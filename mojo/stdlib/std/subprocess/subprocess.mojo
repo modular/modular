@@ -24,7 +24,7 @@ from std.sys._libc import FILE_ptr, pclose, popen
 from std.ffi import c_char
 from std.sys.info import CompilationTarget
 
-from std.memory import Span
+from std.collections import Span
 
 
 struct _POpenHandle:
@@ -78,7 +78,9 @@ struct _POpenHandle:
 
             # Note: This will raise if the subprocess yields non-UTF-8 bytes.
             res += StringSlice(
-                from_utf8=Span(ptr=line.value().bitcast[Byte](), length=read)
+                from_utf8=Span(
+                    unsafe_ptr=line.value().bitcast[Byte](), length=read
+                )
             )
 
         libc.free(unsafe_cast[Type=NoneType](line))

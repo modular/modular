@@ -49,7 +49,6 @@ def bench[
 ]() raises:
     comptime N = 100
 
-    @parameter
     def runner():
         try:
             for _ in range(N):
@@ -58,7 +57,7 @@ def bench[
         except e:
             abort(String(e))
 
-    var ms = std.benchmark.run[runner](1, 10)
+    var ms = std.benchmark.run(runner, 1, 10)
 
     pretty_print(
         name,
@@ -128,7 +127,7 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     var constant = Scalar[DType.int](7)
 
     # pad
-    pad_constant(output, input, paddings.ptr, constant)
+    pad_constant(output, input, paddings._storage, constant)
 
     if verify:
         # Simple verification: check that the padding values are correct
@@ -196,7 +195,7 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     )
 
     # pad
-    pad_reflect(output, input, paddings.ptr)
+    pad_reflect(output, input, paddings._storage)
 
     if verify:
         # Simple verification: check that values are set

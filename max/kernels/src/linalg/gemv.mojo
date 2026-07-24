@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Provides general matrix-vector (GEMV) and general vector-matrix (GEVM) kernels for CPU and GPU."""
+
 from std.collections import Optional
 from std.math import align_down, align_up, ceildiv
 from std.math.uutils import umod, ufloordiv
@@ -61,6 +64,7 @@ from layout import (
     Coord,
     Idx,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -82,6 +86,13 @@ comptime logger = Logger()
 
 @fieldwise_init
 struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
+    """Enumerates the GEMV kernel algorithm variants used by the GPU dispatcher.
+
+    Each variant targets a distinct operand shape, memory access pattern, or
+    hardware capability. The dispatcher in `gemv_gpu` selects among these based
+    on runtime shape information and target architecture.
+    """
+
     var _value: Int
 
     comptime GEMV_KERNEL = Self(0)
@@ -94,7 +105,7 @@ struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
 
     @always_inline("nodebug")
     def __int__(self) -> Int:
-        return Int(self._value)
+        return self._value
 
     @always_inline
     def __eq__(self, other: Self) -> Bool:
@@ -113,8 +124,8 @@ struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
         return self != other
 
     @always_inline
-    def __hash__(self) -> UInt:
-        return UInt(Int(self._value))
+    def __hash__(self) -> Int:
+        return self._value
 
     @always_inline
     def write_to(self, mut writer: Some[Writer]):
@@ -138,6 +149,8 @@ struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
 
 @always_inline
 def reverse_idx[transpose: Bool](x: Int, y: Int) -> IndexList[2]:
+    """Returns an index pair (x, y) or (y, x) depending on the transpose parameter.
+    """
     return Index(y, x) if transpose else Index(x, y)
 
 
@@ -160,6 +173,28 @@ def gemv_kernel[
     n: Int,
     k: Int,
 ):
+    """GPU kernel for matrix-vector multiplication using scalar warp-level reduction.
+
+    Each warp computes one output row by accumulating a dot product over the K
+    dimension with one scalar element per thread, then reducing across the warp.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: A (matrix) element type.
+        b_type: B (vector) element type.
+        transpose_b: When True, writes the result to a transposed output index.
+        elementwise_lambda_fn: Optional epilogue function applied to each output element.
+        accum_type: Accumulation precision type.
+        pdl_level: Programmatic dependent launch level for PDL barriers.
+
+    Args:
+        c: Output pointer of length m.
+        a: Input matrix pointer of shape (m, k).
+        b: Input vector pointer of length k.
+        m: Number of output rows.
+        n: Unused; retained for interface consistency.
+        k: Shared reduction dimension.
+    """
     var tid = global_idx.x
     var global_warp_id = warp.broadcast(ufloordiv(tid, WARP_SIZE))
     var lane_id = lane_id()
@@ -208,6 +243,9 @@ def gemv_kernel_vector[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_storage: TensorStorage,
+    a_storage: TensorStorage,
+    b_storage: TensorStorage,
     *,
     simd_width: Int,
     transpose_b: Bool = False,
@@ -216,13 +254,43 @@ def gemv_kernel_vector[
     check_bounds: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],  # m
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],  # m * k
-    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],  # 1 * k
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Storage=c_storage],  # m
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Storage=a_storage],  # m * k
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],  # 1 * k
     m: Int,
     n: Int,
     k: Int,
 ):
+    """GPU kernel for matrix-vector multiplication using vectorized warp-level loads.
+
+    Each warp processes one output row. Threads collaborate to load `simd_width`-wide
+    vectors from A and B, accumulate dot products locally, then reduce across the warp.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: A (matrix) element type.
+        b_type: B (vector) element type.
+        c_layout: Layout descriptor for the output tensor.
+        a_layout: Layout descriptor for the A matrix.
+        b_layout: Layout descriptor for the B vector.
+        c_storage: Storage kind for the output tensor.
+        a_storage: Storage kind for A.
+        b_storage: Storage kind for B.
+        simd_width: Number of elements loaded per vectorized access.
+        transpose_b: When True, writes the result transposed.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+        accum_type: Accumulation precision type.
+        check_bounds: When True, bounds-checks the last K iteration.
+        pdl_level: Programmatic dependent launch level.
+
+    Args:
+        c: Rank-2 output TileTensor.
+        a: Rank-2 input matrix TileTensor, shape (m, k).
+        b: Rank-2 input vector TileTensor, shape (1, k).
+        m: Number of output rows.
+        n: Unused; retained for interface consistency.
+        k: Shared reduction dimension.
+    """
     comptime assert c.flat_rank == 2, "c must be of rank 2"
     comptime assert a.flat_rank == 2, "a must be of rank 2"
     comptime assert b.flat_rank == 2, "b must be of rank 2"
@@ -291,25 +359,30 @@ def gemv_kernel_vector[
 
 @always_inline
 def _dot_accum[
-    in_type: DType,
+    a_type: DType,
+    b_type: DType,
     accum_type: DType,
-    width: SIMDSize,
+    width: SIMDLength,
 ](
-    a: SIMD[in_type, width], b: SIMD[in_type, width], acc: Scalar[accum_type]
+    a: SIMD[a_type, width], b: SIMD[b_type, width], acc: Scalar[accum_type]
 ) -> Scalar[accum_type]:
     """Compute dot(a, b) + acc with fused bf16→f32 dot product on AMD.
 
-    On AMD GPUs except gfx90a, bf16 inputs with an f32 accumulator use
-    v_dot2_f32_bf16 to avoid explicit bf16→f32 conversion
-    (120 v_perm/v_bfi instructions). On other targets or types, this
-    falls back to cast-then-multiply.
+    `a` and `b` may have different element types. On AMD GPUs except gfx90a,
+    when BOTH operands are bf16 with an f32 accumulator we use v_dot2_f32_bf16
+    to avoid explicit bf16→f32 conversion (120 v_perm/v_bfi instructions). When
+    the operands differ (e.g. bf16 activation × fp32 router weight) or on other
+    targets/types, each operand is widened to `accum_type` and multiplied — the
+    widening is exact for bf16→f32, so a mixed bf16×fp32 dot is numerically
+    identical to first casting the bf16 activation to f32 then dotting.
     """
     var result = acc
 
     comptime if (
         is_amd_gpu()
         and not _is_amd_mi250x()
-        and in_type == DType.bfloat16
+        and a_type == DType.bfloat16
+        and b_type == DType.bfloat16
         and accum_type == DType.float32
     ):
         # v_dot2_f32_bf16: D.f32 = S0.bf16[0]*S1.bf16[0] + S0.bf16[1]*S1.bf16[1] + S2.f32
@@ -363,20 +436,24 @@ def gemv_split_k[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_storage: TensorStorage,
+    a_storage: TensorStorage,
+    b_storage: TensorStorage,
     simd_width: Int,
     tile_m: Int,
     tile_n: Int,
     num_threads: Int,
     unroll_factor: Int = 2,
+    weight_non_temporal: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
     check_bounds_m: Bool = True,
     check_bounds_n: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    output: TileTensor[c_type, c_layout, MutAnyOrigin],
-    act: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    output: TileTensor[c_type, c_layout, MutAnyOrigin, Storage=c_storage],
+    act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Storage=a_storage],
+    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],
     m: Int,
     n: Int,
     k: Int,
@@ -393,6 +470,45 @@ def gemv_split_k[
     is only safe when the launcher guarantees m % tile_m == 0 (m is a runtime
     value, so tile_m == 1 is the usual way to guarantee it), and
     `check_bounds_n=False` is only safe when n % tile_n == 0.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: Activation matrix element type.
+        b_type: Weight matrix element type.
+        c_layout: Layout descriptor for the output tensor.
+        a_layout: Layout descriptor for the activation matrix.
+        b_layout: Layout descriptor for the weight matrix.
+        c_storage: Storage kind for the output tensor.
+        a_storage: Storage kind for the activation matrix.
+        b_storage: Storage kind for the weight matrix.
+        simd_width: Number of elements per vectorized load; sets
+            `tile_k` with `num_threads`.
+        tile_m: Number of output rows each thread accumulates.
+        tile_n: Number of weight rows each thread accumulates.
+        num_threads: Threads per block; sets K-tile width and
+            cross-warp reduction count.
+        unroll_factor: K-loop unroll factor for instruction-level
+            parallelism (defaults to 2).
+        weight_non_temporal: When True, load the weight matrix with
+            non-temporal (streaming) hints to bypass the cache (defaults
+            to True).
+        elementwise_lambda_fn: Optional epilogue applied to each
+            output element.
+        accum_type: Accumulation precision type.
+        check_bounds_m: When True, guards M-tail rows when `m` is
+            not a multiple of `tile_m`.
+        check_bounds_n: When True, guards N-tail columns when `n` is
+            not a multiple of `tile_n`.
+        pdl_level: Programmatic dependent launch level for PDL
+            barriers.
+
+    Args:
+        output: Output tensor, shape (m, n), row-major.
+        act: Activation matrix, shape (m, k).
+        weight: Weight matrix, shape (n, k), row-major transposed B.
+        m: Number of activation rows, output rows.
+        n: Number of weight rows, output columns.
+        k: Reduction dimension shared by activation and weight.
     """
     comptime assert output.flat_rank == 2, "output must be of rank 2"
     comptime assert act.flat_rank == 2, "act must be of rank 2"
@@ -430,16 +546,17 @@ def gemv_split_k[
         var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
 
         # Load weights into tile_w.
-        # On AMD, use non-temporal loads to avoid L1/L2 cache pollution
-        # (weights are read exactly once).
+        # Streaming is best when each weight is read once. Tiny-M router GEMV
+        # launches one row block per M value, so those blocks should retain and
+        # reuse the same weight rows instead.
         comptime for i in range(tile_n):
             comptime if check_bounds_n:
                 if i + tile_id_n >= n:
                     continue
             comptime if is_amd_gpu():
-                var b_vec = weight_tile.load[simd_width, non_temporal=True](
-                    Coord(i, thread_idx.x * simd_width)
-                )
+                var b_vec = weight_tile.load[
+                    simd_width, non_temporal=weight_non_temporal
+                ](Coord(i, thread_idx.x * simd_width))
                 tile_w.store(Coord(i, Idx[0]), b_vec)
             else:
                 var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
@@ -453,10 +570,13 @@ def gemv_split_k[
                     continue
             var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
 
-            comptime NativeVecType = SIMD[a_type, simd_width]
-            var act_native = rebind[NativeVecType](act_vec)
+            # `act` is a_type, `tile_w` is b_type; keep each fragment in its
+            # native element type so mixed A/B dtypes (e.g. bf16 activation ×
+            # fp32 router weight) need no unsafe reinterpretation. `_dot_accum`
+            # widens both to accum_type unless both are bf16 (fused fdot2).
+            var act_native = rebind[SIMD[a_type, simd_width]](act_vec)
             comptime for j in range(tile_n):
-                var weight_native = rebind[NativeVecType](
+                var weight_native = rebind[SIMD[b_type, simd_width]](
                     tile_w.vectorize[1, simd_width]()[j, 0]
                 )
                 var local_accum = rebind[Scalar[accum_type]](acc[i, j])
@@ -543,6 +663,119 @@ def gemv_split_k[
         launch_dependent_grids()
 
 
+def router_gate_use_mixed_gemv(m: Int) -> Bool:
+    """Returns whether runtime `m` should take the fused mixed router GEMV.
+
+    Only tiny-M (decode) rows use the single-launch mixed GEMV. `m == 0`
+    (graph-capture warmup) takes neither path, and large `m` (prefill) must fall
+    back to cast + fp32 matmul to preserve the baseline's performance.
+
+    Args:
+        m: The runtime row count of the router-gate activation.
+
+    Returns:
+        True if the fused mixed GEMV should be launched for this `m`.
+    """
+    comptime max_m = 16
+    return m > 0 and m <= max_m
+
+
+def router_gate_mixed_gemv[
+    static_N: Int,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    c_storage: TensorStorage,
+    a_storage: TensorStorage,
+    b_storage: TensorStorage,
+](
+    c: TileTensor[DType.float32, c_layout, MutAnyOrigin, Storage=c_storage],
+    a: TileTensor[DType.bfloat16, a_layout, ImmutAnyOrigin, Storage=a_storage],
+    b: TileTensor[DType.float32, b_layout, ImmutAnyOrigin, Storage=b_storage],
+    m: Int,
+    n: Int,
+    k: Int,
+    ctx: DeviceContext,
+) raises:
+    """Launches the mixed bf16-activation × fp32-weight router-gate GEMV.
+
+    Fuses the standalone bf16→fp32 activation cast into the router GEMV: `a` is
+    loaded as bf16 and widened to fp32 in registers, then dotted against the
+    unchanged fp32 weight `b` (`c = a @ b^T`) in a single launch. MiniMax-M3
+    uses this path on MI355X; other architectures retain the standard router.
+
+    Because bf16→fp32 widening is lossless and the reduction structure matches
+    `gemv_split_k`, the result is numerically identical to casting `a` to fp32
+    first and running the fp32 GEMV.
+
+    The launch config is the MI355X (gfx950 / CDNA4) cache-busting sweep winner
+    for the `N=128, K=6144, M<=16` router-gate shape: `simd_width=4, tile_m=1,
+    tile_n=2, 128 threads, unroll=2`, with the weight kept cache-resident
+    (`weight_non_temporal=False`) so the per-row-block weight rereads hit L2 —
+    the same cache policy the merged KERN-3219 fp32 router path selects.
+
+    Parameters:
+        static_N: Static output width (weight rows / expert count). Selects the
+            `check_bounds_n` guard at compile time.
+        c_layout: Layout of the fp32 output tensor.
+        a_layout: Layout of the bf16 activation tensor.
+        b_layout: Layout of the fp32 weight tensor.
+        c_storage: Storage of the fp32 output tensor.
+        a_storage: Storage of the bf16 activation tensor.
+        b_storage: Storage of the fp32 weight tensor.
+
+    Args:
+        c: Output `[M, N]` fp32 tensor.
+        a: Activation `[M, K]` bf16 tensor.
+        b: Weight `[N, K]` fp32 tensor (transpose_b layout).
+        m: Runtime row count (`M`). Optimal for tiny `M` (router: `M<=16`).
+        n: Output width (`N`).
+        k: Contraction dim (`K`).
+        ctx: The device context.
+    """
+    # gfx950 fp32 vectorized load = 16 B = 4 fp32 elements; the same element
+    # count vectorizes the bf16 activation load (8 B), matching the K tiling.
+    comptime simd_width = 16 // size_of[DType.float32]()
+    comptime tile_m = 1
+    comptime tile_n = 2
+    comptime num_threads = 128
+    comptime unroll_factor = 2
+    # Empty-launch guard: a graph-capture warmup can call the router with M==0
+    # (and N is never 0 for a real gate); skip the launch so no block reads or
+    # writes past the zero-length buffers.
+    if m == 0 or n == 0:
+        return
+    comptime kernel = gemv_split_k[
+        DType.float32,
+        DType.bfloat16,
+        DType.float32,
+        c_layout,
+        a_layout,
+        b_layout,
+        c_storage,
+        a_storage,
+        b_storage,
+        simd_width=simd_width,
+        tile_m=tile_m,
+        tile_n=tile_n,
+        num_threads=num_threads,
+        unroll_factor=unroll_factor,
+        weight_non_temporal=False,
+        check_bounds_m=tile_m > 1,
+        check_bounds_n=static_N % tile_n != 0,
+    ]
+    ctx.enqueue_function[kernel](
+        c,
+        a,
+        b,
+        m,
+        n,
+        k,
+        grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
+        block_dim=num_threads,
+    )
+
+
 # Row Vector-Matrix multiplication
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(tile_size))
@@ -565,6 +798,29 @@ def gevm_kernel[
     n: Int,
     k: Int,
 ):
+    """GPU kernel for row-vector times matrix multiplication (GEVM).
+
+    Each CTA block computes `tile_size // WARP_SIZE` consecutive output elements.
+    Threads in each warp collaboratively accumulate the dot product of the input
+    row vector with columns of the matrix, then reduce through shared memory.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: Input vector (row) element type.
+        b_type: Input matrix element type.
+        tile_size: Total threads per block; must be a multiple of WARP_SIZE.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+        accum_type: Accumulation precision type.
+        pdl_level: Programmatic dependent launch level.
+
+    Args:
+        c: Output pointer of length n.
+        a: Input row vector pointer of length k.
+        b: Input matrix pointer of shape (k, n).
+        m: Unused; retained for interface consistency.
+        n: Number of output columns.
+        k: Shared reduction dimension.
+    """
     comptime warps_per_block = tile_size // WARP_SIZE
 
     var warp_id = warp_id()
@@ -619,7 +875,7 @@ def _amd_gemv_config[
 
     Returns (num_threads, tile_n, unroll_factor).
 
-    Works for both FP8 (simd_width=16) and BF16 (simd_width=8) — all
+    Works for both FP8 (simd_width=16) and BF16 (simd_width=8). All
     thresholds derive from simd_width, WARP_SIZE, and
     max_thread_block_size.
 
@@ -766,6 +1022,24 @@ def _nvidia_gemv_config[
 
 
 @always_inline
+def is_minimax_router_gemm[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    static_N: Int,
+    static_K: Int,
+]() -> Bool:
+    """Returns whether a GEMM has the MiniMax-M3 fp32 router signature."""
+    return (
+        a_type == DType.float32
+        and b_type == DType.float32
+        and c_type == DType.float32
+        and static_N == 128
+        and static_K == 6144
+    )
+
+
+@always_inline
 def gemv_gpu_dispatch[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
@@ -778,6 +1052,24 @@ def gemv_gpu_dispatch[
     b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
+    """Launches the GPU GEMV kernel indicated by kernel_func with appropriate grid and block dims.
+
+    Translates a `GEMVAlgorithm` variant into a concrete kernel call with shape-derived
+    launch parameters, handling input/output layout transformation where needed.
+
+    Parameters:
+        transpose_b: When True, B is treated as transposed (N, K) row-major.
+        elementwise_lambda_fn: Optional epilogue applied element-wise to each output.
+        pdl_level: Programmatic dependent launch level.
+        tile_m: Number of output rows processed per CTA (used by GEMV_SPLIT_K).
+
+    Args:
+        kernel_func: The GEMV algorithm variant to launch.
+        c: Rank-2 output TileTensor.
+        a: Rank-2 input matrix TileTensor.
+        b: Rank-2 input vector or matrix TileTensor.
+        ctx: Device context for kernel launch.
+    """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
@@ -805,6 +1097,7 @@ def gemv_gpu_dispatch[
             num_threads: Int,
             tile_n: Int,
             unroll_factor: Int = 2,
+            weight_non_temporal: Bool = True,
         ]() raises:
             comptime kernel = gemv_split_k[
                 c_type,
@@ -813,11 +1106,15 @@ def gemv_gpu_dispatch[
                 type_of(c).LayoutType,
                 type_of(a).LayoutType,
                 type_of(b).LayoutType,
+                type_of(c).Storage,
+                type_of(a).Storage,
+                type_of(b).Storage,
                 simd_width=simd_width,
                 tile_m=tile_m,
                 tile_n=tile_n,
                 num_threads=num_threads,
                 unroll_factor=unroll_factor,
+                weight_non_temporal=weight_non_temporal,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 check_bounds_m=tile_m > 1,
                 check_bounds_n=static_N % tile_n != 0,
@@ -836,18 +1133,25 @@ def gemv_gpu_dispatch[
             )
 
         comptime if has_amd_gpu_accelerator():
-            comptime config = _amd_gemv_config[
-                simd_width,
-                ctx.default_device_info.max_thread_block_size,
-                static_K,
-                has_N,
-                static_N,
-            ]()
-            _gemv_split_k_dispatch[
-                config[0],
-                config[1],
-                config[2],
-            ]()
+            comptime if is_minimax_router_gemm[
+                c_type, a_type, b_type, static_N, static_K
+            ]():
+                # MiniMax-M3 router gate: M row blocks reread the same 3 MB
+                # weight. Cached loads turn those rereads into L2/MALL hits.
+                _gemv_split_k_dispatch[128, 2, 2, False]()
+            else:
+                comptime config = _amd_gemv_config[
+                    simd_width,
+                    ctx.default_device_info.max_thread_block_size,
+                    static_K,
+                    has_N,
+                    static_N,
+                ]()
+                _gemv_split_k_dispatch[
+                    config[0],
+                    config[1],
+                    config[2],
+                ]()
         else:
             # NVIDIA B200: shape-dependent dispatch for FP8 and BF16.
             comptime config = _nvidia_gemv_config[
@@ -880,6 +1184,9 @@ def gemv_gpu_dispatch[
                     type_of(c).LayoutType,
                     type_of(a).LayoutType,
                     type_of(b).LayoutType,
+                    type_of(c).Storage,
+                    type_of(a).Storage,
+                    type_of(b).Storage,
                     simd_width=simd_width,
                     transpose_b=False,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -916,6 +1223,9 @@ def gemv_gpu_dispatch[
                     type_of(c).LayoutType,
                     type_of(a).LayoutType,
                     type_of(b_tile_n_major).LayoutType,
+                    type_of(c).Storage,
+                    type_of(a).Storage,
+                    type_of(b_tile_n_major).Storage,
                     simd_width=simd_width,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -941,6 +1251,9 @@ def gemv_gpu_dispatch[
                 type_of(c).LayoutType,
                 type_of(b).LayoutType,
                 type_of(a).LayoutType,
+                type_of(c).Storage,
+                type_of(b).Storage,
+                type_of(a).Storage,
                 simd_width=simd_width,
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1021,7 +1334,7 @@ def gemv_gpu_dispatch[
             m,
             n,
             k,
-            grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+            grid_dim=ceildiv(n, WARP_SIZE),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
             attributes=pdl_launch_attributes(pdl_level),
         )
@@ -1040,6 +1353,9 @@ def gemv_gpu_dispatch[
             BLOCK_DIM,
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            c_storage=type_of(c).Storage,
+            a_storage=type_of(a).Storage,
+            b_storage=type_of(b).Storage,
         ]
         ctx.enqueue_function[kernel](
             c,
@@ -1056,6 +1372,18 @@ def gemv_gpu_dispatch[
 def log_shape[
     has_mode_1: Bool, has_mode_2: Bool, name: String
 ](mode_1: Int, mode_2: Int,) -> None:
+    """Logs the shape of a named tensor dimension pair to the info logger.
+
+    Parameters:
+        has_mode_1: When True, prefixes the first dimension value with an underscore
+            to indicate a dynamic dimension.
+        has_mode_2: When True, prefixes the second dimension value with an underscore.
+        name: The label to print before the shape tuple.
+
+    Args:
+        mode_1: Value of the first dimension.
+        mode_2: Value of the second dimension.
+    """
     logger.info(
         name,
         ": (",
@@ -1080,11 +1408,29 @@ def gemv_gpu[
     b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
+    """Selects and dispatches the appropriate GPU GEMV kernel based on shape and hardware.
+
+    Examines runtime dimensions M, N, K and static shape information to choose among
+    GEMV_KERNEL, GEMV_KERNEL_VECTOR, GEMV_SPLIT_K, GEVM_KERNEL, and MATMUL_NAIVE variants.
+
+    Parameters:
+        transpose_b: When True, B is treated as transposed (N, K) row-major.
+        elementwise_lambda_fn: Optional epilogue applied element-wise to each output.
+        pdl_level: Programmatic dependent launch level for PDL barriers.
+
+    Args:
+        c: Rank-2 output TileTensor.
+        a: Rank-2 input matrix TileTensor.
+        b: Rank-2 input vector or matrix TileTensor.
+        ctx: Device context for kernel launch.
+    """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
 
     comptime a_type = a.dtype
+    comptime b_type = b.dtype
+    comptime c_type = c.dtype
 
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
@@ -1095,6 +1441,8 @@ def gemv_gpu[
     comptime has_M = c.static_shape[0] > -1
     comptime has_N = c.static_shape[1] > -1
     comptime has_K = a.static_shape[1] > -1
+    comptime static_N = c.static_shape[1] if has_N else UNKNOWN_VALUE
+    comptime static_K = a.static_shape[1] if has_K else UNKNOWN_VALUE
 
     logger.info("------ Dispatching to GEMV ------")
 
@@ -1115,7 +1463,17 @@ def gemv_gpu[
         else:
             kernel_func = GEMVAlgorithm.GEMV_KERNEL
 
-    elif m == 1 and transpose_b == True:
+    elif (
+        m == 1
+        or (
+            has_N
+            and has_K
+            and is_minimax_router_gemm[
+                c_type, a_type, b_type, static_N, static_K
+            ]()
+            and m <= 16
+        )
+    ) and transpose_b == True:
         comptime if a_type in (
             DType.float32,
             DType.bfloat16,
@@ -1159,6 +1517,20 @@ def gemv[
     a_buf: TileTensor[mut=False, ...],
     b_buf: TileTensor[mut=False, ...],
 ) raises:
+    """Computes a CPU matrix-vector product C = A * b using vectorized element-wise reduction.
+
+    Optionally parallelizes across rows. Accumulates the product of each row of A
+    with the vector b into the corresponding element of c.
+
+    Parameters:
+        parallelize: When True, the reduction runs in parallel across output rows.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+
+    Args:
+        c_buf: Output TileTensor of length M.
+        a_buf: Input matrix TileTensor of shape (M, K).
+        b_buf: Input vector TileTensor of length K.
+    """
     comptime c_type = c_buf.dtype
     comptime simd_width = simd_width_of[c_type]()
 
@@ -1178,7 +1550,7 @@ def gemv[
     @always_inline
     @parameter
     def output_fn[
-        out_type: DType, width: SIMDSize, rank: Int
+        out_type: DType, width: SIMDLength, rank: Int
     ](idx: IndexList[rank], value: SIMD[out_type, width]):
         comptime if elementwise_lambda_fn:
             comptime func = elementwise_lambda_fn.value()
@@ -1193,7 +1565,7 @@ def gemv[
     @always_inline
     @parameter
     def reduce_impl[
-        ty: DType, width: SIMDSize
+        ty: DType, width: SIMDLength
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 
@@ -1213,6 +1585,16 @@ def naive_gemv(
     a_buf: TileTensor[mut=False, ...],
     b_buf: TileTensor[mut=False, ...],
 ):
+    """Computes a reference matrix-vector product C = A * b using a scalar nested loop.
+
+    Iterates over K then M, accumulating each A[m, k] * b[k] into c[m]. Intended for
+    correctness testing rather than performance-critical paths.
+
+    Args:
+        c_buf: Output TileTensor of length M, zero-filled on entry.
+        a_buf: Input matrix TileTensor of shape (M, K).
+        b_buf: Input vector TileTensor of length K.
+    """
     comptime c_type = c_buf.dtype
     var M = Int(a_buf.dim[0]())
     var K = Int(a_buf.dim[1]())
@@ -1371,7 +1753,7 @@ struct _MmaCpAsyncGmemLoaderA[
 
 
 struct _MmaCpAsyncGmemLoaderB[
-    weight_origin: ImmutOrigin,
+    weight_origin: ImmOrigin,
     //,
     b_type: DType,
     b_layout: TensorLayout,
@@ -1752,6 +2134,38 @@ def gemm_mma_cpasync_kernel[
     gemm_n: Int,
     batch_size: Int,
 ):
+    """SM100 (B200) warp-specialized GEMM kernel using cp.async and m16n8k16 MMA instructions.
+
+    Implements a multi-stage software-pipelining loop: producer warps (0-3) prefetch
+    activation and weight tiles from global memory into shared memory via cp.async,
+    and consumer warps (4+) issue m16n8k16 MMA operations and write results to the
+    output. Requires B200 (sm_100x) hardware.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: Activation (A) element type.
+        b_type: Weight (B) element type.
+        c_layout: TensorLayout for the output.
+        a_layout: TensorLayout for activations.
+        b_layout: TensorLayout for weights.
+        tile_m: Tile size along M; must be 16 for m16n8k16 MMA.
+        tile_n: Tile size along N per warp.
+        tile_k: Tile size along K; determines shared memory allocation.
+        stage_cnt: Number of pipeline stages.
+        accum_type: Accumulator precision; must be float32.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+        pdl_level: Programmatic dependent launch level.
+        swapAB: When True, swaps the A and B operand roles.
+
+    Args:
+        output: Rank-3 output TileTensor of shape (batch, gemm_m, gemm_n).
+        act: Rank-3 activation TileTensor of shape (batch, gemm_m, gemm_k).
+        weight: Rank-3 weight TileTensor of shape (batch, gemm_n, gemm_k).
+        gemm_m: M dimension of the GEMM.
+        gemm_k: K (reduction) dimension of the GEMM.
+        gemm_n: N dimension of the GEMM.
+        batch_size: Number of independent GEMM problems in the batch.
+    """
     comptime assert _is_sm_100x(), "gemm_mma_cpasync requires B200 (sm_100x)"
     comptime assert tile_m == 16, "tile_m must be 16 for m16n8k16 MMA"
     comptime assert tile_n == 8, "tile_n must be 8 for m16n8k16 MMA"
@@ -1907,6 +2321,14 @@ def gemm_mma_cpasync[
     epilogue transposes the store back into the row-major `[M, N]` buffer. This
     makes the large weight the producer-independent operand for PDL overlap at
     small M (decode), while keeping the output layout identical.
+
+    Parameters:
+        pdl_level: Programmatic dependent launch level for PDL barriers.
+        tile_k: K-dimension tile size for the MMA kernel (defaults to 128).
+        elementwise_lambda_fn: Optional epilogue applied to each output
+            element.
+        swapAB: When True, feeds the weight to the A operand slot and the
+            activation to the B slot for PDL overlap at small M.
 
     Args:
         c:          Output, shape (gemm_m, gemm_n) or (batch, gemm_m, gemm_n),

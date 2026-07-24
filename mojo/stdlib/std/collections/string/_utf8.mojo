@@ -18,7 +18,7 @@ from std.sys import simd_width_of, simd_byte_width
 from std.sys.intrinsics import likely
 
 from std.bit import count_leading_zeros
-from std.memory import Span
+from std.collections import Span
 
 # ===-----------------------------------------------------------------------===#
 # Validate UTF-8
@@ -109,7 +109,7 @@ def _utf8_char_width(b: Byte) -> Int:
 
 @always_inline
 def _extract_vector[
-    width: SIMDSize, //, offset: Int
+    width: SIMDLength, //, offset: Int
 ](a: SIMD[DType.uint8, width], b: SIMD[DType.uint8, width]) -> SIMD[
     DType.uint8, width
 ]:
@@ -148,7 +148,7 @@ def validate_chunk[
     return must23_as_80 ^ sc
 
 
-def _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
+def _is_valid_utf8_runtime(span: Span[mut=False, Byte, _]) -> Bool:
     """Fast utf-8 validation using SIMD instructions.
 
     References for this algorithm:
@@ -191,10 +191,10 @@ def _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
     return all(has_error.eq(0))
 
 
-def _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
+def _is_valid_utf8_comptime(span: Span[mut=False, Byte, _]) -> Bool:
     var ptr = span.unsafe_ptr()
-    var length = UInt(len(span))
-    var offset = UInt(0)
+    var length = Int(len(span))
+    var offset = 0
 
     while offset < length:
         var b0 = ptr[offset]
@@ -208,7 +208,7 @@ def _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
             return False
 
         for i in range(1, Int(byte_type)):
-            var idx = offset + UInt(i)
+            var idx = offset + i
             if idx >= length or not _is_utf8_continuation_byte(ptr[idx]):
                 return False
 
@@ -225,13 +225,13 @@ def _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
         elif b0 == 0xF4 and b1 > 0x8F:
             return False
 
-        offset += UInt(byte_type)
+        offset += Int(byte_type)
 
     return True
 
 
 @always_inline("nodebug")
-def _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
+def _is_valid_utf8(span: Span[mut=False, Byte, _]) -> Bool:
     """Verify that the bytes are valid UTF-8.
 
     Args:
@@ -270,7 +270,7 @@ def _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
 @parameter
 @always_inline
 def _is_utf8_continuation_byte[
-    w: SIMDSize
+    w: SIMDLength
 ](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
     return vec.cast[DType.int8]().lt(-(0b1000_0000 >> 1))
 
@@ -324,10 +324,10 @@ def _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
 def _is_newline_char_utf8[
     include_r_n: Bool = False
 ](
-    p: UnsafePointer[mut=False, Byte, ...],
-    eol_start: UInt,
+    p: Pointer[mut=False, Byte, ...],
+    eol_start: Int,
     b0: Byte,
-    char_len: UInt,
+    char_len: Int,
 ) -> Bool:
     """Returns whether the char is a newline char.
 
@@ -352,7 +352,7 @@ def _is_newline_char_utf8[
     elif char_len == 4:
         return False
 
-    var b1 = p[eol_start + 1]
+    var b1 = p[unsafe_offset=eol_start + 1]
     if char_len == 2:
         var is_next_line = b0 == 0xC2 and b1 == 0x85  # unicode next line \x85
 
@@ -362,11 +362,11 @@ def _is_newline_char_utf8[
             return is_next_line
     else:  # unicode line sep or paragraph sep: \u2028 , \u2029
         assert char_len == 3, "invalid UTF-8 byte length"
-        var b2 = p[eol_start + 2]
+        var b2 = p[unsafe_offset=eol_start + 2]
         return b0 == 0xE2 and b1 == 0x80 and (b2 == 0xA8 or b2 == 0xA9)
 
 
-struct UTF8Chunk[origin: ImmutOrigin](ImplicitlyCopyable):
+struct UTF8Chunk[origin: ImmOrigin](ImplicitlyCopyable):
     var valid: StringSlice[Self.origin]
     """The valid UTF-8 bytes."""
 
@@ -386,7 +386,7 @@ struct UTF8Chunk[origin: ImmutOrigin](ImplicitlyCopyable):
 
 # This is an implementation of Rust's `UTF8Chunk` iterator.
 # https://doc.rust-lang.org/src/core/str/lossy.rs.html#194
-struct UTF8Chunks[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
+struct UTF8Chunks[origin: ImmOrigin](ImplicitlyCopyable, Iterable, Iterator):
     """An iterator over valid and invalid UTF-8 chunks."""
 
     comptime IteratorType[
@@ -408,7 +408,7 @@ struct UTF8Chunks[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
             raise StopIteration()
 
         @always_inline
-        def safe_get(i: Int) {read self} -> Byte:
+        def safe_get(i: Int) {imm self} -> Byte:
             return self._bytes[i] if i < len(self._bytes) else Byte(0)
 
         @always_inline

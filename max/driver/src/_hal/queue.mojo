@@ -17,12 +17,13 @@ from .plugin import (
     QueueHandle,
     FunctionHandle,
 )
-from .buffer import BufferView
+from .buffer import Buffer, BufferView
 from .context import Context
+from .memory import _enqueue_copy
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable, _EventInner
 from .device import DeviceSpec
 from .status import STATUS_SUCCESS, HALError
-from std.collections import InlineArray
+from std.collections import InlineArray, OptionalReg
 from std.memory import (
     ArcPointer,
     OpaquePointer,
@@ -30,6 +31,13 @@ from std.memory import (
     UnsafeMaybeUninit,
 )
 from std.memory.arc_pointer import WeakPointer
+from .execution_config import (
+    ExecutionConfig,
+    BlockExecutionConfig,
+    GridBlockExecutionConfig,
+    GPUExecutionConfiguration,
+    NearComputeGeneralPurposeScratchpadExecutionConfig,
+)
 
 
 @fieldwise_init
@@ -93,6 +101,8 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
         shared_mem_bytes: UInt32 = 0,
+        attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
+        num_attributes: UInt32 = 0,
     ) raises HALError:
         """
         Enqueue an execution of the passed function as a kernel on this queue.
@@ -109,8 +119,90 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             arg_sizes,
             num_args,
             shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes,
+            num_attributes=num_attributes,
         )
 
+    def execute[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+    ](
+        self,
+        func: FunctionHandle,
+        execution_config: ExecutionConfigType,
+        args: UnsafePointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
+        arg_sizes: UnsafePointer[mut=True, UInt64, _],
+        num_args: UInt32,
+        attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
+        num_attributes: UInt32 = 0,
+    ) raises HALError:
+        """
+        Enqueue an execution of the passed function as a kernel on this queue.
+
+        Totally ordered with respect to other operations within this queue
+        if backed by a stream.
+        """
+        var grid_dim = execution_config.get_grid_dim()
+        var block_dim = execution_config.get_block_dim()
+
+        debug_assert(
+            grid_dim.x() > 0 and grid_dim.y() > 0 and grid_dim.z() > 0,
+            "grid dimensions must be positive",
+        )
+        debug_assert(
+            block_dim.x() > 0 and block_dim.y() > 0 and block_dim.z() > 0,
+            "block dimensions must be positive",
+        )
+        debug_assert(
+            grid_dim.x() <= 0xFFFFFFFF
+            and grid_dim.y() <= 0xFFFFFFFF
+            and grid_dim.z() <= 0xFFFFFFFF,
+            "grid dimensions must fit in 32 bits",
+        )
+        debug_assert(
+            block_dim.x() <= 0xFFFFFFFF
+            and block_dim.y() <= 0xFFFFFFFF
+            and block_dim.z() <= 0xFFFFFFFF,
+            "block dimensions must fit in 32 bits",
+        )
+
+        var grid = Tuple(
+            UInt32(grid_dim.x()), UInt32(grid_dim.y()), UInt32(grid_dim.z())
+        )
+        var block = Tuple(
+            UInt32(block_dim.x()), UInt32(block_dim.y()), UInt32(block_dim.z())
+        )
+
+        var near_compute_scratchpad_usage: UInt64 = 0
+        comptime if conforms_to(
+            ExecutionConfigType,
+            NearComputeGeneralPurposeScratchpadExecutionConfig,
+        ):
+            near_compute_scratchpad_usage = (
+                execution_config.get_near_compute_scratchpad_usage()
+            )
+
+        debug_assert(
+            near_compute_scratchpad_usage <= 0xFFFFFFFF,
+            "near compute scratchpad usage must fit in 32 bits",
+        )
+
+        self._raw[].execute_function(
+            self._handle,
+            func,
+            grid,
+            block,
+            args,
+            arg_sizes,
+            num_args,
+            shared_mem_bytes=UInt32(near_compute_scratchpad_usage),
+            attributes=attributes,
+            num_attributes=num_attributes,
+        )
+
+    # Direction-specific transports. Callable directly for fine-grained
+    # control, and the raw-host path (a bare pointer, not a `Buffer`) that
+    # `copy` cannot express; `copy` (below) dispatches to these by residency.
     def copy_to_device(
         self,
         dst: BufferView,
@@ -151,6 +243,16 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         )
         self._raw[].copy_intra_device(self._handle, dst._view, src._view)
 
+    def launch_host_func[
+        origin: MutOrigin
+    ](
+        self,
+        func: def(OpaquePointer[origin]) thin -> None,
+        user_data: OpaquePointer[origin],
+    ) raises HALError:
+        """Enqueues a host function callback (e.g. cuLaunchHostFunc)."""
+        self._raw[].queue_launch_host_func(self._handle, func, user_data)
+
     def set_memory(
         self,
         dst: BufferView,
@@ -175,9 +277,48 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         """
         self._raw[].fill(self._handle, dst._view, value, value_size)
 
+    # ===-------------------------------------------------------------------===#
+    # Unified copy
+    # ===-------------------------------------------------------------------===#
+
+    def copy(
+        self,
+        *,
+        dst: Buffer[Self.device_spec],
+        src: Buffer[Self.device_spec],
+    ) raises HALError:
+        """Enqueues a buffer-to-buffer copy of `src` into the front of `dst`.
+
+        Transfers exactly `src.byte_size` bytes; `dst` must be at least that
+        large, and any remaining tail of `dst` is left untouched. The transfer
+        runs on this queue, so the device-resident operand it touches must
+        reside on this queue's device — `dst` for a to-device or same-device
+        copy, `src` for a device-to-pinned-host copy. A pinned host operand is
+        only a host pointer and may come from any device's context. A
+        device-to-device copy whose source is on another device is a peer copy;
+
+        Args:
+            dst: Destination buffer.
+            src: Source buffer.
+        """
+        _enqueue_copy(
+            self._raw,
+            self._handle,
+            self._context[]._device[].id,
+            dst=dst,
+            src=src,
+        )
+
+    def wait_value64(
+        self, device_address: UInt64, value: UInt64
+    ) raises HALError:
+        """Enqueues a wait until the 64-bit slot at `device_address` equals
+        `value` (e.g. cuStreamWaitValue64 with EQ semantics)."""
+        self._raw[].queue_wait_value64(self._handle, device_address, value)
+
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,
-    ](self, out event: Event[flags],) raises HALError:
+    ](self, out event: Event[flags]) raises HALError:
         """Creates a fresh event, records it on this queue's timeline, and
         returns it.
 
@@ -203,7 +344,7 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def wait_for_events[
         *EventTypes: Waitable,
-    ](self, *events: *EventTypes,) raises HALError:
+    ](self, *events: *EventTypes) raises HALError:
         """Enqueues a wait for the given events on this queue.
 
         Accepts any combination of events with different flag combos.
@@ -226,3 +367,10 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         if backed by a stream.
         """
         self._raw[].synchronize_queue(self._handle)
+
+    def native_handle(self) raises HALError -> OptionalReg[UInt64]:
+        """Returns the backend stream/queue handle, or None if the queue has
+        none (a device with no OS-level stream object, e.g. CPU)."""
+        return self._raw[].get_optional_queue_property["native_handle", UInt64](
+            self._handle
+        )

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides pooling helpers and sliding-window shape utilities used by image-processing operations."""
 
 from layout import TensorLayout, TileTensor
 
@@ -20,6 +21,8 @@ from std.utils.index import IndexList
 # Padding handling method.
 @fieldwise_init
 struct PadHandling(TrivialRegisterPassable):
+    """Encodes how padding values are treated during pooling operations."""
+
     var value: Int
     comptime EXCLUDE_PAD = PadHandling(0)  # Do not count padding.
     comptime INCLUDE_PAD = PadHandling(2)  # Count padding.
@@ -36,6 +39,9 @@ struct PadHandling(TrivialRegisterPassable):
 # Data layout encoding.
 @fieldwise_init
 struct Image2DLayout(TrivialRegisterPassable):
+    """Encodes the data layout of a 2D image or filter tensor used by conv2d operations.
+    """
+
     var value: Int
     comptime UNKNOWN = Image2DLayout(-1)  # statically unknown layout.
     comptime NHWC = Image2DLayout(0)  # channels last layout.
@@ -62,7 +68,18 @@ struct ImageData[
     origin: MutOrigin,
 ](TrivialRegisterPassable):
     """Utility class that generalizes conv2d data and filter tensor with a given
-    data layout."""
+    data layout.
+
+    Parameters:
+        LayoutType: The `TensorLayout` of the underlying `TileTensor`
+            (inferred).
+        dtype: The element type of the stored image or filter data.
+        static_image_layout: The compile-time known data layout tag, or
+            `Image2DLayout.UNKNOWN` when the layout is only resolved at
+            runtime.
+        origin: The `MutOrigin` memory origin kind for the underlying
+            `TileTensor`.
+    """
 
     var data: TileTensor[Self.dtype, Self.LayoutType, Self.origin]
     var dynamic_image_layout: Image2DLayout
@@ -100,6 +117,10 @@ struct ImageData[
     ]:
         """Conversion utility from a fully dynamic data structure, e.g. from c
         shim to one with compile-time known data layout.
+
+        Parameters:
+            new_static_image_layout: The compile-time data layout tag to
+                specialize the returned image data with.
 
         Returns:
             The image data with static data layout.
@@ -278,6 +299,12 @@ struct ImageShape(TrivialRegisterPassable):
         image_layout: Image2DLayout,
     ](out self, image_data: ImageData[dtype, image_layout, ...]):
         """Constructor of an ImageShape instance from an ImageData.
+
+        Parameters:
+            dtype: The element type of the image data (inferred).
+            image_layout: The compile-time data layout tag of the image
+                data, or `Image2DLayout.UNKNOWN` when only known at
+                runtime.
 
         Args:
             image_data: The image data instance to extract shape

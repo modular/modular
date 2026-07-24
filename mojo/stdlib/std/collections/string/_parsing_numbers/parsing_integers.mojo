@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import simd_width_of
-from std.memory import memcmp, memcpy
+from std.memory import unsafe_memcmp, unsafe_memcpy
 
 from .constants import CONTAINER_SIZE, MAXIMUM_UINT64_AS_STRING
 
@@ -26,7 +26,7 @@ def standardize_string_slice(
     var standardized_x = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
     var std_x_ptr = standardized_x.unsafe_ptr()
     var x_len = x.byte_length()
-    memcpy(
+    unsafe_memcpy(
         dest=std_x_ptr + CONTAINER_SIZE - x_len, src=x.unsafe_ptr(), count=x_len
     )
     return standardized_x^
@@ -70,7 +70,9 @@ def to_integer(
     for i in range(CONTAINER_SIZE):
         if not (Byte(ord("0")) <= std_x_ptr[i] <= Byte(ord("9"))):
             var num_str = StringSlice(
-                unsafe_from_utf8=Span(ptr=std_x_ptr, length=len(standardized_x))
+                unsafe_from_utf8=Span(
+                    unsafe_ptr=std_x_ptr, length=len(standardized_x)
+                )
             ).lstrip("0")
 
             raise Error(
@@ -92,11 +94,16 @@ def to_integer(
         CONTAINER_SIZE, "0"
     )
     var too_large = (
-        memcmp(std_x_ptr, max_standardized_x.unsafe_ptr(), CONTAINER_SIZE) == 1
+        unsafe_memcmp(
+            std_x_ptr, max_standardized_x.unsafe_ptr(), CONTAINER_SIZE
+        )
+        == 1
     )
     if too_large:
         var num_str = StringSlice(
-            unsafe_from_utf8=Span(ptr=std_x_ptr, length=len(standardized_x))
+            unsafe_from_utf8=Span(
+                unsafe_ptr=std_x_ptr, length=len(standardized_x)
+            )
         ).lstrip("0")
         raise Error(
             "The string is too large to be converted to an integer: '",

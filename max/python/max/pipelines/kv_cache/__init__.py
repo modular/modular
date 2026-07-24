@@ -13,7 +13,7 @@
 
 """KV cache management for MAX pipelines."""
 
-from .config import KVCacheConfig, KVConnectorConfig
+from .config import KVCacheConfig, KVConnectorConfig, cache_dtype_for_encoding
 from .memory_planner import (
     MemoryPlanner,
     ModelConfig,
@@ -45,5 +45,6 @@ __all__ = [
     "PagedMemoryPlanner",
     "TransferReqData",
     "available_port",
+    "cache_dtype_for_encoding",
     "load_kv_manager",
 ]

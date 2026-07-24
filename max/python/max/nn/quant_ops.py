@@ -15,7 +15,9 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
 from .kernels import (
+    _apple_int8_w8a8_matmul,
     _apple_weight_only_block_scaled_matmul,
+    _apple_weight_only_scaled_float8_matmul,
     _fused_qkv_index_ragged_matmul_scaled_mxfp8,
     _fused_qkv_ragged_matmul_scaled_float4,
     _fused_qkv_ragged_matmul_scaled_float8,
@@ -254,6 +256,31 @@ def _matmul_float8(
     Returns:
         The output tensor.
     """
+    if _is_apple_gpu():
+        # Apple M5 weight-only (W8A16) path: keep the activation in bf16 (do NOT
+        # quantize it to FP8) and feed the FP8-E4M3 weight straight to the kernel,
+        # which widens it to f32/bf16 at the point of consumption (register-
+        # resident GEMV at M=1; a transient bf16 buffer for the M>1 interim). The
+        # kernel produces the RAW `x @ W_fp8^T`, so the modelopt per-tensor scalar
+        # `weight_scale` is folded here as a post-matmul multiply -- the FP8 analog
+        # of the NVFP4 `weight_scale_2` fold in `_matmul_float4`. (`input_scale`
+        # cancels: the static path scales x by `1/input_scale` then folds
+        # `input_scale` back into the epilogue; with a bf16 activation neither step
+        # happens, so `weight_scale` is the only surviving global factor. Because
+        # it is a per-tensor scalar it factors out of the sum, so the post-matmul
+        # fold is exact.) Placed before the fnuz conversion (AMD-only) so the
+        # weight stays `float8_e4m3fn`, which Metal reads natively. The gate is
+        # additive: NVIDIA/AMD FP8 below is untouched.
+        res = _apple_weight_only_scaled_float8_matmul(
+            x, weight, out_type=DType.float32
+        )
+        # Fold the per-tensor scale in f32, then a single cast to bf16:
+        # fp32-accum -> f32 out -> `* weight_scale` (f32) -> one bf16 round.
+        # Requesting f32 out (not bf16) avoids a premature bf16 round of the raw
+        # matmul BEFORE the scale multiply (folding a bf16-rounded product would
+        # lose mantissa bits). Mirrors the NVFP4 `weight_scale_2` fold.
+        return (res * weight_scale.to(res.device)).cast(DType.bfloat16)
+
     weight, weight_scale = convert_weights_to_fp8_fnuz_if_needed(
         weight, weight_scale
     )
@@ -357,6 +384,38 @@ def _matmul_float8(
     )
 
 
+def _matmul_int8(
+    x: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    bias: TensorValue | None = None,
+) -> TensorValue:
+    """Computes x @ weight.T (+bias) with symmetric int8 W8A8 quant (Apple M5).
+
+    The activation ``x`` (bf16) is dynamically quantized to int8 per token and
+    the pre-quantized int8 ``weight`` (per-output-channel ``weight_scale``) is
+    fed to the int8 widening-MMA GEMM. Apple M5 only -- there is no
+    NVIDIA/AMD int8 W8A8 dense path here.
+
+    Args:
+        x: The bf16 input activation, shape ``[M, K]``.
+        weight: The int8 weight, shape ``[N, K]`` (RTN-quantized at load).
+        weight_scale: The fp32 per-output-channel weight scale, ``[N, 1]``.
+        bias: Optional per-output-channel bias, shape ``[N]``; fused into the
+            dequant epilogue (added after dequant) instead of a separate add.
+
+    Returns:
+        The output tensor in bf16, shape ``[M, N]``.
+    """
+    if not _is_apple_gpu():
+        raise NotImplementedError(
+            "int8 W8A8 dense matmul is only implemented for Apple M5 GPUs"
+        )
+    return _apple_int8_w8a8_matmul(
+        x, weight, weight_scale, bias=bias, out_type=DType.bfloat16
+    )
+
+
 def quantized_matmul(
     x: TensorValue,
     weight: TensorValue,
@@ -364,6 +423,7 @@ def quantized_matmul(
     input_scale: TensorValue | None,
     quant_config: QuantConfig,
     weight_scale_2: TensorValue | None = None,
+    bias: TensorValue | None = None,
 ) -> TensorValue:
     """Single entry point for all quantized dense matmuls.
 
@@ -378,6 +438,8 @@ def quantized_matmul(
             static FP8).
         quant_config: The quantization configuration.
         weight_scale_2: Additional weight scale factor (NVFP4 only).
+        bias: Optional bias tensor. Only the int8 W8A8 (Apple M5) path fuses it
+            into the matmul epilogue; other formats leave the caller to add it.
 
     Returns:
         The output tensor.
@@ -418,6 +480,8 @@ def quantized_matmul(
                 input_scale,
                 quant_config,
             )
+        case QuantFormat.INT8_W8A8:
+            return _matmul_int8(x, weight, weight_scale, bias=bias)
         case _:
             raise ValueError(
                 f"Unsupported quantization format for dense matmul: {quant_config.format}"
@@ -606,15 +670,15 @@ def quantized_fused_qkv_index_matmul(
     idx_head_dim: int,
     quant_config: QuantConfig,
     weight_scale: TensorValue,
-) -> TensorValue:
+) -> tuple[TensorValue, TensorValue]:
     """Fuses MiniMax-M3's QKV and index-QK projections into one MXFP8 matmul.
 
     All five projections (``Q``, ``K``, ``V``, ``IndexQ``, ``IndexK``) read the
     same hidden state ``x``. This quantizes ``x`` once and runs a single
     block-scaled GEMM over the concatenated weights ``[Wq | Wk | Wv | Wiq |
     Wik]``, scattering ``K`` / ``V`` into ``kv_collection`` and ``IndexK`` into
-    ``index_kv_collection`` while returning the combined ``Q`` / ``IndexQ``
-    output for the caller to split.
+    ``index_kv_collection`` while returning ``Q`` and ``IndexQ`` as two separate
+    output tensors.
 
     Only the MXFP8 dynamic-activation-quant format is supported; callers must
     gate on it (other formats keep the separate QKV + IndexQK matmuls).
@@ -635,8 +699,9 @@ def quantized_fused_qkv_index_matmul(
         weight_scale: The concatenated E8M0 weight scale tensor (pre-interleave).
 
     Returns:
-        The combined ``[total_seq_len, q_dim + iq_dim]`` bf16 tensor
-        (``Q`` followed by ``IndexQ``).
+        A tuple ``(q, index_q)`` of bf16 tensors: ``q`` is
+        ``[total_seq_len, q_dim]`` and ``index_q`` is
+        ``[total_seq_len, iq_dim]``.
     """
     if quant_config.format != QuantFormat.MXFP8:
         raise ValueError(

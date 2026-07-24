@@ -15,6 +15,7 @@ package(default_visibility = [
     "//:__pkg__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
+    "//utils/benchmarking/nixl:__pkg__",
 ])
 
 # Kubernetes manifests for the cross-node KVTransferEngine smoke test CI job.

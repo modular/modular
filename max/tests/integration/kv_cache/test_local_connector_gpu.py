@@ -19,14 +19,13 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheBuffer, KVConnectorType, MHAKVCacheParams
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
-from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 
 
 # Test-fixture helper for the bytes-only connector boundary: tests pre-date
-# Option A and used int hashes directly; ``_hs`` wraps a variadic sequence of
-# ints into the canonical 8-byte signed-BE encoding.
+# the bytes-only migration and used int hashes directly; ``_hs`` wraps a
+# variadic sequence of ints into the canonical 8-byte signed-BE encoding.
 def _hs(*ns: int) -> list[bytes]:
-    return [to_block_hash_bytes(n) for n in ns]
+    return [n.to_bytes(8, "big", signed=True) for n in ns]
 
 
 def create_local_connector(
@@ -120,7 +119,7 @@ def test_load_returns_zero_for_empty_cache() -> None:
 
     loaded = connector.load([0, 1, 2], _hs(100, 200, 300))
 
-    assert loaded == 0
+    assert len(loaded.g0_blocks) == 0
 
 
 def test_load_finds_cached_blocks() -> None:
@@ -131,7 +130,7 @@ def test_load_finds_cached_blocks() -> None:
 
     loaded = connector.load([3, 4, 5], _hs(100, 200, 300))
 
-    assert loaded == 3
+    assert len(loaded.g0_blocks) == 3
 
 
 def test_load_stops_at_first_miss() -> None:
@@ -143,7 +142,7 @@ def test_load_stops_at_first_miss() -> None:
 
     loaded = connector.load([3, 4], _hs(100, 200))
 
-    assert loaded == 1
+    assert len(loaded.g0_blocks) == 1
 
 
 def test_load_full_round_trip() -> None:
@@ -154,7 +153,7 @@ def test_load_full_round_trip() -> None:
     assert connector.num_used_host_blocks == 3
 
     loaded = connector.load([10, 11, 12], _hs(100, 200, 300))
-    assert loaded == 3
+    assert len(loaded.g0_blocks) == 3
 
     assert connector.num_used_host_blocks == 3
 
@@ -166,7 +165,7 @@ def test_load_partial_hit() -> None:
     connector.offload([0, 1], _hs(100, 200))
 
     loaded = connector.load([10, 11, 12], _hs(100, 200, 300))
-    assert loaded == 2
+    assert len(loaded.g0_blocks) == 2
 
 
 def test_load_miss_at_start() -> None:
@@ -176,7 +175,7 @@ def test_load_miss_at_start() -> None:
     connector.offload([1, 2], _hs(200, 300))
 
     loaded = connector.load([10, 11, 12], _hs(100, 200, 300))
-    assert loaded == 0
+    assert len(loaded.g0_blocks) == 0
 
 
 def test_reset_prefix_cache_clears_host_cache() -> None:
@@ -210,7 +209,7 @@ def test_repeated_load_does_not_leak() -> None:
 
     for _i in range(5):
         loaded = connector.load([10], _hs(100))
-        assert loaded == 1
+        assert len(loaded.g0_blocks) == 1
 
     free_after_cycles = (
         connector._host_block_pool.free_block_queue.num_free_blocks

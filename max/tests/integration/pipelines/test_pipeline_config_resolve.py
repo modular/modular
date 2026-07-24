@@ -18,6 +18,7 @@ SupportedArchitecture instances registered in PIPELINE_REGISTRY.
 No network access required.
 """
 
+import dataclasses
 import json
 import os
 import struct
@@ -41,6 +42,7 @@ from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.sampling import SamplingConfig
 from test_common.pipeline_model_dummy import (
     DUMMY_GEMMA_ARCH,
     DUMMY_LLAMA_ARCH,
@@ -174,7 +176,7 @@ def _pipeline_resolve_mocks(
 
     Mocks external I/O and hardware while leaving the real resolution
     logic intact:
-    - devices_exist, load_devices — avoid GPU probes
+    - load_devices — avoid GPU probes
     - WeightPathParser.parse — avoid network
     - validate_hf_repo_access — avoid network
     - MemoryEstimator — avoid real memory estimation
@@ -184,10 +186,6 @@ def _pipeline_resolve_mocks(
     mock_devices = [DeviceRef.GPU()] * num_devices
 
     with (
-        patch(
-            "max.pipelines.lib.config.model_config.devices_exist",
-            return_value=True,
-        ),
         patch(
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=weight_path_return,
@@ -596,9 +594,29 @@ class TestRopeTypeResolution:
     """Tests for RoPE type resolution from architecture defaults."""
 
     @prepare_registry
-    def test_rope_type_resolved_from_architecture(self) -> None:
-        """RoPE type should be inherited from architecture when not set."""
-        # DUMMY_GEMMA_ARCH has rope_type="normal"
+    def test_rope_type_preserved_through_resolution(self) -> None:
+        """A user-set rope_type survives resolution untouched.
+
+        Resolution no longer writes an architecture default onto
+        ``model.rope_type`` (the arch default is applied by each
+        architecture's ``ArchConfig.initialize``); the field is now purely the
+        user override, so an explicit value must pass through unchanged.
+        """
+        PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=_GEMMA_CONFIG,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(tmpdir, rope_type="neox")
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+            assert _model(config).rope_type == "neox"
+
+    @prepare_registry
+    def test_rope_type_unset_stays_none(self) -> None:
+        """An unset rope_type stays None after resolution (no arch default)."""
         PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(
@@ -609,24 +627,51 @@ class TestRopeTypeResolution:
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
                 _resolve_config(config)
-            assert _model(config).rope_type == "normal"
+            assert _model(config).rope_type is None
+
+
+class TestStructuredOutputBackendResolution:
+    """Architecture default for ``sampling.structured_output_backend``."""
 
     @prepare_registry
-    def test_rope_type_preserved_if_already_set(self) -> None:
-        """Explicit RoPE type should not be overwritten by architecture."""
-        # DUMMY_LLAMA_ARCH has rope_type="none", so set a different valid value
-        PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
+    def test_backend_resolved_from_architecture(self) -> None:
+        """Arch's default_structured_output_backend applies when user is unset."""
+        arch = dataclasses.replace(
+            DUMMY_GEMMA_ARCH, default_structured_output_backend="xgrammar"
+        )
+        PIPELINE_REGISTRY.register(arch)
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 hf_config=_GEMMA_CONFIG,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
             )
-            # Set rope_type="neox" which differs from DUMMY_GEMMA_ARCH's "normal"
-            config = _make_pipeline_config(tmpdir, rope_type="neox")
+            config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
                 _resolve_config(config)
-            assert _model(config).rope_type == "neox"
+            assert config.sampling.structured_output_backend == "xgrammar"
+
+    @prepare_registry
+    def test_explicit_backend_value_wins(self) -> None:
+        """An explicit user backend is never overridden by the arch default."""
+        arch = dataclasses.replace(
+            DUMMY_GEMMA_ARCH, default_structured_output_backend="xgrammar"
+        )
+        PIPELINE_REGISTRY.register(arch)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=_GEMMA_CONFIG,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(tmpdir)
+            # Constructing with the field set records it in model_fields_set.
+            config.sampling = SamplingConfig(
+                structured_output_backend="llguidance"
+            )
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+            assert config.sampling.structured_output_backend == "llguidance"
 
 
 # ---------------------------------------------------------------------------
@@ -641,6 +686,7 @@ class TestCacheDtypeResolution:
     def test_cache_dtype_bf16_for_bf16_encoding(self) -> None:
         """BF16 encoding should result in bfloat16 cache dtype."""
         from max.dtype import DType
+        from max.pipelines.kv_cache import cache_dtype_for_encoding
 
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -651,7 +697,13 @@ class TestCacheDtypeResolution:
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
                 _resolve_config(config)
-            assert _model(config).kv_cache._cache_dtype == DType.bfloat16
+            assert (
+                cache_dtype_for_encoding(
+                    _model(config).quantization_encoding,
+                    _model(config).kv_cache.kv_cache_format,
+                )
+                == DType.bfloat16
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -885,3 +937,37 @@ class TestDGCTaskDisambiguation:
                     arch=arch, max_batch_size=plan.max_batch_size
                 )
             assert config.runtime.device_graph_capture is True
+
+
+# ---------------------------------------------------------------------------
+# Category K: Chat Template Wiring Through retrieve_tokenizer()
+# ---------------------------------------------------------------------------
+
+
+class TestChatTemplateWiring:
+    """``PipelineConfig.model.chat_template`` (a ``Path``) must reach the
+    tokenizer.
+
+    Regression coverage for the ``registry.py`` call sites that read
+    ``pipeline_config.model.chat_template`` and pass it through
+    ``_retrieve_chat_template()`` when building the tokenizer.
+    """
+
+    @prepare_registry
+    def test_chat_template_path_reaches_tokenizer(self) -> None:
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
+            )
+            template_file = Path(tmpdir) / "custom_template.jinja"
+            template_file.write_text("{{ messages }}")
+            config = _make_pipeline_config(tmpdir, chat_template=template_file)
+
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+                PIPELINE_REGISTRY.retrieve_tokenizer(config)
+
+        assert DummyTextTokenizer.init_kwargs["chat_template"] == (
+            "{{ messages }}"
+        )

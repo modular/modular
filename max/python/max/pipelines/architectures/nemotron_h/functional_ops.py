@@ -41,7 +41,7 @@ from __future__ import annotations
 from typing import cast
 
 from max.dtype import DType
-from max.graph import BufferValue, TensorType, TensorValue, ops
+from max.graph import BufferValue, DeviceRef, TensorType, TensorValue, ops
 
 
 def mamba2_ssd_chunk_scan_varlen_fwd(
@@ -131,8 +131,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
     """Mamba-2 SSD chunked-scan forward — in-place SSM-pool write-back.
 
     Identical to :func:`mamba2_ssd_chunk_scan_varlen_fwd` but writes final
-    states directly into ``ssm_pool[cache_indices[b], ...]`` (fp32, in-place)
-    instead of returning a separate ``final_states`` output tensor.  This
+    states directly into ``ssm_pool[cache_indices[b], ...]`` in place instead
+    of returning a separate ``final_states`` output tensor.  This
     eliminates the graph-side ``buffer_load → gather → scatter_nd →
     buffer_store`` whole-pool RMW that otherwise dominates decode GPU time.
 
@@ -144,8 +144,9 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
         C: ``[total_len, ngroups, dstate]`` grouped output proj (model dtype).
         D: ``[nheads]`` skip connection (model dtype; empty to disable).
         dt_bias: ``[nheads]`` dt bias (model dtype; empty to disable softplus).
-        ssm_pool: ``[max_slots, nheads, head_dim, dstate]`` fp32 mutable state
-            pool.  Read at ``ssm_pool[cache_indices[b]]`` when
+        ssm_pool: ``[max_slots, nheads, head_dim, dstate]`` mutable state
+            pool (fp32; bf16 on Apple GPUs — storage only, the scan
+            accumulates in fp32).  Read at ``ssm_pool[cache_indices[b]]`` when
             ``has_initial_state[b]`` is true; written in-place with final state.
         query_start_loc: ``[batch + 1]`` int32 cumulative sequence lengths.
         has_initial_state: ``[batch]`` bool, whether to load initial state for
@@ -194,6 +195,7 @@ def causal_conv1d_varlen_fwd(
     cache_indices: TensorValue,
     has_initial_state: TensorValue,
     activation: str = "silu",
+    channels_last: bool = False,
 ) -> TensorValue:
     """Slot-indexed varlen causal depthwise conv1d (prefill and decode).
 
@@ -203,7 +205,8 @@ def causal_conv1d_varlen_fwd(
     position 4 (after ``output, x, weight, bias``).
 
     Args:
-        x: ``[dim, total_seqlen]`` input (channels-first, model dtype).
+        x: ``[dim, total_seqlen]`` input (channels-first, model dtype), or
+            ``[total_seqlen, dim]`` when ``channels_last`` is true.
         weight: ``[dim, width]`` depthwise conv weights.
         bias: ``[dim]`` per-channel bias (empty to disable).
         conv_states: ``[max_slots, dim, width - 1]`` mutable conv-state pool.
@@ -211,15 +214,19 @@ def causal_conv1d_varlen_fwd(
         cache_indices: ``[batch]`` int32 slot indices into ``conv_states``.
         has_initial_state: ``[batch]`` bool, whether to use the stored state.
         activation: ``"silu"`` or ``"none"``.
+        channels_last: If true, ``x`` and the output are tokens-major
+            ``[total_seqlen, dim]``. The kernel indexes through runtime
+            strides, so this only relabels the axes — it avoids the
+            materialized transposes the ``[dim, total_seqlen]`` contract
+            forces on a tokens-major caller.
 
     Returns:
-        ``[dim, total_seqlen]`` conv output. ``conv_states`` is mutated in place.
+        Conv output with the same shape/layout as ``x``. ``conv_states`` is
+        mutated in place.
     """
     device = x.device
-    dim = x.shape[0]
-    total_seqlen = x.shape[1]
 
-    out_type = TensorType(x.dtype, [dim, total_seqlen], device)
+    out_type = TensorType(x.dtype, x.shape, device)
 
     # Operand order matches the builtin registration
     # ``CausalConv1DVarlenFwd.execute``: after the ``output`` operand,
@@ -238,6 +245,48 @@ def causal_conv1d_varlen_fwd(
             has_initial_state,
         ],
         [out_type],
-        parameters={"activation": activation},
+        parameters={"activation": activation, "channels_last": channels_last},
+    )
+    return cast(TensorValue, results[0])
+
+
+def gated_group_rmsnorm(
+    y: TensorValue,
+    gate: TensorValue,
+    norm_weight: TensorValue,
+    eps: float,
+    group_size: int,
+) -> TensorValue:
+    """Fused gated group-RMSNorm (HF ``Zamba2RMSNormGated``, ``norm_before_gate=False``).
+
+    Collapses ``cast(y->f32) -> silu(gate)*y -> group rms_norm -> *norm_weight ->
+    cast`` into one dispatch. ``y`` and ``gate`` are ``[N, intermediate]``;
+    ``norm_weight`` is fp32 ``[intermediate]``. Each contiguous ``group_size``
+    slice of the intermediate axis is normalized independently. Returns the model
+    dtype (``y.dtype``), so the downstream ``out_proj`` cast is a no-op.
+
+    Args:
+        y: ``[N, intermediate]`` SSD scan output (model dtype).
+        gate: ``[N, intermediate]`` gate projection (any float dtype; may be a
+            strided split view of the fused in-proj).
+        norm_weight: ``[intermediate]`` fp32 RMSNorm weight.
+        eps: Epsilon inside ``rsqrt(mean_sq + eps)``.
+        group_size: Width of each normalized group (``intermediate // n_groups``).
+
+    Returns:
+        ``[N, intermediate]`` in ``y.dtype``.
+    """
+    device = y.device
+    out_type = TensorType(y.dtype, [y.shape[0], y.shape[1]], device)
+    # eps is a rank-0 fp32 CPU constant; the framework marshals it into the
+    # kernel's ``Float32`` execute arg (the ``ops.rms_norm`` / fused-qk-rmsnorm
+    # idiom).
+    eps_c = ops.constant(eps, DType.float32, device=DeviceRef.CPU())
+    results = ops.custom(
+        "gated_group_rmsnorm",
+        device,
+        [y, gate, norm_weight, eps_c],
+        [out_type],
+        parameters={"group_size": group_size},
     )
     return cast(TensorValue, results[0])

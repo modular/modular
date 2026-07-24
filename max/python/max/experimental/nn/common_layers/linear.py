@@ -32,35 +32,43 @@ class _LinearProtocol(Protocol):
 _LinearLayer = TypeVar("_LinearLayer", bound=_LinearProtocol)
 
 
-def col_parallel(layer: _LinearLayer) -> _LinearLayer:
+def col_parallel(
+    layer: _LinearLayer, tp_axis: str | None = None
+) -> _LinearLayer:
     """Parallelize the linear layer across the column dimension."""
+    if tp_axis is None:
+        tp_axis = TP
     # Note that the first dimension of the weight is sharded because MAX's
     # linear layer applies ``x @ W.T`` (the transpose of W)
-    layer.weight._mapping = NamedMapping(layer.weight.mesh, (TP, None))
+    layer.weight._mapping = NamedMapping(layer.weight.mesh, (tp_axis, None))
     if isinstance(layer.bias, Tensor):
-        layer.bias._mapping = NamedMapping(layer.bias.mesh, (TP,))
+        layer.bias._mapping = NamedMapping(layer.bias.mesh, (tp_axis,))
     return layer
 
 
-def row_parallel(layer: _LinearLayer) -> _LinearLayer:
+def row_parallel(
+    layer: _LinearLayer, tp_axis: str | None = None
+) -> _LinearLayer:
     """Parallelize the linear layer across the row dimension."""
-    layer.weight._mapping = NamedMapping(layer.weight.mesh, (None, TP))
+    if tp_axis is None:
+        tp_axis = TP
+    layer.weight._mapping = NamedMapping(layer.weight.mesh, (None, tp_axis))
     if isinstance(layer.bias, Tensor):
-        layer.bias._mapping = NamedMapping(layer.bias.mesh, (None,))
+        layer.bias._mapping = NamedMapping(layer.bias.mesh, (None, tp_axis))
     return layer
 
 
 class ColumnParallelLinear(Linear):
     """Linear layer with column-parallel weight sharding."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, tp_axis: str | None = None, **kwargs):
         super().__init__(*args, **kwargs)
-        col_parallel(self)
+        col_parallel(self, tp_axis)
 
 
 class RowParallelLinear(Linear):
     """Linear layer with row-parallel weight sharding."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, tp_axis: str | None = None, **kwargs):
         super().__init__(*args, **kwargs)
-        row_parallel(self)
+        row_parallel(self, tp_axis)

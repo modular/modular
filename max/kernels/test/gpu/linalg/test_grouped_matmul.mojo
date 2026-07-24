@@ -202,14 +202,18 @@ def test[
     @__copy_capture(c_dev_tile)
     @parameter
     def epilogue_fn[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
 
         comptime for i in range(width):
             new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
 
-        ptr = c_dev_tile.ptr.bitcast[Scalar[out_type]]() + idx[0] * N + idx[1]
+        ptr = (
+            c_dev_tile._storage.bitcast[Scalar[out_type]]()
+            + idx[0] * N
+            + idx[1]
+        )
 
         ptr.store[width=width, alignment=alignment](new_val.cast[out_type]())
 
@@ -217,7 +221,7 @@ def test[
     @__copy_capture(c_dev_tile, total_num_tokens)
     @parameter
     def perm_dim_fn[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
         var i = idx[0]
@@ -229,7 +233,7 @@ def test[
         # The permdim tensor has the shape 3 x M x N, so the index is then
         # [new_j, i, new_k].
         ptr = (
-            c_dev_tile.ptr.bitcast[Scalar[out_type]]()
+            c_dev_tile._storage.bitcast[Scalar[out_type]]()
             + new_j * total_num_tokens * N
             + i * N
             + new_k
@@ -850,3 +854,47 @@ def main() raises:
                 num_experts=4,
                 expert_shape=Index(256, 192),
             ](2, [25, 40], [1, 3], ctx)
+
+        # float32 C output. The SM90/SM100 TMA kernels cannot emit a float32
+        # C (their store path is 16-bit and they hard-assert
+        # `c_type != float32`); the `grouped_matmul` dispatch must route
+        # float32 output to the naive path. These shapes mirror the LoRA
+        # `o_proj` grouped matmuls that crashed an un-quantized (float32)
+        # model serving with LoRA on B200: the LoRA-A "shrink"
+        # (`[M, hidden] @ [G, rank, hidden]`, expert_shape=(rank, hidden)) and
+        # the LoRA-B "expand" (`[M, rank] @ [G, hidden, rank]`,
+        # expert_shape=(hidden, rank)). hidden=576, rank=16 = SmolLM-135M.
+        # See SERVOPT-1478.
+        test[
+            DType.float32,
+            DType.float32,
+            num_experts=4,
+            expert_shape=Index(16, 576),  # LoRA shrink (contracts hidden)
+        ](2, [128, 64], [0, 2], ctx)
+
+        test[
+            DType.float32,
+            DType.float32,
+            num_experts=4,
+            expert_shape=Index(576, 16),  # LoRA expand (contracts rank)
+        ](2, [128, 64], [0, 2], ctx)
+
+        # float32 output with an elementwise epilogue (mirrors the LoRA
+        # shrink's permute epilogue threading through the naive path).
+        test[
+            DType.float32,
+            DType.float32,
+            num_experts=4,
+            expert_shape=Index(16, 576),
+            has_epilogue=True,
+        ](2, [128, 64], [0, 2], ctx)
+
+        # float32 QKV-permute epilogue: the exact epilogue shape the LoRA
+        # shrink (`shrink_qkv_permute_3mn_sm100`) uses.
+        test[
+            DType.float32,
+            DType.float32,
+            num_experts=4,
+            expert_shape=Index(16, 576),
+            qkv_perm_dim=True,
+        ](2, [128, 64], [0, 2], ctx)

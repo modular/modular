@@ -46,7 +46,6 @@ gemma3_multimodal_modulev3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    rope_type="normal",
     required_arguments={
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,

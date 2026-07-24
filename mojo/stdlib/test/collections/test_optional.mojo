@@ -405,14 +405,14 @@ def double(var x: Int) -> Float64:
 
 def test_map_with_value() raises:
     var opt = Optional(21)
-    var result = opt^.map[To=Float64](double)
+    var result = opt^.map(double)
     assert_true(result)
     assert_equal(result.value(), 42.0)
 
 
 def test_map_with_none() raises:
     var opt = Optional[Int](None)
-    var result = opt^.map[To=Float64](double)
+    var result = opt^.map(double)
     assert_false(result)
 
 
@@ -422,7 +422,7 @@ def test_map_with_closure_that_takes_by_read() raises:
     def closure_by_read(s: String) -> String:
         return s + "42"
 
-    var result1 = opt.map[To=String](closure_by_read)
+    var result1 = opt.map(closure_by_read)
     assert_equal(result1[], "hello42")
 
 
@@ -435,55 +435,95 @@ def try_parse_int(var s: String) -> Optional[Int]:
 
 def test_and_then_with_value() raises:
     var opt = Optional("42")
-    var result = opt^.and_then[To=Int](try_parse_int)
+    var result = opt^.and_then(try_parse_int)
     assert_true(result)
     assert_equal(result.value(), 42)
 
 
 def test_and_then_with_value_returns_none() raises:
     var opt = Optional("not_a_number")
-    var result = opt^.and_then[To=Int](try_parse_int)
+    var result = opt^.and_then(try_parse_int)
     assert_false(result)
 
 
 def test_and_then_with_none() raises:
     var opt = Optional[String](None)
-    var result = opt^.and_then[To=Int](try_parse_int)
+    var result = opt^.and_then(try_parse_int)
     assert_false(result)
 
 
-def test_optional_linear_type_destroy_with() raises:
-    # `Optional` holding a linear value is retired via `destroy_with`.
+def _unwrap_linear(var x: ExplicitDelOnly) -> Int:
+    var data = x.data
+    x^.destroy()
+    return data
+
+
+def _unwrap_linear_opt(var x: ExplicitDelOnly) -> Optional[Int]:
+    var data = x.data
+    x^.destroy()
+    return data
+
+
+def test_map_linear_type() raises:
+    # `map` moves the linear value out and consumes the `Optional`; the
+    # emptied `Optional` is destroyed without instantiating `Variant.__del__`.
+    var opt = Optional(ExplicitDelOnly(5))
+    var result = opt^.map(_unwrap_linear)
+    assert_equal(result.value(), 5)
+
+    # The empty branch is destroyed without calling `_unwrap_linear`.
+    var empty = Optional[ExplicitDelOnly](None)
+    assert_false(empty^.map(_unwrap_linear))
+
+
+def test_and_then_linear_type() raises:
+    var opt = Optional(ExplicitDelOnly(7))
+    var result = opt^.and_then(_unwrap_linear_opt)
+    assert_equal(result.value(), 7)
+
+    var empty = Optional[ExplicitDelOnly](None)
+    assert_false(empty^.and_then(_unwrap_linear_opt))
+
+
+def test_optional_linear_type_deinit_with() raises:
+    # `Optional` holding a linear value is destroyed via `deinit_with`.
     var v1 = Optional(ExplicitDelOnly(5))
-    v1^.destroy_with(ExplicitDelOnly.destroy)
+    v1^.deinit_with(ExplicitDelOnly.destroy)
 
-    # `Optional[T]` holding `None` is retired without invoking
-    # `destroy_func`.
+    # `Optional[T]` holding `None` is destroyed without invoking
+    # `deinit_func`.
     var v2 = Optional[ExplicitDelOnly](None)
-    v2^.destroy_with(ExplicitDelOnly.destroy)
+    v2^.deinit_with(ExplicitDelOnly.destroy)
 
 
-def test_optional_destroy_with_runs_exactly_once() raises:
-    # Verify `destroy_func` runs exactly once on the contained value.
+def test_optional_linear_type_deinit_assert_empty() raises:
+    # An empty `Optional` holding a linear type is destroyed without a
+    # caller-provided deinitializer via `deinit_assert_empty`.
+    var v = Optional[ExplicitDelOnly](None)
+    v^.deinit_assert_empty()
+
+
+def test_optional_deinit_with_runs_exactly_once() raises:
+    # Verify `deinit_func` runs exactly once on the contained value.
     var counter = 0
 
     def increment_counter(var _value: Int) {mut counter}:
         counter += 1
 
     var opt = Optional[Int](42)
-    opt^.destroy_with(increment_counter)
+    opt^.deinit_with(increment_counter)
     assert_equal(counter, 1)
 
 
-def test_optional_destroy_with_none_does_not_call_destroy() raises:
-    # Verify `destroy_func` is not called when the `Optional` is empty.
+def test_optional_deinit_with_none_does_not_call_destroy() raises:
+    # Verify `deinit_func` is not called when the `Optional` is empty.
     var counter = 0
 
     def increment_counter(var _value: Int) {mut counter}:
         counter += 1
 
     var opt = Optional[Int](None)
-    opt^.destroy_with(increment_counter)
+    opt^.deinit_with(increment_counter)
     assert_equal(counter, 0)
 
 

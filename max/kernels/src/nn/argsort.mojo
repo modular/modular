@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides CPU and GPU implementations of argsort that return indices permuting a tensor into sorted order."""
 
 
 from std.math import ceildiv, iota
@@ -82,7 +83,7 @@ def _argsort_cpu[
         Span[
             Scalar[indices.dtype],
             indices.origin,
-        ](ptr=indices.ptr, length=indices.num_elements())
+        ](unsafe_ptr=indices.ptr, length=indices.num_elements())
     )
 
 

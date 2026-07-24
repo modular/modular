@@ -34,6 +34,7 @@ from .buffer import (
     DevicePinnedBuffer,
     _unsafe_alloc_fast_pinned_buffer,
     _unsafe_free_fast_pinned_buffer,
+    copy_pinned_to_destinations,
     load_max_buffer,
 )
 from .driver import (
@@ -73,6 +74,7 @@ __all__ = [
     "accelerator_count",
     "calculate_virtual_device_count",
     "calculate_virtual_device_count_from_cli",
+    "copy_pinned_to_destinations",
     "devices_exist",
     "enable_all_peer_access",
     "get_virtual_cpu_target",

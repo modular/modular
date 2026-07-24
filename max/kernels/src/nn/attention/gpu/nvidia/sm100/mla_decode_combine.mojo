@@ -55,6 +55,30 @@ struct CombineParams[
     warps_per_head: Int = 2,
     has_attn_sink: Bool = False,
 ](Copyable, DevicePassable, TrivialRegisterPassable):
+    """Holds the pointers, strides, and shape metadata for the main split-K combine kernel.
+
+    Carries the per-split partial output and LSE accumulators, the final output
+    tensor, optional ragged row offsets and attention-sink pointer, and the
+    derived strides used by `mla_combine_kernel` to index the split, batch,
+    sequence, and head dimensions.
+
+    Parameters:
+        output_type: The element type of the per-split partial output
+            accumulator and the final combined output tensor.
+        accum_type: The element type of the per-split LSE accumulator values.
+        num_splits: The compile-time number of KV cache splits to combine.
+            Used to unroll the per-split accumulation loop.
+        ragged: Whether batches have variable-length sequences in a packed
+            layout (defaults to `False`). When true,
+            `input_row_offsets_ptr` selects each batch's token range.
+        warps_per_head: Number of warps assigned to each attention head
+            (defaults to 2). Must divide 8; controls vector load width and
+            threads per block.
+        has_attn_sink: Whether to apply attention-sink correction to the
+            global LSE (defaults to `False`). When true, `attn_sink_ptr`
+            must be provided.
+    """
+
     # Invariant: warps_per_head must divide 8 (checked in mla_combine_kernel).
     comptime heads_per_block = 8 // Self.warps_per_head
     comptime num_threads = Self.heads_per_block * Self.warps_per_head * WARP_SIZE
@@ -184,6 +208,38 @@ def mla_combine_kernel[
         has_attn_sink,
     ]
 ):
+    """Combines partial split-K attention outputs into a single decoded result using LSE-based weighting.
+
+    Loads each split's partial output and LSE value, computes a global LSE via
+    warp reduction, derives per-split scale factors as `exp2(lse_i - global_lse)`,
+    and accumulates the weighted sum of partial outputs into the final output
+    tensor. Supports ragged batch layouts and optional attention-sink correction.
+
+    Parameters:
+        output_type: The element type of the per-split partial output
+            accumulator and the final combined output tensor.
+        accum_type: The element type of the per-split LSE accumulator values.
+        head_dim: The dimension of each attention head. Must be divisible by
+            `WARP_SIZE * warps_per_head`.
+        num_splits: The compile-time number of KV cache splits to combine.
+            Used to unroll the per-split accumulation loop.
+        ragged: Whether batches have variable-length sequences in a packed
+            layout (defaults to `False`). When true,
+            `input_row_offsets_ptr` selects each batch's token range.
+        warps_per_head: Number of warps assigned to each attention head
+            (defaults to 2). Must divide 8; controls vector load width and
+            threads per block.
+        has_attn_sink: Whether to apply attention-sink correction to the
+            global LSE (defaults to `False`). When true, `attn_sink_ptr`
+            must be provided.
+
+    Args:
+        params: The `CombineParams` instance carrying the per-split partial
+            output and LSE accumulators, the final output tensor, optional
+            ragged row offsets and attention-sink pointer, and the derived
+            strides used to index the split, batch, sequence, and head
+            dimensions.
+    """
     # PDL: Wait for the MLA decode kernel (dependent kernel) to complete.
     wait_on_dependent_grids()
 
@@ -441,6 +497,27 @@ struct SplitParallelCombineParams[
     ragged: Bool = False,
     has_attn_sink: Bool = False,
 ](Copyable, DevicePassable, TrivialRegisterPassable):
+    """Holds the pointers, strides, and shape metadata for the split-parallel combine kernel.
+
+    Carries the per-split partial output and LSE accumulators, the final output
+    tensor, optional ragged row offsets and attention-sink pointer, and the
+    derived strides used by `mla_combine_kernel_split_parallel`. All 8 warps
+    cooperate on a single head, so `heads_per_block` is fixed at 1.
+
+    Parameters:
+        output_type: The element type of the per-split partial output
+            accumulator and the final combined output tensor.
+        accum_type: The element type of the per-split LSE accumulator values.
+        num_splits: The compile-time number of KV cache splits to combine.
+            Used to partition splits across the 8 warps.
+        ragged: Whether batches have variable-length sequences in a packed
+            layout (defaults to `False`). When true,
+            `input_row_offsets_ptr` selects each batch's token range.
+        has_attn_sink: Whether to apply attention-sink correction to the
+            global LSE (defaults to `False`). When true, `attn_sink_ptr`
+            must be provided.
+    """
+
     # All 8 warps work on one head, so heads_per_block = 1.
     comptime num_warps = 8
     comptime heads_per_block = 1
@@ -568,6 +645,28 @@ def mla_combine_kernel_split_parallel[
     Each warp independently accumulates its assigned range of splits using
     online log-sum-exp. After the per-warp loop, partial results are written
     to shared memory and tree-reduced in log2(8)=3 steps.
+
+    Parameters:
+        output_type: The element type of the per-split partial output
+            accumulator and the final combined output tensor.
+        accum_type: The element type of the per-split LSE accumulator values.
+        head_dim: The dimension of each attention head. Must be divisible by
+            `WARP_SIZE`.
+        num_splits: The compile-time number of KV cache splits to combine.
+            Used to partition splits across the 8 warps.
+        ragged: Whether batches have variable-length sequences in a packed
+            layout (defaults to `False`). When true,
+            `input_row_offsets_ptr` selects each batch's token range.
+        has_attn_sink: Whether to apply attention-sink correction to the
+            global LSE (defaults to `False`). When true, `attn_sink_ptr`
+            must be provided.
+
+    Args:
+        params: The `SplitParallelCombineParams` instance carrying the
+            per-split partial output and LSE accumulators, the final output
+            tensor, optional ragged row offsets and attention-sink pointer,
+            and the derived strides used to index the split, batch,
+            sequence, and head dimensions.
     """
     # PDL: Wait for the MLA decode kernel (dependent kernel) to complete.
     wait_on_dependent_grids()
@@ -862,6 +961,47 @@ def launch_mla_combine_kernel_split_parallel[
     num_heads: Int,
     ctx: DeviceContext,
 ) raises:
+    """Launches the split-parallel combine kernel on the device with one CTA per (batch, seq, head).
+
+    Extracts raw device pointers from the input `TileTensor` arguments,
+    constructs a `SplitParallelCombineParams` instance, and enqueues
+    `mla_combine_kernel_split_parallel` with a grid of `(batch_size, seq_len,
+    num_heads)` blocks and PDL launch attributes.
+
+    Parameters:
+        output_type: The element type of the per-split partial output
+            accumulator and the final combined output tensor.
+        accum_type: The element type of the per-split LSE accumulator values.
+        head_dim: The dimension of each attention head. Must be divisible by
+            `WARP_SIZE`.
+        num_splits: The compile-time number of KV cache splits to combine.
+            Used to partition splits across the 8 warps.
+        ragged: Whether batches have variable-length sequences in a packed
+            layout (defaults to `False`). When true,
+            `input_row_offsets_ptr` selects each batch's token range.
+        has_attn_sink: Whether to apply attention-sink correction to the
+            global LSE (defaults to `False`). When true, `attn_sink_ptr`
+            must be provided.
+
+    Args:
+        out_accum_split: The per-split partial output accumulator tensor of
+            shape `[num_splits, batch_size, seq_len, num_heads, head_dim]`.
+        lse_accum_split: The per-split LSE accumulator tensor of shape
+            `[num_splits, batch_size, seq_len, num_heads]`.
+        output: The final combined output tensor of shape `[batch_size,
+            seq_len, num_heads, head_dim]` (or the ragged-packed equivalent).
+        input_row_offsets_ptr: Pointer to cumulative token counts per batch;
+            `input_row_offsets_ptr[i]` is the start token index for batch
+            `i`. Used only in ragged mode.
+        attn_sink_ptr: Optional pointer to per-head attention-sink LSE values
+            of shape `[num_heads]` in natural log. Used only when
+            `has_attn_sink` is true.
+        batch_size: Number of batches in the request.
+        seq_len: Maximum number of query tokens per batch (the padded grid
+            dimension along the sequence axis).
+        num_heads: Number of query attention heads.
+        ctx: The device context used to enqueue the kernel.
+    """
     comptime ParamsType = SplitParallelCombineParams[
         output_type,
         accum_type,
@@ -946,6 +1086,50 @@ def launch_mla_combine_kernel[
     num_heads: Int,
     ctx: DeviceContext,
 ) raises:
+    """Launches the main split-K combine kernel on the device with one CTA per (batch, seq, head-block).
+
+    Extracts raw device pointers from the input `TileTensor` arguments,
+    constructs a `CombineParams` instance, and enqueues `mla_combine_kernel`
+    with a grid of `(batch_size, seq_len, ceildiv(num_heads, heads_per_block))`
+    blocks and PDL launch attributes.
+
+    Parameters:
+        output_type: The element type of the per-split partial output
+            accumulator and the final combined output tensor.
+        accum_type: The element type of the per-split LSE accumulator values.
+        head_dim: The dimension of each attention head. Must be divisible by
+            `WARP_SIZE * warps_per_head`.
+        num_splits: The compile-time number of KV cache splits to combine.
+            Used to unroll the per-split accumulation loop.
+        ragged: Whether batches have variable-length sequences in a packed
+            layout (defaults to `False`). When true,
+            `input_row_offsets_ptr` selects each batch's token range.
+        warps_per_head: Number of warps assigned to each attention head
+            (defaults to 2). Must divide 8; controls vector load width and
+            threads per block.
+        has_attn_sink: Whether to apply attention-sink correction to the
+            global LSE (defaults to `False`). When true, `attn_sink_ptr`
+            must be provided.
+
+    Args:
+        out_accum_split: The per-split partial output accumulator tensor of
+            shape `[num_splits, batch_size, seq_len, num_heads, head_dim]`.
+        lse_accum_split: The per-split LSE accumulator tensor of shape
+            `[num_splits, batch_size, seq_len, num_heads]`.
+        output: The final combined output tensor of shape `[batch_size,
+            seq_len, num_heads, head_dim]` (or the ragged-packed equivalent).
+        input_row_offsets_ptr: Pointer to cumulative token counts per batch;
+            `input_row_offsets_ptr[i]` is the start token index for batch
+            `i`. Used only in ragged mode.
+        attn_sink_ptr: Optional pointer to per-head attention-sink LSE values
+            of shape `[num_heads]` in natural log. Used only when
+            `has_attn_sink` is true.
+        batch_size: Number of batches in the request.
+        seq_len: Maximum number of query tokens per batch (the padded grid
+            dimension along the sequence axis).
+        num_heads: Number of query attention heads.
+        ctx: The device context used to enqueue the kernel.
+    """
     comptime ParamsType = CombineParams[
         output_type,
         accum_type,
@@ -1033,6 +1217,53 @@ def mla_decode_combine_partial_outputs[
     num_heads: Int,
     ctx: DeviceContext,
 ) raises:
+    """Dispatches split-K partial output combination to either the split-parallel or the main combine kernel.
+
+    Selects `launch_mla_combine_kernel_split_parallel` when `split_parallel` is
+    true, otherwise falls back to `launch_mla_combine_kernel`, forwarding all
+    tensor pointers, shape, and attention-sink parameters unchanged.
+
+    Parameters:
+        output_type: The element type of the per-split partial output
+            accumulator and the final combined output tensor.
+        accum_type: The element type of the per-split LSE accumulator values.
+        head_dim: The dimension of each attention head. Must be divisible by
+            `WARP_SIZE` (and by `WARP_SIZE * warps_per_head` when
+            `split_parallel` is false).
+        num_splits: The compile-time number of KV cache splits to combine.
+            Used to unroll the per-split accumulation loop in the main kernel
+            and to partition splits across warps in the split-parallel kernel.
+        ragged: Whether batches have variable-length sequences in a packed
+            layout (defaults to `False`). When true,
+            `input_row_offsets_ptr` selects each batch's token range.
+        warps_per_head: Number of warps assigned to each attention head
+            (defaults to 2). Must divide 8; controls vector load width and
+            threads per block. Used only when `split_parallel` is false.
+        has_attn_sink: Whether to apply attention-sink correction to the
+            global LSE (defaults to `False`). When true, `attn_sink_ptr`
+            must be provided.
+        split_parallel: Selects the split-parallel combine kernel when true,
+            otherwise the main combine kernel (defaults to `False`).
+
+    Args:
+        out_accum_split: The per-split partial output accumulator tensor of
+            shape `[num_splits, batch_size, seq_len, num_heads, head_dim]`.
+        lse_accum_split: The per-split LSE accumulator tensor of shape
+            `[num_splits, batch_size, seq_len, num_heads]`.
+        output: The final combined output tensor of shape `[batch_size,
+            seq_len, num_heads, head_dim]` (or the ragged-packed equivalent).
+        input_row_offsets_ptr: Pointer to cumulative token counts per batch;
+            `input_row_offsets_ptr[i]` is the start token index for batch
+            `i`. Used only in ragged mode.
+        attn_sink_ptr: Optional pointer to per-head attention-sink LSE values
+            of shape `[num_heads]` in natural log. Used only when
+            `has_attn_sink` is true.
+        batch_size: Number of batches in the request.
+        seq_len: Maximum number of query tokens per batch (the padded grid
+            dimension along the sequence axis).
+        num_heads: Number of query attention heads.
+        ctx: The device context used to enqueue the kernel.
+    """
     comptime if split_parallel:
         launch_mla_combine_kernel_split_parallel[
             output_type,

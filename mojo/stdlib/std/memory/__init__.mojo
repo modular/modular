@@ -29,34 +29,46 @@ from .alloc import Allocation, ThinAllocation, alloc, dealloc, Layout
 from .arc_pointer import ArcPointer
 from .memory import (
     memcmp,
+    unsafe_memcmp,
     memcpy,
+    unsafe_memcpy,
+    # TODO(MSTDL-2918): Remove this export once the `memmove` deprecation is
+    # dropped; callers should use `unsafe_memmove`.
     memmove,
+    unsafe_memmove,
     memset,
+    unsafe_memset,
     memset_zero,
+    unsafe_memset_zero,
     destroy_n,
+    unsafe_destroy_n,
     is_trivially_copyable,
     is_trivially_deletable,
     is_trivially_movable,
     uninit_copy_n,
     uninit_move_n,
+    unsafe_uninit_copy_n,
+    unsafe_uninit_move_n,
     forget_deinit,
 )
 from .stack_allocation import stack_allocation
 from .owned_pointer import OwnedPointer
 from .pointer import (
     AddressSpace,
+    ImmPointer,
     ImmutPointer,
     MutPointer,
     Pointer,
 )
-from .span import ImmutSpan, MutSpan, Span
 from .unsafe import bitcast, pack_bits
 from .unsafe_pointer import (
-    alloc,
+    ImmOpaquePointer,
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
+    OptionalPointer,
     OptionalUnsafePointer,
+    ImmUnsafePointer,
     ImmutUnsafePointer,
     MutUnsafePointer,
     UnsafePointer,

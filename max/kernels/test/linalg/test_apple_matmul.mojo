@@ -42,11 +42,8 @@ comptime some_constant = 20
 comptime do_benchmarking = False
 
 
-@parameter
-def bench_run[
-    func: def() raises capturing[_] -> None
-]() raises -> std.benchmark.Report:
-    return std.benchmark.run[func3=func](2, 1_000_000, 1, 3)
+def bench_run(func: Some[def() raises]) raises -> std.benchmark.Report:
+    return std.benchmark.run(func, 2, 1_000_000, 1, 3)
 
 
 def gemm_naive[
@@ -169,9 +166,7 @@ def test_matmul[
                 pack_transposed_b_ndbuffer[a_type, c_type](b, bp)
 
     @always_inline
-    @__copy_capture(c, a, bp)
-    @parameter
-    def bench_fn_matmul() raises:
+    def bench_fn_matmul() raises {var}:
         if kernel_type_m != 0:
             _matmul_cpu[
                 transpose_b=transpose_b,
@@ -193,7 +188,7 @@ def test_matmul[
     bench_fn_matmul()
 
     comptime if do_benchmarking:
-        var matmul_perf = bench_run[bench_fn_matmul]()
+        var matmul_perf = bench_run(bench_fn_matmul)
         std.benchmark.keep(c[Coord(Idx[0], Idx[0])])
         print(
             "Apple Matmul GFLOP/s for (M, N, K) = (",
@@ -307,7 +302,7 @@ def test_matmul[
     @always_inline
     @__copy_capture(c)
     def epilogue_fn[
-        _type: DType, width: SIMDSize, *, alignment: Int = 1
+        _type: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_type, width]) -> None:
         c.store(Coord(idx), rebind[SIMD[c_type, width]](val + some_constant))
 
@@ -524,7 +519,7 @@ def test_batched_matmul[
     @__copy_capture(c)
     def epilogue_fn[
         _type: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         rank: Int,
         *,
         alignment: Int = 1,
@@ -535,9 +530,7 @@ def test_batched_matmul[
         )
 
     @always_inline
-    @__copy_capture(c, a, b)
-    @parameter
-    def bench_fn_batched_matmul() raises:
+    def bench_fn_batched_matmul() raises {var}:
         comptime if has_lambda:
             batched_matmul[
                 transpose_a=False,
@@ -553,7 +546,7 @@ def test_batched_matmul[
     bench_fn_batched_matmul()
 
     comptime if do_benchmarking:
-        var batched_matmul_perf = bench_run[bench_fn_batched_matmul]()
+        var batched_matmul_perf = bench_run(bench_fn_batched_matmul)
         std.benchmark.keep(c[Coord(Idx[0], Idx[0], Idx[0])])
         print(
             "Apple Batched Matmul GFLOP/s for (BATCHES, M, N, K) = (",

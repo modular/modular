@@ -31,7 +31,7 @@ struct Box(ImplicitlyCopyable, Movable):
         self.v = v
 
 
-def take_read(read x: Int) -> Int:  # read = immutable borrow
+def take_read(imm x: Int) -> Int:  # read = immutable borrow
     return x
 
 
@@ -43,7 +43,7 @@ def take_var(var b: Box) -> Int:  # var = owns the value
     return b.v
 
 
-def first[T: Movable](ref xs: List[T]) -> ref[origin_of(xs)] T:
+def first[T: Movable](ref xs: List[T]) -> ref[xs[0]] T:
     return xs[0]  # len(xs) known to be > 0
 
 
@@ -145,6 +145,15 @@ def test_views() raises:
     assert_equal(String(hi), "Hello")
 
 
+# Consuming iteration: `^` drains a collection, moving each element out.
+def test_consuming_iteration() raises:
+    var items = [Box(1), Box(2), Box(3)]
+    var total = 0
+    for var x in items^:  # items drained; each x is owned
+        total += x.v
+    assert_equal(total, 6)
+
+
 def main() raises:
     test_int_simd_aliases()
     test_var_owns_ref_refers()
@@ -154,4 +163,4 @@ def main() raises:
     test_ref_return_origin()
     test_returns()
     test_views()
-    print("ALL OWNERSHIP CARD TESTS GREEN")
+    test_consuming_iteration()

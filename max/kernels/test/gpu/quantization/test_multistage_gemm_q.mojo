@@ -45,7 +45,7 @@ from layout.layout import *
 from layout.layout_tensor import copy_dram_to_sram
 from linalg.matmul.gpu import multistage_gemm
 from linalg.utils_gpu import MatmulKernels
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from std.memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile

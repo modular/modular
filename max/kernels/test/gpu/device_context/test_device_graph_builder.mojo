@@ -13,7 +13,8 @@
 
 from std.math import ceildiv
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext, DeviceGraphBuilder
+from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
+from std.runtime.async_value import AnyAsyncValueRef
 from std.testing import assert_equal
 
 
@@ -67,7 +68,7 @@ def test_vec_add_kernel_node(ctx: DeviceContext) raises:
 
     var func = ctx.compile_function[vec_add]()
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_function(
             func,
             out_dev,
@@ -78,7 +79,7 @@ def test_vec_add_kernel_node(ctx: DeviceContext) raises:
             block_dim=block_dim,
         )
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
 
     # Check values and zero out buffer for next run
@@ -112,7 +113,7 @@ def test_parameterized_kernel_node(ctx: DeviceContext) raises:
             in1_host[i] = Float32(length - i)
 
     # Pass `vec_add` directly as a parameter; the builder compiles it.
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_function[vec_add](
             out_dev,
             in0_dev,
@@ -122,12 +123,63 @@ def test_parameterized_kernel_node(ctx: DeviceContext) raises:
             block_dim=block_dim,
         )
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
 
     with out_dev.map_to_host() as out_host:
         for i in range(length):
             assert_equal(out_host[i], Float32(length))
+
+
+def test_capturing_parameterized_kernel_node(ctx: DeviceContext) raises:
+    print(
+        "Test add_function compiling a capturing kernel passed as a parameter"
+        " with runtime arguments."
+    )
+    comptime length = 1024
+    comptime block_dim = 256
+    var scale = Float32(3.0)
+
+    var in0_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var in1_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
+
+    with in0_dev.map_to_host() as in0_host, in1_dev.map_to_host() as in1_host:
+        for i in range(length):
+            in0_host[i] = Float32(i)
+            in1_host[i] = Float32(length - i)
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        # Captures `scale` from the enclosing scope while also taking runtime
+        # arguments, exercising the capturing parameter-based overload.
+        @parameter
+        @__copy_capture(scale)
+        def scaled_vec_add(
+            output: UnsafePointer[Float32, MutAnyOrigin],
+            in0: UnsafePointer[Float32, ImmutAnyOrigin],
+            in1: UnsafePointer[Float32, ImmutAnyOrigin],
+            length: Int,
+        ):
+            var tid = global_idx.x
+            if tid >= length:
+                return
+            output[tid] = (in0[tid] + in1[tid]) * scale
+
+        _ = builder.add_function[scaled_vec_add](
+            out_dev,
+            in0_dev,
+            in1_dev,
+            length,
+            grid_dim=ceildiv(length, block_dim),
+            block_dim=block_dim,
+        )
+
+    var graph = DeviceGraph.create(ctx, build)
+    graph.replay()
+
+    with out_dev.map_to_host() as out_host:
+        for i in range(length):
+            assert_equal(out_host[i], Float32(length) * scale)
 
 
 def test_closure_node(ctx: DeviceContext) raises:
@@ -156,14 +208,14 @@ def test_closure_node(ctx: DeviceContext) raises:
             return
         out_ptr[tid] = (in0_ptr[tid] + in1_ptr[tid]) * scale
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_function(
             scaled_vec_add,
             grid_dim=ceildiv(length, block_dim),
             block_dim=block_dim,
         )
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
 
     _ = in0_dev^
@@ -183,10 +235,10 @@ def test_add_copy_to_device(ctx: DeviceContext) raises:
         host_src[i] = Float32(i) * 3.0
     var dev_buf = ctx.enqueue_create_buffer[DType.float32](length)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_copy(dev_buf, host_src)
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -209,10 +261,10 @@ def test_add_copy_from_device(ctx: DeviceContext) raises:
     for i in range(length):
         host_dst[i] = 0.0
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_copy(host_dst, dev_buf)
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -231,10 +283,10 @@ def test_add_copy_device_to_device(ctx: DeviceContext) raises:
         for i in range(length):
             src_host[i] = Float32(i * i)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_copy(dst_dev, src_dev)
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -252,7 +304,7 @@ def test_add_memset(ctx: DeviceContext) raises:
     var buf_u32 = ctx.enqueue_create_buffer[DType.uint32](length)
     var buf_u64 = ctx.enqueue_create_buffer[DType.uint64](length)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # The four memsets target disjoint buffers, so each can be an
         # independent graph root.
         _ = builder.add_memset(buf_u8, UInt8(123))
@@ -262,7 +314,7 @@ def test_add_memset(ctx: DeviceContext) raises:
         # single node.
         _ = builder.add_memset(buf_u64, UInt64(0x0101010101010101))
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -283,6 +335,45 @@ def test_add_memset(ctx: DeviceContext) raises:
             assert_equal(host_u64[i], UInt64(0x0101010101010101))
 
 
+def test_add_output(ctx: DeviceContext) raises:
+    print("Test registering a graph output alongside a kernel node.")
+    comptime length = 1024
+    comptime block_dim = 256
+
+    var in0_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var in1_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
+
+    with in0_dev.map_to_host() as in0_host, in1_dev.map_to_host() as in1_host:
+        for i in range(length):
+            in0_host[i] = Float32(i)
+            in1_host[i] = Float32(length - i)
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        _ = builder.add_function[vec_add](
+            out_dev,
+            in0_dev,
+            in1_dev,
+            length,
+            grid_dim=ceildiv(length, block_dim),
+            block_dim=block_dim,
+        )
+        # Register the result buffer as a graph output; the graph must still
+        # instantiate and replay correctly. Copy the buffer handle so `out_dev`
+        # remains valid for the host readback below.
+        assert_equal(builder.num_outputs(), 0)
+        builder.add_output(AnyAsyncValueRef(storage_buf=out_dev.copy()))
+        assert_equal(builder.num_outputs(), 1)
+
+    var graph = DeviceGraph.create(ctx, build)
+    graph.replay()
+    ctx.synchronize()
+
+    with out_dev.map_to_host() as out_host:
+        for i in range(length):
+            assert_equal(out_host[i], Float32(length))
+
+
 def test_add_function_with_dependencies(ctx: DeviceContext) raises:
     print(
         "Test add_function with explicit dependencies for two independent"
@@ -297,7 +388,7 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
 
     var func = ctx.compile_function[fill_constant]()
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Sequence A on `buf_a`: write 1, then 2, then 3, internally chained
         # via explicit dependencies. The first node is rooted with an empty
         # deps list; downstream nodes name their predecessor explicitly.
@@ -357,7 +448,7 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
             dependencies=[b1],
         )
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -379,7 +470,7 @@ def test_add_memset_with_dependencies(ctx: DeviceContext) raises:
     var buf_a = ctx.enqueue_create_buffer[DType.uint8](length)
     var buf_b = ctx.enqueue_create_buffer[DType.uint8](length)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Sequence A on `buf_a`: 0x11 -> 0x22 -> 0x33, internally chained.
         # First node is rooted with an empty deps list; sequences A and B are
         # independent because neither names a predecessor in the other chain.
@@ -392,7 +483,7 @@ def test_add_memset_with_dependencies(ctx: DeviceContext) raises:
         var b1 = builder.add_memset(buf_b, UInt8(0xBB), dependencies=[b0])
         _ = builder.add_memset(buf_b, UInt8(0xCC), dependencies=[b1])
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -427,7 +518,7 @@ def test_add_copy_with_dependencies(ctx: DeviceContext) raises:
         host_b1[i] = UInt32(0xAAAAAAAA)
         host_b2[i] = UInt32(0xBBBBBBBB)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Sequence A: HtoD(host_a1) -> HtoD(host_a2). Final state of `buf_a`
         # is the second copy's payload (host_a2). First node rooted
         # explicitly.
@@ -438,7 +529,7 @@ def test_add_copy_with_dependencies(ctx: DeviceContext) raises:
         var b0 = builder.add_copy(buf_b, host_b1, dependencies=[])
         _ = builder.add_copy(buf_b, host_b2, dependencies=[b0])
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -464,7 +555,7 @@ def test_region(ctx: DeviceContext) raises:
     var buf_b = ctx.enqueue_create_buffer[DType.uint8](length)
     var buf_c = ctx.enqueue_create_buffer[DType.uint8](length)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Pre-existing root node added before the scope. It must NOT be a
         # predecessor of the join node returned by the scope.
         var pre_scope = builder.add_memset(buf_a, UInt8(0x01), dependencies=[])
@@ -475,7 +566,7 @@ def test_region(ctx: DeviceContext) raises:
         # callback because the callback is generic over the scope origin, so
         # it is injected as a scope-level predecessor via `dependencies=`
         # instead; every node the callback adds runs after it.
-        def add_producers(mut b: DeviceGraphBuilder) raises {read}:
+        def add_producers(mut b: DeviceGraphBuilder) raises {imm}:
             _ = b.add_memset(buf_a, UInt8(0xAA), dependencies=[])
             _ = b.add_memset(buf_b, UInt8(0xBB), dependencies=[])
 
@@ -491,7 +582,7 @@ def test_region(ctx: DeviceContext) raises:
             buf_c, UInt8(0xCC), dependencies=[producers_join]
         )
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -514,8 +605,8 @@ def test_region_empty(ctx: DeviceContext) raises:
     comptime length = 64
     var buf = ctx.enqueue_create_buffer[DType.uint8](length)
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
-        def add_nothing(mut b: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        def add_nothing(mut b: DeviceGraphBuilder) raises {imm}:
             return
 
         var join = builder.region(add_nothing)
@@ -524,7 +615,7 @@ def test_region_empty(ctx: DeviceContext) raises:
         # still instantiates and replays successfully.
         _ = builder.add_memset(buf, UInt8(0xEE), dependencies=[join])
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -547,9 +638,9 @@ def test_region_with_dependencies(ctx: DeviceContext) raises:
     var fill = ctx.compile_function[fill_constant]()
     var incr = ctx.compile_function[add_in_place]()
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Producer scope: fill `buf` with 5 (single kernel node, a graph root).
-        def producer(mut b: DeviceGraphBuilder) raises {read}:
+        def producer(mut b: DeviceGraphBuilder) raises {imm}:
             _ = b.add_function(
                 fill,
                 buf,
@@ -565,7 +656,7 @@ def test_region_with_dependencies(ctx: DeviceContext) raises:
         # Consumer scope: increment `buf` by 10. Passing dependencies=[join_a]
         # injects join_a as an ambient predecessor of the incr node, so it
         # runs strictly after the producer. Final value must be 15, not 10.
-        def consumer(mut b: DeviceGraphBuilder) raises {read}:
+        def consumer(mut b: DeviceGraphBuilder) raises {imm}:
             _ = b.add_function(
                 incr,
                 buf,
@@ -578,7 +669,7 @@ def test_region_with_dependencies(ctx: DeviceContext) raises:
 
         _ = builder.region(consumer, dependencies=[join_a])
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -603,9 +694,9 @@ def test_region_passthrough_dependencies(
     var fill = ctx.compile_function[fill_constant]()
     var incr = ctx.compile_function[add_in_place]()
 
-    def build(mut builder: DeviceGraphBuilder) raises {read}:
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Producer scope: fill `buf` with 5.
-        def producer(mut b: DeviceGraphBuilder) raises {read}:
+        def producer(mut b: DeviceGraphBuilder) raises {imm}:
             _ = b.add_function(
                 fill,
                 buf,
@@ -621,7 +712,7 @@ def test_region_passthrough_dependencies(
         # Empty scope depending on join_a: adds no nodes, so its returned join
         # falls back to depending on join_a directly (it must chain the
         # barrier).
-        def add_nothing(mut b: DeviceGraphBuilder) raises {read}:
+        def add_nothing(mut b: DeviceGraphBuilder) raises {imm}:
             return
 
         var passthrough = builder.region(add_nothing, dependencies=[join_a])
@@ -639,7 +730,7 @@ def test_region_passthrough_dependencies(
             dependencies=[passthrough],
         )
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -652,11 +743,13 @@ def main() raises:
     with DeviceContext() as ctx:
         test_vec_add_kernel_node(ctx)
         test_parameterized_kernel_node(ctx)
+        test_capturing_parameterized_kernel_node(ctx)
         test_closure_node(ctx)
         test_add_copy_to_device(ctx)
         test_add_copy_from_device(ctx)
         test_add_copy_device_to_device(ctx)
         test_add_memset(ctx)
+        test_add_output(ctx)
         test_add_function_with_dependencies(ctx)
         test_add_memset_with_dependencies(ctx)
         test_add_copy_with_dependencies(ctx)

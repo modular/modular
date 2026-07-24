@@ -26,13 +26,13 @@ controls how it accesses values from its enclosing scope:
 def main():
     var multiplier = 3
 
-    def scale(x: Int) {read multiplier} -> Int:
+    def scale(x: Int) {imm multiplier} -> Int:
         return x * multiplier
 
     print(scale(5))  # 15
 ```
 
-`{read multiplier}` references `multiplier` from the enclosing
+`{imm multiplier}` references `multiplier` from the enclosing
 scope as an immutable reference. Without the capture list,
 referencing any outer value is a compile error.
 
@@ -49,7 +49,7 @@ closures.
 
 ## Closure syntax
 
-<!-- VERIFIED: From parseCaptureList in Signatures.cpp:1274-1364 -->
+<!-- VERIFIED: From parseCaptureList in Signatures.cpp:1327-1424 -->
 
 ```text
 def name(argument-list) {capture-list} -> ReturnType:
@@ -74,7 +74,7 @@ See [Function declarations](./function-declarations.mdx).
 
 ## Capture list grammar
 
-<!-- VERIFIED: parseCaptureList, Signatures.cpp:1274-1364 -->
+<!-- VERIFIED: parseCaptureList, Signatures.cpp:1327-1424 -->
 
 A capture list is a brace-enclosed, comma-separated sequence of
 *entries*:
@@ -85,12 +85,12 @@ A capture list is a brace-enclosed, comma-separated sequence of
 |----------------|-----------------------------------------------|
 | `<conv> name`  | Capture `name` with convention `<conv>`       |
 | `<conv>`       | Default convention for all free variables     |
-| `name`         | Capture `name` with convention `read`         |
+| `name`         | Capture `name` with convention `imm`          |
 | `<conv> name^` | Move-capture (only with `var` or no `<conv>`) |
 
 <!-- markdownlint-enable MD013 -->
 
-`<conv>` is one of `read`, `mut`, `var`, `ref`. Position within
+`<conv>` is one of `imm`, `mut`, `var`, `ref`. Position within
 the list isn't significant: `{mut, var z}` and `{var z, mut}`
 are equivalent. Trailing commas are accepted.
 
@@ -116,7 +116,7 @@ error: '^' requires 'var' convention; write 'var x^' to
 
 | Convention | Form                     | Storage in closure                | Lifetime tie to outer |
 |------------|--------------------------|-----------------------------------|-----------------------|
-| `read`     | `{read name}` / `{read}` | Immutable reference               | Live                  |
+| `imm`      | `{imm name}` / `{imm}`   | Immutable reference               | Live                  |
 | `mut`      | `{mut name}` / `{mut}`   | Mutable reference                 | Live                  |
 | `ref`      | `{ref name}` / `{ref}`   | Reference, mutability from origin | Live                  |
 | `var`      | `{var name}` / `{var}`   | Owned copy                        | Independent           |
@@ -125,7 +125,7 @@ error: '^' requires 'var' convention; write 'var x^' to
 
 <!-- markdownlint-enable MD013 -->
 
-## `read`
+## `imm`
 
 <!-- VERIFIED: unified_closures_mem.mojo:72-80,
      unified_closure_captured_param.mojo:98 -->
@@ -137,7 +137,7 @@ current state at each call:
 def main():
     var limit = 10
 
-    def check(x: Int) {read limit} -> Bool:
+    def check(x: Int) {imm limit} -> Bool:
         return x < limit
 
     print(check(5))   # True
@@ -145,9 +145,9 @@ def main():
     print(check(5))   # False
 ```
 
-`{read}` (no name) applies `read` to every free variable in
+`{imm}` (no name) applies `imm` to every free variable in
 the body. A bare name without a convention keyword also defaults
-to `read`: `{x}` is equivalent to `{read x}`.
+to `imm`: `{x}` is equivalent to `{imm x}`.
 
 ## `mut`
 
@@ -176,16 +176,16 @@ free variable in the body.
 Removed for now:
 
 The outer binding must be mutable. Capturing an immutable
-register-passable name (like a `read` parameter of type `Int`)
+register-passable name (like an `imm` parameter of type `Int`)
 with `mut` or `ref` produces the same diagnostic, with the
 offending convention substituted into the message:
 
 ```text
 error: register passible value 'x' can not be captured by
-       'mut'. Do you mean 'read'?
+       'mut'. Do you mean 'imm'?
 
 error: register passible value 'x' can not be captured by
-       'ref'. Do you mean 'read'?
+       'ref'. Do you mean 'imm'?
 ```
 -->
 
@@ -213,13 +213,13 @@ def main():
 
 The copy constructor runs once per closure declaration.
 Capturing a large `List` or `String` by `var` allocates at that
-point. Use `read` or `mut` when an independent copy isn't
+point. Use `imm` or `mut` when an independent copy isn't
 needed.
 
 ## Move capture: `var name^`
 
 <!-- VERIFIED: unified_closures.mojo:260,
-     Signatures.cpp:1311-1325 -->
+     Signatures.cpp:1371-1386 -->
 
 Transfers ownership of `name` into the closure. The outer
 binding is consumed; using it after the closure declaration is a
@@ -243,7 +243,7 @@ is the only way to capture a move-only type by value.
 Constraints:
 
 - Only legal after `var` or after a bare (convention-less) name.
-- `{read name^}`, `{mut name^}`, and `{ref name^}` are
+- `{imm name^}`, `{mut name^}`, and `{ref name^}` are
   rejected.
 - A bare `name^` is equivalent to `var name^`. Both produce the
   same `kConventionMove` entry.
@@ -251,7 +251,7 @@ Constraints:
 ## Copyable closures: `var^`
 
 <!-- VERIFIED: unified_closures_mem.mojo:94-103,
-     unified_closures.mojo:185, Signatures.cpp:1278-1293 -->
+     unified_closures.mojo:185, Signatures.cpp:1391-1406 -->
 
 `{var^}` (no name) applies move capture as the default for
 every free variable in the body. When every captured type is
@@ -297,7 +297,7 @@ Comparison with `{var name^}`:
      MutOrigin/origin_of usage -->
 
 Reference whose mutability is inherited from the outer
-binding's origin. The closure doesn't pick `read` or `mut`; it
+binding's origin. The closure doesn't pick `imm` or `mut`; it
 forwards whatever the origin already carries:
 
 ```mojo
@@ -309,8 +309,8 @@ def show_mutability(ref items: List[Int]):
             print("immut")
     report()
 
-# `xs` uses default `read` convention, immutable reference
-def from_read(xs: List[Int]):
+# `xs` uses default `imm` convention, immutable reference
+def from_imm(xs: List[Int]):
     show_mutability(xs)
 
 # `xs` uses `mut` convention, mutable reference
@@ -319,22 +319,22 @@ def from_mut(mut xs: List[Int]):
 
 def main():
     var nums: List[Int] = [10, 20, 30]
-    from_read(nums)   # immut
+    from_imm(nums)    # immut
     from_mut(nums)    # mut
 ```
 
 `ref` is the only convention that forwards origin information
-unchanged. `read` and `mut` create references with a fixed
+unchanged. `imm` and `mut` create references with a fixed
 mutability; `var` removes the origin relationship entirely.
 
 `ref` captures are intended for generic code that must operate
-across mutability contexts. In ordinary closures, `read` and
+across mutability contexts. In ordinary closures, `imm` and
 `mut` produce clearer signatures.
 
 ## Empty and omitted capture lists
 
 <!-- VERIFIED: parseCaptureList early return,
-     Signatures.cpp:1275-1276 -->
+     Signatures.cpp:1330-1331 -->
 
 `{}` and no capture list at all produce the same result: any
 reference to an outer value is rejected:
@@ -354,7 +354,7 @@ declaration.
 
 ## Mixing conventions
 
-<!-- VERIFIED: parseCaptureList loop, Signatures.cpp:1352-1362 -->
+<!-- VERIFIED: parseCaptureList loop, Signatures.cpp:1412-1423 -->
 
 Each entry carries its own convention independently:
 
@@ -364,7 +364,7 @@ def main():
     var count = 0
     var label = "run-1"
 
-    def process() {read config, mut count, var label}:
+    def process() {imm config, mut count, var label}:
         count += 1
         print(config, count, label)
 
@@ -374,11 +374,11 @@ def main():
                 # (label was copied at declaration time)
 ```
 
-A bare name in a mixed list uses `read`, not the convention of
+A bare name in a mixed list uses `imm`, not the convention of
 its neighbors:
 
 ```mojo
-# y is captured as 'read', not 'mut'
+# y is captured as 'imm', not 'mut'
 def f() {var z, mut x, y}:
     # ...
 ```
@@ -386,7 +386,7 @@ def f() {var z, mut x, y}:
 ## Default convention
 
 <!-- VERIFIED: captureAllByConvention path,
-     Signatures.cpp:1333-1346 -->
+     Signatures.cpp:1393-1406 -->
 
 A convention keyword without a name sets the default for every
 free variable not named explicitly:
@@ -528,18 +528,18 @@ def main():
 
 Closures are values and can be used in capture lists. An inner closure that
 names an outer closure must declare the same kind of capture (`var`,
-`read`, etc.) as it would for any other value.
+`imm`, etc.) as it would for any other value.
 
 ## Capture-list errors
 
 <!-- VERIFIED: parseCaptureList diagnostics,
-     Signatures.cpp:1314-1349 -->
+     Signatures.cpp:1355-1423 -->
 
 <!-- markdownlint-disable MD013 -->
 
 | Compiler complaint                                                                | Trigger                                                                      |
 |-----------------------------------------------------------------------------------|------------------------------------------------------------------------------|
-| Transfer sigil `^` without `var` convention                                       | `^` after `mut`, `read`, or `ref`                                            |
+| Transfer sigil `^` without `var` convention                                       | `^` after `mut`, `imm`, or `ref`                                             |
 | Duplicate default convention                                                      | Two bare convention keywords in one list                                     |
 | Unrecognized token in capture position                                            | Token that isn't a convention keyword or name                                |
 | Missing comma between entries                                                     | Identifier followed by an unrecognized token                                 |

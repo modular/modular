@@ -134,6 +134,16 @@ struct Grouped1D1DSmem[
 
     Thin wrapper over BlockScaledTileCore + SmemPipelineBundleNoClc.
     Uses 3-warp specialization (Load, MMA, Epilogue) without a scheduler warp.
+
+    Parameters:
+        a_type: Element type of the A operand matrix.
+        b_type: Element type of the B operand matrix.
+        c_type: Element type of the C output matrix.
+        sfa_dtype: Element type of the A operand scaling factors.
+        sfb_dtype: Element type of the B operand scaling factors.
+        transpose_b: Whether the B operand is stored in transposed layout.
+        config: Block-scaled matmul configuration providing tile shapes,
+            pipeline stage counts, and scaling factor layout parameters.
     """
 
     # ========== Core (tile storage + constants) ==========

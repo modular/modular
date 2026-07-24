@@ -10,9 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the ONNX Tile operator, which replicates a tensor a specified number of times along each axis."""
 
 from layout import TileTensor
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 
 from std.utils import IndexList
 
@@ -143,7 +144,7 @@ def tile[
                     var dst_ptr = output.ptr + (
                         output_src_index + rep * output_src_stride
                     )
-                    memcpy(dest=dst_ptr, src=src_ptr, count=count)
+                    unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
     # Handles tiling across the second lowest dimension (if tensor rank >= 2).
     # Continuing with the example above, this will handle the 'X's, which
@@ -153,7 +154,7 @@ def tile[
     #            [4, 5, 6, 4, 5, 6],
     #            [1, 2, 3, 1, 2, 3],
     #            [4, 5, 6, 4, 5, 6]]
-    # Moving from the inner to the outermost dimension, we can memcpy to
+    # Moving from the inner to the outermost dimension, we can unsafe_memcpy to
     # replicate contiguous memory areas (representing a dimension to be tiled).
     comptime if input.rank >= 2:
         var src_index_stride = num_rows_input * num_cols_input * repeat_cols
@@ -181,9 +182,10 @@ def tile[
                     )
                     # dst_ptr and src_ptr are non-overlapping slices of the
                     # same `output` buffer (shared origin). Opt out of
-                    # exclusivity with an unsafe any-origin: memcpy's non-overlap
+                    # exclusivity with an unsafe any-origin:
+                    # unsafe_memcpy's non-overlap
                     # is a caller contract the checker can't prove.
-                    memcpy(
+                    unsafe_memcpy(
                         dest=dst_ptr,
                         src=src_ptr.as_unsafe_any_origin(),
                         count=count,
@@ -216,9 +218,10 @@ def tile[
                 )
                 # dst_ptr and src_ptr are non-overlapping slices of the
                 # same `output` buffer (shared origin). Opt out of
-                # exclusivity with an unsafe any-origin: memcpy's non-overlap
+                # exclusivity with an unsafe any-origin:
+                # unsafe_memcpy's non-overlap
                 # is a caller contract the checker can't prove.
-                memcpy(
+                unsafe_memcpy(
                     dest=dst_ptr,
                     src=src_ptr.as_unsafe_any_origin(),
                     count=count,
@@ -244,9 +247,10 @@ def tile[
             )
             # dst_ptr and src_ptr are non-overlapping slices of the
             # same `output` buffer (shared origin). Opt out of
-            # exclusivity with an unsafe any-origin: memcpy's non-overlap
+            # exclusivity with an unsafe any-origin:
+            # unsafe_memcpy's non-overlap
             # is a caller contract the checker can't prove.
-            memcpy(
+            unsafe_memcpy(
                 dest=dst_ptr,
                 src=src_ptr.as_unsafe_any_origin(),
                 count=count,

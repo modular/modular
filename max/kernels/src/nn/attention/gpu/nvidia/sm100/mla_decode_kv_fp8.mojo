@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the SM100 MLA decode kernel variant that loads KV cache in FP8 and converts to BF16 in shared memory before MMA."""
+
 from std.math import ceildiv
 from std.sys import size_of
 from std.gpu import (
@@ -104,6 +106,36 @@ struct MLA_SM100_Decode_KV_FP8[
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
 ](TrivialRegisterPassable):
+    """FP8 KV decode kernel for MLA attention on SM100 GPUs.
+
+    This kernel uses 4 warpgroups plus 4 individual warps, where a dedicated
+    convert warpgroup performs FP8-to-BF16 conversion in shared memory before
+    the MMA warps consume the data. Two KV pipelines coordinate the load,
+    convert, and MMA stages in a double-buffered pipeline.
+
+    Parameters:
+        q_type: Element type of the query tensor; also the target type for
+            FP8-to-BF16 KV conversion before MMA.
+        KVLUTType: Operand describing the paged KV cache lookup table,
+            including its element type and page table layout.
+        output_type: Element type of the output tensor written by the
+            store warp.
+        SplitAccumType: `OptionalPointer` type for the split-K partial
+            output accumulation buffer, or `NullPointer` when split-K is
+            disabled.
+        MaskType: Attention mask applied to the QK scores; only `NullMask`
+            and `CausalMask` are supported.
+        config: Tile sizes, thread counts, pipeline stages, swizzle modes,
+            and tuning parameters for the decode kernel.
+        ValidLengthType: `OptionalPointer` type for the per-batch valid key
+            length tensor, or `NullPointer` when not provided.
+        _is_cache_length_accurate: Whether the reported cache length is
+            exact (defaults to `False`).
+        ragged: Whether variable-length sequences are enabled, allowing
+            early exit for batches with fewer query tokens (defaults to
+            `False`).
+    """
+
     comptime kv_type = Self.KVLUTType.dtype
     comptime AccumType = get_accum_type[Self.q_type]()
     # 576 / 64 = 9
@@ -239,7 +271,7 @@ struct MLA_SM100_Decode_KV_FP8[
             Int32(Self.config.num_threads)
         )
     )
-    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDLength(1))
     @__name(
         t"sm100_mla_decode_kv_fp8_{Self.q_type}_{Self.kv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )
@@ -278,7 +310,7 @@ struct MLA_SM100_Decode_KV_FP8[
         ],
     ):
         # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
-        # (MLA_SM100_Decode_QKV_FP8).  Reject it here at comptime.
+        # (MLA_SM100_Decode_QKV_FP8). Reject it here at comptime.
         comptime _mask_type_name: String = Self.MaskType.get_type_name()
         comptime assert (
             _mask_type_name == "NullMask" or _mask_type_name == "CausalMask"
@@ -295,7 +327,7 @@ struct MLA_SM100_Decode_KV_FP8[
         comptime num_reg_keep_fp8tofp16 = 184
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))
-        var num_partitions = Int(scalar_args.raw_load(2))
+        var num_partitions = mla_decode_pack.num_partitions
         mask = mla_decode_pack.mask
         valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
@@ -323,7 +355,7 @@ struct MLA_SM100_Decode_KV_FP8[
         # Early exit for split-K: CTAs with no work (num_keys_this_split == 0)
         # must still write -inf LSE, zero o_accum_split, and call
         # launch_dependent_grids() to fulfill the PDL contract with the
-        # combine kernel.  Skipping launch_dependent_grids() causes the
+        # combine kernel. Skipping launch_dependent_grids() causes the
         # combine kernel to hang, leading to CUDA_ERROR_ILLEGAL_ADDRESS.
         comptime if Self.config.decoding_warp_split_k:
             if offset_position.num_keys_this_split == 0:

@@ -14,6 +14,7 @@
 """Unit tests for hash_image function."""
 
 import numpy as np
+import pytest
 from max.support.image import hash_image, hash_video
 
 
@@ -57,6 +58,62 @@ def test_hash_image_contiguous_vs_non_contiguous_same_data() -> None:
     h1 = hash_image(arr_t)
     h2 = hash_image(arr_t_copy)
     assert h1 == h2, "Contiguous and non-contiguous with same data should match"
+
+
+def test_hash_image_bytes_matches_encoder_content_key() -> None:
+    """Pin hash_image's raw-bytes mode to the Rust encoder's ``content_key``.
+
+    These goldens were produced by the encoder's
+    ``multimodal::content_key(bytes, tier)`` (mach crate). Byte-for-byte parity
+    is the whole point: the engine and the encoder must derive the same per-image
+    key so cache-aware routing sends a request to the worker already holding it.
+    A change here means the two sides have silently diverged.
+    """
+    assert hash_image(b"", 0) == -4072596861322023719
+    assert (
+        hash_image(b"modular-multimodal-routing", 280) == -1621788365911394505
+    )
+    assert hash_image(bytes(range(256)), 2016) == 441527499587478968
+
+
+def test_hash_image_bytes_tier_and_bytes_participate() -> None:
+    """The size tier and the raw bytes both change the key."""
+    data = b"some encoded image bytes"
+    assert hash_image(data, 0) == hash_image(data, 0)
+    assert hash_image(data, 280) != hash_image(data, 560)
+    assert hash_image(data, 280) != hash_image(data + b"!", 280)
+
+
+def test_hash_image_bytes_requires_and_bounds_tier() -> None:
+    """Bytes mode requires size_tier; out-of-range tiers raise OverflowError."""
+    # Bytes without a size_tier is a usage error, not a silent pixel-mode hash.
+    with pytest.raises(ValueError, match="size_tier is required"):
+        hash_image(b"x")
+    # size_tier is appended as a little-endian u64, so to_bytes itself rejects
+    # negatives and values that do not fit in 64 bits.
+    with pytest.raises(OverflowError):
+        hash_image(b"x", -1)
+    with pytest.raises(OverflowError):
+        hash_image(b"x", 2**64)
+    # The largest valid u64 is accepted, not rejected off-by-one.
+    assert isinstance(hash_image(b"x", 2**64 - 1), int)
+
+
+def test_hash_image_bytes_accepts_bytearray() -> None:
+    """bytearray input hashes identically to the equivalent bytes."""
+    ba = bytearray(b"modular")
+    assert hash_image(ba, 280) == hash_image(b"modular", 280)
+
+
+def test_hash_image_pixels_reject_size_tier() -> None:
+    """Pixel mode rejects a size_tier instead of silently ignoring it."""
+    arr = np.arange(8, dtype=np.float32)
+    # A pixel array hashes fine with no tier...
+    assert isinstance(hash_image(arr), int)
+    # ...but passing a tier (which pixel mode cannot fold in) is a usage error
+    # that would otherwise yield a subtly wrong, tier-independent key.
+    with pytest.raises(ValueError, match="size_tier is only folded"):
+        hash_image(arr, 123)
 
 
 def test_hash_video_depends_on_pixels_and_grid() -> None:

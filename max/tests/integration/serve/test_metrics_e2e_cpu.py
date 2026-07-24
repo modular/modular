@@ -21,11 +21,9 @@ import requests
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.serve.config import MetricLevel, MetricRecordingMethod
+from max.pipelines import PipelineArgs
+from max.pipelines.lib import KVCacheConfig
+from max.serve.config import MetricRecordingMethod
 from max.serve.schemas.openai import CreateChatCompletionResponse
 
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
@@ -98,20 +96,15 @@ def _metric_total(metrics_text: str, name: str) -> float:
 @pytest.mark.parametrize(
     "pipeline_config",
     [
-        PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path=MODEL_NAME,
-                        huggingface_model_revision=MODEL_REVISION,
-                        device_specs=[DeviceSpec.cpu()],
-                        quantization_encoding="float32",
-                        kv_cache=KVCacheConfig(),
-                        max_length=512,
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(max_batch_size=16),
+        PipelineArgs(
+            model_path=MODEL_NAME,
+            huggingface_model_revision=MODEL_REVISION,
+            huggingface_weight_revision=MODEL_REVISION,
+            device_specs=[DeviceSpec.cpu()],
+            quantization_encoding="float32",
+            kv_cache=KVCacheConfig(),
+            max_length=512,
+            max_batch_size=16,
         )
     ],
     indirect=True,
@@ -122,9 +115,6 @@ def _metric_total(metrics_text: str, name: str) -> float:
         {
             "MAX_SERVE_USE_HEARTBEAT": True,
             "MAX_SERVE_METRIC_RECORDING_METHOD": MetricRecordingMethod.PROCESS,
-            "MAX_SERVE_METRIC_LEVEL": MetricLevel.DETAILED,
-            # This ensures that batch size is sent immediately and not buffered
-            "MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR": 0,
         }
     ],
     indirect=True,
@@ -191,7 +181,7 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
                 "maxserve_time_to_first_token_milliseconds_bucket",
                 "maxserve_num_output_tokens_total",
                 "maxserve_batch_size",
-                "maxserve_cache_hit_rate",
+                "maxserve_cache_request_prefix_coverage",
                 f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
             ],
             absent_metrics=None,
@@ -239,20 +229,15 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
 @pytest.mark.parametrize(
     "pipeline_config",
     [
-        PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path=MODEL_NAME,
-                        huggingface_model_revision=MODEL_REVISION,
-                        device_specs=[DeviceSpec.cpu()],
-                        quantization_encoding="float32",
-                        kv_cache=KVCacheConfig(),
-                        max_length=512,
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(max_batch_size=16),
+        PipelineArgs(
+            model_path=MODEL_NAME,
+            huggingface_model_revision=MODEL_REVISION,
+            huggingface_weight_revision=MODEL_REVISION,
+            device_specs=[DeviceSpec.cpu()],
+            quantization_encoding="float32",
+            kv_cache=KVCacheConfig(),
+            max_length=512,
+            max_batch_size=16,
         )
     ],
     indirect=True,
@@ -262,10 +247,7 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
     [
         {
             "MAX_SERVE_USE_HEARTBEAT": True,
-            "MAX_SERVE_METRIC_LEVEL": MetricLevel.DETAILED,
             "MAX_SERVE_METRIC_RECORDING_METHOD": MetricRecordingMethod.PROCESS,
-            # This ensures that batch size is sent immediately and not buffered
-            "MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR": 0,
         }
     ],
     indirect=True,
@@ -301,7 +283,7 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
                 "maxserve_time_to_first_token_milliseconds_bucket",
                 "maxserve_num_output_tokens_total",
                 "maxserve_batch_size",
-                "maxserve_cache_hit_rate",
+                "maxserve_cache_request_prefix_coverage",
                 f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
             ],
             absent_metrics=None,
@@ -312,20 +294,15 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
 @pytest.mark.parametrize(
     "pipeline_config",
     [
-        PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path=MODEL_NAME,
-                        huggingface_model_revision=MODEL_REVISION,
-                        device_specs=[DeviceSpec.cpu()],
-                        quantization_encoding="float32",
-                        kv_cache=KVCacheConfig(),
-                        max_length=512,
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(max_batch_size=16),
+        PipelineArgs(
+            model_path=MODEL_NAME,
+            huggingface_model_revision=MODEL_REVISION,
+            huggingface_weight_revision=MODEL_REVISION,
+            device_specs=[DeviceSpec.cpu()],
+            quantization_encoding="float32",
+            kv_cache=KVCacheConfig(),
+            max_length=512,
+            max_batch_size=16,
         )
     ],
     indirect=True,

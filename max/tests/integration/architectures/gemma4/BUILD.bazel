@@ -32,15 +32,25 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_fused_projection_weights",
+    srcs = ["test_fused_projection_weights.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/gemma4",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_batch_vision_inputs_cpu",
     srcs = ["test_batch_vision_inputs.py"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/pipelines/architectures/gemma4",
-        "//max/python/max/pipelines/context",
-        "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/request",
         requirement("numpy"),
     ],
 )
@@ -53,6 +63,7 @@ modular_py_test(
         exclude = [
             "test_batch_vision_inputs.py",
             "test_config_init.py",
+            "test_fused_projection_weights.py",
             "test_image_processor.py",
             "test_reasoning.py",
             "test_tokenizer.py",
@@ -150,9 +161,10 @@ modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [
+        "//max/python/max/_xgrammar",
         "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/modeling",
-        requirement("llguidance"),
     ],
 )
 

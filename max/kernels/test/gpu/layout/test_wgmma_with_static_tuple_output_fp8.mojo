@@ -246,7 +246,7 @@ def wgmma_e4m3_e4m3_f32[
 
     ctx.synchronize()
 
-    assert_equal(c_host.ptr, c_host_ref.ptr, c_host.num_elements())
+    assert_equal(c_host._storage, c_host_ref._storage, c_host.num_elements())
 
 
 def main() raises:

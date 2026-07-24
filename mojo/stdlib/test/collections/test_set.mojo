@@ -14,7 +14,7 @@
 from std.collections import Set
 from std.hashlib import hash
 
-from test_utils import MoveOnly, check_write_to
+from test_utils import ExplicitDestroyKey, MoveOnly, check_write_to
 from std.testing import (
     assert_false,
     assert_equal,
@@ -568,6 +568,13 @@ def test_set_conditional_conformances() raises:
     assert_false(conforms_to(Set[MoveOnly[Int]], Hashable))
     assert_false(conforms_to(Set[MoveOnly[Int]], Writable))
 
+    # ImplicitlyDeletable conformance is conditional on the element type.
+    assert_true(conforms_to(Set[Int], ImplicitlyDeletable))
+    assert_true(conforms_to(Set[String], ImplicitlyDeletable))
+    assert_true(conforms_to(Set[MoveOnly[Int]], ImplicitlyDeletable))
+    # A linear (explicitly-destroyed) element makes the set itself linear.
+    assert_false(conforms_to(Set[ExplicitDestroyKey], ImplicitlyDeletable))
+
 
 def test_set_iter_owned() raises:
     # Test that owned iteration works, for non-Copyable types
@@ -637,6 +644,82 @@ def test_set_move_only_element() raises:
     s.clear()
     assert_equal(len(s), 0)
     assert_false(s.__bool__())
+
+
+def test_set_insert_linear() raises:
+    # `insert` on a linear (non-`ImplicitlyDeletable`) element type moves any
+    # displaced equal element out and returns it instead of destroying it in
+    # place. The returned `Optional[T]` is itself linear and is consumed via
+    # `deinit_with`. The final `deinit_with` covers `Set`'s per-element
+    # teardown path end-to-end.
+    var s = Set[ExplicitDestroyKey]()
+    var disposed = List[Int]()
+
+    def dispose(var key: ExplicitDestroyKey) {mut}:
+        disposed.append(key.value)
+        key^.destroy()
+
+    # New elements: nothing displaced, so each returned `Optional` is empty.
+    s.insert(ExplicitDestroyKey(1)).deinit_with(dispose)
+    s.insert(ExplicitDestroyKey(2)).deinit_with(dispose)
+    var len_after_new = len(s)
+    var disposed_after_new = len(disposed)
+
+    # Inserting an equal element displaces the previously-present one, which
+    # comes back and is disposed by the caller (not the just-inserted element).
+    s.insert(ExplicitDestroyKey(1)).deinit_with(dispose)
+    var len_after_dup = len(s)
+    var disposed_after_dup = len(disposed)
+
+    s^.deinit_with(dispose)
+
+    assert_equal(len_after_new, 2)
+    assert_equal(disposed_after_new, 0)
+    assert_equal(len_after_dup, 2)
+    assert_equal(disposed_after_dup, 1)
+    # Final teardown disposed the two survivors (1 and 2).
+    assert_equal(len(disposed), 3)
+    assert_true(1 in disposed)
+    assert_true(2 in disposed)
+
+
+def test_set_clear_with_linear() raises:
+    # `clear_with` on a populated linear `Set`: every element reaches the
+    # closure once, the set empties, and its capacity is reused.
+    var s = Set[ExplicitDestroyKey]()
+    var disposed = List[Int]()
+
+    def dispose(var key: ExplicitDestroyKey) {mut}:
+        disposed.append(key.value)
+        key^.destroy()
+
+    s.insert(ExplicitDestroyKey(1)).deinit_with(dispose)
+    s.insert(ExplicitDestroyKey(2)).deinit_with(dispose)
+    s.insert(ExplicitDestroyKey(3)).deinit_with(dispose)
+    var len_before_clear = len(s)
+
+    s.clear_with(dispose)
+    var cleared = disposed.copy()
+    var len_after_clear = len(s)
+
+    # Capacity is retained, so the emptied set is reusable.
+    s.insert(ExplicitDestroyKey(4)).deinit_with(dispose)
+    var len_after_reuse = len(s)
+
+    s^.deinit_with(dispose)
+
+    assert_equal(len_before_clear, 3)
+    assert_equal(len_after_clear, 0)
+    assert_equal(len_after_reuse, 1)
+
+    assert_equal(len(cleared), 3)
+    assert_true(1 in cleared)
+    assert_true(2 in cleared)
+    assert_true(3 in cleared)
+
+    # Final teardown disposed the reused survivor (4).
+    assert_equal(len(disposed), 4)
+    assert_true(4 in disposed)
 
 
 def main() raises:

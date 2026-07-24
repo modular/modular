@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 from std.math import iota
@@ -28,7 +28,7 @@ from std.gpu import (
 )
 from std.gpu.primitives import warp
 from std.gpu.memory import AddressSpace, external_memory
-from std.memory import Span
+from std.collections import Span
 
 from extensibility import InputTensor, OutputTensor
 
@@ -49,7 +49,7 @@ struct TopKElement[T: DType](Comparable, TrivialRegisterPassable):
         return self.val < rhs.val
 
 
-@compiler.register("top_k_custom")
+@extensibility.register("top_k_custom")
 struct TopK:
     """Registers the `top_k_custom` op, allowing python to use it from the `max`
     package. This is a simplified version without bottom_k and sorting options,
@@ -161,7 +161,9 @@ struct TopK:
                         )
 
                     sort[val_greater_than](
-                        Span(ptr=out_idxs.unsafe_ptr() + offset, length=K)
+                        Span(
+                            unsafe_ptr=out_idxs.unsafe_ptr() + offset, length=K
+                        )
                     )
 
                     for i in range(K):

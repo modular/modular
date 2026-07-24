@@ -316,13 +316,13 @@ struct LayoutTensor[
                 Self.OriginCastType[MutAnyOrigin],
                 Self.OriginCastType[MutUntrackedOrigin],
                 Self.OriginCastType[ImmutAnyOrigin],
-                Self.OriginCastType[ImmutUntrackedOrigin],
+                Self.OriginCastType[ImmUntrackedOrigin],
             ]().contains[T]()
         else:
             return TypeList.of[
                 Self,
                 Self.OriginCastType[ImmutAnyOrigin],
-                Self.OriginCastType[ImmutUntrackedOrigin],
+                Self.OriginCastType[ImmUntrackedOrigin],
             ]().contains[T]()
 
     def _to_device_type(
@@ -1003,7 +1003,7 @@ struct LayoutTensor[
         origin: The origin for the result tensor.
     """
 
-    comptime Immut = Self.OriginCastType[ImmutOrigin(Self.origin)]
+    comptime Immut = Self.OriginCastType[ImmOrigin(Self.origin)]
     """Type alias for an immutably-casted tensor."""
 
     comptime MutableAnyType = Self.OriginCastType[MutAnyOrigin]
@@ -1081,7 +1081,7 @@ struct LayoutTensor[
     @always_inline
     def get_immutable(
         self,
-    ) -> Self.OriginCastType[ImmutOrigin(Self.origin)]:
+    ) -> Self.OriginCastType[ImmOrigin(Self.origin)]:
         """
         Return an immutable version of this tensor.
 
@@ -2434,7 +2434,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     def store[
-        width: SIMDSize, store_alignment: Int = Self.alignment
+        width: SIMDLength, store_alignment: Int = Self.alignment
     ](
         self: LayoutTensor[mut=True, Self.dtype, ...],
         m: Int,
@@ -2511,7 +2511,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     def store[
-        width: SIMDSize, store_alignment: Int = Self.alignment
+        width: SIMDLength, store_alignment: Int = Self.alignment
     ](
         self: LayoutTensor[mut=True, Self.dtype, ...],
         coords: IndexList[...],
@@ -2556,8 +2556,8 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     def aligned_store[
-        width: SIMDSize
-    ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width],):
+        width: SIMDLength
+    ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width]):
         """Store a SIMD vector with alignment guarantees to the tensor.
 
         Performs an aligned vectorized store operation to the tensor's memory,
@@ -4341,7 +4341,7 @@ struct LayoutTensor[
                 )
 
     comptime ShapeVectorizedType[
-        origin: ImmutOrigin,
+        origin: ImmOrigin,
         vector_shape: IntTuple,
         linear_vectorize: Bool,
     ] = LayoutTensor[
@@ -4395,7 +4395,7 @@ struct LayoutTensor[
 
     @always_inline
     def _vectorize_2[
-        _origin: ImmutOrigin,  # FIXME: MOCO-1912
+        _origin: ImmOrigin,  # FIXME: MOCO-1912
         vector_shape: IntTuple,
         check_rank: Bool = True,
         linear_vectorize: Bool = vector_shape.is_value(),
@@ -6880,7 +6880,7 @@ def copy_dram_to_sram_async[
     ](dst, src)
 
 
-comptime binary_op_type = def[dtype: DType, width: SIMDSize](
+comptime binary_op_type = def[dtype: DType, width: SIMDLength](
     lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]
 ) thin -> SIMD[dtype, width]
 """
@@ -8293,7 +8293,7 @@ struct LayoutTensorIter[
     @implicit
     def __init__(
         other: LayoutTensorIter,
-        out self: type_of(other)._OriginCastType[ImmutOrigin(other.origin)],
+        out self: type_of(other)._OriginCastType[ImmOrigin(other.origin)],
     ):
         """Implicitly cast a mutable LayoutTensorIter to immutable.
 

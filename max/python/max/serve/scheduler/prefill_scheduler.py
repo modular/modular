@@ -288,7 +288,10 @@ class PrefillScheduler(Scheduler):
         self.dispatcher.send_reply_nowait(
             PrefillResponse(
                 id=req_id,
-                generated_token_id=int(context.tokens[-1]),
+                # The last buffer slot may be an unrealized future-token
+                # placeholder while overlap forwards are in flight; send the
+                # newest realized token.
+                generated_token_id=context.last_realized_token,
                 transfer_metadata=transfer_data,
                 draft_tokens=draft_tokens,
             ),
@@ -398,7 +401,13 @@ class PrefillScheduler(Scheduler):
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
-        # Log batch metrics
+        # Log batch metrics. When the overlap pipeline is active, the
+        # wall-clock time measured above describes the previously enqueued
+        # batch; the pipeline reports that batch's composition and timing so
+        # telemetry is attributed to the correct batch type.
+        is_overlap_active = bool(
+            getattr(self.pipeline, "overlap_active", False)
+        )
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             inputs=inputs,
@@ -408,6 +417,13 @@ class PrefillScheduler(Scheduler):
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
+            batch_execution_time_is_previous=is_overlap_active,
+            completed_batch_stats=self.pipeline.take_completed_batch_stats()
+            if hasattr(self.pipeline, "take_completed_batch_stats")
+            else None,
+            batch_vision_metrics=self.pipeline.batch_vision_metrics()
+            if hasattr(self.pipeline, "batch_vision_metrics")
+            else None,
         )
 
         return SchedulerProgress.MADE_PROGRESS

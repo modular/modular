@@ -278,7 +278,9 @@ def _write_int[
         # ptr=digit_chars_array,
         writer.write(
             StringSlice(
-                unsafe_from_utf8=Span(ptr=zero_buf.unsafe_ptr(), length=1)
+                unsafe_from_utf8=Span(
+                    unsafe_ptr=zero_buf.unsafe_ptr(), length=1
+                )
             )
         )
 
@@ -298,7 +300,7 @@ def _write_int[
     # earlier in the buffer as we write the more-significant digits.
     var offset = CAPACITY - 1
 
-    (buf.unsafe_ptr() + offset).init_pointee_copy(
+    (buf.unsafe_ptr() + offset).unsafe_write(
         0
     )  # Write NUL terminator at the end
 
@@ -319,7 +321,7 @@ def _write_int[
 
             # Write the char representing the value of the least significant
             # digit.
-            (buf.unsafe_ptr() + offset).init_pointee_copy(
+            (buf.unsafe_ptr() + offset).unsafe_write(
                 digit_chars_array.unsafe_ptr()[Int(digit_value)]
             )
 

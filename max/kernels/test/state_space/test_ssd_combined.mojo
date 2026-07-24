@@ -165,7 +165,7 @@ def run_ssd_combined[
 
     # Initialize gamma to positive values
     for i in range(dim):
-        gamma_h.ptr[i] = abs(gamma_h.ptr[i]) + Scalar[dtype](0.1)
+        gamma_h._storage[i] = abs(gamma_h._storage[i]) + Scalar[dtype](0.1)
 
     var epsilon = Float32(0.001)
     var weight_offset = Scalar[dtype](0.0)
@@ -222,16 +222,16 @@ def run_ssd_combined[
             # Pre-load A values with LOG2E scaling (matches kernel)
             var A_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
-                A_ref[n] = Float32(A_h.ptr[d_idx * dstate + n]) * LOG2E
+                A_ref[n] = Float32(A_h._storage[d_idx * dstate + n]) * LOG2E
 
             # Load per-dim scalars
-            var gamma_val = Float32(gamma_h.ptr[d_idx])
+            var gamma_val = Float32(gamma_h._storage[d_idx])
             var D_val = Float32(0)
             if has_D:
-                D_val = Float32(D_h.ptr[d_idx])
+                D_val = Float32(D_h._storage[d_idx])
             var delta_bias_val = Float32(0)
             if has_delta_bias:
-                delta_bias_val = Float32(delta_bias_h.ptr[d_idx])
+                delta_bias_val = Float32(delta_bias_h._storage[d_idx])
             var weight_offset_val = Float32(weight_offset)
 
             # Initialize state to zero
@@ -239,9 +239,9 @@ def run_ssd_combined[
 
             for t in range(seqlen):
                 var off_3d = b_idx * dim * seqlen + d_idx * seqlen + t
-                var u_val = Float32(u_h.ptr[off_3d])
-                var delta_val = Float32(delta_h.ptr[off_3d])
-                var residual_val = Float32(residual_h.ptr[off_3d])
+                var u_val = Float32(u_h._storage[off_3d])
+                var delta_val = Float32(delta_h._storage[off_3d])
+                var residual_val = Float32(residual_h._storage[off_3d])
 
                 if has_delta_bias:
                     delta_val += delta_bias_val
@@ -260,8 +260,8 @@ def run_ssd_combined[
                         + n * seqlen
                         + t
                     )
-                    B_vals[n] = Float32(B_h.ptr[bc_offset])
-                    C_vals[n] = Float32(C_h.ptr[bc_offset])
+                    B_vals[n] = Float32(B_h._storage[bc_offset])
+                    C_vals[n] = Float32(C_h._storage[bc_offset])
 
                 # State update: state = state * exp2(A * delta) + B * delta * u
                 var a_t = exp2(A_ref * delta_val)
@@ -279,7 +279,7 @@ def run_ssd_combined[
                 var normalized = combined * (gamma_val + weight_offset_val)
 
                 if has_z:
-                    var z_val = Float32(z_h.ptr[off_3d])
+                    var z_val = Float32(z_h._storage[off_3d])
                     var out_z_val = normalized * silu_ref(z_val)
                     out_z_ref_heap[off_3d] = Scalar[dtype](out_z_val)
                     normalized = out_z_val
@@ -289,7 +289,7 @@ def run_ssd_combined[
     # Compare kernel output vs reference
     for i in range(ref_size):
         assert_almost_equal(
-            output_h.ptr[i],
+            output_h._storage[i],
             output_ref_heap[i],
             rtol=rtol,
         )
@@ -298,7 +298,7 @@ def run_ssd_combined[
     if has_z:
         for i in range(ref_size):
             assert_almost_equal(
-                out_z_h.ptr[i],
+                out_z_h._storage[i],
                 out_z_ref_heap[i],
                 rtol=rtol,
             )

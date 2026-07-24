@@ -57,15 +57,23 @@ async def _read_framed(stream: aiohttp.StreamReader) -> AsyncIterator[bytes]:
         yield await stream.readexactly(length)
 
 
+# aiohttp's default connection-pool limit is 100. Streaming ``call_method``
+# calls hold a connection open for the whole generation, so under concurrent
+# serving that cap deadlocks dispatch well before the model saturates (e.g. 600
+# in-flight requests starve on 100 connections). ``limit=0`` removes the cap;
+# the model worker's own scheduler bounds real concurrency downstream.
+_CONNECTION_LIMIT = 0
+
+
 def _connector_for(address: str) -> aiohttp.BaseConnector:
     """Build the right aiohttp connector for an ``http://`` or ``unix://`` URL."""
     parsed = urlparse(address)
     if parsed.scheme == "http":
-        return aiohttp.TCPConnector()
+        return aiohttp.TCPConnector(limit=_CONNECTION_LIMIT)
     if parsed.scheme == "unix":
         if not parsed.path:
             raise ValueError(f"unix:// address requires a path: {address!r}")
-        return aiohttp.UnixConnector(path=parsed.path)
+        return aiohttp.UnixConnector(path=parsed.path, limit=_CONNECTION_LIMIT)
     raise ValueError(f"Unsupported address scheme: {address!r}")
 
 
@@ -183,7 +191,11 @@ class HttpRuntimeProxy(Runtime):
             # exiting this context deletes the remote result
 
     async def get_result(self, result_id: str) -> object:
-        """Fetch a single result via the proxy's session."""
+        """Fetch a single result via the proxy's session.
+
+        The HTTP transport pickles values, so they arrive as the native
+        Python object with no JSON decoding.
+        """
         async with (
             self.session() as session,
             session.get(f"{self._base_url}/result/{result_id}") as response,
@@ -196,7 +208,10 @@ class HttpRuntimeProxy(Runtime):
         raise value
 
     async def stream_result(self, result_id: str) -> AsyncIterator[object]:
-        """Stream a result via the proxy's session."""
+        """Stream a result via the proxy's session.
+
+        Pickled items arrive as native objects; no JSON decoding.
+        """
         async with (
             self.session() as session,
             session.get(

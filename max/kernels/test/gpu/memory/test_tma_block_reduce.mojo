@@ -277,6 +277,7 @@ def test_tma_block_reduce[
         kernel_launch(ctx)
 
     ctx.enqueue_copy(result_host, d_out)
+    ctx.synchronize()
 
     var total_sum = Scalar[accum_type](0)
     for i in range(grid_dim):

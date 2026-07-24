@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, cast
 
 from max.driver import Device, is_virtual_device_mode
 from max.nn.kv_cache import (
+    KVCacheParamInterface,
     compute_max_seq_len_fitting_in_cache,
     estimated_memory_size,
 )
@@ -43,17 +44,53 @@ logger = logging.getLogger("max.pipelines")
 _DEFAULT_BATCH_SIZE = 512
 
 
+def _kv_params_per_layer_depth(params: KVCacheParamInterface) -> int:
+    """Returns the largest ``num_layers`` among the pool's per-layer sub-pools.
+
+    Recurses into a :class:`~max.nn.kv_cache.MultiKVCacheParams` tree. A leaf
+    with ``per_layer_buffers`` set contributes its ``num_layers``; every other
+    cache contributes ``1`` (a single multi-layer buffer). Returns ``1`` when no
+    cache uses per-layer buffers.
+    """
+    children = getattr(params, "children", None)
+    if children is not None:
+        return max(
+            (_kv_params_per_layer_depth(child) for child in children.values()),
+            default=1,
+        )
+    if getattr(params, "per_layer_buffers", False):
+        return max(int(getattr(params, "num_layers", 1)), 1)
+    return 1
+
+
+def _max_per_layer_buffer_count(arch_config: ArchConfig) -> int:
+    """Returns the per-device allocation-cap multiplier for the KV pool.
+
+    A pool that uses one buffer *per layer* splits its per-device allocation
+    into ``num_layers`` independent buffers, each bounded by the per-allocation
+    cap, so the pool may use up to ``num_layers`` times that cap per device.
+    Returns the depth of the largest per-layer sub-pool, or ``1`` when no cache
+    uses per-layer buffers (leaving the cap unchanged).
+    """
+    if not isinstance(arch_config, ArchConfigWithKVCache):
+        return 1
+    return _kv_params_per_layer_depth(arch_config.get_kv_params())
+
+
 @dataclass(frozen=True)
 class _MemoryPlan:
     """Result of memory planning for a pipeline.
 
-    Note: ``estimate_memory_footprint`` also mutates ``model_config`` directly
-    (``kv_cache._available_cache_memory``, ``max_length``). Those mutations are
-    the next thing to clean up as part of removing ``resolve()``.
+    Note: ``estimate_memory_footprint`` still mutates ``model_config.max_length``
+    directly; that mutation is the next thing to clean up as part of removing
+    ``resolve()``.
     """
 
     max_batch_size: int
     footprint: int
+    available_cache_memory: int | None = None
+    """Committed KV-cache byte budget; ``None`` when not computed (virtual-device
+    early-outs and non-KV models)."""
 
 
 # Vision encoder cache and paged token KV share the same pre-KV memory pool
@@ -146,6 +183,7 @@ class MemoryEstimator:
         devices: list[Device],
         arch_config: ArchConfig,
         signal_buffer_size: int = 0,
+        available_cache_memory: int | None = None,
     ) -> int | None:
         """Computes the hard upper bound on tokens for a single request.
 
@@ -178,9 +216,8 @@ class MemoryEstimator:
         # ``available_kv_cache_memory()`` (pre-vision) can overcount blocks and clamp
         # ``max_length`` above the physical paged KV capacity, causing runtime
         # InsufficientBlocksError when ``len(tokens)`` reaches ``total_blocks * page_size + 1``.
-        allocated_kv = model_config.kv_cache._available_cache_memory
-        if allocated_kv is not None:
-            kvcache_mem = allocated_kv
+        if available_cache_memory is not None:
+            kvcache_mem = available_cache_memory
         else:
             kvcache_mem = cls.available_kv_cache_memory(
                 model_weights_size,
@@ -231,13 +268,13 @@ class MemoryEstimator:
             max_batch_size = max_batch_size or 1
             if not model_config.max_length:
                 model_config.max_length = arch_config.get_max_seq_len()
-            # Set a large available cache memory value since we're not actually
-            # allocating memory during cross-compilation. Use 1TB as a reasonable
-            # large value that should work for any model.
-            model_config.kv_cache._available_cache_memory = (
-                1024 * 1024 * 1024 * 1024  # 1TB
+            # Report a large cache budget since we're only cross-compiling, not
+            # allocating memory. 1TB works for any model.
+            return _MemoryPlan(
+                max_batch_size=max_batch_size,
+                footprint=0,
+                available_cache_memory=1024 * 1024 * 1024 * 1024,  # 1TB
             )
-            return _MemoryPlan(max_batch_size=max_batch_size, footprint=0)
 
         try:
             free_memory = cls.free_memory(devices)
@@ -283,11 +320,15 @@ class MemoryEstimator:
                 f"Try running a smaller model, using a smaller precision, or using a device with more memory."
             )
 
-        # KV cache is one buffer per device; budget can't exceed the
-        # per-allocation cap (Metal's maxBufferLength).
+        # KV cache is normally one buffer per device, so the budget can't
+        # exceed the per-allocation cap (e.g. Metal's maxBufferLength). A pool
+        # that uses one buffer *per layer* (``per_layer_buffers``) splits that
+        # allocation into ``num_layers`` independent buffers, each bounded by
+        # the cap, so it may use up to ``num_layers`` times the cap per device.
+        per_alloc_layers = _max_per_layer_buffer_count(arch_config)
         available_kv_cache_memory = min(
             available_kv_cache_memory,
-            sum(d.max_single_alloc_size for d in devices),
+            per_alloc_layers * sum(d.max_single_alloc_size for d in devices),
         )
 
         vision_cache_bytes = cls._reserve_vision_cache_memory(
@@ -319,11 +360,10 @@ class MemoryEstimator:
                 available_kv_cache_memory=available_kv_cache_memory,
             )
 
-            model_config.kv_cache._available_cache_memory = kv_cache_size
-
             return _MemoryPlan(
                 max_batch_size=max_batch_size,
                 footprint=int(total_size),
+                available_cache_memory=kv_cache_size,
             )
 
         if not user_provided_max_length:
@@ -350,7 +390,9 @@ class MemoryEstimator:
             available_kv_cache_memory=available_kv_cache_memory,
         )
 
-        model_config.kv_cache._available_cache_memory = actual_kv_cache_size
+        # Committed KV byte budget (captured before the OOM-fit search below may
+        # reassign ``actual_kv_cache_size``); threaded to consumers on the plan.
+        available_cache_memory = actual_kv_cache_size
 
         total_size += actual_kv_cache_size
         # If the model is too large to fit in memory, and the user did not
@@ -407,7 +449,9 @@ class MemoryEstimator:
                 )
 
         return _MemoryPlan(
-            max_batch_size=max_batch_size, footprint=int(total_size)
+            max_batch_size=max_batch_size,
+            footprint=int(total_size),
+            available_cache_memory=available_cache_memory,
         )
 
     @classmethod

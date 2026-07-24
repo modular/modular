@@ -139,7 +139,7 @@ def bench_rms_norm_fused_fp8[
             @__copy_capture(rms_output_buf_offset)
             @parameter
             def rms_output_fn[
-                width: SIMDSize, alignment: Int
+                width: SIMDLength, alignment: Int
             ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
                 var idx = rms_output_buf_offset.layout(coords)
                 rms_output_buf_offset.raw_store[
@@ -323,7 +323,7 @@ def bench_rms_norm_fused_fp8[
     @__copy_capture(rms_output_buf_verify)
     @parameter
     def rms_output_fn_verify[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
         var idx = rms_output_buf_verify.layout(coords)
         rms_output_buf_verify.raw_store[width=width, alignment=alignment](

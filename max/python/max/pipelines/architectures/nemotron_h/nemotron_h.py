@@ -30,23 +30,30 @@ against the verified HF reference and is ready to logit-verify once invocable.
 
 from __future__ import annotations
 
+import functools
 import math
+from collections.abc import Iterable, Sequence
 
-import numpy as np
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    ShardingStrategy,
     TensorType,
     TensorValue,
+    TensorValueLike,
     Weight,
     ops,
 )
+from max.graph.quantization import QuantizationEncoding
 from max.nn.attention import MHAMaskVariant
 from max.nn.embedding import Embedding
 from max.nn.kernels import (
     flash_attention_ragged,
+    grouped_matmul_ragged,
+    moe_create_indices,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
@@ -56,13 +63,15 @@ from max.nn.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
+from max.nn.linear import MLP, Linear
+from max.nn.moe import MoE, MoEGate
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnLogits, logits_postprocess
 
 from .functional_ops import (
     causal_conv1d_varlen_fwd,
+    gated_group_rmsnorm,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
 )
 from .model_config import NemotronHConfig
@@ -84,6 +93,24 @@ def _weight_dtype(
     if quant_config is not None:
         return DType.float8_e4m3fn
     return model_dtype
+
+
+def _ssm_state_dtype() -> DType:
+    """SSM state-pool STORAGE dtype: bf16 on Apple GPUs, fp32 elsewhere.
+
+    The Mamba-2 SSD scan always accumulates its recurrence in fp32 registers;
+    this only selects the storage dtype of the persistent slot-indexed state
+    pool. On Apple silicon the pool read+write dominates the decode-step
+    traffic, and only the Apple GPU kernel implements the bf16 load ->
+    fp32-accumulate -> round-on-store path, so bf16 is gated to Apple
+    (matching the kernel-side guard in
+    ``mamba2_ssd_chunk_scan_varlen_fwd_inplace``).
+    """
+    try:
+        is_apple = accelerator_api() == "metal"
+    except Exception:
+        is_apple = False
+    return DType.bfloat16 if is_apple else DType.float32
 
 
 class NemotronHMLP(Module):
@@ -119,6 +146,354 @@ class NemotronHMLP(Module):
         return self.down_proj(_relu2(self.up_proj(x)))
 
 
+class NemotronHExpertMLP(MLP):
+    """Non-gated relu2 expert MLP: ``down(relu(up(x))**2)`` (no ``gate_proj``).
+
+    Serves two roles in :class:`NemotronHMoE`:
+
+    * routed experts (``mlp_cls``): the base :class:`~max.nn.moe.MoE` reads only
+      ``.up_proj.weight`` / ``.down_proj.weight`` to build the grouped-matmul
+      weight stacks and never calls ``__call__``, so the up/down Linears are all
+      that is required;
+    * the shared expert (``shared_mlp_cls``): ``MoE.__call__`` invokes
+      ``shared_experts(x)`` directly, so ``__call__`` runs the relu2 MLP.
+
+    The constructor keywords match what ``MoE`` passes to the expert MLP class.
+    """
+
+    def __init__(
+        self,
+        dtype: DType,
+        quantization_encoding: QuantizationEncoding | None,
+        hidden_dim: int,
+        feed_forward_length: int,
+        devices: list[DeviceRef],
+        quant_config: QuantConfig | None = None,
+    ) -> None:
+        # Subclass MLP so this is a valid `Callable[..., MLP]` expert factory
+        # for the base MoE. Init the MLP base with is_sharding=True: it sets the
+        # shared MLP attributes but skips building the gated gate/up/down
+        # projections. This expert is non-gated (no gate_proj) and builds only
+        # up/down below, so the base MLP projections must not be created.
+        super().__init__(
+            dtype=dtype,
+            quantization_encoding=quantization_encoding,
+            hidden_dim=hidden_dim,
+            feed_forward_length=feed_forward_length,
+            devices=devices,
+            quant_config=quant_config,
+            is_sharding=True,
+        )
+        dev = devices[0]
+        # FP8 (per-tensor static) stores the expert weight as float8_e4m3fn;
+        # the routed-expert grouped matmul widens it on load (weight-only) and
+        # the shared expert runs the dense FP8 Linear path. bf16 otherwise.
+        wdtype = _weight_dtype(dtype, quant_config)
+        self.up_proj = Linear(
+            in_dim=hidden_dim,
+            out_dim=feed_forward_length,
+            dtype=wdtype,
+            device=dev,
+            has_bias=False,
+            quant_config=quant_config,
+        )
+        self.down_proj = Linear(
+            in_dim=feed_forward_length,
+            out_dim=hidden_dim,
+            dtype=wdtype,
+            device=dev,
+            has_bias=False,
+            quant_config=quant_config,
+        )
+
+    def __call__(self, x: TensorValueLike) -> TensorValue:
+        x = TensorValue(x)
+        return self.down_proj(_relu2(self.up_proj(x)))
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Gets the expert MLP sharding strategy."""
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Sets the sharding strategy for the up/down projections.
+
+        Overrides :attr:`MLP.sharding_strategy`, which also shards
+        ``gate_proj`` — this expert is non-gated and never builds one.
+        Tensor parallelism shards ``up_proj`` rowwise and ``down_proj``
+        columnwise, matching the base MLP.
+        """
+        self._sharding_strategy = strategy
+
+        if strategy.is_replicate:
+            self.up_proj.sharding_strategy = strategy
+            self.down_proj.sharding_strategy = strategy
+        elif strategy.is_tensor_parallel:
+            self.up_proj.sharding_strategy = ShardingStrategy.rowwise(
+                strategy.num_devices
+            )
+            self.down_proj.sharding_strategy = ShardingStrategy.columnwise(
+                strategy.num_devices
+            )
+        else:
+            raise ValueError(f"Unsupported sharding strategy: {strategy}")
+
+    def shard(
+        self, devices: Iterable[DeviceRef]
+    ) -> Sequence[NemotronHExpertMLP]:
+        """Creates sharded views of this expert MLP across multiple devices.
+
+        Overrides :meth:`MLP.shard`, which shards ``gate_proj`` (absent
+        here) and constructs base :class:`MLP` shards; this builds
+        :class:`NemotronHExpertMLP` shards from the sharded up/down
+        projections.
+
+        Args:
+            devices: Iterable of devices to place the shards on.
+
+        Returns:
+            Sharded :class:`NemotronHExpertMLP` instances, one per device.
+        """
+        if self.sharding_strategy is None:
+            raise ValueError("Sharding strategy is not set")
+
+        sharded_up_projs = self.up_proj.shard(devices)
+        sharded_down_projs = self.down_proj.shard(devices)
+
+        shards: list[NemotronHExpertMLP] = []
+        for device, up_proj, down_proj in zip(
+            devices, sharded_up_projs, sharded_down_projs, strict=True
+        ):
+            sharded = NemotronHExpertMLP(
+                dtype=self.up_proj.weight.dtype,
+                quantization_encoding=self.quantization_encoding,
+                hidden_dim=self.hidden_dim,
+                feed_forward_length=self.feed_forward_length,
+                devices=[device],
+                quant_config=self.quant_config,
+            )
+            sharded.up_proj = up_proj
+            sharded.down_proj = down_proj
+            # Keep the original weights reachable for stacking checks,
+            # mirroring MLP.shard.
+            sharded._parent_layer = self
+            shards.append(sharded)
+
+        return shards
+
+
+class NemotronHMoEGate(MoEGate):
+    """Sigmoid top-k router with an additive score-correction bias.
+
+    Nemotron-3's router is DeepSeek-style — sigmoid gate scores, an additive
+    ``e_score_correction_bias`` applied for *selection* only, and the pre-bias
+    scores used for the *weights* — but with ``n_group == topk_group == 1`` the
+    group-limited scheme degenerates to plain top-k. It therefore uses only
+    ``ops.top_k`` + ``ops.gather`` (both have native Apple/Metal branches) and
+    avoids ``moe_router_group_limited`` (``DeepseekV3TopKRouter``), whose
+    warp-collective ``WARP_SIZE % group_size`` constraint fails at 128 experts
+    with ``n_group == 1``.
+    """
+
+    def __init__(
+        self,
+        devices: list[DeviceRef],
+        hidden_dim: int,
+        num_experts: int,
+        num_experts_per_token: int,
+        dtype: DType,
+        routed_scaling_factor: float,
+        norm_topk_prob: bool,
+        correction_bias_dtype: DType = DType.float32,
+    ) -> None:
+        super().__init__(
+            devices=devices,
+            hidden_dim=hidden_dim,
+            num_experts=num_experts,
+            num_experts_per_token=num_experts_per_token,
+            dtype=dtype,
+        )
+        self.routed_scaling_factor = routed_scaling_factor
+        self.norm_topk_prob = norm_topk_prob
+        self.e_score_correction_bias = Weight(
+            "e_score_correction_bias",
+            shape=[num_experts],
+            device=devices[0],
+            dtype=correction_bias_dtype,
+        )
+
+    def __call__(
+        self, hidden_states: TensorValue
+    ) -> tuple[TensorValue, TensorValue]:
+        # Routing math in fp32 (matches the HF reference); the weights are cast
+        # back to the activation dtype for the downstream combine matmul in
+        # ``MoE.__call__``.
+        scores = ops.sigmoid(self.gate_score(hidden_states).cast(DType.float32))
+        bias = self.e_score_correction_bias.to(self.devices[0]).cast(
+            DType.float32
+        )
+        # Select experts on the bias-corrected scores.
+        sel = scores + bias
+        topk_sel, topk_idx = ops.top_k(
+            sel, k=self.num_experts_per_token, axis=-1
+        )
+        # Weight with the *pre-bias* sigmoid scores at the selected experts:
+        # scores[t, e] == sel[t, e] - bias[e]. Subtracting the gathered bias
+        # recovers those weights without a per-row take-along-axis gather
+        # (``ops.gather`` is numpy-take, not torch.gather); gathering the 1-D
+        # ``bias`` with the [tokens, k] indices yields ``bias[idx]`` directly.
+        topk_weight = topk_sel - ops.gather(bias, topk_idx, axis=0)
+        if self.norm_topk_prob:
+            topk_weight = topk_weight / ops.sum(topk_weight, axis=-1)
+        topk_weight = topk_weight * self.routed_scaling_factor
+        return topk_idx, topk_weight.cast(hidden_states.dtype)
+
+
+class NemotronHMoE(MoE):
+    """Nemotron-3 MoE mixer: 128 non-gated relu2 experts (top-6) + 1 shared.
+
+    :attr:`gate_up_proj` is overridden: the experts are non-gated (relu2, no
+    ``gate_proj``), so the routed-expert weight stack is the up-projection only,
+    ``[num_experts, moe_intermediate_size, hidden]``.
+
+    bf16 (no ``quant_config``) reuses the base :class:`~max.nn.moe.MoE`
+    grouped-matmul routing verbatim, which on Apple resolves to MAX's own
+    ``naive_grouped_matmul`` (the else-branch of ``grouped_matmul_ragged``).
+
+    FP8 (per-tensor static ``quant_config``, the 30B-A3B) keeps the routed
+    expert weights as ``float8_e4m3fn`` and feeds them to the SAME grouped
+    matmul: the op is dtype-generic, so the naive kernel widens each E4M3 weight
+    to fp32 on load (bf16 activation x fp8 weight -> fp32 accumulate -> bf16),
+    i.e. weight-only W8A16 — the grouped analog of the dense Apple FP8 Linear.
+    The per-tensor scalar ``weight_scale`` (one per expert) factors out of the
+    matmul sum, so it is folded EXACTLY as a post-matmul per-row multiply
+    (gathered by each permuted row's expert). The shared expert runs the dense
+    FP8 Linear path. Activations stay bf16 (``input_scale`` is unused, matching
+    the dense weight-only path).
+    """
+
+    @property
+    def gate_up_proj(self) -> TensorValue:
+        # Non-gated experts: the base property interleaves gate+up and would
+        # AttributeError on our gate-less experts. Stack the up projections
+        # only -> [num_experts, moe_intermediate_size, hidden]. FP8 experts
+        # stack as float8_e4m3fn (weight-only); bf16 experts stack as bf16.
+        return ops.stack(
+            [expert.up_proj.weight for expert in self.experts], axis=0
+        )
+
+    def _expert_weight_scales(self, proj_name: str) -> TensorValue:
+        """Stack the per-expert scalar ``weight_scale`` -> ``[num_experts]``.
+
+        Each FP8 expert Linear carries one per-tensor ``weight_scale`` (shape
+        ``()``); stacking yields the per-expert dequant factor gathered by the
+        grouped matmul's permuted rows.
+        """
+        scales: list[TensorValue] = []
+        for expert in self.experts:
+            ws = getattr(expert, proj_name).weight_scale
+            assert ws is not None, (
+                f"FP8 MoE expert {proj_name} is missing weight_scale"
+            )
+            scales.append(ws.to(self.devices[0]))
+        return ops.stack(scales, axis=0)
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        # bf16 MoE (no quant_config): the base grouped-matmul path is exact.
+        if self.quant_config is None:
+            return super().__call__(x)
+
+        # FP8 weight-only (W8A16): mirrors the base routing, but the routed
+        # expert grouped matmuls consume FP8-E4M3 weight stacks (widened to
+        # fp32 on load by the dtype-generic naive grouped-matmul kernel) and the
+        # per-expert scalar ``weight_scale`` is folded post-matmul. A per-tensor
+        # scalar factors out of the sum, so the fold is exact (not merely within
+        # tolerance) -- the grouped analog of the dense Apple FP8 Linear.
+        seq_len = x.shape[0]
+        router_idx, router_weight = self.gate(x)
+        router_idx = ops.reshape(router_idx, [-1])
+
+        (
+            token_expert_order,
+            expert_start_indices,
+            restore_token_order,
+            expert_ids,
+            expert_usage_stats,
+        ) = moe_create_indices(
+            ops.cast(router_idx, DType.int32), self.num_experts
+        )
+
+        permutated_states = ops.gather(
+            x,
+            ops.cast(
+                ops.floor_div(token_expert_order, self.num_experts_per_token),
+                DType.int32,
+            ),
+            axis=0,
+        )
+
+        # Per-permuted-row expert id -> per-row dequant scale. The expert of
+        # permuted row p is ``router_idx[token_expert_order[p]]`` (the same
+        # ordering the grouped matmul groups by), so a gather recovers each
+        # row's ``weight_scale`` without a scatter over the CSR offsets.
+        expert_per_row = ops.gather(
+            ops.cast(router_idx, DType.int32), token_expert_order, axis=0
+        )
+        # Keep the per-row dequant scales in f32 (the stacked ``weight_scale``
+        # is f32); the fold below multiplies in f32 and casts once, matching the
+        # dense Apple FP8 path (`quant_ops.py`), where downcasting the scale to
+        # bf16 before the multiply would lose mantissa bits.
+        up_scale = ops.reshape(
+            ops.gather(
+                self._expert_weight_scales("up_proj"), expert_per_row, axis=0
+            ),
+            [-1, 1],
+        )
+        down_scale = ops.reshape(
+            ops.gather(
+                self._expert_weight_scales("down_proj"), expert_per_row, axis=0
+            ),
+            [-1, 1],
+        )
+
+        # Up projection (weight-only FP8 grouped matmul) -> dequant fold ->
+        # relu2, all in f32. Folding the up scale BEFORE relu2 matches
+        # dequantizing the weight then squaring (weight_scale >= 0, so relu
+        # commutes with it); the trailing cast returns the model dtype for the
+        # down matmul activation.
+        up = grouped_matmul_ragged(
+            permutated_states,
+            self.gate_up_proj,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats,
+        )
+        up = _relu2(up.cast(DType.float32) * up_scale).cast(x.dtype)
+
+        # Down projection (weight-only FP8 grouped matmul) -> dequant fold in
+        # f32, then cast to the model dtype.
+        down = grouped_matmul_ragged(
+            up,
+            self.down_proj,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats,
+        )
+        down = (down.cast(DType.float32) * down_scale).cast(x.dtype)
+
+        down = ops.gather(down, restore_token_order, axis=0).reshape(
+            [seq_len, self.num_experts_per_token, self.hidden_dim]
+        )
+        routed_expert_out = ops.unsqueeze(router_weight, axis=1) @ down
+        routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(x.dtype)
+
+        if self.has_shared_experts:
+            routed_expert_out += self.shared_experts(x)
+
+        return routed_expert_out
+
+
 class NemotronHAttention(Module):
     """GQA attention, NoPE (no rotary), no bias.
 
@@ -136,38 +511,38 @@ class NemotronHAttention(Module):
         dev = config.devices[0]
         self.kv_params: KVCacheParams = config.kv_params
         self.kv_layer_idx = kv_layer_idx
+        # Preserve the activation dtype at the FP8 attention output boundary.
+        self.dtype = config.dtype
         self.n_heads = config.num_attention_heads
         self.n_kv_heads = config.num_key_value_heads
         self.head_dim = config.attention_head_dim
         self.scale = math.sqrt(1.0 / self.head_dim)
 
-        q_dim = self.n_heads * self.head_dim
-        kv_dim = self.n_kv_heads * self.head_dim
-        # Attention projections always stay bf16 (in the FP8 checkpoint's
-        # exclude list), so no quantization config is wired here.
-        self.q_proj = Linear(
+        self.q_dim = self.n_heads * self.head_dim
+        self.kv_dim = self.n_kv_heads * self.head_dim
+        # Attention projections are bf16 here: the 4B FP8 checkpoint excludes
+        # them from quantization, and the 8B Reasoning checkpoint's per-tensor
+        # FP8 q/k/v/o are dequantized to bf16 at load by the weight adapter. So
+        # no quantization config is wired here.
+        #
+        # Fused QKV: one matmul over the concatenated [q | k | v] out-dim, then
+        # ``ops.split``. The HF checkpoint ships q/k/v as separate weights; the
+        # adapter concatenates them (q, then k, then v) into ``qkv_proj.weight``.
+        # Unlike the mamba ``in_proj`` (whose merged split feeds a group-RMSNorm
+        # reduce that misaligns on a strided source — see
+        # known-limitations/strided-split-misaligns-gpu-group-reduce), the q/k/v
+        # split chunks feed reshape -> flash_attention_ragged, a different kernel
+        # path that tolerates the split-view stride. Validated on a minimized
+        # smoke before the full serve.
+        self.qkv_proj = Linear(
             in_dim=config.hidden_size,
-            out_dim=q_dim,
-            dtype=config.dtype,
-            device=dev,
-            has_bias=config.attention_bias,
-        )
-        self.k_proj = Linear(
-            in_dim=config.hidden_size,
-            out_dim=kv_dim,
-            dtype=config.dtype,
-            device=dev,
-            has_bias=config.attention_bias,
-        )
-        self.v_proj = Linear(
-            in_dim=config.hidden_size,
-            out_dim=kv_dim,
+            out_dim=self.q_dim + 2 * self.kv_dim,
             dtype=config.dtype,
             device=dev,
             has_bias=config.attention_bias,
         )
         self.o_proj = Linear(
-            in_dim=q_dim,
+            in_dim=self.q_dim,
             out_dim=config.hidden_size,
             dtype=config.dtype,
             device=dev,
@@ -182,11 +557,22 @@ class NemotronHAttention(Module):
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         total_seq_len = x.shape[0]
-        query = ops.reshape(self.q_proj(x), [-1, self.n_heads, self.head_dim])
-        key = ops.reshape(self.k_proj(x), [-1, self.n_kv_heads, self.head_dim])
-        value = ops.reshape(
-            self.v_proj(x), [-1, self.n_kv_heads, self.head_dim]
-        )
+        # One fused QKV matmul, then split into q | k | v (sizes q_dim, kv_dim,
+        # kv_dim along the feature axis).
+        qkv = self.qkv_proj(x)
+        q, k, v = ops.split(qkv, [self.q_dim, self.kv_dim, self.kv_dim], axis=1)
+        query = ops.reshape(q, [-1, self.n_heads, self.head_dim])
+        key = ops.reshape(k, [-1, self.n_kv_heads, self.head_dim])
+        value = ops.reshape(v, [-1, self.n_kv_heads, self.head_dim])
+
+        # Paged stores require K/V to match the cache dtype, and FP8 flash
+        # attention requires the query to match it as well. Convert the
+        # attention output back to the activation dtype before ``o_proj``.
+        if self.kv_params.is_fp8_kv_dtype:
+            cache_dtype = self.kv_params.dtype
+            query = ops.cast(query, cache_dtype)
+            key = ops.cast(key, cache_dtype)
+            value = ops.cast(value, cache_dtype)
 
         # NoPE: write K/V to cache as-is (no rotary), then ragged flash attn.
         store_k_cache_ragged(kv_collection, key, input_row_offsets, layer_idx)
@@ -200,6 +586,7 @@ class NemotronHAttention(Module):
             input_row_offsets=input_row_offsets,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
+            output_dtype=self.dtype,
         )
         attn_out = ops.reshape(attn_out, [total_seq_len, -1])
         return self.o_proj(attn_out)
@@ -211,7 +598,8 @@ class NemotronHMamba2Mixer(Module):
     State plumbing (carried by ``model.py``):
     * conv1d state lives in a slot-indexed pool mutated in place by
       ``causal_conv1d_varlen_fwd`` (handles prefill + decode).
-    * SSM state lives in a slot-indexed fp32 pool mutated in place by
+    * SSM state lives in a slot-indexed pool (fp32; bf16 on Apple GPUs — see
+      ``_ssm_state_dtype``) mutated in place by
       ``mamba2_ssd_chunk_scan_varlen_fwd_inplace``: the kernel reads initial
       state from ``ssm_pool[slot_idx[b]]`` and writes the final state back to
       the same slot without any graph-side gather/scatter_nd/buffer_store.
@@ -239,32 +627,28 @@ class NemotronHMamba2Mixer(Module):
         self.eps = config.layer_norm_epsilon
 
         # in_proj: hidden -> [gate(intermediate), hidden_states_B_C(conv_dim),
-        # dt(nheads)]. The fused HF ``in_proj.weight`` is split into three
-        # separate Linears (the adapter row-slices the fused weight + replicates
-        # the per-tensor FP8 scale). Three matmuls give contiguous gate /
-        # hidden_BC / dt outputs — a single fused matmul + ``ops.split`` yields
-        # strided views whose row stride breaks the downstream group-RMSNorm
-        # reduce on GPU (CUDA misaligned-address).
+        # dt(nheads)]. ONE fused matmul matching the HF reference and vLLM (the
+        # checkpoint ships a single ``in_proj.weight`` with ONE per-tensor FP8
+        # weight_scale / input_scale, so the fused FP8 matmul is numerically
+        # identical to three matmuls that each replicate that shared scale —
+        # accuracy-neutral). Output is split into gate / hidden_BC / dt.
+        #
+        # The earlier 3-separate-Linears workaround existed because a naive
+        # fused matmul + ``ops.split`` made a strided ``gate`` view whose row
+        # stride (the full fused width 17504) broke the downstream gated
+        # group-RMSNorm regroup+reduce on GPU
+        # (known-limitations/strided-split-misaligns-gpu-group-reduce). That
+        # limitation has since decayed: a minimized GPU repro at the exact real
+        # geometry (fused 17504, group_size 960) feeds the strided bf16 ``gate``
+        # straight into the group-RMSNorm reduce and runs clean (no
+        # CUDA_ERROR_MISALIGNED_ADDRESS). ``_gated_group_rmsnorm`` also casts
+        # ``gate`` -> fp32 as its first op, materializing a contiguous buffer.
+        # Validated on the FP8 quantized path (mini-smoke + serve), not just the
+        # bf16 repro, before claiming servable.
         wdtype = _weight_dtype(config.dtype, quant_config)
-        self.in_proj_gate = Linear(
+        self.in_proj = Linear(
             in_dim=config.hidden_size,
-            out_dim=self.intermediate,
-            dtype=wdtype,
-            device=dev,
-            has_bias=config.mamba_proj_bias,
-            quant_config=quant_config,
-        )
-        self.in_proj_hidden_BC = Linear(
-            in_dim=config.hidden_size,
-            out_dim=self.conv_dim,
-            dtype=wdtype,
-            device=dev,
-            has_bias=config.mamba_proj_bias,
-            quant_config=quant_config,
-        )
-        self.in_proj_dt = Linear(
-            in_dim=config.hidden_size,
-            out_dim=self.nheads,
+            out_dim=self.intermediate + self.conv_dim + self.nheads,
             dtype=wdtype,
             device=dev,
             has_bias=config.mamba_proj_bias,
@@ -323,32 +707,22 @@ class NemotronHMamba2Mixer(Module):
     ) -> TensorValue:
         """HF ``Zamba2RMSNormGated`` with ``norm_before_gate=False``.
 
-        ``y`` and ``gate`` are ``[N, intermediate]``. Matches the reference
-        exactly: cast to fp32, ``y = y * silu(gate)``, group RMSNorm over groups
-        of ``group_size``, cast back to the input dtype, THEN multiply by the
-        (fp32) norm weight (so the final product is fp32, matching
-        ``self.weight * hidden_states.to(input_dtype)``).
+        ``y`` and ``gate`` are ``[N, intermediate]``. One fused kernel replaces
+        the ``cast -> silu(gate)*y -> group rms_norm -> *norm_weight -> cast``
+        chain (which otherwise lowers to ~3-4 serial GPU dispatches per layer
+        because the group ``rms_norm`` reduction is a hard fusion boundary). The
+        kernel reproduces the reference bit-for-bit: silu-gate in fp32, group
+        RMSNorm over ``group_size``, cast to the input dtype, multiply by the
+        fp32 norm weight, then cast to the model dtype (folding the final
+        ``out_proj`` cast — hence it returns ``y.dtype``).
         """
-        device = y.device
-        input_dtype = y.dtype
-        yf = ops.cast(y, DType.float32)
-        gatef = ops.cast(gate, DType.float32)
-        yf = yf * ops.silu(gatef)
-        # Group RMSNorm over the last (group_size) axis. Use the dedicated
-        # ``ops.rms_norm`` kernel (with an all-ones weight = pure normalization)
-        # rather than a hand-rolled reshape+mean+rsqrt — the manual reduce over
-        # a reshaped/fused tensor misaligns on GPU. rms_norm normalizes the last
-        # dim and broadcasts back over the leading axes.
-        yg = ops.reshape(yf, [-1, self.group_size])
-        ones = ops.constant(
-            np.ones((self.group_size,), np.float32), device=device
+        return gated_group_rmsnorm(
+            y,
+            gate,
+            self.norm_weight.to(y.device),
+            self.eps,
+            self.group_size,
         )
-        yg = ops.rms_norm(yg, ones, self.eps, multiply_before_cast=True)
-        yf = ops.reshape(yg, [-1, self.intermediate])
-        # Cast to input dtype, then multiply by the fp32 norm weight (upcasts
-        # the product to fp32), exactly as the reference does.
-        w = self.norm_weight.to(device)
-        return w * ops.cast(yf, input_dtype)
 
     def __call__(
         self,
@@ -375,12 +749,28 @@ class NemotronHMamba2Mixer(Module):
         """
         device = x.device
         query_start_loc = ops.cast(query_start_loc, DType.int32)
-        # Three separate projections (contiguous outputs); see __init__ note.
-        gate = self.in_proj_gate(x)  # [N, intermediate]
-        hidden_BC = self.in_proj_hidden_BC(x)  # [N, conv_dim]
-        dt = self.in_proj_dt(x)  # [N, nheads]
+        # ONE fused in_proj matmul, then split into gate / hidden_BC / dt along
+        # the feature axis.
+        proj = self.in_proj(x)  # [N, intermediate + conv_dim + nheads]
+        # The ``gate`` chunk feeds the gated group-RMSNorm regroup+reduce, which
+        # misaligns on a strided source (the fused matmul's row stride 17504 —
+        # known-limitations/strided-split-misaligns-gpu-group-reduce; confirmed
+        # still live on the FP8 path). Make ``gate`` a CONTIGUOUS fp32 buffer by
+        # casting the whole fused output to fp32 BEFORE the split: the fp32
+        # split chunk's 4-byte stride keeps the reduce aligned (validated by the
+        # FP8 mini-smoke). ``_gated_group_rmsnorm`` then consumes an fp32 gate
+        # directly (it casts gate->fp32 internally anyway). hidden_BC / dt are
+        # split from the original bf16 ``proj`` (they feed conv / SSD kernels
+        # that tolerate the split-view stride).
+        proj_f32 = ops.cast(proj, DType.float32)
+        gate = ops.slice_tensor(
+            proj_f32, [slice(None), slice(0, self.intermediate)]
+        )
+        _, hidden_BC, dt = ops.split(
+            proj, [self.intermediate, self.conv_dim, self.nheads], axis=1
+        )
 
-        # Depthwise SiLU conv over hidden_BC. Op expects [dim, total_seqlen].
+        # Depthwise SiLU conv over hidden_BC.
         conv_w = ops.reshape(
             self.conv1d_weight.to(device), [self.conv_dim, self.conv_kernel]
         )
@@ -391,12 +781,16 @@ class NemotronHMamba2Mixer(Module):
                 [self.conv_dim]
             )
         )
-        hidden_BC_t = ops.transpose(hidden_BC, 0, 1)  # [conv_dim, N]
         # Slot-indexed in-place conv: the kernel reads+writes the conv pool at
         # slot ``cache_indices[b] = slot_idx[b]`` (Qwen3.5 GatedDeltaNet conv
         # pattern). No graph-side gather/scatter — the pool is mutated directly.
-        conv_out_t = causal_conv1d_varlen_fwd(
-            x=hidden_BC_t,
+        # ``channels_last=True``: the op consumes/produces the tokens-major
+        # [N, conv_dim] layout the surrounding graph already carries,
+        # eliminating the materialized [conv_dim, N] transposes on both sides
+        # of the conv (the dominant prefill glue-kernel cost, ~9.5 ms per
+        # 4k-token request on B200).
+        conv_out = causal_conv1d_varlen_fwd(
+            x=hidden_BC,
             weight=conv_w,
             bias=conv_bias,
             conv_states=conv_pool,
@@ -404,8 +798,8 @@ class NemotronHMamba2Mixer(Module):
             cache_indices=ops.cast(slot_idx, DType.int32),
             has_initial_state=has_initial_state,
             activation="silu",
-        )
-        conv_out = ops.transpose(conv_out_t, 0, 1)  # [N, conv_dim]
+            channels_last=True,
+        )  # [N, conv_dim]
 
         # Split conv output: [hidden(intermediate), B(ng*ds), C(ng*ds)].
         gtss = self.ngroups * self.dstate
@@ -473,6 +867,33 @@ class NemotronHBlock(Module):
             self.mixer = NemotronHMamba2Mixer(config, quant_config=quant_config)
         elif self.kind == "attention":
             self.mixer = NemotronHAttention(config, kv_layer_idx)
+        elif self.kind == "moe":
+            # Non-gated relu2 MoE. ``quant_config`` is set only when this MoE
+            # layer is FP8 (the 30B-A3B FP8 checkpoint); it makes the routed +
+            # shared expert weights float8_e4m3fn. When None the experts are
+            # bf16 and NemotronHMoE.__call__ delegates to the base MoE.
+            self.mixer = NemotronHMoE(
+                devices=config.devices,
+                hidden_dim=config.hidden_size,
+                num_experts=config.num_experts,
+                num_experts_per_token=config.num_experts_per_tok,
+                moe_dim=config.moe_intermediate_size,
+                gate_cls=functools.partial(
+                    NemotronHMoEGate,
+                    routed_scaling_factor=config.routed_scaling_factor,
+                    norm_topk_prob=config.norm_topk_prob,
+                ),
+                mlp_cls=NemotronHExpertMLP,
+                shared_mlp_cls=NemotronHExpertMLP,
+                has_shared_experts=True,
+                shared_experts_dim=config.moe_shared_expert_intermediate_size,
+                dtype=config.dtype,
+                apply_router_weight_first=False,
+                quant_config=quant_config,
+                # Non-gated: relu2 over the whole up-projection (the moe_dim
+                # split arg from the base MoE is ignored).
+                gated_activation_fn=lambda gate_up, moe_dim: _relu2(gate_up),
+            )
         else:  # mlp
             self.mixer = NemotronHMLP(config, quant_config=quant_config)
 
@@ -520,6 +941,8 @@ class NemotronH(Module):
             if kind == "mamba" and li in config.fp8_mamba_layers:
                 qc = quant_config
             elif kind == "mlp" and li in config.fp8_mlp_layers:
+                qc = quant_config
+            elif kind == "moe" and li in config.fp8_moe_layers:
                 qc = quant_config
             blocks.append(NemotronHBlock(config, li, kv_layer, quant_config=qc))
             if kind == "attention":
@@ -602,7 +1025,9 @@ class NemotronH(Module):
                     input_row_offsets,
                 )
                 kv_i += 1
-            else:  # mlp
+            elif block.kind in ("moe", "mlp"):
+                # MoE and MLP are both stateless (hidden states only; no
+                # SSM/KV state), so they dispatch identically.
                 out = block.mixer(normed)
             h = residual + out
 
@@ -622,8 +1047,10 @@ class NemotronH(Module):
 
         Order: ``tokens, input_row_offsets, return_n_logits, *kv_inputs,
         slot_idx, *conv_pools, *ssm_pools, has_initial_state``. The conv pools
-        are model-dtype mutable buffers; the SSM pools are fp32 mutable buffers
-        mutated in place by ``mamba2_ssd_chunk_scan_varlen_fwd_inplace`` at
+        are model-dtype mutable buffers; the SSM pools are mutable buffers of
+        ``_ssm_state_dtype()`` (fp32; bf16 on Apple GPUs, storage only — the
+        scan accumulates in fp32) mutated in place by
+        ``mamba2_ssd_chunk_scan_varlen_fwd_inplace`` at
         slot ``slot_idx[batch_item]``. ``has_initial_state`` is ``[batch]``
         bool (empty for a fresh prefill, all-True for decode).
         """
@@ -652,7 +1079,7 @@ class NemotronH(Module):
         ]
         ssm_pool_types: list[TensorType | BufferType] = [
             BufferType(
-                DType.float32,
+                _ssm_state_dtype(),
                 shape=[
                     "max_slots",
                     self.mamba_nheads,

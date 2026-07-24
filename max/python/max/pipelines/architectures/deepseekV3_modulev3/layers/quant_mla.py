@@ -19,7 +19,7 @@ import math
 from collections.abc import Callable
 from typing import Any
 
-from max.driver import CPU
+from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
@@ -29,6 +29,7 @@ from max.experimental.nn.common_layers.functional_kernels import (
     mla_prefill_decode_graph,
     mla_prefill_graph,
 )
+from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
     assign_columnwise_mapping,
@@ -36,10 +37,12 @@ from max.experimental.nn.common_layers.multi_latent_attention import (
     assign_rowwise_mapping,
 )
 from max.experimental.nn.norm import RMSNorm
+from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
+from typing_extensions import Self
 
 from . import quant_ops
 from .quant_linear import QuantizedLinear
@@ -54,7 +57,9 @@ def _data(weight: Tensor | FP8BlockTensor) -> Tensor:
 
 def _scale(weight: Tensor | FP8BlockTensor) -> Tensor | None:
     """Per-block inverse scales of a weight, or ``None`` for bf16 weights."""
-    return weight.scale_inv if isinstance(weight, FP8BlockTensor) else None
+    return (
+        weight.weight_scale_inv if isinstance(weight, FP8BlockTensor) else None
+    )
 
 
 class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
@@ -153,6 +158,18 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
             quant_config=quant_config,
         )
 
+    def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
+        super().to(target)
+
+        self.kv_a_proj_with_mqa = self.kv_a_proj_with_mqa.to(target)
+        self.kv_b_proj = self.kv_b_proj.to(target)
+        if self.q_lora_rank is not None:
+            self.q_a_proj = self.q_a_proj.to(target)
+            self.q_b_proj = self.q_b_proj.to(target)
+        else:
+            self.q_proj = self.q_proj.to(target)
+        return self
+
     @property
     def _kv_b_proj_weight(self) -> Tensor:
         """``kv_b_proj`` data reshaped to ``[kv_rank, n_heads, qk_nope+v]``."""
@@ -179,7 +196,7 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
 
     @property
     def w_uk(self) -> tuple[Tensor, Tensor | None]:
-        """Decode K-projection ``(data, scale_inv|None)``."""
+        """Decode K-projection ``(data, weight_scale_inv|None)``."""
         w_uk_base = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
         w_uk = w_uk_base.transpose(0, 1)
         if not self.quantized:
@@ -191,7 +208,7 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
 
     @property
     def w_uv(self) -> tuple[Tensor, Tensor | None]:
-        """Decode V-projection ``(data, scale_inv|None)``."""
+        """Decode V-projection ``(data, weight_scale_inv|None)``."""
         w_uv = self._kv_b_proj_weight[..., self.qk_nope_head_dim :].permute(
             [1, 2, 0]
         )
@@ -204,7 +221,7 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
 
     @property
     def w_k(self) -> tuple[Tensor, Tensor | None]:
-        """Prefill K-projection ``(data, scale_inv|None)``."""
+        """Prefill K-projection ``(data, weight_scale_inv|None)``."""
         w_uk_base = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
         w_k = w_uk_base.permute([1, 2, 0]).reshape((-1, self.kv_lora_rank))
         if not self.quantized:
@@ -286,9 +303,8 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
                 mla_prefill_metadata.buffer_row_offsets
             )
             attn_kwargs["cache_offsets"] = mla_prefill_metadata.cache_offsets
-            attn_kwargs["buffer_length"] = (
-                mla_prefill_metadata.buffer_lengths.to(CPU())
-            )
+            buffer_lengths = mla_prefill_metadata.buffer_lengths
+            attn_kwargs["buffer_length"] = buffer_lengths.to(CPU())
             w_k, w_k_scale = self.w_k
             w_uv, w_uv_scale = self.w_uv
             attn_kwargs["w_k"] = w_k
@@ -340,7 +356,9 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
             xq = quant_ops.matmul(x, self.q_proj)
             kv = quant_ops.matmul(x, self.kv_a_proj_with_mqa)
 
-        xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))
+        # Explicit token dim: the shape rule cannot prove a ``-1`` leading
+        # dim against a per-shard (data-parallel) token count.
+        xq = xq.reshape((xq.shape[0], self.n_heads, self.qk_head_dim))
 
         attn_out = self._mla_impl(
             xq,
@@ -363,7 +381,7 @@ def _assign_quant_aware(
     """Apply a placement-assignment to a (possibly quantized) weight."""
     if isinstance(weight, FP8BlockTensor):
         assign(weight.data)
-        assign(weight.scale_inv)
+        assign(weight.weight_scale_inv)
     else:
         assign(weight)
 

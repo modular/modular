@@ -46,7 +46,7 @@ def test_declared_arg_types(ctx: DeviceContext) raises:
     comptime assert arg_types[3] == Int
     comptime assert arg_types[4] == Int
 
-    assert_equal(reflect[arg_types[0]].base_name(), "UnsafePointer")
+    assert_equal(reflect[arg_types[0]].base_name(), "Pointer")
 
 
 def test_is_compatible(ctx: DeviceContext) raises:
@@ -185,9 +185,9 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
     var block_dim = 32
     var supplement = 5
 
-    var output = Span(ptr=out_device.unsafe_ptr(), length=length)
-    var in0 = Span(ptr=in0_device.unsafe_ptr(), length=length)
-    var in1 = Span(ptr=in1_device.unsafe_ptr(), length=length)
+    var output = Span(unsafe_ptr=out_device.unsafe_ptr(), length=length)
+    var in0 = Span(unsafe_ptr=in0_device.unsafe_ptr(), length=length)
+    var in1 = Span(unsafe_ptr=in1_device.unsafe_ptr(), length=length)
 
     def vec_closure() {var supplement, var in0, var in1, var output}:
         var tid = global_idx.x

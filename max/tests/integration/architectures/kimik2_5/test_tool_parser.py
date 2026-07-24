@@ -1023,9 +1023,9 @@ def test_combined_grammar_enforces_response_schema(
     """The response_format branch enforces the schema on both backends.
 
     A JSON object missing the required ``answer`` field must not be a complete,
-    accepted output. (Under xgrammar auto-reasoning the bytes may be consumed as
-    reasoning text, so the backend-agnostic invariant is ``not is_accepting``
-    rather than a partial token consume.)
+    accepted output. Both backends model the combined grammar as "a full tool
+    call OR a schema-conforming JSON" with no free-text branch, so ``{}`` reaches
+    no accepting state on either.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
         tools=_tools("get_weather"),
@@ -1084,12 +1084,11 @@ def test_combined_grammar_still_accepts_tool_call(
 def test_combined_grammar_xgrammar_structural_tag_shape(
     mock_tokenizer: PipelineTokenizer[Any, Any, Any],
 ) -> None:
-    """xgrammar combined grammar is an ``or`` of the tool envelope and json_schema.
+    """The combined grammar allows an optional reasoning prefix followed by
+    either a tool call or a schema-conforming JSON response.
 
-    Complements the llguidance ``json_response`` / ``%json`` string assertions:
-    the xgrammar grammar is a serialized StructuralTag whose top-level format is
-    an ``OrFormat`` carrying the response schema verbatim in a ``json_schema``
-    alternative.
+    Verifies the serialized StructuralTag has that shape: a reasoning prefix,
+    then an ``or`` between the tool section and the response ``json_schema``.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
         tools=_tools("get_weather"),
@@ -1098,15 +1097,50 @@ def test_combined_grammar_xgrammar_structural_tag_shape(
         backend="xgrammar",
     )
     tag = xgrammar.StructuralTag.model_validate_json(grammar)
-    assert tag.format.type == "or"
-    element_types = {element.type for element in tag.format.elements}
+    assert tag.format.type == "sequence"
+    or_format = tag.format.elements[-1]
+    assert or_format.type == "or"
+    element_types = {element.type for element in or_format.elements}
     assert "json_schema" in element_types
     json_branch = next(
         element
-        for element in tag.format.elements
+        for element in or_format.elements
         if element.type == "json_schema"
     )
     assert json_branch.json_schema == _COMBINED_RESPONSE_SCHEMA
+
+
+def test_combined_grammar_xgrammar_accepts_reasoned_json_response(
+    ll_tokenizer: LLTokenizer,
+    minimal_tokenizer: _MinimalTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> None:
+    """xgrammar: a reasoning preamble may precede the JSON response branch.
+
+    The reasoning prefix is factored outside the tool/json alternation, so the
+    model may emit ``</think>`` and then a schema-conforming JSON response — not
+    only a tool call. Without this the JSON branch would be unreachable once the
+    model reasons, forcing a tool call.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather"),
+        response_format_schema=_COMBINED_RESPONSE_SCHEMA,
+        tokenizer=mock_tokenizer,
+        backend="xgrammar",
+    )
+    matcher = _make_grammar_matcher(
+        "xgrammar", grammar, ll_tokenizer, minimal_tokenizer
+    )
+
+    tokens = minimal_tokenizer(THINK_END + json.dumps({"answer": "sunny"}))
+    consumed = matcher.try_consume_tokens(tokens)
+    assert consumed == len(tokens), (
+        f"reasoned JSON response rejected at offset {consumed} of "
+        f"{len(tokens)}; error: {matcher.get_error()}"
+    )
+    assert matcher.is_accepting(), (
+        "matcher not accepting after a reasoned schema-conforming JSON response"
+    )
 
 
 def test_xgrammar_enforces_tool_argument_schema(

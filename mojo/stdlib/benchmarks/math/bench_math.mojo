@@ -31,7 +31,7 @@ def make_inputs(
     var step = (end - begin) / (num - 1)
 
     var result = List[input_type]()
-    for i in range(num):
+    for i in range(input_type(0), num, input_type(1)):
         result.append(begin + step * i)
     return result^
 
@@ -55,9 +55,9 @@ def make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
 
 @parameter
 def bench_math[
-    math_f1p: def[dtype: DType, size: SIMDSize](SIMD[dtype, size]) thin -> SIMD[
-        dtype, size
-    ]
+    math_f1p: def[dtype: DType, size: SIMDLength](
+        SIMD[dtype, size]
+    ) thin -> SIMD[dtype, size]
 ](mut b: Bencher) raises:
     var inputs = make_inputs(0, 10_000, 1_000_000)
 
@@ -78,7 +78,7 @@ def bench_math[
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_math3[
-    math_f3p: def[dtype: DType, size: SIMDSize](
+    math_f3p: def[dtype: DType, size: SIMDLength](
         SIMD[dtype, size], SIMD[dtype, size], SIMD[dtype, size]
     ) thin -> SIMD[dtype, size]
 ](mut b: Bencher) raises:

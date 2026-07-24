@@ -53,14 +53,13 @@ gemma4_arch = SupportedArchitecture(
         InputModality.IMAGE,
         InputModality.VIDEO,
     },
-    rope_type="normal",
     context_type=Gemma4Context,
     config=Gemma4ForConditionalGenerationConfig,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
+    default_structured_output_backend="xgrammar",
     memory_planner=Gemma4MemoryPlanner,
     supports_device_graph_capture=False,
-    default_structured_output_backend="llguidance",
 )
 
 

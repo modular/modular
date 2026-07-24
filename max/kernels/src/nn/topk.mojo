@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides top-K selection kernels using warp- and block-level reductions for CPU and GPU."""
 
 from std.math import ceildiv, exp, iota
 from std.math.uutils import ufloordiv, udivmod
@@ -99,16 +100,20 @@ def top_k_shape_impl[
         The output shape.
     """
 
-    # Clamp max_k
-    var bound_max_k = Int(input.dim(axis)) if max_k == -1 else max_k
+    # Normalize a negative axis up front, matching what `top_k()` itself does;
+    # `TileTensor.dim()` has no negative-index case and would abort otherwise.
+    var normalized_axis = normalize_neg_index(axis, input.rank)
 
-    if bound_max_k < 0 or bound_max_k > Int(input.dim(axis)):
+    # Clamp max_k
+    var bound_max_k = Int(input.dim(normalized_axis)) if max_k == -1 else max_k
+
+    if bound_max_k < 0 or bound_max_k > Int(input.dim(normalized_axis)):
         raise Error("[top/bottom-k] k must be within [0, input_shape[axis]]")
 
     var shape = rebind[IndexList[input.rank]](
         coord_to_index_list(input.layout.shape_coord())
     )
-    shape[normalize_neg_index(axis, input.rank)] = bound_max_k
+    shape[normalized_axis] = bound_max_k
 
     return shape
 
@@ -344,10 +349,13 @@ def _top_k_cpu[
                             break
                         num_equal += 1
                     if num_equal > 1:
-                        var ptr = idxs.unsafe_ptr() + i
+                        var idxs_ptr: UnsafePointer[
+                            idxs.T, origin_of(idxs)
+                        ] = idxs.unsafe_ptr()
+                        var ptr = idxs_ptr + i
                         sort(
                             Span[idxs.T, origin_of(idxs)](
-                                ptr=ptr, length=num_equal
+                                unsafe_ptr=ptr, length=num_equal
                             )
                         )
                     i += num_equal
@@ -647,14 +655,28 @@ def _topk_dead_val[T: DType, largest: Bool = True]() -> Scalar[T]:
 struct TopK_2[T: DType, largest: Bool = True](
     Defaultable, TrivialRegisterPassable
 ):
+    """Tracks the single best (value, index) pair per thread during top-K reductions.
+
+    Parameters:
+        T: Data type of the tracked values.
+        largest: Whether the best value is the maximum (top k) or minimum (bottom k).
+
+    Fields:
+        p: Flattened index of the tracked element.
+        u: Value of the tracked element.
+    """
+
     var p: Int  # flattened index of the element
     var u: Scalar[Self.T]  # value of the element
 
     def __init__(out self):
+        """Initializes the tracker with a dead value and a zero index."""
         self.p = 0  # 0 to solve OOB
         self.u = _topk_dead_val[Self.T, Self.largest]()
 
     def insert(mut self, elem: Scalar[Self.T], elem_id: Int):
+        """Replaces the tracked element when the candidate beats the current best.
+        """
         comptime if Self.largest:
             if elem > self.u:
                 self.u = elem
@@ -799,7 +821,7 @@ def _warp_reduce_topk[
     # Shuffle function for TopK_2 structure
     @parameter
     def shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
-        comptime fn_type = def[dtype: DType, simd_width: SIMDSize](
+        comptime fn_type = def[dtype: DType, simd_width: SIMDLength](
             val: SIMD[dtype, simd_width], offset: UInt32
         ) thin -> SIMD[dtype, simd_width]
         comptime xor_fn: fn_type = warp.shuffle_xor
@@ -2054,6 +2076,21 @@ def apply_gumbel_noise_kernel[
     temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     seed: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]],
 ):
+    """Adds Gumbel(0,1) noise to logits for sampling via the Gumbel-max trick.
+
+    Parameters:
+        dtype: Data type of the input and output logit buffers.
+        OutputLayoutType: Layout of the output tensor.
+        InputLayoutType: Layout of the input tensor.
+        num_sms: Number of streaming multiprocessors to launch with.
+        num_threads: Number of threads per block.
+
+    Args:
+        output: Output tensor of noised logits.
+        input: Input tensor of logits.
+        temperature: Optional per-token temperature scaling.
+        seed: Optional per-token random seed.
+    """
     comptime EPS = Float32(1e-20)
     comptime LOG2 = Float32(0.6931471806)
     comptime MIN_TEMP = Float32(1e-6)

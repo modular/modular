@@ -49,7 +49,7 @@ from layout.tensor_core_async import (
 from linalg.arch.sm100.mma import smem_descriptor
 
 from std.gpu.host.info import B200
-from std.gpu.globals import WARP_SIZE
+from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from std.gpu.memory import fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.compute.arch.mma_nvidia_sm100 import (
@@ -68,12 +68,16 @@ struct MLAConfig[
     *,
     rope_gmem_dtype: DType,
     rope_mma_dtype: DType,
-    scale_dtype: DType = DType.invalid,
+    scale_dtype_: Optional[DType] = None,
 ](TrivialRegisterPassable):
+    # Concrete scale dtype for `Scalar[...]`/`TMATensorTile[...]` reads. Falls
+    # back to `qkv_dtype` when unset; presence flows to `FA4Config` via the
+    # optional `scale_dtype_`.
+    comptime scale_dtype = Self.scale_dtype_.or_else(Self.qkv_dtype)
     var fa4_config: FA4Config[
         Self.qkv_dtype,
-        rope_dtype=Self.rope_mma_dtype,
-        scale_dtype=Self.scale_dtype,
+        rope_dtype_=Self.rope_mma_dtype,
+        scale_dtype_=Self.scale_dtype_,
     ]
     var MMA_M: Int
     var BM: Int
@@ -123,7 +127,7 @@ struct MLAConfig[
         depth: Int,
         page_size: Int,
         v_depth: Int = -1,
-        num_qo: Int = 2,
+        num_q: Int = 2,
         single_o: Bool = False,
         bn_cap: Int = 0,
     ):
@@ -178,7 +182,9 @@ struct MLAConfig[
             swizzle_mode = self.qkv_swizzle_mode,
             page_size = page_size,
             is_mla = True,
-            num_qo = num_qo,
+            # FA4Config's primary knob is now BM; MLA is single-CTA so
+            # num_q=2 -> BM=256, num_q=1 -> BM=128.
+            BM = 256 if num_q == 2 else 128,
             nope_depth = nope_depth,
             single_o = single_o,
             bn_cap = bn_cap,
@@ -209,25 +215,25 @@ struct MLAConfig[
         self.TMEM_P1 = self.fa4_config.TMEM_P1
 
     @always_inline
-    def num_qo(self) -> Int:
-        return self.fa4_config.num_qo
+    def num_q(self) -> Int:
+        return self.fa4_config.num_q
 
     @always_inline
     def q_tile_rows(self) -> Int:
-        """Rows per Q TMA tile / per-half MMA — `BM // num_qo`.
+        """Rows per Q TMA tile / per-half MMA — `BM // num_q`.
 
         128 in both modes: one of two BM=256 halves in 2Q, the single full
         BM=128 tile in 1Q. The Q (and per-token q_scale) TMA boxes and the
         ragged output store all fold to this value, which is why their op
         types match across the 1Q/2Q configs.
         """
-        return self.BM // self.fa4_config.num_qo
+        return self.BM // self.fa4_config.num_q
 
     @always_inline
-    def with_num_qo(self, num_qo: Int) -> Self:
-        """Reconstruct this config with a different `num_qo` (single-CTA).
+    def with_num_q(self, num_q: Int) -> Self:
+        """Reconstruct this config with a different `num_q` (single-CTA).
 
-        Mirrors `FA4Config.with_num_qo`, but simpler: MLA pins
+        Mirrors `FA4Config.with_num_q`, but simpler: MLA pins
         `num_qk_stages == 1` (is_mla), so there is no staging knob to
         match between the 1Q and 2Q variants.
 
@@ -243,19 +249,19 @@ struct MLAConfig[
             depth=self.qk_depth,
             page_size=self.fa4_config.page_size,
             v_depth=self.fa4_config.ov_depth,
-            num_qo=num_qo,
+            num_q=num_q,
             # Preserve single-O only when reconstructing as 1Q (it implies 1Q).
-            single_o=self.fa4_config.single_o and num_qo == 1,
+            single_o=self.fa4_config.single_o and num_q == 1,
         )
 
     @always_inline
     def switch_1q_config(self) -> Self:
         """The 1Q variant used by the in-kernel per-sequence 1Q/2Q switch.
 
-        Identical to `with_num_qo(1)` (see `with_num_qo` for why MLA has
+        Identical to `with_num_q(1)` (see `with_num_q` for why MLA has
         no staging-pinning concern, unlike `FA4Config.switch_1q_config`).
         """
-        return self.with_num_qo(1)
+        return self.with_num_q(1)
 
     @always_inline
     def can_switch_to_1q(self) -> Bool:
@@ -264,11 +270,11 @@ struct MLAConfig[
 
         True only when this is a 2Q config AND the 1Q variant is valid.
         The TMA-op types fold between the two configs by construction:
-        the Q TMA / ragged-store `BM // num_qo` is 128 in both modes, and
+        the Q TMA / ragged-store `BM // num_q` is 128 in both modes, and
         the K_nope/K_rope/V TMA shapes are BM-independent (BN's formula
-        does not reference `num_qo`).
+        does not reference `num_q`).
         """
-        if self.fa4_config.num_qo != 2 or self.fa4_config.pair_cta:
+        if self.fa4_config.num_q != 2 or self.fa4_config.pair_cta:
             return False
         var cfg1 = self.switch_1q_config()
         return cfg1.supported() and cfg1.fa4_config.supported()
@@ -285,6 +291,23 @@ struct MLAConfig[
         if self.can_switch_to_1q():
             return max(self.smem_used, self.switch_1q_config().smem_used)
         return self.smem_used
+
+    @always_inline
+    def launch_num_threads(self) -> Int:
+        """Threads to launch for this config's kernel.
+
+        The generic single-O (wide-V) path drops the redundant 2nd softmax
+        warpgroup -- WG1 is a full no-op there (see the single-O serial-KV
+        accumulation) -- so it launches 3 warpgroups (Softmax0 + Correction +
+        MMA/Load/Empty) instead of 4. Every other config keeps the standard
+        4-warpgroup (`num_threads` = 512) layout. Only the generic kernel calls
+        this; the per-token-scale / blockscale siblings read the `num_threads`
+        field directly and stay at 512 even for their own single-O configs
+        (they keep the 2nd softmax WG).
+        """
+        if self.fa4_config.single_o:
+            return 3 * WARPGROUP_SIZE
+        return self.num_threads
 
     @always_inline
     def prefer_1q(
@@ -324,12 +347,6 @@ struct MLAConfig[
     def correction_smem_elements(self) -> Int:
         return self.BM * Self.num_correction_cols
 
-    def num_active_warps_per_group(self) -> Int:
-        return 4
-
-    def num_active_threads_per_group(self) -> Int:
-        return WARP_SIZE * self.num_active_warps_per_group()
-
 
 @always_inline
 def select_mla_prefill_config[
@@ -337,7 +354,7 @@ def select_mla_prefill_config[
     *,
     rope_gmem_dtype: DType,
     rope_mma_dtype: DType,
-    scale_dtype: DType = DType.invalid,
+    scale_dtype_: Optional[DType] = None,
 ](
     *,
     num_q_heads: Int,
@@ -349,7 +366,7 @@ def select_mla_prefill_config[
     qkv_dtype,
     rope_gmem_dtype=rope_gmem_dtype,
     rope_mma_dtype=rope_mma_dtype,
-    scale_dtype=scale_dtype,
+    scale_dtype_=scale_dtype_,
 ]:
     """Selects the supported SM100 MLA-prefill config for these dims.
 
@@ -361,7 +378,7 @@ def select_mla_prefill_config[
     width == nope width" (the DeepSeek shape). The standard 2-O config is tried
     first, so when `v_head_dim == qk_nope_head_dim` the result is byte-identical
     to the pre-decoupling path. A wide V (e.g. `v_head_dim=256`) overflows the
-    2-O TMEM layout (standard BN=0), so fall back to a single-O (`num_qo=1`)
+    2-O TMEM layout (standard BN=0), so fall back to a single-O (`num_q=1`)
     config at the TMEM-max BN, then to a BN capped at the `supported()` floor so
     >= 2 KV stages still fit shared memory. If none is supported, return the
     standard config so the caller's `supported()` assert reports the real dims.
@@ -370,7 +387,7 @@ def select_mla_prefill_config[
         qkv_dtype,
         rope_gmem_dtype=rope_gmem_dtype,
         rope_mma_dtype=rope_mma_dtype,
-        scale_dtype=scale_dtype,
+        scale_dtype_=scale_dtype_,
     ]
     # `bn_floor` == the `MLAConfig.supported()` BN floor (`self.BN >= 64`): the
     # largest MMA_K-aligned BN cap that still admits >= 2 KV stages for a wide V.
@@ -388,7 +405,7 @@ def select_mla_prefill_config[
         depth=depth,
         page_size=page_size,
         v_depth=v_depth,
-        num_qo=1,
+        num_q=1,
         single_o=True,
     )
     var singleo_floor = Config(
@@ -397,7 +414,7 @@ def select_mla_prefill_config[
         depth=depth,
         page_size=page_size,
         v_depth=v_depth,
-        num_qo=1,
+        num_q=1,
         single_o=True,
         bn_cap=bn_floor,
     )
@@ -510,7 +527,7 @@ struct MLAPositionSummary(TrivialRegisterPassable):
 struct MLAKVLayouts[
     k_nope_dtype: DType,
     k_rope_dtype: DType,
-    kv_scale_dtype: DType,
+    kv_scale_dtype: Optional[DType],
     config: MLAConfig,
 ]:
     """Comptime layout and size metadata for MLA K/V tiles."""
@@ -798,11 +815,11 @@ struct SM100MLA[
     comptime rope_mma_kind = (
         UMMAKind.KIND_F16 if Self.rope_mma_dtype.is_half_float() else UMMAKind.KIND_F8F6F4
     )
-    # use_fused_kv means we use a fused kv pipeline in shared memory
+    # use_shared_kv means we use a shared kv pipeline in shared memory
     # that forces us to put the k nope and rope in separate regions of smem
     # preventing us from fusing the nope and rope parts of UMMA0
     comptime fused_umma0 = (Self.qkv_dtype == Self.rope_mma_dtype) and (
-        not Self.config.fa4_config.use_fused_kv
+        not Self.config.fa4_config.use_shared_kv
     )
     comptime BK0 = Self.qk_depth if Self.fused_umma0 else Self.nope_depth
 
@@ -879,9 +896,17 @@ struct SM100MLA[
         num_pv_stages=Self.config.fa4_config.num_pv_stages,
         num_kv_stages=Self.config.fa4_config.num_kv_stages,
         use_order_barriers=EnableForcedOrdering,
-        use_fused_kv=Self.config.fa4_config.use_fused_kv,
+        use_shared_kv=Self.config.fa4_config.use_shared_kv,
         pair_cta=Self.config.fa4_config.pair_cta,
-        num_qo=Self.config.fa4_config.num_qo,
+        num_q=Self.config.fa4_config.num_q,
+        splitk_partitions=Self.config.fa4_config.splitk_partitions,
+        BM=Self.config.fa4_config.BM,
+        # MLA is never warp-specialized (use_ws is always False here), but the
+        # param must be threaded so this MiscMBarsType matches the one built by
+        # `SM100AttentionSMem.MiscMBarsType` (same `...use_ws` expression) — an
+        # omitted param defaults to literal `False`, a DIFFERENT type from the
+        # `config.fa4_config.use_ws` expression, and the two would not convert.
+        use_ws=Self.config.fa4_config.use_ws,
     ]
 
     @staticmethod
@@ -906,7 +931,7 @@ struct SM100MLA[
     def descriptor_q(
         q_smem: SharedMemPointer[Scalar[Self.qkv_dtype]],
     ) -> MMASmemDescriptorPair:
-        # `BM // num_qo` = 128 in both modes: one of two Q halves in 2Q,
+        # `BM // num_q` = 128 in both modes: one of two Q halves in 2Q,
         # the single full-BM Q tile in 1Q.
         return smem_descriptor[
             BMN=Self.config.q_tile_rows(),

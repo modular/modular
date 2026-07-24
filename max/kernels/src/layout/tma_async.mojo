@@ -54,6 +54,7 @@ from std.gpu.memory import (
     ReduceOp,
     async_copy,
     cp_async_bulk_tensor_global_shared_cta,
+    cp_async_bulk_tensor_global_shared_cta_elect,
     cp_async_bulk_tensor_reduce_global_shared_cta,
     cp_async_bulk_tensor_shared_cluster_global,
     cp_async_bulk_tensor_shared_cluster_global_elect,
@@ -931,7 +932,7 @@ struct TMATensorTile[
 
         Each unrolled `cp_async_bulk_tensor_shared_cluster_global` issue is
         predicated in-PTX on `elect`: the TMA fires only on the elected lane.
-        All lanes follow the same PTX control flow — no warp-divergent
+        All lanes follow the same PTX control flow; no warp-divergent
         `if elect != 0:` is needed at the call site.
 
         Parameters:
@@ -1135,7 +1136,7 @@ struct TMATensorTile[
 
         Parameters:
             cta_group: If set to 2, the TMA emits `cta_group::2` PTX so the
-                mbarrier arrival routes to the leader CTA's barrier — required
+                mbarrier arrival routes to the leader CTA's barrier, required
                 for pair-CTA kernels that share one barrier across the pair.
                 Defaults to 1.
             eviction_policy: Optional cache eviction policy that controls how the data is handled
@@ -1213,7 +1214,7 @@ struct TMATensorTile[
     ):
         """Elect-predicated overload of `async_copy_3d`.
 
-        See `async_copy_elect` for semantics — each unrolled TMA issue is
+        See `async_copy_elect` for semantics: each unrolled TMA issue is
         predicated in-PTX on `elect`.
 
         Parameters:
@@ -1295,7 +1296,7 @@ struct TMATensorTile[
 
         Parameters:
             cta_group: If set to 2, the TMA emits `cta_group::2` PTX so the
-                mbarrier arrival routes to the leader CTA's barrier — required
+                mbarrier arrival routes to the leader CTA's barrier, required
                 for pair-CTA kernels that share one barrier across the pair.
                 Defaults to 1.
             eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
@@ -1517,7 +1518,7 @@ struct TMATensorTile[
     ):
         """Elect-predicated overload of `async_copy_4d`.
 
-        See `async_copy_elect` for semantics — each unrolled TMA issue is
+        See `async_copy_elect` for semantics: each unrolled TMA issue is
         predicated in-PTX on `elect`.
 
         Parameters:
@@ -1841,7 +1842,7 @@ struct TMATensorTile[
     ):
         """Elect-predicated overload of `async_copy_5d`.
 
-        See `async_copy_elect` for semantics — each unrolled TMA issue is
+        See `async_copy_elect` for semantics: each unrolled TMA issue is
         predicated in-PTX on `elect`.
 
         Parameters:
@@ -3161,8 +3162,13 @@ struct TMATensorTile[
             coords: Base 2D coordinates in the source tensor.
             multicast_mask: Bit mask specifying CTAs that receive the data.
         """
+        # `_offset_storage` yields an offset-derived storage policy; storages
+        # are copy-compatible, so reinterpret it as `dst`'s own storage type.
         var dst_slice = type_of(dst)(
-            dst._offset_storage(cta_rank * tma_load_size), dst.layout
+            rebind[type_of(dst._storage)](
+                dst._offset_storage(cta_rank * tma_load_size)
+            ),
+            dst.layout,
         )
 
         self.async_multicast_load(
@@ -3708,7 +3714,7 @@ struct TMATensorTile[
     @always_inline
     def replace_tensormap_global_address_in_gmem[
         _dtype: DType,
-    ](self, src_ptr: UnsafePointer[Scalar[_dtype], _],):
+    ](self, src_ptr: UnsafePointer[Scalar[_dtype], _]):
         """
         Replaces the global memory address in the TMA descriptor stored in global memory.
 
@@ -4957,7 +4963,7 @@ def _create_split_tma_folded[
 
     `row_major=False` (default) builds the rank-4 **chunk-outer** box
     `[gran, box_rows, fold_chunks, 1]` (CUDA fast->slow): all `box_rows` of chunk 0,
-    then chunk 1, ... — byte-equivalent to the per-chunk loop only for a single page
+    then chunk 1, ..., byte-equivalent to the per-chunk loop only for a single page
     (`box_rows == smem_j_stride_rows`, `pages_per_iter == 1`).
 
     `row_major=True` builds the rank-5 **chunk-inner** (row-major-atoms) box
@@ -5146,13 +5152,13 @@ def create_split_tma[
     of the tensor into multiples of swizzle granularity. This functionality is currently
     disabled because it was not found to improve performance.
 
-    When `fold_chunks >= 2`, the contiguous innermost (depth) dimension — which the
-    swizzle hardware forces to be split into `swizzle_granularity`-sized chunks — is
+    When `fold_chunks >= 2`, the contiguous innermost (depth) dimension, which the
+    swizzle hardware forces to be split into `swizzle_granularity`-sized chunks, is
     folded into an extra, non-innermost box dimension so that a *single* rank-4
     `cp.async.bulk.tensor` copies all `fold_chunks` depth chunks at once instead of one
     TMA per chunk. The PUBLIC return type stays rank-3 (`SplitLastDimTMATensorTile`);
     the rank-4 CUDA descriptor is built internally and its opaque 128 B
-    `TMADescriptor` blob (which is rank-agnostic — see `TMADescriptor`) is wrapped into
+    `TMADescriptor` blob (which is rank-agnostic; see `TMADescriptor`) is wrapped into
     the rank-3 tile via its `@implicit` constructor. The issue site
     (`PagedRowIndices._tma_copy_kv_impl`) must agree by issuing rank-4 coords; the
     shared `kv_tma_fold_chunks` predicate is the single source of truth that keeps the
@@ -5161,8 +5167,8 @@ def create_split_tma[
 
     Folding is byte-equivalent to the per-chunk loop ONLY when the box's per-chunk SMEM
     stride (`box_rows * swizzle_granularity`) equals the consumer/producer chunk stride
-    (`smem_j_stride_rows * swizzle_granularity`) — i.e. `box_rows == smem_j_stride_rows`
-    — and the tile occupies a single page (`pages_per_iter == 1`). The caller is
+    (`smem_j_stride_rows * swizzle_granularity`), i.e. `box_rows == smem_j_stride_rows`,
+    and the tile occupies a single page (`pages_per_iter == 1`). The caller is
     responsible for only passing `fold_chunks >= 2` when those hold; here `box_rows`
     equals `smem_shape[0]`.
 
@@ -5341,7 +5347,7 @@ struct TMATensorTileArray[
     @always_inline
     def __init__(
         out self,
-        tensormaps_device: DeviceBuffer[DType.uint8],
+        mut tensormaps_device: DeviceBuffer[DType.uint8],
     ):
         """
         Initializes a new TMATensorTileArray.
@@ -5349,8 +5355,10 @@ struct TMATensorTileArray[
         Args:
             tensormaps_device: Device buffer to store TMA descriptors.
         """
-
-        self.tensormaps_ptr = tensormaps_device.unsafe_ptr()
+        # TODO: this type should properly hold origins
+        self.tensormaps_ptr = tensormaps_device.unsafe_ptr().unsafe_origin_cast[
+            MutUntrackedOrigin
+        ]()
 
     @always_inline
     def __getitem__(
@@ -5648,9 +5656,14 @@ struct RaggedTMA3DTile[
         ragged_idx: UInt32,
         dynamic_dim: UInt32,
         middle_idx: UInt32,
+        elect: Int32,
     ):
         """Copy a single swizzle_granularity-wide column chunk from smem to
         gmem.
+
+        The TMA store is PTX-predicated on `elect`, so call this unconditionally
+        from every lane (no warp-divergent `if elect != 0:` wrapper); only the
+        elected lane issues the copy.
 
         Parameters:
             col: Which column chunk (0-indexed, each chunk is
@@ -5665,6 +5678,8 @@ struct RaggedTMA3DTile[
             dynamic_dim: Number of rows (or seq positions when group > 1)
                 to copy.
             middle_idx: Index into the middle (generally head) dimension.
+            elect: `0` on non-elected lanes (skip the TMA), non-zero on the
+                single elected lane (issue the TMA).
         """
         comptime copy_offset = col * Self.BM * Self.swizzle_granularity
         # `merged` folds (middle_dim, rows) into the outermost descriptor dim.
@@ -5674,7 +5689,7 @@ struct RaggedTMA3DTile[
         comptime if Self.group > 1:
             var box_idx = Int(UInt32(Self.BM_seq) - dynamic_dim)
 
-            cp_async_bulk_tensor_global_shared_cta[
+            cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
@@ -5686,11 +5701,12 @@ struct RaggedTMA3DTile[
                     box_idx,
                     merged,
                 ),
+                elect,
             )
         else:
             var box_idx = Int(UInt32(Self.BM) - dynamic_dim)
 
-            cp_async_bulk_tensor_global_shared_cta[
+            cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
@@ -5701,6 +5717,7 @@ struct RaggedTMA3DTile[
                     box_idx,
                     merged,
                 ),
+                elect,
             )
 
     @always_inline
@@ -5716,6 +5733,7 @@ struct RaggedTMA3DTile[
         ragged_idx: UInt32,
         dynamic_dim: UInt32,
         middle_idx: UInt32,
+        elect: Int32,
     ):
         """Copy `tma_blocks_per_op` swizzle_granularity-wide column blocks from
         smem to gmem in a single TMA, starting at block `col_start`.
@@ -5725,6 +5743,10 @@ struct RaggedTMA3DTile[
         overruns the true block count, the TMA masks the overhang off (no gmem
         write). With the (middle_dim, rows) selector merge the descriptor is
         rank-4 for `group == 1` and rank-5 for `group > 1`.
+
+        The TMA store is PTX-predicated on `elect`, so call this unconditionally
+        from every lane (no warp-divergent `if elect != 0:` wrapper); only the
+        elected lane issues the copy.
 
         Parameters:
             col_start: First block (0-indexed, each block is swizzle_granularity
@@ -5737,6 +5759,8 @@ struct RaggedTMA3DTile[
             ragged_idx: Index into the ragged dimension.
             dynamic_dim: Number of rows (or seq positions when group > 1) to copy.
             middle_idx: Index into the middle (generally head) dimension.
+            elect: `0` on non-elected lanes (skip the TMA), non-zero on the
+                single elected lane (issue the TMA).
         """
         comptime assert (
             Self.tma_blocks_per_op > 0
@@ -5749,57 +5773,24 @@ struct RaggedTMA3DTile[
         comptime if Self.group > 1:
             var box_idx = Int(UInt32(Self.BM_seq) - dynamic_dim)
             # dims (inner->outer): (K, group, BM_seq, n_blocks, merged)
-            cp_async_bulk_tensor_global_shared_cta[
+            cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
                 UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                 Index(0, 0, box_idx, col_start, merged),
+                elect,
             )
         else:
             var box_idx = Int(UInt32(Self.BM) - dynamic_dim)
             # dims (inner->outer): (K, BM, n_blocks, merged)
-            cp_async_bulk_tensor_global_shared_cta[
+            cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
                 UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                 Index(0, box_idx, col_start, merged),
-            )
-
-    @always_inline
-    def async_copy_from[
-        eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
-    ](
-        self,
-        src: UnsafePointer[
-            Scalar[Self.dtype], _, address_space=AddressSpace.SHARED
-        ],
-        *,
-        ragged_idx: UInt32,
-        dynamic_dim: UInt32,
-        middle_idx: UInt32,
-    ):
-        """
-        Copy from the smem source to the `RaggedTMA3DTile` destination.
-
-        Args:
-            src: The source shared memory pointer from which we copy memory.
-            ragged_idx: Index into the ragged dimension.
-            dynamic_dim: Number of rows to copy.
-            middle_idx: Index into the middle (generally head) dimension.
-
-        Parameters:
-            eviction_policy: Optional cache eviction policy that controls how the data is handled
-                in the cache hierarchy. Defaults to EVICT_FIRST.
-        """
-
-        comptime for col in range(ceildiv(Self.BN, Self.swizzle_granularity)):
-            self.async_copy_from_col[col, eviction_policy](
-                src,
-                ragged_idx=ragged_idx,
-                dynamic_dim=dynamic_dim,
-                middle_idx=middle_idx,
+                elect,
             )
 
     @always_inline
@@ -7030,7 +7021,7 @@ def create_tensor_tile_im2col[
 ) raises -> TMATensorTileIm2col[dtype, 2, __tile_shape, __desc_shape]:
     """Creates a TMA tensor tile with im2col transformation for 2D convolution.
 
-    TileTensor overload — delegates to the shared `_build_im2col_descriptor`
+    TileTensor overload: delegates to the shared `_build_im2col_descriptor`
     helper. See the LayoutTensor overload for full background.
 
     Parameters:

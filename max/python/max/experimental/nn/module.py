@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Generic
 from max.driver import CPU, Buffer, Device, DLPackArray
 from max.engine import CompiledModel as EngineCompiledModel
 from max.engine import Model
+from max.experimental import functional as F
 from max.experimental.realization_context import (
     GraphRealizationContext,
     in_graph_context,
@@ -53,17 +54,17 @@ from max.experimental.nn._compile_utils import (
     _detect_signals,
     _emit_cast_summary,
     _flatten_input_types,
-    _flatten_named_buffers,
     _flatten_outputs,
     _InputSlot,
     _OutputSlot,
-    _prepare_weight_for_parameter,
-    _process_provided_weights,
     _reconstruct_outputs,
     _wrap_graph_inputs,
     engine_call_error,
+    flatten_distributed_tensors,
     flatten_input_buffers,
     lower_subgraph,
+    prepare_weight_for_parameter,
+    prepare_weights_registry,
 )
 from max.nn.comm.allreduce import Signals
 from max.profiler import Tracer
@@ -714,11 +715,15 @@ class Module(Generic[_P, _R]):
 
         def lookup(name: str, existing: Tensor) -> Tensor:
             loaded.add(name)
-            prepared, cast_record = _prepare_weight_for_parameter(
-                name, state[name], existing, auto_cast=auto_cast
+            prepared, cast_record, transfer_needed = (
+                prepare_weight_for_parameter(
+                    name, state[name], existing, auto_cast=auto_cast
+                )
             )
             if cast_record is not None:
                 cast_counts[cast_record] = cast_counts.get(cast_record, 0) + 1
+            if transfer_needed:
+                prepared = F.transfer_to(prepared, existing.mapping)
             return prepared
 
         self.apply_to_parameters(lookup)
@@ -911,6 +916,7 @@ class Module(Generic[_P, _R]):
         *,
         custom_extensions: Iterable[Path] = (),
         allow_subgraphs: bool = True,
+        weights_to_transfer: Mapping[str, Tensor] | None = None,
     ) -> tuple[
         Graph,
         list[_InputSlot],
@@ -964,8 +970,16 @@ class Module(Generic[_P, _R]):
                 list(graph.inputs[:n_tensor_inputs]), input_slots
             )
 
-            def as_weight(name: str, tensor: Tensor):  # noqa: ANN202
-                return tensor._as_constant_external(name, align=1)
+            def as_weight(name: str, tensor: Tensor) -> Tensor:
+                if weights_to_transfer and (
+                    (weight_tensor := weights_to_transfer.get(name)) is not None
+                ):
+                    external_tensor = weight_tensor._as_constant_external(
+                        name, align=1
+                    )
+                    return external_tensor.to(tensor.mapping)
+                else:
+                    return tensor._as_constant_external(name, align=1)
 
             # Call forward (not __call__) so a subgraphable root inlines.
             # (run_forward: Any sidesteps forward's ParamSpec under a splat.)
@@ -1164,25 +1178,29 @@ class Module(Generic[_P, _R]):
             Tracer(f"Module.compile({compile_name})"),
             CompilationTimer(compile_name) as timer,
         ):
+            with Tracer("Module.compile.weights_registry"):
+                # Compile the graph with module parameters as weights
+
+                # Build weights registry from parameters.
+                weights_to_transfer: Mapping[str, Tensor] = {}
+                if weights is None:
+                    weights_registry = flatten_distributed_tensors(
+                        self.parameters
+                    )
+                else:
+                    weights_registry, weights_to_transfer = (
+                        prepare_weights_registry(
+                            weights, self.parameters, auto_cast=auto_cast
+                        )
+                    )
+
             with Tracer("Module.compile.trace"):
                 graph, input_slots, output_slots, unary, signals = self._trace(
                     input_types,
                     custom_extensions=custom_extensions,
                     allow_subgraphs=allow_subgraphs,
+                    weights_to_transfer=weights_to_transfer,
                 )
-
-            with Tracer("Module.compile.weights_registry"):
-                # Compile the graph with module parameters as weights
-                session = _session()
-
-                # Build weights registry from parameters.
-                if weights is None:
-                    weights_registry = _flatten_named_buffers(self.parameters)
-                else:
-                    weights_registry = _process_provided_weights(
-                        weights, self.parameters, auto_cast=auto_cast
-                    )
-
             timer.mark_build_complete()
             with Tracer("Module.compile.session_load"):
                 # Compile and initialize as separate steps (equivalent to
@@ -1190,6 +1208,7 @@ class Module(Generic[_P, _R]):
                 # artifact is what backs `CompiledModel.export_mef`, and it
                 # remains usable even in virtual-device mode where `init`
                 # returns a mock model rather than a live one.
+                session = _session()
                 compiled_artifact = session.compile(graph)
                 session_model = session.init(
                     compiled_artifact, weights_registry=weights_registry

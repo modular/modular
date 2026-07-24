@@ -16,10 +16,12 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
+"""Registers distributed and multi-GPU collective graph ops backed by the `comm` and `shmem` kernels."""
+
 from std.math import ceildiv
 from std.sys import get_defined_bool
 from std.sys.info import size_of
-import extensibility as compiler
+import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -32,11 +34,13 @@ from comm.allreduce_residual_rmsnorm import allreduce_residual_rmsnorm
 from comm.lamport import Lamport
 from std.gpu import WARP_SIZE
 from comm.reducescatter import reducescatter
+from comm.reducescatter_rmsnorm import _dispatch_rs_norm, reducescatter_rmsnorm
+from nn.normalization import rms_norm_gpu
 from comm.broadcast import broadcast
 from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
-from std.gpu.host import DeviceContext, DeviceContextList
+from std.gpu.host import DeviceContext, DeviceContextArray
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from extensibility import (
@@ -80,8 +84,11 @@ from .kernels import (
 )
 
 
-@compiler.register("mo.distributed.allreduce.sum")
+@extensibility.register("mo.distributed.allreduce.sum")
 struct DistributedAllReduceSum:
+    """Registers the `mo.distributed.allreduce.sum` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -94,9 +101,15 @@ struct DistributedAllReduceSum:
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         """Distributed allreduce operation implementation for sum reduction.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Tensor rank (number of dimensions) of the inputs and outputs.
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
 
         Args:
             outputs: Output tensors (one per GPU) to store reduced results.
@@ -124,7 +137,7 @@ struct DistributedAllReduceSum:
         )
 
         # output_lambda writes each device's reduced output into the fused
-        # epilogue output tensor.  Defined at execute scope so that
+        # epilogue output tensor. Defined at execute scope so that
         # epilogue_wrapper in vendor_ccl.allreduce (also execute scope) can
         # call it without triggering the MLIR 'kgen.param.declare.region must
         # have subprogram scope' error that arises when parameterized functions
@@ -134,7 +147,7 @@ struct DistributedAllReduceSum:
         def output_lambda[
             output_index: Int,
             _dtype: DType,
-            _width: SIMDSize,
+            _width: SIMDLength,
             *,
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -171,10 +184,10 @@ struct DistributedAllReduceSum:
             def launch_vendor_allreduce[
                 index: Int
             ]() raises {
-                read in_tensors,
-                read rank_sigs,
-                read dev_ctxs_input,
-                read outputs,
+                imm in_tensors,
+                imm rank_sigs,
+                imm dev_ctxs_input,
+                imm outputs,
             }:
                 # _get_global_comms has a check-then-create race: two
                 # threads seeing null simultaneously would both call
@@ -216,10 +229,10 @@ struct DistributedAllReduceSum:
         def launch_allreduce[
             index: Int
         ]() raises {
-            read in_tensors,
-            read rank_sigs,
-            read dev_ctxs_input,
-            read outputs,
+            imm in_tensors,
+            imm rank_sigs,
+            imm dev_ctxs_input,
+            imm outputs,
         }:
             var out_buf = outputs[index].to_tile_tensor[DType.int64]()
             allreduce[
@@ -235,8 +248,11 @@ struct DistributedAllReduceSum:
         _launch_device_collective[num_devices](launch_allreduce, dev_ctxs_input)
 
 
-@compiler.register("mo.distributed.reducescatter.sum")
+@extensibility.register("mo.distributed.reducescatter.sum")
 struct DistributedReduceScatterSum:
+    """Registers the `mo.distributed.reducescatter.sum` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -251,9 +267,20 @@ struct DistributedReduceScatterSum:
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         """Distributed reduce-scatter operation implementation for sum reduction.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Tensor rank (number of dimensions) of the inputs and outputs.
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
+            axis: Axis along which to scatter the reduced result
+                (defaults to 0).
+            group_size: Number of devices per reduce-scatter group; must be
+                at least 1 and must evenly divide the total number of
+                devices (defaults to 0).
 
         Args:
             outputs: Output tensors (one per GPU) to store scattered reduced results.
@@ -289,10 +316,10 @@ struct DistributedReduceScatterSum:
         def launch_reducescatter[
             index: Int
         ]() raises {
-            read inputs,
-            read signal_buffers,
-            read dev_ctxs_input,
-            read outputs,
+            imm inputs,
+            imm signal_buffers,
+            imm dev_ctxs_input,
+            imm outputs,
         }:
             comptime group_id, local_rank = divmod(index, group_size)
             comptime group_start = group_id * group_size
@@ -329,7 +356,7 @@ struct DistributedReduceScatterSum:
             def output_lambda[
                 output_index: Int,
                 _dtype: DType,
-                _width: SIMDSize,
+                _width: SIMDLength,
                 *,
                 _alignment: Int,
             ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -360,8 +387,11 @@ struct DistributedReduceScatterSum:
         )
 
 
-@compiler.register("mo.distributed.allgather")
+@extensibility.register("mo.distributed.allgather")
 struct DistributedAllGather:
+    """Registers the `mo.distributed.allgather` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -375,9 +405,18 @@ struct DistributedAllGather:
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         """Distributed allgather operation implementation.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Tensor rank (number of dimensions) of the inputs and outputs.
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
+            group_size: Number of devices per allgather group; must be at
+                least 1 and must evenly divide the total number of devices
+                (defaults to 0).
 
         Args:
             outputs: Output tensors (one per GPU) to store gathered results.
@@ -407,10 +446,10 @@ struct DistributedAllGather:
         def launch_allgather[
             index: Int
         ]() raises {
-            read inputs,
-            read outputs,
-            read signal_buffers,
-            read dev_ctxs_input,
+            imm inputs,
+            imm outputs,
+            imm signal_buffers,
+            imm dev_ctxs_input,
         }:
             comptime group_id, local_rank = divmod(index, group_size)
             comptime group_start = group_id * group_size
@@ -474,7 +513,7 @@ struct DistributedAllGather:
         _launch_device_collective[num_devices](launch_allgather, dev_ctxs_input)
 
 
-@compiler.register("mo.distributed.broadcast")
+@extensibility.register("mo.distributed.broadcast")
 struct DistributedBroadcast:
     """Distributed broadcast: copy tensor from root GPU to all GPUs.
 
@@ -498,7 +537,7 @@ struct DistributedBroadcast:
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         """Execute distributed broadcast operation.
 
@@ -552,10 +591,10 @@ struct DistributedBroadcast:
         def launch_broadcast[
             index: Int
         ]() raises {
-            read in_buf,
-            read rank_sigs,
-            read dev_ctxs_input,
-            read outputs,
+            imm in_buf,
+            imm rank_sigs,
+            imm dev_ctxs_input,
+            imm outputs,
         }:
             var out_buf = TileTensor[mut=True](
                 outputs[index]
@@ -575,7 +614,7 @@ struct DistributedBroadcast:
         _launch_device_collective[num_devices](launch_broadcast, dev_ctxs_input)
 
 
-@compiler.register("mo.distributed.scatter")
+@extensibility.register("mo.distributed.scatter")
 struct DistributedScatter:
     """Distributed scatter: send different chunks to different device groups.
 
@@ -601,7 +640,7 @@ struct DistributedScatter:
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         comptime ngpus = signal_buffers.size
         comptime assert (
@@ -647,10 +686,10 @@ struct DistributedScatter:
         def launch_scatter[
             index: Int
         ]() raises {
-            read in_tensors,
-            read rank_sigs,
-            read dev_ctxs_input,
-            read outputs,
+            imm in_tensors,
+            imm rank_sigs,
+            imm dev_ctxs_input,
+            imm outputs,
         }:
             var out_buf = outputs[index].to_tile_tensor[DType.int64]()
             scatter[ngpus=ngpus, dp_size=ngpus](
@@ -663,8 +702,13 @@ struct DistributedScatter:
         _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input)
 
 
-@compiler.register("mo.composite.distributed.allreduce_add_rms_norm_quant_fp8")
+@extensibility.register(
+    "mo.composite.distributed.allreduce_add_rms_norm_quant_fp8"
+)
 struct DistributedAllReduceAddRMSNormQuantFP8:
+    """Registers the `mo.composite.distributed.allreduce_add_rms_norm_quant_fp8` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         dtype: DType,
@@ -688,7 +732,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         epsilons: InputVariadicTensors[dtype=DType.float32, ...],
         weight_offsets: InputVariadicTensors[dtype=dtype, ...],
         scales_ub: InputVariadicTensors[dtype=DType.float32, ...],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         comptime num_devices = inputs.size
         comptime assert signal_buffers.size == num_devices, (
@@ -754,17 +798,17 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         def launch_fused_allreduce[
             index: Int
         ]() raises {
-            read in_tensors,
-            read rank_sigs,
-            read dev_ctxs,
-            read gammas,
-            read epsilons,
-            read weight_offsets,
-            read scales_ub,
-            read outputs,
-            read outputs_scales,
-            read outputs_residual,
-            read residuals,
+            imm in_tensors,
+            imm rank_sigs,
+            imm dev_ctxs,
+            imm gammas,
+            imm epsilons,
+            imm weight_offsets,
+            imm scales_ub,
+            imm outputs,
+            imm outputs_scales,
+            imm outputs_residual,
+            imm residuals,
         }:
             # Marshal per-device outputs and residual as TileTensors.
             var out_buf = outputs[index].to_tile_tensor[DType.int64]()
@@ -803,8 +847,173 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         _launch_device_collective[num_devices](launch_fused_allreduce, dev_ctxs)
 
 
-@compiler.register("mo.composite.distributed.matmul_reduce_scatter.sum")
+@extensibility.register("mo.composite.distributed.reduce_scatter_rms_norm")
+struct DistributedReduceScatterRMSNorm:
+    """Registers the `mo.composite.distributed.reduce_scatter_rms_norm` graph op with the graph compiler.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        outputs_normed: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        outputs_sum: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
+        epsilons: InputVariadicTensors[dtype=DType.float32, ...],
+        weight_offsets: InputVariadicTensors[dtype=dtype, ...],
+        dev_ctxs_input: DeviceContextArray,
+    ) capturing raises:
+        """Fused reduce-scatter sum + RMSNorm (bf16 in/out, no quantization).
+
+        Reduce-scatters `inputs` (one `[rows, cols]` tensor per device) along
+        rows and RMSNorm-normalizes each owned shard in the same launch, writing
+        the normed shard to `outputs_normed` and the reduce-scatter sum shard
+        (the residual stream) to `outputs_sum`.
+
+        Parameters:
+            dtype: Element type of the input/output tensors.
+            rank: Tensor rank of the inputs and outputs.
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
+
+        Args:
+            outputs_normed: Per-device normed output shards.
+            outputs_sum: Per-device reduce-scatter sum shards (residual stream).
+            inputs: Per-device input tensors to reduce and scatter.
+            signal_buffers: Per-device synchronization buffers.
+            gammas: Per-device RMSNorm gamma weights (in_dtype, length cols).
+            epsilons: Per-device RMSNorm epsilon scalars (float32).
+            weight_offsets: Per-device gamma offset scalars (in_dtype).
+            dev_ctxs_input: Device contexts for participating GPUs.
+
+        Limitations:
+            - Maximum of 8 GPUs supported (matches MAX_GPUS in comm/sync.mojo).
+            - Full-world reduce-scatter only (no device grouping); requires P2P.
+        """
+        comptime num_devices = inputs.size
+        comptime assert signal_buffers.size == num_devices, (
+            "expected reduce_scatter_rms_norm inputs and signal buffers to have"
+            " the same number of elements"
+        )
+
+        # Like plain reduce-scatter, no scratch: only the Signal struct.
+        _check_signal_buffer_size(signal_buffers[0].size(), 0)
+
+        # The kernel also takes CPU operands (epsilon/weight_offset are rank-0
+        # CPU scalars), so CPU devices must be removed.
+        var dev_ctxs = dev_ctxs_input.filter_gpu_contexts[num_devices]()
+
+        comptime InputTensorType = type_of(
+            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+        )
+        var in_tensors = InlineArray[InputTensorType, num_devices](
+            uninitialized=True
+        )
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](uninitialized=True)
+
+        comptime for i in range(num_devices):
+            in_tensors[i] = rebind[InputTensorType](
+                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+            )
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
+
+        @always_inline
+        def launch_fused_rs_norm[
+            index: Int
+        ]() raises {
+            imm in_tensors,
+            imm rank_sigs,
+            imm dev_ctxs,
+            imm gammas,
+            imm epsilons,
+            imm weight_offsets,
+            imm outputs_normed,
+            imm outputs_sum,
+        }:
+            var normed_buf = outputs_normed[index].to_tile_tensor[DType.int64]()
+            var sum_buf = outputs_sum[index].to_tile_tensor[DType.int64]()
+            var gamma_tensor = gammas[index].to_tile_tensor[DType.int64]()
+            var epsilon = epsilons[index].unsafe_ptr()[]
+            var weight_offset = weight_offsets[index].unsafe_ptr()[]
+
+            # Two-launch fallback: standalone reduce-scatter into `sum_buf`,
+            # then `rms_norm_gpu` into `normed_buf`. The dispatcher runs this
+            # above the fuse threshold (prefill M); below it the fused kernel is
+            # bit-identical to this. `sum_buf` is the plain reduce-scatter either
+            # way, so the residual is bit-identical regardless. mbc=True.
+            @parameter
+            @always_inline
+            def two_launch() raises:
+                reducescatter[dtype=dtype, ngpus=num_devices, axis=0](
+                    in_tensors, sum_buf, rank_sigs, dev_ctxs[index]
+                )
+
+                # `@__copy_capture` is REQUIRED: embedded into the
+                # `rms_norm_gpu` device kernel, a captured local `var`
+                # (`sum_buf`/`normed_buf`) is not carried to the device without
+                # it -> the closure reads a garbage host-stack pointer and
+                # corrupts device memory.
+                @__copy_capture(sum_buf)
+                @parameter
+                @always_inline
+                def norm_input_fn[
+                    width: Int
+                ](coords: Coord) -> SIMD[dtype, width]:
+                    return sum_buf.raw_load[width=width](sum_buf.layout(coords))
+
+                @__copy_capture(normed_buf)
+                @parameter
+                @always_inline
+                def norm_output_fn[
+                    width: SIMDLength, alignment: Int
+                ](coords: Coord, val: SIMD[dtype, width]) -> None:
+                    normed_buf.raw_store[width=width, alignment=alignment](
+                        normed_buf.layout(coords), val
+                    )
+
+                rms_norm_gpu[
+                    rank,
+                    norm_input_fn,
+                    norm_output_fn,
+                    multiply_before_cast=True,
+                ](
+                    sum_buf.layout.shape_coord(),
+                    gamma_tensor,
+                    epsilon,
+                    weight_offset,
+                    dev_ctxs[index],
+                )
+
+            _dispatch_rs_norm[two_launch=two_launch](
+                in_tensors,
+                normed_buf,
+                sum_buf,
+                gamma_tensor,
+                epsilon,
+                weight_offset,
+                rank_sigs,
+                dev_ctxs[index],
+            )
+
+        _launch_device_collective[num_devices](launch_fused_rs_norm, dev_ctxs)
+
+
+@extensibility.register("mo.composite.distributed.matmul_reduce_scatter.sum")
 struct DistributedMatmulReduceScatterSum:
+    """Registers the `mo.composite.distributed.matmul_reduce_scatter.sum` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         a_type: DType,
@@ -823,7 +1032,7 @@ struct DistributedMatmulReduceScatterSum:
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        dev_ctxs_input: DeviceContextList,
+        dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
         comptime num_devices = inputs_a.size
         comptime assert (
@@ -888,7 +1097,7 @@ struct DistributedMatmulReduceScatterSum:
         @always_inline
         @__copy_capture(residual)
         def residual_add_fn[
-            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+            _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_dtype, _width]) capturing -> SIMD[
             _dtype, _width
         ]:
@@ -938,7 +1147,7 @@ struct DistributedMatmulReduceScatterSum:
         ](c_peer_tt, a_per_peer, b_per_peer, rank_sigs, dev_ctxs_input)
 
 
-@compiler.register("lamport_allreduce_rmsnorm")
+@extensibility.register("lamport_allreduce_rmsnorm")
 struct LamportAllreduceRMSNorm:
     """Per-rank fused Lamport allreduce + RMSNorm (high-perf protocol).
 

@@ -22,17 +22,19 @@ from .plugin import (
     M_driver_static_bundle,
     M_driver_slice,
     M_driver_bundle_compilation_options,
+    M_driver_dlpack_device,
 )
 
-from .buffer import Buffer
+from .buffer import Buffer, BufferView
 from .device import DeviceSpec
 from .stream import Stream
 
 from .status import STATUS_SUCCESS, HALError
 
 from std.memory import (
-    ImmutPointer,
+    ImmPointer,
     ArcPointer,
+    MutOpaquePointer,
     UnsafePointer,
     UnsafeMaybeUninit,
 )
@@ -122,7 +124,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def handle[
         origin: Origin, //
-    ](ref[origin] self) -> UnsafePointer[ContextHandle.type, origin]:
+    ](ref[origin] self) -> UnsafePointer[ContextHandle.T, origin]:
         """Returns the raw context handle, tying its origin back to `self`.
 
         Accessing `self._handle` directly hands out a `ContextHandle` whose
@@ -139,6 +141,76 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             origin
         ]()
 
+    # ===-------------------------------------------------------------------===#
+    # Queries
+    # ===-------------------------------------------------------------------===#
+
+    def get_driver_name(self) raises HALError -> String:
+        """Returns the API name reported by the plugin backing this context.
+
+        This is the plugin's own identity (e.g. "CUDA", "Metal", "HIP"),
+        not the loader label from the plugin spec, so it is stable however
+        the plugin was loaded.
+        """
+        return self._raw[].get_api_name()
+
+    def get_device_id(self) -> Int64:
+        """Returns the id of the device this context is bound to."""
+        return self._device[].id
+
+    def get_dlpack_device(
+        self, pinned: Bool
+    ) raises HALError -> M_driver_dlpack_device:
+        """Returns the DLPack `(device_type, device_id)` for this context."""
+        return self._device[].get_dlpack_device(pinned)
+
+    # ===-------------------------------------------------------------------===#
+    # Synchronous copies
+    # ===-------------------------------------------------------------------===#
+
+    def copy_to_device(
+        self,
+        dst: BufferView,
+        src: UnsafePointer[mut=False, UInt8, _],
+    ) raises HALError:
+        """Copies `dst.byte_size` bytes from host memory into `dst`, blocking
+        until complete."""
+        self._raw[].copy_to_device_sync(self._handle, dst._view, src)
+
+    def copy_from_device(
+        self,
+        dst: UnsafePointer[mut=True, UInt8, _],
+        src: BufferView,
+    ) raises HALError:
+        """Copies `src.byte_size` bytes from `src` into host memory, blocking
+        until complete."""
+        self._raw[].copy_from_device_sync(self._handle, dst, src._view)
+
+    def copy_intra_device(
+        self,
+        dst: BufferView,
+        src: BufferView,
+    ) raises HALError:
+        """Copies `dst.byte_size` bytes from `src` into `dst`, blocking until
+        complete."""
+        debug_assert(
+            src.byte_size() >= dst.byte_size(),
+            "copy_intra_device source view smaller than destination",
+        )
+        self._raw[].copy_intra_device_sync(self._handle, dst._view, src._view)
+
+    def set_memory(self, dst: BufferView, value: UInt8) raises HALError:
+        """Sets every byte of `dst` to `value`, blocking until complete."""
+        self._raw[].set_memory_sync(self._handle, dst._view, value)
+
+    def fill(
+        self, dst: BufferView, value: UInt64, value_size: UInt64
+    ) raises HALError:
+        """Fills `dst` with a repeated `value_size`-byte `value`, blocking until
+        complete. `value_size` must be one of 1, 2, 4, or 8."""
+        self._raw[].fill_sync(self._handle, dst._view, value, value_size)
+
+    @always_inline
     def _compile_inner[
         fn_type: TrivialRegisterPassable,
         func: fn_type,
@@ -172,6 +244,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             emission_kind="object",
         )
 
+    @always_inline
     def compile[
         fn_type: TrivialRegisterPassable,
         func: fn_type,
@@ -184,7 +257,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         return (bundle^, compiled_info)
 
     def load_bundle[
-        asm_origin: ImmutOrigin
+        asm_origin: ImmOrigin
     ](
         self, asm: StringSlice[origin=asm_origin]
     ) raises HALError -> RuntimeBundle:
@@ -199,12 +272,12 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
                 data=Pointer(to=asm.unsafe_ptr()[]),
                 size=UInt64(asm.byte_length()),
             ),
-            file_type=Pointer(to=file_type.unsafe_ptr()[]),
+            file_type=Pointer(to=file_type.unsafe_ptr().bitcast[Int8]()[]),
             file_type_len=UInt64(file_type.byte_length()),
         )
 
         var opts = M_driver_bundle_compilation_options(
-            debug_level=rebind[ImmutPointer[Int8, ImmutUntrackedOrigin]](
+            debug_level=rebind[ImmPointer[Int8, ImmUntrackedOrigin]](
                 "".unsafe_ptr()
             ),
             debug_level_len=UInt64(0),
@@ -260,6 +333,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         return Buffer[Self.device_spec](
             _handle=self._raw[].alloc_sync(self._handle, byte_size),
             byte_size=byte_size,
+            is_host_pinned=False,
             _context=self._self_ref.try_upgrade().value(),
         )
 
@@ -272,6 +346,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         return Buffer[Self.device_spec](
             _handle=self._raw[].alloc_pinned(self._handle, byte_size),
             byte_size=byte_size,
+            is_host_pinned=True,
             _context=self._self_ref.try_upgrade().value(),
         )
 
@@ -280,11 +355,86 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     ) raises HALError:
         self._raw[].free_pinned(self._handle, mem._handle)
 
+    def wrap_memory(
+        self, address: UInt64, byte_size: UInt64, owning: Bool = False
+    ) raises HALError -> Buffer[Self.device_spec]:
+        """Wraps an existing device memory region in a Buffer.
+
+        With `owning=False` (the default) the region is externally owned:
+        the plugin never frees it, freeing the buffer releases only the
+        plugin's bookkeeping, and the caller must keep the underlying
+        allocation alive for the buffer's lifetime. With `owning=True`
+        the buffer frees the region through the plugin's normal path,
+        which is only valid for an address that came from this plugin's
+        own allocator (e.g. one released with `unwrap_memory`).
+        """
+        return Buffer[Self.device_spec](
+            _handle=self._raw[].wrap_memory(
+                self._handle, address, byte_size, owning
+            ),
+            byte_size=byte_size,
+            is_host_pinned=False,
+            _context=self._self_ref.try_upgrade().value(),
+        )
+
+    def unwrap_memory(
+        self, mem: Buffer[Self.device_spec]
+    ) raises HALError -> UInt64:
+        """Releases ownership of the region under `mem`, returning its address.
+
+        After this call the buffer is non-owning — freeing it releases
+        only the plugin's bookkeeping — and the caller is responsible for
+        the region at the returned address.
+        """
+        return self._raw[].unwrap_memory(self._handle, mem._handle)
+
     def memory_get_address(
         self, mem: Buffer[Self.device_spec]
     ) raises HALError -> UInt64:
         """Get the GPU address of a device memory allocation."""
         return self._raw[].get_memory_property["address", UInt64](mem._handle)
+
+    def memory_get_host_address[
+        mut: Bool, //, origin: Origin[mut=mut]
+    ](self, mem: Buffer[Self.device_spec]) raises HALError -> UnsafePointer[
+        UInt8, origin
+    ]:
+        """Get a host-dereferenceable pointer to a host-accessible allocation.
+
+        Host-accessible memory is any allocation on a host (CPU) device and
+        pinned GPU allocations (`alloc_host_pinned`); on unified-memory GPUs
+        every allocation qualifies. The plugin is the authority on residency:
+        """
+        return UnsafePointer[UInt8, origin](
+            unsafe_from_address=Int(
+                self._raw[].get_memory_property["host_address", UInt64](
+                    mem._handle
+                )
+            )
+        )
+
+    # ===-------------------------------------------------------------------===#
+    # Current-context state
+    # ===-------------------------------------------------------------------===#
+
+    def set_current(self) raises HALError:
+        """Sets this context as the calling thread's current context."""
+        self._raw[].set_context_current(self._handle)
+
+    def get_current_driver_context(self) raises HALError -> Int:
+        """Returns the calling thread's active driver-level context as an
+        opaque handle."""
+        return self._raw[].get_current_driver_context(self._handle)
+
+    def set_current_driver_context(self, driver_context: Int) raises HALError:
+        """Installs a handle previously obtained from
+        `get_current_driver_context` as the calling thread's current context.
+        """
+        self._raw[].set_current_driver_context(self._handle, driver_context)
+
+    def get_memory_info(self) raises HALError -> Tuple[UInt64, UInt64]:
+        """Returns the free and total device memory, in bytes."""
+        return self._raw[].get_context_memory_info(self._handle)
 
     # ===-------------------------------------------------------------------===#
     # Function execution
@@ -295,8 +445,100 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     ) raises HALError -> FunctionHandle:
         return self._raw[].load_function(self._handle, bundle._handle, name)
 
+    def set_function_attribute(
+        self, func: FunctionHandle, attribute: Int32, value: Int32
+    ) raises HALError:
+        """Sets a backend function attribute (e.g. the dynamic shared-memory
+        cap) on a loaded function."""
+        self._raw[].set_function_attribute(self._handle, func, attribute, value)
+
     def unload_function(self, func: FunctionHandle) raises HALError:
         self._raw[].unload_function(self._handle, func)
+
+    def function_occupancy_max_active_blocks(
+        self,
+        func: FunctionHandle,
+        block_size: Int32,
+        dynamic_shared_memory_bytes: UInt64,
+    ) raises HALError -> Int32:
+        """Returns the max number of resident blocks per multiprocessor for
+        the function at the given block size and dynamic shared-memory usage.
+        """
+        return self._raw[].function_occupancy_max_active_blocks(
+            self._handle, func, block_size, dynamic_shared_memory_bytes
+        )
+
+    def tensor_map_encode_tiled(
+        self,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_device_address: UInt64,
+        global_dim: UnsafePointer[mut=False, UInt64, _],
+        global_strides: UnsafePointer[mut=False, UInt64, _],
+        box_dim: UnsafePointer[mut=False, UInt32, _],
+        element_strides: UnsafePointer[mut=False, UInt32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises HALError:
+        """Encodes a tiled TMA descriptor into `tensor_map` for this
+        context's device."""
+        self._raw[].tensor_map_encode_tiled(
+            self._handle,
+            tensor_map,
+            data_type,
+            rank,
+            global_device_address,
+            global_dim,
+            global_strides,
+            box_dim,
+            element_strides,
+            interleave,
+            swizzle,
+            l2_promotion,
+            oob_fill,
+        )
+
+    def tensor_map_encode_im2col(
+        self,
+        tensor_map: MutOpaquePointer[_],
+        data_type: Int32,
+        rank: Int32,
+        global_device_address: UInt64,
+        global_dim: UnsafePointer[mut=False, UInt64, _],
+        global_strides: UnsafePointer[mut=False, UInt64, _],
+        pixel_box_lower_corner: UnsafePointer[mut=False, Int32, _],
+        pixel_box_upper_corner: UnsafePointer[mut=False, Int32, _],
+        channels_per_pixel: Int32,
+        pixels_per_column: Int32,
+        element_strides: UnsafePointer[mut=False, UInt32, _],
+        interleave: Int32,
+        swizzle: Int32,
+        l2_promotion: Int32,
+        oob_fill: Int32,
+    ) raises HALError:
+        """Encodes an im2col TMA descriptor into `tensor_map` for this
+        context's device."""
+        self._raw[].tensor_map_encode_im2col(
+            self._handle,
+            tensor_map,
+            data_type,
+            rank,
+            global_device_address,
+            global_dim,
+            global_strides,
+            pixel_box_lower_corner,
+            pixel_box_upper_corner,
+            channels_per_pixel,
+            pixels_per_column,
+            element_strides,
+            interleave,
+            swizzle,
+            l2_promotion,
+            oob_fill,
+        )
 
 
 @fieldwise_init

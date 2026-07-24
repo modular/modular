@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Generic, cast
 
 from max.pipelines.context import (
@@ -76,6 +76,116 @@ class TokenGeneratorOutput:
     stop_sequence: str | None = None
 
 
+def _merge_outputs(chunks: list[TokenGeneratorOutput]) -> TokenGeneratorOutput:
+    """Combine several consecutive TokenGeneratorOutputs into one.
+
+    Decoded text concatenates directly because the detokenizer is stateful
+    across the whole request, so consecutive decoded pieces reassemble the
+    exact stream text. status/stop_sequence come from the last chunk; the
+    first-chunk fields take the first non-None value.
+    """
+    assert chunks
+    content_parts = [c.decoded_tokens for c in chunks if c.decoded_tokens]
+    reasoning_parts = [
+        c.decoded_reasoning_tokens for c in chunks if c.decoded_reasoning_tokens
+    ]
+    token_log_probs = [
+        p
+        for c in chunks
+        if c.token_log_probabilities
+        for p in c.token_log_probabilities
+    ]
+    top_log_probs = [
+        p
+        for c in chunks
+        if c.top_log_probabilities
+        for p in c.top_log_probabilities
+    ]
+
+    def _first_not_none(attr: str) -> Any:
+        for c in chunks:
+            v = getattr(c, attr)
+            if v is not None:
+                return v
+        return None
+
+    stop_sequence = None
+    for c in chunks:
+        if c.stop_sequence is not None:
+            stop_sequence = c.stop_sequence
+
+    return TokenGeneratorOutput(
+        status=chunks[-1].status,
+        decoded_tokens="".join(content_parts) if content_parts else None,
+        decoded_reasoning_tokens="".join(reasoning_parts)
+        if reasoning_parts
+        else None,
+        token_count=sum(c.token_count for c in chunks),
+        token_log_probabilities=token_log_probs or None,
+        top_log_probabilities=top_log_probs or None,
+        prompt_token_count=_first_not_none("prompt_token_count"),
+        cached_token_count=_first_not_none("cached_token_count"),
+        reasoning_token_count=sum(c.reasoning_token_count or 0 for c in chunks)
+        or None,
+        stop_sequence=stop_sequence,
+    )
+
+
+def _apply_stop_truncation(
+    merged: TokenGeneratorOutput,
+) -> TokenGeneratorOutput:
+    """Drop the stop string and anything after it from a flushed chunk's
+    content. The coalescer buffers, so a matched stop string is normally
+    wholly present in the merged text and located exactly by find().
+
+    Accepted limitation: a stop string split across an already-emitted prior
+    chunk boundary cannot be retroactively trimmed. This matches every
+    streaming implementation and is unchanged from today's behavior.
+    """
+    if merged.stop_sequence is None or not merged.decoded_tokens:
+        return merged
+    idx = merged.decoded_tokens.find(merged.stop_sequence)
+    if idx < 0:
+        return merged  # straddled an already-emitted chunk (rare) — accepted limitation
+    return replace(merged, decoded_tokens=merged.decoded_tokens[:idx] or None)
+
+
+async def _coalesce_chunks(
+    source: AsyncGenerator[TokenGeneratorOutput, None],
+    min_chunk_tokens: int,
+) -> AsyncGenerator[TokenGeneratorOutput, None]:
+    """Buffer streamed token chunks to a minimum size and drop empty deltas.
+
+    Flush rules:
+    - first visible chunk flushes as soon as it has text (TTFT unaffected);
+    - a terminal chunk (status.is_done) always flushes;
+    - the token floor only counts once there is non-empty text, so empty
+      deltas (partial multi-byte char / skipped special token) are buffered
+      until real text arrives and never emitted alone.
+    """
+    buffer: list[TokenGeneratorOutput] = []
+    buffered_tokens = 0
+    first_emitted = False
+    async for chunk in source:
+        buffer.append(chunk)
+        buffered_tokens += chunk.token_count + (
+            chunk.reasoning_token_count or 0
+        )
+        merged = _merge_outputs(buffer)
+        has_text = bool(merged.decoded_tokens) or bool(
+            merged.decoded_reasoning_tokens
+        )
+        must_flush = chunk.status.is_done
+        reached_floor = has_text and (
+            not first_emitted or buffered_tokens >= min_chunk_tokens
+        )
+        if must_flush or reached_floor:
+            yield _apply_stop_truncation(merged)  # Part B
+            buffer, buffered_tokens, first_emitted = [], 0, True
+    if buffer:
+        yield _apply_stop_truncation(_merge_outputs(buffer))
+
+
 class BasePipeline(Generic[BaseContextType, RequestType, PipelineOutputType]):
     def __init__(
         self,
@@ -109,10 +219,12 @@ class TokenGeneratorPipeline(
         self,
         *args,
         reasoning_parser_name: str | None = None,
+        min_chunk_tokens: int = 1,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._reasoning_parser_name = reasoning_parser_name
+        self._min_chunk_tokens = max(1, min_chunk_tokens)
 
     async def _reasoning_parser(self) -> ReasoningParser | None:
         if self._reasoning_parser_name is None:
@@ -142,10 +254,17 @@ class TokenGeneratorPipeline(
     async def next_token_chunk(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[TokenGeneratorOutput, None]:
-        """Generates and streams token chunks for the provided request.
+        """Tokenizes and submits ``request``, returning a token-chunk generator.
 
-        Yields chunks of tokens aligned with scheduler responses. Each chunk
-        contains all tokens from a single model worker response. Benefits:
+        Awaiting this coroutine tokenizes the request and hands it off to the
+        model worker. A failure during that submission (e.g. a tokenization
+        error or a dead worker) raises here, before the generator is returned,
+        so the caller can surface it as an error response before any streaming
+        headers are sent.
+
+        Iterating the returned generator streams token chunks aligned with
+        scheduler responses. Each chunk contains all tokens from a single model
+        worker response. Benefits:
         - Single tokenizer.decode() call per chunk instead of per token
         - Callers can amortize Pydantic/SSE overhead across the chunk
         """
@@ -179,11 +298,10 @@ class TokenGeneratorPipeline(
 
         # Count this request as awaiting admission to the model worker: it has
         # been accepted by the API server but is still API-side (tokenization /
-        # pre-submit). Decremented just before the handoff to the worker below,
-        # so a persistently high gauge points at an API-server backlog rather
-        # than the scheduler queue.
+        # pre-submit). Decremented once the handoff to the worker succeeds (or
+        # fails) below, so a persistently high gauge points at an API-server
+        # backlog rather than the scheduler queue.
         self.model_worker.note_awaiting_admission(1)
-        awaiting_admission = True
 
         try:
             with record_ms(METRICS.input_time):
@@ -248,180 +366,221 @@ class TokenGeneratorPipeline(
             ):
                 is_still_reasoning = False
 
-            with record_ms(METRICS.output_time):
-                has_stop_sequences = bool(context.eos_tracker.eos_stop_strings)
+            has_stop_sequences = bool(context.eos_tracker.eos_stop_strings)
 
-                # Handing the request off to the model worker; it is no longer
-                # awaiting admission on the API side.
-                self.model_worker.note_awaiting_admission(-1)
-                awaiting_admission = False
+            # Hand the request off to the model worker. Awaiting the submit
+            # performs the handoff (e.g. the zmq put), so a failure here — for
+            # example a dead worker — raises before the generator is returned,
+            # letting the caller respond with an HTTP error before streaming
+            # headers are sent.
+            response_stream = await self.model_worker.stream(
+                context.request_id, context
+            )
+        except BaseException:
+            # Balance the awaiting-admission counter if we never reached a
+            # successful handoff (tokenization failed or the submit raised).
+            self.model_worker.note_awaiting_admission(-1)
+            raise
 
-                async for responses in self.model_worker.stream(
-                    context.request_id, context
-                ):
-                    assert isinstance(responses, list)
-                    assert len(responses) > 0
-                    assert isinstance(responses[0], TextGenerationOutput)
-                    response = TextGenerationOutput.merge(responses)
+        # Handoff succeeded: the request is no longer awaiting admission.
+        self.model_worker.note_awaiting_admission(-1)
 
-                    num_generated_tokens += len(response.tokens)
+        async def _generate() -> AsyncGenerator[TokenGeneratorOutput, None]:
+            nonlocal \
+                decode_elapsed_ms, \
+                num_generated_tokens, \
+                first_chunk_yielded, \
+                is_still_reasoning
+            try:
+                with record_ms(METRICS.output_time):
+                    async for responses in response_stream:
+                        assert isinstance(responses, list)
+                        assert len(responses) > 0
+                        assert isinstance(responses[0], TextGenerationOutput)
+                        response = TextGenerationOutput.merge(responses)
 
-                    tokens: list[int] | None = response.tokens
-                    token_log_probs = response.log_probabilities
-                    reasoning_tokens = None
-                    reasoning_text_formatter = None
+                        num_generated_tokens += len(response.tokens)
 
-                    if reasoning_parser is not None:
-                        # Always run the parser, even when we weren't seeded
-                        # into reasoning. This lets architectures like Gemma 4
-                        # — which can emit ``<|channel>thought\n...<channel|>``
-                        # mid-stream regardless of enable_thinking — detect
-                        # those reasoning sections dynamically rather than
-                        # leaking them as content.
-                        parsed = reasoning_parser.stream(
-                            response.tokens,
-                            is_currently_reasoning=is_still_reasoning,
-                        )
-                        reasoning_span = parsed.span
-                        is_still_reasoning = parsed.is_still_reasoning
-                        reasoning_text_formatter = (
-                            parsed.reasoning_text_formatter
-                        )
-                        tokens = (
-                            reasoning_span.extract_content(response.tokens)
-                            or None
-                        )
-                        if response.log_probabilities is not None:
-                            token_log_probs = (
-                                reasoning_span.extract_content(
-                                    response.log_probabilities
+                        tokens: list[int] | None = response.tokens
+                        token_log_probs = response.log_probabilities
+                        reasoning_tokens = None
+                        reasoning_text_formatter = None
+
+                        if reasoning_parser is not None:
+                            # Always run the parser, even when we weren't seeded
+                            # into reasoning. This lets architectures like Gemma
+                            # 4 — which can emit
+                            # ``<|channel>thought\n...<channel|>`` mid-stream
+                            # regardless of enable_thinking — detect those
+                            # reasoning sections dynamically rather than leaking
+                            # them as content.
+                            parsed = reasoning_parser.stream(
+                                response.tokens,
+                                is_currently_reasoning=is_still_reasoning,
+                            )
+                            reasoning_span = parsed.span
+                            is_still_reasoning = parsed.is_still_reasoning
+                            reasoning_text_formatter = (
+                                parsed.reasoning_text_formatter
+                            )
+                            tokens = (
+                                reasoning_span.extract_content(response.tokens)
+                                or None
+                            )
+                            if response.log_probabilities is not None:
+                                token_log_probs = (
+                                    reasoning_span.extract_content(
+                                        response.log_probabilities
+                                    )
+                                    or None
+                                )
+                            reasoning_tokens = (
+                                reasoning_span.extract_reasoning(
+                                    response.tokens
                                 )
                                 or None
                             )
-                        reasoning_tokens = (
-                            reasoning_span.extract_reasoning(response.tokens)
-                            or None
+
+                        if tokens is None and reasoning_tokens is None:
+                            # If the status is not done and there were no
+                            # tokens, this indicates that the chunk contained
+                            # only stripped tokens, such as reasoning
+                            # delimiters. In this case, hold off on yielding a
+                            # chunk.
+                            if response.final_status.is_done:
+                                # This terminal chunk may be the only one the
+                                # route ever sees (e.g. max_tokens=1 stopping
+                                # on a think-start delimiter), so it must carry
+                                # the prompt token count or the final usage
+                                # chunk reports prompt_tokens=0 (CLIN-1523).
+                                # cached_token_count is likewise a one-time
+                                # per-request report, so mirror the first-chunk
+                                # gating below and only emit it if no earlier
+                                # chunk already carried it.
+                                yield TokenGeneratorOutput(
+                                    status=response.final_status,
+                                    token_count=0,
+                                    prompt_token_count=context.tokens.prompt_length,
+                                    cached_token_count=response.num_cached_tokens
+                                    if not first_chunk_yielded
+                                    else None,
+                                )
+                            continue
+
+                        token_count = len(tokens) if tokens is not None else 0
+                        reasoning_token_count = (
+                            len(reasoning_tokens)
+                            if reasoning_tokens is not None
+                            else 0
                         )
 
-                    if tokens is None and reasoning_tokens is None:
-                        # If the status is not done and there were no tokens,
-                        # this indicates that the chunk contained only stripped
-                        # tokens, such as reasoning delimiters. In this case,
-                        # hold off on yielding a chunk.
-                        if response.final_status.is_done:
-                            yield TokenGeneratorOutput(
-                                status=response.final_status,
-                                token_count=0,
+                        with Tracer(
+                            f"tokenizer.decode_chunk({token_count + reasoning_token_count} toks)"
+                        ):
+                            # Decode tokens using the buffered detokenizer which
+                            # handles multi-byte UTF-8 sequences across chunks.
+                            decoded_tokens = (
+                                await content_detokenizer.decode(tokens)
+                                if tokens
+                                else None
                             )
-                        continue
-
-                    token_count = len(tokens) if tokens is not None else 0
-                    reasoning_token_count = (
-                        len(reasoning_tokens)
-                        if reasoning_tokens is not None
-                        else 0
-                    )
-
-                    with Tracer(
-                        f"tokenizer.decode_chunk({token_count + reasoning_token_count} toks)"
-                    ):
-                        # Decode tokens using the buffered detokenizer which
-                        # handles multi-byte UTF-8 sequences across chunks.
-                        decoded_tokens = (
-                            await content_detokenizer.decode(tokens)
-                            if tokens
-                            else None
-                        )
-                        decoded_reasoning_tokens = (
-                            await reasoning_detokenizer.decode(reasoning_tokens)
-                            if reasoning_tokens
-                            else None
-                        )
-
-                    if reasoning_text_formatter and decoded_reasoning_tokens:
-                        decoded_reasoning_tokens = reasoning_text_formatter(
-                            decoded_reasoning_tokens
-                        )
-
-                    # Check for stop sequences if configured (EOSTracker)
-                    status = response.final_status
-                    stop_sequence_match = None
-                    if has_stop_sequences and decoded_tokens is not None:
-                        with Tracer("eos_tracker.is_eos_from_string"):
-                            if (
-                                stop_sequence_match
-                                := context.eos_tracker.is_eos_from_string(
-                                    decoded_tokens
+                            decoded_reasoning_tokens = (
+                                await reasoning_detokenizer.decode(
+                                    reasoning_tokens
                                 )
-                            ):
-                                status = GenerationStatus.END_OF_SEQUENCE
-                                self.model_worker.cancel(request.request_id)
+                                if reasoning_tokens
+                                else None
+                            )
 
-                    # Collect log probability values if present (still per-token)
-                    # Does not consider reasoning tokens
-                    token_log_prob_values: list[float] | None = None
-                    top_token_log_prob_values: list[dict[str, float]] | None = (
-                        None
+                        if (
+                            reasoning_text_formatter
+                            and decoded_reasoning_tokens
+                        ):
+                            decoded_reasoning_tokens = reasoning_text_formatter(
+                                decoded_reasoning_tokens
+                            )
+
+                        # Check for stop sequences if configured (EOSTracker)
+                        status = response.final_status
+                        stop_sequence_match = None
+                        if has_stop_sequences and decoded_tokens is not None:
+                            with Tracer("eos_tracker.is_eos_from_string"):
+                                if (
+                                    stop_sequence_match
+                                    := context.eos_tracker.is_eos_from_string(
+                                        decoded_tokens
+                                    )
+                                ):
+                                    status = GenerationStatus.END_OF_SEQUENCE
+                                    self.model_worker.cancel(request.request_id)
+
+                        # Collect log probability values if present (still
+                        # per-token). Does not consider reasoning tokens.
+                        token_log_prob_values: list[float] | None = None
+                        top_token_log_prob_values: (
+                            list[dict[str, float]] | None
+                        ) = None
+                        if token_log_probs is not None:
+                            token_log_prob_values = []
+                            top_token_log_prob_values = []
+                            for log_prob in token_log_probs:
+                                with Tracer("collect_log_probs"):
+                                    token_probs = (
+                                        log_prob.token_log_probabilities
+                                    )
+                                    top_probs = await self._top_log_probs(
+                                        log_prob, skip_special_tokens
+                                    )
+                                    token_log_prob_values.extend(token_probs)
+                                    top_token_log_prob_values.extend(top_probs)
+
+                        # Record metrics - one TTFT/ITL per chunk
+                        is_first_chunk = not first_chunk_yielded
+                        if is_first_chunk:
+                            METRICS.ttft(itl.elapsed_ms)
+                            decode_sw.reset()
+                            first_chunk_yielded = True
+                        else:
+                            METRICS.itl(itl.elapsed_ms)
+                            decode_elapsed_ms = decode_sw.elapsed_ms
+                        itl.reset()
+
+                        yield TokenGeneratorOutput(
+                            status=status,
+                            decoded_tokens=decoded_tokens,
+                            decoded_reasoning_tokens=decoded_reasoning_tokens,
+                            token_count=token_count,
+                            token_log_probabilities=token_log_prob_values,
+                            top_log_probabilities=top_token_log_prob_values,
+                            prompt_token_count=context.tokens.prompt_length,
+                            cached_token_count=response.num_cached_tokens
+                            if is_first_chunk
+                            else None,
+                            reasoning_token_count=reasoning_token_count,
+                            stop_sequence=stop_sequence_match,
+                        )
+            finally:
+                if first_chunk_yielded and num_generated_tokens > 1:
+                    METRICS.time_per_output_token(
+                        decode_elapsed_ms / (num_generated_tokens - 1)
                     )
-                    if token_log_probs is not None:
-                        token_log_prob_values = []
-                        top_token_log_prob_values = []
-                        for log_prob in token_log_probs:
-                            with Tracer("collect_log_probs"):
-                                token_probs = log_prob.token_log_probabilities
-                                top_probs = await self._top_log_probs(
-                                    log_prob, skip_special_tokens
-                                )
-                                token_log_prob_values.extend(token_probs)
-                                top_token_log_prob_values.extend(top_probs)
-
-                    # Record metrics - one TTFT/ITL per chunk
-                    is_first_chunk = not first_chunk_yielded
-                    if is_first_chunk:
-                        METRICS.ttft(itl.elapsed_ms)
-                        decode_sw.reset()
-                        first_chunk_yielded = True
-                    else:
-                        METRICS.itl(itl.elapsed_ms)
-                        decode_elapsed_ms = decode_sw.elapsed_ms
-                    itl.reset()
-
-                    yield TokenGeneratorOutput(
-                        status=status,
-                        decoded_tokens=decoded_tokens,
-                        decoded_reasoning_tokens=decoded_reasoning_tokens,
-                        token_count=token_count,
-                        token_log_probabilities=token_log_prob_values,
-                        top_log_probabilities=top_token_log_prob_values,
-                        prompt_token_count=context.tokens.prompt_length,
-                        cached_token_count=response.num_cached_tokens
-                        if is_first_chunk
-                        else None,
-                        reasoning_token_count=reasoning_token_count,
-                        stop_sequence=stop_sequence_match,
+                if self.debug_logging:
+                    self.logger.debug(
+                        "%s: Completed: Elapsed: %0.2f ms",
+                        request.request_id,
+                        total_sw.elapsed_ms,
                     )
-        finally:
-            # Balance the awaiting-admission counter if we never reached the
-            # handoff (e.g. tokenization failed, or the consumer abandoned the
-            # stream before submit).
-            if awaiting_admission:
-                self.model_worker.note_awaiting_admission(-1)
-            if first_chunk_yielded and num_generated_tokens > 1:
-                METRICS.time_per_output_token(
-                    decode_elapsed_ms / (num_generated_tokens - 1)
-                )
-            if self.debug_logging:
-                self.logger.debug(
-                    "%s: Completed: Elapsed: %0.2f ms",
-                    request.request_id,
-                    total_sw.elapsed_ms,
-                )
+
+        if self._min_chunk_tokens > 1:
+            return _coalesce_chunks(_generate(), self._min_chunk_tokens)
+        return _generate()
 
     async def all_tokens(
         self, request: TextGenerationRequest
     ) -> list[TokenGeneratorOutput]:
         """Generates all token chunks for the provided request."""
-        return [chunk async for chunk in self.next_token_chunk(request)]
+        generator = await self.next_token_chunk(request)
+        return [chunk async for chunk in generator]
 
     async def encode(
         self, request: TextGenerationRequest
@@ -442,9 +601,10 @@ class TokenGeneratorPipeline(
                 # For embeddings tasks, the model worker runs an EmbeddingsPipeline which
                 # returns EmbeddingsGenerationOutput. The EngineQueue correctly deserializes
                 # this based on the model_worker_interface pipeline_task.
-                async for responses in self.model_worker.stream(
+                response_stream = await self.model_worker.stream(
                     request.request_id, context
-                ):
+                )
+                async for responses in response_stream:
                     for response in responses:
                         # At runtime, response should be EmbeddingsGenerationOutput for embeddings tasks
                         # Cast to handle the generic type parameter mismatch

@@ -27,6 +27,7 @@ from layout import (
     Coord,
     TileTensor,
     TensorLayout,
+    PointerStorage,
     Idx,
     row_major,
     stack_allocation,
@@ -43,7 +44,6 @@ from std.gpu import (
 from std.gpu.host import DeviceContext
 from std.gpu.intrinsics import ldg
 from linalg.utils import elementwise_epilogue_type
-from std.memory import stack_allocation
 
 from std.utils import StaticTuple
 from std.utils.index import Index
@@ -83,9 +83,24 @@ def sgemm_warp_tiling_kernel[
     NUM_THREADS: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    mat_c: TileTensor[c_type, CLayoutType, MutAnyOrigin],
-    mat_a: TileTensor[a_type, ALayoutType, MutAnyOrigin],
-    mat_b: TileTensor[b_type, BLayoutType, MutAnyOrigin],
+    mat_c: TileTensor[
+        c_type,
+        CLayoutType,
+        MutAnyOrigin,
+        Storage=PointerStorage[element_width=1],
+    ],
+    mat_a: TileTensor[
+        a_type,
+        ALayoutType,
+        MutAnyOrigin,
+        Storage=PointerStorage[element_width=1],
+    ],
+    mat_b: TileTensor[
+        b_type,
+        BLayoutType,
+        MutAnyOrigin,
+        Storage=PointerStorage[element_width=1],
+    ],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ) where (a_type.is_numeric() and b_type.is_numeric()):
@@ -122,12 +137,12 @@ def sgemm_warp_tiling_kernel[
     )
 
     # Move blocktile to beginning of A's row and B's column.
-    var aa_ptr = mat_a.ptr + c_row * BM * K
-    var bb_ptr = mat_b.ptr + c_col * BN
+    var aa_ptr = mat_a._storage + c_row * BM * K
+    var bb_ptr = mat_b._storage + c_col * BN
     # Move C_ptr to warp's output tile
     var M_offset_warp = c_row * BM + warp_row * WM
     var N_offset_warp = c_col * BN + warp_col * WN
-    var cc_ptr = mat_c.ptr + M_offset_warp * N + N_offset_warp
+    var cc_ptr = mat_c._storage + M_offset_warp * N + N_offset_warp
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.

@@ -203,6 +203,31 @@ struct AttentionRDNA[
     cache_depth: Int = config.depth,
     output_depth: Int = config.depth,
 ]:
+    """RDNA Wave32 multi-head attention tile driver for prefill and decode.
+
+    Holds the Q/K/V register and shared-memory buffers, online-softmax state,
+    and output accumulator, and exposes the per-iteration mask, softmax, and
+    store hooks that the prefill and decode kernels in `mha.mojo` invoke.
+
+    Parameters:
+        output_type: The `DType` of the output tensor (inferred).
+        q_type: The `DType` of the query tensor (inferred).
+        k_t: The `MHAOperand` type of the key operand (inferred).
+        v_t: The `MHAOperand` type of the value operand (inferred).
+        mask_t: The `MHAMask` type applied to attention scores (inferred).
+        config: The MHA configuration holding tile, warp, and head counts.
+        group: Number of query heads sharing each KV head in GQA.
+        sink: Whether to initialize the softmax with attention sink
+            weights.
+        token_gen: Whether the kernel runs in decode (token generation)
+            mode rather than prefill (defaults to `False`).
+        q_depth: Head dimension of the query (defaults to `config.depth`).
+        cache_depth: Head dimension of each KV cache entry (defaults to
+            `config.depth`).
+        output_depth: Head dimension of the output projection (defaults
+            to `config.depth`).
+    """
+
     comptime attention_config = MHAAttentionConfigRDNA[
         Self.token_gen, Self.config, Self.group
     ]
@@ -754,7 +779,12 @@ struct AttentionRDNA[
 
     @always_inline
     def copy_fragment_to_smem[chunk_idx: Int](self):
-        """Copy one chunk of P to shared memory."""
+        """Copy one chunk of P to shared memory.
+
+        Parameters:
+            chunk_idx: The compile-time index of the P fragment chunk to
+                copy.
+        """
         self.p_reg_buffer.copy_to_shared[chunk_idx]()
 
     @always_inline

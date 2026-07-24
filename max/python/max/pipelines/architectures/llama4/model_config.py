@@ -32,6 +32,7 @@ from max.nn.quant_config import (
 )
 from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
@@ -43,6 +44,7 @@ from max.pipelines.lib.interfaces.arch_config import (
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.weights import gptq_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -311,7 +313,9 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = model_config.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
         n_devices = len(pipeline_config.model.device_specs)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -357,7 +361,10 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             vocab_size=text_config.vocab_size,
             dtype=dtype,
             model_quantization_encoding=pipeline_config.model.graph_quantization_encoding,
-            quantization_config=pipeline_config.model._quant,
+            quantization_config=gptq_quant_config(
+                pipeline_config.model.quantization_encoding,
+                pipeline_config.model.huggingface_config,
+            ),
             max_seq_len=cls.calculate_max_seq_len(
                 pipeline_config,
                 huggingface_config=huggingface_config,

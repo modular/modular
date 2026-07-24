@@ -15,7 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from std.builtin.constrained import _constrained_conforms_to
 from std.format._utils import (
     write_sequence_to,
     TypeNames,
@@ -33,22 +32,22 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
+@explicit_destroy(
+    "Use `deinit_with()` to explicitly destroy a `Tuple` with"
+    " non-`ImplicitlyDeletable` elements"
+)
 struct Tuple[*element_types: Movable](
+    Comparable where element_types.all_conforms_to[Comparable](),
     Copyable where element_types.all_conforms_to[Copyable](),
     Defaultable where element_types.all_conforms_to[Defaultable](),
     Equatable where element_types.all_conforms_to[Equatable](),
     Hashable where element_types.all_conforms_to[Hashable](),
-    # TODO(MOCO-3421): all_conforms_to[ImplicitlyCopyable] implies
-    # all_conforms_to[Copyable] since ImplicitlyCopyable refines Copyable, but
-    # the compiler can't infer parent trait constraints from derived ones yet.
-    # Remove the Copyable check from this where clause once that's fixed.
-    ImplicitlyCopyable where (
-        element_types.all_conforms_to[ImplicitlyCopyable]()
-        and element_types.all_conforms_to[Copyable]()
-    ),
-    # ImplicitlyDeletable and Movable are listed explicitly because
-    # conditional conformances require all conformances to be stated.
-    ImplicitlyDeletable,
+    ImplicitlyCopyable where element_types.all_conforms_to[
+        ImplicitlyCopyable
+    ](),
+    ImplicitlyDeletable where element_types.all_conforms_to[
+        ImplicitlyDeletable
+    ](),
     Movable,
     RegisterPassable where element_types.all_conforms_to[RegisterPassable](),
     Sized,
@@ -99,7 +98,7 @@ struct Tuple[*element_types: Movable](
                 "Tuple default-construction requires all element types to"
                 " conform to `Defaultable`"
             )
-            UnsafePointer(to=self[i]).init_pointee_move({})
+            Pointer(to=self[i]).unsafe_write({})
 
     @always_inline("nodebug")
     def __init__(out self, var *args: *Self.element_types):
@@ -116,25 +115,38 @@ struct Tuple[*element_types: Movable](
         # Move each element into the tuple storage.
         @parameter
         def init_elt[idx: Int](var elt: Self.element_types[idx]):
-            UnsafePointer(to=self[idx]).init_pointee_move(elt^)
+            Pointer(to=self[idx]).unsafe_write(elt^)
 
         args^.consume_elements[init_elt]()
 
-    def __del__(deinit self):
-        """Destructor that destroys all of the elements."""
+    def __del__(
+        deinit self,
+    ) where Self.element_types.all_conforms_to[ImplicitlyDeletable]():
+        """Destructor that destroys all of the elements.
 
+        Constraints:
+            All `element_types` must be `ImplicitlyDeletable`. When any element
+            is not, the tuple has no implicit destructor and must be torn down
+            with `deinit_with()`.
+        """
         # Run the destructor on each member, the destructor of !kgen.struct is
         # trivial and won't do anything.
         comptime for i in range(Self.__len__()):
-            comptime TUnknown = Self.element_types[i]
-            _constrained_conforms_to[
-                conforms_to(TUnknown, ImplicitlyDeletable),
-                Parent=Self,
-                Element=TUnknown,
-                ParentConformsTo="ImplicitlyDeletable",
-            ]()
-            comptime assert conforms_to(TUnknown, ImplicitlyDeletable)
-            UnsafePointer(to=self[i]).destroy_pointee()
+            Pointer(to=self[i]).unsafe_deinit_pointee()
+
+    def deinit_with[
+        deinit_func: def[idx: Int](var elt: Self.element_types[idx]) capturing
+    ](deinit self):
+        """Consume the tuple, deinitializing each element with a closure.
+
+        Use this to tear down a `Tuple` whose elements are not
+        `ImplicitlyDeletable`. Elements are visited in index order.
+
+        Parameters:
+            deinit_func: A closure called once per element, receiving ownership
+                of the element at that index so it can destroy it.
+        """
+        self^.consume_elements[deinit_func]()
 
     @always_inline("nodebug")
     def __init__(out self, *, copy: Self):
@@ -152,7 +164,7 @@ struct Tuple[*element_types: Movable](
             comptime assert conforms_to(Self.element_types[i], Copyable)
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
-            UnsafePointer(to=self[i]).init_pointee_copy(copy[i])
+            Pointer(to=self[i]).unsafe_write(copy=copy[i])
 
     @always_inline("nodebug")
     def __init__(out self, *, deinit move: Self):
@@ -169,9 +181,7 @@ struct Tuple[*element_types: Movable](
         comptime for i in range(Self.__len__()):
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
-            UnsafePointer(to=self[i]).init_pointee_move_from(
-                UnsafePointer(to=move[i])
-            )
+            Pointer(to=self[i]).unsafe_write_move_from(Pointer(to=move[i]))
         # Note: The destructor on `move` is auto-disabled in a moveinit.
 
     @always_inline("builtin")
@@ -207,14 +217,14 @@ struct Tuple[*element_types: Movable](
         """
         # Return a reference to an element at the specified index, propagating
         # mutability of self.
-        var storage_kgen_ptr = UnsafePointer(to=self._mlir_value).address
+        var storage_kgen_ptr = Pointer(to=self._mlir_value)._get_kgen_pointer()
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
             index=idx.__mlir_index__(),
-            _type=UnsafePointer[Self.element_types[idx]]._mlir_type,
+            _type=Pointer[Self.element_types[idx]]._mlir_type,
         ](storage_kgen_ptr)
-        return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
+        return Pointer[_, origin_of(self)](_mlir_value=elt_kgen_ptr)[]
 
     @always_inline("nodebug")
     def __contains__[T: Equatable](self, value: T) -> Bool:
@@ -454,9 +464,9 @@ struct Tuple[*element_types: Movable](
         )
 
         comptime for i in range(type_of(result).__len__()):
-            UnsafePointer(to=result[i]).init_pointee_move_from(
-                rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
-                    UnsafePointer(to=self[Self.element_types.size - 1 - i])
+            Pointer(to=result[i]).unsafe_write_move_from(
+                rebind[Pointer[type_of(result[i]), origin_of(self)]](
+                    Pointer(to=self[Self.element_types.size - 1 - i])
                 )
             )
 
@@ -499,17 +509,58 @@ struct Tuple[*element_types: Movable](
         comptime self_len = Self.__len__()
 
         comptime for i in range(self_len):
-            UnsafePointer(to=result[i]).init_pointee_move_from(
-                rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
-                    UnsafePointer(to=self[i])
+            Pointer(to=result[i]).unsafe_write_move_from(
+                rebind[Pointer[type_of(result[i]), origin_of(self)]](
+                    Pointer(to=self[i])
                 )
             )
 
         comptime for i in range(type_of(other).__len__()):
-            UnsafePointer(to=result[self_len + i]).init_pointee_move_from(
+            Pointer(to=result[self_len + i]).unsafe_write_move_from(
                 rebind[
-                    UnsafePointer[
-                        type_of(result[self_len + i]), origin_of(other)
-                    ]
-                ](UnsafePointer(to=other[i]))
+                    Pointer[type_of(result[self_len + i]), origin_of(other)]
+                ](Pointer(to=other[i]))
+            )
+
+    @always_inline("nodebug")
+    def consume_elements[
+        elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
+    ](deinit self):
+        """Consume the tuple by transferring ownership of each element into the
+        provided closure one at a time.
+
+        Destructuring assignment such as `a, b = t^` desugars to
+        reference-returning subscripts, so it copies each element and cannot
+        extract elements whose type is `Movable` but not `ImplicitlyCopyable`.
+        `consume_elements` hands each element to `elt_handler` by value instead,
+        so a tuple of move-only elements can still be taken apart. Elements are
+        visited in index order.
+
+        Parameters:
+            elt_handler: A function called once for each element of the tuple,
+                receiving ownership of the element at that index.
+
+        Example:
+
+        `List` is `Movable` but not `ImplicitlyCopyable`, so its elements can
+        be moved out of a tuple but not copied out:
+
+        ```mojo
+        # Each `List` is moved out of the tuple, one at a time.
+        var t = ([1, 2, 3], [4, 5, 6])
+
+        @parameter
+        def handler[idx: Int](var elt: t.element_types[idx]):
+            print(len(elt))  # prints 3, then 3
+
+        t^.consume_elements[handler]()
+        ```
+        """
+        # `deinit self` disables `Tuple.__del__`; the underlying `!kgen.struct`
+        # destructor is trivial, so moving every element out and letting `self`
+        # die leaks nothing.
+        comptime for i in range(Self.__len__()):
+            var ptr = Pointer(to=self[i])
+            elt_handler[i](
+                __get_address_as_owned_value(ptr._get_kgen_pointer())
             )

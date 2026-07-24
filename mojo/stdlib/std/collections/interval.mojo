@@ -299,9 +299,7 @@ struct _IntervalNode[
           and collection operations.
     """
 
-    comptime _OpaquePointer = Optional[
-        UnsafePointer[NoneType, MutUntrackedOrigin]
-    ]
+    comptime _OpaquePointer = Optional[Pointer[NoneType, MutUntrackedOrigin]]
 
     var interval: Interval[Self.T]
     """The interval contained in this node."""
@@ -326,26 +324,26 @@ struct _IntervalNode[
 
     def left(
         ref self,
-    ) -> ref[self._left] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
+    ) -> ref[self._left] Optional[Pointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the left child pointer."""
-        return UnsafePointer(to=self._left).bitcast[
-            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
+        return Pointer(to=self._left).unsafe_bitcast[
+            Optional[Pointer[Self, MutUntrackedOrigin]]
         ]()[]
 
     def right(
         ref self,
-    ) -> ref[self._right] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
+    ) -> ref[self._right] Optional[Pointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the right child pointer."""
-        return UnsafePointer(to=self._right).bitcast[
-            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
+        return Pointer(to=self._right).unsafe_bitcast[
+            Optional[Pointer[Self, MutUntrackedOrigin]]
         ]()[]
 
     def parent(
         ref self,
-    ) -> ref[self._parent] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
+    ) -> ref[self._parent] Optional[Pointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the parent pointer."""
-        return UnsafePointer(to=self._parent).bitcast[
-            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
+        return Pointer(to=self._parent).unsafe_bitcast[
+            Optional[Pointer[Self, MutUntrackedOrigin]]
         ]()[]
 
     def __init__(
@@ -467,7 +465,7 @@ struct IntervalTree[
     """
 
     comptime _IntervalNodePointer = Optional[
-        UnsafePointer[_IntervalNode[Self.T, Self.U], MutUntrackedOrigin]
+        Pointer[_IntervalNode[Self.T, Self.U], MutUntrackedOrigin]
     ]
 
     var _root: Self._IntervalNodePointer
@@ -488,13 +486,13 @@ struct IntervalTree[
 
     @staticmethod
     def _del_helper(
-        node: UnsafePointer[_IntervalNode[Self.T, Self.U], MutUntrackedOrigin],
+        node: Pointer[_IntervalNode[Self.T, Self.U], MutUntrackedOrigin],
     ):
         if node[].left():
             Self._del_helper(node[].left().value())
         if node[].right():
             Self._del_helper(node[].right().value())
-        node.destroy_pointee()
+        node.unsafe_deinit_pointee()
         dealloc(
             ThinAllocation(unsafe_assume_ownership=node).unsafe_with_layout(
                 {count = 1}
@@ -656,10 +654,10 @@ struct IntervalTree[
         """
         # Allocate memory for a new node and initialize it with the interval
         # and data
-        var new_node = alloc(
-            Layout[_IntervalNode[Self.T, Self.U]].single()
-        ).unsafe_leak()
-        new_node.init_pointee_move(_IntervalNode(interval, data))
+        var new_node: Pointer[
+            _IntervalNode[Self.T, Self.U], MutUntrackedOrigin
+        ] = alloc(Layout[_IntervalNode[Self.T, Self.U]].single()).unsafe_leak()
+        new_node.unsafe_write(_IntervalNode(interval, data))
         self._len += 1
 
         # If the tree is empty, set the root to the new node and color it black.

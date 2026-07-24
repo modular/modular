@@ -45,6 +45,7 @@ from max.nn import ReturnLogits
 from max.pipelines.context import (
     BatchLogitsProcessor,
     LogProbabilities,
+    TextAndVisionContext,
     TextGenerationContextType,
     TextGenerationOutput,
 )
@@ -54,6 +55,11 @@ from max.pipelines.context.exceptions import (  # noqa: F401 (for docstring)
 from max.pipelines.kv_cache import (
     PagedKVCacheManager,
     load_kv_manager,
+)
+from max.pipelines.lib.vision_encoder_cache import (
+    SupportsVisionEncoding,
+    VisionEncoderCache,
+    as_vision_context_batches,
 )
 from max.pipelines.modeling.types import (
     Pipeline,
@@ -90,6 +96,7 @@ from ..interfaces import (
 from ..interfaces.generate import GenerateMixin
 from ..memory_estimation import _MemoryPlan
 from ..utils import CompilationTimer
+from ..vision_encoder_cache import VisionEncoderMetrics
 
 logger = logging.getLogger("max.pipelines")
 
@@ -233,7 +240,7 @@ class TextGenerationPipeline(
             max_batch_size=max_batch_size,
         )
 
-        available_cache_memory = model_config.kv_cache._available_cache_memory
+        available_cache_memory = memory_plan.available_cache_memory
         kv_params = self._pipeline_model.kv_params
         self._kv_manager = load_kv_manager(
             params=kv_params,
@@ -242,6 +249,15 @@ class TextGenerationPipeline(
             session=session,
             available_cache_memory=available_cache_memory,
         )
+
+        self._encoder_cache: VisionEncoderCache[TextAndVisionContext] | None = (
+            None
+        )
+        if isinstance(self._pipeline_model, SupportsVisionEncoding):
+            self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
+                max_entries=pipeline_config.runtime.max_vision_cache_entries,
+                n_devices=len(self._devices),
+            )
 
         # Device the sampler runs on. ``sample_on_host`` routes sampling to the
         # host CPU.
@@ -413,14 +429,25 @@ class TextGenerationPipeline(
         if self.batch_info_output_fname is not None:
             self._record_batch_info(flat_batch)
 
-        return (
-            self._pipeline_model.prepare_initial_token_inputs(
-                replica_batches=replica_batches,
-                kv_cache_inputs=kv_cache_inputs,
-            ),
-            bitmask,
-            flat_batch,
+        model_inputs = self._pipeline_model.prepare_initial_token_inputs(
+            replica_batches=replica_batches,
+            kv_cache_inputs=kv_cache_inputs,
         )
+
+        if self._encoder_cache is not None:
+            assert isinstance(self._pipeline_model, SupportsVisionEncoding)
+            vision = self._encoder_cache.run_vision_encode(
+                self._pipeline_model,
+                as_vision_context_batches(replica_batches),
+                self._devices,
+            )
+            if vision is not None:
+                (
+                    model_inputs.vision_embeddings,
+                    model_inputs.vision_scatter_indices,
+                ) = vision
+
+        return (model_inputs, bitmask, flat_batch)
 
     @traced
     def _maybe_sort_loras(
@@ -638,9 +665,11 @@ class TextGenerationPipeline(
         """Release model-specific resources for a completed request.
 
         Primary and extra KV cache lifecycle is managed by the batch
-        constructor.  This method handles model-specific cleanup only
-        (e.g. vision encoder cache).
+        constructor.  This method drops the request's vision-encoder-cache
+        references and any model-specific state.
         """
+        if self._encoder_cache is not None:
+            self._encoder_cache.release_request(request_id)
         if hasattr(self._pipeline_model, "release"):
             self._pipeline_model.release(request_id)
 
@@ -648,3 +677,14 @@ class TextGenerationPipeline(
     def kv_manager(self) -> PagedKVCacheManager:
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
+
+    def batch_vision_metrics(self) -> VisionEncoderMetrics | None:
+        """Returns vision encoder metrics for the most recent batch.
+
+        Returns ``None`` for text-only models and for batches that did no
+        vision encoding (e.g. decode steps). The metrics come from the
+        pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one.
+        """
+        if self._encoder_cache is None:
+            return None
+        return self._encoder_cache.pop_metrics()

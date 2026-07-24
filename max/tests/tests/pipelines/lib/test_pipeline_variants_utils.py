@@ -14,10 +14,14 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
+import max.pipelines.lib.pipeline_variants.structured_output_backend as _sob
 import numpy as np
 import numpy.typing as npt
+import pytest
+from max import _xgrammar as xgrammar
 from max.pipelines.context import (
     GenerationStatus,
     GrammarMatcher,
@@ -25,14 +29,20 @@ from max.pipelines.context import (
     TextContext,
     TokenBuffer,
 )
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib.pipeline_variants.structured_output_backend import (
     GrammarBackend,
+    GrammarValidator,
+    XgrammarBackend,
 )
 from max.pipelines.lib.pipeline_variants.utils import (
     StructuredOutputHelper,
     build_response,
+    update_spec_decode_context_and_prepare_responses,
 )
-from max.pipelines.modeling.types import RequestID
+from max.pipelines.lib.tool_parsing import StructuralTagToolParser, register
+from max.pipelines.modeling.types import ParsedToolCall, RequestID
+from max.pipelines.sampling import DEFAULT_STRUCTURED_OUTPUT_BACKEND
 
 
 class _RecordingMatcher(GrammarMatcher):
@@ -62,7 +72,7 @@ class _RecordingMatcher(GrammarMatcher):
         return _RecordingMatcher()
 
 
-class _NoopBackend(GrammarBackend):
+class _NoopBackend(GrammarBackend[Any]):
     """GrammarBackend stub so Part 2's fills don't touch llguidance."""
 
     name = "noop"
@@ -72,6 +82,9 @@ class _NoopBackend(GrammarBackend):
 
     def create_matcher(self, grammar: Any) -> GrammarMatcher:
         return _RecordingMatcher()
+
+    def validate_grammar(self, grammar: Any) -> None:
+        return None
 
     def allocate_token_bitmask(
         self, batch_size: int, vocab_size: int
@@ -104,6 +117,45 @@ def advance_to_processed(ctx: TextContext) -> None:
     """
     ctx.update_with_future_token()
     ctx.realize_future_token(new_token=99, log_probabilities=None)
+
+
+@register("_test_section_parser")
+class _SectionParser(StructuralTagToolParser):
+    """Minimal section-wrapped parser for region-tag derivation tests."""
+
+    SECTION_BEGIN = "<sec>"
+    SECTION_END = "</sec>"
+
+    def _parse_complete_section(
+        self, tool_section: str
+    ) -> list[ParsedToolCall]:
+        return []
+
+
+@register("_test_to_eos_parser")
+class _ToEosParser(_SectionParser):
+    """Section parser that opts into enforcement-to-EOS."""
+
+    ENFORCE_TOOL_REGION_TO_EOS = True
+
+
+class TestGetToolRegionTags:
+    """``StructuredOutputHelper._get_tool_region_tags``."""
+
+    def test_section_parser_returns_section_pair(self) -> None:
+        tags = StructuredOutputHelper._get_tool_region_tags(
+            "_test_section_parser"
+        )
+        assert tags == ("<sec>", "</sec>")
+
+    def test_to_eos_parser_has_no_end_tag(self) -> None:
+        """With no end tag, enforcement never flips off: the completed
+        grammar masks everything but EOS, so the turn ends with its single
+        tool-call section (e.g. MiniMax-M3)."""
+        tags = StructuredOutputHelper._get_tool_region_tags(
+            "_test_to_eos_parser"
+        )
+        assert tags == ("<sec>", None)
 
 
 class TestBuildResponse:
@@ -190,6 +242,78 @@ class TestBuildResponse:
         # With max_growth_per_step=1: 50 + 1 = 51 > 50 → MAXIMUM_LENGTH
         build_response(
             [ctx], max_seq_len=global_max_seq_len, max_growth_per_step=1
+        )
+        assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
+
+
+class TestSpecDecodeStopsExactlyAtPerRequestCap:
+    """Regression for CENG-827.
+
+    With Eagle spec decoding on, ``build_response`` reserved a full
+    ``num_speculative_tokens + 1`` worst-case chunk of slack against the
+    *per-request* cap (``context.max_length``), so a request was marked
+    ``MAXIMUM_LENGTH`` up to ``num_speculative_tokens`` tokens before it
+    actually reached its cap -- the final (possibly partial) accept chunk
+    that would have landed exactly on the cap never got a chance to run.
+    That slack must only be reserved against the hard model/KV limit
+    (``max_seq_len``), never against the per-request cap.
+    """
+
+    def test_stops_exactly_at_cap_on_non_chunk_aligned_boundary(self) -> None:
+        prompt_len = 10
+        num_speculative_tokens = 3
+        max_gen_tokens = 20
+        # Hard model/KV limit is far above the per-request cap, so only the
+        # per-request cap should ever gate termination in this test.
+        max_seq_len = 10_000
+
+        ctx = create_text_context(
+            prompt_len=prompt_len, max_length=prompt_len + max_gen_tokens
+        )
+
+        # Phase 1: overlap scheduler always appends a placeholder future
+        # token before a request's first spec-decode verify step.
+        ctx.update_with_future_token()
+
+        # Per-step accepted-draft counts (out of 3 drafts). Each full cycle
+        # (a placeholder future token followed by its verify step) commits
+        # num_accept + 1 tokens (accepted drafts + bonus token) -- these sum
+        # to exactly max_gen_tokens (20). The step sizes -- 4, 4, 4, 4, 2, 2
+        # -- don't line up on a fixed 4-token (num_speculative_tokens + 1)
+        # chunk grid, so the cap is reached by a partial (2-token) chunk,
+        # not a full one: exactly the case the per-token accept loop in
+        # ``update_spec_decode_context_and_prepare_responses`` truncates to
+        # land precisely on the cap -- if ``build_response`` lets that final
+        # step run at all.
+        accept_counts = [3, 3, 3, 3, 1, 1]
+        assert all(c <= num_speculative_tokens for c in accept_counts)
+        assert sum(c + 1 for c in accept_counts) == max_gen_tokens
+
+        for num_accept in accept_counts:
+            if ctx.is_done:
+                # The cap was already reached (e.g. by a placeholder future
+                # token landing exactly on it); the scheduler would not have
+                # driven a further step for this request.
+                break
+            update_spec_decode_context_and_prepare_responses(
+                draft_tokens=np.array([[101, 102, 103]], dtype=np.int32),
+                next_draft_tokens=np.array([[201, 202, 203]], dtype=np.int32),
+                num_accepted_draft_tokens=np.array(
+                    [num_accept], dtype=np.int32
+                ),
+                next_tokens=np.array([999], dtype=np.int32),
+                context_batch=[ctx],
+                max_seq_len=max_seq_len,
+            )
+            if ctx.is_done:
+                break
+            # Mirrors the overlap scheduler: only a still-active request gets
+            # a placeholder future token for its next verify step.
+            ctx.update_with_future_token()
+
+        assert ctx.tokens.generated_length == max_gen_tokens, (
+            f"expected exactly {max_gen_tokens} generated tokens, got "
+            f"{ctx.tokens.generated_length}"
         )
         assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
 
@@ -449,3 +573,379 @@ class TestAdvanceFsmAndComputeBitmasks:
 
         # Unconstrained rows: callback resets every row to all-valid (-1).
         assert (bitmask_out == -1).all()
+
+
+class _RaisingBackend(GrammarBackend[Any]):
+    """GrammarBackend stub whose compiles always raise, to exercise the
+    validator's exception translation."""
+
+    name = "boom"
+
+    def compile_json_schema(self, json_schema: Any) -> Any:
+        raise ValueError("cannot compile schema")
+
+    def create_matcher(self, grammar: Any) -> GrammarMatcher:
+        raise ValueError("cannot compile grammar")
+
+    def validate_grammar(self, grammar: Any) -> None:
+        return None
+
+    def allocate_token_bitmask(
+        self, batch_size: int, vocab_size: int
+    ) -> npt.NDArray[np.int32]:
+        raise NotImplementedError
+
+    def fill_next_token_bitmask(
+        self,
+        matcher: GrammarMatcher,
+        bitmask: npt.NDArray[np.int32],
+        index: int,
+    ) -> None:
+        raise NotImplementedError
+
+
+class TestGrammarValidation:
+    """A backend's GrammarValidator checks turn a compile failure into an
+    InputError (400)."""
+
+    def test_tool_grammar_ok_does_not_raise(self) -> None:
+        _NoopBackend().check_tool_grammar("<grammar>")
+
+    def test_tool_grammar_uncompilable_raises_input_error(self) -> None:
+        with pytest.raises(InputError, match="boom"):
+            _RaisingBackend().check_tool_grammar("<grammar>")
+
+    def test_json_schema_ok_does_not_raise(self) -> None:
+        _NoopBackend().check_json_schema('{"type": "object"}')
+
+    def test_json_schema_uncompilable_raises_input_error(self) -> None:
+        with pytest.raises(InputError, match="boom"):
+            _RaisingBackend().check_json_schema('{"type": "object"}')
+
+    def test_make_validator_none_falls_back_to_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A None backend_name (unresolved config) builds the validator with
+        the default backend -- mirroring StructuredOutputHelper.from_tokenizer
+        -- so admission still fires when the worker would otherwise silently
+        fall back to xgrammar on an unresolved config and crash."""
+        captured: dict[str, Any] = {}
+
+        def fake_make(
+            name: Any,
+            delegate: Any,
+            vocab_size: Any,
+            reject_unsupported: bool = False,
+        ) -> GrammarBackend[Any]:
+            captured["name"] = name
+            return _NoopBackend()
+
+        monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
+        _sob.make_grammar_validator(None, object(), 128)
+        assert captured["name"] == DEFAULT_STRUCTURED_OUTPUT_BACKEND
+
+
+class TestXgrammarCacheBound:
+    """xgrammar's compiled-grammar cache is bounded (vLLM's VLLM_XGRAMMAR_CACHE_MB
+    analog) so a long-running server can't grow it without limit."""
+
+    def test_default_limit_is_512_mb(self) -> None:
+        assert _sob._xgrammar_cache_limit_bytes() == 512 * 1024 * 1024
+
+    def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MODULAR_XGRAMMAR_CACHE_MB", "64")
+        assert _sob._xgrammar_cache_limit_bytes() == 64 * 1024 * 1024
+
+    def test_compiler_honors_byte_limit(self) -> None:
+        vocab = [f"tok{i}".encode() for i in range(16)]
+        tokenizer_info = xgrammar.TokenizerInfo(
+            vocab, vocab_type=xgrammar.VocabType.RAW, stop_token_ids=[0]
+        )
+        limit = 8 * 1024 * 1024
+        compiler = xgrammar.GrammarCompiler(
+            tokenizer_info, max_memory_bytes=limit
+        )
+        assert compiler._impl.cache_limit_bytes == limit
+
+
+def _xgrammar_backend(reject_unsupported: bool) -> XgrammarBackend:
+    vocab = [chr(c) for c in range(32, 127)] + ["<eos>"]
+    tokenizer_info = xgrammar.TokenizerInfo(
+        vocab,
+        vocab_type=xgrammar.VocabType.RAW,
+        stop_token_ids=[len(vocab) - 1],
+    )
+    return XgrammarBackend(
+        xgrammar.GrammarCompiler(tokenizer_info),
+        reject_unsupported=reject_unsupported,
+    )
+
+
+# An unenforceable keyword: multipleOf has no faithful CFG encoding.
+_UNSUPPORTED_SCHEMA = {"type": "number", "multipleOf": 5}
+
+
+class TestXgrammarBackendRejectUnsupported:
+    """response_format compilation honors the per-backend reject_unsupported
+    flag threaded for Gemma (ENABLE B/C). The default (all other models) stays
+    permissive."""
+
+    def test_default_permits_unsupported_keyword(self) -> None:
+        backend = _xgrammar_backend(reject_unsupported=False)
+        compiled = backend.compile_json_schema(_UNSUPPORTED_SCHEMA)
+        assert isinstance(compiled, xgrammar.CompiledGrammar)
+
+    def test_reject_unsupported_rejects_unsupported_keyword(self) -> None:
+        backend = _xgrammar_backend(reject_unsupported=True)
+        with pytest.raises(Exception):
+            backend.compile_json_schema(_UNSUPPORTED_SCHEMA)
+
+    def test_reject_unsupported_permits_enforceable_schema(self) -> None:
+        backend = _xgrammar_backend(reject_unsupported=True)
+        compiled = backend.compile_json_schema(
+            {"type": "object", "properties": {"x": {"type": "string"}}}
+        )
+        assert isinstance(compiled, xgrammar.CompiledGrammar)
+
+
+class TestMakeValidatorRejectUnsupported:
+    """make_grammar_validator threads reject_unsupported through to the backend
+    so admission matches the worker (which sets it True for Gemma). Without it,
+    an unenforceable response_format slips admission and crashes the worker."""
+
+    def _validator_over_real_xgrammar(
+        self, monkeypatch: pytest.MonkeyPatch, reject_unsupported: bool
+    ) -> GrammarValidator:
+        def fake_make(
+            name: Any,
+            delegate: Any,
+            vocab_size: Any,
+            reject_unsupported: bool = False,
+        ) -> GrammarBackend[Any]:
+            return _xgrammar_backend(reject_unsupported=reject_unsupported)
+
+        monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
+        return _sob.make_grammar_validator(
+            "xgrammar",
+            object(),
+            len([chr(c) for c in range(32, 127)]) + 1,
+            reject_unsupported=reject_unsupported,
+        )
+
+    def test_reject_unsupported_true_rejects_unenforceable_schema(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        validator = self._validator_over_real_xgrammar(
+            monkeypatch, reject_unsupported=True
+        )
+        with pytest.raises(InputError):
+            validator.check_json_schema(json.dumps(_UNSUPPORTED_SCHEMA))
+
+    def test_default_permits_unenforceable_schema(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        validator = self._validator_over_real_xgrammar(
+            monkeypatch, reject_unsupported=False
+        )
+        validator.check_json_schema(json.dumps(_UNSUPPORTED_SCHEMA))
+
+    def test_forwards_reject_unsupported_to_backend(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        def fake_make(
+            name: Any,
+            delegate: Any,
+            vocab_size: Any,
+            reject_unsupported: bool = False,
+        ) -> GrammarBackend[Any]:
+            captured["reject_unsupported"] = reject_unsupported
+            return _NoopBackend()
+
+        monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
+        _sob.make_grammar_validator(
+            "xgrammar", object(), 128, reject_unsupported=True
+        )
+        assert captured["reject_unsupported"] is True
+
+    def test_default_forwards_false_to_backend(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        def fake_make(
+            name: Any,
+            delegate: Any,
+            vocab_size: Any,
+            reject_unsupported: bool = False,
+        ) -> GrammarBackend[Any]:
+            captured["reject_unsupported"] = reject_unsupported
+            return _NoopBackend()
+
+        monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
+        _sob.make_grammar_validator("xgrammar", object(), 128)
+        assert captured["reject_unsupported"] is False
+
+
+class _FillRecordingBackend(_NoopBackend):
+    """Backend that stamps a ``0`` sentinel into every slot it fills.
+
+    ``advance_fsm_and_compute_bitmasks`` resets each output row to ``-1``
+    (all-valid / unconstrained) before filling. A slot the fill path touches
+    is stamped ``0`` here, so after the call a slot still holding ``-1`` was
+    left unconstrained and a slot holding ``0`` was constrained.
+    """
+
+    name = "fill-recording"
+
+    def fill_next_token_bitmask(
+        self,
+        matcher: GrammarMatcher,
+        bitmask: npt.NDArray[np.int32],
+        index: int,
+    ) -> None:
+        bitmask[index, :] = 0
+
+
+class TestCommittedInteriorEosTerminates:
+    """``StructuredOutputHelper.advance_fsm_and_compute_bitmasks`` Part 1: the
+    async callback permanently advances the real ``ctx`` through the committed
+    span ``accepted_drafts[:num_accepted] + [bonus]``, and it must stop at the
+    FIRST EOS-class token so spec decode does not diverge from non-spec.
+
+    Generation stops at the first EOS-class committed token: non-spec decode
+    terminates on ``generated[-1]`` one token at a time, and
+    ``update_spec_decode_context_and_prepare_responses`` truncates the committed
+    span at that same token. Tokens after it are never emitted, so the matcher
+    must not advance through them -- doing so would desync the matcher on
+    phantom tokens and disable enforcement for a continuation that does not
+    exist.
+    """
+
+    @staticmethod
+    def _constrained_ctx() -> TextContext:
+        ctx = create_text_context(prompt_len=4, max_length=128)
+        ctx.update(new_token=99)
+        ctx.set_matcher(_RecordingMatcher())
+        # ``tool_choice=required`` enforces from the first token throughout.
+        ctx.grammar_enforced = True
+        # ``<eos>`` (1) and ``<end_of_turn>`` (7) are both stop ids.
+        ctx.eos_tracker.eos_token_ids = {1, 7}
+        return ctx
+
+    def test_interior_eos_terminates_and_stops_matcher_walk(self) -> None:
+        """An interior committed EOS ends generation (the span is truncated
+        there), so enforcement flips off and the matcher must not advance
+        through the tokens after it. Spec decode matches non-spec: the first
+        EOS-class token is terminal."""
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_FillRecordingBackend()
+        )
+
+        ctx = self._constrained_ctx()
+        matcher = ctx.matcher
+        assert isinstance(matcher, _RecordingMatcher)
+
+        # Committed span: accepted draft [1] (=<eos>, interior) + bonus 8.
+        # Generation stops at the interior <eos>; bonus 8 is truncated and
+        # never reaches the matcher. num_accepted=1.
+        accepted = np.array([[1]], dtype=np.int64)
+        num_accepted = np.array([1], dtype=np.int64)
+        bonus = np.array([8], dtype=np.int64)
+        next_draft = np.array([[5, 6, 8]], dtype=np.int64)
+        bitmask_out = np.zeros((1, 4, 1), dtype=np.int32)
+
+        helper.advance_fsm_and_compute_bitmasks(
+            context_batch=[ctx],
+            accepted_draft_tokens=accepted,
+            num_accepted=num_accepted,
+            bonus_tokens=bonus,
+            next_draft_tokens=next_draft,
+            bitmask_out=bitmask_out,
+            output_context_batch=[ctx],
+        )
+
+        # Generation ends at the first EOS: enforcement flips off.
+        assert not ctx.grammar_enforced, (
+            "interior EOS is terminal; enforcement should be disabled"
+        )
+        # The matcher walk stops at the EOS: the truncated post-EOS token is
+        # never fed to the matcher.
+        assert matcher.consumed == [], matcher.consumed
+
+    def test_terminal_eos_still_disables_enforcement(self) -> None:
+        """Control: a terminal committed EOS (generation actually ending) still
+        disables enforcement, and the content token before it is advanced into
+        the matcher first."""
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_FillRecordingBackend()
+        )
+
+        ctx = self._constrained_ctx()
+
+        # Committed span: accepted draft [8] (content) + bonus 1 (=<eos>,
+        # terminal). is_eos_from_tokens sees generated[-1]=<eos> -> done.
+        accepted = np.array([[8]], dtype=np.int64)
+        num_accepted = np.array([1], dtype=np.int64)
+        bonus = np.array([1], dtype=np.int64)
+        next_draft = np.array([[5, 6, 8]], dtype=np.int64)
+        bitmask_out = np.zeros((1, 4, 1), dtype=np.int32)
+
+        helper.advance_fsm_and_compute_bitmasks(
+            context_batch=[ctx],
+            accepted_draft_tokens=accepted,
+            num_accepted=num_accepted,
+            bonus_tokens=bonus,
+            next_draft_tokens=next_draft,
+            bitmask_out=bitmask_out,
+            output_context_batch=[ctx],
+        )
+
+        assert not ctx.grammar_enforced, (
+            "terminal EOS should disable enforcement (generation ended)"
+        )
+
+    def test_multi_token_eos_sequence_terminates_the_walk(self) -> None:
+        """A committed span completing a multi-token stop ``eos_sequence``
+        terminates the request at the sequence's final token, matching the
+        truncation path (which checks ``is_eos_from_tokens``, not just single
+        ids). Enforcement flips off and the matcher does not advance past the
+        completed sequence -- the case a bare ``token in eos_token_ids`` check
+        would miss."""
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_FillRecordingBackend()
+        )
+
+        ctx = self._constrained_ctx()
+        matcher = ctx.matcher
+        assert isinstance(matcher, _RecordingMatcher)
+        # A two-token stop sequence [5, 6]. None of 5/6/8 is a single-id EOS
+        # ({1, 7}), so only the completed sequence can end the request here.
+        ctx.eos_tracker.eos_sequences = [[5, 6]]
+
+        # Committed span: accepted [5, 6] completes the stop sequence at token
+        # 6; bonus 8 is truncated and must not reach the matcher.
+        accepted = np.array([[5, 6]], dtype=np.int64)
+        num_accepted = np.array([2], dtype=np.int64)
+        bonus = np.array([8], dtype=np.int64)
+        next_draft = np.array([[5, 6, 8]], dtype=np.int64)
+        bitmask_out = np.zeros((1, 4, 1), dtype=np.int32)
+
+        helper.advance_fsm_and_compute_bitmasks(
+            context_batch=[ctx],
+            accepted_draft_tokens=accepted,
+            num_accepted=num_accepted,
+            bonus_tokens=bonus,
+            next_draft_tokens=next_draft,
+            bitmask_out=bitmask_out,
+            output_context_batch=[ctx],
+        )
+
+        # Only the completed stop sequence can flip enforcement off here, so
+        # this proves the sequence check fired (a single-id check would not).
+        assert not ctx.grammar_enforced, (
+            "multi-token stop sequence did not terminate the matcher walk"
+        )
+        # The truncated post-sequence token never reaches the matcher.
+        assert [8] not in matcher.consumed, matcher.consumed

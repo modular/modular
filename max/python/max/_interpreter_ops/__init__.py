@@ -28,16 +28,12 @@ from max._core.driver import Buffer
 # matmul / unary-elementwise handlers are backed by graph-compiler models
 # (compiled below), unlike the Mojo op bindings above.
 from . import (  # type: ignore[attr-defined]
-    argmax_ops,
     argnonzero_ops,
-    avg_pool_ops,
     band_part_ops,
-    bottomk_ops,
-    conv_ops,
+    conv_gc,
     data_movement_ops,
-    elementwise_binary_ops,
+    elementwise_binary_gc,
     elementwise_cast_ops,
-    elementwise_comparison_ops,
     gather_scatter_ops,
     gc_compile,
     group_norm_ops,
@@ -45,59 +41,16 @@ from . import (  # type: ignore[attr-defined]
     matmul_gc,
     misc_ops,
     nms_ops,
-    pad_ops,
-    pooling_ops,
-    reduce_ops,
-    resize_ops,
+    pooling_gc,
+    reduce_axis_gc,
+    resize_gc,
     rms_norm_ops,
     roi_align_ops,
-    softmax_ops,
-    split_ops,
-    tile_ops,
-    topk_ops,
+    select_ops,
+    shape_rearrange_gc,
+    topk_gc,
     unary_elementwise_gc,
 )
-
-# Arithmetic binary ops: output dtype matches input dtype
-# Dtype dispatch is handled in Mojo
-
-
-BINARY_ELEMENTWISE: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer, Buffer, int], None]
-] = {
-    mo.AddOp: elementwise_binary_ops.Add,
-    mo.SubOp: elementwise_binary_ops.Sub,
-    mo.MulOp: elementwise_binary_ops.Mul,
-    mo.DivOp: elementwise_binary_ops.Div,
-    mo.ModOp: elementwise_binary_ops.Mod,
-    mo.MaxOp: elementwise_binary_ops.Max,
-    mo.MinOp: elementwise_binary_ops.Min,
-    mo.AndOp: elementwise_binary_ops.And,
-    mo.OrOp: elementwise_binary_ops.Or,
-    mo.XorOp: elementwise_binary_ops.Xor,
-    mo.PowOp: elementwise_binary_ops.Pow,
-}
-
-# Comparison binary ops: output dtype is always bool
-BINARY_ELEMENTWISE_COMPARISON: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer, Buffer, int], None]
-] = {
-    mo.EqualOp: elementwise_comparison_ops.Equal,
-    mo.GreaterOp: elementwise_comparison_ops.Greater,
-    mo.GreaterEqualOp: elementwise_comparison_ops.GreaterEqual,
-    mo.NotEqualOp: elementwise_comparison_ops.NotEqual,
-}
-
-# Reduce ops: reduce along an axis, output shape has reduced dim = 1
-REDUCE: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer, int, int], None]
-] = {
-    mo.ReduceMaxOp: reduce_ops.ReduceMax,
-    mo.ReduceMinOp: reduce_ops.ReduceMin,
-    mo.ReduceAddOp: reduce_ops.ReduceAdd,
-    mo.ReduceMeanOp: reduce_ops.Mean,
-    mo.ReduceMulOp: reduce_ops.ReduceMul,
-}
 
 # Cast: any dtype input -> any dtype output. (IsNan/IsInf now route through the
 # graph compiler; see unary_elementwise_gc.)
@@ -107,37 +60,41 @@ UNARY_MIXED: dict[
     mo.CastOp: elementwise_cast_ops.Cast,
 }
 
-# Softmax ops: output shape matches input, applied along an axis
-SOFTMAX: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer, int, int], None]
-] = {
-    mo.ReduceSoftmaxOp: softmax_ops.Softmax,
-    mo.ReduceLogsoftmaxOp: softmax_ops.LogSoftmax,
-}
-
 # Import handlers after defining kernels to avoid circular import issues.
 # handlers.py uses the kernel dictionaries defined above.
+# Re-export the warm-adoption query (from gc_compile) so a consumer can assert
+# the ops were force-loaded from the manifest rather than cold-compiled.
+from .gc_compile import adopted_from_manifest
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
+
+# Every warm path iterates this; each ``*_gc.py`` self-registers at import
+# (MXF-533), so there's no hand-maintained list to drift.
+GC_FAMILIES: tuple[gc_compile.GCOpFamily, ...] = (
+    gc_compile.registered_families()
+)
+
+
+def compile_all_families() -> None:
+    """Compile every registered GC family's full sweep into the cache."""
+    for family in GC_FAMILIES:
+        family.compile_sweep()
 
 
 # Opt-in (MAX_EAGER_OP_PRECOMPILE=1) precompile of the full GC matrix; lazy
-# per-dispatch otherwise (MXF-508). Wrapped in a function to defer the
-# matmul_gc / unary_gc symbol access past their import cycle with this module.
+# per-dispatch otherwise (MXF-508).
 def _precompile_gc_models() -> None:
     if gc_compile.should_precompile():
-        matmul_gc.compile_matmul_sweep()
-        unary_elementwise_gc.compile_unary_sweep()
+        compile_all_families()
 
 
 _precompile_gc_models()
 
 __all__ = [
-    "BINARY_ELEMENTWISE",
-    "BINARY_ELEMENTWISE_COMPARISON",
-    "REDUCE",
-    "SOFTMAX",
+    "GC_FAMILIES",
     "UNARY_MIXED",
     "_MO_OP_HANDLERS",
+    "adopted_from_manifest",
+    "compile_all_families",
     "lookup_handler",
     "register_op_handler",
 ]

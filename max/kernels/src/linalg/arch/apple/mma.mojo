@@ -23,6 +23,7 @@ kernel should check once per simdgroup, not per load.
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.gpu import lane_id
 from std.gpu.compute.arch.mma_apple import _mma_apple_transposable
+from std.gpu.memory import build_edge_mask, gmem_edge_masked_load
 from std.math import divmod
 from std.sys.info import align_of
 
@@ -107,6 +108,23 @@ struct MmaOpApple[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
 ]:
+    """Apple Silicon simdgroup-level MMA abstraction for tile-based matrix multiply.
+
+    Each simdgroup (32 threads) owns one instance and accumulates a
+    `(num_m_mmas * 16) x (num_n_mmas * 16)` output tile using Apple simdgroup
+    matrix multiply-accumulate instructions. Supports both dense and fused
+    online-im2col A-operand paths.
+
+    Parameters:
+        out_type: Element type for the output accumulator (float32 or float16).
+        in_type: Element type for the A operand.
+        num_m_mmas: Number of 16x16 MMA tiles along the M dimension.
+        num_n_mmas: Number of 16x16 MMA tiles along the N dimension.
+        b_type: Element type for the B operand; defaults to in_type.
+        transpose_a: When True, the A tile is stored in transposed (K, M) layout.
+        transpose_b: When True, the B tile is stored in transposed (N, K) layout.
+    """
+
     comptime MMA_M = 16
     comptime MMA_N = 16
     comptime MMA_K = 16
@@ -259,32 +277,16 @@ struct MmaOpApple[
         lo_off: Int,
         hi_off: Int,
     ) -> SIMD[dtype, 8]:
-        """Bounded path: predicated loads, zero-fill for OOB.
-
-        Vectorized 4-wide when all 4 cols in bounds; scalar per-element
-        when straddling the column boundary. Zero-filled OOB elements
-        contribute nothing to the dot product.
-        """
-        var col = self.cb
-        var lo = SIMD[dtype, 4](0)
-        var hi = SIMD[dtype, 4](0)
-
-        if self.rb < valid_rows:
-            if col + 3 < valid_cols:
-                lo = (tile.ptr + lo_off).load[width=4]()
-            else:
-                for i in range(4):
-                    if col + i < valid_cols:
-                        lo[i] = tile.ptr[lo_off + i]
-
-        if self.rb + 8 < valid_rows:
-            if col + 3 < valid_cols:
-                hi = (tile.ptr + hi_off).load[width=4]()
-            else:
-                for i in range(4):
-                    if col + i < valid_cols:
-                        hi[i] = tile.ptr[hi_off + i]
-
+        """Bounded path: AGX3 edge-masked vector loads, zero-fill for OOB."""
+        # Clamp to >= 0: a negative upper bound (e.g. valid_cols - ni*16 on
+        # a small ragged tile) reads as unbounded in build_edge_mask.
+        var col_mask = build_edge_mask(
+            Int32(self.cb), Int32(0), Int32(max(0, valid_cols))
+        )
+        var lo_mask = col_mask if self.rb < valid_rows else Int16(0)
+        var hi_mask = col_mask if self.rb + 8 < valid_rows else Int16(0)
+        var lo = gmem_edge_masked_load[4](tile.ptr + lo_off, lo_mask)
+        var hi = gmem_edge_masked_load[4](tile.ptr + hi_off, hi_mask)
         return lo.join(hi)
 
     @always_inline
@@ -350,6 +352,10 @@ struct MmaOpApple[
         is in-bounds. Use mma[bounded=True]() for edge tiles --
         zero-fills OOB elements. The kernel should check once per
         simdgroup, not per load.
+
+        Parameters:
+            bounded: When True, zero-fill out-of-bounds A/B elements
+                instead of reading them (defaults to False).
 
         Args:
             accum: Caller-owned InlineArray of SIMD[out_type, 8]
@@ -464,8 +470,151 @@ struct MmaOpApple[
                     )
 
     @always_inline
+    def _load_frag_x2[
+        dtype: DType, bounded: Bool
+    ](
+        self,
+        tile: TileTensor[dtype, ...],
+        lo_off: Int,
+        hi_off: Int,
+        two_cb: Int,
+        valid_rows: Int,
+        k_valid: Int,
+    ) -> Tuple[SIMD[dtype, 8], SIMD[dtype, 8]]:
+        """Load a BK=32 "double-strip" pair of fragments via FOUR width-4 loads.
+
+        Four width-4 loads, not two width-8: a `load[width=8]` of `half`/`bf16`
+        at element alignment SCALARIZES on the AGX backend (width-8 only
+        vectorizes at `align 16`, which MISCOMPUTES on misaligned K). This is
+        bit-identical to two separate BK=16 strips' width-4 loads, just grouped
+        so the K-loop iterates half as often.
+        """
+        comptime align = align_of[Scalar[dtype]]()
+        var lo_a: SIMD[dtype, 4]
+        var lo_b: SIMD[dtype, 4]
+        var hi_a: SIMD[dtype, 4]
+        var hi_b: SIMD[dtype, 4]
+
+        comptime if bounded:
+            # Upper bound clamped >= 0, same reason as `_bounded_load`.
+            var k_valid_c = Int32(max(0, k_valid))
+            var mask_a = build_edge_mask(Int32(two_cb), Int32(0), k_valid_c)
+            var mask_b = build_edge_mask(Int32(two_cb + 4), Int32(0), k_valid_c)
+            var lo_mask_a = mask_a if self.rb < valid_rows else Int16(0)
+            var lo_mask_b = mask_b if self.rb < valid_rows else Int16(0)
+            var hi_mask_a = mask_a if self.rb + 8 < valid_rows else Int16(0)
+            var hi_mask_b = mask_b if self.rb + 8 < valid_rows else Int16(0)
+            lo_a = gmem_edge_masked_load[4](tile.ptr + lo_off, lo_mask_a)
+            lo_b = gmem_edge_masked_load[4](tile.ptr + lo_off + 4, lo_mask_b)
+            hi_a = gmem_edge_masked_load[4](tile.ptr + hi_off, hi_mask_a)
+            hi_b = gmem_edge_masked_load[4](tile.ptr + hi_off + 4, hi_mask_b)
+        else:
+            lo_a = (tile.ptr + lo_off).load[width=4, alignment=align]()
+            lo_b = (tile.ptr + lo_off + 4).load[width=4, alignment=align]()
+            hi_a = (tile.ptr + hi_off).load[width=4, alignment=align]()
+            hi_b = (tile.ptr + hi_off + 4).load[width=4, alignment=align]()
+
+        return (lo_a.join(hi_a), lo_b.join(hi_b))
+
+    @always_inline
+    def mma_dense_x2[
+        bounded: Bool = False
+    ](
+        self,
+        mut accum: Self.AccumType,
+        a_tile: TileTensor[Self.in_type, ...],
+        b_tile: TileTensor[Self.b_type, ...],
+        a_valid_rows: Int = Self.num_m_mmas * 16,
+        b_valid_cols: Int = Self.num_n_mmas * 16,
+        k_valid: Int = 32,
+    ):
+        """BK=32 "double-strip" dense NT MMA: process 32 K per call.
+
+        A `(SG_M, 32)` row-major and B `(32, SG_N)` col-major are both K
+        contiguous, so one call reads two BK=16 strips' worth of K -- halving
+        the K-loop's iteration count -- via native `load[width=4]`s (see
+        `_load_frag_x2`).
+
+        Correctness: the `2*cb` split permutes K identically on both operands
+        (`f0` = K-cols `{2cb..2cb+3}`, `f1` = `{2cb+4..2cb+7}`), and matmul
+        contraction is K-permutation-invariant, so `f0`+`f1` sum to the full
+        32-K contraction -- the same trick `mma_im2col`'s width-8 gather uses.
+
+        Args:
+            accum: Caller-owned accumulators (one per num_m_mmas * num_n_mmas).
+            a_tile: A operand, `(num_m_mmas*16, 32)` row-major.
+            b_tile: B operand, `(32, num_n_mmas*16)` col-major (NT).
+            a_valid_rows: Valid M rows from the tile origin (bounded path only).
+            b_valid_cols: Valid N cols from the tile origin (bounded path only).
+            k_valid: Valid K elements in this 32-strip (partial-K tail only).
+        """
+        comptime a_k = type_of(a_tile).static_shape[1]
+        comptime a_m = type_of(a_tile).static_shape[0]
+        comptime b_k = type_of(b_tile).static_shape[0]
+        comptime b_n = type_of(b_tile).static_shape[1]
+        comptime assert a_k == 32, "mma_dense_x2 requires A K == 32"
+        comptime assert b_k == 32, "mma_dense_x2 requires B K == 32"
+        comptime assert a_m % 16 == 0, "A M dimension must be a multiple of 16"
+        comptime assert b_n % 16 == 0, "B N dimension must be a multiple of 16"
+        comptime assert (
+            type_of(a_tile).static_stride[1] == 1
+        ), "mma_dense_x2: A must be row-major (K contiguous)"
+        comptime assert (
+            type_of(b_tile).static_stride[0] == 1
+        ), "mma_dense_x2: B must be col-major NT (K contiguous)"
+
+        comptime hw_transpose_a = Self.transpose_a  # a_col_major == False
+        comptime hw_transpose_b = not Self.transpose_b  # b_col_major == True
+
+        var a_row_stride = Self._row_stride(a_tile)
+        var b_row_stride = Self._row_stride(b_tile)
+        var two_cb = 2 * self.cb
+
+        # Preload both strips' B fragments per N sub-tile (as in `mma`).
+        var b_frags0 = InlineArray[
+            SIMD[Self.b_type, Self.FRAG_SIZE], Self.num_n_mmas
+        ](uninitialized=True)
+        var b_frags1 = InlineArray[
+            SIMD[Self.b_type, Self.FRAG_SIZE], Self.num_n_mmas
+        ](uninitialized=True)
+        comptime for ni in range(Self.num_n_mmas):
+            var r0 = ni * 16 + self.rb
+            var lo_off = r0 * b_row_stride + two_cb
+            var hi_off = (r0 + 8) * b_row_stride + two_cb
+            var bf = self._load_frag_x2[Self.b_type, bounded](
+                b_tile, lo_off, hi_off, two_cb, b_valid_cols - ni * 16, k_valid
+            )
+            b_frags0[ni] = bf[0]
+            b_frags1[ni] = bf[1]
+
+        comptime for mi in range(Self.num_m_mmas):
+            var r0 = mi * 16 + self.rb
+            var lo_off = r0 * a_row_stride + two_cb
+            var hi_off = (r0 + 8) * a_row_stride + two_cb
+            var af = self._load_frag_x2[Self.in_type, bounded](
+                a_tile, lo_off, hi_off, two_cb, a_valid_rows - mi * 16, k_valid
+            )
+            comptime for ni in range(Self.num_n_mmas):
+                _mma_apple_transposable(
+                    accum[mi * Self.num_n_mmas + ni],
+                    af[0],
+                    b_frags0[ni],
+                    accum[mi * Self.num_n_mmas + ni],
+                    hw_transpose_a,
+                    hw_transpose_b,
+                )
+                _mma_apple_transposable(
+                    accum[mi * Self.num_n_mmas + ni],
+                    af[1],
+                    b_frags1[ni],
+                    accum[mi * Self.num_n_mmas + ni],
+                    hw_transpose_a,
+                    hw_transpose_b,
+                )
+
+    @always_inline
     def _load_a_im2col_fragment_x2[
-        input_origin: ImmutOrigin, bounded: Bool, c_aligned: Bool, mi: Int
+        input_origin: ImmOrigin, bounded: Bool, c_aligned: Bool, mi: Int
     ](
         self,
         input_ptr: UnsafePointer[Scalar[Self.in_type], input_origin],
@@ -623,7 +772,7 @@ struct MmaOpApple[
 
     @always_inline
     def mma_im2col[
-        input_origin: ImmutOrigin, bounded: Bool = True, c_aligned: Bool = False
+        input_origin: ImmOrigin, bounded: Bool = True, c_aligned: Bool = False
     ](
         self,
         mut accum: Self.AccumType,
@@ -651,6 +800,14 @@ struct MmaOpApple[
         the loader and passed in, so the gather does no `//`/`%` on the K axis.
         Apple M5 has no LDS stage, so the A operand is gathered per fragment
         rather than staged. Design: KB `kernels/apple-conv2d-im2col`.
+
+        Parameters:
+            input_origin: Memory origin of the NHWC input pointer (inferred).
+            bounded: When True, zero-fill out-of-bounds A/B elements
+                instead of reading them (defaults to True).
+            c_aligned: When True, assume `conv.C` is a multiple of 8 so
+                the channel run is contiguous and a single width-8 load
+                suffices (defaults to False).
 
         Args:
             accum: Caller-owned accumulators (one per num_m_mmas * num_n_mmas).
@@ -762,6 +919,12 @@ struct MmaOpApple[
         """Store all accumulators to output tile (unconditional).
 
         Caller guarantees all elements are in-bounds.
+
+        Args:
+            accum: Caller-owned accumulators to write, one per
+                (num_m_mmas * num_n_mmas) tile.
+            d_tile: Output tile of shape (num_m_mmas * 16,
+                num_n_mmas * 16).
         """
         comptime for mi in range(Self.num_m_mmas):
             comptime for ni in range(Self.num_n_mmas):
@@ -779,6 +942,16 @@ struct MmaOpApple[
         """Stores accumulators where `(row < valid_rows) and (col < valid_cols)`.
 
         Assumes row-major `d_tile`; for col-major, mirror `_do_load`'s swap.
+
+        Args:
+            accum: Caller-owned accumulators to write, one per
+                (num_m_mmas * num_n_mmas) tile.
+            d_tile: Row-major output tile of shape (num_m_mmas * 16,
+                num_n_mmas * 16).
+            valid_rows: Valid rows from the tile origin; rows at or past
+                this are skipped.
+            valid_cols: Valid cols from the tile origin; cols at or past
+                this are skipped.
         """
         comptime for mi in range(Self.num_m_mmas):
             comptime for ni in range(Self.num_n_mmas):
@@ -789,3 +962,23 @@ struct MmaOpApple[
                     valid_rows=valid_rows - mi * 16,
                     valid_cols=valid_cols - ni * 16,
                 )
+
+    @always_inline
+    def load_accum(
+        self,
+        d_tile: TileTensor[Self.out_type, ...],
+    ) -> Self.AccumType:
+        """Inverse of `store`: seed an accumulator from a previously-written
+        output tile (chained-accumulate split-K, e.g. `clamp_v2`'s second
+        pass, instead of a separate partials buffer + reduce kernel).
+
+        Caller guarantees all elements are in-bounds.
+        """
+        var accum = Self.AccumType(uninitialized=True)
+        comptime for mi in range(Self.num_m_mmas):
+            comptime for ni in range(Self.num_n_mmas):
+                var sub = d_tile.tile[16, 16](mi, ni)
+                accum[mi * Self.num_n_mmas + ni] = self.load_fragment[
+                    Self.out_type
+                ](sub)
+        return accum

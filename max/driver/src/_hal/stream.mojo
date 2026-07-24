@@ -12,18 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 
 from .plugin import OpaquePointer, FunctionHandle, OutParam
-from .buffer import BufferView
+from std.collections import OptionalReg
+from .buffer import Buffer, BufferView
 from .context import Context
 from .queue import Queue
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable
 from .device import DeviceSpec
 from .status import STATUS_SUCCESS, HALError
+from std.collections import OptionalReg
 from std.memory import (
     ArcPointer,
     UnsafePointer,
     UnsafeMaybeUninit,
 )
 from std.memory.arc_pointer import WeakPointer
+from .execution_config import (
+    ExecutionConfig,
+    BlockExecutionConfig,
+    GridBlockExecutionConfig,
+    GPUExecutionConfiguration,
+    NearComputeGeneralPurposeScratchpadExecutionConfig,
+)
 
 
 @fieldwise_init
@@ -101,6 +110,8 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
         shared_mem_bytes: UInt32 = 0,
+        attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
+        num_attributes: UInt32 = 0,
     ) raises HALError:
         """Enqueues a function execution. Runs after all previous Stream ops."""
         self._chain_wait()
@@ -112,9 +123,40 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             arg_sizes,
             num_args,
             shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes,
+            num_attributes=num_attributes,
         )
         self._chain_signal()
 
+    def execute[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+    ](
+        mut self,
+        func: FunctionHandle,
+        execution_config: ExecutionConfigType,
+        args: UnsafePointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
+        arg_sizes: UnsafePointer[mut=True, UInt64, _],
+        num_args: UInt32,
+        attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
+        num_attributes: UInt32 = 0,
+    ) raises HALError:
+        """Enqueues a function execution. Runs after all previous Stream ops."""
+        self._chain_wait()
+        self._queue[].execute(
+            func,
+            execution_config,
+            args,
+            arg_sizes,
+            num_args,
+            attributes=attributes,
+            num_attributes=num_attributes,
+        )
+        self._chain_signal()
+
+    # Direction-specific transports. Callable directly for fine-grained
+    # control, and the raw-host path (a bare pointer, not a `Buffer`) that
+    # `copy` cannot express; `copy` (below) dispatches to these by residency.
     def copy_to_device(
         mut self,
         dst: BufferView,
@@ -169,9 +211,48 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         self._queue[].fill(dst, value, value_size)
         self._chain_signal()
 
+    # ===-------------------------------------------------------------------===#
+    # Unified copy
+    # ===-------------------------------------------------------------------===#
+
+    def copy(
+        mut self,
+        *,
+        dst: Buffer[Self.device_spec],
+        src: Buffer[Self.device_spec],
+    ) raises HALError:
+        """Buffer-to-buffer copy of `src` into the front of `dst`. Runs after
+        all previous Stream ops.
+
+        Transfers exactly `src.byte_size` bytes; `dst` must be at least that
+        large, and any remaining tail of `dst` is left untouched. The transfer
+        runs on this stream, so the device-resident operand it touches must
+        reside on this stream's device — `dst` for a to-device or same-device
+        copy, `src` for a device-to-pinned-host copy. A pinned host operand may
+        come from any device's context. A device-to-device copy whose source is
+        on another device is a peer copy that the caller must order against the
+        source's producers itself.
+
+        Args:
+            dst: Destination buffer.
+            src: Source buffer.
+        """
+        self._chain_wait()
+        self._queue[].copy(dst=dst, src=src)
+        self._chain_signal()
+
+    def wait_value64(
+        mut self, device_address: UInt64, value: UInt64
+    ) raises HALError:
+        """Enqueues a wait until the 64-bit slot at `device_address` equals
+        `value`. Runs after all previous Stream ops."""
+        self._chain_wait()
+        self._queue[].wait_value64(device_address, value)
+        self._chain_signal()
+
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,
-    ](mut self,) raises HALError -> Event[flags]:
+    ](mut self) raises HALError -> Event[flags]:
         """Returns an event signaled when all previous stream ops complete.
 
         Parameters:
@@ -183,7 +264,7 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def wait_for_events[
         *EventTypes: Waitable,
-    ](mut self, *events: *EventTypes,) raises HALError:
+    ](mut self, *events: *EventTypes) raises HALError:
         """Inserts a wait for cross-stream events into the in-order chain.
 
         Accepts any combination of events with different flag combos.
@@ -191,6 +272,24 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         self._queue[].wait_for_events(*events)
         self._chain_signal()
 
+    def enqueue_host_func[
+        origin: MutOrigin
+    ](
+        mut self,
+        func: def(OpaquePointer[origin]) thin -> None,
+        user_data: OpaquePointer[origin],
+    ) raises HALError:
+        """Enqueues a host function callback. Runs after all previous Stream
+        ops."""
+        self._chain_wait()
+        self._queue[].launch_host_func(func, user_data)
+        self._chain_signal()
+
     def synchronize(self) raises HALError:
         """Blocks the host until all submitted ops on this stream complete."""
         self._queue[].synchronize()
+
+    def native_handle(self) raises HALError -> OptionalReg[UInt64]:
+        """Returns the backend stream/queue handle, or None if the underlying
+        queue has none (a device with no OS-level stream object)."""
+        return self._queue[].native_handle()

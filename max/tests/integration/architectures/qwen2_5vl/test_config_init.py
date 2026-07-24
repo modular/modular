@@ -47,14 +47,13 @@ def _mock_pipeline_config(
 ) -> Mock:
     """Builds a minimal PipelineConfig mock for config init."""
     model = Mock()
-    model.kv_cache.cache_dtype = "bfloat16"
     model.quantization_encoding = "bfloat16"
+    model.kv_cache.kv_cache_format = None
     model.weight_path = [Path("model.safetensors")]
     model.rope_type = "default"
     model.device_specs = [DeviceSpec.cpu()]
     model.max_length = None
     model.graph_quantization_encoding = None
-    model._quant = None
     model.use_subgraphs = True
     model.data_parallel_degree = 1
     model.huggingface_config = hf_config

@@ -58,10 +58,20 @@ def blockwise_fp8_matmul[
     b_scales: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime a_type = config.a_type
-    comptime b_type = config.b_type
-    comptime c_type = config.c_type
     """Launch blockwise FP8 matmul kernel.
+
+    Parameters:
+        transpose_b: Whether `b` is stored transposed as N x K rather than
+            K x N. Only transposed B is currently supported.
+        a_scales_type: `DType` of the `a_scales` scaling factors. Must be
+            `float32` and must match `b_scales_type`.
+        b_scales_type: `DType` of the `b_scales` scaling factors. Must be
+            `float32` and must match `a_scales_type`.
+        config: `MatmulConfig` controlling tile shapes, CTA grouping, cluster
+            shape, swizzle modes, and pipeline stages for the kernel launch.
+        n_scale_granularity: B-scale block size along the N dimension in
+            elements (defaults to 128). Set smaller when the matmul's N-tile
+            spans multiple finer-grained scale blocks.
 
     Args:
         c: Output matrix (M x N).
@@ -74,6 +84,9 @@ def blockwise_fp8_matmul[
     Environment:
         USE_LEGACY_BLOCKWISE_FP8: If True, use legacy kernel instead of structured.
     """
+    comptime a_type = config.a_type
+    comptime b_type = config.b_type
+    comptime c_type = config.c_type
 
     comptime if get_defined_bool["USE_LEGACY_BLOCKWISE_FP8", False]():
         sm100_warp_specialized_blockwise_fp8[

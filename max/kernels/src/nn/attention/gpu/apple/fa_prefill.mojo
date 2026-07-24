@@ -341,6 +341,65 @@ def fa_prefill_apple_core[
     P.V runs on the M5 16x16 simdgroup MMA via `_mma_apple_transposable`, with the
     QK score fragment fed directly as the PV A-operand (register-resident P).
 
+    Parameters:
+        q_type: The dtype of the query tensor `q`, also used as the
+            P-fragment cast type in the PV matmul.
+        output_type: The dtype of the output tensor `output`, applied as
+            a final cast on store.
+        p_type: The accumulation type for the softmax probabilities,
+            derived from `get_accum_type[q_type]` (`Float32`).
+        k_t: The `MHAOperand` type of the paged key cache, determining
+            key dtype and page size.
+        v_t: The `MHAOperand` type of the paged value cache, determining
+            value dtype.
+        mask_t: The `MHAMask` type of the attention mask functor,
+            selecting causal vs non-causal masking at compile time.
+        q_layout: The `TensorLayout` of the flattened query `TileTensor`.
+        output_layout: The `TensorLayout` of the flattened output
+            `TileTensor`.
+        valid_length_layout: The `TensorLayout` of the flattened
+            `valid_length` `TileTensor`.
+        sink_layout: The `TensorLayout` of the sink weights `TileTensor`.
+        ragged: If True, `valid_length` is a cumulative offset buffer
+            over variable-length sequences in the batch (defaults to
+            False).
+        sink: If True, pre-seed the softmax state from per-head sink
+            weights (defaults to False).
+        _use_valid_length: If True, read each batch's query length from
+            `valid_length[batch_id]` (defaults to False).
+        _is_cache_length_accurate: If True, the total attention length
+            equals the query length (no cached prefix); if False, add the
+            key operand's per-batch cache length (defaults to False).
+        Depth: The compile-time head dimension; must be a multiple of 16
+            and at most `FA_PREFILL_APPLE_MAX_HEAD_DIM`.
+        NumNMmas: Number of 16-key column-blocks per KV tile, setting the
+            tile width `Sk = NumNMmas * 16`.
+        NumSimdgroups: Number of simdgroups co-resident per threadgroup,
+            controlling per-launch occupancy (defaults to 1).
+
+    Args:
+        output: The output tensor, written in the same flattened BSHD
+            layout as `q`.
+        q: The query tensor in flattened BSHD layout (batch, seq, head,
+            depth).
+        k: The paged key cache operand.
+        v: The paged value cache operand.
+        mask_functor: The attention mask functor applied to each score
+            tile.
+        valid_length: Per-batch `uint32` sequence lengths or cumulative
+            offsets, depending on `ragged` and `_use_valid_length`.
+        sink_weights: Optional per-head sink weights indexed by head id;
+            dereferenced only when `sink` is True.
+        scale: The softmax scale factor applied to QK score products.
+        batch_size: Number of sequences in the batch.
+        max_prompt_len: Maximum query length across the batch, in tokens.
+        max_cache_size: Maximum KV cache length across the batch, in
+            tokens.
+        num_heads: Number of query attention heads.
+        depth: Head dimension; must match the compile-time `Depth`
+            parameter.
+        group: Number of query heads per KV head (GQA group size).
+
     Constraints:
         `Depth % 16 == 0`, and either `k.page_size == 0` or `k.page_size % 16 == 0`
         so a 16-key sub-tile never crosses a page boundary. Other page sizes are
@@ -835,6 +894,44 @@ def fa_prefill_apple[
     `depth` (a multiple of 16 up to `FA_PREFILL_APPLE_MAX_HEAD_DIM`). The external
     `LayoutTensor` ABI is converted to `TileTensor` at the enqueue boundary so the
     kernel is TileTensor-only.
+
+    Parameters:
+        output_type: The dtype of the output tensor (inferred).
+        k_t: The `MHAOperand` type of the paged key cache (inferred).
+        v_t: The `MHAOperand` type of the paged value cache (inferred).
+        mask_t: The `MHAMask` type of the attention mask functor (inferred).
+        ragged: If True, `valid_length` is a cumulative offset buffer over
+            variable-length sequences in the batch (defaults to False).
+        sink: If True, pre-seed the softmax state from per-head sink weights
+            (defaults to False).
+        _use_valid_length: If True, read each batch's query length from
+            `valid_length[batch_id]` (defaults to False).
+        _is_cache_length_accurate: If True, the total attention length equals
+            the query length (no cached prefix); if False, add the key
+            operand's per-batch cache length (defaults to False).
+        num_simdgroups: Number of simdgroups co-resident per threadgroup,
+            controlling per-launch occupancy (defaults to 4).
+
+    Args:
+        q: The query tensor in flattened BSHD layout (batch, seq, head,
+            depth).
+        k: The paged key cache operand.
+        v: The paged value cache operand.
+        mask_functor: The attention mask functor applied to each score tile.
+        output: The output tensor, written in the same BSHD layout as `q`.
+        valid_length: Per-batch `uint32` sequence lengths or cumulative
+            offsets, depending on `ragged` and `_use_valid_length`.
+        scale: The softmax scale factor applied to QK score products.
+        batch_size: Number of sequences in the batch.
+        max_prompt_len: Maximum query length across the batch, in tokens.
+        max_cache_size: Maximum KV cache length across the batch, in tokens.
+        num_heads: Number of query attention heads.
+        depth: Head dimension; must be a multiple of 16 and at most
+            `FA_PREFILL_APPLE_MAX_HEAD_DIM`.
+        group: Number of query heads per KV head (GQA group size).
+        ctx: The device context used to enqueue the kernel.
+        sink_weights: Optional per-head sink weights indexed by head id
+            (defaults to None).
     """
     # No `is_apple_gpu()` assert: this launcher compiles for the host target where
     # that query is always False; the Apple gate is the caller's in dispatch.

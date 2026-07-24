@@ -22,7 +22,7 @@ from std.collections.string._unicode_lookups import (
     uppercase_mapping3,
 )
 
-from std.memory import Span
+from std.collections import Span
 
 
 def _uppercase_mapping_index(rune: Codepoint) -> Int:
@@ -48,7 +48,7 @@ def _lowercase_mapping_index(rune: Codepoint) -> Int:
 
 
 @always_inline
-def _to_index[lookup: List[UInt32, ...]](rune: Codepoint) -> Int:
+def _to_index[lookup: List[UInt32]](rune: Codepoint) -> Int:
     """Find index of rune in lookup with binary search.
     Returns -1 if not found."""
 
@@ -61,11 +61,11 @@ def _to_index[lookup: List[UInt32, ...]](rune: Codepoint) -> Int:
 
 
 # TODO:
-#   Refactor this to return a Span[Codepoint, StaticConstantOrigin], so that the
-#   return `UInt` count and fixed-size `InlineArray` are not necessary.
+#   Refactor this to return a Span[Codepoint, ImmStaticOrigin], so that the
+#   return `Int` count and fixed-size `InlineArray` are not necessary.
 def _get_uppercase_mapping(
     char: Codepoint,
-) -> Optional[Tuple[UInt, InlineArray[Codepoint, 3]]]:
+) -> Optional[Tuple[Int, InlineArray[Codepoint, 3]]]:
     """Returns the 1, 2, or 3 character sequence that is the uppercase form of
     `char`.
 
@@ -77,14 +77,14 @@ def _get_uppercase_mapping(
     if index1 != -1:
         var rune = materialize[uppercase_mapping]()[index1]
         array[0] = Codepoint(unsafe_unchecked_codepoint=rune)
-        return Tuple(UInt(1), array^)
+        return Tuple(Int(1), array^)
 
     var index2 = _uppercase_mapping2_index(char)
     if index2 != -1:
         var runes = materialize[uppercase_mapping2]()[index2]
         array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
         array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
-        return Tuple(UInt(2), array^)
+        return Tuple(Int(2), array^)
 
     var index3 = _uppercase_mapping3_index(char)
     if index3 != -1:
@@ -92,13 +92,13 @@ def _get_uppercase_mapping(
         array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
         array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
         array[2] = Codepoint(unsafe_unchecked_codepoint=runes[2])
-        return Tuple(UInt(3), array^)
+        return Tuple(Int(3), array^)
 
     return None
 
 
 def _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
-    var index: Optional[UInt] = Span(
+    var index: Optional[Int] = Span(
         materialize[has_lowercase_mapping]()
     )._binary_search_index(char.to_u32())
 

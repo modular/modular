@@ -121,9 +121,20 @@ _TARGETS: dict[str, FuzzTarget] = {
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_matmul.mojo.test",
         binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_matmul.mojo.test",
         description=(
-            "matmul _matmul_gpu tuned SM100 bf16 (memory-safety oracle)"
+            "matmul _matmul_gpu tuned SM100 bf16 (memory-safety; also"
+            " determinism + batch_variance negative control)"
         ),
         default_oracle="memcheck",
+    ),
+    "gemv_split_k": FuzzTarget(
+        name="gemv_split_k",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_gemv_split_k.mojo.test",
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_gemv_split_k.mojo.test",
+        description=(
+            "GEMV split-K (SM100 GEMV_SPLIT_K, FP32 decode router GEMM)"
+            " run-to-run determinism"
+        ),
+        default_oracle="determinism",
     ),
     "numeric_canary": FuzzTarget(
         name="numeric_canary",
@@ -518,10 +529,20 @@ def _oracle_command_and_env(
 ) -> tuple[list[str], dict[str, str]]:
     """Return the (command, extra-env) for running one case under `oracle`.
 
-    diff      -- run as-is; catches hangs (timeout) and crashes (exit code).
-    ref       -- numerical correctness: run with `--check 1` so the target
+    diff        -- run as-is; catches hangs (timeout) and crashes (exit code).
+    ref         -- numerical correctness: run with `--check 1` so the target
                  compares its output to a higher-precision CPU reference and
                  emits FUZZ_NUMERIC_FAIL on a wrong answer. No sanitizer.
+    determinism -- run-to-run bit-stability: `--rerun 8` re-runs the same input
+                 N times (no forced split-K) and flags any non-bit-exact output.
+    batch_invariance -- `--batch-invariance 1`: run a probe under two different
+                 co-batch compositions and flag if the probe's output changes.
+    batch_variance -- `--batch-variance 1`: the negative control (inverse of
+                 batch_invariance) -- run the probe across a batch composition
+                 that straddles an M-keyed dispatch breakpoint (dense matmul
+                 M=1 GEMV vs M>1 tile GEMM; attention default partition
+                 heuristic) and require the probe's output to DIVERGE. Proves
+                 the batch_invariance oracle has teeth; a bit-match is the FAIL.
     redzone   -- MAX redzone allocator: catches OOB *writes* at free (~native).
     poison    -- MAX poison allocator (`poison-all`) + `--check`: every device
                  allocation is NaN-filled, so an unwritten/uninitialized output
@@ -561,6 +582,33 @@ def _oracle_command_and_env(
         # varied launch decomposition (e.g. forced split-K) N times and checks
         # the output is bit-stable; divergence = an inter-block race.
         return base_cmd + ["--schedule", "8"], env
+    if oracle == "determinism":
+        # Run-to-run determinism: the target re-runs the SAME input N times and
+        # checks the output is bit-stable (atol=rtol=0). Like `schedule` but
+        # WITHOUT forcing a split-K decomposition -- it exercises the kernel's
+        # default launch, catching races / order-dependent atomics that show up
+        # without any forced amplification.
+        return base_cmd + ["--rerun", "8"], env
+    if oracle == "batch_invariance":
+        # Batch invariance: the target runs a probe token under two different
+        # co-batch compositions (different filler count / distribution / expert
+        # set for the OTHER tokens; same expert + same input for the probe) and
+        # checks the probe's output rows are bit-identical (atol=rtol=0). A
+        # difference means a dispatch/reduction path keyed on the batch.
+        return base_cmd + ["--batch-invariance", "1"], env
+    if oracle == "batch_variance":
+        # Negative control (the inverse of batch_invariance): the target runs
+        # the SAME probe row in two batches whose composition straddles an
+        # M-keyed dispatch breakpoint (dense matmul M=1 GEMV_SPLIT_K vs M>1 tile
+        # GEMM; attention decode's default partition heuristic, which keys the
+        # partition count on the batch size) and asserts the probe's output rows
+        # DIVERGE bit-for-bit -- PASS iff divergence is observed, FAIL if they
+        # bit-match (the control lost its teeth / the path became invariant, or
+        # the heuristic collapsed to one count for the shapes). This proves the
+        # invariance oracles above have real sensitivity to a dispatch switch,
+        # rather than passing vacuously. A bit-match is reported as a finding,
+        # not silently swallowed.
+        return base_cmd + ["--batch-variance", "1"], env
     if oracle == "contract":
         # Special-value contract: the target injects NaN/Inf/large inputs and
         # checks a finiteness/propagation contract (not a tolerance diff).
@@ -947,6 +995,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
             "diff",
             "ref",
             "schedule",
+            "determinism",
+            "batch_invariance",
+            "batch_variance",
             "contract",
             "redzone",
             "poison",

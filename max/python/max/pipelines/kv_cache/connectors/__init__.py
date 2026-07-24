@@ -25,12 +25,12 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from max.driver import Device
+from max.driver import Device, accelerator_api
 from max.nn.kv_cache.cache_params import (
     KVCacheBufferInterface,
     KVCacheMemory,
+    KVCacheParamInterface,
     KVConnectorType,
-    KVHashAlgo,
 )
 from max.pipelines.kv_cache.kv_connector import KVConnector
 
@@ -50,7 +50,7 @@ def create_connector(
     devices: Sequence[Device],
     replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
     total_num_host_blocks: int,
-    kv_hash_algo: KVHashAlgo,
+    params: KVCacheParamInterface,
 ) -> KVConnector:
     """Create a KV cache connector instance based on ``kv_connector``.
 
@@ -69,9 +69,8 @@ def create_connector(
             sequence per DP replica).
         total_num_host_blocks: Total number of host blocks for swapping (the
             full shared pool across replicas for ``local``/``tiered``).
-        kv_hash_algo: KV-cache hash algorithm; forwarded to connectors that
-            persist hash-keyed state on disk so they can refuse to start
-            against a directory locked to a different algorithm.
+        params: KV-cache parameters; the ``dkv`` connector uses them to derive
+            its multi-tenant per-GPU handshake identity.
 
     Returns:
         A connector instance implementing the KVConnector protocol.
@@ -97,6 +96,7 @@ def create_connector(
             replica_kv_memory=replica_kv_memory,
             local_block_store_endpoint=kv_connector_config.block_store_endpoint,
             devices=devices,
+            params=params,
         )
 
     if connector == KVConnectorType.tiered:
@@ -119,8 +119,37 @@ def create_connector(
             total_num_host_blocks=total_num_host_blocks,
             disk_cache_dir=cfg.disk_offload_dir,
             max_disk_size_gb=cfg.disk_offload_max_gb,
-            kv_hash_algo=kv_hash_algo,
-            use_direct_io=cfg.disk_offload_direct_io,
+        )
+
+    if connector == KVConnectorType.rust_tiered:
+        cfg = kv_connector_config
+        if cfg is None or cfg.disk_offload_dir is None:
+            raise ValueError(
+                "kv_connector_config must include 'disk_offload_dir' "
+                "when kv_connector is 'rust_tiered'"
+            )
+        # The Rust connector drives CUDA copy engines directly (cudarc); it has
+        # no HIP/Metal backend, so it is CUDA-only.
+        api = accelerator_api()
+        if api != "cuda":
+            raise ValueError(
+                f"kv_connector 'rust_tiered' requires a CUDA device, but the "
+                f"accelerator API is '{api}'. Use 'tiered' instead."
+            )
+        from .rust_tier_connector import RustTierConnector
+
+        logger.debug(
+            "Creating RustTierConnector: "
+            f"host_blocks={total_num_host_blocks}, "
+            f"disk_dir={cfg.disk_offload_dir}, "
+            f"disk_max_gb={cfg.disk_offload_max_gb}"
+        )
+        return RustTierConnector(
+            replica_kv_memory=replica_kv_memory,
+            total_num_host_blocks=total_num_host_blocks,
+            kv_hash_algo=params.kv_hash_algo,
+            disk_cache_dir=cfg.disk_offload_dir,
+            max_disk_size_gb=cfg.disk_offload_max_gb,
         )
 
     if connector == KVConnectorType.local:

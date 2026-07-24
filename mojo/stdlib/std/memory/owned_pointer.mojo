@@ -19,7 +19,6 @@ from std.memory import OwnedPointer
 ```
 """
 
-from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 from std.format._utils import (
     Repr,
@@ -34,7 +33,12 @@ from std.memory.alloc import (
 )
 
 
+@explicit_destroy(
+    "Use `take()` (for a `Movable` `T`) or `steal_data()` to consume an"
+    " `OwnedPointer` whose element type is not `ImplicitlyDeletable`"
+)
 struct OwnedPointer[T: AnyType](
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     RegisterPassable,
     Writable where conforms_to(T, Writable),
 ):
@@ -49,7 +53,10 @@ struct OwnedPointer[T: AnyType](
     pointers](/docs/manual/pointers/) in the Mojo Manual.
 
     Parameters:
-        T: The type to be stored in the `OwnedPointer`.
+        T: The type to be stored in the `OwnedPointer`. When `T` is not
+            `ImplicitlyDeletable`, the `OwnedPointer` has no implicit
+            destructor and must be consumed with `take()` (for a `Movable`
+            `T`) or `steal_data()`.
     """
 
     var _inner: ThinAllocation[Self.T]
@@ -68,7 +75,7 @@ struct OwnedPointer[T: AnyType](
             value: The value to move into the `OwnedPointer`.
         """
         self._inner = alloc(Layout[_T].single()).into_thin()
-        self._inner.unsafe_ptr().init_pointee_move(value^)
+        self._inner.unsafe_ptr().unsafe_write(value^)
 
     def __init__[_T: Copyable](out self: OwnedPointer[_T], *, copy_value: _T):
         """Construct a new `OwnedPointer` by explicitly copying the passed value into a new backing allocation.
@@ -81,7 +88,7 @@ struct OwnedPointer[T: AnyType](
             copy_value: The value to explicitly copy into the `OwnedPointer`.
         """
         self._inner = alloc(Layout[_T].single()).into_thin()
-        self._inner.unsafe_ptr().init_pointee_copy(copy_value)
+        self._inner.unsafe_ptr().unsafe_write(copy=copy_value)
 
     def __init__[
         _T: Copyable, U: NoneType = None
@@ -96,7 +103,7 @@ struct OwnedPointer[T: AnyType](
             value: The value to copy into the `OwnedPointer`.
         """
         self._inner = alloc(Layout[_T].single()).into_thin()
-        self._inner.unsafe_ptr().init_pointee_copy(value)
+        self._inner.unsafe_ptr().unsafe_write(copy=value)
 
     def __init__[
         _T: Copyable
@@ -114,21 +121,21 @@ struct OwnedPointer[T: AnyType](
     def __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutUntrackedOrigin],
+        unsafe_from_raw_pointer: Pointer[Self.T, MutUntrackedOrigin],
     ):
-        """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
+        """Construct a new `OwnedPointer` by taking ownership of the provided `Pointer`.
 
         Args:
-            unsafe_from_raw_pointer: The `UnsafePointer` to take ownership of.
+            unsafe_from_raw_pointer: The `Pointer` to take ownership of.
 
         Safety:
 
-        This function is unsafe as the provided `UnsafePointer` must be initialize with a single valid `T`
+        This function is unsafe as the provided `Pointer` must be initialize with a single valid `T`
         initially allocated with this `OwnedPointer`'s backing allocator.
         This function is unsafe as other memory problems can arise such as a double-free if this function
         is called twice with the same pointer or a user manually deallocates the same data.
 
-        After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
+        After using this constructor, the `Pointer` is assumed to be owned by this `OwnedPointer`.
         In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
         """
         self._inner = ThinAllocation(
@@ -151,42 +158,40 @@ struct OwnedPointer[T: AnyType](
         After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
         In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
         """
-        var ptr = unsafe_from_opaque_pointer.bitcast[Self.T]()
+        var ptr = unsafe_from_opaque_pointer.unsafe_bitcast[Self.T]()
         self = Self(
             unsafe_from_raw_pointer=ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         )
 
-    def __del__(deinit self):
-        """Destroy the OwnedPointer[]."""
-        _constrained_conforms_to[
-            conforms_to(Self.T, ImplicitlyDeletable),
-            Parent=Self,
-            Element=Self.T,
-            ParentConformsTo="ImplicitlyDeletable",
-        ]()
-        comptime assert conforms_to(Self.T, ImplicitlyDeletable)
+    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+        """Destroy the `OwnedPointer`, running the destructor of its value.
 
-        self._inner.unsafe_ptr().destroy_pointee()
+        Constraints:
+            `T` must be `ImplicitlyDeletable`. When it is not, the
+            `OwnedPointer` has no implicit destructor and must be consumed
+            with `take()` (for a `Movable` `T`) or `steal_data()`.
+        """
+        self._inner.unsafe_ptr().unsafe_deinit_pointee()
         dealloc(self._inner^.unsafe_with_layout(Layout[Self.T].single()))
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     def __getitem__(
         ref[AddressSpace.GENERIC] self,
-    ) -> ref[self._inner, AddressSpace.GENERIC] Self.T:
+    ) -> ref[
+        origin_of(self)._get_owned_interior["value"], AddressSpace.GENERIC
+    ] Self.T:
         """Returns a reference to the pointers's underlying data with parametric mutability.
 
         Returns:
             A reference to the data underlying the `OwnedPointer`.
         """
-        # This should have a widening conversion here that allows
-        # the mutable ref that is always (potentially unsafely)
-        # returned from UnsafePointer to be guarded behind the
-        # aliasing guarantees of the origin system here.
-        # All of the magic happens above in the function signature
-        return self._inner.unsafe_ptr()[]
+        return self._inner.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
+            "value", origin_of(self)
+        ]()
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -225,7 +230,7 @@ struct OwnedPointer[T: AnyType](
         Returns:
             The data that is (was) backing the `OwnedPointer`.
         """
-        var r = self._inner.unsafe_ptr().take_pointee()
+        var r = self._inner.unsafe_ptr().unsafe_take_pointee()
         dealloc(self._inner^.unsafe_with_layout(Layout[_T].single()))
         return r^
 

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 from std.builtin.simd import SIMD
@@ -22,7 +22,7 @@ from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
 
-@compiler.register("grayscale")
+@extensibility.register("grayscale")
 struct Grayscale:
     @staticmethod
     def execute[
@@ -57,7 +57,7 @@ struct Grayscale:
         foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
 
 
-@compiler.register("brightness")
+@extensibility.register("brightness")
 struct Brightness:
     @staticmethod
     def execute[
@@ -82,7 +82,7 @@ struct Brightness:
         foreach[brighten, target=target](img_out, ctx)
 
 
-@compiler.register("blur")
+@extensibility.register("blur")
 struct Blur:
     @staticmethod
     def execute[

@@ -155,7 +155,7 @@ def kernel_qk_chain[
     comptime _smem_total = _K_SLOT_ROWS * _K_SUB_COLS
     var i = tid
     while i < _smem_total:
-        k_smem.ptr[i] = src_k_swz_ptr[i]
+        k_smem._storage[i] = src_k_swz_ptr[i]
         i += 64
     barrier()
 

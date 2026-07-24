@@ -31,7 +31,9 @@ from max.pipelines.lib.eplb_stats import (
 class TestEplbStatsMetadata:
     def test_construct_valid(self) -> None:
         md = EplbStatsMetadata(
+            num_layers=60,
             num_moe_layers=60,
+            moe_layer_indices=tuple(range(60)),
             num_logical_experts=384,
             num_experts_per_token=8,
         )
@@ -56,14 +58,18 @@ class TestEplbStatsMetadata:
     ) -> None:
         with pytest.raises(AssertionError):
             EplbStatsMetadata(
+                num_layers=layers,
                 num_moe_layers=layers,
+                moe_layer_indices=tuple(range(max(layers, 0))),
                 num_logical_experts=experts,
                 num_experts_per_token=topk,
             )
 
     def test_to_dict_round_trip(self) -> None:
         original = EplbStatsMetadata(
+            num_layers=60,
             num_moe_layers=60,
+            moe_layer_indices=tuple(range(60)),
             num_logical_experts=384,
             num_experts_per_token=8,
         )
@@ -80,15 +86,19 @@ class TestEplbStatsMetadata:
         with pytest.raises(ValueError, match="must be an int"):
             EplbStatsMetadata.from_dict(
                 {
-                    "num_moe_layers": "1",
-                    "num_logical_experts": 2,
+                    "num_moe_layers": 1,
+                    "num_logical_experts": "2",
                     "num_experts_per_token": 1,
                 }
             )
 
     def test_frozen(self) -> None:
         md = EplbStatsMetadata(
-            num_moe_layers=1, num_logical_experts=2, num_experts_per_token=1
+            num_layers=1,
+            num_moe_layers=1,
+            moe_layer_indices=(0,),
+            num_logical_experts=2,
+            num_experts_per_token=1,
         )
         with pytest.raises(Exception):
             md.num_moe_layers = 2  # type: ignore[misc]
@@ -96,7 +106,9 @@ class TestEplbStatsMetadata:
 
 def _md(layers: int = 2, experts: int = 4, topk: int = 2) -> EplbStatsMetadata:
     return EplbStatsMetadata(
+        num_layers=layers,
         num_moe_layers=layers,
+        moe_layer_indices=tuple(range(layers)),
         num_logical_experts=experts,
         num_experts_per_token=topk,
     )
@@ -161,7 +173,9 @@ class TestEplbStatsSnapshot:
 
     def test_realistic_shape(self) -> None:
         metadata = EplbStatsMetadata(
+            num_layers=60,
             num_moe_layers=60,
+            moe_layer_indices=tuple(range(60)),
             num_logical_experts=384,
             num_experts_per_token=8,
         )
@@ -179,7 +193,9 @@ class TestEplbStatsSnapshotJson:
     @staticmethod
     def _populated() -> EplbStatsSnapshot:
         metadata = EplbStatsMetadata(
+            num_layers=2,
             num_moe_layers=2,
+            moe_layer_indices=(0, 1),
             num_logical_experts=4,
             num_experts_per_token=2,
         )
@@ -208,7 +224,7 @@ class TestEplbStatsSnapshotJson:
 
     @pytest.mark.parametrize(
         "missing_field",
-        ["metadata", "histogram", "total_tokens"],
+        ["metadata", "histogram", "non_draft_tokens"],
     )
     def test_from_dict_missing_required(self, missing_field: str) -> None:
         data = self._populated().to_dict()
@@ -231,8 +247,8 @@ class TestEplbStatsSnapshotJson:
 
     def test_from_dict_total_tokens_wrong_type(self) -> None:
         data = self._populated().to_dict()
-        data["total_tokens"] = "9"
-        with pytest.raises(ValueError, match="total_tokens must be an int"):
+        data["non_draft_tokens"] = "9"
+        with pytest.raises(ValueError, match="non_draft_tokens must be an int"):
             EplbStatsSnapshot.from_dict(data)
 
 

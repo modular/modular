@@ -73,7 +73,7 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/nn/hooks:print_hook",
-        "//max/tests/integration/graph:modular_graph_test",
+        "//max/tests/integration/test_common:modular_graph_test",
         requirement("numpy"),
         requirement("torch"),
         requirement("hypothesis"),
@@ -84,6 +84,7 @@ modular_py_test(
 _NN_LIGHT_GPU_TESTS = [
     "test_async_host_func_gpu.py",
     "test_completion_flag_gpu.py",
+    "test_graph_observes_pending_driver_work_gpu.py",
     "test_grouped_matmul_rowwise_fp8_gpu.py",
     "test_host_func_gpu.py",
     "test_moe_gpu.py",
@@ -108,12 +109,14 @@ modular_py_test(
             "bench_row_mean_of_squares_gpu.py",
             "test_conv_transpose_gpu.py",
             "test_grouped_matmul_swiglu_nvfp4_gpu.py",
+            "test_int8_w8a8_apple_gpu.py",
             "test_linear_fp8_amd_gpu.py",
             "test_linear_nvfp4_apple_gpu.py",
             "test_lora_kernels_gpu.py",
             "test_mlp_fp4_gpu.py",
             "test_moe_nvfp4_gpu.py",
             "test_mxfp4_fused_silu_scale_fusion_gpu.py",
+            "test_router_gate_mixed_gemv_gpu.py",
             "test_sgmv_kernels_gpu.py",
             "test_swiglu_nvfp4_graph_capture_mwe_gpu.py",
         ],
@@ -126,6 +129,12 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
+    # Distinct MXFP8 / FP8-KV graphs are compiled. Shard so
+    # they run as parallel processes instead of serializing in one (keeps the
+    # per-shard wall-clock and peak memory down).
+    per_test_shard_count = {
+        "test_fused_qkv_mxfp8_matmul_gpu.py": 3,
+    },
     tags = [
         "gpu",
     ],
@@ -320,6 +329,7 @@ modular_py_test(
     srcs = [
         "conftest.py",
         "test_linear_fp8_amd_gpu.py",
+        "test_router_gate_mixed_gemv_gpu.py",
     ],
     exec_properties = {
         "test.resources:gpu-memory": "2",
@@ -347,6 +357,7 @@ modular_py_test(
     size = "large",
     srcs = [
         "conftest.py",
+        "test_int8_w8a8_apple_gpu.py",
         "test_linear_nvfp4_apple_gpu.py",
     ],
     exec_properties = {

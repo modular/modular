@@ -153,11 +153,11 @@ def test_list_unsafe_set() raises:
 def test_list_clear() raises:
     var list = [1, 2, 3]
     assert_equal(len(list), 3)
-    assert_equal(list.capacity, 3)
+    assert_equal(list.capacity(), 3)
     list.clear()
 
     assert_equal(len(list), 0)
-    assert_equal(list.capacity, 3)
+    assert_equal(list.capacity(), 3)
 
 
 def test_list_to_bool_conversion() raises:
@@ -372,15 +372,15 @@ def test_list_insert() raises:
     assert_equal(v1[2], 3)
 
     #
-    # Test the list [1, 2, 3, 4, 5] created with negative and positive index
+    # Test the list [1, 2, 3, 4, 5] created with interior and boundary indices
     #
 
     v2 = List[Int]()
-    v2.insert(-1729, 2)
+    v2.insert(0, 2)
     v2.insert(len(v2), 3)
     v2.insert(len(v2), 5)
-    v2.insert(-1, 4)
-    v2.insert(-len(v2), 1)
+    v2.insert(2, 4)
+    v2.insert(0, 1)
 
     assert_equal(len(v2), 5)
     assert_equal(v2[0], 1)
@@ -390,14 +390,14 @@ def test_list_insert() raises:
     assert_equal(v2[4], 5)
 
     #
-    # Test the list [1, 2, 3, 4] created with negative index
+    # Test the list [1, 2, 3, 4] created by inserting at the front
     #
 
     v3 = List[Int]()
-    v3.insert(-11, 4)
-    v3.insert(-13, 3)
-    v3.insert(-17, 2)
-    v3.insert(-19, 1)
+    v3.insert(0, 4)
+    v3.insert(0, 3)
+    v3.insert(0, 2)
+    v3.insert(0, 1)
 
     assert_equal(len(v3), 4)
     assert_equal(v3[0], 1)
@@ -592,17 +592,17 @@ def test_2d_dynamic_list() raises:
     assert_equal(3, list[1][2])
 
     assert_equal(2, len(list))
-    assert_equal(2, list.capacity)
+    assert_equal(2, list.capacity())
 
     assert_equal(3, len(list[0]))
 
     list[0].clear()
     assert_equal(0, len(list[0]))
-    assert_equal(4, list[0].capacity)
+    assert_equal(4, list[0].capacity())
 
     list.clear()
     assert_equal(0, len(list))
-    assert_equal(2, list.capacity)
+    assert_equal(2, list.capacity())
 
 
 def test_list_explicit_copy() raises:
@@ -1107,6 +1107,19 @@ def test_list_write_repr_to() raises:
     check_write_to(
         List[Int](), expected="List[SIMD[DType.int, 1]]([])", is_repr=True
     )
+    # Non-`Int` scalar elements also print using their type alias.
+    var uints: List[UInt] = [1, 2]
+    check_write_to(
+        uints,
+        expected="List[SIMD[DType.uint, 1]]([UInt(1), UInt(2)])",
+        is_repr=True,
+    )
+    var floats: List[Float32] = [1.0, 2.0]
+    check_write_to(
+        floats,
+        expected="List[SIMD[DType.float32, 1]]([Float32(1.0), Float32(2.0)])",
+        is_repr=True,
+    )
 
 
 def test_list_fill_constructor() raises:
@@ -1126,16 +1139,16 @@ def test_list_fill_constructor() raises:
 def test_uninit_ctor() raises:
     var list = List[String](unsafe_uninit_length=2)
 
-    UnsafePointer(to=list[0]).init_pointee_move("hello ")
-    UnsafePointer(to=list[1]).init_pointee_move("world")
+    UnsafePointer(to=list[0]).unsafe_write("hello ")
+    UnsafePointer(to=list[1]).unsafe_write("world")
     assert_equal(list[0], "hello ")
     assert_equal(list[1], "world")
 
     # Resize with uninitialized memory.
     var list2 = List[String]()
     list2.resize(unsafe_uninit_length=2)
-    (list2.unsafe_ptr() + 0).init_pointee_move("hello ")
-    (list2.unsafe_ptr() + 1).init_pointee_move("world")
+    list2.unsafe_ptr().unsafe_offset(0).unsafe_write("hello ")
+    list2.unsafe_ptr().unsafe_offset(1).unsafe_write("world")
     assert_equal(list2[0], "hello ")
     assert_equal(list2[1], "world")
 
@@ -1250,7 +1263,7 @@ def test_list_with_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    list^.destroy_with(destroy_closure)
+    list^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, [0, 1])
 
@@ -1264,7 +1277,7 @@ def test_empty_list_with_explicit_destroy_type() raises:
         destroyed += 1
         e^.destroy()
 
-    list^.destroy_with(destroy_closure)
+    list^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, 0)
 
@@ -1280,7 +1293,7 @@ def test_extend_list_with_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    list1^.destroy_with(destroy_closure)
+    list1^.deinit_with(destroy_closure)
     assert_equal(destroyed, [0, 1, 2])
 
 

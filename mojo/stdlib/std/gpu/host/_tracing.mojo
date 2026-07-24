@@ -51,9 +51,7 @@ comptime _TraceType_MAX = 4
 
 @always_inline
 def _setup_category(
-    name_category: def(
-        UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]
-    ) thin -> NoneType,
+    name_category: def(UInt32, Pointer[UInt8, ImmutAnyOrigin]) thin -> NoneType,
     value: Int,
     name: StaticString,
 ):
@@ -61,9 +59,7 @@ def _setup_category(
 
 
 def _setup_categories(
-    name_category: def(
-        UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]
-    ) thin -> NoneType
+    name_category: def(UInt32, Pointer[UInt8, ImmutAnyOrigin]) thin -> NoneType
 ):
     _setup_category(name_category, _TraceType_OTHER, "Other")
     _setup_category(name_category, _TraceType_ASYNCRT, "AsyncRT")
@@ -103,9 +99,7 @@ def _init_dylib() -> OwnedDLHandle:
         comptime if has_nvidia_gpu_accelerator():
             _setup_categories(
                 dylib._handle.get_function[
-                    def(
-                        UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]
-                    ) thin -> NoneType
+                    def(UInt32, Pointer[UInt8, ImmutAnyOrigin]) thin -> NoneType
                 ]("nvtxNameCategoryA")
             )
 
@@ -180,7 +174,7 @@ struct Color(Intable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct _C_EventAttributes[message_origin: ImmutOrigin](TrivialRegisterPassable):
+struct _C_EventAttributes[message_origin: ImmOrigin](TrivialRegisterPassable):
     var version: UInt16
     """Version flag of the structure."""
 
@@ -214,8 +208,8 @@ struct _C_EventAttributes[message_origin: ImmutOrigin](TrivialRegisterPassable):
 
 def c_event_attrs_ffi(
     attrs: _C_EventAttributes[_],
-) -> _C_EventAttributes[ImmutUntrackedOrigin]:
-    return rebind[_C_EventAttributes[ImmutUntrackedOrigin]](attrs)
+) -> _C_EventAttributes[ImmUntrackedOrigin]:
+    return rebind[_C_EventAttributes[ImmUntrackedOrigin]](attrs)
 
 
 @always_inline
@@ -231,7 +225,7 @@ def color_from_category(category: Int) -> Color:
     return Color.PURPLE
 
 
-struct EventAttributes[message_origin: ImmutOrigin](TrivialRegisterPassable):
+struct EventAttributes[message_origin: ImmOrigin](TrivialRegisterPassable):
     var _value: _C_EventAttributes[Self.message_origin]
 
     @always_inline
@@ -250,7 +244,7 @@ struct EventAttributes[message_origin: ImmutOrigin](TrivialRegisterPassable):
             resolved_color = color_from_category(category)
         self._value = _C_EventAttributes(
             version=NVTXVersion,
-            size=UInt16(size_of[_C_EventAttributes[ImmutUntrackedOrigin]]()),
+            size=UInt16(size_of[_C_EventAttributes[ImmUntrackedOrigin]]()),
             category=UInt32(category),
             color_type=Color.FORMAT,
             color=UInt32(Int(resolved_color)),
@@ -278,7 +272,7 @@ struct _dylib_function[fn_name: StaticString, fn_type: TrivialRegisterPassable](
 comptime _nvtxMarkEx = _dylib_function[
     "nvtxMarkEx",
     def(
-        UnsafePointer[_C_EventAttributes[ImmutUntrackedOrigin], ImmutAnyOrigin]
+        Pointer[_C_EventAttributes[ImmUntrackedOrigin], ImmutAnyOrigin]
     ) thin -> NoneType,
 ]
 
@@ -286,7 +280,7 @@ comptime _nvtxMarkEx = _dylib_function[
 comptime _nvtxRangeStartEx = _dylib_function[
     "nvtxRangeStartEx",
     def(
-        UnsafePointer[_C_EventAttributes[ImmutUntrackedOrigin], ImmutAnyOrigin]
+        Pointer[_C_EventAttributes[ImmUntrackedOrigin], ImmutAnyOrigin]
     ) thin -> RangeID,
 ]
 
@@ -299,7 +293,7 @@ comptime _nvtxRangeEnd = _dylib_function[
 comptime _nvtxRangePushEx = _dylib_function[
     "nvtxRangePushEx",
     def(
-        UnsafePointer[_C_EventAttributes[ImmutUntrackedOrigin], ImmutAnyOrigin]
+        Pointer[_C_EventAttributes[ImmUntrackedOrigin], ImmutAnyOrigin]
     ) thin -> Int32,
 ]
 
@@ -351,9 +345,7 @@ struct _Mark:
     def __call__(self, val: _C_EventAttributes[_]):
         comptime assert has_nvidia_gpu_accelerator()
         var attrs = c_event_attrs_ffi(val)
-        self._fn[_nvtxMarkEx.fn_type](
-            UnsafePointer(to=attrs).as_unsafe_any_origin()
-        )
+        self._fn[_nvtxMarkEx.fn_type](Pointer(to=attrs).as_unsafe_any_origin())
 
     def __call__(self, val: CStringSlice[_]):
         comptime assert has_amd_gpu_accelerator()
@@ -376,7 +368,7 @@ struct _RangeStart:
         comptime assert has_nvidia_gpu_accelerator()
         var attrs = c_event_attrs_ffi(val)
         return self._fn[_nvtxRangeStartEx.fn_type](
-            UnsafePointer(to=attrs).as_unsafe_any_origin()
+            Pointer(to=attrs).as_unsafe_any_origin()
         )
 
     def __call__(self, val: CStringSlice[_]) -> RangeID:
@@ -410,7 +402,7 @@ struct _RangePush:
         comptime assert has_nvidia_gpu_accelerator()
         var attrs = c_event_attrs_ffi(val)
         return self._fn[_nvtxRangePushEx.fn_type](
-            UnsafePointer(to=attrs).as_unsafe_any_origin()
+            Pointer(to=attrs).as_unsafe_any_origin()
         )
 
     def __call__(self, val: CStringSlice[_]) -> Int32:

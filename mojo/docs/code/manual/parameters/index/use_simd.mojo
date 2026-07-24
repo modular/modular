@@ -48,7 +48,7 @@ def main():
     from std.math import sqrt
 
     def rsqrt[
-        dt: DType, width: SIMDSize
+        dt: DType, width: SIMDLength
     ](x: SIMD[dt, width]) -> SIMD[dt, width]:
         return 1 / sqrt(x)
 

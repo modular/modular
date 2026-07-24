@@ -27,18 +27,13 @@ from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    CompilationTimer,
+    GraphPipelineModelWithKVCache,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModelWithKVCache,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.utils import (
-    parse_state_dict_from_weights,
-)
-from max.profiler import traced
 
 from .batch_processor import Llama3BatchProcessor
 from .data_parallel_llama import create_graph as create_data_parallel_graph
@@ -113,7 +108,8 @@ class Llama3Inputs(ModelInputs):
 
 
 class LlamaModelBase(
-    LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]
+    LogProbabilitiesMixin,
+    GraphPipelineModelWithKVCache[TextContext],
 ):
     """Base Llama pipeline model implementation."""
 
@@ -200,23 +196,7 @@ class LlamaModelBase(
         assert self.batch_processor is not None
         return self.batch_processor.process_outputs(model_outputs)
 
-    @traced
-    def load_model(self, session: InferenceSession) -> Model:
-        with CompilationTimer("model") as timer:
-            graph = self._build_graph(self.weights, self.adapter)
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
-
-        return model
-
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-    ) -> Graph:
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter
-        )
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         model_config = Llama3Config.initialize(self.pipeline_config)
         model_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -226,96 +206,114 @@ class LlamaModelBase(
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
         )
+        return model_config
 
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        assert isinstance(model_config, Llama3Config)
         if model_config.data_parallel_degree > 1:
-            graph, new_state_dict = create_data_parallel_graph(
+            return create_data_parallel_graph(
                 model_config, self.kv_params, state_dict
             )
-            self.state_dict = new_state_dict
-            return graph
-
-        # Tensor Parallel case
         if len(self.devices) > 1:
-            dist_model: DistributedLlama3 = DistributedLlama3(model_config)
+            return self._build_tensor_parallel_graph_for_compile(
+                state_dict, model_config
+            )
+        return self._build_single_device_graph_for_compile(
+            state_dict, model_config
+        )
 
-            # Load weights.
-            dist_model.load_state_dict(
-                state_dict,
-                override_quantization_encoding=True,
-                weight_alignment=1,
-                strict=False,  # TODO(MODELS-550) `rope_freqs.weight` not used
+    def _build_tensor_parallel_graph_for_compile(
+        self,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        assert isinstance(model_config, Llama3Config)
+        dist_model: DistributedLlama3 = DistributedLlama3(model_config)
+
+        dist_model.load_state_dict(
+            state_dict,
+            override_quantization_encoding=True,
+            weight_alignment=1,
+            strict=False,  # TODO(MODELS-550) `rope_freqs.weight` not used
+        )
+
+        weights_registry = dist_model.state_dict()
+
+        with Graph(
+            getattr(self.huggingface_config, "model_type", "llama3"),
+            input_types=dist_model.input_types(self.kv_params),
+        ) as graph:
+            tokens, input_row_offsets, return_n_logits, *variadic_args = (
+                graph.inputs
             )
 
-            self.state_dict = dist_model.state_dict()
+            signal_buffers = [
+                v.buffer for v in variadic_args[: len(self.devices)]
+            ]
 
-            with Graph(
-                getattr(self.huggingface_config, "model_type", "llama3"),
-                input_types=dist_model.input_types(self.kv_params),
-            ) as graph:
-                tokens, input_row_offsets, return_n_logits, *variadic_args = (
-                    graph.inputs
-                )
+            kv_caches_per_dev = self._unflatten_kv_inputs(
+                variadic_args[len(self.devices) :]
+            )
 
-                # Multi-GPU passes a signal buffer per device: unmarshal these.
-                signal_buffers = [
-                    v.buffer for v in variadic_args[: len(self.devices)]
-                ]
+            outputs = dist_model(
+                tokens.tensor,
+                signal_buffers,
+                kv_caches_per_dev,
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
+            )
 
-                # Unmarshal the remaining arguments, which are for KV cache.
-                kv_caches_per_dev = self._unflatten_kv_inputs(
-                    variadic_args[len(self.devices) :]
-                )
+            graph.output(*outputs)
+            return graph, weights_registry
 
-                outputs = dist_model(
-                    tokens.tensor,
-                    signal_buffers,
-                    kv_caches_per_dev,
-                    return_n_logits.tensor,
-                    input_row_offsets.tensor,
-                )
+    def _build_single_device_graph_for_compile(
+        self,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        assert isinstance(model_config, Llama3Config)
+        single_model: Llama3 = Llama3(model_config)
 
-                graph.output(*outputs)
-                return graph
+        if self._lora_manager:
+            self._lora_manager.init_weights(single_model, state_dict)
 
-        # Single GPU case
-        else:
-            single_model: Llama3 = Llama3(model_config)
+        single_model.load_state_dict(
+            state_dict,
+            override_quantization_encoding=True,
+            weight_alignment=1,
+            strict=False,  # TODO(MODELS-550) `rope_freqs.weight` not used
+        )
+        weights_registry = single_model.state_dict()
 
+        with Graph(
+            "llama3",
+            input_types=single_model.input_types(
+                self.kv_params, self._lora_manager
+            ),
+        ) as graph:
+            (
+                tokens,
+                input_row_offsets,
+                return_n_logits,
+                *rest,
+            ) = graph.inputs
             if self._lora_manager:
-                self._lora_manager.init_weights(single_model, state_dict)
-
-            # Load weights.
-            single_model.load_state_dict(
-                state_dict,
-                override_quantization_encoding=True,
-                weight_alignment=1,
-                strict=False,  # TODO(MODELS-550) `rope_freqs.weight` not used
+                rest = self._lora_manager.bind_graph_inputs(rest)
+            kv_collections = self._unflatten_kv_inputs(rest)
+            outputs = single_model(
+                tokens.tensor,
+                kv_collections[0],
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
             )
-            self.state_dict = single_model.state_dict()
-
-            with Graph(
-                "llama3",
-                input_types=single_model.input_types(
-                    self.kv_params, self._lora_manager
-                ),
-            ) as graph:
-                (
-                    tokens,
-                    input_row_offsets,
-                    return_n_logits,
-                    *rest,
-                ) = graph.inputs
-                if self._lora_manager:
-                    rest = self._lora_manager.bind_graph_inputs(rest)
-                kv_collections = self._unflatten_kv_inputs(rest)
-                outputs = single_model(
-                    tokens.tensor,
-                    kv_collections[0],
-                    return_n_logits.tensor,
-                    input_row_offsets.tensor,
-                )
-                graph.output(*outputs)
-                return graph
+            graph.output(*outputs)
+            return graph, weights_registry
 
 
 class Llama3Model(LlamaModelBase):

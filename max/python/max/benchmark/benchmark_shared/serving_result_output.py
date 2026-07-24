@@ -357,16 +357,18 @@ def print_benchmark_summary(
     if metrics.text_data is not None:
         t = metrics.text_data
         print_section(title="Client Experience Metrics")
-        print(
-            t.input_throughput.format_with_prefix(
-                prefix="input token throughput", unit="tok/s"
+        if t.input_throughput is not None:
+            print(
+                t.input_throughput.format_with_prefix(
+                    prefix="input token throughput", unit="tok/s"
+                )
             )
-        )
-        print(
-            t.output_throughput.format_with_prefix(
-                prefix="output token throughput", unit="tok/s"
+        if t.output_throughput is not None:
+            print(
+                t.output_throughput.format_with_prefix(
+                    prefix="output token throughput", unit="tok/s"
+                )
             )
-        )
         total_tpm = (
             (t.total_input + t.total_output) * 60.0 / agg.duration
             if agg.duration > 0
@@ -384,19 +386,22 @@ def print_benchmark_summary(
             )
             + "%"
         )
-        print_section(title="Time to First Token")
-        print(t.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
-        print_section(title="Time per Output Token")
-        print("[(latency - TTFT) / (output_tokens - 1), per request]")
-        print(t.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
+        if t.ttft_ms is not None:
+            print_section(title="Time to First Token")
+            print(t.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
+        if t.tpot_ms is not None:
+            print_section(title="Time per Output Token")
+            print("[(latency - TTFT) / (output_tokens - 1), per request]")
+            print(t.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
         if t.step_tpot_ms is not None:
             print_section(title="Time per Output Token (step-based)")
             print("[ITL / tokens_per_step, per decode step]")
             print(
                 t.step_tpot_ms.format_with_prefix(prefix="Step TPOT", unit="ms")
             )
-        print_section(title="Inter-token Latency")
-        print(t.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
+        if t.itl_ms is not None:
+            print_section(title="Inter-token Latency")
+            print(t.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
         if t.per_turn_cached_token_rate is not None:
             print_section(title="Per-Turn Cached Token Rate")
             print(
@@ -413,10 +418,13 @@ def print_benchmark_summary(
                 )
             )
 
-    print_section(title="Per-Request E2E Latency")
-    print(
-        agg.latency_ms.format_with_prefix(prefix="Request Latency", unit="ms")
-    )
+    if agg.latency_ms is not None:
+        print_section(title="Per-Request E2E Latency")
+        print(
+            agg.latency_ms.format_with_prefix(
+                prefix="Request Latency", unit="ms"
+            )
+        )
 
     if metrics.text_data is not None:
         t = metrics.text_data

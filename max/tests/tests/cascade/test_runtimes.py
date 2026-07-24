@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import os
 import socket
 import sys
@@ -36,9 +37,11 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 
 import pytest
+import pytest_asyncio
 from max.experimental.cascade import (
     GenerateRequest,
     LocalRuntime,
+    Result,
     Runtime,
     Worker,
     worker_method,
@@ -55,32 +58,103 @@ from max.experimental.cascade.http_runtime.client import HttpRuntimeProxy
 from max.experimental.cascade.http_runtime.subproc import (
     _wait_until_alive as _http_wait_until_alive,
 )
-from max.serve.process_control import subprocess_manager
-from max.tests.tests.cascade.dummy_textgen import (
+from max.experimental.cascade.pipelines.dummy_textgen import (
     build_dummy_textgen_pipeline,
 )
+from max.serve.process_control import subprocess_manager
+from pydantic import BaseModel
 
-# Each entry is a zero-arg factory whose ``async with`` yields a connected
-# :py:class:`Runtime`. Parameterizing the fixture by factory (rather than by
-# instance) keeps each test case lifecycle-isolated.
-_RUNTIME_FACTORIES: list[Callable[[], Runtime]] = [
-    LocalRuntime,
-    SubprocGrpcRuntimeClient,
-    SubprocHttpRuntime,
-]
+# The transports the shared-runtime suite runs against. ``LocalRuntime`` is
+# in-process; the other two are backed by a server subprocess (see
+# ``_shared_server``).
+_RUNTIME_TRANSPORTS = ["local", "grpc", "http"]
 
 
-@pytest.fixture(
-    params=_RUNTIME_FACTORIES,
-    ids=lambda factory: factory.__name__,
+async def _grpc_ready(target: str) -> None:
+    """Block until the gRPC server at ``target`` answers (``__aenter__`` polls)."""
+    async with GrpcRuntimeClient(target):
+        pass
+
+
+async def _http_ready(address: str) -> None:
+    """Block until the HTTP server at ``address`` reports alive."""
+    proxy = HttpRuntimeProxy(address)
+    async with proxy.session() as session:
+        await _http_wait_until_alive(session, proxy._base_url)
+
+
+@pytest_asyncio.fixture(
+    params=_RUNTIME_TRANSPORTS,
+    ids=lambda transport: transport,
+    scope="module",
 )
-async def runtime(
+async def _shared_server(
     request: pytest.FixtureRequest,
+) -> AsyncIterator[Callable[[], Runtime]]:
+    """Boot one server per subprocess-backed transport, shared across the module.
+
+    Yields a zero-arg opener returning an *unentered* :py:class:`Runtime`
+    pointed at the shared server (or a fresh in-process :py:class:`LocalRuntime`,
+    which is cheap enough to build per test). Booting the server once per module
+    -- rather than once per test case -- avoids ~40 subprocess spawn/teardown
+    cycles across this file, each of which pays the subprocess SIGTERM-grace
+    teardown (especially costly under ASAN). The subprocess lifecycle is owned
+    by :py:func:`~max.serve.process_control.subprocess_manager` (the same code
+    the real runtimes use); tests just dial the server with lightweight
+    per-test clients.
+    """
+    transport: str = request.param
+    if transport == "local":
+        yield LocalRuntime
+        return
+
+    sock_path = f"/tmp/max-test-{uuid.uuid4().hex[:12]}.sock"
+    address = f"unix://{sock_path}"
+    if transport == "grpc":
+        server_fn: Callable[[str], None] = grpc_server.serve
+        opener: Callable[[], Runtime] = functools.partial(
+            GrpcRuntimeClient, f"unix:{sock_path}"
+        )
+        ready = _grpc_ready(f"unix:{sock_path}")
+    else:
+        server_fn = http_server.serve
+        opener = functools.partial(HttpRuntimeProxy, address)
+        ready = _http_ready(address)
+
+    # Manage the server subprocess (loop-agnostic, module-lived) and its client
+    # (event-loop-bound, per-test) separately rather than reusing the bundled
+    # ``Subproc*Runtime`` classes, whose single ``async with`` opens a client on
+    # this fixture's loop that the per-function test loops then can't await.
+    try:
+        async with subprocess_manager(
+            f"cascade {transport} test server"
+        ) as proc:
+            proc.start(server_fn, address)
+            await asyncio.wait_for(ready, timeout=30.0)
+            yield opener
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(sock_path)
+
+
+@pytest_asyncio.fixture
+async def runtime(
+    _shared_server: Callable[[], Runtime],
 ) -> AsyncIterator[Runtime]:
-    """Yield an opened runtime for each factory under test."""
-    factory: Callable[[], Runtime] = request.param
-    async with factory() as rt:
+    """Open a per-test client to the module's shared runtime.
+
+    The client (a gRPC channel / aiohttp session, or a fresh in-process
+    ``LocalRuntime``) is cheap; the server subprocess it talks to is shared
+    across the whole module by :py:func:`_shared_server`.
+    """
+    async with _shared_server() as rt:
         yield rt
+
+
+class Person(BaseModel):
+    name: str
+    age: int
+    is_lefthanded: bool
 
 
 class _Echo(Worker):
@@ -95,6 +169,28 @@ class _Echo(Worker):
         for i in range(n):
             yield i
 
+    @worker_method()
+    async def hello(self, person: Person) -> str:
+        return "Hello " + person.name + ", how are you?"
+
+    @worker_method()
+    async def add_person(
+        self, name: str, age: int, is_lefthanded: bool
+    ) -> Person:
+        return Person(name=name, age=age, is_lefthanded=is_lefthanded)
+
+    @worker_method()
+    async def greet(self, name: str, excited: bool = False) -> str:
+        return f"Hi {name}" + ("!" if excited else ".")
+
+    @worker_method()
+    async def total(self, nums: list[int]) -> int:
+        return sum(nums)
+
+    @worker_method()
+    async def hello_all(self, people: list[Person]) -> str:
+        return "Hello " + ", ".join(p.name for p in people) + "!"
+
 
 class _Failing(Worker):
     """Worker whose methods fail in various ways."""
@@ -107,7 +203,7 @@ class _Failing(Worker):
     async def exit_hard(self) -> str:
         # Ensure exit happens after server is setup, instead of
         # racing between server shutdown and `sys.exit(1)`.
-        await asyncio.sleep(3)
+        await asyncio.sleep(1)
         sys.exit(1)
 
     @worker_method()
@@ -133,6 +229,88 @@ async def test_scalar_call(runtime: Runtime) -> None:
 
         add_handle = await echo.add(10, -4)
         assert await add_handle == 6
+
+
+@pytest.mark.asyncio
+async def test_basemodel_type_inference_result(runtime: Runtime) -> None:
+    """Test that `pydantic.BaseModel`s get type inferred and decoded properly
+
+    We should not have to explicitly specify which class an argument gets decoded into.
+    """
+    async with _pipeline_method_scope():
+        echo = await runtime.deploy(_Echo())
+        person_handle = await echo.add_person("Lebron", 41, False)
+        greeting_handle = await echo.hello(person_handle)
+        assert await greeting_handle == "Hello Lebron, how are you?"
+
+
+@pytest.mark.asyncio
+async def test_kwargs_type_inference(runtime: Runtime) -> None:
+    """Kwargs decode by name while positional args bind to the leading params.
+
+    Proxy methods are statically positional-only, so exercise the kwargs
+    wire path through ``call_method`` directly.
+    """
+    worker_id = await runtime.deploy_worker(_Echo())
+    # All-kwargs call.
+    async with runtime.call_method(
+        worker_id, "add", (), {"a": 2, "b": 3}
+    ) as result_id:
+        assert await runtime.get_result(result_id) == 5
+    # Mixed positional + kwargs call.
+    async with runtime.call_method(
+        worker_id, "add", (2,), {"b": 4}
+    ) as result_id:
+        assert await runtime.get_result(result_id) == 6
+
+
+@pytest.mark.asyncio
+async def test_kwargs_basemodel_type_inference(runtime: Runtime) -> None:
+    """A result forwarded as a kwarg decodes into its `pydantic.BaseModel`."""
+    worker_id = await runtime.deploy_worker(_Echo())
+    async with runtime.call_method(
+        worker_id, "add_person", ("Lebron", 41, False), {}
+    ) as person_id:
+        person_handle: Result[Person] = Result(person_id, runtime)
+        async with runtime.call_method(
+            worker_id, "hello", (), {"person": person_handle}
+        ) as result_id:
+            assert (
+                await runtime.get_result(result_id)
+                == "Hello Lebron, how are you?"
+            )
+
+
+@pytest.mark.asyncio
+async def test_basemodel_list_type_inference(runtime: Runtime) -> None:
+    """Test a container of pydantic.BaseModels"""
+    async with _pipeline_method_scope():
+        echo = await runtime.deploy(_Echo())
+        people = [
+            Person(name="Lebron", age=41, is_lefthanded=False),
+            Person(name="Max", age=3, is_lefthanded=True),
+        ]
+        greeting_handle = await echo.hello_all(people)
+        assert await greeting_handle == "Hello Lebron, Max!"
+
+
+@pytest.mark.asyncio
+async def test_container_type_inference(runtime: Runtime) -> None:
+    """A non-``BaseModel`` hint (``list[int]``) decodes through the same
+    hinted path as models, not the generic-JSON fallback."""
+    async with _pipeline_method_scope():
+        echo = await runtime.deploy(_Echo())
+        total_handle = await echo.total([1, 2, 3])
+        assert await total_handle == 6
+
+
+@pytest.mark.asyncio
+async def test_default_arg_omitted(runtime: Runtime) -> None:
+    """A call omitting a defaulted param still works."""
+    async with _pipeline_method_scope():
+        echo = await runtime.deploy(_Echo())
+        greeting_handle = await echo.greet("Max")
+        assert await greeting_handle == "Hi Max."
 
 
 @pytest.mark.asyncio
@@ -309,17 +487,25 @@ async def test_worker_exception(runtime: Runtime) -> None:
 async def test_worker_sys_exit(runtime_cls: type) -> None:
     """A subprocess worker that calls ``sys.exit(1)`` surfaces an error.
 
-    Only tested against subprocess runtimes because ``sys.exit`` in-process
-    raises :py:class:`SystemExit` (a :py:class:`BaseException`) which tears
-    through the local task group destructively. In a subprocess runtime the
-    child dies and the transport layer reports the failure as a normal
-    exception.
+    The error surfaces either on the client's ``await handle`` or as
+    ``SubprocessExit`` from ``subprocess_manager``, since both are notified
+    when the child process dies.
+
+    The client is notified since the runtime drops the (gRPC) connection, and
+    the ``subprocess_manager`` is notified since it watches the child's
+    process' termination.
+
+    So wrap the entire pipeline with `pytest.raises`, and check for a successful
+    deploy so a deployment failure stays a real error.
     """
-    async with runtime_cls() as rt, _pipeline_method_scope():
-        worker = await rt.deploy(_Failing())
-        with pytest.raises(Exception):
+    deployed = False
+    with pytest.raises(Exception):
+        async with runtime_cls() as rt, _pipeline_method_scope():
+            worker = await rt.deploy(_Failing())
+            deployed = True
             handle = await worker.exit_hard()
             await handle
+    assert deployed, "worker deploy failed before exit_hard could run"
 
 
 @pytest.mark.asyncio

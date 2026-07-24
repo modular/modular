@@ -146,7 +146,7 @@ def fp8_quantize[
 @always_inline
 def cast_saturating[
     in_dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     out_dtype: DType,
 ](values: SIMD[in_dtype, width]) -> SIMD[out_dtype, width]:
@@ -156,7 +156,7 @@ def cast_saturating[
     on NVIDIA (the `cvt` is not `satfinite`); FP8 stores must SATURATE instead.
     This helper clamps to [min_finite, max_finite] before the cast when
     `out_dtype` is FP8, and is a plain cast otherwise (no-op clamp for
-    bf16/f16). Use it for direct stores to a (possibly-FP8) destination — e.g.
+    bf16/f16). Use it for direct stores to a (possibly-FP8) destination, e.g.
     the MLA RoPE / RMSNorm KV-cache writes where the cache dtype is generic.
 
     Parameters:

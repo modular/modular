@@ -723,7 +723,7 @@ def _is_alphanumeric(byte: Byte) -> Bool:
 
 
 def _parse_variable_name[
-    immutable: ImmutOrigin
+    immutable: ImmOrigin
 ](bytes: Span[Byte, immutable]) -> Tuple[StringSlice[immutable], Int]:
     """Returns the environment variable name and the byte count required to extract it.
     For `${}` expansions, two additional bytes are added to the byte count to account for the braces.

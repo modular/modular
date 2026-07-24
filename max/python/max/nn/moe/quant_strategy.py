@@ -101,6 +101,9 @@ class QuantStrategy(Protocol):
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         max_padded_M: int = 0,
+        clamp_activation: bool = False,
+        swiglu_alpha: float = 0.0,
+        swiglu_limit: float = 0.0,
     ) -> tuple[TensorValue, TensorValue]:
         """Applies gating and quantizes activations for the down proj."""
         ...
@@ -187,12 +190,20 @@ class Fp8Strategy:
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         max_padded_M: int = 0,
+        clamp_activation: bool = False,
+        swiglu_alpha: float = 0.0,
+        swiglu_limit: float = 0.0,
     ) -> tuple[TensorValue, TensorValue]:
         """Applies fused SiLU gate and returns quantized activations.
 
-        ``max_padded_M`` is accepted for ``QuantStrategy`` conformance; it only
-        applies to the MXFP4 EP scale fusion and is ignored here.
+        ``max_padded_M`` and the ``clamp_activation``/``swiglu_*`` args are
+        accepted for ``QuantStrategy`` conformance; they only apply to the
+        MXFP4 EP path and are ignored here.
         """
+        assert not clamp_activation, (
+            "clamped SwiGLU-OAI activation is only supported on the MXFP4 EP"
+            " path"
+        )
         _, _, expert_start_indices, _, _ = expert_inputs
         return fused_silu_quantized(
             gate_up_projs,
@@ -331,12 +342,20 @@ class NvMxf4f8Strategy:
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         max_padded_M: int = 0,
+        clamp_activation: bool = False,
+        swiglu_alpha: float = 0.0,
+        swiglu_limit: float = 0.0,
     ) -> tuple[TensorValue, TensorValue]:
         """Applies SiLU gate then quantizes the result.
 
-        ``max_padded_M`` is accepted for ``QuantStrategy`` conformance; it only
-        applies to the MXFP4 EP scale fusion and is ignored here.
+        ``max_padded_M`` and the ``clamp_activation``/``swiglu_*`` args are
+        accepted for ``QuantStrategy`` conformance; they only apply to the
+        MXFP4 EP path and are ignored here.
         """
+        assert not clamp_activation, (
+            "clamped SwiGLU-OAI activation is only supported on the MXFP4 EP"
+            " path"
+        )
         _, _, expert_start_indices, scales_offsets, _, _ = expert_inputs
         return fused_silu_quantized(
             gate_up_projs,
@@ -500,6 +519,7 @@ class Mxfp4Strategy:
         estimated_total_m: TensorValue | None = None,
         a_scales_preshuffled: bool = False,
         a_scales_max_padded_m: int = 0,
+        decode_grid_m_cap: int = 0,
     ) -> TensorValue:
         """Runs grouped MXFP4 matmul with per-expert scales."""
         (
@@ -522,6 +542,7 @@ class Mxfp4Strategy:
             preshuffled_b=self.preshuffled_b,
             a_scales_preshuffled=a_scales_preshuffled,
             a_scales_max_padded_m=a_scales_max_padded_m,
+            decode_grid_m_cap=decode_grid_m_cap,
         )
 
     def prepare_weight_scales(
@@ -538,8 +559,11 @@ class Mxfp4Strategy:
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         max_padded_M: int = 0,
+        clamp_activation: bool = False,
+        swiglu_alpha: float = 0.0,
+        swiglu_limit: float = 0.0,
     ) -> tuple[TensorValue, TensorValue]:
-        """Applies SiLU gate then MXFP4 quantizes the result."""
+        """Applies SiLU (or clamped SwiGLU-OAI) gate then MXFP4 quantizes."""
         _, _, expert_start_indices, _, _ = expert_inputs
         return fused_silu_quantized(
             gate_up_projs,
@@ -548,6 +572,9 @@ class Mxfp4Strategy:
             self.dtype,
             input_scales,
             max_padded_M=max_padded_M,
+            clamp_activation=clamp_activation,
+            swiglu_alpha=swiglu_alpha,
+            swiglu_limit=swiglu_limit,
         )
 
 

@@ -40,7 +40,6 @@ from max.nn.kv_cache.cache_params import (
     ReplicatedKVCacheMemory,
 )
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
-from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 
 
 def _u8_view(buf: Buffer) -> Buffer:
@@ -143,7 +142,7 @@ def test_mla_replicated_fp8_offload_roundtrip() -> None:
         total_num_host_blocks=4,
     )
 
-    block_hash = to_block_hash_bytes(0xABCD)
+    block_hash = (0xABCD).to_bytes(8, "big", signed=True)
     connector.offload([src_page], [block_hash])
     connector.wait_for_offloads()
 
@@ -155,7 +154,9 @@ def test_mla_replicated_fp8_offload_roundtrip() -> None:
 
     loaded = connector.load([dst_page], [block_hash])
     connector.wait_for_offloads()
-    assert loaded == 1, "expected the offloaded block to be a host-cache hit"
+    assert len(loaded.g0_blocks) == 1, (
+        "expected the offloaded block to be a host-cache hit"
+    )
 
     # Every rank's reloaded page must match the original bytes.
     for i, v in enumerate(values):
@@ -222,7 +223,7 @@ def test_mixed_replicated_and_sharded_offload_roundtrip() -> None:
         replica_kv_memory=[kv_memory], total_num_host_blocks=4
     )
 
-    block_hash = to_block_hash_bytes(0xBEEF)
+    block_hash = (0xBEEF).to_bytes(8, "big", signed=True)
     connector.offload([src_page], [block_hash])
     connector.wait_for_offloads()
 
@@ -233,7 +234,9 @@ def test_mixed_replicated_and_sharded_offload_roundtrip() -> None:
 
     loaded = connector.load([dst_page], [block_hash])
     connector.wait_for_offloads()
-    assert loaded == 1, "expected the offloaded block to be a host-cache hit"
+    assert len(loaded.g0_blocks) == 1, (
+        "expected the offloaded block to be a host-cache hit"
+    )
 
     # Replicated unit: rank-0 and the broadcast peer must match the original.
     np.testing.assert_array_equal(

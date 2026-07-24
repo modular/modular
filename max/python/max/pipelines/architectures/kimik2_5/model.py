@@ -22,6 +22,8 @@ from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import Any, ClassVar, cast
 
+import numpy as np
+import numpy.typing as npt
 from max.driver import (
     Buffer,
     Device,
@@ -47,14 +49,15 @@ from max.nn.kv_cache import (
     KVCacheParamInterface,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
+    MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
-    PipelineModelWithKVCache,
 )
 from max.pipelines.lib.eplb_stats import (
     EplbPlacement,
@@ -62,14 +65,14 @@ from max.pipelines.lib.eplb_stats import (
     EplbStatsMetadata,
     EplbStatsSnapshot,
 )
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
+from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.modeling.config_enums import is_float4_encoding
-from max.pipelines.request import RequestID
 from max.pipelines.weights.mxfp4_preshuffle import (
     preshuffle_mxfp4_b_experts,
     preshuffle_mxfp4_b_scales,
 )
 from max.pipelines.weights.quant import parse_quant_config
+from max.profiler import traced
 from transformers import AutoConfig
 
 from ..deepseekV3.model import DeepseekV3Inputs
@@ -158,7 +161,7 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
 
 class KimiK2_5Model(
     AlwaysSignalBuffersMixin,
-    PipelineModelWithKVCache[KimiK2_5TextAndVisionContext],
+    MultiGraphPipelineModelWithKVCache[KimiK2_5TextAndVisionContext],
 ):
     """A Kimi-K2.5 pipeline model for multimodal text generation."""
 
@@ -177,7 +180,7 @@ class KimiK2_5Model(
     this; rounded up from ~16x to leave headroom.
     """
 
-    vision_model: Model
+    vision_model: Model | None
     """The compiled vision model for processing images."""
 
     language_model: Model
@@ -203,11 +206,6 @@ class KimiK2_5Model(
         self.session = session
         self._eplb_log2phy_buffers: list[Buffer] = []
         self._eplb_logcnt_buffers: list[Buffer] = []
-        self._ve_cache: VisionEncoderCache[KimiK2_5TextAndVisionContext] = (
-            VisionEncoderCache(
-                max_entries=pipeline_config.runtime.max_vision_cache_entries
-            )
-        )
         super().__init__(
             pipeline_config,
             session,
@@ -224,9 +222,9 @@ class KimiK2_5Model(
 
         if self._batch_processor is not None:
             assert isinstance(self._batch_processor, KimiK2_5BatchProcessor)
-            self._batch_processor.bind_vision_cache(self._ve_cache)
             assert self.model_config is not None
             self._batch_processor.bind_model_config(self.model_config)
+            assert self.vision_model is not None
             self._batch_processor.bind_vision_encoder(
                 vision_model=self.vision_model,
                 session=self.session,
@@ -428,9 +426,7 @@ class KimiK2_5Model(
         )
         return model_config
 
-    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
-        """Load the model with the given weights."""
-
+    def _load_state_dict(self) -> dict[str, Any]:
         if self.adapter:
             state_dict = self.adapter(
                 dict(self.weights.items()),
@@ -441,9 +437,47 @@ class KimiK2_5Model(
             state_dict = {
                 key: value.data() for key, value in self.weights.items()
             }
+        # Weights are loaded onto ``nn_model`` in ``_init_distributed_runtime``.
+        self._vision_weights_dict = {}
+        self._language_weights_dict = {}
+        return state_dict
 
-        # Create the LM model first
+    @traced
+    def load_model(
+        self, session: InferenceSession
+    ) -> tuple[Model | None, Model]:
+        state_dict = self._load_state_dict()
         config = self._create_model_config(state_dict)
+        self._init_distributed_runtime(session, config, state_dict)
+        assert self.model_config is not None
+        kimik2_5_config = self.model_config
+
+        with CompilationTimer("vision + language model") as timer:
+            module = Module()
+
+            vision_graph, vision_registry = self._build_vision_graph(
+                kimik2_5_config, self._vision_weights_dict, module=module
+            )
+            language_graph, language_registry = self._build_language_graph(
+                config, self._language_weights_dict, module=module
+            )
+            timer.mark_build_complete()
+
+            models = session.load_all(
+                module,
+                weights_registry={**vision_registry, **language_registry},
+            )
+
+        vision_model = models[vision_graph.name]
+        language_model = models[language_graph.name]
+        return vision_model, language_model
+
+    def _init_distributed_runtime(  # type: ignore[override]
+        self,
+        session: InferenceSession,
+        config: KimiK2_5TextConfig,
+        state_dict: dict[str, Any],
+    ) -> None:
         # ---- EPLB placement -----------------------------------------------------
         plan: EplbPlacement | None = None
         if config.ep_config is not None:
@@ -515,32 +549,14 @@ class KimiK2_5Model(
         else:
             self._eplb_stats_accumulator = None
 
-        # Load the vision + language model.
-        with CompilationTimer("vision + language model") as timer:
-            # Create a new module to hold both models
-            module = Module()
-
-            # Build the vision graph in the module
-            vision_graph = self._build_vision_graph(
-                kimik2_5_config, state_dict, module=module
-            )
-
-            # Build the language graph in the module
-            language_graph = self._build_language_graph(config, module=module)
-            timer.mark_build_complete()
-            models = session.load_all(module, weights_registry=self.state_dict)
-            vision_model = models[vision_graph.name]
-            language_model = models[language_graph.name]
-
-        return vision_model, language_model
-
     def _build_vision_graph(
         self,
         config: KimiK2_5Config,
         state_dict: dict[str, WeightData],
-        module: Module | None = None,
-    ) -> Graph:
+        module: Module,
+    ) -> tuple[Graph, dict[str, Any]]:
         """Build the vision model graph for processing images."""
+        del state_dict
         assert isinstance(self.nn_model, KimiK2_5)
         vision_encoder = self.nn_model.vision_encoder
 
@@ -658,14 +674,17 @@ class KimiK2_5Model(
 
             graph.output(*image_embeddings)
 
-            return graph
+            return graph, self.state_dict
 
     def _build_language_graph(
         self,
         config: KimiK2_5TextConfig,
-        module: Module | None = None,
-    ) -> Graph:
+        state_dict: dict[str, WeightData],
+        module: Module,
+    ) -> tuple[Graph, dict[str, Any]]:
         """Build the language model graph for text generation with image embeddings."""
+        del state_dict
+        assert isinstance(config, KimiK2_5TextConfig)
         assert isinstance(self.nn_model, KimiK2_5)
         language_model = self.nn_model.language_model
         assert language_model is not None, "Language model must be initialized"
@@ -738,7 +757,69 @@ class KimiK2_5Model(
 
             graph.output(*outputs)
 
-        return graph
+        return graph, {}
+
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[
+            tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> None:
+        """Kimi packs inline in :meth:`vision_execute` (chunked encode)."""
+        return None
+
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: None,
+    ) -> VisionEncodeResult:
+        """Run the chunked vision encoder over the cache-selected images.
+
+        The chunked encode (packing + per-chunk graph runs + re-concatenation to
+        per-image order) stays encapsulated in the batch processor; the cache
+        only ever sees the per-image-ordered output.
+        """
+        assert isinstance(self._batch_processor, KimiK2_5BatchProcessor)
+        embeddings, token_counts = (
+            self._batch_processor.encode_uncached_chunked(selection)
+        )
+        return VisionEncodeResult(
+            embeddings=embeddings, per_image_token_counts=token_counts
+        )
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device ``[0, hidden]`` image embeddings for non-vision steps.
+
+        Cached: this is hit on every text-only / decode step, so it must not
+        allocate per call.
+        """
+        if not hasattr(self, "_cached_empty_vision_embeddings"):
+            hidden_size = self.huggingface_config.text_config.hidden_size
+            host = Buffer.zeros(shape=[0, hidden_size], dtype=DType.bfloat16)
+            self._cached_empty_vision_embeddings = [host.to(d) for d in devices]
+        return self._cached_empty_vision_embeddings
+
+    def _empty_vision_scatter(self) -> list[Buffer]:
+        """Per-device empty scatter indices, cached for the decode hot path."""
+        if not hasattr(self, "_cached_empty_vision_scatter"):
+            host = Buffer.from_numpy(np.empty(0, dtype=np.int32)).to(
+                self.devices[0]
+            )
+            self._cached_empty_vision_scatter = [
+                host.to(d) for d in self.devices
+            ]
+        return self._cached_empty_vision_scatter
+
+    def _vision_scatter_to_devices(
+        self, scatter_np: npt.NDArray[np.int32]
+    ) -> list[Buffer]:
+        """Copy real scatter indices to each device."""
+        buf = Buffer.from_numpy(scatter_np.astype(np.int32)).to(self.devices[0])
+        return [buf.to(d) for d in self.devices]
 
     def execute(
         self,
@@ -748,43 +829,22 @@ class KimiK2_5Model(
         assert model_inputs.kv_cache_inputs is not None, (
             "KimiK2_5 requires KV cache inputs"
         )
-        if model_inputs.has_vision_inputs:
-            assert model_inputs.image_token_indices is not None
-            assert model_inputs.pixel_values is not None
-            assert model_inputs.vision_position_ids is not None
-            assert model_inputs.cu_seqlens is not None
-            assert model_inputs.max_seqlen is not None
-            assert model_inputs.grid_thws is not None
-            assert self.model_config is not None
-
-            image_embeddings = self.vision_model.execute(
-                *model_inputs.pixel_values,
-                *model_inputs.grid_thws,
-                *model_inputs.cu_seqlens,
-                *model_inputs.max_seqlen,
-                *model_inputs.vision_position_ids,
-                *model_inputs.signal_buffers,
+        if model_inputs.vision_embeddings is not None:
+            model_inputs.language_image_embeddings = (
+                model_inputs.vision_embeddings
             )
-
-            assert len(image_embeddings) == len(self.devices)
-            for output in image_embeddings:
-                assert isinstance(output, Buffer)
-                assert (
-                    output.shape[1]
-                    == self.huggingface_config.text_config.hidden_size
-                )
-            assert (
-                model_inputs.image_token_indices[0].shape[0]
-                == image_embeddings[0].shape[0]
-            ), (
-                f"The size of scatter indices must match the number of image embeddings. "
-                f"Got: {model_inputs.image_token_indices[0].shape[0]} != {image_embeddings[0].shape[0]}"
-            )
-
-            # Update language model placeholders with actual vision outputs.
-            model_inputs.language_image_embeddings = image_embeddings
+            scatter_np = model_inputs.vision_scatter_indices
             model_inputs.language_image_token_indices = (
-                model_inputs.image_token_indices
+                self._vision_scatter_to_devices(scatter_np)
+                if scatter_np is not None and len(scatter_np) > 0
+                else self._empty_vision_scatter()
+            )
+        else:
+            model_inputs.language_image_embeddings = (
+                self.empty_vision_embeddings(self.devices)
+            )
+            model_inputs.language_image_token_indices = (
+                self._empty_vision_scatter()
             )
 
         if self._eplb_stats_accumulator is not None:
@@ -799,10 +859,6 @@ class KimiK2_5Model(
             )
         assert self.batch_processor is not None
         return self.batch_processor.process_outputs(model_outputs)
-
-    def release(self, request_id: RequestID) -> None:
-        """Release vision encoder cache entries for a completed request."""
-        self._ve_cache.release_request(request_id)
 
     @cached_property
     def _frozen_ep_inputs(self) -> tuple[Buffer, ...]:
@@ -833,10 +889,20 @@ class KimiK2_5Model(
         raise RuntimeError("No batch processor configured for KimiK2_5Model")
 
     def _eplb_stats_metadata(self) -> EplbStatsMetadata:
-        """Returns shape descriptor for the language MoE layers."""
+        """Returns shape descriptor for the language layers (row i == layer i)."""
         text = self.huggingface_config.text_config
+        num_layers = text.num_hidden_layers
+        first_k_dense = int(getattr(text, "first_k_dense_replace", 0) or 0)
+        moe_freq = int(getattr(text, "moe_layer_freq", 1) or 1)
+        moe_idx = tuple(
+            i
+            for i in range(num_layers)
+            if i >= first_k_dense and i % moe_freq == 0
+        )
         return EplbStatsMetadata(
-            num_moe_layers=text.num_hidden_layers,
+            num_layers=num_layers,
+            num_moe_layers=len(moe_idx),
+            moe_layer_indices=moe_idx,
             num_logical_experts=text.n_routed_experts,
             num_experts_per_token=text.num_experts_per_tok,
         )
@@ -855,7 +921,7 @@ class KimiK2_5Model(
             snap = EplbStatsSnapshot.from_dict(json.load(f))
         md = self._eplb_stats_metadata()
         if (
-            snap.metadata.num_moe_layers != md.num_moe_layers
+            snap.metadata.num_layers != md.num_layers
             or snap.metadata.num_logical_experts != md.num_logical_experts
         ):
             raise ValueError(

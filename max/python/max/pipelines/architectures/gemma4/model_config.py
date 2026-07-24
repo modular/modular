@@ -24,6 +24,7 @@ from max.pipelines.architectures.gemma3.model_config import (
     _HIDDEN_ACTIVATION_MAP,
     Gemma3Config,
 )
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
@@ -91,6 +92,17 @@ class Gemma4TextConfig(Gemma3Config):
 
     num_kv_shared_layers: int = 0
     """An optimization used in smaller models to share the kv cache across layers."""
+
+    fused_projection_weights: bool = False
+    """Load MLP gate/up and attention qkv/qk projections pre-fused (DISTINF-194).
+
+    When true (single-device, non-quantized only), each decoder layer's MLP uses
+    :class:`~max.nn.FusedMLP` (one ``gate_up_proj_fused`` weight) and attention
+    uses ``StackedLinear(stacked=True)`` (one ``qkv_proj``/``qk_proj`` weight),
+    and the weight adapter concatenates the checkpoint projections accordingly.
+    Avoids the in-graph concat the compiler would otherwise hoist to model init
+    and materialize as a second on-device copy. The gen-mef build tool sets
+    this after config finalization when ``--engine-owned-weights`` is enabled."""
 
     enable_moe_block: bool = False
     """If the model uses MOE."""
@@ -183,12 +195,15 @@ class Gemma4TextConfig(Gemma3Config):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
 
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == "normal"
+            and (pipeline_config.model.rope_type or "normal") == "normal"
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -582,7 +597,10 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
 
         tie_word_embeddings = getattr(
             huggingface_config, "tie_word_embeddings", False

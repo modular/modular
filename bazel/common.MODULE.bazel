@@ -3,14 +3,19 @@
 bazel_dep(name = "abseil-cpp", version = "20250814.2")
 bazel_dep(name = "apple_support", version = "2.3.0", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
+bazel_dep(name = "aspect_rules_js", version = "2.9.2")  # TODO: bump to pnpm >v9 for v3
+bazel_dep(name = "aspect_rules_ts", version = "3.7.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "curl", version = "8.12.0")
+bazel_dep(name = "fmt", version = "11.2.0")
 bazel_dep(name = "gazelle", version = "0.50.0")
 bazel_dep(name = "google_benchmark", version = "1.9.4")
 bazel_dep(name = "grpc", version = "1.76.0.bcr.1", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_cc", version = "0.2.18")
+bazel_dep(name = "rules_nodejs", version = "6.7.3")
 bazel_dep(name = "rules_mojo", version = "0.6.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
@@ -18,17 +23,35 @@ bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_pycross", version = "0.8.1")
 bazel_dep(name = "rules_python", version = "1.8.5")
 bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "tcmalloc", version = "0.0.0-20250927-12f2552")
 bazel_dep(name = "tomlplusplus", version = "3.4.0")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
+bazel_dep(name = "xxhash", version = "0.8.3.bcr.1")
+
+# Necessary for LLVM
+bazel_dep(name = "zlib-ng", version = "2.3.3", repo_name = "llvm_zlib")
+bazel_dep(name = "zstd", version = "1.5.7.bcr.1", repo_name = "llvm_zstd")
+
+# TODO: Bump when deps go past this version
+bazel_dep(name = "nlohmann_json", version = "3.12.0.bcr.1")
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
 
 archive_override(
-    module_name = "rules_mojo",
-    integrity = "sha256-PvMqbvlCakQ3JczLgemNYHlPzV0ZdIW3WXBNQAQ50Mg=",
-    strip_prefix = "rules_mojo-9a6a240114bd8ce0e0d3fea0dbef1d70744f7c6f",
+    module_name = "rules_cc",
+    integrity = "sha256-xPt/jPo70Y+LPhowjcTLhMxwtkZtw7QBwO969n7mWPo=",
+    strip_prefix = "rules_cc-ad214a9cb17d41e4e03199d61d436974a2261885",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/9a6a240114bd8ce0e0d3fea0dbef1d70744f7c6f.tar.gz",
+        "https://github.com/bazelbuild/rules_cc/archive/ad214a9cb17d41e4e03199d61d436974a2261885.tar.gz",
+    ],
+)
+
+archive_override(
+    module_name = "rules_mojo",
+    integrity = "sha256-iYH7inOkUT80gV8O1W48V57rqOzoHg/8eS+4O7H0wBk=",
+    strip_prefix = "rules_mojo-ef3cecd075982a6ece98bbb84ae71e1b7754be0a",
+    urls = [
+        "https://github.com/modular/rules_mojo/archive/ef3cecd075982a6ece98bbb84ae71e1b7754be0a.tar.gz",
     ],
 )
 
@@ -43,6 +66,8 @@ archive_override(
         # TODO: Should we submit this upstream or force our deps to directly
         # depend on the things that provide their pyi files?
         "//bazel/public-patches:rules_mypy_pyi_files.patch",
+        # https://github.com/bazel-contrib/rules_mypy/pull/141
+        "//bazel/public-patches:rules_mypy_transitives.patch",
     ],
     strip_prefix = "rules_mypy-0.41.0",
     urls = [
@@ -208,17 +233,17 @@ http_archive(
 http_archive(
     name = "efa_libfabric_prebuilt",
     build_file = "//bazel/public-patches:efa_libfabric_prebuilt.BUILD",
-    sha256 = "bacb29273e6117e61b2843864cd74fc31c662252ec55349ba623705a043cfd99",
+    sha256 = "0a2b8fb7971f32efefe1ea0609f9c541241b428dc480493ae3fb704ae0f50ce5",
     strip_prefix = "efa-libfabric-prebuilt",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0/bacb29273e6117e61b2843864cd74fc31c662252ec55349ba623705a043cfd99/efa-libfabric-prebuilt-cpu.tar.xz",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod2/0a2b8fb7971f32efefe1ea0609f9c541241b428dc480493ae3fb704ae0f50ce5/efa-libfabric-prebuilt-cpu.tar.xz",
 )
 
 http_archive(
     name = "efa_libfabric_prebuilt_cuda",
     build_file = "//bazel/public-patches:efa_libfabric_prebuilt.BUILD",
-    sha256 = "60303b4c40430de5dfc0dc1be45d022695fe421b44bc57d44a1085410620ea82",
+    sha256 = "0645cc72de32045c7f57a5909bf26aa3280e79069612fe1702a38fcd4c560271",
     strip_prefix = "efa-libfabric-prebuilt",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0/60303b4c40430de5dfc0dc1be45d022695fe421b44bc57d44a1085410620ea82/efa-libfabric-prebuilt-cuda.tar.xz",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod2/0645cc72de32045c7f57a5909bf26aa3280e79069612fe1702a38fcd4c560271/efa-libfabric-prebuilt-cuda.tar.xz",
 )
 
 # CUDA Driver API + runtime headers used by libfabric_plugin_lib (-DHAVE_CUDA).
@@ -650,6 +675,67 @@ RUMDL_VERSION = "0.1.95"
     ]
 ]
 
+http_archive(
+    name = "crashpad",
+    build_file = "//bazel/public-patches:crashpad.BUILD",
+    patch_args = ["-p1"],
+    patches = [
+        "//bazel/public-patches:crashpad.patch",
+    ],
+    sha256 = "a0a02abd861da5a768ef95c88f8a343fe518cd2de21b2b0533e13ff0424bfb2c",
+    strip_prefix = "crashpad",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/crashpad/031c47b4b3349d784d330f670360bb8af0266da3/a0a02abd861da5a768ef95c88f8a343fe518cd2de21b2b0533e13ff0424bfb2c/crashpad.tar.gz",
+)
+
+single_version_override(
+    module_name = "opentelemetry-cpp",
+    patch_strip = 1,
+    patches = [
+        # TODO: Remove next bump
+        "//bazel/public-patches:opentelemetry-cpp-loads.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "tcmalloc",
+    patch_strip = 1,
+    patches = [
+        "//bazel/public-patches:tcmalloc-visibility.patch",
+        "//bazel/public-patches:tcmalloc-local-dynamic.patch",
+        "//bazel/public-patches:tcmalloc-numa.patch",
+        "//bazel/public-patches:tcmalloc-glibc-rseq.patch",
+    ],
+)
+
+# TODO: Comment very out of date
+# Must be rebuilt when updating with: MACOSX_DEPLOYMENT_TARGET=11.0 build-tcmalloc
+# And uploaded to s3 with: aws s3 cp tcmalloc.tar.gz s3://modular-bazel-artifacts-public/artifacts/gperftools/VERSION/SHA/tcmalloc.tar.gz
+http_archive(
+    name = "gperftools-macos",
+    build_file = "//bazel/public-patches:gperftools-macos.BUILD",
+    sha256 = "0d1dbb0273d94d32e28ccb53971d1473cab9bde90a463251f6f117867cf2d680",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/gperftools/2.15/0d1dbb0273d94d32e28ccb53971d1473cab9bde90a463251f6f117867cf2d680/tcmalloc.tar.gz",
+)
+
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node", dev_dependency = True)
+node.toolchain(node_version = "22.15.1")
+
+npm.npm_translate_lock(
+    name = "mojo-lsp-server-node-tests",
+    data = ["//KGEN/test/mojo-lsp-server-node:package.json"],
+    dev = True,
+    pnpm_lock = "//KGEN/test/mojo-lsp-server-node:pnpm-lock.yaml",
+)
+use_repo(npm, "mojo-lsp-server-node-tests")
+
+rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext", dev_dependency = True)
+rules_ts_ext.deps(
+    ts_version_from = "//KGEN/test/mojo-lsp-server-node:package.json",
+)
+use_repo(rules_ts_ext, "npm_typescript")
+
 # BEGIN GENERATED LOGIT_VERIFICATION GOLDEN HTTP_FILES
 
 LOGIT_VERIFICATION_GOLDENS = [
@@ -817,11 +903,6 @@ LOGIT_VERIFICATION_GOLDENS = [
         "name": "torch_idefics3_8b_llama3_golden.tar.gz",
         "sha256": "996834f83014e543593c5a9ae283b16e33e05575720cce9ec4e175c0ad3a5283",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_idefics3_8b_llama3_golden/3/996834f83014e543593c5a9ae283b16e33e05575720cce9ec4e175c0ad3a5283/torch_idefics3_8b_llama3_golden.tar.gz",
-    },
-    {
-        "name": "torch_exaone_3_5_2_4b_instruct_float32_golden.tar.gz",
-        "sha256": "ae16f10ebd7514f5d60f25755babbcff9636a4fa1c68d1470f614474fa907427",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_exaone_3_5_2_4b_instruct_float32_golden/1/ae16f10ebd7514f5d60f25755babbcff9636a4fa1c68d1470f614474fa907427/torch_exaone_3_5_2_4b_instruct_float32_golden.tar.gz",
     },
     {
         "name": "torch_phi_3_5_mini_instruct_bfloat16_golden.tar.gz",

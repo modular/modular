@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler
+import extensibility
 
 from std.math import ceildiv
 from std.math.uutils import udivmod
@@ -68,7 +68,7 @@ from std.utils import StaticTuple
 from std.utils.index import Index, IndexList
 
 
-@compiler.register("tensor_core_mma")
+@extensibility.register("tensor_core_mma")
 struct TensorCoreMMA[algorithm: StaticString]:
     """
     The central custom operation that dispatches to multiple different
@@ -125,7 +125,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
             # `comptime stride` stays compile-time). The other algorithms use the
             # `TileTensor` views (`a_tt`/`b_tt`/`out_tt`) directly.
             var b_transposed_tt = TileTensor(
-                Span(ptr=b_ptr_to_use, length=N * K), row_major[N, K]()
+                Span(unsafe_ptr=b_ptr_to_use, length=N * K), row_major[N, K]()
             ).as_unsafe_any_origin()
 
             out_tt = output.to_tile_tensor().as_unsafe_any_origin()

@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Signal-based GPU synchronization primitives for multi-GPU collective kernels.
+
+Provides the `Signal` struct for counter-based cross-GPU thread-block
+synchronization, peer-to-peer memory access helpers, and the barrier utilities
+consumed by allreduce, scatter, and other collective operations.
+"""
+
 from std.collections import InlineArray
 from std.utils import StaticTuple
 from std.math.uutils import umod
@@ -30,10 +37,26 @@ from .lamport import LAMPORT_SENTINEL_U32, Lamport, LamportGeneration
 
 # No-op (currently) group operation functions (enables vendor_ccl drop in replacement)
 def group_start():
+    """Marks the start of a collective operation group.
+
+    Currently a no-op that exists as a drop-in placeholder for vendor CCL
+    (`ncclGroupStart` / `rcclGroupStart`). Wrapping a series of collective
+    calls between `group_start()` and `group_end()` allows a future
+    implementation to batch them as a single fused CCL operation without
+    changing call sites.
+    """
     return
 
 
 def group_end():
+    """Marks the end of a collective operation group.
+
+    Currently a no-op that exists as a drop-in placeholder for vendor CCL
+    (`ncclGroupEnd` / `rcclGroupEnd`). Wrapping a series of collective
+    calls between `group_start()` and `group_end()` allows a future
+    implementation to batch them as a single fused CCL operation without
+    changing call sites.
+    """
     return
 
 
@@ -89,6 +112,14 @@ def circular_add[n: Int](x: Int, y: Int) -> Int:
     Equivalent to (x + y) % n. When n is a power of 2, uses unsigned
     modulo which compiles to a single `and` instruction. Otherwise uses
     a conditional subtract to avoid expensive integer division on GPU.
+
+    Parameters:
+        n: The modulus. Must be positive. Both addends are assumed to
+            already lie in `[0, n)`.
+
+    Args:
+        x: The first addend, in `[0, n)`.
+        y: The second addend, in `[0, n)`.
     """
 
     comptime if n.is_power_of_two():
@@ -232,6 +263,12 @@ struct Signal:
         dtype: DType
     ](mut self) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
         """Typed pointer to the start of this `Signal`'s embedded Lamport region.
+
+        Parameters:
+            dtype: The element type to reinterpret the raw region bytes as.
+                The returned pointer is typed `UnsafePointer[Scalar[dtype], ...]`
+                so callers can read and write Lamport message packs in this
+                dtype without an extra cast.
         """
         return (
             UnsafePointer(to=self.lamport_region)

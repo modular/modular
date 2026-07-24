@@ -80,15 +80,19 @@ HF_MODELS: dict[str, set[str]] = {
     "google/diffusiongemma-26B-A4B-it": MULTI | {"max", "max-ci"},
     "google/gemma-3-1b-it": MULTI | {"vllm@B200", "MI355"},  # TODO(KERN-3014)
     "google/gemma-3-27b-it": MULTI,
-    "google/gemma-4-26B-A4B-it": MULTI | {"max", "max-ci"},  # TODO(SERVOPT-1292)
+    "google/gemma-4-26B-A4B-it": MULTI,
     "google/gemma-4-31B-it": MULTI,
-    "nvidia/Gemma-4-26B-A4B-NVFP4": MULTI | {"max", "max-ci", "MI355"},  # TODO(SERVOPT-1292)
+    "nvidia/Gemma-4-26B-A4B-NVFP4": MULTI | {"MI355"},
     "nvidia/diffusiongemma-26B-A4B-it-NVFP4": MULTI | {"max", "max-ci", "MI355"},
     "nvidia/Gemma-4-31B-IT-NVFP4": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct": MULTI,
     "microsoft/Phi-3.5-mini-instruct": MULTI,
     "microsoft/phi-4": MULTI,
     "MiniMaxAI/MiniMax-M2.7": NON_XL | {"4xMI355", "sglang"},
+    # MODELS-1611: MXFP8 runs on 8xB200 only (MI355 comes later). max-ci
+    # exercises the private M3 arch; sglang serves the HF checkpoint as a
+    # reference. vLLM and released MAX are excluded.
+    "MiniMaxAI/MiniMax-M3-MXFP8": NON_XL | {"4xMI355", "max", "vllm"},
     "lukealonso/MiniMax-M2.7-NVFP4": NON_XL | {"4xMI355", "sglang"},
     "mistralai/Mistral-Nemo-Instruct-2407": MULTI | {"vllm"},
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": MULTI | {"vllm"},
@@ -124,6 +128,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "microsoft/Phi-3.5-mini-instruct__modulev3": MULTI,
     "microsoft/phi-4__modulev3": MULTI,
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": MULTI,
+    "deepseek-ai/DeepSeek-R1-0528__modulev3": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": NON_XL | {"4xMI355"},
@@ -135,20 +140,11 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/Kimi-K2.5-NVFP4__dflash_dp": DISABLE,  # MXSERV-84
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | {"4xMI355"},
-    "google/gemma-4-26B-A4B-it__no_dgc": MULTI,
-    "google/gemma-4-26B-A4B-it__localkv": MULTI,
-    "google/gemma-4-26B-A4B-it__tieredkv": MULTI,
-    "google/gemma-4-31B-it__fp8kv": MULTI | {"MI355"},
-    "google/gemma-4-31B-it__localkv": MULTI,
-    "google/gemma-4-31B-it__mtp": MULTI | {"vllm", "sglang"},
-    "google/gemma-4-31B-it__tieredkv": MULTI,
-    "google/gemma-4-31B-it__tp2": set(RUNNERS) - {"2xB200", "2xMI355"},
-    "nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc": MULTI | {"MI355"},
-    "nvidia/Gemma-4-26B-A4B-NVFP4__fp8kv": MULTI | {"MI355"},
-    "nvidia/Gemma-4-26B-A4B-NVFP4__localkv": MULTI | {"MI355"},
-    "nvidia/Gemma-4-26B-A4B-NVFP4__tieredkv": MULTI | {"MI355"},
-    "nvidia/Gemma-4-31B-IT-NVFP4__localkv": MULTI | {"MI355"},
-    "nvidia/Gemma-4-31B-IT-NVFP4__tieredkv": MULTI | {"MI355"},
+    # Tuned recipes use an FP8 KV cache that does not support MI355.
+    "google/gemma-4-26B-A4B-it__tuned": MULTI | {"MI355"},
+    "google/gemma-4-31B-it__tuned": MULTI | {"MI355"},
+    "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": MULTI | {"MI355"},
+    "nvidia/Gemma-4-31B-IT-NVFP4__tuned": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": MULTI | {"MI355"},
@@ -158,6 +154,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
     "nvidia/Kimi-K2.6-NVFP4__eagle_tpep": NON_XL | {"4xMI355"},
     "nvidia/Kimi-K2.6-NVFP4__eagle_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
+    "nvidia/GLM-5.2-NVFP4__mtp_tpep": NON_XL | {"4xMI355"},
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}

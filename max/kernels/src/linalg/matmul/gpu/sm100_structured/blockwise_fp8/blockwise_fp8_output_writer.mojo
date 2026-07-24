@@ -79,7 +79,23 @@ struct BlockwiseFP8TileWriter[
     num_output_warps: Int,
     c_swizzle: TensorMapSwizzle,
 ]:
-    """Write register accumulators to GMEM via SMEM and TMA."""
+    """Write register accumulators to GMEM via SMEM and TMA.
+
+    Parameters:
+        c_type: Element type of the C output tensor.
+        c_smem_dim0: M dimension of the C shared-memory tile.
+        c_smem_dim1: N dimension of the C shared-memory tile.
+        accum_type: Element type of the accumulator registers.
+        accum_num_stages: Number of accumulator pipeline stages to drain.
+        accum_num_elements: Number of elements per accumulator fragment set.
+        block_tile_shape: Block tile shape as (BM, BN, BK).
+        mma_shape: MMA instruction shape as (MMA_M, MMA_N, MMA_K).
+        is_lower_frag_required: Whether the lower register fragment is populated.
+        cta_group: Number of CTAs cooperating per output tile.
+        num_output_stages: Number of SMEM buffer stages for the output epilogue.
+        num_output_warps: Number of warps participating in the output epilogue.
+        c_swizzle: TMA swizzle pattern applied to the C shared-memory tile.
+    """
 
     # ========== Layout from dimensions ==========
     comptime c_smem_layout = row_major[Self.c_smem_dim0, Self.c_smem_dim1]()
@@ -159,7 +175,20 @@ struct BlockwiseFP8TileWriter[
         ],
         c_coord: Tuple[Int, Int],
     ):
-        """Write accumulated register tiles to GMEM via double-buffered SMEM."""
+        """Write accumulated register tiles to GMEM via double-buffered SMEM.
+
+        Parameters:
+            c_rank: Rank of the C output tensor.
+            c_tile_shape: Tile shape of the C output tensor.
+            c_desc_shape: Descriptor shape of the C output tensor.
+            cluster_size: Size of the threadblock cluster for the matmul.
+
+        Args:
+            accum: Blockwise FP8 accumulator holding upper and lower register tiles.
+            c_tiles: Double-buffered SMEM tile array for C output.
+            c_tma_op: TMA tensor tile descriptor for the C store.
+            c_coord: (M, N) tile coordinate of this C tile in the output tensor.
+        """
         Self._write_impl[c_rank, c_tile_shape, c_desc_shape, cluster_size](
             accum, c_tiles, c_tma_op, c_coord
         )
@@ -300,6 +329,12 @@ struct BlockwiseFP8TileWriter[
         c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
     ):
         """Write accumulated register tiles to GMEM with bounds checking.
+
+        Parameters:
+            c_tensor_layout: Layout of the C output tensor in GMEM used for
+                bounds-checked element stores.
+            cluster_size: Number of CTAs in the threadblock cluster for the
+                matmul.
 
         Args:
             accum: Blockwise FP8 accumulator with upper/lower register tiles.

@@ -16,22 +16,26 @@ import pickle
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 
 import pytest
 from max._entrypoints.cli.config import parse_task_flags
 from max.driver import DeviceSpec, accelerator_count
 from max.dtype import DType
+from max.graph.weights import WeightsFormat
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.context import SamplingParamsGenerationConfigDefaults
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
     MAXModelConfig,
+    PipelineArgs,
     PipelineConfig,
     PipelineRuntimeConfig,
     SamplingConfig,
 )
+from max.pipelines.lib.config.model_config import _infer_weight_path
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types.task import PipelineTask
@@ -417,18 +421,25 @@ class TestPipelineConfigUtilityMethods:
 
         config = PipelineConfig.from_flat_kwargs(**kwargs)
         assert config.model.quantization_encoding == "float4_e2m1fnx2"
-        # The KV cache dtype initially has a default value.
-        assert config.model.kv_cache.cache_dtype == DType.float32
 
         assert config.draft_model is not None
         assert config.draft_model.quantization_encoding == "float8_e4m3fn"
-        # The draft model KV cache dtype initially has a default value.
-        assert config.draft_model.kv_cache.cache_dtype == DType.float32
 
-        config.model.set_cache_dtype_given_quantization_encoding()
-        config.draft_model.set_cache_dtype_given_quantization_encoding()
-        assert config.model.kv_cache.cache_dtype == DType.bfloat16
-        assert config.draft_model.kv_cache.cache_dtype == DType.bfloat16
+        # The KV cache dtype is derived from the quantization encoding on demand.
+        assert (
+            cache_dtype_for_encoding(
+                config.model.quantization_encoding,
+                config.model.kv_cache.kv_cache_format,
+            )
+            == DType.bfloat16
+        )
+        assert (
+            cache_dtype_for_encoding(
+                config.draft_model.quantization_encoding,
+                config.draft_model.kv_cache.kv_cache_format,
+            )
+            == DType.bfloat16
+        )
 
     @mock_pipeline_config_resolve
     def test_denoising_cache_survives_runtime_kwargs(self) -> None:
@@ -486,18 +497,31 @@ class TestNeedsBitmaskConstraints:
 
     @mock_pipeline_config_resolve
     @pytest.mark.parametrize(
-        "enable_structured_output,tool_parser,expected",
+        "enable_structured_output,tool_parser,enable_tool_call_constrained_decode,expected",
         [
-            (False, None, False),
-            (True, None, True),
-            (False, "kimik2_5", True),
-            (True, "kimik2_5", True),
+            # No structured output, no parser: never needs the bitmask path.
+            (False, None, True, False),
+            (False, None, False, False),
+            # User structured output on: always needs it, regardless of the
+            # tool-call flag.
+            (True, None, True, True),
+            (True, None, False, True),
+            # Parser configured + tool-call constrained decode on (default):
+            # bitmask path wires in for server-generated tool grammars.
+            (False, "kimik2_5", True, True),
+            (True, "kimik2_5", True, True),
+            # Parser configured but tool-call constrained decode disabled: the
+            # parser still parses output, but no grammar/bitmask on its account.
+            (False, "kimik2_5", False, False),
+            # ...unless user structured output independently requires it.
+            (True, "kimik2_5", False, True),
         ],
     )
     def test_truth_table(
         self,
         enable_structured_output: bool,
         tool_parser: str | None,
+        enable_tool_call_constrained_decode: bool,
         expected: bool,
     ) -> None:
         config = PipelineConfig(
@@ -505,7 +529,8 @@ class TestNeedsBitmaskConstraints:
                 {"main": MAXModelConfig(model_path="test/model")}
             ),
             sampling=SamplingConfig(
-                enable_structured_output=enable_structured_output
+                enable_structured_output=enable_structured_output,
+                enable_tool_call_constrained_decode=enable_tool_call_constrained_decode,
             ),
             runtime=PipelineRuntimeConfig(tool_parser=tool_parser),
         )
@@ -779,6 +804,165 @@ class TestDraftModelQuantizationEncoding:
             )
 
 
+# float32 safetensors for a repo that ships no bfloat16 files, mirroring a
+# checkpoint like ``nvidia/Kimi-K2.6-Eagle3``.
+_F32_SAFETENSORS = [
+    Path("model-00001-of-00002.safetensors"),
+    Path("model-00002-of-00002.safetensors"),
+]
+
+
+def _make_f32_only_repo() -> Mock:
+    """Build a fake ``HuggingFaceRepo`` whose only weights are float32."""
+
+    def files_for_encoding(
+        encoding: SupportedEncoding,
+        weights_format: WeightsFormat | None = None,
+    ) -> dict[WeightsFormat, list[Path]]:
+        if encoding == "float32":
+            return {WeightsFormat.safetensors: list(_F32_SAFETENSORS)}
+        return {}
+
+    repo = Mock()
+    repo.repo_id = "test/f32-only"
+    repo.repo_type = "online"
+    repo.supported_encodings = ["float32"]
+    repo.files_for_encoding = Mock(side_effect=files_for_encoding)
+    # A float32-only repo reports float32 regardless of the preferred encoding.
+    repo.encoding_for_file = Mock(return_value="float32")
+    return repo
+
+
+class TestFloat32WeightFallbackScoping:
+    """Regression tests for the float32 -> 16-bit weight-path fallback.
+
+    ``_infer_weight_path`` falls back to a repo's float32 safetensors
+    when a float16/bfloat16 graph has no matching files. That fallback is
+    scoped to diffuser sub-components (``subfolder`` set); it must NOT fire
+    for architecture-validated models (LLMs, speculative-decoding draft
+    models), where eagerly binding ``weight_path`` to the float32 checkpoint
+    makes the given-encoding validation flip ``quantization_encoding`` to
+    float32 and drop the requested bfloat16.
+
+    Regression guard for KERN-3167: the NVFP4 Kimi-K2.6 Eagle recipes
+    configure a bfloat16 draft model whose HF repo ships only float32
+    safetensors; the unscoped fallback flipped it to float32, which the Eagle3
+    architecture does not support (``quantization_encoding of 'float32' not
+    supported by MAX engine``).
+    """
+
+    def test_draft_model_bf16_encoding_preserved_over_f32_only_repo(
+        self,
+    ) -> None:
+        """An LLM/draft model keeps bfloat16 (cast from float32), not float32.
+
+        Requested bfloat16, repo has only float32 safetensors, no
+        ``subfolder``. The best-effort pass must not bind ``weight_path``, so
+        the given-encoding resolution casts float32 -> bfloat16 (preserving
+        the requested encoding) instead of flipping to float32.
+        """
+        config = MAXModelConfig(
+            model_path="nvidia/Kimi-K2.6-Eagle3",
+            quantization_encoding="bfloat16",
+        )
+        assert config.subfolder is None
+
+        with (
+            patch.object(
+                MAXModelConfig,
+                "huggingface_weight_repo",
+                new_callable=PropertyMock,
+                return_value=_make_f32_only_repo(),
+            ),
+            patch(
+                "max.pipelines.lib.config.model_config.supported_encoding_supported_on",
+                return_value=True,
+            ),
+        ):
+            # Best-effort (pre-architecture) pass must not bind weight_path.
+            assert (
+                _infer_weight_path(
+                    config, "bfloat16", config._applied_dtype_cast_from
+                )
+                == []
+            )
+
+            # Architecture-level given-encoding resolution.
+            config.validate_and_resolve_quantization_encoding_weight_path(
+                default_encoding="bfloat16"
+            )
+
+        # The requested bfloat16 is preserved; the float32 weights are cast at
+        # load time, recorded in the dtype-cast bookkeeping.
+        assert config.quantization_encoding == "bfloat16"
+        assert config._applied_dtype_cast_from == "float32"
+        assert config._applied_dtype_cast_to == "bfloat16"
+
+    def test_no_given_encoding_f32_only_repo_casts_to_bfloat16(self) -> None:
+        """Architecture-level resolution alone still casts f32 -> bf16.
+
+        No ``quantization_encoding`` given, repo has only float32 weights,
+        no ``subfolder``. Calls ``validate_and_resolve_quantization_encoding_weight_path``
+        directly (bypassing ``resolve()``/the best-effort pass entirely) to
+        verify the ``without-given-encoding`` path applies the same
+        float32 -> bfloat16 GPU cast the best-effort pass normally applies
+        first. Regression guard for the case where resolve() wasn't called
+        first or the best-effort pass silently failed to infer an encoding:
+        without this cast, a model whose repo ships only float32 weights
+        would silently run in float32 on GPU instead of the expected
+        bfloat16.
+        """
+        config = MAXModelConfig(model_path="test/f32-only")
+        assert config.quantization_encoding is None
+
+        with (
+            patch.object(
+                MAXModelConfig,
+                "huggingface_weight_repo",
+                new_callable=PropertyMock,
+                return_value=_make_f32_only_repo(),
+            ),
+            patch(
+                "max.pipelines.lib.config.model_config.supported_encoding_supported_on",
+                return_value=True,
+            ),
+        ):
+            config.validate_and_resolve_quantization_encoding_weight_path(
+                default_encoding="bfloat16"
+            )
+
+        assert config.quantization_encoding == "bfloat16"
+        assert config._applied_dtype_cast_from == "float32"
+        assert config._applied_dtype_cast_to == "bfloat16"
+
+    def test_diffuser_subcomponent_f32_fallback_still_resolves(self) -> None:
+        """A diffuser sub-component (``subfolder`` set) still gets the fallback.
+
+        This is the mixed-precision FLUX.2 case the fallback was added for: a
+        bfloat16 component whose checkpoint ships float32 safetensors. The
+        fallback must still resolve ``weight_path`` to the float32 files while
+        leaving the requested bfloat16 encoding in place.
+        """
+        config = MAXModelConfig(
+            model_path="black-forest-labs/FLUX.2-dev",
+            subfolder="text_encoder",
+            quantization_encoding="bfloat16",
+        )
+
+        with patch.object(
+            MAXModelConfig,
+            "huggingface_weight_repo",
+            new_callable=PropertyMock,
+            return_value=_make_f32_only_repo(),
+        ):
+            resolved_weight_path = _infer_weight_path(
+                config, "bfloat16", config._applied_dtype_cast_from
+            )
+
+        assert resolved_weight_path == _F32_SAFETENSORS
+        assert config.quantization_encoding == "bfloat16"
+
+
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_validate_model_path__bad_repo_provided() -> None:
@@ -986,7 +1170,13 @@ def test_config__test_quantization_encoding_with_dtype_casting(
             prefer_module_v3=True,
         ),
     )
-    assert config.model.kv_cache.cache_dtype == DType.float32
+    assert (
+        cache_dtype_for_encoding(
+            config.model.quantization_encoding,
+            config.model.kv_cache.kv_cache_format,
+        )
+        == DType.float32
+    )
 
 
 @pytest.mark.skip(
@@ -1016,7 +1206,13 @@ def test_config__test_quantization_encoding_with_dtype_casting2(
             prefer_module_v3=True,
         ),
     )
-    assert config.model.kv_cache.cache_dtype == DType.float32
+    assert (
+        cache_dtype_for_encoding(
+            config.model.quantization_encoding,
+            config.model.kv_cache.kv_cache_format,
+        )
+        == DType.float32
+    )
 
 
 @pytest.mark.skip(
@@ -1046,7 +1242,13 @@ def test_config__test_quantization_encoding_with_dtype_casting3(
             prefer_module_v3=True,
         ),
     )
-    assert config.model.kv_cache.cache_dtype == DType.bfloat16
+    assert (
+        cache_dtype_for_encoding(
+            config.model.quantization_encoding,
+            config.model.kv_cache.kv_cache_format,
+        )
+        == DType.bfloat16
+    )
 
 
 @pytest.mark.skip(
@@ -1059,23 +1261,15 @@ def test_config__test_retrieve_factory_with_known_architecture(
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=modular_ai_llama_3_1_local_path,
-                    quantization_encoding="bfloat16",
-                    max_length=1,
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            max_batch_size=1,
-            prefer_module_v3=True,
-        ),
+    config = PipelineArgs(
+        model_path=modular_ai_llama_3_1_local_path,
+        quantization_encoding="bfloat16",
+        max_length=1,
+        max_batch_size=1,
+        prefer_module_v3=True,
     )
 
-    _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
+    _, _ = PIPELINE_REGISTRY.retrieve_factory(PipelineConfig.from_args(config))
 
 
 @prepare_registry
@@ -2251,3 +2445,54 @@ def test_resolve_backend__unset_no_arch_defaults_to_xgrammar() -> None:
     config._resolve_default_structured_output_backend(arch=None)
 
     assert config.sampling.structured_output_backend == "xgrammar"
+
+
+def test_from_args__unset_backend_preserves_none_sentinel() -> None:
+    """Regression: ``PipelineArgs`` with no ``--structured-output-backend``
+    must carry the ``None`` sentinel into the built ``PipelineConfig``.
+
+    Before the fix, ``PipelineArgs.structured_output_backend`` defaulted to a
+    hardcoded ``"llguidance"`` string, so ``from_args`` produced a
+    ``SamplingConfig`` that already looked like an explicit user choice. That
+    short-circuited ``_resolve_default_structured_output_backend`` and the
+    global ``xgrammar`` default (and any arch pin) was never reached."""
+    args = PipelineArgs(model_path="test/model")
+    assert args.structured_output_backend is None
+
+    with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
+        config = PipelineConfig.from_args(args)
+
+    assert config.sampling.structured_output_backend is None
+
+
+def test_from_args__unset_backend_resolves_to_xgrammar() -> None:
+    """End-to-end guard for the reported bug: a model launched without an
+    explicit backend and no arch pin ends up on ``xgrammar``, not
+    ``llguidance``."""
+    args = PipelineArgs(model_path="test/model")
+
+    with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
+        config = PipelineConfig.from_args(args)
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default=None)
+    )
+
+    assert config.sampling.structured_output_backend == "xgrammar"
+
+
+def test_from_args__explicit_backend_is_preserved() -> None:
+    """An explicit ``--structured-output-backend`` value survives
+    ``from_args`` and wins over resolution."""
+    args = PipelineArgs(
+        model_path="test/model", structured_output_backend="llguidance"
+    )
+
+    with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
+        config = PipelineConfig.from_args(args)
+    assert config.sampling.structured_output_backend == "llguidance"
+
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default=None)
+    )
+
+    assert config.sampling.structured_output_backend == "llguidance"

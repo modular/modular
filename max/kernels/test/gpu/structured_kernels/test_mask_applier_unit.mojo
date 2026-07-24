@@ -157,7 +157,7 @@ def kernel_mask_unit(
     ).apply(att0, 0, 0, 0, UInt32(0), UInt32(0), l_id)
     var base0 = 0 * PER_CASE_FP32 + l_id * ATT_PER_LANE
     comptime for p in range(ATT_PER_LANE):
-        out_ptr[base0 + p] = att0.ptr[p]
+        out_ptr[base0 + p] = att0._storage[p]
 
     # --- Case 1: CausalMask, q_tile_idx=0, k_tile_idx=0 --- #
     # Diagonal q_pos >= k_pos. With q_tile=0 (q in [0..32)) and k_tile=0
@@ -172,7 +172,7 @@ def kernel_mask_unit(
     )
     var base1 = 1 * PER_CASE_FP32 + l_id * ATT_PER_LANE
     comptime for p in range(ATT_PER_LANE):
-        out_ptr[base1 + p] = att1.ptr[p]
+        out_ptr[base1 + p] = att1._storage[p]
 
     # --- Case 2: CausalMask, q_tile_idx=0, k_tile_idx=2 (partial) --- #
     # k in [128..192). q in [0..32). All k > q, so fully masked.
@@ -187,7 +187,7 @@ def kernel_mask_unit(
     )
     var base2 = 2 * PER_CASE_FP32 + l_id * ATT_PER_LANE
     comptime for p in range(ATT_PER_LANE):
-        out_ptr[base2 + p] = att2.ptr[p]
+        out_ptr[base2 + p] = att2._storage[p]
 
     # --- Case 3: CausalMask, q_tile_idx=0, k_tile_idx=8 (fully masked) --- #
     # k in [512..576), q in [0..32). All k > q, fully masked.
@@ -201,7 +201,7 @@ def kernel_mask_unit(
     )
     var base3 = 3 * PER_CASE_FP32 + l_id * ATT_PER_LANE
     comptime for p in range(ATT_PER_LANE):
-        out_ptr[base3 + p] = att3.ptr[p]
+        out_ptr[base3 + p] = att3._storage[p]
 
     # --- Case 4: ChunkedMask, q_tile_idx=0, k_tile_idx=2 (partial) --- #
     # ChunkedMask groups (q, k) into chunks of CHUNK_SIZE=32. q in [0..32)
@@ -218,7 +218,7 @@ def kernel_mask_unit(
     ).apply(att4, 0, 2, 0, UInt32(0), UInt32(0), l_id)
     var base4 = 4 * PER_CASE_FP32 + l_id * ATT_PER_LANE
     comptime for p in range(ATT_PER_LANE):
-        out_ptr[base4 + p] = att4.ptr[p]
+        out_ptr[base4 + p] = att4._storage[p]
 
     # --- Case 5: SlidingWindowCausalMask, q_tile_idx=0, k_tile_idx=2 --- #
     # window_size=32. q in [0..32), k in [128..192). k > q + window
@@ -234,7 +234,7 @@ def kernel_mask_unit(
     ).apply(att5, 0, 2, 0, UInt32(0), UInt32(0), l_id)
     var base5 = 5 * PER_CASE_FP32 + l_id * ATT_PER_LANE
     comptime for p in range(ATT_PER_LANE):
-        out_ptr[base5 + p] = att5.ptr[p]
+        out_ptr[base5 + p] = att5._storage[p]
 
     # --- Case 6: _fill_dst_neg_inf direct (sanity check) --- #
     # Confirms the FULL_MASK filler writes -3.4028235e38.
@@ -246,7 +246,7 @@ def kernel_mask_unit(
     _fill_dst_neg_inf(att6)
     var base6 = 6 * PER_CASE_FP32 + l_id * ATT_PER_LANE
     comptime for p in range(ATT_PER_LANE):
-        out_ptr[base6 + p] = att6.ptr[p]
+        out_ptr[base6 + p] = att6._storage[p]
 
     # --- Case 7: GPU-side exp2 of the masked CausalMask 0/0 tile --- #
     # Mirrors what `MhaMmaOp.exp2_inplace_range` does in the real
@@ -269,7 +269,7 @@ def kernel_mask_unit(
             v7[i, jj, 0] = math_exp2(x - SIMD[DType.float32, ATT_FRAG](1.0))
     var base7 = 7 * PER_CASE_FP32 + l_id * ATT_PER_LANE
     comptime for p in range(ATT_PER_LANE):
-        out_ptr[base7 + p] = att7.ptr[p]
+        out_ptr[base7 + p] = att7._storage[p]
 
 
 # --------------------------------------------------------------------------- #

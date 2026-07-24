@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides CPU and GPU implementations of the argmax and argmin reduction operations."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -101,7 +102,7 @@ def _argn[
         @parameter
         @always_inline
         def cmpeq[
-            dtype: DType, simd_width: SIMDSize
+            dtype: DType, simd_width: SIMDLength
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
@@ -113,7 +114,7 @@ def _argn[
         @parameter
         @always_inline
         def cmp[
-            dtype: DType, simd_width: SIMDSize
+            dtype: DType, simd_width: SIMDLength
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:

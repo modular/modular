@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, Idx, PointerStorage, TileTensor, row_major
 
 from nn.pad import pad_constant as pad_cpu
 from nn.pad_gpu import get_padding_output_shape, pad_constant
@@ -26,7 +26,12 @@ def test_pad_constant_gpu[
     dtype: DType, rank: Int
 ](
     input_shape: IndexList[rank],
-    paddings: TileTensor[DType.int, address_space=AddressSpace.GENERIC, ...],
+    paddings: TileTensor[
+        DType.int,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
     ctx: DeviceContext,
     verbose: Bool = False,
 ) raises:
@@ -83,7 +88,7 @@ def test_pad_constant_gpu[
         output_shape,
         in_device.unsafe_ptr(),
         input_shape,
-        paddings.ptr,
+        paddings._storage,
         constant,
         ctx,
     )
@@ -107,7 +112,7 @@ def test_pad_constant_gpu[
     pad_cpu(
         output_cpu,
         input,
-        paddings.ptr,
+        paddings._storage,
         constant,
     )
 

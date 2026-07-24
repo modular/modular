@@ -77,7 +77,7 @@ struct BinaryHeap[T: Copyable & Comparable & ImplicitlyDeletable](
         """
         # note: leaves an uninitialized hole in the array
         var data_ptr = self._data.unsafe_ptr()
-        var element = (data_ptr + pos).take_pointee()
+        var element = (data_ptr.unsafe_offset(pos)).unsafe_take_pointee()
         while pos > start:
             var parent = (pos - 1) // 2
 
@@ -85,13 +85,13 @@ struct BinaryHeap[T: Copyable & Comparable & ImplicitlyDeletable](
                 break
 
             # copy the parent element into the (vacant) hole
-            (data_ptr + pos).init_pointee_move(
-                (data_ptr + parent).take_pointee()
+            (data_ptr.unsafe_offset(pos)).unsafe_write(
+                (data_ptr.unsafe_offset(parent)).unsafe_take_pointee()
             )
             pos = parent
 
         # fill the hole back in
-        (data_ptr + pos).init_pointee_move(element^)
+        (data_ptr.unsafe_offset(pos)).unsafe_write(element^)
 
     def _heapify_down(mut self, var pos: Int):
         """Restores the heap property.
@@ -101,24 +101,27 @@ struct BinaryHeap[T: Copyable & Comparable & ImplicitlyDeletable](
         """
         var start = pos
         var data_ptr = self._data.unsafe_ptr()
-        var element = (data_ptr + pos).take_pointee()
+        var element = (data_ptr.unsafe_offset(pos)).unsafe_take_pointee()
 
         var child = 2 * pos + 1
         while child <= max(len(self) - 2, 0):
-            child += 1 if data_ptr[child] <= data_ptr[child + 1] else 0
-            (data_ptr + pos).init_pointee_move(
-                (data_ptr + child).take_pointee()
+            child += (
+                1 if data_ptr[unsafe_offset=child]
+                <= data_ptr[unsafe_offset=child + 1] else 0
+            )
+            (data_ptr.unsafe_offset(pos)).unsafe_write(
+                (data_ptr.unsafe_offset(child)).unsafe_take_pointee()
             )
             pos = child
             child = 2 * pos + 1
 
         if child == len(self) - 1:
-            (data_ptr + pos).init_pointee_move(
-                (data_ptr + child).take_pointee()
+            (data_ptr.unsafe_offset(pos)).unsafe_write(
+                (data_ptr.unsafe_offset(child)).unsafe_take_pointee()
             )
             pos = child
 
-        (data_ptr + pos).init_pointee_move(element^)
+        (data_ptr.unsafe_offset(pos)).unsafe_write(element^)
 
         self._heapify_up(start, pos)
 
@@ -148,7 +151,7 @@ struct BinaryHeap[T: Copyable & Comparable & ImplicitlyDeletable](
             self._heapify_down(0)
         return item^
 
-    def peek(read self) -> ref[self._data] Self.T:
+    def peek(imm self) -> ref[self._data[0]] Self.T:
         """Gets a reference to the largest element in the heap.
 
         Returns:

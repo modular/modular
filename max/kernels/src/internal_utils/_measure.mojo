@@ -116,8 +116,8 @@ def correlation[
     len: Int,
     ctx: DeviceContext,
     *,
-    w: OptionalUnsafePointer[mut=True, u.type, _] = Optional[
-        UnsafePointer[u.type, MutUntrackedOrigin]
+    w: OptionalUnsafePointer[mut=True, u.T, _] = Optional[
+        UnsafePointer[u.T, MutUntrackedOrigin]
     ](),
     centered: Bool = True,
 ) raises -> Scalar[out_type]:
@@ -157,7 +157,7 @@ def correlation[
     var uu_simd = SIMD[out_type, simd_width]()
     var vv_simd = SIMD[out_type, simd_width]()
 
-    var w_val = w_list.unsafe_ptr()
+    var w_val: UnsafePointer[w_list.T, origin_of(w_list)] = w_list.unsafe_ptr()
 
     @parameter
     def accumulate[weighted: Bool]():
@@ -354,7 +354,7 @@ def _sum[
 ](src: UnsafePointer[mut=False, Scalar[dtype], _], len: Int) raises -> Scalar[
     dtype
 ]:
-    return sum(Span[Scalar[dtype]](ptr=src, length=len))
+    return sum(Span[Scalar[dtype]](unsafe_ptr=src, length=len))
 
 
 def _mean[
@@ -362,7 +362,7 @@ def _mean[
 ](src: UnsafePointer[mut=False, Scalar[dtype], _], len: Int) raises -> Scalar[
     dtype
 ]:
-    return mean(Span[Scalar[dtype]](ptr=src, length=len))
+    return mean(Span[Scalar[dtype]](unsafe_ptr=src, length=len))
 
 
 def _dot[

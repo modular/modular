@@ -29,7 +29,7 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import Layout as TileLayout
-from std.memory import memcpy
+from std.memory import UnsafePointer, unsafe_memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_3d_goldens import (
     freqs_cis_table_input,
@@ -93,24 +93,32 @@ def test_fused_qk_rope[
     kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
+    # TODO(MOCO-4334): a safe `Pointer` from `unsafe_ptr()` collapses to an
+    # immutable origin in the tensor ctor; pin to a mutable `UnsafePointer`.
+    var kv_cache_block_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(kv_cache_block_buffer)
+    ] = kv_cache_block_buffer.unsafe_ptr()
     kv_cache_block = LayoutTensor[dtype, Layout.row_major[6]()](
-        kv_cache_block_buffer.unsafe_ptr(),
+        kv_cache_block_ptr,
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
 
     start_positions_dyn = materialize[start_positions]()
     # Initialize KV cache block buffer with golden values.
     k_cache_input_buffer = k_cache_input[dtype]()
+    var k_cache_input_buffer_ptr: UnsafePointer[
+        k_cache_input_buffer.T, origin_of(k_cache_input_buffer)
+    ] = k_cache_input_buffer.unsafe_ptr()
     max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
-        memcpy(
+        unsafe_memcpy(
             dest=kv_cache_block.ptr
             + kv_cache_block._offset(
                 IndexList[6](
                     batch_idx, 0, 0, Int(start_positions_dyn[batch_idx]), 0, 0
                 )
             ),
-            src=k_cache_input_buffer.unsafe_ptr() + (batch_idx * seq_len * dim),
+            src=k_cache_input_buffer_ptr + (batch_idx * seq_len * dim),
             count=seq_len * dim,
         )
         max_cache_len_in_batch = max(
@@ -174,7 +182,7 @@ def test_fused_qk_rope[
         type_of(position_ids_static).LayoutType,
         ImmutAnyOrigin,
     ](
-        position_ids_static.ptr.as_immutable().unsafe_origin_cast[
+        position_ids_static._storage.as_immutable().unsafe_origin_cast[
             ImmutAnyOrigin
         ](),
         position_ids_static.layout,
@@ -202,8 +210,11 @@ def test_fused_qk_rope[
         Coord(Idx[max_seq_len], Idx[rope_dim]),
         Coord(Idx[head_dim], Idx[1]),
     )
+    var freqs_cis_table_buffer_ptr: UnsafePointer[
+        freqs_cis_table_buffer.T, origin_of(freqs_cis_table_buffer)
+    ] = freqs_cis_table_buffer.unsafe_ptr()
     var freqs_cis_table = TileTensor(
-        freqs_cis_table_buffer.unsafe_ptr() + (head_dim - rope_dim),
+        freqs_cis_table_buffer_ptr + (head_dim - rope_dim),
         freqs_cis_layout,
     )
 
@@ -217,6 +228,9 @@ def test_fused_qk_rope[
     assert (
         len(expected_k_out_buffer) == batch_size * seq_len * dim
     ), "invalid expected k out init"
+    var expected_k_out_buffer_ptr: UnsafePointer[
+        expected_k_out_buffer.T, origin_of(expected_k_out_buffer)
+    ] = expected_k_out_buffer.unsafe_ptr()
 
     print("Created freqs_cis_table_buffer", flush=True)
     # Create output buffer and TileTensor.
@@ -253,16 +267,16 @@ def test_fused_qk_rope[
                 )
                 # Verify unroped region: First (head_dim - rope_dim) elements should remain unchanged
                 assert_almost_equal(
-                    q_out.ptr + base_offset,
-                    q.ptr + base_offset,
+                    q_out._storage + base_offset,
+                    q._storage + base_offset,
                     head_dim - rope_dim,
                 )
 
                 # Verify roped region: Last rope_dim elements should match expected output
                 roped_offset = base_offset + (head_dim - rope_dim)
                 assert_almost_equal(
-                    q_out.ptr + roped_offset,
-                    expected_q_out.ptr + roped_offset,
+                    q_out._storage + roped_offset,
+                    expected_q_out._storage + roped_offset,
                     rope_dim,
                 )
 
@@ -287,7 +301,7 @@ def test_fused_qk_rope[
                 # Verify unroped region: Should match original input
                 assert_almost_equal(
                     cache_block_ptr,
-                    k_cache_input_buffer.unsafe_ptr() + input_offset,
+                    k_cache_input_buffer_ptr + input_offset,
                     head_dim - rope_dim,
                 )
 
@@ -295,9 +309,7 @@ def test_fused_qk_rope[
                 roped_offset = head_dim - rope_dim
                 assert_almost_equal(
                     cache_block_ptr + roped_offset,
-                    expected_k_out_buffer.unsafe_ptr()
-                    + input_offset
-                    + roped_offset,
+                    expected_k_out_buffer_ptr + input_offset + roped_offset,
                     rope_dim,
                 )
 

@@ -143,7 +143,7 @@ def test_nvfp4_quant_near_zero[
     # Scan the raw stored scales for non-finite (defense in depth: an e4m3 NaN
     # scale would propagate through any downstream dequant as NaN).
     for i in range(scales_total):
-        var s = scales_host.ptr.load(i).cast[DType.float32]()
+        var s = scales_host._storage.load(i).cast[DType.float32]()
         if isnan(s) or isinf(s):
             num_nonfinite_scales += 1
 

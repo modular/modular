@@ -26,12 +26,9 @@ https://github.com/LMCache/LMCache/blob/dev/lmcache/v1/storage_backend/local_dis
 from __future__ import annotations
 
 import itertools
-import json
 import logging
-import mmap
-import os
 import queue
-import tempfile
+import shutil
 import threading
 from collections import OrderedDict
 from collections.abc import Callable
@@ -41,12 +38,10 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.nn.kv_cache.cache_params import KVHashAlgo
+import psutil
 from max.profiler import Tracer
 
 logger = logging.getLogger("max.pipelines")
-
-_META_FILE = "kv-disk-cache.meta.json"
 
 _SENTINEL = None
 
@@ -167,20 +162,10 @@ class DiskTier:
     first byte of the hash. All TP shards are concatenated into a single file.
     Writes are async, reads return a Future.
     LRU eviction keeps disk usage within a configurable budget.
-    The cached set is the ``*.bin`` files themselves: a warm start rebuilds the
-    in-memory index by scanning the shard subdirectories, so no metadata is
-    persisted and the write path keeps no index in sync. A cache directory
-    written by an older flat-layout build is treated as a cold start.
 
-    ``block_nbytes`` is assumed constant for a given ``cache_dir``. Reusing a
-    directory across a block-size change (page size, model, dtype, or TP degree)
-    is unsupported: the stale, wrong-sized blocks are not detected and may be
-    read as valid data. Point a changed configuration at a fresh ``cache_dir``.
-
-    The `use_direct_io` flag controls whether the OS page cache is bypassed.
-    This should be turned on for better performance if most local CPU memory is
-    consumed (ie: for CPU KVCache). In other cases, leaving this off will yield
-    better performance as reads and writes will be buffered by the OS page cache.
+    The cache is ephemeral scratch: the index starts empty and the whole
+    ``cache_dir`` tree is removed on :meth:`shutdown`. Blocks are never reloaded
+    from a directory left behind by a previous process.
     """
 
     def __init__(
@@ -188,57 +173,17 @@ class DiskTier:
         cache_dir: str,
         block_nbytes: int,
         max_disk_size_bytes: int,
-        kv_hash_algo: KVHashAlgo = "ahash64",
         num_workers: int = 16,
-        use_direct_io: bool = False,
     ) -> None:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         # Pre-create the shard buckets so the write path can open files without
-        # a per-write mkdir. Created before _load_existing scans them.
+        # a per-write mkdir.
         for bucket in range(_NUM_SHARD_BUCKETS):
             (self._cache_dir / f"{bucket:02x}").mkdir(exist_ok=True)
 
         self._block_nbytes = block_nbytes
         self._max_disk_size_bytes = max_disk_size_bytes
-
-        # Optional O_DIRECT for bypassing OS page cache.
-        self._use_direct_io = use_direct_io
-        self._fs_block_size = 4096
-        if self._use_direct_io:
-            if not hasattr(os, "O_DIRECT"):
-                logger.warning(
-                    "O_DIRECT not available on this platform, "
-                    "falling back to buffered I/O"
-                )
-                self._use_direct_io = False
-            else:
-                stat = os.statvfs(str(self._cache_dir))
-                self._fs_block_size = stat.f_bsize
-                total = self._block_nbytes
-                if total % self._fs_block_size != 0:
-                    logger.warning(
-                        "Block size (%d) not aligned to FS block size "
-                        "(%d). Disabling O_DIRECT.",
-                        total,
-                        self._fs_block_size,
-                    )
-                    self._use_direct_io = False
-                else:
-                    logger.info(
-                        "O_DIRECT enabled for disk cache at %s (FS block size=%d)",
-                        self._cache_dir,
-                        self._fs_block_size,
-                    )
-
-        # Pre-allocated aligned buffer for O_DIRECT (one per worker thread).
-        # mmap anonymous regions are always page-aligned, satisfying
-        # O_DIRECT's buffer alignment requirement.  Allocated lazily in
-        # _get_aligned_buf() on first use per thread.
-        self._aligned_buf_size = (
-            self._block_nbytes if self._use_direct_io else 0
-        )
-        self._tls = threading.local()
 
         # LRU tracking: hashes that have been saved to disk
         # The value for the dict is ignored.
@@ -258,10 +203,15 @@ class DiskTier:
         # Priority executor: reads preempt deletes preempt writes.
         self._executor = PriorityExecutor(num_workers=num_workers)
 
-        self._hash_algo: KVHashAlgo = kv_hash_algo
-        self._verify_or_record_algo()
-
-        self._load_existing()
+        available_bytes = psutil.disk_usage(str(self._cache_dir)).free
+        if self._max_disk_size_bytes > available_bytes:
+            raise RuntimeError(
+                "disk_offload_max_gb requests "
+                f"{self._max_disk_size_bytes / (1024**3):.1f} GiB at "
+                f"{self._cache_dir} but only "
+                f"{available_bytes / (1024**3):.1f} GiB is available. Reduce "
+                "disk_offload_max_gb or free space on the target filesystem."
+            )
 
     @property
     def num_blocks(self) -> int:
@@ -379,9 +329,15 @@ class DiskTier:
         self._executor.wait_until_idle()
 
     def shutdown(self) -> None:
-        """Wait for pending writes and shut down the executor."""
+        """Wait for pending writes, stop the executor, and delete the cache dir.
+
+        The disk cache is ephemeral scratch, so the whole ``cache_dir`` tree is
+        removed here. ``ignore_errors`` keeps a filesystem hiccup from turning a
+        best-effort cleanup into a shutdown failure.
+        """
         self.wait_for_writes()
         self._executor.shutdown(wait=True)
+        shutil.rmtree(self._cache_dir, ignore_errors=True)
 
     def reset(self) -> None:
         """Clear all blocks from disk."""
@@ -405,16 +361,11 @@ class DiskTier:
         hogs the gil for any significant amount of time.
         """
         path = self._hash_to_path(block_hash)
-        if self._use_direct_io:
-            self._read_file_direct(path, dest)
-        else:
-            with open(path, "rb") as f:
-                assert dest.data.contiguous
-                n = f.readinto(dest.data)
-                if n != dest.nbytes:
-                    raise OSError(
-                        f"Short read: got {n}, expected {dest.nbytes}"
-                    )
+        with open(path, "rb") as f:
+            assert dest.data.contiguous
+            n = f.readinto(dest.data)
+            if n != dest.nbytes:
+                raise OSError(f"Short read: got {n}, expected {dest.nbytes}")
 
     def _write_block_sync(
         self,
@@ -427,85 +378,13 @@ class DiskTier:
         hogs the gil for any significant amount of time.
         """
         path = self._hash_to_path(block_hash)
-        if self._use_direct_io:
-            self._write_file_direct(path, src)
-        else:
-            with open(path, "wb") as f:
-                assert src.data.contiguous
-                f.write(src.data)
+        with open(path, "wb") as f:
+            assert src.data.contiguous
+            f.write(src.data)
 
         with self._lock:
             self._pending_hashes.discard(block_hash)
             self._saved_hashes[block_hash] = None
-
-    # -- O_DIRECT helpers --
-
-    def _get_aligned_buf(self) -> mmap.mmap:
-        """Return a thread-local page-aligned staging buffer for O_DIRECT.
-
-        Allocated once per worker thread via ``threading.local()`` and
-        reused for every subsequent I/O operation — no per-call allocation.
-        """
-        buf = getattr(self._tls, "aligned_buf", None)
-        if buf is None or buf.closed:
-            buf = mmap.mmap(-1, self._aligned_buf_size)
-            self._tls.aligned_buf = buf
-        return buf
-
-    def _write_file_direct(
-        self, path: Path, src: npt.NDArray[np.uint8]
-    ) -> None:
-        """Write src to path using O_DIRECT (bypass OS page cache).
-
-        Issues a single ``os.write()`` via a ``memoryview``slice.
-        """
-        buf = self._get_aligned_buf()
-        buf.seek(0)
-        assert src.data.contiguous
-        buf.write(src.data)
-        total = buf.tell()
-
-        fd = os.open(
-            str(path),
-            os.O_CREAT | os.O_WRONLY | os.O_TRUNC | os.O_DIRECT,
-            0o644,
-        )
-        try:
-            # memoryview is zero-copy — preserves the mmap's page-aligned
-            # address so os.write sees an aligned buffer.
-            os.write(fd, memoryview(buf)[:total])
-        finally:
-            os.close(fd)
-
-    def _read_file_direct(
-        self, path: Path, array: npt.NDArray[np.uint8]
-    ) -> None:
-        """Read into *array* from *path* using O_DIRECT.
-
-        Single ``os.read()`` into the pre-allocated page-aligned buffer.
-        """
-        nbytes = array.nbytes
-        buf = self._get_aligned_buf()
-        assert len(buf) == nbytes
-        assert array.data.contiguous
-
-        fd = os.open(str(path), os.O_RDONLY | os.O_DIRECT)
-        try:
-            # Read the whole file in one aligned read.
-            n = os.readv(fd, [memoryview(buf)])
-            if n != nbytes:
-                raise OSError(
-                    f"Short O_DIRECT read: got {n}, expected {nbytes}"
-                )
-        finally:
-            os.close(fd)
-
-        # np.copyto releases the GIL during the memcpy.
-        # np.frombuffer on the mmap directly is zero-copy (buffer protocol);
-        np.copyto(
-            array.reshape(-1),
-            np.frombuffer(buf, dtype=array.dtype),
-        )
 
     # -- file paths --
 
@@ -550,128 +429,6 @@ class DiskTier:
         finally:
             with self._lock:
                 self._pending_deletes.discard(block_hash)
-
-    # -- persistence --
-
-    def _load_existing(self) -> None:
-        """Rebuild the in-memory index by scanning the shard subdirectories.
-
-        Blocks live at ``<xx>/<hex>.bin`` where ``<hex>`` is either a 16-char
-        u64 (ahash64) or a 64-char SHA-256 digest. Other lengths are skipped
-        with a warning so a mis-placed sidecar file does not abort warm start.
-        Only the ``<xx>/`` bucket subdirectories are scanned, so a cache
-        directory written by an older flat-layout build is treated as a cold
-        start (its root-level files are not indexed); point a changed
-        configuration at a fresh ``cache_dir``.
-        """
-        scanned = 0
-        for bucket in os.scandir(self._cache_dir):
-            if not bucket.is_dir():
-                continue
-            for entry in os.scandir(bucket.path):
-                scanned += 1
-                name = entry.name
-                if not name.endswith(".bin"):
-                    continue
-                stem = name[:-4]
-                if len(stem) not in (16, 64):
-                    logger.warning(
-                        "Skipping disk cache file with unexpected stem "
-                        "length: %s",
-                        name,
-                    )
-                    continue
-                try:
-                    block_hash = bytes.fromhex(stem)
-                except ValueError:
-                    continue
-                self._saved_hashes[block_hash] = None
-
-        if self._saved_hashes:
-            logger.info(
-                "Disk cache warm start: indexed %d blocks (%.1f GB) from "
-                "%d files in %s",
-                len(self._saved_hashes),
-                len(self._saved_hashes) * self._block_nbytes / (1024**3),
-                scanned,
-                self._cache_dir,
-            )
-        else:
-            logger.info(
-                "Disk cache cold start at %s (scanned %d files)",
-                self._cache_dir,
-                scanned,
-            )
-
-    def _verify_or_record_algo(self) -> None:
-        """Verify the on-disk cache hash algo matches ``self._hash_algo``.
-        Maintains a ``kv-disk-cache.meta.json`` sidecar that pins the
-        algorithm used for filenames in the cache directory.
-        On startup:
-            - If the meta file exists, compare its ``hash_algo`` to
-              ``self._hash_algo`` and raise ``RuntimeError`` on mismatch
-              with a clear remediation message.
-            - If the meta file is missing but ``.bin`` files exist, infer
-              the algo from the first filename's stem length: 64 hex chars
-              must be ``sha256`` (32-byte digests). 16 hex chars are
-              ambiguous between ``ahash64`` and ``sha256_64`` (both store
-              64-bit ints) so we trust the configured algo. Refuse startup
-              on a clear mismatch (e.g. 64-char stems with configured
-              ``ahash64``).
-            - If no meta and no ``.bin`` files exist, write a fresh meta
-              file with the configured algo.
-        """
-        meta_path = self._cache_dir / _META_FILE
-        if meta_path.exists():
-            try:
-                recorded = json.loads(meta_path.read_text())
-            except (OSError, json.JSONDecodeError) as exc:
-                raise RuntimeError(
-                    f"Failed to read disk cache meta at {meta_path}: "
-                    f"{exc}. Delete {self._cache_dir} and restart to "
-                    "start fresh."
-                ) from exc
-            recorded_algo = recorded.get("hash_algo")
-            if recorded_algo != self._hash_algo:
-                raise RuntimeError(
-                    f"Disk cache at {self._cache_dir} was created with "
-                    f"hash_algo={recorded_algo!r}; current configuration "
-                    f"requires {self._hash_algo!r}. Delete "
-                    f"{self._cache_dir} and restart to start fresh."
-                )
-            return
-        existing_stem_len: int | None = None
-        for entry in os.scandir(self._cache_dir):
-            if entry.name.endswith(".bin"):
-                existing_stem_len = len(entry.name) - 4
-                break
-        if existing_stem_len == 64 and self._hash_algo != "sha256":
-            raise RuntimeError(
-                f"Disk cache at {self._cache_dir} contains SHA-256 files "
-                f"(64-char stems) but current configuration requires "
-                f"hash_algo={self._hash_algo!r}. Delete "
-                f"{self._cache_dir} and restart to start fresh."
-            )
-        if existing_stem_len == 16 and self._hash_algo == "sha256":
-            raise RuntimeError(
-                f"Disk cache at {self._cache_dir} contains int-hash files "
-                "(16-char stems) but current configuration requires "
-                "hash_algo='sha256' (64-char stems). Delete "
-                f"{self._cache_dir} and restart to start fresh."
-            )
-        payload = json.dumps(
-            {"hash_algo": self._hash_algo}, separators=(",", ":")
-        )
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            dir=meta_path.parent,
-            prefix=".kv-disk-cache.meta.",
-            suffix=".tmp",
-            delete=False,
-        ) as tmp:
-            tmp.write(payload)
-            tmp_path = tmp.name
-        os.replace(tmp_path, meta_path)
 
     @property
     def inflight_disk_ops(self) -> int:

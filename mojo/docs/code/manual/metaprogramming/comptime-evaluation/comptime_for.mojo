@@ -32,5 +32,5 @@ def main() raises:
         b[i - 1] = a[i] + a[i - 1]
 
     expected: InlineArray[Float64, 4] = [6.0, 9.0, 12.0, 15.0]
-    for i in range(expected.size):
+    for i in range(expected.length):
         assert_equal(b[i], expected[i])

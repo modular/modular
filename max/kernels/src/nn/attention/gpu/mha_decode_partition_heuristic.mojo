@@ -11,6 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Split-K partition-count heuristics for MHA and MLA decode kernels.
+
+Exposes per-backend functions that decide how many partitions the decode
+split-K loop should run across, plus num_keys-independent upper bounds used
+to launch graph-stable decode grids whose extra partitions early-return in
+the kernel. CUDA uses a simple SM-fill target clamped to the single-warp
+reducer limit; HIP (MI355X) uses a wave-aligned formula tuned for both MHA
+and MLA decode shapes.
+"""
+
 from std.bit import next_power_of_two
 from std.gpu.host import DeviceAttribute, DeviceContext
 from std.math import ceildiv, clamp
@@ -20,7 +30,7 @@ from std.math import ceildiv, clamp
 def _bucket_partitions(n: Int) -> Int:
     """Bucket a partition count up to a fixed grid-shape ladder.
 
-    Power-of-two bucketing leaves a 2x gap between 64 and 128 — meaningful
+    Power-of-two bucketing leaves a 2x gap between 64 and 128, meaningful
     for h=64 / h=128 shapes where the target landing point is often in the
     65..127 range and 128 is wasteful. We insert mid-points {48, 96} to
     halve the worst-case over-partitioning above 32 while keeping the
@@ -30,7 +40,7 @@ def _bucket_partitions(n: Int) -> Int:
 
     The SM100 path has an analogous helper, `_bucket_num_partitions` in
     `nvidia/sm100/mla_decode_dispatch.mojo`, with a different ladder
-    (top = `half_sms`, parameterized on GPU SM count) — driven by SM100's
+    (top = `half_sms`, parameterized on GPU SM count), driven by SM100's
     wave-fill target instead of an AMD-reducer hard cap. They aren't
     shared because the constraints differ; the pattern is the same.
     """
@@ -54,6 +64,22 @@ def cuda_mha_decoding_max_num_partitions(
     heads_per_group: Int,
     sm_count: Int,
 ) -> Int:
+    """Returns the num_keys-independent upper bound on CUDA decode split-K partitions.
+
+    Targets one partition per idle SM, clamped to [1, 32]: the 32 ceiling is
+    the MHA split-K reducer's single-warp WARP_SIZE limit and the lower bound
+    guards the large-batch case where `batch_size * heads_per_group > sm_count`
+    would otherwise drive the SM term to zero. Not rounded to a power of two
+    so an exact target avoids over-partitioning.
+
+    Args:
+        batch_size: Number of decode requests in the batch.
+        heads_per_group: Query heads sharing each kv-head group (kv_num_heads for MHA).
+        sm_count: Device multiprocessor count used to size the SM-fill target.
+
+    Returns:
+        Partition count clamped to [1, 32], used as the upper bound for every num_keys.
+    """
     # num_keys-independent partition target: fill one partition per idle SM,
     # clamped to [1, 32]. The 32 ceiling is the MHA split-K reducer's
     # single-warp WARP_SIZE limit; the lower bound of 1 guards the case where
@@ -75,6 +101,22 @@ def cuda_mha_decoding_num_partitions(
     heads_per_group: Int,
     sm_count: Int,
 ) -> Int:
+    """Returns the CUDA decode split-K partition count for the given shape.
+
+    Takes the num_keys-independent upper bound from
+    `cuda_mha_decoding_max_num_partitions` and further limits it so each
+    partition spans at least 512 keys. The `max(1, ...)` floor preserves the
+    >= 1 guard when `num_keys < 512`.
+
+    Args:
+        batch_size: Number of decode requests in the batch.
+        num_keys: Number of key cache entries to scan.
+        heads_per_group: Query heads sharing each kv-head group (kv_num_heads for MHA).
+        sm_count: Device multiprocessor count used to size the SM-fill target.
+
+    Returns:
+        Partition count in [1, 32] further limited by `num_keys // 512`.
+    """
     # The num_keys-independent upper bound, further limited so each partition
     # spans at least 512 keys. Deriving from the max keeps the SM-fill target
     # and the [1, 32] clamp in one place, so max >= actual holds by
@@ -106,7 +148,7 @@ def hip_mha_decoding_num_partitions(
       typically small (≤ 8). Each (kv_head, batch) is its own CTA in
       grid_y, so `actual_ctas_per_partition = heads_per_group ×
       batch_size`. When `work_items = heads_per_group × batch_size ≥
-      sm_count`, one partition already fills the GPU — use few
+      sm_count`, one partition already fills the GPU; use few
       partitions, just enough to amortize key reads. This matches the
       original heuristic's HIGH_OCC branch (preserved verbatim to
       avoid regressing the MHA bench grid).
@@ -116,7 +158,7 @@ def hip_mha_decoding_num_partitions(
       h ∈ {32, 64, 128}). MLA packs BM queries into one CTA, so
       `actual_ctas_per_partition = ceildiv(num_heads, BM) ×
       batch_size`. Even when `work_items` looks large (e.g. bs=8
-      h=64 → 512), actual CTAs are only 16 — needs many partitions.
+      h=64 → 512), actual CTAs are only 16; needs many partitions.
       Apply the 2-wave wave-aligned formula:
           one_wave    = sm_count // ctas_per_partition
           two_wave    = 2 × sm_count // ctas_per_partition
@@ -125,7 +167,7 @@ def hip_mha_decoding_num_partitions(
 
       EXCEPTION (num_heads <= 16, e.g. Kimi-K2.5 TP=4): the one_wave floor
       underfills. With num_blocks_y=1, ctas_per_partition = batch_size, so
-      one wave (np = sm/bs) gives each CU exactly one CTA — no second block
+      one wave (np = sm/bs) gives each CU exactly one CTA: no second block
       to overlap HBM-read latency. These shapes are latency-bound, so target
       two full waves instead:
           np_target   = min(two_wave, pages)
@@ -145,7 +187,7 @@ def hip_mha_decoding_num_partitions(
     AMD reducer constraint: `mla_splitk_reduce` supports MAX_PARTITIONS
     up to `parts_per_lane × WARP_SIZE`; the 256-partition specialization
     (parts_per_lane=4) lifts the MLA-style cap to 256. Only nk >= 64K
-    (pages >= 256) actually reaches np=256 — smaller nk is page-limited.
+    (pages >= 256) actually reaches np=256; smaller nk is page-limited.
 
     Tunables (MLA-style):
         BM                   = 32   (MLA decode block-M on MI355)
@@ -153,6 +195,14 @@ def hip_mha_decoding_num_partitions(
         MAX_PAGES_PER_SPLIT  = 5    (= 1280 keys per partition cap)
         MAX_HIP_PARTITIONS   = 256  (reducer's MAX_PARTITIONS limit; the
                                      MHA-style branch above stays pinned ≤64)
+
+    Args:
+        batch_size: Number of decode requests in the batch.
+        num_keys: Number of key cache entries to scan.
+        heads_per_group: Query heads sharing each kv-head group
+            (`kv_num_heads` for MHA, `num_heads` for MLA).
+        sm_count: Device multiprocessor count used to size the wave-fill target.
+        is_mla: Whether the caller is the MLA decode path (defaults to `False`).
     """
     comptime BM = 32
     comptime SPLIT_PAGE_SIZE = 256
@@ -235,6 +285,22 @@ def mha_decoding_num_partitions(
     ctx: DeviceContext,
     is_mla: Bool = False,
 ) raises -> Int:
+    """Dispatches to the backend-specific decode split-K partition heuristic.
+
+    Queries the device multiprocessor count lazily and routes CUDA and HIP to
+    their tuned heuristics; every other backend (Metal, accelerators with no
+    split-K decode path) returns 1 so the decode kernel runs unsplit.
+
+    Args:
+        batch_size: Number of decode requests in the batch.
+        num_keys: Number of key cache entries to scan.
+        heads_per_group: Query heads sharing each kv-head group (kv_num_heads for MHA, num_heads for MLA).
+        ctx: Device context used to query the backend API and SM count.
+        is_mla: Whether the caller is the MLA decode path (HIP only).
+
+    Returns:
+        Number of split-K partitions for the decode kernel's split-K loop.
+    """
     var api = ctx.api()
     if api == "hip" or api == "cuda":
         # MULTIPROCESSOR_COUNT is only meaningful for the split-K heuristics,
@@ -267,6 +333,22 @@ def mha_decoding_max_num_partitions(
     heads_per_group: Int,
     ctx: DeviceContext,
 ) raises -> Int:
+    """Returns the num_keys-independent upper bound on `mha_decoding_num_partitions`.
+
+    Used to launch a graph-stable decode grid. Only the CUDA decode path
+    over-launches and early-returns the extra partitions; every other backend
+    keeps `max == actual` so the `max >= actual` invariant holds and no
+    over-launch path is taken.
+
+    Args:
+        batch_size: Number of decode requests in the batch.
+        num_keys: Number of key cache entries to scan.
+        heads_per_group: Query heads sharing each kv-head group (kv_num_heads for MHA).
+        ctx: Device context used to query the backend API and SM count.
+
+    Returns:
+        Upper bound on the partition count for any num_keys on this backend.
+    """
     # num_keys-independent upper bound on mha_decoding_num_partitions, used to
     # launch a graph-stable decode grid. Only the CUDA decode path over-launches
     # and early-returns the extra partitions; every other backend keeps

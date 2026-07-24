@@ -14,9 +14,10 @@
 """Three-tier KV cache connector: GPU <-> CPU (pinned) <-> Disk.
 
 Composes the CPU tier (pinned host ``Buffer`` + ``BlockOffloadEngine``) with a
-``DiskTier`` that provides flat-file persistence. Write-through policy ensures
-every block saved to CPU is also written to disk asynchronously, so CPU
-eviction is always safe and disk coverage is maximised for warm restarts.
+``DiskTier`` that provides flat-file scratch storage. Write-through policy
+ensures every block saved to CPU is also written to disk asynchronously, so CPU
+eviction is always safe. The disk tier is ephemeral: it is removed on shutdown
+and never reloaded across restarts.
 """
 
 from __future__ import annotations
@@ -31,6 +32,11 @@ from max.driver import Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import Tracer, traced
 
@@ -69,6 +75,15 @@ class TieredConnector:
 
     Uses write-through: every block saved to CPU is also async-written to disk.
     Blocks are stored in the native paged format at every tier — no reshape.
+
+    .. deprecated::
+        Superseded by the Rust ``rust_tiered`` connector, which runs its
+        disk/copy work on dedicated background threads + a separate copy engine
+        and reports completion through :class:`KVConnectorTransfer`, so onloads
+        overlap GPU compute. This connector drives its H2D on the forward stream
+        (ordered by the deprecated :meth:`wait_for_loads` barrier) and does disk
+        I/O on the scheduler thread, so a disk-bound onload stalls the GPU. Kept
+        for backward compatibility.
     """
 
     @traced
@@ -79,8 +94,6 @@ class TieredConnector:
         total_num_host_blocks: int,
         disk_cache_dir: str,
         max_disk_size_gb: float,
-        kv_hash_algo: KVHashAlgo = "ahash64",
-        use_direct_io: bool = False,
         synchronous_d2h_copy_mode: bool = False,
     ) -> None:
         if total_num_host_blocks <= 0:
@@ -118,8 +131,6 @@ class TieredConnector:
             cache_dir=disk_cache_dir,
             block_nbytes=self._block_disk_bytes,
             max_disk_size_bytes=int(max_disk_size_gb * GiB),
-            kv_hash_algo=kv_hash_algo,
-            use_direct_io=use_direct_io,
         )
 
         logger.info(
@@ -182,11 +193,14 @@ class TieredConnector:
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
-    ) -> int:
+    ) -> KVConnectorTransfer:
         """Load data from host or disk cache into ``replica_idx``'s blocks.
 
         Returns:
-            Number of blocks loaded from host cache.
+            A :class:`CompletedTransfer` whose ``g0_blocks`` are the device
+            blocks loaded: the H2D is stream-ordered ahead of the forward by the
+            deprecated :meth:`wait_for_loads` barrier, so from the manager's
+            perspective it is already complete (no cordoning).
         """
 
         host_cache = self._host_block_pool.prefix_cache
@@ -299,7 +313,36 @@ class TieredConnector:
         if remaining:
             wait(remaining)
 
-        return num_loaded
+        return CompletedTransfer(
+            TransferDirection.LOAD,
+            [h.device_block_id for h in hits[:num_loaded]],
+        )
+
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        """Counts contiguous leading blocks resident in the CPU or disk tier.
+
+        Read-only companion to ``load``: same tier walk (CPU first, then disk
+        per block) and the same last-level-cache-only override, but no
+        promotions, allocations, or LRU updates. Unlike ``load`` it does not
+        require free host blocks to count a disk hit, so it reflects index
+        presence rather than immediate serviceability.
+        """
+        host_cache = self._host_block_pool.prefix_cache
+        num_host_hits = 0
+        num_disk_hits = 0
+        for block_hash in block_hashes:
+            if (
+                not self._only_use_kv_connector_last_level_cache
+                and block_hash in host_cache
+            ):
+                num_host_hits += 1
+            elif self._disk_tier.contains(block_hash):
+                num_disk_hits += 1
+            else:
+                break
+        return (num_host_hits, num_disk_hits)
 
     @traced
     def wait_for_offloads(self) -> None:
@@ -363,7 +406,7 @@ class TieredConnector:
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
-    ) -> None:
+    ) -> KVConnectorTransfer:
         """Offload ``replica_idx``'s device blocks to the external cache.
 
         ``parent_seq_hash`` is ignored: blocks are keyed by hash at each tier.
@@ -373,6 +416,10 @@ class TieredConnector:
         ``wait_for_loads``; ``offload`` is now called once per request
         (multiple times per forward pass), so syncing here would re-serialize
         the copies against the forward pass and destroy the overlap.
+
+        Returns:
+            A :class:`CompletedTransfer`: the D2H is stream-ordered, so the
+            manager keeps no pin. ``g0_blocks`` are the offloaded device blocks.
         """
         host_blocks: list[KVCacheBlock] = []
         dsts: list[int] = []
@@ -401,6 +448,16 @@ class TieredConnector:
             # If flag is set, immediately synchronize the event.
             if self._synchronous_d2h_copy_mode:
                 pending_disk_write.d2h_copy_complete_event.synchronize()
+
+        return CompletedTransfer(TransferDirection.OFFLOAD, srcs)
+
+    def touch(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> None:
+        """No-op: this connector does not refresh recency on device-cache hits."""
+        return None
 
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""

@@ -71,7 +71,7 @@ def rebind[
         A reference to the value rebound as `dest_type`.
     """
     lit = __get_mvalue_as_litref(src)
-    rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_type](lit)
+    rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_lit_ref](lit)
     return __get_litref_as_mvalue(rebound)
 
 
@@ -104,7 +104,7 @@ def rebind_var[
         An owned value rebound as `dest_type`.
     """
     ref dest_ref = rebind[dest_type](src)
-    dest = UnsafePointer(to=dest_ref).take_pointee()
+    dest = Pointer(to=dest_ref).unsafe_take_pointee()
     std.memory.forget_deinit(src^)
 
 

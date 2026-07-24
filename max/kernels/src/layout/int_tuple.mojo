@@ -59,7 +59,7 @@ var total_size = size(shape)  # Results in 120
 from std.os import abort
 
 from std.builtin.range import _StridedRange, _StridedScalarRange
-from std.memory import dealloc, memcpy, ThinAllocation
+from std.memory import dealloc, unsafe_memcpy, ThinAllocation
 from std.memory.alloc import Layout as AllocLayout
 from std.collections import check_bounds
 from std.utils.numerics import max_finite
@@ -249,7 +249,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             size: Number of elements to copy.
         """
         if self._data and source._data:
-            memcpy(
+            unsafe_memcpy(
                 dest=self._data.unsafe_value() + offset,
                 src=source._data.unsafe_value(),
                 count=size,
@@ -268,7 +268,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             size: Number of elements to copy.
         """
         if self._data and source._data:
-            memcpy(
+            unsafe_memcpy(
                 dest=self._data.unsafe_value() + dst_offset,
                 src=source._data.unsafe_value() + src_offset,
                 count=size,
@@ -297,7 +297,7 @@ def create_unknown_int_tuple(rank: Int) -> IntTuple:
     return result
 
 
-struct _IntTupleIter[origin: ImmutOrigin](
+struct _IntTupleIter[origin: ImmOrigin](
     Iterable, Iterator, TrivialRegisterPassable
 ):
     """Iterator for traversing elements of an IntTuple."""
@@ -374,7 +374,7 @@ struct IntTuple(
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _IntTupleIter[ImmutOrigin(iterable_origin)]
+    ]: Iterator = _IntTupleIter[ImmOrigin(iterable_origin)]
     """The iterator type for IntTuple iteration.
 
     Parameters:
@@ -418,7 +418,7 @@ struct IntTuple(
     @staticmethod
     @always_inline("nodebug")
     def elements_size[
-        _origin: ImmutOrigin, n: Int
+        _origin: ImmOrigin, n: Int
     ](elements: InlineArray[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
         """Calculate the total storage size needed for IntTuples at a specific index.
 
@@ -1131,7 +1131,7 @@ struct IntTuple(
         comptime assert (
             IntLiteral[idx.value]() >= 0
         ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
-        # This avoids an interpreter memcpy error
+        # This avoids an interpreter unsafe_memcpy error
         if not __is_run_in_comptime_interpreter:
             check_bounds(idx, len(self))
         return self._unchecked_get(Int(idx))
@@ -1147,7 +1147,7 @@ struct IntTuple(
         Returns:
             An `IntTuple` containing either a single value or a sub-tuple.
         """
-        # This avoids an interpreter memcpy error
+        # This avoids an interpreter unsafe_memcpy error
         if not __is_run_in_comptime_interpreter:
             check_bounds(idx, len(self))
         return self._unchecked_get(idx)

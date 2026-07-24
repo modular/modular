@@ -83,7 +83,7 @@ from std.gpu.memory import (
     external_memory,
 )
 from std.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
-from std.memory import memset_zero, stack_allocation
+from std.memory import unsafe_memset_zero, stack_allocation
 from std.sys import has_nvidia_gpu_accelerator, size_of
 from std.utils.index import Index, IndexList
 
@@ -202,8 +202,8 @@ def _rowmajor_fold_spike_kernel[
 
     if thread_idx.x == 0:
         mbar[].init(1)
-        memset_zero(smem_ref, smem_elems)
-        memset_zero(smem_test, smem_elems)
+        unsafe_memset_zero(smem_ref, smem_elems)
+        unsafe_memset_zero(smem_test, smem_elems)
     barrier()
 
     if thread_idx.x == 0:
@@ -364,7 +364,7 @@ def run_spike[
     var gmem_runtime = RuntimeLayout[gmem_layout].row_major(gmem_shape)
     var gmem = ManagedLayoutTensor[dtype, gmem_layout](gmem_runtime, ctx)
     var gmem_host = gmem.tensor[update=False]()
-    memset_zero(gmem_host.ptr, gmem_runtime.size())
+    unsafe_memset_zero(gmem_host.ptr, gmem_runtime.size())
     for r in range(BN):
         for h in range(num_heads):
             for d in range(head_size):

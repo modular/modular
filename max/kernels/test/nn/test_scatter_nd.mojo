@@ -19,7 +19,7 @@ from std.testing import assert_equal
 
 @always_inline
 def use_update[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]) -> SIMD[
     dtype, width
 ]:
@@ -429,7 +429,7 @@ def main() raises:
 
         @always_inline
         def _add[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
@@ -641,7 +641,7 @@ def main() raises:
 
         @always_inline
         def _max[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
@@ -853,7 +853,7 @@ def main() raises:
 
         @always_inline
         def _min[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return min(v1, v2)
 
@@ -1065,7 +1065,7 @@ def main() raises:
 
         @always_inline
         def _mul[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 * v2
 
@@ -1081,3 +1081,55 @@ def main() raises:
         _ = data_ptr^
 
     test_scatternd_multiply()
+
+    def test_scatternd_add_parallel_duplicates() raises:
+        print("== test_scatternd_add_parallel_duplicates")
+        # More index rows than the CPU elementwise grain size (32768), so
+        # the reduce runs on several workers concurrently. Duplicate index
+        # vectors must still accumulate atomically — with 100k rows
+        # colliding on 8 target rows, a non-atomic reduce drops updates.
+        comptime rows = 64
+        comptime cols = 4
+        comptime n_idx = 100_000
+        comptime n_targets = 8
+
+        var data_ptr = List(length=rows * cols, fill=Float32(0))
+        for i in range(rows * cols):
+            data_ptr[i] = Float32(i % 7)
+        var data = TileTensor(data_ptr, row_major[rows, cols]())
+
+        var indices_ptr = List(length=n_idx, fill=Int64(0))
+        for k in range(n_idx):
+            indices_ptr[k] = Int64((k % n_targets) * 7 + 1)
+        var indices = TileTensor(indices_ptr, row_major[n_idx, 1]())
+
+        var updates_ptr = List(length=n_idx * cols, fill=Float32(1))
+        var updates = TileTensor(updates_ptr, row_major[n_idx, cols]())
+
+        var output_ptr = List(length=rows * cols, fill=Float32(0))
+        var output = TileTensor(output_ptr, row_major[rows, cols]())
+
+        @always_inline
+        def _add[
+            ty: DType, width: SIMDLength
+        ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+            return v1 + v2
+
+        scatter_nd_generator[reduce_fn=_add](
+            data, indices, updates, output, DeviceContext(api="cpu")
+        )
+
+        comptime dups_per_target = n_idx // n_targets
+        for i in range(rows * cols):
+            var expected = data_ptr[i]
+            var row = i // cols
+            if row % 7 == 1 and row < n_targets * 7:
+                expected += Float32(dups_per_target)
+            assert_equal(output_ptr[i], expected, String("i=", i))
+
+        _ = output_ptr^
+        _ = updates_ptr^
+        _ = indices_ptr^
+        _ = data_ptr^
+
+    test_scatternd_add_parallel_duplicates()

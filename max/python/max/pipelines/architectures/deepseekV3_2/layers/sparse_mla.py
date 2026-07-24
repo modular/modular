@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
@@ -35,7 +36,6 @@ from max.nn.comm import Allreduce
 from max.nn.kernels import (
     mla_decode_graph,
     mla_prefill_decode_graph,
-    mla_prefill_graph,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.linear import Linear
@@ -44,6 +44,66 @@ from max.nn.quant_ops import quantized_matmul
 from max.nn.rotary_embedding import RotaryEmbedding
 
 from .indexer import Indexer
+
+logger = logging.getLogger("max.pipelines")
+
+
+# Head counts that route prefill through the combined prefill/decode op
+# unconditionally (landed behavior; the sparse-prefill kernel handles 128 or
+# any multiple of 8 in (0, 64]).  Other counts fall back to decode rather
+# than tripping the kernel's comptime assert.
+_SPARSE_PREFILL_SUPPORTED_HEADS_BF16 = (64, 128)
+_SPARSE_PREFILL_SUPPORTED_HEADS_FP8 = (64, 128)
+# GLM 5.2's TP-sharded counts (64 // {8, 4, 2}) route to the combined op over a
+# bfloat16 OR float8_e4m3fn latent cache.  The combined op's prefill arm now
+# takes the sparse-prefill kernel for both cache dtypes: mla_graph.mojo
+# dispatches an FP8 latent cache to mla_sm100_prefill_sparse_fp8 read at unit
+# scale (scale_block_size=0), mirroring the sparse-decode kernel's read of the
+# scale-less FP8 latent cache.  So the absorbed sparse path -- not the dense
+# unabsorbed FP8 prefill (whose extra Q/K/V requantization cost accuracy) --
+# runs for FP8-cache prefill at these head counts.
+_SPARSE_PREFILL_TP_SHARDED_HEADS = (8, 16, 32)
+
+
+# Master gate for the sparse-MLA *prefill* kernel. When False, prefill is
+# routed through the sparse *decode* kernel (the same fallback used for
+# unsupported head counts) instead of the sparse-prefill kernel, so the
+# combined-op wiring can merge while the prefill kernel is still being
+# optimized.
+_ENABLE_SPARSE_MLA_PREFILL_KERNEL = True
+
+# Dedup the one-time "prefill kernel gated off" notice (guard runs per layer).
+_WARNED_PREFILL_KERNEL_DISABLED: set[str] = set()
+
+
+def _warn_prefill_kernel_disabled() -> None:
+    """Log once (deduped across layers) that the prefill kernel is off."""
+    if "logged" in _WARNED_PREFILL_KERNEL_DISABLED:
+        return
+    _WARNED_PREFILL_KERNEL_DISABLED.add("logged")
+    logger.info(
+        "Sparse MLA prefill kernel disabled "
+        "(_ENABLE_SPARSE_MLA_PREFILL_KERNEL=False); routing prefill "
+        "through the sparse decode kernel."
+    )
+
+
+def _sparse_prefill_head_count_supported(
+    n_heads: int,
+    supported_heads: tuple[int, ...],
+    cache_dtype: DType,
+) -> bool:
+    """Whether prefill may route through the combined prefill/decode op."""
+    if n_heads in supported_heads:
+        return True
+    return n_heads in _SPARSE_PREFILL_TP_SHARDED_HEADS and cache_dtype in (
+        DType.bfloat16,
+        DType.float8_e4m3fn,
+    )
+
+
+# Head counts already warned about; the guard runs per layer, so dedup the log.
+_WARNED_FALLBACK_HEADS: set[int] = set()
 
 
 class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
@@ -152,6 +212,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         sparse_topk_lengths: TensorValue | None = None,
         sparse_attn_sink: TensorValue | None = None,
         sparse_indices_stride: int | None = None,
+        index_share: bool = False,
     ) -> TensorValue:
         attn_kwargs: dict[str, Any] = {
             "q": xq,
@@ -173,7 +234,35 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         w_k, w_k_scale = self.w_k
         w_uk, w_uk_scale = self.w_uk
         w_uv, w_uv_scale = self.w_uv
-        if self.graph_mode in ["prefill", "auto"]:
+
+        effective_graph_mode = self.graph_mode
+        if (
+            effective_graph_mode != "decode"
+            and not _ENABLE_SPARSE_MLA_PREFILL_KERNEL
+        ):
+            _warn_prefill_kernel_disabled()
+            effective_graph_mode = "decode"
+        elif (
+            effective_graph_mode != "decode"
+            and not _sparse_prefill_head_count_supported(
+                self.n_heads,
+                _SPARSE_PREFILL_SUPPORTED_HEADS_FP8,
+                self.kv_params.dtype,
+            )
+        ):
+            if self.n_heads not in _WARNED_FALLBACK_HEADS:
+                _WARNED_FALLBACK_HEADS.add(self.n_heads)
+                logger.warning(
+                    "Sparse MLA prefill does not support %d query heads "
+                    "(supported: %s); falling back to the slower decode path "
+                    "for prefill. This usually means tensor-parallel attention "
+                    "sharded the head count below a supported value.",
+                    self.n_heads,
+                    _SPARSE_PREFILL_SUPPORTED_HEADS_FP8,
+                )
+            effective_graph_mode = "decode"
+
+        if effective_graph_mode in ["prefill", "auto"]:
             if _mla_prefill_metadata is None:
                 mla_prefill_metadata = self.create_mla_prefill_metadata(
                     input_row_offsets, kv_collection
@@ -193,7 +282,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             attn_kwargs["w_uv"] = w_uv
             attn_kwargs["w_uv_scale"] = w_uv_scale
 
-        if self.graph_mode in ["decode", "auto"]:
+        if self.graph_mode in ["prefill", "decode", "auto"]:
             attn_kwargs["w_uk"] = w_uk
             attn_kwargs["w_uk_scale"] = w_uk_scale
             attn_kwargs["w_uv"] = w_uv
@@ -214,13 +303,16 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 "sparse_topk_lengths": sparse_topk_lengths,
                 "sparse_attn_sink": sparse_attn_sink,
                 "sparse_indices_stride": sparse_indices_stride,
+                # Read-once shared-KV fold (KERN-3141); only True when the
+                # caller has a shared top-k across folded MTP positions.
+                "index_share": index_share,
             }
 
-        if self.graph_mode == "prefill":
-            result = mla_prefill_graph(**attn_kwargs)
-        elif self.graph_mode == "decode":
+        if effective_graph_mode == "decode":
             result = mla_decode_graph(**attn_kwargs, **sparse_kw)
         else:
+            # TODO(KERN-3198): "prefill" uses the combined op because
+            # mla_prefill_graph doesn't support sparse args yet.
             result = mla_prefill_decode_graph(**attn_kwargs, **sparse_kw)
 
         return result.reshape((-1, self.n_heads * self.v_head_dim))
@@ -273,19 +365,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 input_row_offsets,
                 indexer_kv_collection,
                 layer_idx,
-                # TODO(KERN-2997): Once the graph mode is no longer hardcoded to
-                # "decode", this should be conditionally set to NULL_MASK.
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            )
-            topk_indices = ops.where(
-                (topk_indices != -1),
-                topk_indices,
-                ops.broadcast_to(
-                    ops.constant(
-                        0, dtype=topk_indices.dtype, device=topk_indices.device
-                    ),
-                    topk_indices.shape,
-                ),
             )
         else:
             # ``shared`` layer: reuse the previous full layer's top-k selection
@@ -298,20 +378,29 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 )
             topk_indices = prev_topk_indices
 
-        batch_dim = kv_collection.lookup_table.shape[0]
         sparse_topk_lengths = ops.broadcast_to(
             ops.constant(
                 self.index_topk,
                 dtype=DType.int32,
                 device=xq.device,
             ),
-            (batch_dim,),
+            (xq.shape[0],),
         )
         sparse_attn_sink = ops.broadcast_to(
-            ops.constant(float("-inf"), dtype=DType.float32, device=xq.device),
+            ops.constant(-1.0e38, dtype=DType.float32, device=xq.device),
             (self.n_heads,),
         )
 
+        # Read-once shared-index MTP fold (KERN-3141). Enable the fold only for
+        # a *full* indexer layer (``skip_topk`` is False) that reuses a prior
+        # selection: there the reused list is the single shared MTP top-k
+        # (``index_share_for_mtp_iteration``), so every folded q position
+        # attends one gathered pass. ``skip_topk`` (cross-layer) reuse keeps a
+        # per-position list, so it must stay on the unfolded path. The decode
+        # dispatch additionally self-gates on the fold shape (q_len in [2, 8]);
+        # default-off remains the production behavior (see Phase 8: index_share
+        # is only True at q_len=1 today, where the fold does not fire).
+        index_share = reuse_prev_topk and not self.skip_topk
         attn_out = self._mla_impl(
             xq,
             kv,
@@ -325,6 +414,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             sparse_topk_lengths=sparse_topk_lengths,
             sparse_attn_sink=sparse_attn_sink,
             sparse_indices_stride=self.index_topk,
+            index_share=index_share,
         )
 
         return self.o_proj(attn_out), topk_indices
@@ -798,7 +888,34 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
             "v_head_dim": self.v_head_dim,
         }
 
-        if self.graph_mode in ["prefill", "auto"]:
+        effective_graph_mode = self.graph_mode
+        if (
+            effective_graph_mode != "decode"
+            and not _ENABLE_SPARSE_MLA_PREFILL_KERNEL
+        ):
+            _warn_prefill_kernel_disabled()
+            effective_graph_mode = "decode"
+        elif (
+            effective_graph_mode != "decode"
+            and not _sparse_prefill_head_count_supported(
+                self.n_heads,
+                _SPARSE_PREFILL_SUPPORTED_HEADS_BF16,
+                self.kv_params.dtype,
+            )
+        ):
+            if self.n_heads not in _WARNED_FALLBACK_HEADS:
+                _WARNED_FALLBACK_HEADS.add(self.n_heads)
+                logger.warning(
+                    "Sparse MLA prefill does not support %d query heads "
+                    "(supported: %s); falling back to the slower decode path "
+                    "for prefill. This usually means tensor-parallel attention "
+                    "sharded the head count below a supported value.",
+                    self.n_heads,
+                    _SPARSE_PREFILL_SUPPORTED_HEADS_BF16,
+                )
+            effective_graph_mode = "decode"
+
+        if effective_graph_mode in ["prefill", "auto"]:
             if _mla_prefill_metadata is None:
                 mla_prefill_metadata = self.create_mla_prefill_metadata(
                     input_row_offsets, kv_collection
@@ -816,7 +933,7 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
             attn_kwargs["w_k"] = self.w_k
             attn_kwargs["w_uv"] = self.w_uv
 
-        if self.graph_mode in ["decode", "auto"]:
+        if self.graph_mode in ["prefill", "decode", "auto"]:
             attn_kwargs["w_uk"] = self.w_uk
             attn_kwargs["w_uv"] = self.w_uv
             assert kv_collection.attention_dispatch_metadata is not None
@@ -837,11 +954,11 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
                 "sparse_indices_stride": sparse_indices_stride,
             }
 
-        if self.graph_mode == "prefill":
-            result = mla_prefill_graph(**attn_kwargs)
-        elif self.graph_mode == "decode":
+        if effective_graph_mode == "decode":
             result = mla_decode_graph(**attn_kwargs, **sparse_kw)
         else:
+            # TODO(KERN-3198): "prefill" uses the combined op because
+            # mla_prefill_graph doesn't support sparse args yet.
             result = mla_prefill_decode_graph(**attn_kwargs, **sparse_kw)
 
         return result.reshape((-1, self.n_heads * self.v_head_dim))
@@ -881,22 +998,7 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
                 input_row_offsets,
                 indexer_kv_collection,
                 layer_idx,
-                # TODO(KERN-2997): Once the graph mode is no longer hardcoded to
-                # "decode", this should be conditionally set to NULL_MASK.
-                # Must stay CAUSAL for MTP: the target verifies K+1 merged
-                # tokens in one decode forward, so a NULL_MASK top-k would leak
-                # future draft-position keys into each verification query.
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            )
-            topk_indices = ops.where(
-                (topk_indices != -1),
-                topk_indices,
-                ops.broadcast_to(
-                    ops.constant(
-                        0, dtype=topk_indices.dtype, device=topk_indices.device
-                    ),
-                    topk_indices.shape,
-                ),
             )
         else:
             if prev_topk_indices is None:
@@ -906,17 +1008,16 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
                 )
             topk_indices = prev_topk_indices
 
-        batch_dim = kv_collection.lookup_table.shape[0]
         sparse_topk_lengths = ops.broadcast_to(
             ops.constant(
                 self.index_topk,
                 dtype=DType.int32,
                 device=xq.device,
             ),
-            (batch_dim,),
+            (xq.shape[0],),
         )
         sparse_attn_sink = ops.broadcast_to(
-            ops.constant(float("-inf"), dtype=DType.float32, device=xq.device),
+            ops.constant(-1.0e38, dtype=DType.float32, device=xq.device),
             (self.n_heads,),
         )
 

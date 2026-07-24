@@ -20,7 +20,7 @@ from std.format._utils import FormatStruct
 from std.memory import (
     ArcPointer,
     OwnedPointer,
-    memcpy,
+    unsafe_memcpy,
 )
 from std.memory.alloc import alloc, Layout
 from std.ffi import CStringSlice, external_call
@@ -49,7 +49,7 @@ struct StackTrace(Copyable, Movable, Writable):
     def __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[UInt8, MutUntrackedOrigin],
+        unsafe_from_raw_pointer: Pointer[UInt8, MutUntrackedOrigin],
     ):
         """Construct a StackTrace from a raw pointer to a C string.
 
@@ -75,7 +75,7 @@ struct StackTrace(Copyable, Movable, Writable):
         var src_ptr = copy._data.unsafe_ptr()
         var str_len = Int(_unsafe_strlen(src_ptr))
         var new_ptr = alloc(Layout[UInt8](count=str_len + 1)).unsafe_leak()
-        memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
+        unsafe_memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
         self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
 
     @staticmethod
@@ -104,10 +104,10 @@ struct StackTrace(Copyable, Movable, Writable):
         if depth < 0:
             return None
 
-        var buffer = Optional[UnsafePointer[UInt8, MutUntrackedOrigin]]()
+        var buffer = Optional[Pointer[UInt8, MutUntrackedOrigin]]()
         var num_bytes = external_call[
-            "KGEN_CompilerRT_GetStackTrace", SIMDSize
-        ](UnsafePointer(to=buffer), depth)
+            "KGEN_CompilerRT_GetStackTrace", SIMDLength
+        ](Pointer(to=buffer), depth)
         # When num_bytes is zero, the stack trace was not collected.
         if num_bytes == 0:
             return None
@@ -124,7 +124,9 @@ struct StackTrace(Copyable, Movable, Writable):
         writer.write_string(
             StringSlice(
                 unsafe_from_utf8=CStringSlice(
-                    unsafe_from_ptr=self._data.unsafe_ptr().bitcast[Int8]()
+                    unsafe_from_ptr=self._data.unsafe_ptr().unsafe_bitcast[
+                        Int8
+                    ]()
                 )
             )
         )

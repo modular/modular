@@ -52,14 +52,14 @@ def _stencil_impl_gpu[
     & def[simd_width: Int]() -> SIMD[dtype, simd_width],
     ComputeFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[simd_width: SIMDSize](
+    & def[simd_width: SIMDLength](
         IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width],
     ComputeFinalizeFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[simd_width: SIMDSize](
+    & def[simd_width: SIMDLength](
         IndexList[rank, ...], SIMD[dtype, simd_width]
     ) -> None,
 ](
@@ -112,7 +112,7 @@ def _stencil_impl_gpu[
     # GPU kernel implementation
     @always_inline
     def stencil_kernel() {
-        read shape,
+        imm shape,
         var input_shape,
         var map_func,
         var map_strides_func,

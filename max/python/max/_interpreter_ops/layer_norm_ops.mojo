@@ -23,8 +23,9 @@ from std.algorithm.functional import IndexList
 from std.math import sqrt
 
 from extensibility import ManagedTensorSlice
-from extensibility import Input
+from extensibility import IOSpec
 from extensibility import StaticTensorSpec
+from layout import Coord, coord_to_index_list
 from nn.normalization import layer_norm as nn_layer_norm
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
@@ -161,13 +162,16 @@ def layer_norm_op[
                 # GPU path: use nn.normalization.layer_norm kernel via
                 # callback functions (similar to softmax_ops.mojo pattern)
 
+                # `layer_norm`'s input lambda migrated to `Coord`-form (mirror
+                # of `rms_norm` / softmax migration); `gamma_fn` / `output_fn`
+                # keep their n-D `IndexList` form.
                 @always_inline
                 @parameter
                 @__copy_capture(in_ptr, feature_dim)
                 def input_fn[
-                    width: Int, rank: Int, alignment: Int
-                ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-                    var c = rebind[IndexList[2]](coords)
+                    width: Int, alignment: Int
+                ](coords: Coord) -> SIMD[dtype, width]:
+                    var c = rebind[IndexList[2]](coord_to_index_list(coords))
                     var flat_idx = c[0] * feature_dim + c[1]
                     return in_ptr.load[width=width, alignment=alignment](
                         flat_idx
@@ -188,7 +192,7 @@ def layer_norm_op[
                 @parameter
                 @__copy_capture(out_ptr, feature_dim)
                 def output_fn[
-                    width: SIMDSize, rank: Int, alignment: Int
+                    width: SIMDLength, rank: Int, alignment: Int
                 ](coords: IndexList[rank], val: SIMD[dtype, width]):
                     var c = rebind[IndexList[2]](coords)
                     var flat_idx = c[0] * feature_dim + c[1]
@@ -201,7 +205,7 @@ def layer_norm_op[
                     dtype, 1, ...
                 ].get_unknown()
                 var beta_tensor = ManagedTensorSlice[
-                    io_spec=Input, static_spec=beta_spec
+                    io_spec=IOSpec.Input, static_spec=beta_spec
                 ](beta_ptr, gamma_shape)
 
                 nn_layer_norm[
@@ -212,7 +216,7 @@ def layer_norm_op[
                     output_fn,
                     target="gpu",
                 ](
-                    shape,
+                    Coord(shape),
                     gamma_shape,
                     beta_tensor.to_tile_tensor[DType.int64](),
                     epsilon,

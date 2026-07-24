@@ -84,6 +84,23 @@ class SamplingConfig(ConfigFileModel):
         ),
     )
 
+    enable_tool_call_constrained_decode: bool = Field(
+        default=True,
+        description=(
+            "Whether tool-call requests are constrained to a server-generated "
+            "grammar during decoding. When enabled (the default), a configured "
+            "``runtime.tool_parser`` both produces a decode-time grammar and "
+            "parses the resulting output. Set to ``False`` to keep the parser "
+            "(tool calls are still parsed out of generated text) while skipping "
+            "the constrained-decode/bitmask path for tool calls -- useful when "
+            "the grammar path is undesirable but tool-call parsing is still "
+            "wanted. With this disabled, ``tool_choice=required`` or a named "
+            "function can no longer force a tool call. Independent of "
+            "``enable_structured_output``, which gates user-supplied "
+            "``response_format`` JSON schemas."
+        ),
+    )
+
     enable_variable_logits: bool = Field(
         default=False,
         description=(

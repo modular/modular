@@ -30,7 +30,7 @@ and V_hi are in separate slots (4 total V slots per iteration); otherwise
 only 2 V slots per iteration.
 
 CTA role split (cta_group=2):
-    Leader CTA (even rank): Owns all pipeline interactions — waits on KV
+    Leader CTA (even rank): Owns all pipeline interactions: waits on KV
         producer barriers, issues MMA, releases KV consumer barriers with
         cta_group=2 commit (fences MMA read of both CTAs' SMEM, then
         signals both CTAs' consumer barriers), and commits S/O barriers.
@@ -70,6 +70,28 @@ def depth512_mma[
     num_keys: UInt32,
     mask: MaskType,
 ):
+    """Runs the pair-CTA Q@K' and P@V MMAs for depth=256/512 SM100 attention.
+
+    Drives the leader CTA of a cta_group=2 pair through the full attention
+    iteration loop: a peeled first iteration seeds S_even and O, then the main
+    loop alternates S_even/S_odd while accumulating into O (or O_lo/O_hi when
+    split_o). Peer CTAs return immediately.
+
+    Parameters:
+        MaskType: The MHAMask specialization governing tile masking behavior.
+        qkv_dtype: Element dtype of the Q, K, V operands.
+        config: Depth-256/512 SM100 attention configuration (tile sizes,
+            pipeline depths, split_o strategy).
+        page_size: Paged KV cache page size in keys.
+
+    Args:
+        smem: Shared-memory allocator holding Q, K, V, P buffers and mbarriers.
+        tmem_addr: Base TMEM address for this CTA pair's S/O accumulators.
+        seq_id: Sequence index used by the mask.
+        score_row: Starting query row index for this CTA pair.
+        num_keys: Number of valid keys in the KV cache for this sequence.
+        mask: Mask instance used to skip fully-masked tiles.
+    """
     comptime accum_type = DType.float32
     comptime BM = config.BM
     comptime BN = config.BN

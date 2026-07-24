@@ -16,7 +16,7 @@
 struct WeightsRegistry(ImplicitlyCopyable):
     """Bag of weights where names[i] names a weight with data weights[i]."""
 
-    var dict: Dict[String, OpaquePointer[ImmutUntrackedOrigin]]
+    var dict: Dict[String, OpaquePointer[ImmUntrackedOrigin]]
 
     def __init__(out self, *, copy: Self):
         """Copy an existing weights registry.
@@ -28,7 +28,7 @@ struct WeightsRegistry(ImplicitlyCopyable):
 
     def __getitem__(
         self, name: String
-    ) raises -> OpaquePointer[ImmutUntrackedOrigin]:
+    ) raises -> OpaquePointer[ImmUntrackedOrigin]:
         var lookup = self.dict.get(name)
         if lookup:
             return lookup.value()

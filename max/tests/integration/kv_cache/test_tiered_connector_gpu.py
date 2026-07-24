@@ -35,15 +35,17 @@ from max.nn.kv_cache import (
 )
 from max.nn.kv_cache.cache_params import KVCacheQuantizationConfig
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
-from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     PagedKVCacheManager,
 )
 
+
 # Test-fixture helpers for the bytes-only connector boundary: tests pre-date
-# Option A and used int hashes directly; ``_b`` wraps a single int and ``_hs``
-# wraps a variadic sequence into the canonical 8-byte signed-BE encoding.
-_b = to_block_hash_bytes
+# the bytes-only migration and used int hashes directly; ``_b`` wraps a single
+# int and ``_hs`` wraps a variadic sequence into the canonical 8-byte
+# signed-BE encoding.
+def _b(h: int) -> bytes:
+    return h.to_bytes(8, "big", signed=True)
 
 
 def _hs(*ns: int) -> list[bytes]:
@@ -154,7 +156,7 @@ def test_duplicate_hash_not_saved_twice() -> None:
 def test_load_returns_zero_for_empty_cache() -> None:
     connector = create_tiered_connector(page_size=16)
     loaded = connector.load([0, 1, 2], _hs(100, 200, 300))
-    assert loaded == 0
+    assert len(loaded.g0_blocks) == 0
     connector.shutdown()
 
 
@@ -163,7 +165,7 @@ def test_load_finds_cached_blocks() -> None:
     connector.offload([0, 1, 2], _hs(100, 200, 300))
 
     loaded = connector.load([3, 4, 5], _hs(100, 200, 300))
-    assert loaded == 3
+    assert len(loaded.g0_blocks) == 3
     connector.shutdown()
 
 
@@ -173,7 +175,7 @@ def test_load_stops_at_first_miss() -> None:
     connector.offload([2], _hs(300))
 
     loaded = connector.load([3, 4, 5], _hs(100, 200, 300))
-    assert loaded == 1
+    assert len(loaded.g0_blocks) == 1
     connector.shutdown()
 
 
@@ -183,7 +185,7 @@ def test_load_full_round_trip() -> None:
     connector.offload([0, 1], _hs(100, 200))
 
     loaded = connector.load([10, 11], _hs(100, 200))
-    assert loaded == 2
+    assert len(loaded.g0_blocks) == 2
     connector.shutdown()
 
 
@@ -270,7 +272,7 @@ def test_disk_promotion_to_cpu() -> None:
 
         # Load hash 100 -> should find it on disk and promote to CPU
         loaded = connector.load([10], _hs(100))
-        assert loaded == 1  # disk hit
+        assert len(loaded.g0_blocks) == 1  # disk hit
 
         connector.shutdown()
 
@@ -304,7 +306,7 @@ def test_full_round_trip() -> None:
 
         # Load [100, 200] -> both promoted from disk
         loaded = connector.load([20, 21], _hs(100, 200))
-        assert loaded == 2
+        assert len(loaded.g0_blocks) == 2
 
         connector.shutdown()
 
@@ -361,7 +363,7 @@ def test_load_breaks_chain_at_disk_miss() -> None:
 
         # Load [100, 200, 300] -> should stop at 200 (miss)
         loaded = connector.load([10, 11, 12], _hs(100, 200, 300))
-        assert loaded == 1  # only hash 100
+        assert len(loaded.g0_blocks) == 1  # only hash 100
 
         connector.shutdown()
 
@@ -399,29 +401,21 @@ def test_reset_prefix_cache_clears_cpu_and_disk() -> None:
         connector.shutdown()
 
 
-# -- Warm restart --
+# -- Shutdown removes the disk offload directory --
 
 
-def test_warm_restart_loads_disk_cache() -> None:
-    """Verify a new TieredConnector finds blocks persisted by a previous one."""
-    with tempfile.TemporaryDirectory(prefix="tiered_warm_") as disk_dir:
-        # First connector: write blocks to disk
-        c1 = create_tiered_connector(disk_cache_dir=disk_dir)
-        c1.offload([0, 1], _hs(100, 200))
-        c1.wait_for_offloads()
-        c1._disk_tier.wait_for_writes()
-        c1.shutdown()  # saves metadata
+def test_shutdown_removes_disk_cache_dir() -> None:
+    """The disk tier is ephemeral: shutdown deletes its cache directory."""
+    with tempfile.TemporaryDirectory(prefix="tiered_shutdown_") as parent:
+        disk_dir = str(Path(parent) / "offload")
+        connector = create_tiered_connector(disk_cache_dir=disk_dir)
+        connector.offload([0, 1], _hs(100, 200))
+        connector.wait_for_offloads()
+        connector._disk_tier.wait_for_writes()
+        assert Path(disk_dir).exists()
 
-        # Second connector: same disk dir -> should load metadata
-        c2 = create_tiered_connector(disk_cache_dir=disk_dir)
-        assert c2._disk_tier.contains(_b(100))
-        assert c2._disk_tier.contains(_b(200))
-
-        # Should be able to promote from disk
-        loaded = c2.load([10, 11], _hs(100, 200))
-        assert loaded == 2
-
-        c2.shutdown()
+        connector.shutdown()
+        assert not Path(disk_dir).exists()
 
 
 # -- Zero-copy disk writes (Change 4) --
@@ -569,6 +563,9 @@ def _write_block_pattern(buf: Buffer, block_id: int, seed: int) -> np.ndarray:
     buf.view(dtype=DType.uint8, shape=[buf.shape[0], nbytes])[
         block_id, :
     ].inplace_copy_from(host.to(buf.device))
+    # Sync the main-stream write before the connector's aux-stream D2H reads
+    # this block, else it offloads stale bytes (QUA-685 / MXSERV-227).
+    buf.device.synchronize()
     return pattern
 
 
@@ -731,8 +728,8 @@ def test_disk_round_trip_is_bit_exact(use_fp8: bool) -> None:
                 _write_block_pattern(b, bid, seed=0)
 
         loaded = connector.load(dst_blocks, hashes)
-        assert loaded == len(hashes), (
-            f"expected all {len(hashes)} blocks loaded from disk, got {loaded}"
+        assert len(loaded.g0_blocks) == len(hashes), (
+            f"expected all {len(hashes)} blocks loaded from disk, got {len(loaded.g0_blocks)}"
         )
 
         for dst_bid, h in zip(dst_blocks, hashes, strict=False):
@@ -821,7 +818,7 @@ def test_mixed_cpu_and_disk_chain_is_bit_exact(use_fp8: bool) -> None:
                 _write_block_pattern(b, bid, seed=0)
 
         loaded = connector.load(dst_blocks, hashes)
-        assert loaded == len(hashes)
+        assert len(loaded.g0_blocks) == len(hashes)
 
         for dst_bid, h in zip(dst_blocks, hashes, strict=False):
             actual = np.concatenate(
@@ -858,7 +855,6 @@ class _DiskConnectorConfig:
 
     disk_offload_dir: str
     disk_offload_max_gb: float
-    disk_offload_direct_io: bool
     host_kvcache_swap_space_gb: float
 
 
@@ -897,7 +893,6 @@ def _build_multi_cache_manager(
     cfg = _DiskConnectorConfig(
         disk_offload_dir=disk_dir,
         disk_offload_max_gb=1.0,
-        disk_offload_direct_io=False,
         host_kvcache_swap_space_gb=999.0,
     )
     sliding = _fp8_cache_params(cfg, n_kv_heads=4, head_dim=256)  # idx0
@@ -1012,7 +1007,7 @@ def test_multi_cache_disk_round_trip_restores_all_caches() -> None:
         }
 
         loaded = connector.load([bid], [block_hash])
-        assert loaded == 1
+        assert len(loaded.g0_blocks) == 1
 
         for i, b in enumerate(all_bufs):
             got = _read_block_bytes(b, bid)

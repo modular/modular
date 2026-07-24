@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import heapq
 import json
 import re
 from collections.abc import Sequence
@@ -386,52 +388,36 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
                 self.img_processor(images)
             )
 
-        # Process videos — unpack padded per-video arrays into flat
-        # per-frame lists so the model doesn't redo this every batch.
         video_frame_patches: list[npt.NDArray[np.float32]] = []
         video_frame_pos_ids: list[npt.NDArray[np.int32]] = []
-        video_frame_patch_counts: list[int] = []
-        video_frame_soft_token_counts: list[int] = []
         video_num_soft_tokens: list[int] = []
-
         video_metadata_list: list[VideoMetadata] = []
         video_hashes: list[int] = []
+        frames_per_video: list[int] = []
         if request.videos:
             (
                 padded_pvs,
                 padded_pos,
                 video_num_soft_tokens,
                 video_metadata_list,
-            ) = self.video_processor(request.videos)
-            k = self.video_processor.pooling_kernel_size
+            ) = await asyncio.to_thread(self.video_processor, request.videos)
+            frames_per_video = [int(pv.shape[0]) for pv in padded_pvs]
             for pv, pos in zip(padded_pvs, padded_pos, strict=True):
                 real_mask = pos[:, :, 0] >= 0
                 for f in range(pv.shape[0]):
                     n_real = int(real_mask[f].sum())
                     video_frame_patches.append(pv[f, :n_real, :])
                     video_frame_pos_ids.append(pos[f, :n_real, :])
-                    video_frame_patch_counts.append(n_real)
-                    video_frame_soft_token_counts.append(n_real // (k * k))
 
-            if self.enable_vision_caching:
-                # Content hash per video: hash all real pixels, then fold in
-                # (n_frames, patches_per_frame) so clips with identical pixels
-                # but different sizes don't collide (same pattern as M3).
-                for pv, pos in zip(padded_pvs, padded_pos, strict=True):
-                    n_frames = pv.shape[0]
-                    real_mask = pos[:, :, 0] >= 0
-                    real_patches = np.concatenate(
-                        [pv[f, real_mask[f]] for f in range(n_frames)], axis=0
-                    )
-                    pixel_hash = hash_image(real_patches)
-                    video_hashes.append(
-                        hash_image(
-                            np.array(
-                                [pixel_hash, n_frames, int(real_mask[0].sum())],
-                                dtype=np.int64,
-                            )
-                        )
-                    )
+            if self.enable_prefix_caching or self.enable_vision_caching:
+                video_size_tier = (
+                    self.video_processor.max_soft_tokens << 16
+                    | self.video_processor.num_frames
+                )
+                for raw_bytes, _metadata in zip(
+                    request.videos, video_metadata_list, strict=True
+                ):
+                    video_hashes.append(hash_image(raw_bytes, video_size_tier))
 
         # Expand image placeholders
         if isinstance(prompt, str):
@@ -515,7 +501,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         )
         json_schema = (
             json.dumps(response_format_schema)
-            if response_format_schema
+            if response_format_schema is not None
             else None
         )
 
@@ -530,32 +516,91 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise PromptTooLongError(encoded_prompt.shape[0], self.max_length)
 
-        # Build ImageMetadata for images only (not videos).
-        # Find contiguous ranges of *image* tokens only.
+        needs_image_hash = (
+            self.enable_prefix_caching or self.enable_vision_caching
+        )
         image_token_ranges = find_contiguous_ranges(
             encoded_prompt, [self.image_token_id]
         )
-        image_metadata = [
-            ImageMetadata(
-                start_idx=start_idx,
-                end_idx=end_idx,
-                pixel_values=pixels,
-                image_hash=hash_image(pixels)
-                if self.enable_prefix_caching or self.enable_vision_caching
-                else None,
+        image_size_tier = self.img_processor.max_soft_tokens
+        image_entries = (
+            (
+                ImageMetadata(
+                    start_idx=int(start_idx),
+                    end_idx=int(end_idx),
+                    pixel_values=pixels,
+                    image_hash=hash_image(raw_bytes, image_size_tier)
+                    if needs_image_hash
+                    else None,
+                ),
+                pos_ids,
             )
-            for (start_idx, end_idx), pixels in zip(
-                image_token_ranges, pixel_values_list, strict=True
+            for (start_idx, end_idx), pixels, raw_bytes, pos_ids in zip(
+                image_token_ranges,
+                pixel_values_list,
+                request.images,
+                pixel_position_ids_list,
+                strict=True,
             )
-        ]
+        )
 
-        # Build video token ranges
-        video_token_ranges = [
-            (int(s), int(e))
-            for s, e in find_contiguous_ranges(
-                encoded_prompt, [self.video_token_id]
+        frame_ranges = find_contiguous_ranges(
+            encoded_prompt, [self.video_token_id]
+        )
+        expected_frames = sum(frames_per_video)
+        if len(frame_ranges) != expected_frames:
+            raise ValueError(
+                f"Video placeholder mismatch: found {len(frame_ranges)} "
+                f"contiguous <video> run(s) in the prompt but the processor "
+                f"produced {expected_frames} frame(s). User-injected <video> "
+                "tokens are not supported."
             )
+        video_frame_keys = [
+            (video_idx, frame_idx)
+            for video_idx, n_frames in enumerate(frames_per_video)
+            for frame_idx in range(n_frames)
         ]
+        frame_entries = (
+            (
+                ImageMetadata(
+                    start_idx=int(start_idx),
+                    end_idx=int(end_idx),
+                    pixel_values=patches,
+                    image_hash=hash_image(
+                        np.array(
+                            [video_hashes[video_idx], frame_idx],
+                            dtype=np.int64,
+                        )
+                    )
+                    if needs_image_hash
+                    else None,
+                ),
+                pos_ids,
+            )
+            for (video_idx, frame_idx), (
+                start_idx,
+                end_idx,
+            ), patches, pos_ids in zip(
+                video_frame_keys,
+                frame_ranges,
+                video_frame_patches,
+                video_frame_pos_ids,
+                strict=True,
+            )
+        )
+
+        # image_entries and frame_entries are each already ordered by prompt
+        # position, but images and video frames can interleave in the prompt.
+        # Merge the two streams by start_idx so ctx.images lands in
+        # prompt order, which the embedding scatter and chunked-prefill cursor
+        # both require.
+        vision_entries = list(
+            heapq.merge(
+                image_entries, frame_entries, key=lambda e: e[0].start_idx
+            )
+        )
+        image_metadata = [meta for meta, _ in vision_entries]
+        pixel_position_ids_ordered = [pos for _, pos in vision_entries]
 
         eos_tracker = await self.create_eos_tracker(request)
         context = Gemma4Context(
@@ -563,13 +608,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             eos_tracker=eos_tracker,
             target_endpoint=request.target_endpoint,
             mm_token_type_ids=mm_token_type_ids.astype(np.int64, copy=False),
-            pixel_position_ids=pixel_position_ids_list,
-            video_frame_patches=video_frame_patches,
-            video_frame_pos_ids=video_frame_pos_ids,
-            video_frame_patch_counts=video_frame_patch_counts,
-            video_frame_soft_token_counts=video_frame_soft_token_counts,
-            video_token_ranges=video_token_ranges,
-            video_hashes=video_hashes,
+            pixel_position_ids=pixel_position_ids_ordered,
             tokens=TokenBuffer(
                 array=encoded_prompt.astype(np.int64, copy=False),
             ),

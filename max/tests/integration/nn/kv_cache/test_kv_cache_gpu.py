@@ -29,7 +29,6 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
-from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from test_common.context_utils import create_text_context
 
 
@@ -93,17 +92,23 @@ def test_multi_cache_connector_offloads_all_caches() -> None:
     sliding_cache = sliding_buf.values[0]
     global_cache = global_buf.values[0]
 
+    # The connector copies on an aux stream; these writes run on the main
+    # stream. Serving orders them via stream barriers, but this test pokes the
+    # buffers directly, so sync before each connector hand-off or the D2H/H2D
+    # copies race the writes. (Reads are ordered by ``wait_for_offloads``.)
     _write_block(sliding_cache, 0, 1.0)
     _write_block(global_cache, 0, 2.0)
+    device.synchronize()
 
-    connector.offload([0], [to_block_hash_bytes(42)])
+    connector.offload([0], [(42).to_bytes(8, "big", signed=True)])
     connector.wait_for_offloads()
 
     _write_block(sliding_cache, 0, 0.0)
     _write_block(global_cache, 0, 0.0)
+    device.synchronize()
 
-    loaded = connector.load([0], [to_block_hash_bytes(42)])
-    assert loaded == 1
+    loaded = connector.load([0], [(42).to_bytes(8, "big", signed=True)])
+    assert len(loaded.g0_blocks) == 1
     connector.wait_for_offloads()
 
     np.testing.assert_array_equal(sliding_cache.to_numpy()[0], 1.0)

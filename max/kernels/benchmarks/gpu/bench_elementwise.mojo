@@ -55,7 +55,7 @@ def run_elementwise[
     rank: Int,
     //,
     dtype: DType,
-    kernel_fn: def[dtype: DType, width: SIMDSize](
+    kernel_fn: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](
@@ -163,7 +163,7 @@ def main() raises:
     var op = arg_parse("op", "sqrt")
     comptime dtype = DType._from_str(
         get_defined_string["dtype", "DType.bfloat16"]()
-    )
+    ).value()
     comptime dims_str = get_defined_string["dims", "1x1024x3072"]()
     comptime dims = list_to_static_tuple[parse_shape[dims_str]()]()
     var m = Bench()

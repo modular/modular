@@ -679,7 +679,7 @@ def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
         dtype,
         output_origin=output_dev_nd.origin,
         OutputLayoutType=output_dev_nd.LayoutType,
-        input_origin=ImmutOrigin(input_dev_nd.origin),
+        input_origin=ImmOrigin(input_dev_nd.origin),
         InputLayoutType=input_dev_nd.LayoutType,
     ]
 

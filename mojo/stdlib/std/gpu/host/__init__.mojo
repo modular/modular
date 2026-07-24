@@ -19,16 +19,19 @@ from .device_context import (
     CompletionFlag,
     DeviceBuffer,
     DeviceContext,
+    DeviceContextArray,
     DeviceContextList,
     DeviceEvent,
     DeviceFunction,
-    DeviceGraph,
-    DeviceGraphBuilder,
-    DeviceGraphNode,
     DeviceMulticastBuffer,
     DevicePointer,
     DeviceStream,
     HostBuffer,
+)
+from .device_graph import (
+    DeviceGraph,
+    DeviceGraphBuilder,
+    DeviceGraphNode,
 )
 from .dim import Dim
 from .func_attribute import Attribute, FuncAttribute

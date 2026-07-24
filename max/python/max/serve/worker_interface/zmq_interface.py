@@ -17,7 +17,7 @@ import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any, Generic
 
 from max.pipelines.context import (
@@ -36,6 +36,7 @@ from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface import (
     ModelWorkerInterface,
     ModelWorkerProxy,
+    RequestQueueFull,
     WorkerQueues,
 )
 from max.serve.worker_interface._zmq_queue import ZmqConfig
@@ -60,6 +61,11 @@ class ZmqModelWorkerProxy(
         self.request_queue = request_queue
         self.response_queue = response_queue
         self.cancel_queue = cancel_queue
+        # Serializes admission (the writability probe + push) so the probe is
+        # authoritative: only one request is admitted at a time, and since the
+        # worker only ever frees request-queue slots, a positive probe
+        # guarantees the subsequent push does not block.
+        self._admission_lock = asyncio.Lock()
 
         # Each queued item is ``(enqueue_monotonic_s, result)`` so the
         # streaming layer can measure how long the response waited in the
@@ -75,28 +81,49 @@ class ZmqModelWorkerProxy(
         """Total responses buffered across all pending output queues."""
         return sum(q.qsize() for q in self.pending_out_queues.values())
 
-    @contextlib.asynccontextmanager
-    async def _open_channel(
-        self, req_id: RequestID, data: BaseContextType
-    ) -> AsyncGenerator[
-        asyncio.Queue[tuple[float, SchedulerResult[PipelineOutputType]]]
-    ]:
-        """
-        Async context manager to open a communication channel for a specific request.
+    async def wait_until_connected(self, timeout_s: float | None) -> None:
+        """Block until the request queue's PUSH/PULL handshake completes.
 
-        Registers a new asyncio.Queue for the given request ID, sends the request data
-        through the request push socket, and yields the queue for streaming results. Upon
-        exiting the context, the queue is cleaned up from the pending output queues.
-
-        Args:
-            req_id: The unique identifier for the request.
-            data: The input data associated with the request.
-
-        Yields:
-            asyncio.Queue: The queue to receive streamed results for the request.
+        Called once at startup (before the API server accepts connections) so
+        that at request time an unwritable socket unambiguously means the queue
+        is *full* -- never merely "not connected yet." This keeps the runtime
+        admission check (:meth:`stream`) a pure, immediate backpressure signal.
+        ``timeout_s`` of ``None`` waits indefinitely.
 
         Raises:
-            RuntimeError: If a queue for the given req_id already exists, indicating a duplicate request.
+            RuntimeError: If the worker does not connect within ``timeout_s``.
+        """
+        if not await self.request_queue.writable(timeout_s=timeout_s):
+            within = "" if timeout_s is None else f" within {timeout_s:g}s"
+            raise RuntimeError(
+                f"Model worker request queue did not connect{within}."
+            )
+
+    async def stream(
+        self, req_id: RequestID, data: BaseContextType
+    ) -> AsyncGenerator[list[PipelineOutputType], None]:
+        """Submit a request to the model worker and return a response generator.
+
+        Awaiting this coroutine registers an output queue for ``req_id`` and
+        puts ``data`` on the request queue (the handoff to the model worker).
+        The push is the admission gate: if the bounded request queue
+        (``Settings.max_queue_size``) has no room, :class:`RequestQueueFull` is
+        raised *immediately* (before any response is streamed and with no
+        registration left behind), so the API can shed load with HTTP 429
+        without adding latency to the rejected request. The returned async
+        generator drains responses until the request completes.
+
+        The check is a point-in-time writability probe rather than a timed
+        blocking send: connectivity is established once at startup (see
+        :meth:`wait_until_connected`), so an unwritable socket here means the
+        queue is full, not that the worker is still connecting.
+
+        The yielded lists are guaranteed to be non-empty and ordered.
+
+        Raises:
+            RuntimeError: If a queue for the given ``req_id`` already exists,
+                indicating a duplicate request.
+            RequestQueueFull: If the worker request queue is at capacity.
         """
         if req_id in self.pending_out_queues:
             raise RuntimeError(
@@ -105,34 +132,46 @@ class ZmqModelWorkerProxy(
                 "Please ensure that the `req_id` is unique for each request."
             )
 
-        out_queue: asyncio.Queue[
-            tuple[float, SchedulerResult[PipelineOutputType]]
-        ] = asyncio.Queue()
-        self.pending_out_queues[req_id] = out_queue
-        try:
-            await self.request_queue.put(data)
-            yield out_queue
-        except BaseException:
+        # Admission gate. Probe writability and push under a lock so the probe
+        # is authoritative: a full request queue (the worker has stopped
+        # draining under load) is rejected immediately, and because only one
+        # request is admitted at a time and the worker only frees slots, the
+        # push after a positive probe does not block. (A bare non-blocking send
+        # is unsafe here: with a finite high-water mark a multipart send can
+        # accept some frames and then EAGAIN, desyncing the stream.)
+        async with self._admission_lock:
+            if not await self.request_queue.writable():
+                raise RequestQueueFull(
+                    f"Model worker request queue is full; rejecting {req_id}."
+                )
+
+            out_queue: asyncio.Queue[
+                tuple[float, SchedulerResult[PipelineOutputType]]
+            ] = asyncio.Queue()
+            self.pending_out_queues[req_id] = out_queue
             try:
-                self.cancel(req_id)
-            except Exception:
-                pass
-            raise
-        finally:
-            del self.pending_out_queues[req_id]
+                await self.request_queue.put(data)
+            except BaseException:
+                # Submission failed before any response streamed; roll back the
+                # registration and cancel so the worker drops partial state.
+                del self.pending_out_queues[req_id]
+                with contextlib.suppress(Exception):
+                    self.cancel(req_id)
+                raise
 
-    async def stream(
-        self, req_id: RequestID, data: BaseContextType
-    ) -> AsyncIterator[list[PipelineOutputType]]:
+        return self._drain_responses(req_id, out_queue)
+
+    async def _drain_responses(
+        self,
+        req_id: RequestID,
+        queue: asyncio.Queue[tuple[float, SchedulerResult[PipelineOutputType]]],
+    ) -> AsyncGenerator[list[PipelineOutputType], None]:
+        """Drain the output queue for a submitted request until it completes.
+
+        Cleans up the pending output queue on exit and cancels the request with
+        the worker if the stream is abandoned before completing normally.
         """
-        Asynchronously streams results for a given request ID and input data.
-
-        Opens a channel for the request, drains the queue to build output batches,
-        and closes the channel when the stream ends.
-
-        The yielded lists are guaranteed to be non-empty and ordered.
-        """
-        async with self._open_channel(req_id, data) as queue:
+        try:
             # queue.get() will wait until an item is available.
             # This will exit when no result is passed in the SchedulerResult.
             # or the SchedulerResult states that we should stop the stream.
@@ -170,6 +209,14 @@ class ZmqModelWorkerProxy(
 
                 if should_stop:
                     break
+        except BaseException:
+            # The consumer abandoned the stream (e.g. client disconnect) or an
+            # error occurred mid-stream; tell the worker to stop generating.
+            with contextlib.suppress(Exception):
+                self.cancel(req_id)
+            raise
+        finally:
+            del self.pending_out_queues[req_id]
 
     def cancel(self, req_id: RequestID) -> None:
         """
@@ -234,10 +281,17 @@ class ZmqModelWorkerInterface(
         self,
         pipeline_task: PipelineTask,
         context_type: type[TextContext] | type[EmbeddingsContext],
+        request_queue_size: int | None = None,
     ) -> None:
         response_type = _response_type_for_task(pipeline_task)
 
-        self.request_queue_config = ZmqConfig[BaseContextType](context_type)
+        # Bound the request queue (cap N) so an overloaded worker exerts
+        # backpressure: once the queue is full, ``stream`` raises
+        # ``RequestQueueFull`` and the API rejects with HTTP 429 instead of
+        # letting the backlog to the worker grow without bound.
+        self.request_queue_config = ZmqConfig[BaseContextType](
+            context_type, high_water_mark=request_queue_size
+        )
         self.response_queue_config = ZmqConfig[
             dict[RequestID, SchedulerResult[PipelineOutputType]]
         ](response_type)

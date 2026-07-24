@@ -13,6 +13,7 @@
 
 from std.random import random_ui64, seed
 from std.math.uutils import udivmod
+from std.sys.defines import get_defined_string
 
 from std.gpu.host import DeviceBuffer, DeviceContext
 from kv_cache.types import (
@@ -34,7 +35,7 @@ from layout import (
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from linalg.matmul.gpu import _matmul_gpu
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.kv_cache_ragged import (
     _fused_qkv_matmul_kv_cache_ragged_impl,
     _matmul_k_cache_ragged_impl,
@@ -122,7 +123,7 @@ def _initialize_ragged_inputs[
                 hidden_state_ragged_host_ptr
                 + (ragged_start_idx + s) * hidden_size
             )
-            memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
+            unsafe_memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
 
     var hidden_state_padded_device = ctx.enqueue_create_buffer[dtype](
         padded_size
@@ -733,7 +734,7 @@ def generic_assert_output_equals[
 # prove that and rejects passing both as separately-writable arguments. Disable
 # the nested-origin exclusivity check as a stopgap; the proper fix is to give the
 # k/v views provably-disjoint origins instead of sharing the collection's.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def generic_execute_fused_qkv_cache_ragged[
     cache_t: KVCacheT,
     //,
@@ -1166,32 +1167,33 @@ def execute_cont_batch_fused_qkv_matmul[
 
 
 # TODO implement fused qkv matmul for paged
-def execute_fused_matmul_suite(ctx: DeviceContext) raises:
-    comptime dtypes_tolerances = ((DType.float32, 1e-3), (DType.bfloat16, 1e-2))
+def execute_fused_matmul_suite[
+    dtype: DType, rtol: Float64
+](ctx: DeviceContext) raises:
+    comptime test_kernel = get_defined_string["test_kernel", "all"]()
 
-    comptime for dtype_idx in range(2):
-        comptime dtype = dtypes_tolerances[dtype_idx][0]
-        comptime rtol = dtypes_tolerances[dtype_idx][1]
+    for bs in [1, 16]:
+        ce_cache_sizes = List[Int]()
+        ce_seq_lens = List[Int]()
+        tg_cache_sizes = List[Int]()
+        tg_seq_lens = List[Int]()
+        for _ in range(bs):
+            tg_seq_lens.append(1)
+            # TODO increase sizes here to ensure we cross page boundary.
+            tg_cache_sizes.append(Int(random_ui64(512, 700)))
+            ce_seq_lens.append(Int(random_ui64(512, 700)))
+            ce_cache_sizes.append(0)
 
-        for bs in [1, 16]:
-            ce_cache_sizes = List[Int]()
-            ce_seq_lens = List[Int]()
-            tg_cache_sizes = List[Int]()
-            tg_seq_lens = List[Int]()
-            for _ in range(bs):
-                tg_seq_lens.append(1)
-                # TODO increase sizes here to ensure we cross page boundary.
-                tg_cache_sizes.append(Int(random_ui64(512, 700)))
-                ce_seq_lens.append(Int(random_ui64(512, 700)))
-                ce_cache_sizes.append(0)
-
-            # llama3 context encoding
+        # llama3 context encoding
+        comptime if test_kernel == "all" or test_kernel == "fused_cont":
             execute_cont_batch_fused_qkv_matmul[
                 llama_num_q_heads, dtype, kv_params_llama3, rtol
             ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
+        comptime if test_kernel == "all" or test_kernel == "fused_paged":
             execute_paged_fused_qkv_matmul[
                 llama_num_q_heads, dtype, kv_params_llama3, rtol
             ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
+        comptime if test_kernel == "all" or test_kernel == "kv_cont":
             execute_matmul_kv_cache_ragged[
                 llama_num_q_heads, dtype, kv_params_llama3, rtol
             ](
@@ -1202,17 +1204,21 @@ def execute_fused_matmul_suite(ctx: DeviceContext) raises:
                 layer_idx=1,
                 ctx=ctx,
             )
+        comptime if test_kernel == "all" or test_kernel == "k_paged":
             execute_matmul_k_cache_ragged[
                 llama_num_q_heads, dtype, kv_params_llama3, rtol
             ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
 
-            # llama3 token gen
+        # llama3 token gen
+        comptime if test_kernel == "all" or test_kernel == "fused_cont":
             execute_cont_batch_fused_qkv_matmul[
                 llama_num_q_heads, dtype, kv_params_llama3, rtol
             ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
+        comptime if test_kernel == "all" or test_kernel == "fused_paged":
             execute_paged_fused_qkv_matmul[
                 llama_num_q_heads, dtype, kv_params_llama3, rtol
             ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
+        comptime if test_kernel == "all" or test_kernel == "kv_cont":
             execute_matmul_kv_cache_ragged[
                 llama_num_q_heads, dtype, kv_params_llama3, rtol
             ](
@@ -1223,6 +1229,7 @@ def execute_fused_matmul_suite(ctx: DeviceContext) raises:
                 layer_idx=3,
                 ctx=ctx,
             )
+        comptime if test_kernel == "all" or test_kernel == "k_paged":
             execute_matmul_k_cache_ragged[
                 llama_num_q_heads, dtype, kv_params_llama3, rtol
             ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
@@ -1230,5 +1237,28 @@ def execute_fused_matmul_suite(ctx: DeviceContext) raises:
 
 def main() raises:
     seed(42)
+
+    comptime test_dtype = get_defined_string["test_dtype", "all"]()
+    comptime assert (
+        test_dtype == "all"
+        or test_dtype == "bfloat16"
+        or test_dtype == "float32"
+    ), "test_dtype must be one of: all, bfloat16, float32"
+
+    comptime test_kernel = get_defined_string["test_kernel", "all"]()
+    comptime assert (
+        test_kernel == "all"
+        or test_kernel == "fused_cont"
+        or test_kernel == "fused_paged"
+        or test_kernel == "kv_cont"
+        or test_kernel == "k_paged"
+    ), (
+        "test_kernel must be one of: all, fused_cont, fused_paged, kv_cont,"
+        " k_paged"
+    )
+
     with DeviceContext() as ctx:
-        execute_fused_matmul_suite(ctx)
+        comptime if test_dtype == "all" or test_dtype == "float32":
+            execute_fused_matmul_suite[DType.float32, 1e-3](ctx)
+        comptime if test_dtype == "all" or test_dtype == "bfloat16":
+            execute_fused_matmul_suite[DType.bfloat16, 1e-2](ctx)

@@ -19,7 +19,7 @@ from std.math import ceil
 
 from std.sys import bit_width_of
 from std.bit import count_leading_zeros
-from std.memory import Span
+from std.collections import Span
 from std.memory.alloc import alloc, dealloc, Layout
 
 # ===-----------------------------------------------------------------------===#
@@ -38,21 +38,23 @@ def _insertion_sort[
     cmp_fn: def(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]):
     """Sort the array[start:end] slice"""
-    var array = span.unsafe_ptr().as_unsafe_any_origin()
+    var array = span.as_ref().as_unsafe_any_origin()
     var size = len(span)
 
     for i in range(1, size):
-        var value = (array + i).take_pointee()
+        var value = array.unsafe_offset(i).unsafe_take_pointee()
         var j = i
 
         # Find the placement of the value in the array, shifting as we try to
         # find the position. Throughout, we assume array[start:i] has already
         # been sorted.
-        while j > 0 and cmp_fn(value, array[j - 1]):
-            (array + j).init_pointee_move_from(array + j - 1)
+        while j > 0 and cmp_fn(value, array[unsafe_offset=j - 1]):
+            array.unsafe_offset(j).unsafe_write_move_from(
+                array.unsafe_offset(j - 1)
+            )
             j -= 1
 
-        (array + j).init_pointee_move(value^)
+        array.unsafe_offset(j).unsafe_write(value^)
 
 
 # put everything that's "<" to the left of pivot
@@ -230,7 +232,7 @@ def _quicksort[
         # already have array[-1] <= array[0]
         var interval_ptr = interval.unsafe_ptr()
         if interval_ptr > span.unsafe_ptr() and not cmp_fn(
-            interval_ptr[-1], interval_ptr[0]
+            interval_ptr[unsafe_offset=-1], interval_ptr[unsafe_offset=0]
         ):
             var pivot = _quicksort_partition_left[cmp_fn](interval)
             if len > pivot + 2:
@@ -261,7 +263,7 @@ def _quicksort[
 
 # This is being passed mutable origins that are taken from the same memory
 # object, so of course they alias.  The caller guarantees they don't overlap.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def _merge[
     T: Copyable,
     span_origin: MutOrigin,
@@ -291,9 +293,9 @@ def _merge[
     """
     var span1_size = len(span1)
     var span2_size = len(span2)
-    var span1_ptr = span1.unsafe_ptr()
-    var span2_ptr = span2.unsafe_ptr()
-    var res_ptr = result.unsafe_ptr()
+    var span1_ptr = span1.as_ref()
+    var span2_ptr = span2.as_ref()
+    var res_ptr = result.as_ref()
 
     assert span1_size + span2_size <= len(
         result
@@ -304,20 +306,28 @@ def _merge[
     while i < span1_size:
         if j == span2_size:
             while i < span1_size:
-                (res_ptr + k).init_pointee_move_from(span1_ptr + i)
+                res_ptr.unsafe_offset(k).unsafe_write_move_from(
+                    span1_ptr.unsafe_offset(i)
+                )
                 k += 1
                 i += 1
             return
         if cmp_fn(span2.unsafe_get(j), span1.unsafe_get(i)):
-            (res_ptr + k).init_pointee_move_from(span2_ptr + j)
+            res_ptr.unsafe_offset(k).unsafe_write_move_from(
+                span2_ptr.unsafe_offset(j)
+            )
             j += 1
         else:
-            (res_ptr + k).init_pointee_move_from(span1_ptr + i)
+            res_ptr.unsafe_offset(k).unsafe_write_move_from(
+                span1_ptr.unsafe_offset(i)
+            )
             i += 1
         k += 1
 
     while j < span2_size:
-        (res_ptr + k).init_pointee_move_from(span2_ptr + j)
+        res_ptr.unsafe_offset(k).unsafe_write_move_from(
+            span2_ptr.unsafe_offset(j)
+        )
         k += 1
         j += 1
 
@@ -351,8 +361,8 @@ def _stable_sort_impl[
             )
             _merge[cmp_fn](span1, span2, temp_buff)
             for i in range(merge_size + len(span2)):
-                UnsafePointer(to=span.unsafe_get(j + i)).init_pointee_move_from(
-                    UnsafePointer(to=temp_buff.unsafe_get(i))
+                Pointer(to=span.unsafe_get(j + i)).unsafe_write_move_from(
+                    Pointer(to=temp_buff.unsafe_get(i))
                 )
             j += 2 * merge_size
         merge_size *= 2
@@ -422,7 +432,7 @@ def _partition[
         elif k < pivot:
             span = span.unsafe_subspan(offset=0, length=pivot)
         else:
-            span._data += pivot + 1
+            span._data = span._data.unsafe_offset(pivot + 1)
             span._len -= pivot + 1
             k -= pivot + 1
 

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import Vendor
+from std.sys import Vendor
 from layout import TileTensor, coord, row_major
 from nn.irfft import irfft
 from std.testing import assert_almost_equal

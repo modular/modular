@@ -17,8 +17,12 @@ from .plugin import (
     RawDriver,
     OutParam,
     DeviceHandle,
+    M_driver_dlpack_device,
 )
 from .status import STATUS_SUCCESS, STATUS_INVALID_ARG, HALError
+
+from std.collections import InlineArray
+from std.ffi import c_char
 
 from std.memory import (
     ArcPointer,
@@ -28,7 +32,11 @@ from std.memory.arc_pointer import WeakPointer
 
 from std.gpu.host.compile import get_gpu_target
 from std.gpu.host.info import GPUInfo
-from machine import MachineDefinition, DeviceRef, DeviceSpec
+from ._machine import MachineDefinition, DeviceRef, DeviceSpec
+
+# Buffer size for string-valued device properties; must match
+# M_DRIVER_DEVICE_PROPERTY_MAX_LEN in SDK/include/HAL/M_driver_device.h.
+comptime _DEVICE_PROPERTY_MAX_LEN = 256
 
 
 def get_machine_definition() -> MachineDefinition:
@@ -128,3 +136,40 @@ struct Device[spec: DeviceSpec](ImplicitlyDeletable, Movable):
         self,
     ) raises HALError -> ArcPointer[Context[Self.spec]]:
         return Context[Self.spec]._create(self)
+
+    def get_attribute(self, attribute: Int32) raises HALError -> Int32:
+        """Queries a numeric device attribute by its CUDA-style ID."""
+        return self._raw[].get_device_attribute(self._handle, attribute)
+
+    def get_dlpack_device(
+        self, pinned: Bool
+    ) raises HALError -> M_driver_dlpack_device:
+        """Returns the DLPack `(device_type, device_id)` for this device."""
+        if pinned:
+            return self._raw[].get_device_property[
+                "dlpack_device_pinned", M_driver_dlpack_device
+            ](self._handle)
+        return self._raw[].get_device_property[
+            "dlpack_device", M_driver_dlpack_device
+        ](self._handle)
+
+    def get_name(self) raises HALError -> String:
+        """Queries the device's human-readable name."""
+        var buf = InlineArray[Int8, _DEVICE_PROPERTY_MAX_LEN](fill=0)
+        self._raw[].get_device_property_string["name"](
+            self._handle, buf.unsafe_ptr()
+        )
+        return String(unsafe_from_utf8_ptr=buf.unsafe_ptr().bitcast[c_char]())
+
+    def get_arch(self) raises HALError -> String:
+        """Queries the device's compile-target architecture name.
+
+        For AMD GPUs this is the `gfx*` name (e.g. `gfx942`); vendors whose arch
+        is derived host-side (e.g. CUDA `sm_<cc>`) need not implement this
+        plugin property.
+        """
+        var buf = InlineArray[Int8, _DEVICE_PROPERTY_MAX_LEN](fill=0)
+        self._raw[].get_device_property_string["arch"](
+            self._handle, buf.unsafe_ptr()
+        )
+        return String(unsafe_from_utf8_ptr=buf.unsafe_ptr().bitcast[c_char]())

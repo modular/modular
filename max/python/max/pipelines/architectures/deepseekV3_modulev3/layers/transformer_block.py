@@ -22,6 +22,9 @@ from typing import Any
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
+from max.experimental.nn.common_layers.multi_latent_attention import (
+    MLAPrefillMetadata,
+)
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.sharding import Partial, PlacementMapping
 from max.experimental.tensor import Tensor
@@ -86,8 +89,13 @@ def _get_mlp(
             return ExpertParallelMoE(
                 **moe_kwargs, ep_batch_manager=ep_batch_manager
             )
-        if config.mesh is not None and config.mesh.num_devices > 1:
+        if (
+            mode is not ParallelismMode.DP_EP
+            and config.mesh is not None
+            and config.mesh.num_devices > 1
+        ):
             return TensorParallelMoE(**moe_kwargs)
+        # Single device or pure data parallelism: replicated expert set.
         return QuantizedMoE(**moe_kwargs)
     mlp = QuantizedMLP(
         hidden_dim=config.hidden_size,
@@ -140,13 +148,12 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
                 self.mode = ParallelismMode.TP_EP
             else:
                 self.mode = ParallelismMode.DP_EP
+        elif config.data_parallel_degree == num_devices:
+            # Pure data parallelism needs no residual collectives -- exactly
+            # the DP_EP arms of the hooks below.
+            self.mode = ParallelismMode.DP_EP
         else:
             self.mode = ParallelismMode.TP_TP
-
-        if self.mode not in (ParallelismMode.TP_TP, ParallelismMode.TP_EP):
-            raise NotImplementedError(
-                f"Multi-device parallelism mode {self.mode.value} not yet implemented"
-            )
 
         self.self_attn = QuantizedLatentAttentionWithRope(
             num_attention_heads=config.num_attention_heads,
@@ -180,6 +187,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
         freqs_cis: Tensor,
+        mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> Tensor:
         residual = x
         norm_x = self.input_layernorm(x)
@@ -189,6 +197,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
             freqs_cis,
             layer_idx,
             input_row_offsets,
+            mla_prefill_metadata,
         )
 
         hidden_states = self._post_attention(residual, attn_out)

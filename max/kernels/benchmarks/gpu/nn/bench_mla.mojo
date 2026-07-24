@@ -44,10 +44,10 @@ from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import (
+from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLASparseConfig,
-    mla_prefill_sparse,
 )
+from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
 from nn.attention.mha_mask import CausalMask
 
 from std.utils.index import Index, IndexList
@@ -165,7 +165,7 @@ def bench_decode[
 
         b.iter_custom[_kernel_launch](ctx)
 
-    def compute_flops() {read} -> Int:
+    def compute_flops() {imm} -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
     m.bench_function[bench_func](
@@ -358,7 +358,7 @@ def bench_prefill[
 
         b.iter_custom[_kernel_launch](ctx)
 
-    def compute_flops() {read} -> Int:
+    def compute_flops() {imm} -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
     m.bench_function[bench_func](
@@ -403,7 +403,7 @@ def bench_prefill_sparse[
     q_tmem_depth: Int = 384,
     page_size: Int = 128,
     cache_busting: Bool = True,
-](mut m: Bench, s_q: Int, num_kv_tokens: Int, ctx: DeviceContext,) raises:
+](mut m: Bench, s_q: Int, num_kv_tokens: Int, ctx: DeviceContext) raises:
     var scale = Float32(1.0) / sqrt(Float32(192.0))
     comptime kv_num_heads = 1
     comptime num_layers = 1
@@ -559,7 +559,7 @@ def bench_prefill_sparse[
 
         b.iter_custom[_kernel_launch](ctx)
 
-    def compute_flops() {read} -> Int:
+    def compute_flops() {imm} -> Int:
         return 2 * s_q * topk * num_heads * (qk_depth + v_depth)
 
     m.bench_function[bench_func](

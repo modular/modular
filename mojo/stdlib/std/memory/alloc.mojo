@@ -17,7 +17,7 @@ This module provides the `alloc` and `dealloc` functions together with a
 the call site, keeping ownership and layout information explicit and
 co-located.
 
-Allocations are represented by two explicitly destroyed (`@explicit_destroy`)
+Allocations are represented by two explicitly destroyed
 owning handles, so the compiler forces every allocation to be released on all
 paths — either by passing it to `dealloc` or by taking the raw pointer with
 `unsafe_leak()`:
@@ -32,7 +32,7 @@ paths — either by passing it to `dealloc` or by taking the raw pointer with
 
 For automatic cleanup, an `Allocation` can be converted into a
 `DeletableAllocation[T]` with `into_deletable()`. Unlike the two explicitly
-destroyed handles, a `DeletableAllocation` is not `@explicit_destroy`: it
+destroyed handles, a `DeletableAllocation` implements `ImplicitlyDeletable`: it
 deallocates its storage in its destructor, which Mojo runs automatically after
 the value's last use (ASAP destruction), so no explicit `dealloc` is needed.
 Like `dealloc`, this frees the storage without running the destructors of any
@@ -44,21 +44,21 @@ Allocate, use, and free storage through the `Allocation` returned by `alloc`:
 
 ```mojo
 from std.memory.alloc import alloc, dealloc, Layout
-from std.memory import destroy_n
+from std.memory import unsafe_destroy_n
 
 var allocation = alloc(Layout[String](count=4))
 var ptr = allocation.unsafe_ptr()
 
 # initialize the memory
 for i in range(allocation.layout().count()):
-    (ptr + i).init_pointee_move("🔥")
+    (ptr + i).unsafe_write("🔥")
 
 # print the values
 for string in allocation.unsafe_span():
     print(string) # prints "🔥"
 
 # deinitialize the values
-destroy_n(allocation.unsafe_ptr(), allocation.layout().count())
+unsafe_destroy_n(allocation.unsafe_ptr(), allocation.layout().count())
 
 # deallocate the memory
 dealloc(allocation^)
@@ -77,14 +77,14 @@ dealloc(thin^.unsafe_with_layout(layout))
 
 Memory safety:
 
-Because `Allocation` and `ThinAllocation` are `@explicit_destroy` types, the
-compiler catches the three classic allocation bugs at compile time, instead of
-leaving them as runtime hazards.
+Because `Allocation` and `ThinAllocation` are non-`ImplicitlyDeletable types,
+the compiler catches the three classic allocation bugs at compile time, instead
+of leaving them as runtime hazards.
 
 An accidental leak is rejected: the compiler requires every `Allocation` to be
 destroyed on every path, including error paths. If an intervening operation can
 raise, skipping the `dealloc`, that is an error (whose message includes the
-guidance from `@explicit_destroy`):
+guidance from `@explicit_destroy(..)`):
 
 ```mojo
 from std.memory import alloc, dealloc, Layout
@@ -133,7 +133,9 @@ from std.sys.intrinsics import unlikely
     " out of scope. Deallocate it with `dealloc(allocation^)`, or call"
     " `unsafe_leak()` to take ownership of the underlying pointer."
 )
-struct Allocation[T: AnyType](RegisterPassable, Writable):
+struct Allocation[T: AnyType](
+    ImplicitlyDeletable where False, RegisterPassable, Writable
+):
     """An owning handle to a heap allocation of `T` together with its `Layout`.
 
     An `Allocation` pairs a `ThinAllocation` (the raw owning pointer) with the
@@ -141,7 +143,7 @@ struct Allocation[T: AnyType](RegisterPassable, Writable):
     deallocate the storage travel with the pointer. It is the value returned by
     `alloc`.
 
-    `Allocation` is an explicitly destroyed (`@explicit_destroy`) type: it is
+    `Allocation` is an explicitly destroyed type: it is
     never deallocated automatically, and the compiler requires every value to be
     destroyed manually on all paths. This prevents accidental leaks and
     double-frees. Destroy one by either:
@@ -236,7 +238,7 @@ struct Allocation[T: AnyType](RegisterPassable, Writable):
         `alloc` returns uninitialized storage, so the returned span may cover
         uninitialized memory. Initialize the elements before reading them.
         """
-        return {ptr = self.unsafe_ptr(), length = self._layout.count()}
+        return {unsafe_ptr = self.unsafe_ptr(), length = self._layout.count()}
 
     def layout(self) -> Layout[Self.T]:
         """Returns the `Layout` the storage was allocated with.
@@ -274,8 +276,8 @@ struct Allocation[T: AnyType](RegisterPassable, Writable):
         you have initialized in the storage: no element destructors are run,
         either by this conversion or when the `DeletableAllocation` is later
         destroyed. If the elements need their destructors run, destroy them
-        yourself (for example with `destroy_n`) before the `DeletableAllocation`
-        is destroyed.
+        yourself (for example with `unsafe_destroy_n`) before the
+        `DeletableAllocation` is destroyed.
 
         Returns:
             A `DeletableAllocation` owning this storage.
@@ -286,11 +288,11 @@ struct Allocation[T: AnyType](RegisterPassable, Writable):
         from std.memory.alloc import alloc, Layout
 
         var deletable = alloc(Layout[String](count=4)).into_deletable()
-        deletable.unsafe_ptr().init_pointee_move("hello")
+        deletable.unsafe_ptr().unsafe_write("hello")
 
         # Even though the allocation is automatically cleaned up, destructors
         # must still be manually run!
-        std.memory.destroy_n(deletable.unsafe_ptr(), 1)
+        std.memory.unsafe_destroy_n(deletable.unsafe_ptr(), 1)
 
         # No `dealloc` needed: `deletable` frees its storage when destroyed.
         ```
@@ -324,10 +326,10 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
 
     A `DeletableAllocation` wraps an `Allocation` and deallocates the storage in
     its destructor. It is the self-freeing counterpart to `Allocation`: where
-    `Allocation` is `@explicit_destroy` and must be passed to `dealloc` on every
-    path, a `DeletableAllocation` deallocates its storage automatically. Mojo
-    runs the destructor after the value's last use, following its "as soon as
-    possible" (ASAP) destruction policy — including on error paths, where the
+    `Allocation` is non-`ImplicitlyDeletable` and must be passed to `dealloc` on
+    every path, a `DeletableAllocation` deallocates its storage automatically.
+    Mojo runs the destructor after the value's last use, following its "as soon
+    as possible" (ASAP) destruction policy — including on error paths, where the
     destructor runs as the stack unwinds.
 
     This trades the compile-time leak-proofing of `Allocation` for ergonomics:
@@ -339,8 +341,8 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
 
     Like `dealloc`, the destructor frees the storage but does not run the
     destructors of any elements written into it. If the elements need their
-    destructors run, destroy them yourself (for example with `destroy_n`) before
-    the `DeletableAllocation` is destroyed.
+    destructors run, destroy them yourself (for example with
+    `unsafe_destroy_n`) before the `DeletableAllocation` is destroyed.
 
     Parameters:
         T: The type of the elements stored in the allocation.
@@ -353,7 +355,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
     var deletable = alloc(Layout[Int32](count=4)).into_deletable()
     var ptr = deletable.unsafe_ptr()
     for i in range(4):
-        (ptr + i).init_pointee_move(i)
+        (ptr + i).unsafe_write(i)
     # `deletable` frees its storage when it is destroyed (after its last use).
     ```
     """
@@ -381,7 +383,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
         Releases the storage owned by the wrapped `Allocation` by passing it to
         `dealloc`. Like `dealloc`, this frees the storage but does not run the
         destructors of any elements written into it; destroy them yourself (for
-        example with `destroy_n`) beforehand if they need it.
+        example with `unsafe_destroy_n`) beforehand if they need it.
         """
         dealloc(self._alloc^)
 
@@ -454,7 +456,9 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
     " with its layout: `dealloc(allocation^.unsafe_with_layout(layout))`, or"
     " call `unsafe_leak()` to take ownership of the underlying pointer."
 )
-struct ThinAllocation[T: AnyType](RegisterPassable, Writable):
+struct ThinAllocation[T: AnyType](
+    ImplicitlyDeletable where False, RegisterPassable, Writable
+):
     """An owning handle to a heap allocation of `T`, without its `Layout`.
 
     A `ThinAllocation` is the minimal owning handle to allocated storage: just
@@ -476,13 +480,13 @@ struct ThinAllocation[T: AnyType](RegisterPassable, Writable):
         T: The type of the elements stored in the allocation.
     """
 
-    var _ptr: UnsafePointer[Self.T, MutUntrackedOrigin]
+    var _ptr: Pointer[Self.T, MutUntrackedOrigin]
     """The owning pointer to the allocated storage."""
 
     def __init__(
         out self,
         *,
-        unsafe_assume_ownership: UnsafePointer[Self.T, MutUntrackedOrigin],
+        unsafe_assume_ownership: Pointer[Self.T, MutUntrackedOrigin],
     ):
         """Initializes a `ThinAllocation` that takes ownership of a raw pointer.
 
@@ -525,7 +529,7 @@ struct ThinAllocation[T: AnyType](RegisterPassable, Writable):
 
     def unsafe_leak(
         deinit self,
-    ) -> UnsafePointer[Self.T, MutUntrackedOrigin]:
+    ) -> Pointer[Self.T, MutUntrackedOrigin]:
         """Consumes the `ThinAllocation` and returns its raw owning pointer.
 
         `ThinAllocation` is an explicitly destroyed type: it is never
@@ -546,7 +550,7 @@ struct ThinAllocation[T: AnyType](RegisterPassable, Writable):
         origin: Origin,
         address_space: AddressSpace,
         //,
-    ](ref[origin, address_space] self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> Pointer[
         Self.T, origin, address_space=address_space
     ]:
         """Returns a pointer to the allocated storage without consuming `self`.
@@ -566,7 +570,7 @@ struct ThinAllocation[T: AnyType](RegisterPassable, Writable):
         return (
             self._ptr.unsafe_mut_cast[origin.mut]()
             .unsafe_origin_cast[origin]()
-            .address_space_cast[address_space]()
+            .unsafe_address_space_cast[address_space]()
         )
 
     def write_to(self, mut writer: Some[Writer]):
@@ -597,7 +601,62 @@ def _alloc_bytes(
     return pointer.unsafe_value()
 
 
-def alloc[T: AnyType, //](layout: Layout[T], /) -> Allocation[T]:
+@always_inline
+def alloc[
+    type: AnyType, /
+](count: Int, *, alignment: Int = align_of[type]()) -> UnsafePointer[
+    type, MutUntrackedOrigin
+]:
+    """Allocates contiguous storage for `count` elements of `type` with
+    alignment `alignment`.
+
+    Parameters:
+        type: The type of the elements to allocate storage for.
+
+    Args:
+        count: Number of elements to allocate.
+        alignment: The alignment of the allocation.
+
+    Returns:
+        A pointer to the newly allocated uninitialized array.
+
+    Constraints:
+        `count` must be positive and `size_of[type]()` must be > 0.
+
+    Safety:
+
+    - The returned memory is uninitialized; reading before writing is undefined.
+    - The returned pointer has an empty mutable origin; you must call `free()`
+      to release it.
+
+    Example:
+
+    ```mojo
+    var ptr = alloc[Int32](4)
+    ptr.store(0, Int32(42))
+    ptr.store(1, Int32(7))
+    ptr.store(2, Int32(9))
+    var a = ptr.load(0)
+    print(a[0], ptr.load(1)[0], ptr.load(2)[0])
+    ptr.free()
+    ```
+    """
+    comptime size_of_t = size_of[type]()
+    comptime type_name = reflect[type].name()
+    debug_assert(
+        count >= 0,
+        "alloc[",
+        type_name,
+        "]() count must be non-negative: ",
+        Int(count),
+    )
+    var pointer = _malloc[type](size_of_t * count, alignment=alignment)
+    if unlikely(not pointer):
+        abort("alloc failed: returned a null pointer")
+    return pointer.unsafe_value()
+
+
+def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
     """Allocates owned storage for `layout.count()` elements of `T`.
 
     Returns an `Allocation`, an explicitly destroyed handle that bundles the
@@ -629,7 +688,7 @@ def alloc[T: AnyType, //](layout: Layout[T], /) -> Allocation[T]:
     var allocation = alloc(Layout[Int32](count=4))
     var ptr = allocation.unsafe_ptr()
     for i in range(4):
-        (ptr + i).init_pointee_move(i)
+        (ptr + i).unsafe_write(i)
     dealloc(allocation^)
     ```
     """
@@ -640,7 +699,7 @@ def alloc[T: AnyType, //](layout: Layout[T], /) -> Allocation[T]:
 
     comptime if size_of_t == 0:
         return ThinAllocation(
-            unsafe_assume_ownership=UnsafePointer[
+            unsafe_assume_ownership=Pointer[
                 T, MutUntrackedOrigin
             ].unsafe_dangling()
         ).unsafe_with_layout(layout)
@@ -648,7 +707,7 @@ def alloc[T: AnyType, //](layout: Layout[T], /) -> Allocation[T]:
         return ThinAllocation(
             unsafe_assume_ownership=_alloc_bytes(
                 layout.as_byte_layout()
-            ).bitcast[T]()
+            ).unsafe_bitcast[T]()
         ).unsafe_with_layout(layout)
 
 
@@ -786,7 +845,7 @@ struct Layout[T: AnyType](TrivialRegisterPassable, Writable):
 
         var layout = Layout[Int64].single()
         var allocation = alloc(layout)
-        allocation.unsafe_ptr().init_pointee_move(0)
+        allocation.unsafe_ptr().unsafe_write(0)
         dealloc(allocation^)
         ```
         """

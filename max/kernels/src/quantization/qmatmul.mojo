@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides CPU kernels for block-wise quantized int4 matrix multiplication."""
+
 from std.collections import Optional
 from std.math import ceildiv
 from std.sys import CompilationTarget, align_of, simd_width_of, size_of
@@ -59,6 +61,19 @@ def matmul_qint4_pack_b[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
 ) raises:
+    """Repacks block-wise quantized int4 weights into the tiled layout
+    expected by the `matmul_qint4` kernels.
+
+    Parameters:
+        group_size: Number of elements per quantization group.
+
+    Args:
+        b_tt: Source tensor holding packed uint8 weights with float16 scales.
+        b_rot_tt: Destination tensor for the repacked weights.
+
+    Raises:
+        If N is not a multiple of 32.
+    """
     var b = b_tt.to_layout_tensor()
     var b_rot = b_rot_tt.to_layout_tensor()
     comptime assert b.rank == 2
@@ -792,7 +807,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
             comptime for lane in range(0, 4, 2):
                 comptime for col in range(tile_n):
                     var b_data_packed = b_ptr.load[
-                        width=SIMDSize(simd_width) * 4
+                        width=SIMDLength(simd_width) * 4
                     ](b_offset).cast[DType.uint8]()
                     b_offset += simd_width * 4
 
@@ -844,7 +859,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 
             comptime for lane in range(4):
                 comptime for col in range(tile_n):
-                    var b_val = b_ptr.load[width=SIMDSize(simd_width) * 4](
+                    var b_val = b_ptr.load[width=SIMDLength(simd_width) * 4](
                         b_offset
                     )
                     b_offset += simd_width * 4
@@ -929,24 +944,26 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
 
         comptime for k in range(0, group_size, 8):
             var a_tile = InlineArray[
-                SIMD[DType.int8, SIMDSize(simd_width) * 4], block_m
+                SIMD[DType.int8, SIMDLength(simd_width) * 4], block_m
             ](fill=0)
 
             comptime if tile_m > 1:
                 comptime for row in range(block_m):
-                    a_tile[row] = a_ptr.load[width=SIMDSize(simd_width) * 4](
+                    a_tile[row] = a_ptr.load[width=SIMDLength(simd_width) * 4](
                         a_offset
                     )
                     a_offset += simd_width * 4
             else:
                 var a_val = a_ptr.load[width=simd_width * 2](a_offset)
-                a_tile[0] = rebind[SIMD[DType.int8, SIMDSize(simd_width) * 4]](
-                    a_val.join(SIMD[DType.int8, simd_width * 2](0))
-                )
+                a_tile[0] = rebind[
+                    SIMD[DType.int8, SIMDLength(simd_width) * 4]
+                ](a_val.join(SIMD[DType.int8, simd_width * 2](0)))
                 a_offset += simd_width * 2
 
             comptime for col in range(tile_n * 2):
-                var b_val = b_ptr.load[width=SIMDSize(simd_width) * 4](b_offset)
+                var b_val = b_ptr.load[width=SIMDLength(simd_width) * 4](
+                    b_offset
+                )
                 b_offset += simd_width * 4
 
                 comptime for row in range(block_m):
@@ -1315,6 +1332,22 @@ def matmul_qint4[
     ],
     ctx: Optional[DeviceContext] = None,
 ):
+    """Computes a matrix multiply of a float32 A matrix against block-wise
+    quantized int4 B weights, producing a float32 result.
+
+    Dispatches to an architecture-specific kernel (VNNI, AVX2, NEON i8mm,
+    or NEON dotprod) at compile time.
+
+    Parameters:
+        group_size: Number of elements per quantization group.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+
+    Args:
+        a_tt: Input A tensor in float32.
+        b_tt: Input B tensor holding packed uint8 int4 weights.
+        c_tt: Output C tensor in float32.
+        ctx: Optional device context for parallel execution.
+    """
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
     var c = c_tt.to_layout_tensor()

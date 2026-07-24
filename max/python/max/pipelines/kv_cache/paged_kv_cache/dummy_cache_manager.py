@@ -21,6 +21,11 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 from max.pipelines.modeling.types import RequestID
 
 from .cache_manager import PagedKVCacheManager
@@ -50,8 +55,9 @@ class DummyKVCache(PagedKVCacheManager):
         """No-op."""
         pass
 
-    def alloc(self, *args: Any, **kwargs: Any) -> None:
-        """No-op."""
+    def alloc(self, *args: Any, **kwargs: Any) -> KVConnectorTransfer:
+        """No-op; returns an already-complete transfer (nothing to onload)."""
+        return CompletedTransfer(TransferDirection.LOAD)
 
     def step(self, *args: Any, **kwargs: Any) -> None:
         """No-op."""

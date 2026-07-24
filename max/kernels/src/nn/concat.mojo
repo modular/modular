@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements tensor concatenation along a specified axis for CPU and GPU targets."""
 
 from std.collections import Optional
 from std.math import align_down, align_up, ceildiv, divmod
@@ -18,7 +19,6 @@ from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
 
 from std.algorithm.functional import (
-    _get_start_indices_of_nth_subvolume,
     _get_start_indices_of_nth_subvolume,
     dual_elementwise,
     elementwise,
@@ -30,19 +30,28 @@ from std.gpu.host.info import is_cpu, is_valid_target
 from layout import (
     Coord,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     coord_to_index_list,
     row_major,
 )
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils import IndexList, StaticTuple, product
 
 from .gather_scatter import normalize_neg_index
 
+# Reuse the static-divisor subvolume decomposition the layer_norm / rms_norm /
+# softmax migration introduced (the static-folding counterpart of
+# `_get_start_indices_of_nth_subvolume`). When an output dim is statically
+# known in the `Coord` *type* carried by the tensor layout, the `divmod`
+# strength-reduces to a magic-multiply + shift (SASS `IMAD.WIDE`/`SHF`, no
+# `IDIV`/`MUFU.RCP`); dynamic dims fall back to the runtime divide.
+from .shapes import _get_start_indices_of_nth_subvolume_static
+
 comptime elementwise_epilogue_type = def[
-    c_type: DType, rank: Int, width: SIMDSize = 1, *, alignment: Int = 1
+    c_type: DType, rank: Int, width: SIMDLength = 1, *, alignment: Int = 1
 ](IndexList[rank], SIMD[c_type, width]) capturing -> None
 
 
@@ -53,6 +62,9 @@ def preferred_simd_width[dtype: DType]() -> Int:
 
     Uses 32-byte global loads on ``sm_100a``; otherwise the target's native
     ``simd_width_of`` for ``dtype`` on the active GPU compilation target.
+
+    Parameters:
+        dtype: Element type used to compute the SIMD scalar width.
     """
     return (
         32
@@ -79,8 +91,31 @@ def memcpy_or_fuse[
     n: Int,
     out_shape: IndexList[rank, ...],
 ) raises:
+    """Copies ``n`` bytes from ``src_data`` into ``dest_data`` at ``out_byte_offset``, applying ``epilogue_fn`` elementwise when present.
+
+    When no epilogue function is supplied, this performs a plain ``memcpy`` of
+    ``n`` bytes. When an epilogue function is supplied, the source bytes are
+    reinterpreted as typed elements and the epilogue is applied scalar-by-scalar
+    so that fused concat can transform values while copying them into the
+    output buffer.
+
+    Parameters:
+        rank: Number of dimensions in the output tensor used for epilogue
+            indexing.
+        dtype: Element type of the tensors being copied.
+        epilogue_fn: Optional elementwise function applied to each copied
+            element; when absent, a plain byte ``memcpy`` is performed.
+
+    Args:
+        dest_data: Destination byte buffer to write into.
+        out_byte_offset: Byte offset into ``dest_data`` where the copy starts.
+        src_data: Source byte buffer to read from.
+        n: Number of bytes to copy.
+        out_shape: Shape of the output tensor used to compute multi-dimensional
+            indices for the epilogue function.
+    """
     comptime if not epilogue_fn:
-        memcpy(dest=dest_data + out_byte_offset, src=src_data, count=n)
+        unsafe_memcpy(dest=dest_data + out_byte_offset, src=src_data, count=n)
     else:
         comptime func = epilogue_fn.value()
         comptime simd_width = simd_width_of[dtype]()
@@ -163,7 +198,7 @@ def _canonical_reshape[
 
 
 def _canonical_reshape_output[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -187,7 +222,7 @@ def _canonical_reshape_output[
 
 
 def _concat_parallel[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -334,7 +369,7 @@ def _concat_parallel[
 
 @always_inline
 def _concat[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -396,7 +431,7 @@ def _concat[
 
 @always_inline
 def _concat_inner[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -424,7 +459,7 @@ def _concat_inner[
 
 @always_inline
 def _check_input_consistency[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -442,7 +477,7 @@ def _check_input_consistency[
 
 @always_inline
 def _concat_serial[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -473,7 +508,7 @@ def _concat_serial[
 
 @always_inline
 def _concat_cpu[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -508,7 +543,7 @@ def _concat_cpu[
 
 @always_inline
 def concat_shape[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     input_type: DType,
@@ -573,7 +608,7 @@ def concat_shape[
 
 @always_inline
 def concat[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -590,6 +625,26 @@ def concat[
     ],
     context: DeviceContext,
 ) raises:
+    """Concatenates ``inputs`` along ``axis`` into ``output`` for the given ``target``.
+
+    Dispatches to the CPU or GPU concat implementation based on ``target`` and
+    applies ``epilogue_fn`` elementwise to each copied element when supplied.
+    Returns early when the output tensor is empty.
+
+    Parameters:
+        input_origin: Origin of the input tensors (inferred).
+        InputLayoutType: Layout type of the input tensors (inferred).
+        dtype: Element type of the input and output tensors.
+        target: Target device to dispatch to (defaults to ``"cpu"``).
+        epilogue_fn: Optional elementwise function applied to each copied
+            element (defaults to ``None``).
+
+    Args:
+        output: Destination tensor that receives the concatenated result.
+        axis: Axis along which to concatenate the inputs.
+        inputs: Static tuple of input tensors to concatenate.
+        context: Device context used to schedule the work.
+    """
     comptime assert is_valid_target[target](), "not a valid target"
 
     with Trace[TraceLevel.OP, target=target](
@@ -631,8 +686,10 @@ def concat[
 def _concat_gpu_flat_kernel[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
+    OutputStorage: TensorStorage,
     InputLayoutType: TensorLayout,
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
+    InputStorage: TensorStorage,
     //,
     dtype: DType,
     num_inputs: Int,
@@ -641,9 +698,11 @@ def _concat_gpu_flat_kernel[
     block_size: Int,
     vec_width: Int,
 ](
-    output: TileTensor[dtype, OutputLayoutType, output_origin],
+    output: TileTensor[
+        dtype, OutputLayoutType, output_origin, Storage=OutputStorage
+    ],
     inputs: StaticTuple[
-        TileTensor[dtype, InputLayoutType, input_origin],
+        TileTensor[dtype, InputLayoutType, input_origin, Storage=InputStorage],
         num_inputs,
     ],
     inner_size: Int,
@@ -692,17 +751,21 @@ def _concat_gpu_flat_kernel[
 def _concat_inner_most_single_dim[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
+    OutputStorage: TensorStorage,
     InputLayoutType: TensorLayout,
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
+    InputStorage: TensorStorage,
     //,
     dtype: DType,
     num_inputs: Int,
     block_size: Int,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[dtype, OutputLayoutType, output_origin],
+    output: TileTensor[
+        dtype, OutputLayoutType, output_origin, Storage=OutputStorage
+    ],
     inputs: StaticTuple[
-        TileTensor[dtype, InputLayoutType, input_origin],
+        TileTensor[dtype, InputLayoutType, input_origin, Storage=InputStorage],
         num_inputs,
     ],
 ):
@@ -715,8 +778,13 @@ def _concat_inner_most_single_dim[
     if idx >= row_count:
         return
 
-    var index = _get_start_indices_of_nth_subvolume[1](
-        idx, coord_to_index_list(output.layout.shape_coord())
+    # Static-divisor row -> n-D decomposition: the output's outer dims that are
+    # statically known in `OutputLayoutType` fold the per-thread `divmod` to a
+    # magic-multiply + shift (no `IDIV`); dynamic dims fall back to the runtime
+    # divide read from the `Coord`'s leaf values. Behavior is bit-identical to
+    # `_get_start_indices_of_nth_subvolume[1]`.
+    var index = _get_start_indices_of_nth_subvolume_static(
+        idx, output.layout.shape_coord()
     )
     var in_coord = Coord(index)
 
@@ -736,19 +804,24 @@ def _concat_inner_most_single_dim[
 
 @always_inline
 def _concat_gpu_elementwise[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
+    InputStorage: TensorStorage,
     //,
     dtype: DType,
     num_inputs: Int,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
     ],
     axis: Int,
     inputs: StaticTuple[
-        TileTensor[dtype, InputLayoutType, input_origin],
+        TileTensor[dtype, InputLayoutType, input_origin, Storage=InputStorage],
         num_inputs,
     ],
     ctx: DeviceContext,
@@ -763,8 +836,9 @@ def _concat_gpu_elementwise[
 
 @always_inline
 def _concat_gpu_elementwise[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
+    InputStorage: TensorStorage,
     //,
     axis: Int,
     dtype: DType,
@@ -772,10 +846,14 @@ def _concat_gpu_elementwise[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
     ],
     inputs: StaticTuple[
-        TileTensor[dtype, InputLayoutType, input_origin],
+        TileTensor[dtype, InputLayoutType, input_origin, Storage=InputStorage],
         num_inputs,
     ],
     ctx: DeviceContext,
@@ -801,8 +879,10 @@ def _concat_gpu_elementwise[
             comptime kernel_fn = _concat_gpu_flat_kernel[
                 OutputLayoutType=output.LayoutType,
                 output_origin=output.origin,
+                OutputStorage=output.Storage,
                 InputLayoutType=InputLayoutType,
                 input_origin=input_origin,
+                InputStorage=InputStorage,
                 dtype,
                 num_inputs,
                 axis,
@@ -895,18 +975,23 @@ def _concat_gpu_elementwise[
 
 @always_inline
 def _concat_gpu[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
+    InputStorage: TensorStorage,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
     ],
     axis: Int,
     inputs: StaticTuple[
-        TileTensor[dtype, InputLayoutType, input_origin],
+        TileTensor[dtype, InputLayoutType, input_origin, Storage=InputStorage],
         ...,
     ],
     ctx: DeviceContext,
@@ -964,8 +1049,10 @@ def _concat_gpu[
             comptime kernel = _concat_inner_most_single_dim[
                 OutputLayoutType=output.LayoutType,
                 output_origin=output.origin,
+                OutputStorage=output.Storage,
                 InputLayoutType=InputLayoutType,
                 input_origin=input_origin,
+                InputStorage=InputStorage,
                 dtype,
                 num_inputs,
                 block_size,
@@ -995,7 +1082,11 @@ def _fused_concat_cpu[
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
     output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
     ],
     ctx: Optional[DeviceContext],
 ) raises:
@@ -1033,6 +1124,7 @@ def _fused_concat_cpu[
 def _fused_concat_inner_most_single_dim[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
+    OutputStorage: TensorStorage,
     //,
     rank: Int,
     dtype: DType,
@@ -1044,7 +1136,9 @@ def _fused_concat_inner_most_single_dim[
     size: Int,
 ](
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[dtype, OutputLayoutType, output_origin],
+    output: TileTensor[
+        dtype, OutputLayoutType, output_origin, Storage=OutputStorage
+    ],
 ):
     comptime num_inputs = input_shapes.size
 
@@ -1052,8 +1146,14 @@ def _fused_concat_inner_most_single_dim[
     if idx >= product(input_shapes[0], rank):
         return
 
-    var index = _get_start_indices_of_nth_subvolume[1](
-        idx, coord_to_index_list(output.layout.shape_coord())
+    # Static-divisor row -> n-D decomposition: the FusedConcatSlice
+    # hot site. The graph compiler threads a `TileTensor` whose layout
+    # `_shape_types` preserve the statically-known MLIR output dims, so the
+    # per-thread `divmod` over the outer dims folds to magic-multiply + shift
+    # (no `IDIV`). Dynamic dims fall back to the runtime divide; behavior is
+    # bit-identical to `_get_start_indices_of_nth_subvolume[1]`.
+    var index = _get_start_indices_of_nth_subvolume_static(
+        idx, output.layout.shape_coord()
     )
 
     comptime for i in range(num_inputs):
@@ -1071,8 +1171,10 @@ def _fused_concat_inner_most_single_dim[
 def _fused_dual_concat_inner_most_single_dim[
     OutputLayoutType0: TensorLayout,
     output_origin_0: MutOrigin,
+    OutputStorage0: TensorStorage,
     OutputLayoutType1: TensorLayout,
     output_origin_1: MutOrigin,
+    OutputStorage1: TensorStorage,
     //,
     rank: Int,
     dtype: DType,
@@ -1089,9 +1191,13 @@ def _fused_dual_concat_inner_most_single_dim[
     size_1: Int,
 ](
     input_shapes_0: StaticTuple[IndexList[rank], size_0],
-    output_0: TileTensor[dtype, OutputLayoutType0, output_origin_0],
+    output_0: TileTensor[
+        dtype, OutputLayoutType0, output_origin_0, Storage=OutputStorage0
+    ],
     input_shapes_1: StaticTuple[IndexList[rank], size_1],
-    output_1: TileTensor[dtype, OutputLayoutType1, output_origin_1],
+    output_1: TileTensor[
+        dtype, OutputLayoutType1, output_origin_1, Storage=OutputStorage1
+    ],
 ):
     """Dual-concat kernel: two independent inner-most single-dim concats
     execute in the same kernel launch. Every thread processes both concats,
@@ -1100,8 +1206,10 @@ def _fused_dual_concat_inner_most_single_dim[
     var idx = block_idx.x * block_size + thread_idx.x
 
     if idx < product(input_shapes_0[0], rank):
-        var index = _get_start_indices_of_nth_subvolume[1](
-            idx, coord_to_index_list(output_0.layout.shape_coord())
+        # Static-divisor row -> n-D decomposition; folds the per-
+        # thread `divmod` over `output_0`'s statically-known outer dims.
+        var index = _get_start_indices_of_nth_subvolume_static(
+            idx, output_0.layout.shape_coord()
         )
 
         comptime for i in range(size_0):
@@ -1116,8 +1224,10 @@ def _fused_dual_concat_inner_most_single_dim[
             )
 
     if idx < product(input_shapes_1[0], rank):
-        var index = _get_start_indices_of_nth_subvolume[1](
-            idx, coord_to_index_list(output_1.layout.shape_coord())
+        # Static-divisor row -> n-D decomposition; folds the per-
+        # thread `divmod` over `output_1`'s statically-known outer dims.
+        var index = _get_start_indices_of_nth_subvolume_static(
+            idx, output_1.layout.shape_coord()
         )
 
         comptime for i in range(size_1):
@@ -1150,9 +1260,9 @@ def _fused_dual_concat_gpu[
     output_layout_1: TensorLayout,
 ](
     input_shapes_0: StaticTuple[IndexList[rank], size_0],
-    output_0: TileTensor[mut=True, dtype, output_layout_0, _],
+    output_0: TileTensor[mut=True, dtype, output_layout_0, _, Storage=_],
     input_shapes_1: StaticTuple[IndexList[rank], size_1],
-    output_1: TileTensor[mut=True, dtype, output_layout_1, _],
+    output_1: TileTensor[mut=True, dtype, output_layout_1, _, Storage=_],
     ctx: DeviceContext,
 ) raises:
     """Launch the dual-concat kernel for two inner-most single-dim concats.
@@ -1165,8 +1275,10 @@ def _fused_dual_concat_gpu[
     comptime kernel = _fused_dual_concat_inner_most_single_dim[
         OutputLayoutType0=output_0.LayoutType,
         output_origin_0=output_0.origin,
+        OutputStorage0=output_0.Storage,
         OutputLayoutType1=output_1.LayoutType,
         output_origin_1=output_1.origin,
+        OutputStorage1=output_1.Storage,
         rank,
         dtype,
         block_size,
@@ -1205,7 +1317,11 @@ def _fused_concat_gpu_elementwise[
 ](
     input_shapes: StaticTuple[IndexList[rank], size],
     output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1296,11 +1412,19 @@ def _fused_dual_concat_gpu_elementwise[
 ](
     input_shapes_0: StaticTuple[IndexList[rank], size_0],
     output_0: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
     ],
     input_shapes_1: StaticTuple[IndexList[rank], size_1],
     output_1: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        Storage=_,
+        ...,
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1433,7 +1557,7 @@ def _fused_concat_gpu[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[mut=True, dtype, output_layout, _],
+    output: TileTensor[mut=True, dtype, output_layout, _, Storage=_],
     ctx: DeviceContext,
 ) raises:
     comptime num_inputs = input_shapes.size
@@ -1453,6 +1577,7 @@ def _fused_concat_gpu[
             comptime kernel = _fused_concat_inner_most_single_dim[
                 OutputLayoutType=output.LayoutType,
                 output_origin=output.origin,
+                OutputStorage=output.Storage,
                 rank,
                 dtype,
                 block_size,
@@ -1505,9 +1630,9 @@ def _fused_dual_concat_gpu[
 ](
     axis: Int,
     input_shapes_0: StaticTuple[IndexList[rank], size_0],
-    output_0: TileTensor[mut=True, dtype, output_layout_0, _],
+    output_0: TileTensor[mut=True, dtype, output_layout_0, _, Storage=_],
     input_shapes_1: StaticTuple[IndexList[rank], size_1],
-    output_1: TileTensor[mut=True, dtype, output_layout_1, _],
+    output_1: TileTensor[mut=True, dtype, output_layout_1, _, Storage=_],
     ctx: DeviceContext,
 ) raises:
     if axis == rank - 1:
@@ -1583,9 +1708,34 @@ def fused_concat[
     target: StaticString = "cpu",
 ](
     input_shapes: StaticTuple[IndexList[rank], _],
-    output: TileTensor[mut=True, dtype, output_layout, _],
+    output: TileTensor[mut=True, dtype, output_layout, _, Storage=_],
     ctx: DeviceContext,
 ) raises:
+    """Concatenates inputs produced by ``input_fn`` along ``axis`` into ``output``, applying ``output_0_fn`` to each element.
+
+    Instead of reading from concrete input tensors, the fused variant drives the
+    concat from a caller-supplied ``input_fn`` that produces values on demand,
+    allowing the concat to be fused with preceding elementwise operations.
+    Dispatches to the CPU or GPU fused implementation based on ``target`` and
+    returns early when the output tensor is empty.
+
+    Parameters:
+        dtype: Element type of the input and output tensors.
+        rank: Number of dimensions in the input and output tensors.
+        input_fn: Function that produces input element values on demand,
+            indexed by input position.
+        output_0_fn: Epilogue function applied to each produced element before
+            storing.
+        output_layout: Layout type of the output tensor.
+        axis: Axis along which to concatenate the inputs.
+        target: Target device to dispatch to (defaults to ``"cpu"``).
+
+    Args:
+        input_shapes: Static tuple of per-input shapes describing each logical
+            input that ``input_fn`` produces.
+        output: Destination tensor that receives the concatenated result.
+        ctx: Device context used to schedule the work.
+    """
     comptime assert is_valid_target[target](), "not a valid target"
 
     with Trace[TraceLevel.OP, target=target](

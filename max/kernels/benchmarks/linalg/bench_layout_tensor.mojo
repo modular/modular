@@ -20,7 +20,7 @@ import std.benchmark
 from std.algorithm import Static2DTileUnitFunc as Tile2DFunc
 from std.algorithm import sync_parallelize, vectorize
 from layout import *
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from std.python import Python
 
 comptime M = 512  # rows of A and C
@@ -36,7 +36,7 @@ struct Matrix[rows: Int, cols: Int]:
     # Initialize zeroeing all values
     def __init__(out self):
         self.data = alloc[Scalar[dtype]](Self.rows * Self.cols)
-        memset_zero(self.data, Self.rows * Self.cols)
+        unsafe_memset_zero(self.data, Self.rows * Self.cols)
 
     # Initialize taking a pointer, don't set any elements
     def __init__(
@@ -106,7 +106,7 @@ def matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
 
                     def dot[
                         simd_size: Int
-                    ](n: Int) {x, mut C, mut A_val, read B, read m, mut k}:
+                    ](n: Int) {x, mut C, mut A_val, imm B, imm m, mut k}:
                         var idx = n + x
                         C.store(
                             m,
@@ -312,11 +312,10 @@ def bench[
     var C = Matrix[M, N]()
 
     @always_inline
-    @parameter
-    def test_fn():
+    def test_fn() {mut C, imm A, imm B}:
         _ = func(C, A, B)
 
-    var secs = std.benchmark.run[test_fn](max_runtime_secs=0.5).mean()
+    var secs = std.benchmark.run(test_fn, max_runtime_secs=0.5).mean()
 
     A.data.free()
     B.data.free()

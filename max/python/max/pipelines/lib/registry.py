@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import functools
 import importlib
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy as np
@@ -56,8 +58,9 @@ from max.driver import load_devices
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.memory_estimation import MemoryEstimator, _MemoryPlan
-from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
+from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
@@ -157,7 +160,6 @@ class SupportedArchitecture:
                 context_type=TextContext,
                 config=MyModelConfig,  # Architecture-specific config class
                 default_weights_format=WeightsFormat.safetensors,
-                rope_type="none",
                 weight_adapters={
                     WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
                     # Add other weight formats if needed
@@ -213,9 +215,6 @@ class SupportedArchitecture:
     :obj:`PipelineConfig`. For models with KV cache, this should be a class
     implementing :obj:`ArchConfigWithKVCache` to enable KV cache memory estimation.
     """
-
-    rope_type: RopeType = "none"
-    """The type of RoPE (Rotary Position Embedding) used by the model."""
 
     weight_adapters: dict[WeightsFormat, WeightsAdapter] = field(
         default_factory=dict
@@ -362,6 +361,22 @@ class SupportedArchitecture:
 
     ``None`` means the architecture manages its own memory estimation (e.g.
     diffusion pipelines that skip KV cache estimation entirely).
+    """
+
+    cascade_pipeline_factory: Callable[[PipelineConfig], object] | None = None
+    """Optional cascade pipeline factory for this architecture.
+
+    A ``CascadePipeline`` subclass (from ``max.experimental.cascade``) that
+    accepts a :class:`PipelineConfig` in its constructor. The experimental
+    cascade server resolves the architecture and constructs
+    ``cascade_pipeline_factory(config)``, so cascade pipeline selection is
+    driven entirely by the architecture rather than by :class:`PipelineTask`.
+
+    The return is annotated ``object`` rather than ``CascadePipeline`` because
+    the cascade layer sits *above* :mod:`max.pipelines`; importing the base
+    class here to tighten the annotation would invert that dependency (the
+    cascade server narrows the constructed value back to ``CascadePipeline``).
+    ``None`` means the architecture has no cascade pipeline yet.
     """
 
     pipeline_cls: type | None = None
@@ -578,6 +593,7 @@ def _run_memory_planning(
         devices,
         arch_config,
         signal_buffer_size,
+        available_cache_memory=plan.available_cache_memory,
     ):
         if model_config.max_length is None:
             model_config.max_length = clamped_max_seq_len
@@ -590,16 +606,8 @@ def _run_memory_planning(
             model_config.max_length = clamped_max_seq_len
 
     # For speculative decoding, clamp max_length to the draft model's limit
-    # and zero out its cache memory (it shares the target model's KV cache).
+    # (the draft shares the target model's KV cache).
     if draft_arch is not None and pipeline_config.draft_model is not None:
-        if (
-            pipeline_config.draft_model.kv_cache._available_cache_memory
-            is not None
-        ):
-            raise ValueError(
-                "Expected draft model's available_cache_memory to be None"
-            )
-        pipeline_config.draft_model.kv_cache._available_cache_memory = 0
         draft_arch_config = draft_arch.config.initialize(
             pipeline_config, model_config=pipeline_config.draft_model
         )
@@ -630,7 +638,80 @@ def _run_memory_planning(
         )
         pipeline_config.runtime.max_batch_total_tokens = model_config.max_length
 
+    # TODO(MXF-517): Fold this into a consolidated startup logger that reports
+    # all resolved runtime values together. It logs here, from the planner that
+    # computes the budget, because the value is no longer mutated onto the config
+    # for log_basic_config to read.
+    if plan.available_cache_memory is not None:
+        logger.info(
+            "cache_memory: %s",
+            to_human_readable_bytes(plan.available_cache_memory),
+        )
+
     return plan
+
+
+def _retrieve_chat_template(chat_template: Path | None) -> str | None:
+    """Returns the chat template string for a ``--chat-template`` path.
+
+    Returns ``None`` if not set.
+
+    Args:
+        chat_template: Path to a custom chat template file, or ``None`` to
+            use the model's default chat template.
+
+    Raises:
+        ValueError: If ``chat_template`` does not point to an existing file,
+            or if the file cannot be read as UTF-8 text.
+    """
+    if chat_template is None:
+        return None
+
+    # Expand user home directory (e.g. ~/templates/custom.jinja) and resolve
+    # relative paths against cwd.
+    chat_template_path = chat_template.expanduser()
+    if not chat_template_path.is_absolute():
+        chat_template_path = Path.cwd() / chat_template_path
+
+    if not chat_template_path.is_file():
+        if not chat_template_path.exists():
+            raise ValueError(
+                f"--chat-template path ({chat_template_path}) does not exist."
+            )
+        raise ValueError(
+            f"Prompt template path is not a file: {chat_template_path}. "
+            f"Please provide a path to a valid template file."
+        )
+
+    try:
+        template_content = chat_template_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        raise ValueError(
+            f"Failed to read prompt template file {chat_template_path}: {e}. "
+            f"Please ensure the file is readable and contains valid UTF-8 text."
+        ) from e
+
+    # A chat-template file may be either a plain template string or a JSON
+    # object with a "chat_template" key (e.g. HuggingFace's tokenizer_config
+    # format); fall back to the raw content for anything else.
+    try:
+        template_json = json.loads(template_content)
+    except json.JSONDecodeError:
+        template_json = None
+
+    if isinstance(template_json, dict) and "chat_template" in template_json:
+        chat_template_str = template_json["chat_template"]
+        logger.info(
+            f"Successfully loaded chat_template from JSON in {chat_template_path} "
+            f"({len(chat_template_str)} characters)"
+        )
+        return chat_template_str
+
+    logger.info(
+        f"Successfully loaded custom prompt template from {chat_template_path} "
+        f"({len(template_content)} characters)"
+    )
+    return template_content
 
 
 class PipelineRegistry:
@@ -1001,7 +1082,9 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
-                chat_template=pipeline_config.model.retrieve_chat_template(),
+                chat_template=_retrieve_chat_template(
+                    pipeline_config.model.chat_template
+                ),
             )
         else:
             tokenizer = arch.tokenizer(
@@ -1010,7 +1093,9 @@ class PipelineRegistry:
                 revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
-                chat_template=pipeline_config.model.retrieve_chat_template(),
+                chat_template=_retrieve_chat_template(
+                    pipeline_config.model.chat_template
+                ),
             )
 
         return tokenizer
@@ -1060,7 +1145,10 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
-    ) -> tuple[PipelineTokenizer[Any, Any, Any], Callable[[], PipelineTypes]]:
+    ) -> tuple[
+        PipelineTokenizer[Any, Any, Any],
+        Callable[[], PipelineTypes],
+    ]:
         """Retrieves the tokenizer and a factory that creates the pipeline instance."""
         tokenizer: PipelineTokenizer[Any, Any, Any]
         pipeline_factory: Callable[[], PipelineTypes]
@@ -1263,7 +1351,9 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
-                chat_template=pipeline_config.model.retrieve_chat_template(),
+                chat_template=_retrieve_chat_template(
+                    pipeline_config.model.chat_template
+                ),
             )
         else:
             tokenizer = arch.tokenizer(
@@ -1272,7 +1362,9 @@ class PipelineRegistry:
                 revision=pipeline_config.model.huggingface_model_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
-                chat_template=pipeline_config.model.retrieve_chat_template(),
+                chat_template=_retrieve_chat_template(
+                    pipeline_config.model.chat_template
+                ),
             )
 
         if arch.context_validators:
@@ -1421,7 +1513,7 @@ class PipelineRegistry:
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
     ) -> tuple[PipelineTokenizer[Any, Any, Any], PipelineTypes]:
-        """Retrieves the tokenizer and an instantiated pipeline for the config."""
+        """Retrieves the tokenizer and an instantiated pipeline for the args."""
         tokenizer, pipeline_factory = self.retrieve_factory(
             pipeline_config, task, override_architecture
         )

@@ -751,7 +751,7 @@ class HuggingFaceRepo:
             if preferred_encoding and preferred_encoding in supported:
                 return preferred_encoding
             # For multi-encoding repos, pick the most specific quantized
-            # format (matches priority in MAXModelConfig._try_infer_encoding).
+            # format (matches priority in model_config._infer_quantization_encoding).
             if len(supported) > 1:
                 for candidate in (
                     "float4_e2m1fnx2",

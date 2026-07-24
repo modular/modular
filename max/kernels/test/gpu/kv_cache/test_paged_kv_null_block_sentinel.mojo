@@ -30,7 +30,7 @@ Complements the Python-layer regression tests for the KV cache manager.
 
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from std.utils import IndexList
 
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
@@ -124,7 +124,7 @@ def run_null_block_test[
     var blocks_runtime = RuntimeLayout[blocks_layout].row_major(blocks_shape)
     var blocks = ManagedLayoutTensor[dtype, blocks_layout](blocks_runtime, ctx)
     var blocks_host = blocks.tensor[update=False]()
-    memset_zero(blocks_host.ptr, blocks_runtime.size())
+    unsafe_memset_zero(blocks_host.ptr, blocks_runtime.size())
 
     comptime _MAX_PAGES = 16
     var output_buf = ctx.enqueue_create_buffer[DType.uint32](_MAX_PAGES)

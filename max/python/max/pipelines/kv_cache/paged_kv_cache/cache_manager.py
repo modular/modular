@@ -21,7 +21,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import numpy as np
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Device,
+    DevicePinnedBuffer,
+    copy_pinned_to_destinations,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
@@ -40,14 +45,17 @@ from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.nn.kv_cache.utils import build_max_lengths_tensors
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.kv_connector import KVConnector
+from max.pipelines.kv_cache.kv_connector import (
+    KVConnector,
+    KVConnectorTransfer,
+)
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 
 from ..connectors import create_connector
-from .block_manager import BlockManager, _compute_seq_len
+from .block_manager import BlockManager, PrefixCacheHits, _compute_seq_len
 
 logger = logging.getLogger("max.pipelines")
 
@@ -191,10 +199,6 @@ class _ReplicaMetadata:
     claimed_requests: set[RequestID] = field(default_factory=set)
     """Set of request IDs claimed on this replica."""
 
-    # Store last host buffers to ensure lifetimes outlive async copies.
-    last_lut_table_host: Buffer | None = None
-    last_cache_lengths_host: Buffer | None = None
-
 
 class PagedKVCacheManager:
     """Paged KVCache manager with data and tensor parallelism support.
@@ -288,7 +292,7 @@ class PagedKVCacheManager:
             devices=devices,
             replica_kv_memory=replica_kv_memory,
             total_num_host_blocks=total_num_host_pages,
-            kv_hash_algo=params.kv_hash_algo,
+            params=params,
         )
 
         persistent_buffers: list[_PersistentKVDeviceInputBuffers] = [
@@ -321,6 +325,9 @@ class PagedKVCacheManager:
             kv_hash_algo=params.kv_hash_algo,
             kv_hash_seed=params.kv_hash_seed,
             replica_kv_memory=cross_replica_kv_memory,
+            enable_dp_cross_replica_prefix_copy=(
+                params.enable_dp_cross_replica_prefix_copy
+            ),
         )
 
         self._replica: list[_ReplicaMetadata] = [
@@ -364,11 +371,42 @@ class PagedKVCacheManager:
             num_needed_blocks / self._total_num_pages,
         )
 
+    def get_prefix_cache_hit_counts(
+        self, ctx: TextContext
+    ) -> list[PrefixCacheHits]:
+        """Counts each replica's contiguous cached prefix for a request.
+
+        Computes the request's block hashes once and queries every replica's
+        block manager read-only, without claiming the request or mutating any
+        per-request state. Intended for prefix-aware data-parallel routing:
+        callers can compare replicas' hit depths (across the device, host,
+        and disk tiers) before deciding which replica should serve the
+        request.
+
+        Args:
+            ctx: The request context to count cached prefix blocks for.
+
+        Returns:
+            One :class:`PrefixCacheHits` per replica, indexed by replica.
+        """
+        if not self.params.enable_prefix_caching:
+            return [PrefixCacheHits() for _ in self._replica]
+
+        # The hash chain is identical across replicas (same algo, seed, and
+        # block size), so hash once and only vary the lookups.
+        block_hashes = self._replica[0].block_manager.compute_block_hashes(
+            ctx, []
+        )
+        return [
+            replica.block_manager.count_cached_prefix_blocks(block_hashes)
+            for replica in self._replica
+        ]
+
     def alloc(
         self,
         data: TextContext,
         replica_idx: int,
-    ) -> None:
+    ) -> KVConnectorTransfer:
         """Allocates blocks for a request.
 
         When prefix caching is enabled, some of the allocated blocks may be
@@ -380,11 +418,23 @@ class PagedKVCacheManager:
                 must already be assigned to a replica via ``claim``.
             replica_idx: Index of the replica to allocate on.
 
+        Returns:
+            The async onload transfer for the request's reused prefix -- an
+            already-complete :class:`CompletedTransfer` when nothing was onloaded
+            asynchronously (device hits and synchronous connectors). The caller
+            polls ``is_complete()`` to hold the request out of a batch until its
+            onloaded KV has landed -- an asynchronous connector's H2D runs off
+            the forward stream.
+
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
             satisfy the allocation.
         """
-        self._block_manager.reuse_blocks_from_prefix_cache(
+        # Drain completed async KV transfers first to release any g0 blocks of
+        # completed transfers.
+        self._block_manager.poll_transfers()
+
+        _, load_event = self._block_manager.reuse_blocks_from_prefix_cache(
             data, replica_idx=replica_idx
         )
         self._block_manager.allocate_new_blocks(
@@ -393,6 +443,7 @@ class PagedKVCacheManager:
             self.params.num_draft_tokens_per_step,
             replica_idx=replica_idx,
         )
+        return load_event
 
     def _does_req_need_more_blocks(
         self,
@@ -582,11 +633,12 @@ class PagedKVCacheManager:
                 ),
             )
 
-        # Order in-flight loads before the forward pass, since this runs before
-        # the model executes. For dKV's off-stream remote (NIXL) READs this is a
-        # host wait until they land; for dKV's same-host loads it enqueues a
-        # cross-stream CUDA event wait so the compute stream is GPU-ordered after
-        # the copies (no host block). No-op for host/disk tiers.
+        # Pre-forward load barrier (deprecated, dKV-only): dKV posts its READs in
+        # ``load`` and orders them here before the forward reads their KV.
+        # Asynchronous connectors instead hold a request out of the batch until
+        # its onload event polls complete (``poll_transfers`` + the batch
+        # constructor cordon), so the forward never reads KV that has not landed
+        # and this is a no-op for them.
         replica.connector.wait_for_loads()
 
         # Initiate saves to external cache tiers.
@@ -620,15 +672,13 @@ class PagedKVCacheManager:
             )
         )
         # Copy shared LUT and cache_lengths to each TP shard's device buffer.
-        num_tp_shards = len(replica.devices)
-        for tp_shard in range(num_tp_shards):
-            cache_lengths_by_device[tp_shard].inplace_copy_from(
-                cache_lengths_host
-            )
-            lut_table_by_device[tp_shard].inplace_copy_from(lut_table_host)
-
-        replica.last_lut_table_host = lut_table_host
-        replica.last_cache_lengths_host = cache_lengths_host
+        # The pinned host staging is dropped when this method returns; the
+        # memory manager defers its free until the owning device's stream
+        # completes, and ``copy_pinned_to_destinations`` makes the owning
+        # device wait for the other TP shards so the staging is not recycled
+        # while their copies are still reading it.
+        copy_pinned_to_destinations(cache_lengths_host, cache_lengths_by_device)
+        copy_pinned_to_destinations(lut_table_host, lut_table_by_device)
 
         return KVCacheAssignments(
             cache_lengths_by_device=cache_lengths_by_device,
@@ -782,12 +832,28 @@ class PagedKVCacheManager:
         for replica_idx, (replica, ctxs) in enumerate(
             zip(self._replica, batches, strict=True)
         ):
-            # Drain offloads posted this iteration (post-forward-pass): the
-            # host/disk tiers wait on their D2H copies and post disk writes; the
-            # dKV connector awaits its NIXL WRITEs and registers the blocks.
+            # Post-forward offload barrier (deprecated, dKV-only): dKV awaits its
+            # NIXL WRITEs here and registers the blocks. Asynchronous connectors
+            # settle offloads via ``poll_transfers`` (which unpins the D2H source
+            # blocks once the copy lands), so this is a no-op for them.
             replica.connector.wait_for_offloads()
             for ctx in ctxs:
                 self._block_manager.step(ctx, replica_idx)
+
+    def poll_transfers(self) -> None:
+        """Drains completed async KV transfers (onloads and offloads).
+
+        Unpins the device blocks of completed transfers, commits completed
+        onloads into the device prefix cache, and lets asynchronous connectors
+        reclaim their host-side resources. Cheap to call every scheduler
+        iteration; a no-op unless an asynchronous connector (``rust_tiered``)
+        is in use.
+        """
+        self._block_manager.poll_transfers()
+
+    def pending_transfers_exist(self, replica_idx: int = 0) -> bool:
+        """Returns whether any async KV transfer is in flight on the replica."""
+        return self._block_manager.pending_transfers_exist(replica_idx)
 
     def contains(self, request_id: RequestID, replica_idx: int) -> bool:
         """Returns whether the request is present on the given replica."""
@@ -803,6 +869,16 @@ class PagedKVCacheManager:
         self._block_manager.reset_prefix_cache()
         for replica in self._replica:
             replica.connector.reset_prefix_cache()
+
+    def shutdown(self) -> None:
+        """Releases the KV connector's external resources.
+
+        Drains in-flight host/disk transfers and frees the shared pinned host
+        buffer; for the tiered connector this also removes the on-disk offload
+        directory. A single connector backs every replica, so this shuts it
+        down once. A no-op for the ``null`` connector.
+        """
+        self._connector.shutdown()
 
     def get_metrics_aggregated(self) -> KVCacheMetrics:
         """Returns aggregated metrics across all replicas."""

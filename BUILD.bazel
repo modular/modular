@@ -117,6 +117,35 @@ string_flag(
     build_setting_default = "deadbeef",
 )
 
+bool_flag(
+    name = "use_prebuilt_mojo_toolchain",
+    build_setting_default = True,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "use_prebuilt_mojo_toolchain_disabled",
+    flag_values = {":use_prebuilt_mojo_toolchain": "false"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+# The libkineto profiling backend is internal-only; this default-off flag
+# exists so Support/BUILD.bazel's //Support:Profiling select resolves here,
+# always picking the (stubbed) static variant. Only referenced when this
+# package is the workspace root, so the internal unused-targets lint must
+# skip it.
+bool_flag(
+    name = "kineto_profiling",
+    build_setting_default = False,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "kineto_enabled",
+    flag_values = {"//:kineto_profiling": "true"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
 config_setting(
     name = "linux_x86_64",
     constraint_values = [
@@ -387,6 +416,21 @@ config_setting(
     flag_values = {"//:use_vllm": "true"},
 )
 
+# Routes the DeviceContext through the HAL implementation. Selects the HAL
+# overlay of the stdlib's `gpu/host/device_context.mojo` (see
+# mojo/stdlib/std/BUILD.bazel).
+bool_flag(
+    name = "hal_device_context",
+    build_setting_default = False,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "hal_device_context_enabled",
+    flag_values = {"//:hal_device_context": "true"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
 # When set, GPU tests disable MAX's device memory manager (caching allocator)
 # so each `enqueue_create_buffer` is a 1:1 device allocation and
 # compute-sanitizer memcheck/initcheck see true per-buffer bounds. Without this,
@@ -402,4 +446,16 @@ config_setting(
     name = "gpu_memory_manager_disabled",
     flag_values = {"//:gpu_disable_memory_manager": "true"},
     tags = [ALLOW_UNUSED_TAG],
+)
+
+bool_flag(
+    name = "plugin",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "plugin_enabled",
+    flag_values = {
+        "//:plugin": "true",
+    },
 )

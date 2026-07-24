@@ -69,6 +69,17 @@ def ep_mxfp4_max_padded_m(config: EPConfig) -> int:
     (``a_scales_max_padded_m``)."""
     if not config.mxfp4_a_scales_preshuffled:
         return 0
+    return ep_mxfp4_down_slot_stride(config)
+
+
+def ep_mxfp4_down_slot_stride(config: EPConfig) -> int:
+    """Raw per-expert ``scale_4d`` slot stride
+    (= ``align_up(max_recv_tokens_per_expert, 32)``) for the LOCAL SwiGLU
+    down-proj A-scale fold (``fused_silu`` writes it, the down matmul reads it).
+    Unconditional and independent of the distributed up-proj fold
+    (``mxfp4_a_scales_preshuffled``), so it engages on the distributed-dispatch
+    path where that fold is off. ``ep_mxfp4_max_padded_m`` returns this gated on
+    that flag; the caller here gates on applicability."""
     n_ranks = config.n_gpus_per_node * config.n_nodes
     max_recv_per_expert = config.max_tokens_per_rank * n_ranks
     return ceildiv(max_recv_per_expert, 32) * 32
@@ -824,22 +835,6 @@ def call_distributed_ep_dispatch(
             fused_shared_expert=config.fused_shared_expert,
         )
     elif is_mxfp4:
-        if config.mxfp4_a_scales_preshuffled:
-            # Defensive backstop: `_ep_forward` only enables the A-scale
-            # preshuffle fold for the use_allreduce dispatch and the
-            # dispatch-wait paths, so this multi-device single-op path should
-            # never see the flag set. `_ep_dispatch_output_types` above already
-            # sized the scale output for slots, but `dispatch_mxfp4` has no
-            # `fuse_a_scale_preshuffle`/`max_padded_M` params, so a row-major
-            # write into a slot-sized buffer would be silently wrong. Fail loud
-            # if the `_ep_forward` path guard and the op wiring ever diverge.
-            raise NotImplementedError(
-                "MXFP4 EP A-scale preshuffle fusion is not supported on the "
-                "multi-device single-op dispatch path "
-                "(`call_distributed_ep_dispatch`); it is only wired into the "
-                "use_allreduce dispatch and the dispatch-wait paths. The "
-                "`_ep_forward` driver should have left the fold disabled here."
-            )
         return ops.distributed_ep.dispatch_mxfp4(
             input_tokens,
             topk_ids,
@@ -855,6 +850,8 @@ def call_distributed_ep_dispatch(
             n_gpus_per_node=config.n_gpus_per_node,
             n_nodes=config.n_nodes,
             fused_shared_expert=config.fused_shared_expert,
+            fuse_a_scale_preshuffle=config.mxfp4_a_scales_preshuffled,
+            max_padded_m=ep_mxfp4_max_padded_m(config),
         )
     elif is_fp8:
         assert quant_config is not None
@@ -1099,6 +1096,9 @@ def fused_silu_quantized(
     input_scales: TensorValue | None = None,
     scales_offsets: TensorValue | None = None,
     max_padded_M: int = 0,
+    clamp_activation: bool = False,
+    swiglu_alpha: float = 0.0,
+    swiglu_limit: float = 0.0,
 ) -> tuple[TensorValue, TensorValue]:
     """Perform fused SILU operation for all the MLPs in the EP MoE module.
 
@@ -1127,6 +1127,14 @@ def fused_silu_quantized(
             scales tensor will have shape
             ``[n_local_experts * max_padded_M, K_SCALES]`` instead of
             ``[max_recv_tokens, K_SCALES]``.  Only valid for MXFP4.
+        clamp_activation: When True (MXFP4 only), apply the OAI-clamped SwiGLU
+            activation ``(clamp(up, -L, L) + 1) * min(gate, L) *
+            sigmoid(alpha * min(gate, L))`` instead of plain ``SiLU(gate) *
+            up``.
+        swiglu_alpha: Alpha for the clamped activation (ignored unless
+            ``clamp_activation``).
+        swiglu_limit: Limit ``L`` for the clamped activation (ignored unless
+            ``clamp_activation``).
 
     Returns:
         A tuple containing:
@@ -1174,6 +1182,14 @@ def fused_silu_quantized(
     elif quant_config.is_mxfp4:
         op_name += ".mxfp4"
         hidden_size //= 2  # Two FP4 elements are packed into one uint8 element
+        # mxfp4 op always takes trailing alpha/limit CPU f32 constants
+        # (plain SiLU passes 0.0/0.0).
+        input_vals.append(
+            ops.constant(swiglu_alpha, DType.float32, device=DeviceRef.CPU())
+        )
+        input_vals.append(
+            ops.constant(swiglu_limit, DType.float32, device=DeviceRef.CPU())
+        )
         if max_padded_M > 0:
             # KS64 down-proj fusion: write the E8M0 scale directly
             # into the grouped matmul's per-expert fixed-stride slot layout so
@@ -1195,11 +1211,12 @@ def fused_silu_quantized(
         )
 
     parameters: dict[str, bool | int] = {}
-    if quant_config.is_mxfp4 and max_padded_M > 0:
-        parameters = {
-            "fuse_a_scale_preshuffle": True,
-            "max_padded_M": max_padded_M,
-        }
+    if quant_config.is_mxfp4:
+        # Clamp flag applies even with the scale fold off.
+        parameters["clamp_activation"] = clamp_activation
+        if max_padded_M > 0:
+            parameters["fuse_a_scale_preshuffle"] = True
+            parameters["max_padded_M"] = max_padded_M
 
     result = ops.custom(
         op_name,

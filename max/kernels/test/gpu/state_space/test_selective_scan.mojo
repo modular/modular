@@ -766,6 +766,7 @@ def run_selective_scan_update_gpu[
     with ctx.push_context():
         ctx.enqueue_copy(state_out_gpu_h, state_out_device)
         ctx.enqueue_copy(output_gpu_h, output_device)
+        ctx.synchronize()
 
     # Create TileTensors for CPU reference
     var state_out_cpu_tt = TileTensor(

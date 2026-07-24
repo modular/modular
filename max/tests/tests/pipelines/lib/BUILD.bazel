@@ -27,6 +27,7 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/_entrypoints",
+        "//max/python/max/_xgrammar",
         "//max/python/max/config",
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -40,6 +41,7 @@ modular_py_test(
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/sampling",
         "//max/python/max/pipelines/weights",
         "//max/python/max/serve/parser",
         requirement("click"),

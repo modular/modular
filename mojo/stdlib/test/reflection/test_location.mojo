@@ -245,8 +245,8 @@ def source_loc_with_debug() -> SourceLocation:
     ]()
 
     return SourceLocation(
-        SIMDSize(mlir_value=line),
-        SIMDSize(mlir_value=col),
+        SIMDLength(mlir_value=line),
+        SIMDLength(mlir_value=col),
         StaticString(file_name),
     )
 
@@ -262,11 +262,11 @@ def test_source_location_niche() raises:
 
     var storage = UnsafeMaybeUninit[SourceLocation]()
 
-    SourceLocation.write_niche(UnsafePointer(to=storage))
-    assert_true(SourceLocation.isa_niche(UnsafePointer(to=storage)))
+    SourceLocation.write_niche(Pointer(to=storage))
+    assert_true(SourceLocation.isa_niche(Pointer(to=storage)))
 
     storage.init_from(SourceLocation(50, 60, "/path/to/some_file.mojo"))
-    assert_false(SourceLocation.isa_niche(UnsafePointer(to=storage)))
+    assert_false(SourceLocation.isa_niche(Pointer(to=storage)))
 
 
 def main() raises:

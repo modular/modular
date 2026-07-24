@@ -167,22 +167,23 @@ struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
     @staticmethod
     @always_inline
     @doc_hidden
-    def write_niche(
-        memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
-    ):
-        (memory.bitcast[Byte]() + Self._LineByteOffset).bitcast[
-            Int
-        ]().init_pointee_move(Self._LineNiche)
+    def write_niche(memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]):
+        memory.unsafe_bitcast[Byte]().unsafe_offset(
+            Self._LineByteOffset
+        ).unsafe_bitcast[Int]().unsafe_write(Self._LineNiche)
 
     @staticmethod
     @always_inline
     @doc_hidden
     def isa_niche(
-        memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
+        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> Bool:
-        return (memory.bitcast[Byte]() + Self._LineByteOffset).bitcast[
-            Int
-        ]()[] == Self._LineNiche
+        return (
+            memory.unsafe_bitcast[Byte]()
+            .unsafe_offset(Self._LineByteOffset)
+            .unsafe_bitcast[Int]()[]
+            == Self._LineNiche
+        )
 
 
 @always_inline("nodebug")
@@ -217,8 +218,8 @@ def source_location() -> SourceLocation:
     ]()
 
     return SourceLocation(
-        Int(SIMDSize(mlir_value=line)),
-        Int(SIMDSize(mlir_value=col)),
+        Int(SIMDLength(mlir_value=line)),
+        Int(SIMDLength(mlir_value=col)),
         StaticString(file_name),
     )
 
@@ -281,7 +282,7 @@ def call_location[*, inline_count: Int = 1]() -> SourceLocation:
     ]()
 
     return SourceLocation(
-        Int(SIMDSize(mlir_value=line)),
-        Int(SIMDSize(mlir_value=col)),
+        Int(SIMDLength(mlir_value=line)),
+        Int(SIMDLength(mlir_value=col)),
         StaticString(file_name),
     )

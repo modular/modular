@@ -54,7 +54,7 @@ from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
 from max.serve.telemetry.common import configure_logging, configure_metrics
-from max.serve.telemetry.gc_debug import install_gc_debugger
+from max.serve.telemetry.gc_utils import freeze_gc_heap, install_gc_debugger
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 from max.serve.worker_interface import (
@@ -237,15 +237,6 @@ class ModelWorker:
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
 
-        # Optionally instrument CPython garbage-collection pauses. Stop-the-
-        # world GC collections hold the GIL and can stall the scheduler thread,
-        # surfacing as large batch_execution_time_ms spikes (MXSERV-152).
-        install_gc_debugger(
-            enabled=settings.gc_debug,
-            min_duration_ms=settings.gc_debug_min_duration_ms,
-            top_objects=settings.gc_debug_top_objects,
-        )
-
         run_start_s = time.monotonic()
         spawn_duration_s = (
             time.time() - spawn_start_wall_ts
@@ -405,11 +396,22 @@ class ModelWorker:
                 get_reset_prefix_cache_backend(pipeline, zmq_endpoint_base)
             )
 
+            # Tear down the KV connector when the worker exits (normal exit,
+            # exception, or SIGTERM-driven cancellation). This drains host/disk
+            # transfers and, for the tiered connector, removes the on-disk
+            # offload directory so it isn't leaked across restarts.
+            if kv_cache is not None:
+                exit_stack.callback(kv_cache.shutdown)
+
             # Get the EPLB stats accumulator (None unless profiling is
             # enabled and the pipeline supports it).
             eplb_stats_accumulator = _get_eplb_stats_accumulator(
                 pipeline, settings.eplb_profile
             )
+
+            if eplb_stats_accumulator is not None:
+                # Zero warmup/graph-capture skew so the first snapshot is clean.
+                eplb_stats_accumulator.reset()
 
             eplb_stats_backend = (
                 EplbStatsBackend(
@@ -440,6 +442,32 @@ class ModelWorker:
                     lora_manager,
                     zmq_endpoint_base,
                 )
+
+            # Freeze the GC heap now that all long-lived startup objects are
+            # allocated to reduce the work in subsequent GC collections.
+            # See: https://github.com/vllm-project/vllm/blob/95ed0feaa5cd7fb16d72c53ce04950aaf07c4698/vllm/utils/gc_utils.py
+            gc_freeze_start_s = time.monotonic()
+            with Tracer("gc_freeze_after_warmup"):
+                frozen_objects = freeze_gc_heap()
+            gc_freeze_ms = (time.monotonic() - gc_freeze_start_s) * 1000.0
+            logger.info(
+                "Froze %d GC-tracked objects after warmup in %.1fms.",
+                frozen_objects,
+                gc_freeze_ms,
+                extra={
+                    "event": "gc_freeze",
+                    "gc_frozen_objects": frozen_objects,
+                    "gc_freeze_ms": gc_freeze_ms,
+                },
+            )
+
+            # Optionally instrument CPython garbage-collection pauses. This is
+            # done after warmup as graph capture can trigger a large number
+            # of GC collections that are noisy.
+            install_gc_debugger(
+                enabled=settings.gc_debug,
+                top_objects=settings.gc_debug_top_objects,
+            )
 
             # Mark the start of the process, and run the scheduler.
             logger.debug("Started model worker!")
@@ -581,4 +609,9 @@ async def start_model_worker(
         logger.debug("Model worker task is ready")
 
         async with model_worker_interface.model_worker_proxy() as model_worker:
+            # Block until the worker channel is connected before serving, so
+            # runtime admission never has to disambiguate "not connected yet"
+            # from "queue full." Reuses the model-worker readiness budget.
+            await model_worker.wait_until_connected(settings.mw_timeout_s)
+            logger.debug("Model worker channel connected")
             yield model_worker

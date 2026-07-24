@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements CPU-based multi-head attention kernels, including flash attention and KV-cache-backed attention variants."""
+
 from std.collections import OptionalReg
 from std.math import align_down, align_up, ceildiv, exp
 
@@ -45,7 +47,7 @@ from linalg.matmul.cpu.apple_accelerate import (
 )
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
-from std.memory import alloc, dealloc, memset_zero, stack_allocation
+from std.memory import alloc, dealloc, unsafe_memset_zero, stack_allocation
 from std.memory.alloc import DeletableAllocation, Layout as AllocLayout
 from nn.attention.mha_mask import MHAMask
 from std.runtime.asyncrt import parallelism_level
@@ -302,7 +304,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
 
         if aligned_n != N:
             for k in range(K):
-                memset_zero(packed_ptr + k * aligned_n + N, aligned_n - N)
+                unsafe_memset_zero(
+                    packed_ptr + k * aligned_n + N, aligned_n - N
+                )
 
     @no_inline
     @staticmethod
@@ -327,7 +331,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             tile[packed_copy, Self._matmul_config.pack_sizes](0, N)
 
             if aligned_n != N:
-                memset_zero(output_ptr + N, aligned_n - N)
+                unsafe_memset_zero(output_ptr + N, aligned_n - N)
 
             output_ptr += aligned_n
 
@@ -350,7 +354,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             @parameter
             @always_inline
             def do_reduce[
-                _simd_width: SIMDSize
+                _simd_width: SIMDLength
             ](
                 start: Int,
                 end: Int,
@@ -366,7 +370,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             @parameter
             @always_inline
             def do_reduce_accum[
-                target_width: Int, _simd_width: SIMDSize
+                target_width: Int, _simd_width: SIMDLength
             ](
                 accum: InlineArray[SIMD[Self.dtype, _simd_width], tile_n]
             ) -> InlineArray[SIMD[Self.dtype, target_width], tile_n]:
@@ -555,7 +559,7 @@ struct _FlashAttention[
     input_v_fn: def[simd_width: Int, rank: Int](
         idx: IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
-    mask_fn: def[simd_width: SIMDSize, mask_rank: Int](
+    mask_fn: def[simd_width: SIMDLength, mask_rank: Int](
         idx: IndexList[mask_rank],
         score_vec: SIMD[dtype, simd_width],
         kv_cache_length: Int,
@@ -579,7 +583,7 @@ struct _FlashAttention[
 
     @staticmethod
     def _online_softmax[
-        _mask_fn: def[simd_width: SIMDSize](
+        _mask_fn: def[simd_width: SIMDLength](
             m: Int, n: Int, score_vec: SIMD[Self.dtype, simd_width]
         ) capturing -> SIMD[Self.dtype, simd_width],
     ](
@@ -624,7 +628,7 @@ struct _FlashAttention[
             @always_inline
             @parameter
             def output_fn[
-                _dtype: DType, width: SIMDSize, rank: Int
+                _dtype: DType, width: SIMDLength, rank: Int
             ](idx: Int, val: SIMD[_dtype, width]):
                 qk_row.store(
                     IndexList[1](idx), rebind[SIMD[Self.dtype, width]](val)
@@ -869,7 +873,7 @@ struct _FlashAttention[
                     @parameter
                     @always_inline
                     def mask_2d_fn[
-                        _simd_width: SIMDSize
+                        _simd_width: SIMDLength
                     ](
                         _m: Int,
                         _n: Int,
@@ -950,7 +954,7 @@ struct _FlashAttention[
             ):
                 dealloc(packed^.into_allocation())
 
-            packed_alloc^.destroy_with(_dealloc_packed)
+            packed_alloc^.deinit_with(_dealloc_packed)
 
         sync_parallelize[task_func](num_threads, ctx)
 
@@ -1014,7 +1018,7 @@ def _flash_attention[
     @always_inline
     @parameter
     def mask_fn[
-        simd_width: SIMDSize, rank: Int
+        simd_width: SIMDLength, rank: Int
     ](
         idx: IndexList[rank],
         score_vec: SIMD[dtype, simd_width],
@@ -1094,6 +1098,36 @@ def flash_attention[
     ] = None,
     ctx: Optional[DeviceContext] = None,
 ):
+    """Computes scaled dot-product flash attention on CPU for the given query, key, value, and mask accessors.
+
+    Parameters:
+        dtype: The element type of the query, key, value, and output
+            tensors (inferred).
+        rank: The number of dimensions in the query, key, value, and output
+            tensors, either 3 or 4 (inferred).
+        mask_rank: The number of dimensions in the attention mask tensor
+            (inferred).
+        q_origin: The memory origin of the read-only query tensor
+            (inferred).
+        output_origin: The memory origin of the writable output tensor
+            (inferred).
+        input_k_fn: Compile-time function loading a `SIMD` vector of key
+            elements at a given `IndexList` index.
+        input_v_fn: Compile-time function loading a `SIMD` vector of value
+            elements at a given `IndexList` index.
+        input_mask_fn: Compile-time function loading a `SIMD` vector of
+            additive mask values at a given `IndexList` index.
+
+    Args:
+        q: Query tensor in BSHD or BSD layout.
+        k_shape: Shape of the key tensor.
+        v_shape: Shape of the value tensor.
+        mask_shape: Shape of the attention mask tensor.
+        output: Output tensor to write the attention results into.
+        scale: Scaling factor applied to the query-key dot products.
+        sink_weights: Optional per-head attention sink weights.
+        ctx: Optional device context for controlling parallelism.
+    """
     _flash_attention[input_k_fn, input_v_fn, input_mask_fn](
         q,
         k_shape,
@@ -1148,6 +1182,38 @@ def flash_attention_split_kv[
     So this kernel does an in-place concat fusion by changing the input lambdas
     `input_{k,v}_cache_fn_wrapper` to take previous sequence KV elements from
     the KV cache, and current KV elements from tensors `k` and `v`.
+
+    Parameters:
+        dtype: The element type of the query, key, value, and output
+            tensors (inferred).
+        rank: The number of dimensions in the query, key, value, and output
+            tensors, either 3 or 4 (inferred).
+        mask_rank: The number of dimensions in the attention mask tensor
+            (inferred).
+        input_k_fn: Compile-time function loading a `SIMD` vector of current
+            key elements at a given `IndexList` index.
+        input_v_fn: Compile-time function loading a `SIMD` vector of current
+            value elements at a given `IndexList` index.
+        input_k_cache_fn: Compile-time function loading a `SIMD` vector of
+            cached key elements at a given `IndexList` index.
+        input_v_cache_fn: Compile-time function loading a `SIMD` vector of
+            cached value elements at a given `IndexList` index.
+        input_mask_fn: Compile-time function loading a `SIMD` vector of
+            additive mask values at a given `IndexList` index.
+
+    Args:
+        q: Query tensor in BSHD layout.
+        k_shape: Shape of the current key tensor in BSHD layout.
+        v_shape: Shape of the current value tensor in BSHD layout.
+        k_cache_shape: Shape of the cached key tensor with one extra
+            leading dimension.
+        v_cache_shape: Shape of the cached value tensor with one extra
+            leading dimension.
+        mask_shape: Shape of the attention mask tensor.
+        output: Output tensor to write the attention results into.
+        scale: Scaling factor applied to the query-key dot products.
+        ctx: Optional device context for controlling parallelism
+            (defaults to `None`).
     """
     # This expects the following layouts:
     # q: BSHD
@@ -1263,7 +1329,7 @@ def _flash_attention_kv_cache[
     q_origin: Origin[mut=False],
     output_origin: Origin[mut=True],
     //,
-    mask_fn: def[simd_width: SIMDSize, mask_rank: Int](
+    mask_fn: def[simd_width: SIMDLength, mask_rank: Int](
         idx: IndexList[mask_rank],
         score_vec: SIMD[dtype, simd_width],
         kv_cache_length: Int,
@@ -1342,7 +1408,7 @@ def _flash_attention_kv_cache[
     ],
     q_length_fn: def(batch: Int) capturing -> Int,
     kv_length_fn: def(batch: Int) capturing -> Int,
-    mask_fn: def[simd_width: SIMDSize, mask_rank: Int](
+    mask_fn: def[simd_width: SIMDLength, mask_rank: Int](
         idx: IndexList[mask_rank],
         score_vec: SIMD[dtype, simd_width],
         kv_cache_length: Int,
@@ -1419,7 +1485,7 @@ def _flash_attention_kv_cache[
 
 # See the note on the ragged overload below: `k`/`v` alias the same `blocks`
 # buffer and are read-only here, so disable the nested-origin exclusivity check.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
@@ -1443,10 +1509,21 @@ def flash_attention_kv_cache[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ):
+    """Computes flash attention on CPU using a KV cache with an additive LayoutTensor mask.
+
+    Args:
+        q: Query tensor in BSHD layout.
+        k: Key cache.
+        v: Value cache.
+        mask: Additive attention mask tensor.
+        scale: Scaling factor applied to the query-key dot products.
+        output: Output tensor to write the attention results into.
+        sink_weights: Optional per-head attention sink weights."""
+
     @always_inline
     @parameter
     def mask_fn[
-        simd_width: SIMDSize, rank: Int
+        simd_width: SIMDLength, rank: Int
     ](
         idx: IndexList[rank],
         score_vec: SIMD[dtype, simd_width],
@@ -1461,7 +1538,7 @@ def flash_attention_kv_cache[
 
 # See the note on the ragged overload below: `k`/`v` alias the same `blocks`
 # buffer and are read-only here, so disable the nested-origin exclusivity check.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
@@ -1486,10 +1563,21 @@ def flash_attention_kv_cache[
         ]
     ] = None,
 ):
+    """Computes flash attention on CPU using a KV cache with an MHAMask-based mask.
+
+    Args:
+        q: Query tensor in BSHD layout.
+        k: Key cache.
+        v: Value cache.
+        mask: MHAMask applied to the attention scores.
+        scale: Scaling factor applied to the query-key dot products.
+        output: Output tensor to write the attention results into.
+        sink_weights: Optional per-head attention sink weights."""
+
     @always_inline
     @parameter
     def mask_fn[
-        simd_width: SIMDSize,
+        simd_width: SIMDLength,
         rank: Int,
     ](
         idx: IndexList[rank],
@@ -1509,7 +1597,7 @@ def flash_attention_kv_cache[
 # exclusivity checker can't prove that and rejects passing both. Disabling the
 # nested-origin exclusivity check is safe here (read-only) and lets direct
 # callers pass `get_key_cache()`/`get_value_cache()` without a copy-capture shim.
-@__unsafe_disable_nested_origin_exclusivity
+@__unsafe_nested_origins_read_only
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
@@ -1538,12 +1626,38 @@ def flash_attention_kv_cache[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ):
-    """Entrypoint for ragged tensors."""
+    """Computes flash attention on CPU for ragged tensors using a KV cache with an `MHAMask`-based mask.
+
+    Parameters:
+        dtype: The element type of the query, key, value, and output
+            tensors (inferred).
+        cache_t: The KV cache type storing key and value states (inferred).
+        mask_t: The `MHAMask` type applied to the attention scores
+            (inferred).
+        q_origin: The memory origin of the read-only query tensor
+            (inferred).
+        output_origin: The memory origin of the writable output tensor
+            (inferred).
+
+    Args:
+        q: Flattened query tensor indexed by `(row_offset, head, depth)`.
+        q_input_row_offsets: Per-batch start offsets into the flattened
+            query tensor; batch `b` spans rows `[offsets[b], offsets[b + 1])`.
+        kv_input_row_offsets: Per-batch start offsets into the flattened KV
+            tensors; batch `b` spans rows `[offsets[b], offsets[b + 1])`.
+        k: Key cache storing per-head key states.
+        v: Value cache storing per-head value states.
+        mask: `MHAMask` applied additively to the query-key attention
+            scores.
+        scale: Scaling factor applied to the query-key dot products.
+        output: Output tensor to write the attention results into.
+        sink_weights: Optional per-head attention sink weights.
+    """
 
     @always_inline
     @parameter
     def mask_fn[
-        simd_width: SIMDSize,
+        simd_width: SIMDLength,
         rank: Int,
     ](
         idx: IndexList[rank],
