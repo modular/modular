@@ -669,6 +669,12 @@ private:
   ModuleState &importModuleState(StringRef name, ASTDecl *context,
                                  llvm::SMLoc loc, bool isImplicit = false);
 
+  /// Look up a module by its name, in the specified parent scope, in the module
+  /// cache. Returns nullptr on a miss. On a hit:
+  ///   * Memoizes the import loc on first resolution
+  ModuleState *lookupModuleCache(StringRef name, ModuleState *parentState,
+                                 llvm::SMLoc loc);
+
   /// Import the specified module or package nested within the given parent
   /// decl, returning the module state. Always returns a valid module state,
   /// even if the module could not be found.
