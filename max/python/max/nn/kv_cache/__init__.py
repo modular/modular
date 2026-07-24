@@ -32,6 +32,7 @@ from .cache_params import (
     compute_num_device_blocks,
     compute_num_host_blocks,
     estimated_memory_size,
+    spec_decode_cache_slack,
 )
 from .input_types import (
     KVCacheInputs,
@@ -83,4 +84,5 @@ __all__ = [
     "compute_num_device_blocks",
     "compute_num_host_blocks",
     "estimated_memory_size",
+    "spec_decode_cache_slack",
 ]

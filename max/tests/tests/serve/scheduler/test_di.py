@@ -2003,29 +2003,25 @@ def test_update_spec_decode_without_skip_fsm_advance_calls_advance_fsm() -> (
     assert mock_advance_fsm.call_count >= 1
 
 
-def test_update_spec_decode_early_stops_near_max_seq_len() -> None:
-    """update_spec_decode_context_and_prepare_responses marks contexts as
-    MAXIMUM_LENGTH when they would exceed max_seq_len in the next TG step.
+def test_update_spec_decode_does_not_early_stop_near_max_seq_len() -> None:
+    """update_spec_decode_context_and_prepare_responses keeps a near-limit
+    context live as long as there is room for at least one more token.
 
-    Regression test for MAX-615: with speculative decoding, the next step can
-    add up to (num_spec_tokens + 1) tokens. If this would exceed max_seq_len,
-    the sequence is early-stopped to prevent a KV cache overflow crash.
+    MAX-615 was originally mitigated by reserving worst-case
+    (num_spec_tokens + 1) growth in build_response, which stopped a sequence
+    up to num_spec_tokens tokens short of the cap. Now the KV pool carries
+    num_draft_tokens slack beyond max_seq_len (see overlap_text_generation
+    ``_effective_max_cache_length``), so a step may over-speculate into that
+    slack and the per-token commit loop truncates to the cap. A context that
+    still has room must therefore NOT be early-stopped here.
     """
     num_spec_tokens = 3
-    # Max growth per step = num_spec_tokens + 1 = 4
-    max_growth = num_spec_tokens + 1
 
-    # Create a context where:
-    # - After realize_future_token, processed_length = prompt_len
-    # - current_length = processed_length + 1 = prompt_len + 1
-    # - Early-stop if: current_length + max_growth > max_seq_len
-    #   i.e., prompt_len + 1 + max_growth > max_seq_len
-    #   i.e., prompt_len > max_seq_len - max_growth - 1
-    #
-    # For max_seq_len=100, max_growth=4: prompt_len > 95, so prompt_len=96
-    # triggers early-stop.
+    # At prompt_len=96 / max_seq_len=100 the old worst-case reservation
+    # (96 + 1 + 4 > 100) marked this MAXIMUM_LENGTH; it must no longer do so
+    # because there is still room for more tokens (97 < 100).
     max_seq_len = 100
-    prompt_len = max_seq_len - max_growth  # = 96
+    prompt_len = max_seq_len - (num_spec_tokens + 1)  # = 96
     output_len = max_seq_len - prompt_len  # = 4
 
     ctx = create_text_context(
@@ -2039,24 +2035,25 @@ def test_update_spec_decode_early_stops_near_max_seq_len() -> None:
     ctx.update_with_future_token()
     assert not ctx.is_done, "Context should not be done before the test"
 
+    next_draft = [4, 5, 6]
     update_spec_decode_context_and_prepare_responses(
         draft_tokens=np.array([[1, 2, 3]], dtype=np.int32),
-        next_draft_tokens=np.array([[4, 5, 6]], dtype=np.int32),
+        next_draft_tokens=np.array([next_draft], dtype=np.int32),
         num_accepted_draft_tokens=np.array([0], dtype=np.int32),
         next_tokens=np.array([99], dtype=np.int32),
         context_batch=[ctx],
         max_seq_len=max_seq_len,
     )
 
-    # After realize_future_token: processed_length = 96, current_length = 97
-    # Check: 97 + 4 = 101 > 100 → MAXIMUM_LENGTH
-    assert ctx.status == GenerationStatus.MAXIMUM_LENGTH, (
-        "Context should be marked as MAXIMUM_LENGTH when next step would "
-        f"exceed max_seq_len. current_length={ctx.tokens.processed_length + 1}, "
-        f"max_growth={max_growth}, max_seq_len={max_seq_len}"
+    # Only the bonus token committed (current_position=97 < 100), so the
+    # context stays live and keeps its drafts for the next verify step.
+    assert ctx.status != GenerationStatus.MAXIMUM_LENGTH, (
+        "Context with room for more tokens must not be early-stopped: "
+        f"current_position={ctx.tokens.current_position}, "
+        f"max_seq_len={max_seq_len}"
     )
-    assert ctx.spec_decoding_state.draft_tokens_to_verify == [], (
-        "draft_tokens_to_verify must be empty when ctx.is_done=True"
+    assert ctx.spec_decoding_state.draft_tokens_to_verify == next_draft, (
+        "A still-active context must retain its next-step draft tokens"
     )
 
 

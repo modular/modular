@@ -23,6 +23,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     MultiKVCacheParams,
+    spec_decode_cache_slack,
 )
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
 from max.pipelines.kv_cache import cache_dtype_for_encoding
@@ -205,7 +206,8 @@ class DeepseekV3_2Config(DeepseekV3Config):
             first_k_dense_replace=config.first_k_dense_replace,
             norm_topk_prob=config.norm_topk_prob,
             hidden_act=config.hidden_act,
-            max_position_embeddings=config.max_position_embeddings,
+            max_position_embeddings=config.max_position_embeddings
+            + spec_decode_cache_slack(kv_params),
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
             rope_theta=get_rope_theta(config),
