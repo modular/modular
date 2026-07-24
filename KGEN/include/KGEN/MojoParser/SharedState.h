@@ -671,9 +671,11 @@ private:
 
   /// Look up a module by its name, in the specified parent scope, in the module
   /// cache. Returns nullptr on a miss. On a hit:
+  ///   * Prevent module self-imports
   ///   * Memoizes the import loc on first resolution
-  ModuleState *lookupModuleCache(StringRef name, ModuleState *parentState,
-                                 llvm::SMLoc loc);
+  ModuleState *lookupModuleCache(StringRef name, ASTDecl *parentDecl,
+                                 ModuleState *parentState, llvm::SMLoc loc,
+                                 llvm::SMLoc identifierLoc, bool emitErrors);
 
   /// Import the specified module or package nested within the given parent
   /// decl, returning the module state. Always returns a valid module state,
