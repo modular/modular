@@ -170,8 +170,7 @@ struct Counter[
         for var value in iterable:
             # TODO(MOCO-4355): Drop `rebind_var` once the `where` clause's
             # `Element == Self.V` equality is applied when checking the body.
-            var key = rebind_var[Self.V](value^)
-            self[key] = self[key] + 1
+            self._data.setdefault(rebind_var[Self.V](value^), 0) += 1
 
     @staticmethod
     def fromkeys(keys: List[Self.V], value: Int) -> Self:
