@@ -114,30 +114,6 @@ public:
                               CompilationOptions, llvm::StringRef,
                               const std::string &)
 
-  /// Plugin API for registering patterns that lower POP ops to LLVM.
-  REGISTER_GET_KGEN_PLUGIN_FN(PopulateLowerPOPToLLVMPatterns,
-                              populateLowerPOPToLLVMPatterns, M::ErrorOrSuccess,
-                              mlir::RewritePatternSet &,
-                              mlir::LLVMTypeConverter &, M::TargetInfoAttr)
-
-  /// Plugin API for registering patterns that lower global POP ops to LLVM.
-  REGISTER_GET_KGEN_PLUGIN_FN(PopulateLowerGlobalPOPToLLVMPatterns,
-                              populateLowerGlobalPOPToLLVMPatterns,
-                              M::ErrorOrSuccess, mlir::RewritePatternSet &,
-                              mlir::LLVMTypeConverter &, mlir::SymbolTable &,
-                              M::TargetInfoAttr)
-
-  /// Plugin API for contributing target-specific late passes to the
-  /// LLVM-dialect lowering pipeline. Invoked from `buildLowerToLLVMPipeline`
-  /// after canonicalizer/CSE and before DebugInfoToLLVM. The plugin cannot
-  /// register passes with MLIR's global pass registry — MLIR's registry is
-  /// a `ManagedStatic` and each statically-linked unit (host binary, plugin
-  /// .so) has its own copy. Plugin passes must be added via this hook, not
-  /// via `-pass-name` from the CLI.
-  REGISTER_GET_KGEN_PLUGIN_FN(AddPostLowerToLLVMPasses,
-                              addPostLowerToLLVMPasses, M::ErrorOrSuccess,
-                              mlir::OpPassManager &)
-
   /// Plugin API for the custom bitcode-library linking policy: returns true if
   /// only the symbols referenced by unresolved extern functions should be
   /// linked (the default), false if the full library must be linked. Plugins
@@ -187,32 +163,6 @@ public:
                                M::ErrorOr<M::BufferRef>, M::BufferRef,
                                CompilationOptions, llvm::StringRef,
                                const std::string &)
-
-  /// Plugin API for registering patterns that lower POP ops to LLVM.
-  REGISTER_CALL_KGEN_PLUGIN_FN(PopulateLowerPOPToLLVMPatterns,
-                               populateLowerPOPToLLVMPatterns,
-                               M::ErrorOrSuccess, mlir::RewritePatternSet &,
-                               mlir::LLVMTypeConverter &, M::TargetInfoAttr)
-
-  /// Plugin API for registering patterns that lower global POP ops to LLVM.
-  REGISTER_CALL_KGEN_PLUGIN_FN(PopulateLowerGlobalPOPToLLVMPatterns,
-                               populateLowerGlobalPOPToLLVMPatterns,
-                               M::ErrorOrSuccess, mlir::RewritePatternSet &,
-                               mlir::LLVMTypeConverter &, mlir::SymbolTable &,
-                               M::TargetInfoAttr)
-
-  /// Plugin API for contributing target-specific late passes to the
-  /// LLVM-dialect lowering pipeline. Iterates every loaded plugin (not just
-  /// the currently-selected one) because the pipeline is built before the
-  /// target triple is known — each plugin's contributed pass is expected to
-  /// self-gate via `lookupTargetInfo`. Hand-rolled because the iteration
-  /// semantics don't fit the `REGISTER_CALL_KGEN_PLUGIN_FN` macro template,
-  /// which forwards to `currPlugin` only.
-  M::ErrorOrSuccess addPostLowerToLLVMPasses(mlir::OpPassManager &pm) const {
-    for (const auto &p : plugins)
-      (void)p->addPostLowerToLLVMPasses(pm);
-    return M::success();
-  }
 
 private:
   std::vector<std::unique_ptr<Plugin>> plugins;
