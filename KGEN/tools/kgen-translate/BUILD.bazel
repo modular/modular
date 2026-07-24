@@ -29,6 +29,7 @@ modular_cc_binary(
         "//KGEN:Support",
         "//KGEN:ToolCommon",
         "//KGEN:Transforms",
+        "//Support:Compiler",
         "//Support:Driver",
         "//Support:Globals",
         "//Support:MDialect",
