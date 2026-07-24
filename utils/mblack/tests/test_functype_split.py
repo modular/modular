@@ -14,19 +14,14 @@ from tests.util import assert_mojo_format
 def test_ffi_functype_thin_abi_is_stable():
     """A thin C-ABI FFI signature formats unchanged, with `abi("C")` inline."""
     source = (
-        "from std.ffi import OwnedDLHandle, c_char\n"
+        "from std.ffi import c_char\n"
         "\n"
         "\n"
-        "def main() raises:\n"
-        '    var lib = OwnedDLHandle("libcurl.dylib")\n'
-        "    var result = String(capacity=256)\n"
-        "    var curl_version = lib.get_function[\n"
-        '        def() thin abi("C") -> UnsafePointer[\n'
-        "            c_char, ImmOrigin(origin_of(result))\n"
-        "        ]\n"
-        '    ]("curl_version")\n'
-        "    _ = curl_version\n"
-        "    _ = lib\n"
+        "comptime version_query_callback = Optional[\n"
+        '    def() thin abi("C") -> UnsafePointer[\n'
+        "        UnsafePointer[c_char, ImmutAnyOrigin], ImmutAnyOrigin\n"
+        "    ]\n"
+        "]\n"
     )
     assert_mojo_format(source, source)
 
@@ -38,33 +33,23 @@ def test_long_functype_splits_return_type_not_named_effect():
     being chosen as the split point.
     """
     source = (
-        "from std.ffi import OwnedDLHandle, c_char\n"
+        "from std.ffi import c_char\n"
         "\n"
         "\n"
-        "def main() raises:\n"
-        '    var lib = OwnedDLHandle("libcurl.dylib")\n'
-        "    var result_version_string_buffer = String(capacity=256)\n"
-        "    var curl_version = lib.get_function[\n"
-        '        def() thin abi("C") -> UnsafePointer[c_char,'
-        " ImmOrigin(origin_of(result_version_string_buffer))]\n"
-        '    ]("curl_version")\n'
-        "    _ = curl_version\n"
-        "    _ = lib\n"
+        "comptime version_query_callback = Optional[\n"
+        '    def() thin abi("C") -> UnsafePointer['
+        "UnsafePointer[c_char, ImmutAnyOrigin], ImmutAnyOrigin]\n"
+        "]\n"
     )
     expected = (
-        "from std.ffi import OwnedDLHandle, c_char\n"
+        "from std.ffi import c_char\n"
         "\n"
         "\n"
-        "def main() raises:\n"
-        '    var lib = OwnedDLHandle("libcurl.dylib")\n'
-        "    var result_version_string_buffer = String(capacity=256)\n"
-        "    var curl_version = lib.get_function[\n"
-        '        def() thin abi("C") -> UnsafePointer[\n'
-        "            c_char, ImmOrigin(origin_of(result_version_string_buffer))\n"
-        "        ]\n"
-        '    ]("curl_version")\n'
-        "    _ = curl_version\n"
-        "    _ = lib\n"
+        "comptime version_query_callback = Optional[\n"
+        '    def() thin abi("C") -> UnsafePointer[\n'
+        "        UnsafePointer[c_char, ImmutAnyOrigin], ImmutAnyOrigin\n"
+        "    ]\n"
+        "]\n"
     )
     assert_mojo_format(source, expected)
 
@@ -72,19 +57,14 @@ def test_long_functype_splits_return_type_not_named_effect():
 def test_async_ffi_functype_is_stable():
     """An async function type also keeps its named effect inline."""
     source = (
-        "from std.ffi import OwnedDLHandle, c_char\n"
+        "from std.ffi import c_char\n"
         "\n"
         "\n"
-        "def main() raises:\n"
-        '    var lib = OwnedDLHandle("libcurl.dylib")\n'
-        "    var result_version_string_buffer = String(capacity=256)\n"
-        "    var curl_version = lib.get_function[\n"
-        '        async def() thin abi("C") -> UnsafePointer[\n'
-        "            c_char, ImmOrigin(origin_of(result_version_string_buffer))\n"
-        "        ]\n"
-        '    ]("curl_version")\n'
-        "    _ = curl_version\n"
-        "    _ = lib\n"
+        "comptime version_query_callback = Optional[\n"
+        '    async def() thin abi("C") -> UnsafePointer[\n'
+        "        UnsafePointer[c_char, ImmutAnyOrigin], ImmutAnyOrigin\n"
+        "    ]\n"
+        "]\n"
     )
     assert_mojo_format(source, source)
 
@@ -92,25 +72,18 @@ def test_async_ffi_functype_is_stable():
 def test_unsplittable_functype_left_intact():
     """A too-long functype whose only bracket is the effect is left intact.
 
-    With empty params and a non-bracketed return type there is no other bracket
-    to wrap at, so the line is emitted unchanged.
+    The empty parameter list and non-bracketed return type leave only the named
+    effect's parens, which must stay inline, so the over-long line is emitted
+    unchanged.
     """
     source = (
-        "from std.ffi import OwnedDLHandle\n"
+        "comptime AVeryLongReturnTypeAliasNameToForceThisFunctionSignatureWellOverTheColumnLimit = Float64\n"
         "\n"
         "\n"
-        "comptime AVeryLongReturnTypeAliasNameToForceThisSignatureOverColumnLimit"
-        " = Float64\n"
-        "\n"
-        "\n"
-        "def main() raises:\n"
-        '    var lib = OwnedDLHandle("libm.dylib")\n'
-        "    var f = lib.get_function[\n"
-        '        def() thin abi("C") ->'
-        " AVeryLongReturnTypeAliasNameToForceThisSignatureOverColumnLimit\n"
-        '    ]("sym")\n'
-        "    _ = f\n"
-        "    _ = lib\n"
+        "comptime f = Optional[\n"
+        '    def() thin abi("C") ->'
+        " AVeryLongReturnTypeAliasNameToForceThisFunctionSignatureWellOverTheColumnLimit\n"
+        "]\n"
     )
     assert_mojo_format(source, source)
 
@@ -123,31 +96,17 @@ def test_functype_with_params_splits_at_parameter_list():
     relies on this).
     """
     source = (
-        "from std.ffi import OwnedDLHandle\n"
-        "\n"
-        "\n"
-        "def main() raises:\n"
-        '    var lib = OwnedDLHandle("libm.dylib")\n'
-        "    var some_math_function = lib.get_function[\n"
-        "        def(Float64, Float64, Float64, Float64, Float64, Float64)"
+        "comptime some_math_function = Optional[\n"
+        "    def(Float64, Float64, Float64, Float64, Float64, Float64)"
         ' thin abi("C") -> Float64\n'
-        '    ]("some_symbol_name")\n'
-        "    _ = some_math_function\n"
-        "    _ = lib\n"
+        "]\n"
     )
     expected = (
-        "from std.ffi import OwnedDLHandle\n"
-        "\n"
-        "\n"
-        "def main() raises:\n"
-        '    var lib = OwnedDLHandle("libm.dylib")\n'
-        "    var some_math_function = lib.get_function[\n"
-        "        def(\n"
-        "            Float64, Float64, Float64, Float64, Float64, Float64\n"
-        '        ) thin abi("C") -> Float64\n'
-        '    ]("some_symbol_name")\n'
-        "    _ = some_math_function\n"
-        "    _ = lib\n"
+        "comptime some_math_function = Optional[\n"
+        "    def(\n"
+        "        Float64, Float64, Float64, Float64, Float64, Float64\n"
+        '    ) thin abi("C") -> Float64\n'
+        "]\n"
     )
     assert_mojo_format(source, expected)
 
