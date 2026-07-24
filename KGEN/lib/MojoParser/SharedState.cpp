@@ -729,6 +729,18 @@ struct SharedState::ModuleState {
   SmallVector<std::unique_ptr<ModuleState>> nestedModuleAllocations;
   DenseMap<StringAttr, ModuleState *> nestedModules;
 
+  /// Imports that failed to resolve through this scope, sharing one erroneous
+  /// state per name. Lazily allocated.
+  std::unique_ptr<DenseMap<StringAttr, std::unique_ptr<ModuleState>>>
+      failedImports;
+
+  /// For a failed-import state: the import locations already diagnosed.
+  /// Resolver passes legitimately re-attempt the same statement and
+  /// genuinely re-resolve, since failures aren't cached as modules; the
+  /// re-attempt must not duplicate the report, while a distinct import site
+  /// of the same missing name still gets its own.
+  std::unique_ptr<SmallVector<SMLoc>> reportedFailureLocs;
+
   /// Keeps the bytecode buffer alive for deferred lazy materialization.
   /// BytecodeReader holds bufferOwnerRef by reference, so this must outlive it.
   std::shared_ptr<llvm::SourceMgr> sourceMgr;
@@ -1272,6 +1284,23 @@ ASTDecl *SharedState::tryImportSubModule(ASTDecl &parent, StringRef name,
   return state ? state->decl : nullptr;
 }
 
+SharedState::ModuleState *
+SharedState::lookupModuleCache(StringRef name, ModuleState *parentState,
+                               llvm::SMLoc loc) {
+  auto declNameAttr = StringAttr::get(getContext(), name);
+  auto it = parentState->nestedModules.find(declNameAttr);
+  if (it == parentState->nestedModules.end())
+    return nullptr;
+
+  ModuleState *state = it->second;
+
+  // Memoize the "imported from" location; the first resolution wins.
+  if (!state->importLoc.isValid() && !state->isImplicitImport)
+    state->importLoc = loc;
+
+  return state;
+}
+
 SharedState::ModuleState *SharedState::importSubModuleStateImpl(
     StringRef name, ASTDecl *parentDecl, llvm::SMLoc loc,
     llvm::SMLoc identifierLoc, bool emitErrors) {
@@ -1279,6 +1308,10 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
   ModuleState *parentState = impl->moduleStates.lookup(parentDecl);
   assert(parentState && "parent decl must have a module state");
   auto declNameAttr = StringAttr::get(getContext(), name);
+
+  // Check to see if we've already imported this module.
+  if (ModuleState *state = lookupModuleCache(name, parentState, loc))
+    return state;
 
   // On a genuine "no such submodule": null when probing (emitErrors=false), or
   // an error module state with the given message when importing (true).
@@ -1289,27 +1322,15 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
                                    *parentState->decl, message);
   };
 
-  // Root a package's location at the location of its first resolution: the
-  // first reference wins.
-  auto rememberImportLoc = [&](ModuleState *state) -> ModuleState * {
-    if (!state->importLoc.isValid() && !state->isImplicitImport)
-      state->importLoc = loc;
-    return state;
-  };
-
-  // Check to see if we've already imported this module.
-  if (auto it = parentState->nestedModules.find(declNameAttr);
-      it != parentState->nestedModules.end())
-    return rememberImportLoc(it->second);
-
   // Resolve the parent's body so that any lazily-materialized children (e.g.
   // from binary packages, or deferred source siblings) are registered in
   // nestedModules before we fall through to filesystem resolution.
   if (failed(declResolver->resolveBody(*parentDecl, loc)))
     return notFound("failed to resolve parent package body");
-  if (auto it = parentState->nestedModules.find(declNameAttr);
-      it != parentState->nestedModules.end())
-    return rememberImportLoc(it->second);
+
+  // Check the cache again after body resolution
+  if (ModuleState *state = lookupModuleCache(name, parentState, loc))
+    return state;
 
   // Resolve the path for this module.
   std::optional<ModuleSpec> modulePath;
@@ -1323,8 +1344,21 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
     // Otherwise, go through the normal import path.
     modulePath = resolveModulePath(name, loc);
   }
+
   if (!modulePath)
     return notFound("unable to locate module '" + name + "'");
+
+  // A name that previously failed to resolve through this scope now resolves
+  // successfully: drop the stale failure record and disable its decl so neither
+  // shadows the fresh binding.
+  if (parentState->failedImports) {
+    auto failedIt = parentState->failedImports->find(declNameAttr);
+    if (failedIt != parentState->failedImports->end()) {
+      failedIt->second->decl->markDisabled();
+      impl->moduleStates.erase(failedIt->second->decl);
+      parentState->failedImports->erase(failedIt);
+    }
+  }
 
   // If the path was a source package, record the import location so the
   // package's __init__ is opened "included from" here.
@@ -1942,28 +1976,30 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
 
 SharedState::ModuleState &SharedState::createErrorModuleState(
     SMLoc loc, StringAttr name, ASTDecl &errorContext, const Twine &errorMsg) {
-  // Register the error state in the scope whose lookup failed.
+  // Track the failure in the scope whose lookup failed.
   ModuleState *contextState = impl->moduleStates.lookup(&errorContext);
   if (!contextState)
     contextState = impl->topLevelModuleState.get();
 
-  // Reuse a previously-created error state for this name so the message is
-  // emitted once per scope.
-  if (auto *it = contextState->nestedModules.lookup(name)) {
-    assert(it->decl && it->decl->isErroneous() &&
-           "error state requested for a name bound to a real module");
-    return *it;
+  if (!contextState->failedImports) {
+    contextState->failedImports.reset(
+        new DenseMap<StringAttr, std::unique_ptr<ModuleState>>());
+  }
+  std::unique_ptr<ModuleState> &state = (*contextState->failedImports)[name];
+  if (!state) {
+    ASTDecl *decl = &declResolver->addErroneousDecl(name, loc, &errorContext);
+    state = std::make_unique<ModuleState>(decl);
+    impl->moduleStates[decl] = state.get();
   }
 
-  // Emit the error message the first time this error module state is created.
-  emitError(loc, errorMsg);
-
-  // Otherwise, create one.
-  ASTDecl *decl = &declResolver->addErroneousDecl(name, loc, &errorContext);
-  ModuleState &state = contextState->insertNestedModule(
-      name, std::make_unique<ModuleState>(decl));
-  impl->moduleStates[state.decl] = &state;
-  return state;
+  // Report errors once per import site. This data is lazily allocated.
+  if (!state->reportedFailureLocs)
+    state->reportedFailureLocs.reset(new SmallVector<SMLoc>());
+  if (!llvm::is_contained(*state->reportedFailureLocs, loc)) {
+    state->reportedFailureLocs->push_back(loc);
+    emitError(loc, errorMsg);
+  }
+  return *state;
 }
 
 ASTDecl *

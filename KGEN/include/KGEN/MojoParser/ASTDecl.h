@@ -73,6 +73,10 @@ public:
     assert(getCursor().isInvalid() && "should only disable synthetic ASTDecl");
     resolvedness = DeclResolvedness::body;
     irValue = std::nullopt;
+    // Let the parent scope's name lookups know they must now filter disabled
+    // decls; scopes without any stay on the fast path.
+    if (parentDecl)
+      parentDecl->hasDisabledDecls = true;
   }
   bool isDisabled() const { return isa<std::nullopt_t>(irValue); }
 
@@ -377,6 +381,10 @@ private:
   /// the signatures of all the children to register them in the symbol table.
   /// Cache this process using a flag on the decl.
   bool referencedFromBytecode : 1;
+
+  /// True if any decl in this scope has been disabled, so name lookup must
+  /// filter tombstones. Cache this using a flag on the decl.
+  bool hasDisabledDecls : 1;
 
   /// This is set to true when an error is detected and reported about this
   /// declaration that could cause references to it to cause spurious downstream
