@@ -468,17 +468,22 @@ struct InlineArray[T: AnyType, length: Int](
             " report.",
         )
 
-    @always_inline
-    def __init__(
-        out self, var *elems: Self.T, __list_literal__: NoneType
+    def __init__[
+        *, __literal_size__: Int
+    ](
+        out self: InlineArray[Self.T, __literal_size__],
+        var *elems: Self.T,
+        __list_literal__: NoneType,
     ) where conforms_to(Self.T, Movable):
         """Constructs an array from a variadic list of elements.
+
+        Parameters:
+            __literal_size__: Infer the literal size from the list-literal.
 
         Args:
             elems: The elements to initialize the array with. Must match the
                 array size.
-            __list_literal__: Specifies that this constructor can be used for
-                list literals.
+            __list_literal__: Tell Mojo to use this method for list literals.
 
         Examples:
 
@@ -486,6 +491,14 @@ struct InlineArray[T: AnyType, length: Int](
         var arr: InlineArray[Int, 3] = [1, 2, 3]
         ```
         """
+        self = type_of(self)._from_variadic(*elems^)
+
+    # TODO(MOCO-4439): maintain static dims on homogeneous variadic packs.
+    @staticmethod
+    def _from_variadic(
+        out result: Self,
+        var *elems: Self.T,
+    ) where conforms_to(Self.T, Movable):
         debug_assert[assert_mode="safe"](
             len(elems) == Self.length,
             "InlineArray: expected ",
@@ -494,8 +507,8 @@ struct InlineArray[T: AnyType, length: Int](
             len(elems),
         )
         _inline_array_construction_checks[Self.length]()
-        self = Self(uninitialized=True)
-        var ptr = self.unsafe_ptr()
+        result = Self(uninitialized=True)
+        var ptr = result.unsafe_ptr()
 
         # Move each element into the array storage.
         comptime for i in range(Self.length):

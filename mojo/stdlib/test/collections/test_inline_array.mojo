@@ -450,7 +450,6 @@ def _test_inline_array_iter_bounds[
 
     for i in range(array_len):
         var lower, upper = iter.bounds()
-        print(lower, upper, i)
         assert_equal(array_len - i, lower)
         assert_equal(array_len - i, upper.value())
         _ = iter.__next__()
@@ -638,6 +637,32 @@ def test_inline_array_move_only() raises:
 
     # `unsafe_get` is a non-copying accessor.
     assert_equal(arr.unsafe_get(2), MoveOnly[Int](2))
+
+
+def test_inline_array_literal_size_inference() raises:
+    # The array length is inferred from the element count of the literal.
+    var arr: InlineArray[Int, _] = [1, 2, 3]
+    comptime assert type_of(arr).length == 3
+    assert_equal(arr[0], 1)
+    assert_equal(arr[1], 2)
+    assert_equal(arr[2], 3)
+
+    var single: InlineArray[Int, _] = [42]
+    comptime assert type_of(single).length == 1
+    assert_equal(single[0], 42)
+
+    var strings: InlineArray[String, _] = ["hi", "hello"]
+    comptime assert type_of(strings).length == 2
+    assert_equal(strings[0], "hi")
+    assert_equal(strings[1], "hello")
+
+    var move_only: InlineArray[MoveOnly[Int], _] = [
+        MoveOnly[Int](0),
+        MoveOnly[Int](1),
+    ]
+    comptime assert type_of(move_only).length == 2
+    assert_equal(move_only[0], MoveOnly[Int](0))
+    assert_equal(move_only[1], MoveOnly[Int](1))
 
 
 def test_inline_array_with_explicit_destroy_type() raises:
