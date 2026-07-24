@@ -439,6 +439,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `InlineArray` has been renamed to `Array`. A temporary comptime alias exists
+  for adoption.
+
 - `List.unsafe_ptr()` now returns a safe `Pointer` instead of an
   `UnsafePointer`. The two share the same layout and convert implicitly, so
   most code is unaffected. Code that called an unsafe-only pointer operation
