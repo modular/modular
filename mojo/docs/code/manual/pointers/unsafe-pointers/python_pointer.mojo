@@ -19,7 +19,7 @@ def share_array() raises:
     arr = np.array(Python.list(1, 2, 3, 4, 5, 6, 7, 8, 9))
     ptr = arr.ctypes.data.unsafe_get_as_pointer[DType.int64]()
     for i in range(9):
-        print(ptr[i], end=", ")
+        print(ptr[unsafe_offset=i], end=", ")
     print()
 
 

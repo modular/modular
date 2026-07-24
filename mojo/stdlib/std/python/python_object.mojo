@@ -1403,10 +1403,9 @@ struct PythonObject(
         self._obj_ptr = {}
         return ptr
 
-    # TODO(MSTDL-2875): keep UnsafePointer until Kernels/max callers migrate.
     def unsafe_get_as_pointer[
         dtype: DType
-    ](self) raises -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+    ](self) raises -> Pointer[Scalar[dtype], MutAnyOrigin]:
         """Reinterpret a Python integer as a Mojo pointer.
 
         Warning: converting from an integer to a pointer is unsafe! The
@@ -1418,7 +1417,7 @@ struct PythonObject(
             dtype: The desired DType of the pointer.
 
         Returns:
-            An `UnsafePointer` for the underlying Python data.
+            A pointer for the underlying Python data.
 
         Raises:
             If the operation fails.
@@ -1427,10 +1426,9 @@ struct PythonObject(
             unsafe_from_address=Int(py=self)
         )
 
-    # TODO(MSTDL-2875): keep UnsafePointer until max callers migrate.
     def downcast_value_ptr[
         T: ImplicitlyDeletable
-    ](self, *, func: Optional[StaticString] = None) raises -> UnsafePointer[
+    ](self, *, func: Optional[StaticString] = None) raises -> Pointer[
         T, MutAnyOrigin
     ]:
         """Get a pointer to the expected contained Mojo value of type `T`.
@@ -1480,8 +1478,9 @@ struct PythonObject(
                 )
             )
 
-    # TODO(MSTDL-2875): returns UnsafePointer to match the public
-    # downcast_value_ptr boundary; migrate together.
+    # TODO(MSTDL-2875): the public `downcast_value_ptr` now returns a safe
+    # `Pointer` (this result decays into it); the `Optional[UnsafePointer]`
+    # return here is migrated separately.
     def _try_downcast_value[
         T: ImplicitlyDeletable
     ](var self) raises -> Optional[UnsafePointer[T, MutAnyOrigin]]:
@@ -1511,10 +1510,9 @@ struct PythonObject(
                 ).as_unsafe_any_origin()
         return None
 
-    # TODO(MSTDL-2875): kept for cohesion with downcast_value_ptr (max callers).
     def unchecked_downcast_value_ptr[
         mut: Bool, origin: Origin[mut=mut], //, T: ImplicitlyDeletable
-    ](ref[origin] self) -> UnsafePointer[T, origin]:
+    ](ref[origin] self) -> Pointer[T, origin]:
         """Get a pointer to the expected Mojo value of type `T`.
 
         This function assumes that this Python object was allocated as an
