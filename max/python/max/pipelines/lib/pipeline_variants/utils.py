@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 from max.pipelines.context import (
+    FUTURE_TOKEN,
     GenerationStatus,
     LogProbabilities,
     StructuredOutputRegionDelimiters,
@@ -454,7 +455,7 @@ class StructuredOutputHelper:
             # Parsers that opt into enforcement-to-EOS get no end tag:
             # enforcement stays on after the section closes, so the
             # completed grammar masks everything but EOS and the turn
-            # ends with its single section (e.g. MiniMax-M3; CENG-718).
+            # ends with its single section (e.g. MiniMax-M3).
             if parser_cls.ENFORCE_TOOL_REGION_TO_EOS:
                 return (parser_cls.SECTION_BEGIN, None)
             return (parser_cls.SECTION_BEGIN, parser_cls.SECTION_END)
@@ -916,23 +917,6 @@ class StructuredOutputHelper:
                 # Advance the enforcement state machine through committed
                 # tokens, one at a time so special tokens (e.g. tool-call
                 # structural tags) can flip grammar enforcement mid-sequence.
-                # This mirrors the synchronous ``advance_fsm`` in
-                # ``context.py`` exactly:
-                #
-                #   * EOS-class tokens are not part of the grammar — they
-                #     signal end of generation. Skip the matcher so it
-                #     stays in a clean terminal state rather than getting
-                #     a spurious rejection.
-                #   * For everything else, gate on
-                #     ``update_enforcement_state``'s return value, not on
-                #     ``grammar_enforced``. The return value distinguishes
-                #     ``</think>`` (flip enforcement on, do NOT consume —
-                #     the thinking delimiter isn't grammar content) from
-                #     ``<|tool_calls_section_end|>`` (flip enforcement
-                #     off, DO consume — it's the grammar's terminal).
-                #   * If the matcher rejects, log and disable enforcement
-                #     for the rest of the request — continuing against a
-                #     desynced matcher produces schema-shaped nonsense.
                 n_accepted = int(num_accepted[ctx_idx])
                 bonus_token = int(bonus_tokens[ctx_idx])
                 committed_tokens = [
@@ -940,11 +924,20 @@ class StructuredOutputHelper:
                     for j in range(n_accepted)
                 ]
                 committed_tokens.append(bonus_token)
-
+                gen = ctx.tokens.generated
+                prior_generated = (
+                    gen[:-1] if len(gen) and gen[-1] == FUTURE_TOKEN else gen
+                )
+                eos_offset = ctx.eos_tracker.first_eos_offset(
+                    prior_generated, committed_tokens
+                )
                 for committed_idx, token in enumerate(committed_tokens):
-                    if token in ctx.eos_tracker.eos_token_ids:
+                    # Generation stops at the first terminating token; tokens
+                    # after it are never emitted, so disable enforcement and
+                    # stop rather than advancing the matcher through them.
+                    if committed_idx == eos_offset:
                         ctx.grammar_enforced = False
-                        continue
+                        break
                     was_enforced = ctx.grammar_enforced
                     if not ctx.update_enforcement_state(token):
                         continue

@@ -151,7 +151,7 @@ class TestGetToolRegionTags:
     def test_to_eos_parser_has_no_end_tag(self) -> None:
         """With no end tag, enforcement never flips off: the completed
         grammar masks everything but EOS, so the turn ends with its single
-        tool-call section (e.g. MiniMax-M3; CENG-718)."""
+        tool-call section (e.g. MiniMax-M3)."""
         tags = StructuredOutputHelper._get_tool_region_tags(
             "_test_to_eos_parser"
         )
@@ -786,3 +786,166 @@ class TestMakeValidatorRejectUnsupported:
         monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
         _sob.make_grammar_validator("xgrammar", object(), 128)
         assert captured["reject_unsupported"] is False
+
+
+class _FillRecordingBackend(_NoopBackend):
+    """Backend that stamps a ``0`` sentinel into every slot it fills.
+
+    ``advance_fsm_and_compute_bitmasks`` resets each output row to ``-1``
+    (all-valid / unconstrained) before filling. A slot the fill path touches
+    is stamped ``0`` here, so after the call a slot still holding ``-1`` was
+    left unconstrained and a slot holding ``0`` was constrained.
+    """
+
+    name = "fill-recording"
+
+    def fill_next_token_bitmask(
+        self,
+        matcher: GrammarMatcher,
+        bitmask: npt.NDArray[np.int32],
+        index: int,
+    ) -> None:
+        bitmask[index, :] = 0
+
+
+class TestCommittedInteriorEosTerminates:
+    """``StructuredOutputHelper.advance_fsm_and_compute_bitmasks`` Part 1: the
+    async callback permanently advances the real ``ctx`` through the committed
+    span ``accepted_drafts[:num_accepted] + [bonus]``, and it must stop at the
+    FIRST EOS-class token so spec decode does not diverge from non-spec.
+
+    Generation stops at the first EOS-class committed token: non-spec decode
+    terminates on ``generated[-1]`` one token at a time, and
+    ``update_spec_decode_context_and_prepare_responses`` truncates the committed
+    span at that same token. Tokens after it are never emitted, so the matcher
+    must not advance through them -- doing so would desync the matcher on
+    phantom tokens and disable enforcement for a continuation that does not
+    exist.
+    """
+
+    @staticmethod
+    def _constrained_ctx() -> TextContext:
+        ctx = create_text_context(prompt_len=4, max_length=128)
+        ctx.update(new_token=99)
+        ctx.set_matcher(_RecordingMatcher())
+        # ``tool_choice=required`` enforces from the first token throughout.
+        ctx.grammar_enforced = True
+        # ``<eos>`` (1) and ``<end_of_turn>`` (7) are both stop ids.
+        ctx.eos_tracker.eos_token_ids = {1, 7}
+        return ctx
+
+    def test_interior_eos_terminates_and_stops_matcher_walk(self) -> None:
+        """An interior committed EOS ends generation (the span is truncated
+        there), so enforcement flips off and the matcher must not advance
+        through the tokens after it. Spec decode matches non-spec: the first
+        EOS-class token is terminal."""
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_FillRecordingBackend()
+        )
+
+        ctx = self._constrained_ctx()
+        matcher = ctx.matcher
+        assert isinstance(matcher, _RecordingMatcher)
+
+        # Committed span: accepted draft [1] (=<eos>, interior) + bonus 8.
+        # Generation stops at the interior <eos>; bonus 8 is truncated and
+        # never reaches the matcher. num_accepted=1.
+        accepted = np.array([[1]], dtype=np.int64)
+        num_accepted = np.array([1], dtype=np.int64)
+        bonus = np.array([8], dtype=np.int64)
+        next_draft = np.array([[5, 6, 8]], dtype=np.int64)
+        bitmask_out = np.zeros((1, 4, 1), dtype=np.int32)
+
+        helper.advance_fsm_and_compute_bitmasks(
+            context_batch=[ctx],
+            accepted_draft_tokens=accepted,
+            num_accepted=num_accepted,
+            bonus_tokens=bonus,
+            next_draft_tokens=next_draft,
+            bitmask_out=bitmask_out,
+            output_context_batch=[ctx],
+        )
+
+        # Generation ends at the first EOS: enforcement flips off.
+        assert not ctx.grammar_enforced, (
+            "interior EOS is terminal; enforcement should be disabled"
+        )
+        # The matcher walk stops at the EOS: the truncated post-EOS token is
+        # never fed to the matcher.
+        assert matcher.consumed == [], matcher.consumed
+
+    def test_terminal_eos_still_disables_enforcement(self) -> None:
+        """Control: a terminal committed EOS (generation actually ending) still
+        disables enforcement, and the content token before it is advanced into
+        the matcher first."""
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_FillRecordingBackend()
+        )
+
+        ctx = self._constrained_ctx()
+
+        # Committed span: accepted draft [8] (content) + bonus 1 (=<eos>,
+        # terminal). is_eos_from_tokens sees generated[-1]=<eos> -> done.
+        accepted = np.array([[8]], dtype=np.int64)
+        num_accepted = np.array([1], dtype=np.int64)
+        bonus = np.array([1], dtype=np.int64)
+        next_draft = np.array([[5, 6, 8]], dtype=np.int64)
+        bitmask_out = np.zeros((1, 4, 1), dtype=np.int32)
+
+        helper.advance_fsm_and_compute_bitmasks(
+            context_batch=[ctx],
+            accepted_draft_tokens=accepted,
+            num_accepted=num_accepted,
+            bonus_tokens=bonus,
+            next_draft_tokens=next_draft,
+            bitmask_out=bitmask_out,
+            output_context_batch=[ctx],
+        )
+
+        assert not ctx.grammar_enforced, (
+            "terminal EOS should disable enforcement (generation ended)"
+        )
+
+    def test_multi_token_eos_sequence_terminates_the_walk(self) -> None:
+        """A committed span completing a multi-token stop ``eos_sequence``
+        terminates the request at the sequence's final token, matching the
+        truncation path (which checks ``is_eos_from_tokens``, not just single
+        ids). Enforcement flips off and the matcher does not advance past the
+        completed sequence -- the case a bare ``token in eos_token_ids`` check
+        would miss."""
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_FillRecordingBackend()
+        )
+
+        ctx = self._constrained_ctx()
+        matcher = ctx.matcher
+        assert isinstance(matcher, _RecordingMatcher)
+        # A two-token stop sequence [5, 6]. None of 5/6/8 is a single-id EOS
+        # ({1, 7}), so only the completed sequence can end the request here.
+        ctx.eos_tracker.eos_sequences = [[5, 6]]
+
+        # Committed span: accepted [5, 6] completes the stop sequence at token
+        # 6; bonus 8 is truncated and must not reach the matcher.
+        accepted = np.array([[5, 6]], dtype=np.int64)
+        num_accepted = np.array([2], dtype=np.int64)
+        bonus = np.array([8], dtype=np.int64)
+        next_draft = np.array([[5, 6, 8]], dtype=np.int64)
+        bitmask_out = np.zeros((1, 4, 1), dtype=np.int32)
+
+        helper.advance_fsm_and_compute_bitmasks(
+            context_batch=[ctx],
+            accepted_draft_tokens=accepted,
+            num_accepted=num_accepted,
+            bonus_tokens=bonus,
+            next_draft_tokens=next_draft,
+            bitmask_out=bitmask_out,
+            output_context_batch=[ctx],
+        )
+
+        # Only the completed stop sequence can flip enforcement off here, so
+        # this proves the sequence check fired (a single-id check would not).
+        assert not ctx.grammar_enforced, (
+            "multi-token stop sequence did not terminate the matcher walk"
+        )
+        # The truncated post-sequence token never reaches the matcher.
+        assert [8] not in matcher.consumed, matcher.consumed
