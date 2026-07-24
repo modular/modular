@@ -294,6 +294,17 @@
             },
             {
               "type": "category",
+              "label": "testing",
+              "link": {
+                "type": "doc",
+                "id": "max/api/python/experimental.testing"
+              },
+              "items": [
+                "__AUTOGEN:max.experimental.testing__"
+              ]
+            },
+            {
+              "type": "category",
               "label": "torch",
               "link": {
                 "type": "doc",

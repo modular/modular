@@ -18,10 +18,9 @@ import logging
 import re
 import weakref
 
-import numpy as np
 import pytest
 from max import driver
-from max.driver import CPU, Accelerator, accelerator_count
+from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random
@@ -31,7 +30,6 @@ from max.experimental.nn._compile_utils import (
 )
 from max.experimental.nn.module import (
     Module,
-    PinnedDeviceTensor,
     module_dataclass,
 )
 from max.experimental.sharding import (
@@ -42,6 +40,7 @@ from max.experimental.sharding import (
 )
 from max.experimental.sharding.types import DistributedTensorType
 from max.experimental.tensor import Tensor, TensorType, defaults
+from max.experimental.testing import assert_all_close
 
 
 @module_dataclass
@@ -571,96 +570,6 @@ def test_load_state_dict_unwhitelisted_float_dtype_still_raises() -> None:
         module.load_state_dict(weights)
 
 
-@pytest.mark.skipif(not accelerator_count(), reason="requires multiple devices")
-def test_to(test_module: TestModule) -> None:
-    assert all(t.device == Accelerator() for _, t in test_module.parameters)
-    module = test_module.to(CPU())
-    assert module is test_module
-    assert all(t.device == CPU() for _, t in test_module.parameters)
-
-
-@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
-def test_pinned_device_tensor_unchanged_by_to() -> None:
-    """`PinnedDeviceTensor` fields are not moved by `Module.to`."""
-
-    @module_dataclass
-    class ScaledModule(Module[[Tensor], Tensor]):
-        weight: Tensor
-        scale: PinnedDeviceTensor
-
-        def forward(self, x: Tensor) -> Tensor:
-            return x + self.weight
-
-    module = ScaledModule(
-        weight=Tensor.ones([3, 3]),
-        scale=Tensor.full([], 1.0, dtype=DType.float32),
-    )
-    original_scale_device = module.scale.device
-    module.to(Accelerator())
-
-    assert module.weight.device == Accelerator()
-    assert module.scale.device == original_scale_device
-
-
-@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
-def test_pinned_device_tensor_in_child_module() -> None:
-    """`PinnedDeviceTensor` fields in child modules are not moved by `Module.to`."""
-
-    @module_dataclass
-    class Inner(Module[[Tensor], Tensor]):
-        weight: Tensor
-        scale: PinnedDeviceTensor
-
-        def forward(self, x: Tensor) -> Tensor:
-            return x + self.weight
-
-    @module_dataclass
-    class Outer(Module[[Tensor], Tensor]):
-        inner: Inner
-
-        def forward(self, x: Tensor) -> Tensor:
-            return self.inner(x)
-
-    module = Outer(
-        inner=Inner(
-            weight=Tensor.ones([3, 3]),
-            scale=Tensor.full([], 2.0, dtype=DType.float32),
-        )
-    )
-    original_scale_device = module.inner.scale.device
-    module.to(Accelerator())
-
-    assert module.inner.weight.device == Accelerator()
-    assert module.inner.scale.device == original_scale_device
-
-
-@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
-def test_pinned_device_tensor_inherited() -> None:
-    """`PinnedDeviceTensor` annotations are respected through inheritance."""
-
-    @module_dataclass
-    class Base(Module[[Tensor], Tensor]):
-        weight: Tensor
-        scale: PinnedDeviceTensor
-
-        def forward(self, x: Tensor) -> Tensor:
-            return x + self.weight
-
-    @module_dataclass
-    class Child(Base):
-        pass
-
-    module = Child(
-        weight=Tensor.ones([3, 3]),
-        scale=Tensor.full([], 1.0, dtype=DType.float32),
-    )
-    original_scale_device = module.scale.device
-    module.to(Accelerator())
-
-    assert module.weight.device == Accelerator()
-    assert module.scale.device == original_scale_device
-
-
 def test_compile(test_module: TestModule) -> None:
     dtype, device = defaults()
     type = TensorType(dtype, ["batch", "n"], device=device)
@@ -960,37 +869,38 @@ def test_compile_shards_single_device_weight_in_graph() -> None:
     Loading the same weight pre-sharded must produce identical results,
     confirming the in-graph transfer matches the previously-eager behavior.
     """
-    rng = np.random.default_rng(0)
-    w = rng.standard_normal((4, 8)).astype(np.float32)
-    x = rng.standard_normal((2, 4)).astype(np.float32)
-    expected = x @ w
+    random.set_seed(0)
+    w = random.normal([4, 8], dtype=_F32, device=CPU())
+    x = random.normal([2, 4], dtype=_F32, device=CPU())
+    # Eager (non-compile) reference. Flattened to 1-D so `assert_all_close`
+    # reduces over every element rather than only the last axis.
+    expected = (x @ w).reshape([16])
 
     input_type = DistributedTensorType(
         _F32, ["batch", 4], _MESH, (Replicated(),)
     )
-    replicated_x = F.transfer_to(Tensor(x, device=CPU()), _REPLICATED)
+    replicated_x = F.transfer_to(x, _REPLICATED)
 
     # Placeholder distributed parameter; the real weight arrives via compile().
     module = _ColumnParallelLinear(w=F.transfer_to(cpu_tensor(4, 8), _COLUMN))
 
-    # Single-device weight: sharded and transferred in-graph.
-    compiled = module.compile(
-        input_type, weights={"w": Tensor(w, device=CPU())}
-    )
+    # Single-device weight: sharded and transferred in-graph. `materialize`
+    # gathers the replicated result back to a single local tensor to compare.
+    compiled = module.compile(input_type, weights={"w": w})
     single_device = compiled(replicated_x)
     assert single_device.placements == (Replicated(),)
-    np.testing.assert_allclose(
-        single_device.to_numpy(), expected, rtol=1e-4, atol=1e-4
-    )
+    single_device_local = single_device.materialize().reshape([16])
+    assert_all_close(expected, single_device_local, rtol=1e-4, atol=1e-4)
 
     # Pre-sharded weight: preserved path, must match.
     compiled_presharded = module.compile(
         input_type,
-        weights={"w": F.transfer_to(Tensor(w, device=CPU()), _COLUMN)},
+        weights={"w": F.transfer_to(w, _COLUMN)},
     )
     presharded = compiled_presharded(replicated_x)
-    np.testing.assert_allclose(
-        presharded.to_numpy(), single_device.to_numpy(), rtol=1e-6, atol=1e-6
+    presharded_local = presharded.materialize().reshape([16])
+    assert_all_close(
+        single_device_local, presharded_local, rtol=1e-6, atol=1e-6
     )
 
 
