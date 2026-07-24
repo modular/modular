@@ -1177,9 +1177,9 @@ struct MyInt(Movable):
     def __init__(out self, val: Int):
         self.val = val
 
-    def __init__(out self, *, deinit take: MyInt):
-        print("MyInt.__moveinit__", take.val)
-        self.val = take.val
+    def __init__(out self, *, deinit move: MyInt):
+        print("MyInt.__moveinit__", move.val)
+        self.val = move.val
 
     def __del__(deinit self):
         print("MyInt.__del__", self.val)
