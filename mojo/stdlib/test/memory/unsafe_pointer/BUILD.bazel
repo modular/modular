@@ -2,10 +2,19 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
 package(default_visibility = ["//visibility:private"])
 
-# Death test: the assert only fires for address spaces narrower than `Int`,
-# which requires a GPU (`SHARED` pointers are 32-bit).
+# Tests that must run on a GPU.
 _GPU_FILECHECK_TESTS = [
     "test_unsafe_from_address_overflow.mojo",
+    "test_gpu_shared_address_space_cast_bitcast.mojo",
+]
+
+_EXPECT_CRASH = [
+    "test_unsafe_from_address_overflow.mojo",
+]
+
+# PointerRewriter (the pass under test) is Metal/AIR-only.
+_APPLE_GPU_ONLY = [
+    "test_gpu_shared_address_space_cast_bitcast.mojo",
 ]
 
 [
@@ -39,9 +48,14 @@ _GPU_FILECHECK_TESTS = [
             "--debug-level",
             "full",
         ],
-        expect_crash = True,
+        expect_crash = src in _EXPECT_CRASH,
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"],
+        target_compatible_with = ["//:has_gpu"] + (
+            select({
+                "//:apple_gpu": [],
+                "//conditions:default": ["@platforms//:incompatible"],
+            }) if src in _APPLE_GPU_ONLY else []
+        ),
         deps = [
             "@mojo//:std",
             "@mojo//:test_utils",
