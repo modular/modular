@@ -919,10 +919,7 @@ modular_cc_library(
 modular_cc_library(
     name = "Compiler",
     srcs = glob(["lib/Compiler/*.cpp"]),
-    hdrs = glob([
-        "include/KGEN/Compiler/*.h",
-        "include/KGEN/Compiler/Target/*.h",
-    ]),
+    hdrs = glob(["include/KGEN/Compiler/*.h"]),
     deps = [
         ":ExecutionEngine.headers",
         ":JIT",
@@ -931,6 +928,7 @@ modular_cc_library(
         ":KGENInterfacesIncGen",
         ":ObjectCompiler.headers",
         ":Pipeline",
+        ":TargetBackend.headers",
         ":TargetTraits",
         ":ToolCommon.headers",
         ":TransformUtils",
@@ -1246,33 +1244,104 @@ modular_cc_library(
 
 modular_cc_library(
     name = "ObjectCompiler.headers",
-    hdrs = glob([
-        "lib/Compiler/ObjectCompiler/*.h",
-        "lib/Compiler/ObjectCompiler/LLVM/Transforms/*.h",
-        "lib/Compiler/ObjectCompiler/Target/**/*.h",
-    ]),
+    hdrs = glob(
+        [
+            "lib/Compiler/ObjectCompiler/*.h",
+            "lib/Compiler/ObjectCompiler/LLVM/Transforms/*.h",
+            "lib/Compiler/ObjectCompiler/Target/**/*.h",
+        ],
+        # Owned by :HostBackend.
+        exclude = ["lib/Compiler/ObjectCompiler/Target/Host/HostBackend.h"],
+    ),
     strip_include_prefix = "lib/Compiler/ObjectCompiler",
     tags = ["no-clang-tidy-headers"],
     visibility = ["//visibility:private"],
 )
 
+# The `TargetBackend` base interface, separate from `:ObjectCompiler` so a
+# target implementing the interface need not depend on the full codegen stack.
+modular_cc_library(
+    name = "TargetBackend.headers",
+    hdrs = ["include/KGEN/Compiler/Target/TargetBackend.h"],
+    includes = ["include"],
+    tags = ["no-clang-tidy-headers"],
+    visibility = [
+        "//KGEN:consumers",
+        "//KGEN:plugin_consumers",
+    ],
+    deps = [
+        ":KGENDialect",
+        ":TargetTraits",
+        ":ToolCommon.headers",
+        "//Support:Buffer",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+# Base and host `TargetBackend` implementation. Host object emission goes
+# through `EmitContext` callbacks rather than the codegen stack, keeping this a
+# light dependency separate from `:ObjectCompiler`.
+modular_cc_library(
+    name = "HostBackend",
+    srcs = [
+        "lib/Compiler/ObjectCompiler/Target/Host/HostBackend.cpp",
+        "lib/Compiler/ObjectCompiler/Target/TargetBackend.cpp",
+    ],
+    hdrs = ["lib/Compiler/ObjectCompiler/Target/Host/HostBackend.h"],
+    strip_include_prefix = "lib/Compiler/ObjectCompiler",
+    visibility = [
+        "//KGEN:consumers",
+        "//KGEN:plugin_consumers",
+    ],
+    deps = [
+        ":Compiler.headers",
+        ":KGENDialect",
+        ":TargetBackend.headers",
+        ":TargetTraits",
+        ":ToolCommon.headers",
+        "//Support:Buffer",
+        "//Support:Configuration",
+        "@llvm-project//llvm:BitWriter",
+        "@llvm-project//llvm:Core",
+        "@llvm-project//llvm:Instrumentation",
+        "@llvm-project//llvm:MC",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//llvm:Target",
+        "@llvm-project//llvm:TargetParser",
+        "@llvm-project//mlir:IR",
+    ],
+    # Self-registered via static initializer, never referenced directly.
+    alwayslink = True,
+)
+
 modular_cc_library(
     name = "ObjectCompiler",
-    srcs = glob([
-        "lib/Compiler/ObjectCompiler/LLVM/Transforms/*.cpp",
-        "lib/Compiler/ObjectCompiler/*.cpp",
-        "lib/Compiler/ObjectCompiler/*.h",
-        "lib/Compiler/ObjectCompiler/Target/**/*.cpp",
-        "lib/Compiler/ObjectCompiler/Target/**/*.h",
-    ]),
+    srcs = glob(
+        [
+            "lib/Compiler/ObjectCompiler/LLVM/Transforms/*.cpp",
+            "lib/Compiler/ObjectCompiler/*.cpp",
+            "lib/Compiler/ObjectCompiler/*.h",
+            "lib/Compiler/ObjectCompiler/Target/**/*.cpp",
+            "lib/Compiler/ObjectCompiler/Target/**/*.h",
+        ],
+        # Owned by :HostBackend.
+        exclude = [
+            "lib/Compiler/ObjectCompiler/Target/TargetBackend.cpp",
+            "lib/Compiler/ObjectCompiler/Target/Host/HostBackend.cpp",
+            "lib/Compiler/ObjectCompiler/Target/Host/HostBackend.h",
+        ],
+    ),
     data = [
         "@llvm-project//lld:lld",
     ],
     deps = [
         ":Compiler",
+        ":HostBackend",
         ":KGENToLLVM",
         ":ObjectCompiler.BitcodeWriter",
         ":Pipeline",
+        ":TargetBackend.headers",
         ":TargetTraits",
         "//AsyncRT:CompilerSupport",
         "//Support:CacheLog",

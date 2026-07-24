@@ -53,6 +53,8 @@ static constexpr RunfileMapping kRunfileMappings[] = {
     {"mojo-max.compilerrt_path", "", "KGEN", true, "KGENCompilerRTShared"},
     {"mojo-max.lldb_plugin_path", "", "KGEN", true, "MojoLLDB"},
 
+    {"max.lib_path", "", "max/internal", true, "max"},
+
     // Directory paths. The upstream NIXL transport plugins live in per-vendor
     // cpu/, cuda/, and rocm/ subdirectories of the @nixl_upstream repo;
     // resolve one plugin file and let the caller derive the vendor directory

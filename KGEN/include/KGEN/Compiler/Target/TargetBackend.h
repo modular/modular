@@ -57,6 +57,13 @@ class MCLinker;
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 defaultCreateTargetMachine(const CompilationOptions &options, bool isJIT);
 
+/// `defaultCreateTargetMachine`'s signature. Passed to a backend loaded from a
+/// separate shared library so `TargetMachine` creation runs against the host's
+/// LLVM target registry; a separately-loaded library has its own registry,
+/// which nothing initializes.
+using CreateTargetMachineFn = ErrorOr<std::unique_ptr<llvm::TargetMachine>> (*)(
+    const CompilationOptions &options, bool isJIT);
+
 /// Adds the AddressSanitizer / ThreadSanitizer passes when requested in
 /// `options`. Shared building blocks for `TargetBackend::addSanitizers` and the
 /// no-backend fallback.

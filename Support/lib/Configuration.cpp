@@ -654,6 +654,10 @@ static constexpr llvm::StringLiteral kSharedLibExt = ".so";
 #endif
 
 bool M::isMaxInstalled() {
+  // A runfiles-provided library (Bazel) counts as installed.
+  if (findConfigWithRunfiles("max.lib_path").has_value())
+    return true;
+
   ErrorOr<Config> configOr = Config::open();
   if (configOr.isError()) {
     // probably won't happen, return false anyways
