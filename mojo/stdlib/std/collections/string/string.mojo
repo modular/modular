@@ -1031,7 +1031,9 @@ struct String(
         var result_ptr = result.unsafe_ptr_mut()
         unsafe_memcpy(dest=result_ptr, src=lhs.unsafe_ptr(), count=lhs_len)
         unsafe_memcpy(
-            dest=result_ptr + lhs_len, src=rhs.unsafe_ptr(), count=rhs_len
+            dest=result_ptr.unsafe_offset(lhs_len),
+            src=rhs.unsafe_ptr(),
+            count=rhs_len,
         )
         return result^
 
@@ -1056,7 +1058,7 @@ struct String(
             self.capacity() > self.byte_length()
         ), "String: capacity is not sufficient"
         var length = self.byte_length()
-        (self.unsafe_ptr_mut() + length).unsafe_write(byte)
+        self.unsafe_ptr_mut().unsafe_offset(length).unsafe_write(byte)
         self.set_byte_length(length + 1)
 
     def append(mut self, codepoint: Codepoint):
@@ -1069,7 +1071,9 @@ struct String(
         var length = self.byte_length()
         var new_length = length + codepoint.utf8_byte_length()
         self.reserve(new_length)
-        _ = codepoint.unsafe_write_utf8(self.unsafe_ptr_mut() + length)
+        _ = codepoint.unsafe_write_utf8(
+            self.unsafe_ptr_mut().unsafe_offset(length)
+        )
         self.set_byte_length(new_length)
 
     def __radd__(self, other: StringSlice[mut=False, _]) -> String:
@@ -1090,7 +1094,7 @@ struct String(
         var old_len = self.byte_length()
         var new_len = old_len + other_len
         unsafe_memcpy(
-            dest=self.unsafe_ptr_mut(new_len) + old_len,
+            dest=self.unsafe_ptr_mut(new_len).unsafe_offset(old_len),
             src=other.unsafe_ptr(),
             count=other_len,
         )
@@ -1415,7 +1419,7 @@ struct String(
     @always_inline("nodebug")
     def unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, origin_of(self)]:
+    ) -> Pointer[Byte, origin_of(self)]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
@@ -1437,7 +1441,7 @@ struct String(
 
     def unsafe_ptr_mut(
         mut self, var capacity: Int = 0
-    ) -> UnsafePointer[Byte, origin_of(self)]:
+    ) -> Pointer[Byte, origin_of(self)]:
         """Retrieves a mutable pointer to the unique underlying memory. Passing
         a larger capacity will reallocate the string to the new capacity if
         larger than the existing capacity, allowing you to write more data.
@@ -2241,7 +2245,7 @@ struct String(
         var old_len = self.byte_length()
         if length > old_len:
             unsafe_memset(
-                self.unsafe_ptr_mut(length) + old_len,
+                self.unsafe_ptr_mut(length).unsafe_offset(old_len),
                 fill_byte,
                 length - old_len,
             )
@@ -2564,7 +2568,7 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     # underscores under the conditions they have a prefix
     var was_last_digit_underscore = not (real_base in (2, 8, 16) and has_prefix)
     for pos in range(start, str_len):
-        var ord_current = Int(buff[pos])
+        var ord_current = Int(buff[unsafe_offset=pos])
         if ord_current == ord_underscore:
             if was_last_digit_underscore:
                 raise Error(_str_to_base_error(base, str_slice))
@@ -2588,7 +2592,10 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
             break
         else:
             raise Error(_str_to_base_error(base, str_slice))
-        if pos + 1 < str_len and not Codepoint(buff[pos + 1]).is_posix_space():
+        if (
+            pos + 1 < str_len
+            and not Codepoint(buff[unsafe_offset=pos + 1]).is_posix_space()
+        ):
             var nextresult = result * real_base
             if nextresult < result:
                 raise Error(
@@ -2602,7 +2609,7 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
 
     if has_space_after_number:
         for pos in range(start, str_len):
-            if not Codepoint(buff[pos]).is_posix_space():
+            if not Codepoint(buff[unsafe_offset=pos]).is_posix_space():
                 raise Error(_str_to_base_error(base, str_slice))
     if is_negative:
         result = -result
@@ -2625,10 +2632,13 @@ def _trim_and_handle_sign(
     """
     var buff = str_slice.unsafe_ptr()
     var start: Int = 0
-    while start < str_len and Codepoint(buff[start]).is_posix_space():
+    while (
+        start < str_len
+        and Codepoint(buff[unsafe_offset=start]).is_posix_space()
+    ):
         start += 1
-    var p: Bool = buff[start] == UInt8(ord("+"))
-    var n: Bool = buff[start] == UInt8(ord("-"))
+    var p: Bool = buff[unsafe_offset=start] == UInt8(ord("+"))
+    var n: Bool = buff[unsafe_offset=start] == UInt8(ord("-"))
     return start + (Int(p) or Int(n)), n
 
 
@@ -2654,8 +2664,8 @@ def _handle_base_prefix(
     var start = pos
     var buff = str_slice.unsafe_ptr()
     if start + 1 < str_len:
-        var prefix_char = chr(Int(buff[start + 1]))
-        if buff[start] == UInt8(ord("0")) and (
+        var prefix_char = chr(Int(buff[unsafe_offset=start + 1]))
+        if buff[unsafe_offset=start] == UInt8(ord("0")) and (
             (base == 2 and (prefix_char == "b" or prefix_char == "B"))
             or (base == 8 and (prefix_char == "o" or prefix_char == "O"))
             or (base == 16 and (prefix_char == "x" or prefix_char == "X"))

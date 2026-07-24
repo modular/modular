@@ -212,7 +212,7 @@ def _printf_cpu[
         ](
             fd,
             # Guarantee this is nul terminated.
-            get_static_string[fmt]().unsafe_ptr().bitcast[c_char](),
+            get_static_string[fmt]().unsafe_ptr().unsafe_bitcast[c_char](),
             args.get_loaded_kgen_pack(),
         )
 

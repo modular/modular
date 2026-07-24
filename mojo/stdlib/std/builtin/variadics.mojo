@@ -1370,7 +1370,7 @@ struct VariadicList[
             A low-level pointer to the element on the list corresponding to the
             given index.
         """
-        return self._value.unsafe_ptr()[idx][]
+        return self._value.unsafe_ptr()[unsafe_offset=idx][]
 
     def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[

@@ -132,7 +132,7 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
     cpu_reference_one_video[dtype](
         x_host.as_span().unsafe_ptr(),
         len0,
-        ref_host.as_span().unsafe_ptr() + out0_rows * D,
+        ref_host.as_span().unsafe_ptr().unsafe_offset(out0_rows * D),
         t1,
         h1,
         w1,

@@ -62,7 +62,7 @@ struct TString[
 
         @always_inline
         def write_string() {imm encoded_bytes, imm offset, mut writer} -> Int:
-            var literal_start = encoded_bytes.unsafe_ptr() + offset
+            var literal_start = encoded_bytes.unsafe_ptr().unsafe_offset(offset)
             var literal_length = _strlen(literal_start)
             var string_literal = StringSlice(
                 unsafe_from_utf8=Span(

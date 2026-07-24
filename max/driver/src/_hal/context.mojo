@@ -316,7 +316,9 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
                 data=Pointer(to=asm.unsafe_ptr()[]),
                 size=UInt64(asm.byte_length()),
             ),
-            file_type=Pointer(to=file_type.unsafe_ptr().bitcast[Int8]()[]),
+            file_type=Pointer(
+                to=file_type.unsafe_ptr().unsafe_bitcast[Int8]()[]
+            ),
             file_type_len=UInt64(file_type.byte_length()),
         )
 

@@ -49,10 +49,12 @@ def run_elementwise[
     @__copy_capture(out_buffer, in_buffer)
     @parameter
     def func[simd_width: Int, alignment: Int = 1](idx: Coord):
-        out_buffer.unsafe_ptr().store[width=simd_width](
+        out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx[0].value(),
             rsqrt(
-                in_buffer.unsafe_ptr().load[width=simd_width](idx[0].value())
+                in_buffer.unsafe_ptr().unsafe_load[width=simd_width](
+                    idx[0].value()
+                )
             ),
         )
 

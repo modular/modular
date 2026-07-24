@@ -606,7 +606,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             var fd = self._get_raw_fd()
             var bytes_written = external_call["write", c_ssize_t](
                 fd,
-                bytes.unsafe_ptr() + total_written,
+                bytes.unsafe_ptr().unsafe_offset(total_written),
                 len(bytes) - total_written,
             )
 

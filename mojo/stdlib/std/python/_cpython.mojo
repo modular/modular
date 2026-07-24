@@ -390,10 +390,10 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
             | (METH_KEYWORDS if with_kwargs else 0)
         )
         return PyMethodDef(
-            func_name.unsafe_ptr().bitcast[c_char](),
+            func_name.unsafe_ptr().unsafe_bitcast[c_char](),
             func_ptr,
             flags,
-            docstring.unsafe_ptr().bitcast[c_char](),
+            docstring.unsafe_ptr().unsafe_bitcast[c_char](),
         )
 
     @staticmethod
@@ -724,7 +724,7 @@ struct PyModuleDef(Movable, Writable):
 
     def __init__(out self, name: StaticString):
         self.base = {}
-        self.name = name.unsafe_ptr().bitcast[c_char]()
+        self.name = name.unsafe_ptr().unsafe_bitcast[c_char]()
         self.docstring = {}
         # setting `size` to -1 means that the module does not support sub-interpreters
         self.size = -1
@@ -2719,7 +2719,10 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_DecodeUTF8
         """
         return self._PyUnicode_DecodeUTF8(
-            s.unsafe_ptr().bitcast[c_char]().as_imm().as_unsafe_any_origin(),
+            s.unsafe_ptr()
+            .unsafe_bitcast[c_char]()
+            .as_imm()
+            .as_unsafe_any_origin(),
             Py_ssize_t(s.byte_length()),
             "strict".as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
         )

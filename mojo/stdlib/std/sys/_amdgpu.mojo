@@ -165,7 +165,7 @@ def append_bytes(
     def pack_uint64() -> UInt64:
         var arg = UInt64(0)
         if len(data) >= 8:
-            arg = data.unsafe_ptr().bitcast[UInt64]()[]
+            arg = data.unsafe_ptr().unsafe_bitcast[UInt64]()[]
             data = data[8:]
         else:
             var ii = 0

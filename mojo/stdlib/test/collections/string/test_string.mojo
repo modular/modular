@@ -63,7 +63,7 @@ def test_constructors() raises:
 def test_copy() raises:
     var s0 = "find"
     var s1 = String(s0)
-    s1.unsafe_ptr_mut()[3] = Byte(ord("e"))
+    s1.unsafe_ptr_mut()[unsafe_offset=3] = Byte(ord("e"))
     assert_equal("find", s0)
     assert_equal("fine", s1)
 
@@ -1201,7 +1201,10 @@ def test_string_char_slices_iter() raises:
         for v in item.codepoint_slices():
             var byte_len = v.byte_length()
             for i in range(byte_len):
-                assert_equal(ptr[byte_idx + i], v.unsafe_ptr()[i])
+                assert_equal(
+                    ptr[unsafe_offset=byte_idx + i],
+                    v.unsafe_ptr()[unsafe_offset=i],
+                )
             byte_idx += byte_len
             amnt_characters += 1
 
@@ -1462,7 +1465,7 @@ def test_as_c_string_slice_empty() raises:
     assert_equal(string.byte_length(), 0)
     assert_true(string.capacity() > 0)
     # Safe to index `string.byte_length()` as this has a nul terminator
-    assert_equal(string.unsafe_ptr()[string.byte_length()], 0)
+    assert_equal(string.unsafe_ptr()[unsafe_offset=string.byte_length()], 0)
     assert_true(string.as_bytes() == cslice.as_bytes())
 
 
@@ -1470,7 +1473,7 @@ def test_as_c_string_slice_inlined() raises:
     var string = String("a")
     var cslice = string.as_c_string_slice()
     # Safe to index `string.byte_length()` as this has a nul terminator
-    assert_equal(string.unsafe_ptr()[string.byte_length()], 0)
+    assert_equal(string.unsafe_ptr()[unsafe_offset=string.byte_length()], 0)
     assert_true(string.as_bytes() == cslice.as_bytes())
 
 
@@ -1478,7 +1481,7 @@ def test_as_c_string_slice_heap() raises:
     var string = String("abcdefghijlmnopqrstuvwxyz")
     var cslice = string.as_c_string_slice()
     # Safe to index `string.byte_length()` as this has a nul terminator
-    assert_equal(string.unsafe_ptr()[string.byte_length()], 0)
+    assert_equal(string.unsafe_ptr()[unsafe_offset=string.byte_length()], 0)
     assert_true(string.as_bytes() == cslice.as_bytes())
 
 
@@ -1505,7 +1508,7 @@ def test_sso() raises:
     assert_equal(s.byte_length(), 5)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), True)
-    assert_equal(s.unsafe_ptr()[s.byte_length()], 0)
+    assert_equal(s.unsafe_ptr()[unsafe_offset=s.byte_length()], 0)
 
     # Adding a single char should remove the nul terminator and inline it.
     s += "f"
@@ -1522,7 +1525,7 @@ def test_sso() raises:
     assert_equal(s.capacity(), 55)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), True)
-    assert_equal(s.unsafe_ptr()[s.byte_length()], 0)
+    assert_equal(s.unsafe_ptr()[unsafe_offset=s.byte_length()], 0)
 
     # Modifying it should remove the nul terminator.
     s += "f"

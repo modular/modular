@@ -46,8 +46,8 @@ def run_elementwise[
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = Int(idx0[0].value())
 
-        out_buffer.unsafe_ptr().store[width=simd_width](
-            idx, exp(in_buffer.unsafe_ptr().load[width=simd_width](idx))
+        out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
+            idx, exp(in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx))
         )
 
     elementwise[func, pack_size, target="gpu"](Coord(length), ctx)

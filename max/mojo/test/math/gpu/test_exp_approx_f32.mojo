@@ -45,8 +45,8 @@ def run_exp_approx_test[
     @parameter
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = Int(idx0[0].value())
-        var v = in_buffer.unsafe_ptr().load[width=simd_width](idx)
-        out_buffer.unsafe_ptr().store[width=simd_width](
+        var v = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
+        out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx, exp_approx_f32[simd_width](v)
         )
 
