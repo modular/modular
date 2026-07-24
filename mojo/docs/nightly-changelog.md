@@ -1275,6 +1275,14 @@ This version is still a work in progress.
 - `base64.b16decode` now raises on invalid input instead of silently producing
   corrupt output.
 
+- A capturing closure taking `**kwargs` no longer fails to compile ("no
+  matching method in call to '_insert'"): the synthetic `__call__` wrapper now
+  forwards the kwargs dict to the implementation as a `**` splat instead of as
+  a single keyword value. The same fix covers a plain `**kwargs` function
+  bound into a closure-typed value. Together with the call-combination fix
+  below, closures mixing `*args`, named keyword-only arguments, and `**kwargs`
+  all work as values.
+
 - A call may now combine a `*` unpack, literal keyword arguments, and a `**`
   splat, as in Python: `f(*args, **kwargs^)` forwards both packed variadics
   directly to a callee taking `*args` and `**kwargs`, and
