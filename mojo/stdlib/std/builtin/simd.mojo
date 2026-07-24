@@ -2390,7 +2390,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
     def from_bytes[
         *,
         big_endian: Bool = is_big_endian(),
-    ](bytes: InlineArray[Byte, size_of[Self]()]) -> SIMD[Self.dtype, Self.size]:
+    ](bytes: InlineArray[Byte, _]) -> SIMD[Self.dtype, Self.size]:
         """Converts a byte array to a vector.
 
         Args:
@@ -2402,6 +2402,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
         Returns:
             The integer value.
         """
+        comptime assert bytes.length == size_of[Self]()
         var ptr = bytes.unsafe_ptr().unsafe_bitcast[Self]()
         var value = ptr[]
 
