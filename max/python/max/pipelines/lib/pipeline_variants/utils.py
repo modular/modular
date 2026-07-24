@@ -674,9 +674,12 @@ class StructuredOutputHelper:
             context: Request context with grammar state.
         """
         if self.tool_call_region_delimiters is not None:
+            end_token_ids = self.tool_call_region_delimiters.end_token_ids
+            if context.grammar_state.has_json_schema:
+                end_token_ids = None
             context.set_tool_region(
                 start_token_ids=self.tool_call_region_delimiters.start_token_ids,
-                end_token_ids=self.tool_call_region_delimiters.end_token_ids,
+                end_token_ids=end_token_ids,
             )
 
     def _tokens_for_consume(self, token: int, was_enforced: bool) -> list[int]:

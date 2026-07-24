@@ -340,13 +340,22 @@ class GrammarEnforcementState:
         Returns:
             True if the matcher should consume the token.
         """
-        # Check thinking region transitions FIRST (higher priority).
-        # Thinking-end delimiter is NOT grammar content — return False
-        # so the caller skips the matcher even though enforcement resumed.
         if (
             self.thinking_region_delimiters is not None
             and self._in_thinking_region
         ):
+            if (
+                self.tool_region is not None
+                and self.tool_region.start_token_ids is not None
+                and self._check_sequence_match(
+                    token, self.tool_region.start_token_ids
+                )
+            ):
+                self._in_thinking_region = False
+                self._thinking_match_buffer.clear()
+                self.grammar_enforced = True
+                return True
+
             if (
                 self.thinking_region_delimiters.end_token_ids is not None
                 and self._check_sequence_match_with_buffer(
