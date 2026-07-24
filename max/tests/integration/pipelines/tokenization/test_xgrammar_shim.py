@@ -637,6 +637,24 @@ def test_format_date_rejects_invalid() -> None:
     assert not _accepts(compiled, '"2023-13-01"')
 
 
+def test_format_date_time_accepts_valid() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "date-time"}'
+    )
+    assert _accepts(compiled, '"2023-01-31T23:59:60Z"')
+    assert _accepts(compiled, '"2023-04-30T00:00:00+02:00"')
+    assert _accepts(compiled, '"2024-02-29T12:00:00Z"')
+
+
+def test_format_date_time_rejects_invalid() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "date-time"}'
+    )
+    assert not _accepts(compiled, '"2023-02-31T12:00:00Z"')
+    assert not _accepts(compiled, '"2023-04-31T12:00:00Z"')
+    assert not _accepts(compiled, '"2023-13-01T12:00:00Z"')
+
+
 def test_ecma262_backslash_t_compiles() -> None:
     # The JSON ``"\\t"`` decodes to the two-byte regex ``\t``; the regex
     # converter decodes it to a tab, so it compiles (no pre-filter rejection).
