@@ -74,8 +74,6 @@ class LoRAInputs:
     num_active: Buffer
     end_idx: Buffer
     batch_seq_len: Buffer
-    ids_kv: Buffer
-    grouped_offsets_kv: Buffer
 
     def buffers(self) -> tuple[Buffer, ...]:
         """Returns the buffers in canonical (field-declaration) order."""
@@ -563,7 +561,13 @@ class LoRAModel:
     def _combine_lora_b_weights(
         self, layer_prefix: str, default_dtype: DType
     ) -> None:
-        """Combine Q, K, V lora_B weights into separate Q and stacked KV weights."""
+        """Combine Q, K, V lora_B weights into one fused weight.
+
+        The output rows are concatenated along the projection dimension as
+        Q | K | V, giving shape ``[q_dim + 2*kv_dim, max_rank]``. A single
+        boundary-aware grouped matmul consumes this directly (no separate Q and
+        stacked-KV weights), which is what eliminates the K/V offset machinery.
+        """
         q_key, k_key, v_key = self._get_qkv_keys(layer_prefix, LoRAType.B)
         keys = (q_key, k_key, v_key)
         present_keys = [k for k in keys if k in self._lora_B]
@@ -584,41 +588,21 @@ class LoRAModel:
         np_dtype = src_dtype.to_numpy()
 
         # LoRA B shape: [out_features, max_rank]
-        def get_q_or_zeros() -> npt.NDArray[Any]:
-            if q_key in self._lora_B:
-                return self._weight_to_numpy(self._lora_B[q_key])
-            return np.zeros(
-                (q_out_features, self.max_lora_rank), dtype=np_dtype
-            )
-
-        def get_kv_or_zeros(key: str) -> npt.NDArray[Any]:
+        def get_or_zeros(key: str, out_features: int) -> npt.NDArray[Any]:
             if key in self._lora_B:
                 return self._weight_to_numpy(self._lora_B[key])
-            return np.zeros(
-                (kv_out_features, self.max_lora_rank), dtype=np_dtype
-            )
+            return np.zeros((out_features, self.max_lora_rank), dtype=np_dtype)
 
-        q_np = get_q_or_zeros()
-        k_np = get_kv_or_zeros(k_key)
-        v_np = get_kv_or_zeros(v_key)
+        q_np = get_or_zeros(q_key, q_out_features)
+        k_np = get_or_zeros(k_key, kv_out_features)
+        v_np = get_or_zeros(v_key, kv_out_features)
 
-        # Q weight: shape [q_out_features, rank]
-        q_combined_key = f"{layer_prefix}.qkv_lora.{LoRAType.B.value}_q.weight"
-        self._lora_B[q_combined_key] = self._create_weight_data(
-            q_np,
-            q_combined_key,
-            src_dtype,
-            quantization_encoding,
-        )
-
-        # KV weight: shape [2, kv_out_features, rank]
-        kv_np = np.stack([k_np, v_np])
-        kv_combined_key = (
-            f"{layer_prefix}.qkv_lora.{LoRAType.B.value}_kv.weight"
-        )
-        self._lora_B[kv_combined_key] = self._create_weight_data(
-            kv_np,
-            kv_combined_key,
+        # Fused weight: [q_dim + 2*kv_dim, max_rank], rows ordered Q | K | V.
+        combined_np = np.concatenate([q_np, k_np, v_np], axis=0)
+        combined_key = f"{layer_prefix}.qkv_lora.{LoRAType.B.value}.weight"
+        self._lora_B[combined_key] = self._create_weight_data(
+            combined_np,
+            combined_key,
             src_dtype,
             quantization_encoding,
         )
@@ -854,24 +838,10 @@ class LoRAManager:
         grouped_ids = grouped_ids[:last_lora_idx]
         grouped_ranks = grouped_ranks[:last_lora_idx]
 
-        # For KV cache iadd optimization with shape [2m, N]
-        # We need offsets for both K (first m rows) and V (next m rows)
-        # Create duplicate offsets: first for K portion, then for V portion
+        # Total number of LoRA-routed tokens; marks the K/V boundary the single
+        # boundary-aware expand kernel handles internally (no duplicate K/V
+        # offset/id arrays needed).
         lora_end_idx = grouped_offsets[-1]
-        grouped_offsets_kv = []
-        grouped_ids_kv = []
-
-        # Add K portion: G groups with G+1 offsets (includes lora_end_idx)
-        for offset in grouped_offsets:
-            grouped_offsets_kv.append(offset)
-        for id_ in grouped_ids:
-            grouped_ids_kv.append(id_)
-
-        # Add V portion: G groups with G offsets (skip first to avoid duplicate lora_end_idx)
-        for offset in grouped_offsets[1:]:
-            grouped_offsets_kv.append(lora_end_idx + offset)
-        for id_ in grouped_ids:
-            grouped_ids_kv.append(id_ + self.max_num_loras)
 
         lora_ids = Buffer.from_numpy(np.array(grouped_ids, dtype=np.int32)).to(
             device
@@ -899,13 +869,6 @@ class LoRAManager:
             np.array([input_row_offsets[-1]], dtype=np.int64)
         )
 
-        lora_ids_kv = Buffer.from_numpy(
-            np.array(grouped_ids_kv, dtype=np.int32)
-        ).to(device)
-        lora_grouped_offsets_kv = Buffer.from_numpy(
-            np.array(grouped_offsets_kv, dtype=np.uint32)
-        ).to(device)
-
         return (
             lora_ids,
             lora_ranks,
@@ -913,8 +876,6 @@ class LoRAManager:
             num_active_loras,
             lora_end,
             batch_seq_len,
-            lora_ids_kv,
-            lora_grouped_offsets_kv,
         )
 
     def _validate_lora_path(self, path: str) -> LoRAStatus:
@@ -1109,18 +1070,7 @@ class LoRAManager:
                     device=buffer.device,
                 )
 
-            if LoRAType.B_KV.value in state_key:
-                if lora_weight:
-                    buffer[slot, :, :].inplace_copy_from(weight[0, :, :])
-                    buffer[slot + self.max_num_loras, :, :].inplace_copy_from(
-                        weight[1, :, :]
-                    )
-                else:
-                    buffer[slot, :, :].inplace_copy_from(weight)
-                    buffer[slot + self.max_num_loras, :, :].inplace_copy_from(
-                        weight
-                    )
-            elif LoRAType.BIAS.value in state_key:
+            if LoRAType.BIAS.value in state_key:
                 buffer[slot, :].inplace_copy_from(weight)
             else:
                 buffer[slot, :, :].inplace_copy_from(weight)
@@ -1276,12 +1226,6 @@ class LoRAManager:
                 DType.int64, shape=["lora_end_idx"], device=DeviceRef.CPU()
             ),
             TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
-            TensorType(DType.int32, shape=["lora_ids_kv"], device=device_ref),
-            TensorType(
-                DType.uint32,
-                shape=["lora_grouped_offsets_kv"],
-                device=device_ref,
-            ),
         ]
 
     def set_graph_info(self, lora_inputs: Sequence[TensorValue]) -> None:
