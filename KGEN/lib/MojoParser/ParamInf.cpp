@@ -1833,24 +1833,6 @@ VerifiedParamBindings CallParamInf::inferForCall() {
         continue;
       }
 
-      // A '**' unpack can only be forwarded whole (the fast path above).
-      for (auto operandIdx : pogAssignment.kwVariadicIdxs) {
-        if (callOperands[operandIdx].unpackStyle != ArgUnpackStyle::kStarStar)
-          continue;
-        auto &diag = getMojoDiag(callOperands[operandIdx].expr->getLoc());
-        diag << "combining a '**' unpack with other keyword arguments for "
-                "'**kwargs' is not supported"
-             << callOperands[operandIdx].expr->getRange();
-        for (auto otherIdx : pogAssignment.kwVariadicIdxs) {
-          if (otherIdx != operandIdx) {
-            diag.attachNote(callOperands[otherIdx].expr->getLoc())
-                << "other keyword argument specified here";
-            break;
-          }
-        }
-        return {};
-      }
-
       Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
       auto refValType = RefType::getAnyOrigin(valTy, /*isMut=*/true);
       for (auto operandIdx : pogAssignment.kwVariadicIdxs) {
