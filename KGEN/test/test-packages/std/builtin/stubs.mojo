@@ -766,7 +766,6 @@ trait AnyType:
 
 
 @stable
-@explicit_destroy
 trait Copyable(Movable):
     @stable
     def __init__(out self, *, copy: Self):
@@ -805,14 +804,12 @@ def materialize[T: AnyType, //, value: T](out result: T):
     )
 
 
-@explicit_destroy
 trait ExplicitlyDestroyedMovable:
     def __init__(out self, *, deinit move: Self):
         ...
 
 
 @stable
-@explicit_destroy
 trait Movable:
     def __init__(out self, *, deinit move: Self):
         ...

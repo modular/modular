@@ -26,6 +26,33 @@ trait ExplicitDestroyEmptyMsgOnImplicitlyDeletable(ImplicitlyDeletable):
 
 
 # ===----------------------------------------------------------------------=== #
+# `@explicit_destroy` on a `trait` requires a string argument
+# ===----------------------------------------------------------------------=== #
+
+
+# expected-error @+2 {{@explicit_destroy requires an argument: `@explicit_destroy("...")`}}
+# expected-note @+2 {{Use `ImplicitlyDeletable where False` conformance to opt out of implicit deletion. `@explicit_destroy` is no longer required.}}
+@explicit_destroy
+trait BareExplicitDestroyTrait:
+    def consume(deinit self):
+        ...
+
+
+# expected-error @below {{expected exactly one argument: `@explicit_destroy("...")`}}
+@explicit_destroy()
+trait EmptyArgsExplicitDestroyTrait:
+    def consume(deinit self):
+        ...
+
+
+# expected-error @below {{expected a string literal argument: `@explicit_destroy("...")`}}
+@explicit_destroy(42)
+trait NonStringArgExplicitDestroyTrait:
+    def consume(deinit self):
+        ...
+
+
+# ===----------------------------------------------------------------------=== #
 # Old `@explicit_destroy` usage
 # ===----------------------------------------------------------------------=== #
 
@@ -40,6 +67,12 @@ struct UnconditionalDefault:
 # expected-error @below {{expected exactly one argument: `@explicit_destroy("...")`}}
 @explicit_destroy()
 struct UnconditionalDefaultEmptyArgs:
+    pass
+
+
+# expected-error @below {{expected a string literal argument: `@explicit_destroy("...")`}}
+@explicit_destroy(42)
+struct NonStringArgExplicitDestroy:
     pass
 
 

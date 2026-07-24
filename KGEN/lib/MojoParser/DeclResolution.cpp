@@ -3176,6 +3176,43 @@ static ConstraintAttr getConformanceConstraint(StructDeclOp structOp,
   return {};
 }
 
+/// Emits the diagnostic for a bare `@explicit_destroy` decorator, which now
+/// requires a string message argument, with a note nudging users toward the
+/// `ImplicitlyDeletable where ...` replacement. The caller marks the decl
+/// erroneous and returns failure. Shared by `struct` and `trait` resolution.
+static void emitExplicitDestroyRequiresArgError(SharedState &shared,
+                                                SMLoc decoratorLoc,
+                                                const ASTDecl &decl) {
+  auto diag = shared.emitError(decoratorLoc)
+              << "@explicit_destroy requires an argument: "
+                 "`@explicit_destroy(\"...\")`";
+  diag.attachNote(decl)
+      << "Use `ImplicitlyDeletable where False` conformance to opt out of "
+         "implicit deletion. `@explicit_destroy` is no longer required.";
+}
+
+/// Validates that an `@explicit_destroy(...)` call has exactly one string
+/// literal argument, storing its value in `message`. Emits a diagnostic and
+/// returns failure for the wrong-arity and non-string-literal forms. Shared by
+/// `struct` and `trait` resolution.
+static LogicalResult parseExplicitDestroyMessage(SharedState &shared,
+                                                 CallNode *callNode,
+                                                 std::string &message) {
+  if (callNode->operands.size() != 1) {
+    shared.emitError(callNode->getLoc())
+        << "expected exactly one argument: `@explicit_destroy(\"...\")`";
+    return failure();
+  }
+  auto *strExpr = dyn_cast<StringLiteralNode>(callNode->operands.front().expr);
+  if (!strExpr) {
+    shared.emitError(callNode->operands.front().expr->getLoc())
+        << "expected a string literal argument: `@explicit_destroy(\"...\")`";
+    return failure();
+  }
+  message = strExpr->getValue();
+  return success();
+}
+
 /// structdef ::=
 ///   [decorators] "struct" identifier [param_signature]
 ///                ["(" conformance_list ")"] ("where" expression)* ":" suite
@@ -3306,20 +3343,11 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     if (auto *callNode = dyn_cast<CallNode>(decoratorExpr.first)) {
       if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
         if (declRef->spelling == "explicit_destroy") {
-          if (callNode->operands.size() != 1) {
-            shared.emitError(callNode->getLoc())
-                << "expected exactly one argument: "
-                   "`@explicit_destroy(\"...\")`";
+          std::string message;
+          if (failed(parseExplicitDestroyMessage(shared, callNode, message)))
             return failure();
-          } else {
-            auto strExpr =
-                dyn_cast<StringLiteralNode>(callNode->operands.front().expr);
-            // TODO(MOCO-1468): Error message here.
-            if (!strExpr)
-              return failure();
-            linearTypeErrorMsg =
-                std::make_tuple(strExpr->getValue(), callNode->getLoc());
-          }
+          linearTypeErrorMsg =
+              std::make_tuple(std::move(message), callNode->getLoc());
         }
       }
     }
@@ -3588,17 +3616,8 @@ LogicalResult StructDecorators::processBodyDecorator(ExprNode *decorator) {
       return success();
     }
     if (declRef->spelling == "explicit_destroy") {
-      auto diag = emitError(declRef->getLoc())
-                  << "@explicit_destroy requires an argument: "
-                     "`@explicit_destroy(\"...\")`";
-      // To help educate users on migrating to `ImplicitlyDeletable where ...`
-      // constraints, provide an informational nudge.
-      // TODO: This note can be removed after docs/LLMs/ecosystem have learned
-      //       the new way.
-      diag.attachNote(structDecl)
-          << "Use `ImplicitlyDeletable where False` "
-             "conformance to opt out of implicit deletion. `@explicit_destroy` "
-             "is no longer required.";
+      emitExplicitDestroyRequiresArgError(shared, declRef->getLoc(),
+                                          structDecl);
       structDecl.setErroneous();
       return failure();
     }
@@ -4172,32 +4191,25 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   // and cause a cycle when resolving base traits like AnyType.
   bool conformsToImplicitlyDeletable = conformsToTrait("ImplicitlyDeletable");
 
-  // Parse @explicit_destroy decorator if present.
+  // Parse @explicit_destroy decorator if present. It requires a string message
+  // argument; the bare and empty-argument forms are errors, mirroring the
+  // handling on `struct`.
   std::optional<std::string> linearTypeErrorMsg;
   for (auto decoratorExpr : decoratorExprs) {
     if (auto *declRefNode = dyn_cast<DeclRefNode>(decoratorExpr.first)) {
-      // TODO(MOCO-1468): Remove this, always require argument to
-      // @explicit_destroy.
       if (declRefNode->spelling == "explicit_destroy") {
-        linearTypeErrorMsg =
-            "Unhandled explicit_destroy type " + traitOp.getDeclName().str();
+        emitExplicitDestroyRequiresArgError(shared, declRefNode->getLoc(),
+                                            decl);
+        decl.setErroneous();
+        return failure();
       }
     } else if (auto *callNode = dyn_cast<CallNode>(decoratorExpr.first)) {
       if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
         if (declRef->spelling == "explicit_destroy") {
-          // TODO(MOCO-1468): Remove this, always require argument to
-          // @explicit_destroy.
-          if (callNode->operands.size() == 0) {
-            linearTypeErrorMsg = "Unhandled explicit_destroy type " +
-                                 traitOp.getDeclName().str();
-          } else {
-            auto strExpr =
-                dyn_cast<StringLiteralNode>(callNode->operands.front().expr);
-            // TODO(MOCO-1468): Error message here.
-            if (!strExpr)
-              return failure();
-            linearTypeErrorMsg = strExpr->getValue();
-          }
+          std::string message;
+          if (failed(parseExplicitDestroyMessage(shared, callNode, message)))
+            return failure();
+          linearTypeErrorMsg = std::move(message);
         }
       }
     }
