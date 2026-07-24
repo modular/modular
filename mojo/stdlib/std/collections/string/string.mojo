@@ -38,7 +38,7 @@ from std.os import PathLike, abort
 from std.atomic import Atomic, Ordering, fence
 from std.sys import size_of, bit_width_of
 from std.ffi import c_char, CStringSlice
-from std.sys.info import is_32bit
+from std.sys.info import is_32bit, is_apple_gpu
 
 from std.bit import count_leading_zeros
 from std.memory import (
@@ -733,6 +733,10 @@ struct String(
     @always_inline("nodebug")
     def _add_ref(mut self):
         """Atomically increment the refcount."""
+        comptime if is_apple_gpu():
+            # No-op: heap-string refcounting is unsupported on Apple GPU.
+            # See MSTDL-2907.
+            return
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             # See `ArcPointer`'s refcount implementation for more details on the
             # use of memory orderings.
@@ -742,6 +746,10 @@ struct String(
     def _drop_ref(mut self):
         """Atomically decrement the refcount and deallocate self if the result
         hits zero."""
+        comptime if is_apple_gpu():
+            # No-op: heap-string refcounting is unsupported on Apple GPU.
+            # See MSTDL-2907.
+            return
         # If indirect or inline we don't need to do anything.
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             var ptr = self._ptr_or_data.unsafe_offset(-Self.REF_COUNT_SIZE)

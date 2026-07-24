@@ -14,7 +14,7 @@
 
 from std.collections.string.string_slice import get_static_string
 from std.math import align_down, ceildiv, iota
-from std.sys import align_of, simd_width_of, size_of
+from std.sys import align_of, bit_width_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target, is_apple_gpu
 
 from std.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
@@ -833,18 +833,20 @@ def _atomic_reduce[
     payloads cannot livelock the loop.
     """
     comptime if is_apple_gpu():
-        # Metal has no atomic ops; fall back to a plain read-modify-write. This
-        # cannot fold duplicate-index updates atomically, matching the kernel's
-        # prior behavior on Apple GPU, but it is the only path Metal can lower.
-        ptr[] = reduction_fn[dtype, 1](ptr[], update)
-        return
+        # KERN-3243 tracks a real fix for these dtypes.
+        comptime assert bit_width_of[dtype]() == 32, (
+            "scatter_nd atomic reduce needs a 32-bit dtype on Apple GPU:"
+            " Metal has no atomic primitive at any other width"
+        )
 
     var expected = ptr[]
     while True:
         var desired = reduction_fn[dtype, 1](expected, update)
         if desired.to_bits() == expected.to_bits():
             return
-        if Atomic.compare_exchange(ptr, expected, desired):
+        # Apple GPU only exposes a weak compare-exchange primitive; the retry
+        # loop already tolerates spurious failures.
+        if Atomic.compare_exchange[weak=is_apple_gpu()](ptr, expected, desired):
             return
 
 
