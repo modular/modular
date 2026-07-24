@@ -1677,6 +1677,8 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(SharedState &shared,
       Type concreteWrapperType =
           shared.getClosureEmitter().getConcreteClosureWrapperTypeForFnSymbol(
               *declScope, loc, fnPValue);
+      if (!concreteWrapperType)
+        return false;
       return succeeded(shared.getClosureEmitter().isCompatibleWith(
           concreteWrapperType, traitDecl));
     }
@@ -1980,6 +1982,8 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
       ASTType structWrapper =
           shared.getClosureEmitter().getConcreteClosureWrapperTypeForFnSymbol(
               declScope, valueExpr.expr->getLoc(), fnPValue);
+      if (!structWrapper)
+        return PValue();
       (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
           structWrapper, traitDecl);
       return emitMetaTypeToTraitConversion(
@@ -2029,6 +2033,8 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
             fromType)) {
       auto closureMetaType = emitFnLiteralUpCastToTrait(
           fnGen.getType().getType().getSymbolConstantAttr(), anyTrait);
+      if (!closureMetaType)
+        return failure();
       return PValue(TypeParamAttr::get(closureMetaType.getType(), anyTrait));
     }
 

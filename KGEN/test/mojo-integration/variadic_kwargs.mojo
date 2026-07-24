@@ -67,6 +67,8 @@ def main() raises:
     print("m outside", m.value)
 
     forwards_both_variadics(1, 2, x=8, y=9)
+    closure_forwards_both_variadics()
+    closure_forwards_mixed()
 
     kitchen_sink(1, 2, 3, 4, 5, named=6, opt=7, k=8, z=9)
     forwards_to_kitchen_sink(40, 50, k=70, z=80)
@@ -83,6 +85,26 @@ def takes_both_variadics(*args: Int, **kwargs: Int) raises:
 
 def forwards_both_variadics(*args: Int, **kwargs: Int) raises:
     takes_both_variadics(*args, **kwargs^)
+
+
+def closure_forwards_both_variadics() raises:
+    var z = 100
+
+    def c(*args: Int, **kwargs: Int) raises {imm z} -> Int:
+        return z + args[0] + kwargs["a"]
+
+    # CHECK: closure 108
+    print("closure", c(3, a=5))
+
+
+def closure_forwards_mixed() raises:
+    var z = 1000
+
+    def m(x: Int, *args: Int, named: Int, **kwargs: Int) raises {imm z} -> Int:
+        return z + x + args[0] + named + kwargs["a"]
+
+    # CHECK: mixed 1032
+    print("mixed", m(1, 2, named=4, a=25))
 
 
 # Every argument kind in one signature: positional-only ('/'), positional,

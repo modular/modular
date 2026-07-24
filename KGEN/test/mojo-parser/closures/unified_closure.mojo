@@ -25,6 +25,13 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S17 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S18 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S19 < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=KWARGS < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=STAR_ARGS < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=KWARGS_FN_PTR < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=STAR_ARGS_KWARGS < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=MIXED_KWARGS < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=MIXED_KWARGS_FN_PTR < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=STAR_ARGS_KWARGS_FN_PTR < %t.mlir
 # COM: Verify generated trait and struct structure.
 # S0-DAG: [[S0_PARENT:!Int_AnyType_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
 # S0-DAG: [[S0_IMPL_PARENT:!Int_AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
@@ -492,3 +499,166 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
         useIt(one^)
         return x
 
+
+# COM: KWARGS: a `**kwargs` argument forwards through the closure
+# COM: wrapper's `__call__` as a `**` splat, the dict passed whole. The
+# COM: wrapper is synthesized when the closure's signature is resolved.
+
+# The wrapper's __call__ takes the dict `kw_vararg`...
+# KWARGS: lit.fn @"__call__({{.*}}def(**kwargs: Int) -> Int{{.*}},kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
+# ...and forwards it to the impl as a single `**` dict operand.
+# KWARGS: lit.call{{.*}}(%{{.*}}, %kwargs)
+# KWARGS: lit.fn @"kwargs_throughWrapper()"
+
+
+def kwargs_throughWrapper() -> Int:
+    var z = 1
+
+    def g(**kwargs: Int) {imm z} -> Int:
+        return z
+
+    return g(a=1, b=2)
+
+
+# COM: STAR_ARGS: `*args` forwards as a `*` unpack through the same wrapper
+# COM: hop.
+
+# STAR_ARGS: lit.fn @"__call__{{.*}}def(*args: Int) -> Int{{.*}},::SIMD[::DType(int), ::SIMDLength(1)]*)"
+# STAR_ARGS: lit.call{{.*}}(%{{.*}}, %args)
+# STAR_ARGS: lit.fn @"star_args_throughWrapper()"
+
+
+def star_args_throughWrapper() -> Int:
+    var z = 1
+
+    def h(*args: Int) {imm z} -> Int:
+        return z
+
+    return h(1, 2)
+
+
+# COM: KWARGS_FN_PTR: binding a plain `**kwargs` function into a closure-typed
+# COM: value mints its own (fn-pointer) wrapper; its forwarding is pinned
+# COM: separately.
+
+# KWARGS_FN_PTR: lit.fn @"__call__({{.*}}_PtrWrapper[$0],kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
+# KWARGS_FN_PTR: lit.call{{.*}}: Impl]{{.*}}(%kwargs)
+# KWARGS_FN_PTR: lit.fn @"kwargs_fn_ptr_useFnWrapper()"
+
+
+def kwargs_fn_ptr_top(**kwargs: Int) -> Int:
+    return 1
+
+
+def kwargs_fn_ptr_takeClosure(f: Some[def(**kwargs: Int) -> Int]) -> Int:
+    return f(a=1)
+
+
+def kwargs_fn_ptr_useFnWrapper() -> Int:
+    return kwargs_fn_ptr_takeClosure(kwargs_fn_ptr_top)
+
+
+# COM: STAR_ARGS_KWARGS: `*args` and `**kwargs` together forward through the
+# COM: same wrapper hop -- the packed list as a `*` unpack and the packed dict
+# COM: as a `**` splat in one forwarding call. Depends on the call machinery
+# COM: accepting a `*` unpack followed by a `**` splat.
+
+# The wrapper's __call__ takes both the list `pos_vararg` and the dict
+# `kw_vararg`...
+# STAR_ARGS_KWARGS: lit.fn @"__call__{{.*}}def(*args: Int, **kwargs: Int) -> Int{{.*}}*,kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
+# ...and forwards both packed values in one call.
+# STAR_ARGS_KWARGS: lit.call{{.*}}(%{{.*}}, %args, %kwargs)
+# STAR_ARGS_KWARGS: lit.fn @"star_args_kwargs_throughWrapper()"
+
+
+def star_args_kwargs_throughWrapper() -> Int:
+    var z = 1
+
+    def b(*args: Int, **kwargs: Int) {imm z} -> Int:
+        return z
+
+    return b(1, 2, a=3)
+
+
+# COM: MIXED_KWARGS: a named keyword-only argument forwards alongside the
+# COM: `**kwargs` splat through the wrapper -- the literal keyword operand
+# COM: binds its own parameter, the dict its `**kwargs`, in one call.
+
+# MIXED_KWARGS: lit.fn @"__call__{{.*}}def(x: Int, *, named: Int, **kwargs: Int) -> Int{{.*}},named:::SIMD[::DType(int), ::SIMDLength(1)],kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
+# MIXED_KWARGS: lit.call{{.*}}(%{{.*}}, %x, %named, %kwargs)
+# MIXED_KWARGS: lit.fn @"mixed_kwargs_throughWrapper()"
+
+
+def mixed_kwargs_throughWrapper() -> Int:
+    var z = 1
+
+    def m(x: Int, *, named: Int, **kwargs: Int) {imm z} -> Int:
+        return z + x + named
+
+    return m(1, named=2, a=3, b=4)
+
+
+# A defaulted keyword-only argument forwards the same way (the wrapper always
+# passes its own `named` argument through, defaulted or not). The extra `y`
+# keeps this closure's trait name distinct from mixed_kwargs_throughWrapper's --
+# the trait name omits defaults, and a collision is an "invalid redefinition".
+def mixed_kwargs_defaultedThroughWrapper() -> Int:
+    var z = 1
+
+    def m(x: Int, y: Int, *, named: Int = 7, **kwargs: Int) {imm z} -> Int:
+        return z + named
+
+    return m(1, 2, a=3)
+
+
+# A second closure with the same signature reuses the cached wrapper.
+def mixed_kwargs_duplicateSignature() -> Int:
+    var z = 2
+
+    def m(x: Int, *, named: Int, **kwargs: Int) {imm z} -> Int:
+        return z
+
+    return m(1, named=2, a=3)
+
+
+# COM: MIXED_KWARGS_FN_PTR: the same mixed signature forwards through the
+# COM: fn-pointer wrapper minted when a plain function is bound into a
+# COM: closure-typed value.
+
+# MIXED_KWARGS_FN_PTR: lit.fn @"__call__{{.*}}_PtrWrapper[$0],::SIMD[::DType(int), ::SIMDLength(1)],named:::SIMD[::DType(int), ::SIMDLength(1)],kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
+# MIXED_KWARGS_FN_PTR: lit.call{{.*}}: Impl]{{.*}}(%x, %named, %kwargs)
+# MIXED_KWARGS_FN_PTR: lit.fn @"mixed_kwargs_fn_ptr_useFnBinding()"
+
+
+def mixed_kwargs_fn_ptr_top(x: Int, *, named: Int, **kwargs: Int) -> Int:
+    return x + named
+
+
+def mixed_kwargs_fn_ptr_takeClosure(
+    f: Some[def(x: Int, *, named: Int, **kwargs: Int) -> Int]
+) -> Int:
+    return f(1, named=2, a=3)
+
+
+def mixed_kwargs_fn_ptr_useFnBinding() -> Int:
+    return mixed_kwargs_fn_ptr_takeClosure(mixed_kwargs_fn_ptr_top)
+
+
+# COM: STAR_ARGS_KWARGS_FN_PTR: the both-variadics signature forwards through
+# COM: the fn-pointer wrapper as well.
+
+# STAR_ARGS_KWARGS_FN_PTR: lit.fn @"__call__{{.*}}def(*args: Int, **kwargs: Int) thin -> Int_PtrWrapper[$0],::SIMD[::DType(int), ::SIMDLength(1)]*,kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
+# STAR_ARGS_KWARGS_FN_PTR: lit.call{{.*}}(%args, %kwargs)
+# STAR_ARGS_KWARGS_FN_PTR: lit.fn @"star_args_kwargs_fn_ptr_useFnWrapper()"
+
+
+def star_args_kwargs_fn_ptr_top(*args: Int, **kwargs: Int) -> Int:
+    return 1
+
+
+def star_args_kwargs_fn_ptr_takeClosure(f: Some[def(*args: Int, **kwargs: Int) -> Int]) -> Int:
+    return f(1, 2, a=3)
+
+
+def star_args_kwargs_fn_ptr_useFnWrapper() -> Int:
+    return star_args_kwargs_fn_ptr_takeClosure(star_args_kwargs_fn_ptr_top)
