@@ -1598,7 +1598,10 @@ CValue IREmitter::emitConstructorCall(ASTType type,
   }
 
   // If there are no candidates at all, diagnose specific errors.
-  if (!callee) {
+  bool hasNoRealCandidates =
+      !callee.fnDecls.empty() &&
+      llvm::all_of(callee.fnDecls, isNeverCallableSynthesizedCandidate);
+  if (!callee || hasNoRealCandidates) {
     if (!type.getDecl(shared) &&
         callOperands.syntax != CallSyntax::kImplicitConvert) {
       emitError(expr->getLoc())
