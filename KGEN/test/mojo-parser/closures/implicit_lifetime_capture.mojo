@@ -10,7 +10,7 @@ struct Thing[a: Origin[mut=True]](TrivialRegisterPassable):
     pass
 
 
-struct Foo:
+struct Foo(Movable where False):
     pass
 
 

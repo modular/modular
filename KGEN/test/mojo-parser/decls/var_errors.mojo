@@ -70,7 +70,7 @@ def empty_name():
   var `` = 42
 
 # COM: Issue #957 https://github.com/modular/mojo/issues/957
-struct MemoryStruct:
+struct MemoryStruct(Movable where False):
     @implicit
     def __init__(out self, s: Int): pass
 

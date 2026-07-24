@@ -11,7 +11,7 @@
 
 
 # CHECK-LABEL: lit.struct.decl @WithLegacyField
-struct WithLegacyField:
+struct WithLegacyField(Movable where False):
     # CHECK: lit.struct.field legacy_field {allowLegacyAnyOrigin}
     @__allow_legacy_any_origin_fields
     var legacy_field: Int

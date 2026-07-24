@@ -27,7 +27,7 @@ def unstable_function():
 # CHECK: lit.struct.decl @TestStruct
 # CHECK-SAME: hasStableDecorator
 @stable
-struct TestStruct:
+struct TestStruct(Movable where False):
     # CHECK: lit.fn @"stable_method{{.*}}TestStruct)"
     # CHECK-SAME: hasStableDecorator
     @stable

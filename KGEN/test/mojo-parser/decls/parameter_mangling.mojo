@@ -11,7 +11,7 @@ comptime z = __mlir_attr.`0: index`
 
 
 # CHECK-LABEL: lit.struct.decl @A<x: !Int, x_0: !Int>
-struct A[x: Int, x_0: Int]:
+struct A[x: Int, x_0: Int](Movable where False):
     # CHECK: lit.alias.decl *"z`" = <1>
     comptime z = __mlir_attr.`1: index`
     # CHECK: lit.alias.decl *"y`1" = <11>
@@ -34,7 +34,7 @@ struct A[x: Int, x_0: Int]:
 
 
 # COM: test names of implicit parameters
-struct MyStruct[a: Int, b: Int]:
+struct MyStruct[a: Int, b: Int](Movable where False):
     pass
 
 

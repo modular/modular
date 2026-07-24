@@ -145,7 +145,7 @@ trait Animal:
 trait Mammal(Animal):
     pass
 
-struct Dog(Mammal):
+struct Dog(Mammal, Movable where False):
     def speak(self):
         pass
 

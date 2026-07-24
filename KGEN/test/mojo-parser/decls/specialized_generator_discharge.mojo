@@ -46,11 +46,11 @@ def need_a_positive[a: Int, b: Int]() where a > 0:
 comptime ordered_pair[x: Int, y: Int] where x < y = x + y
 
 
-struct PlainStruct:
+struct PlainStruct(Movable where False):
     pass
 
 
-struct IntableStruct(Intable):
+struct IntableStruct(Intable, Movable where False):
     def __int__(self) -> Int:
         return 0
 

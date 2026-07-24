@@ -344,7 +344,7 @@ def fieldConsumeError(
 
 
 # https://github.com/modularml/modular/issues/15404
-struct SimpleStructNoDtor:
+struct SimpleStructNoDtor(Movable where False):
     def __init__(out self):
         pass
 
@@ -360,7 +360,7 @@ def issue15404():
 
 
 @fieldwise_init
-struct SP[n: Int]:
+struct SP[n: Int](Movable where False):
     pass
 
 
@@ -391,7 +391,7 @@ trait RPTTrait(TrivialRegisterPassable):
 
 # Consumption of struct works only on definition of __del__
 # https://github.com/modular/mojo/issues/734
-struct StructWithNoDel:
+struct StructWithNoDel(Movable where False):
     var x: Int
 
     @implicit
@@ -426,7 +426,7 @@ struct NestedInt(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct WrapperNestedInt:
+struct WrapperNestedInt(Movable where False):
     var x: NestedInt
 
 
@@ -528,7 +528,7 @@ def get_inout_ref(mut x: String) -> ref[x] String:
     return x
 
 
-struct StrArray:
+struct StrArray(Movable where False):
     def __getitem__(self, x: Int) -> String:
         return String()
 
@@ -601,7 +601,7 @@ def test_unused_var(mut mut_arg: Int):
 
 @explicit_destroy("Use `consume() method` to finalize")
 @fieldwise_init
-struct LinearType(ImplicitlyDeletable where False):
+struct LinearType(ImplicitlyDeletable where False, Movable where False):
     def consume(deinit self):
         pass
 
@@ -637,7 +637,7 @@ def test_linear_no_return_complex_lifetime(
 
 
 # Hard case for conditional lifetime analysis on abort.  This should compile.
-struct ReducedVariant(ImplicitlyDeletable where False):
+struct ReducedVariant(ImplicitlyDeletable where False, Movable where False):
     var _storage: ReducedStorage
 
     def take[T: Movable](deinit self, cond: Bool) -> T:
@@ -646,14 +646,14 @@ struct ReducedVariant(ImplicitlyDeletable where False):
         return self._storage^.take[T]()
 
 
-struct ReducedStorage(ImplicitlyDeletable where False):
+struct ReducedStorage(ImplicitlyDeletable where False, Movable where False):
     def take[U: Movable](deinit self) -> U:
         abort()
 
 
 @explicit_destroy("This needs explicit destruction when T isn't linear")
 struct ConditionallyLinearType[T: AnyType](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable), Movable where False
 ):
     # var data: Self.T
 

@@ -77,7 +77,7 @@ def launch_ship(mut ship: PlainStruct):
 from trait_package import Flying as ImportedFlying
 
 
-struct Spaceship:
+struct Spaceship(Movable where False):
     var location: Int
 
     def __init__(out self):

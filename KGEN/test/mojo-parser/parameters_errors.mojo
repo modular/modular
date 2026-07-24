@@ -11,7 +11,7 @@
 ##===----------------------------------------------------------------------===##
 
 
-struct ParametricOnInt[a: Int]:
+struct ParametricOnInt[a: Int](Movable where False):
     pass
 
 
@@ -23,7 +23,7 @@ def Rec2[
 
 
 # expected-note @+1 {{'Thing' declared here}}
-struct Thing[a: Int, b: Int]:
+struct Thing[a: Int, b: Int](Movable where False):
     pass
 
 
@@ -40,7 +40,7 @@ def WeirdMetaParams(a: Thing[1, 1.5]):
     pass
 
 
-struct Parameterized[p1: Int]:
+struct Parameterized[p1: Int](Movable where False):
     # expected-error @below {{invalid redefinition of 'p2'}}
     # expected-note @below {{previous definition here}}
     def b[p2: Int, p2: Int, p3: Int](self):  # Cannot shadow parameter names.
@@ -71,7 +71,7 @@ def testTestParamStruct(a: Parameterized[4]):
 comptime DType = __mlir_type.`!kgen.dtype`
 
 
-struct MySIMD[size: Int, type: DType]:
+struct MySIMD[size: Int, type: DType](Movable where False):
     # expected-note @below {{function declared here}}
     def __add__(self, rhs: MySIMD[Self.size, Self.type]):
         pass
@@ -97,7 +97,7 @@ def testSIMD(
     twoUses(a, b)
 
 
-struct TwoParams[a: Int, b: Int]:
+struct TwoParams[a: Int, b: Int](Movable where False):
     @implicit
     def __init__(out self, other: TwoParams[1, 1]):
         pass
@@ -178,7 +178,7 @@ def callVariadic():
 
 
 # expected-note @below {{'StructWithVariadic' declared here}}
-struct StructWithVariadic[*a: Int]:
+struct StructWithVariadic[*a: Int](Movable where False):
     pass
 
 
@@ -220,12 +220,12 @@ def crash1_caller[p: __mlir_type.index](a: __mlir_type.index):
 
 
 @fieldwise_init
-struct StructWithParams[a: Int, b: Int]:
+struct StructWithParams[a: Int, b: Int](Movable where False):
     comptime a1 = StructWithParams[1, 2]()
     comptime a2 = Self.a + 1
     comptime a3 = Self.a + Self.b + 1
 
-struct StructWithRecReference[n: Int]:
+struct StructWithRecReference[n: Int](Movable where False):
     comptime res = StructWithRecReference.f
     @staticmethod
     def f():
@@ -256,12 +256,12 @@ def testStructWithParams():
 
 
 # expected-error @below {{required positional parameter follows optional positional parameter; change the ordering}}
-struct DefaultParams[a: Int, b: Int = 7, msg: Int]:
+struct DefaultParams[a: Int, b: Int = 7, msg: Int](Movable where False):
     pass
 
 
 @fieldwise_init
-struct DefaultParams2[a: Int, b: Int = 7]:  # expected-note {{declared here}}
+struct DefaultParams2[a: Int, b: Int = 7](Movable where False):  # expected-note {{declared here}}
     pass
 
 
@@ -313,13 +313,13 @@ def indirect_callable_pos_only[
 
 # expected-note @+2 {{declared here}}
 @fieldwise_init
-struct KwParamStruct[a: Int, b: Int = 0]:
+struct KwParamStruct[a: Int, b: Int = 0](Movable where False):
     pass
 
 
 # expected-note @+2 {{declared here}}
 @fieldwise_init
-struct VarParamStruct[s: StringLiteral, *args: Int]:
+struct VarParamStruct[s: StringLiteral, *args: Int](Movable where False):
     pass
 
 
@@ -354,7 +354,7 @@ def test_struct_kw_params3():
 # expected-note @+3 {{declared here}}
 # expected-note @+2 {{def __init__(out self)    # note - generated function}}
 @fieldwise_init
-struct PosOnlyStruct[a: Int, b: Int, /, c: Int = 9]:
+struct PosOnlyStruct[a: Int, b: Int, /, c: Int = 9](Movable where False):
     pass
 
 
@@ -374,7 +374,7 @@ def test_pos_only_struct():
 
 
 # expected-note @+1 {{struct declared here}}
-struct CtadStruct[a: Int]:
+struct CtadStruct[a: Int](Movable where False):
     # expected-note @+2 {{declared here}}
     @staticmethod
     def foo():
@@ -394,7 +394,7 @@ def test_implicitly_parametric_static_methods_fails():
 ##===----------------------------------------------------------------------===##
 
 
-struct XOrigin[mut: Int, value: ParametricOnInt[mut]]:
+struct XOrigin[mut: Int, value: ParametricOnInt[mut]](Movable where False):
     pass
 
 # expected-error @+1 {{inferred parameter of type 'ParametricOnInt[MUT]' cannot depend on non-inferred parameter 'MUT'}}
@@ -412,7 +412,7 @@ trait SomeTrait:
         pass
 
 
-struct NoTraitsType:
+struct NoTraitsType(Movable where False):
     pass
 
 
@@ -432,7 +432,7 @@ struct ParamType[p: Int](RegisterPassable):
 
 
 @fieldwise_init
-struct MemParamType[p: Int]:
+struct MemParamType[p: Int](Movable where False):
     pass
 
 
@@ -451,16 +451,16 @@ def autoparams_variadic(*x: MemParamType):
     pass
 
 # expected-note @below {{'InferredParam' declared here}}
-struct InferredParam[p: Int, //, T: TrivialRegisterPassable, use: ParamType[p]]:
+struct InferredParam[p: Int, //, T: TrivialRegisterPassable, use: ParamType[p]](Movable where False):
     pass
 
 
 # expected-note @below {{declared here}}
-struct MultiInferred[p: Int, q: Int, //, uP: ParamType[p], uQ: ParamType[q]]:
+struct MultiInferred[p: Int, q: Int, //, uP: ParamType[p], uQ: ParamType[q]](Movable where False):
     pass
 
 
-struct BindStructField:
+struct BindStructField(Movable where False):
     # expected-error @below {{'InferredParam' failed to infer parameter 'use', specify the parameter or use '_' or '...' to unbind the parameter explicitly}}
     var value: InferredParam[Int]
     # expected-error @below {{'InferredParam' failed to infer parameter 'T'}}
@@ -510,7 +510,7 @@ def substitution_edge_case[p: Int, //, f: def[a: Int] () thin [_] -> ParamType[a
 
 # MOCO-846: bad message when types don't match due to parameter expressions
 # that can't be evaluated at overload resolution time.
-struct HasSize[size: Int]:
+struct HasSize[size: Int](Movable where False):
     def __init__(out self):
         pass
 
@@ -525,7 +525,7 @@ def use_take_args[width: Int]():
 
 # MOCO-1480: handle init-self param not deduce-able.
 # expected-note @below {{struct declared here}}
-struct UnusedInitSelfParam[A: Int]:
+struct UnusedInitSelfParam[A: Int](Movable where False):
     # expected-note @below {{function declared here}}
     def __init__[B: Int](out self: UnusedInitSelfParam[B]):
         pass
@@ -552,7 +552,7 @@ def get_int[A: Int]() -> Int: pass
 def get_int2[Type: AnyType, //](a: Type) -> Int: pass
 
 
-struct HoldsInt:
+struct HoldsInt(Movable where False):
     var t: Int
     def __init__(out self):
         self.t = 1
@@ -581,13 +581,13 @@ def test_param_call():
 def complex(a: Int) -> Int:
   return a*a if a < 42 else a-1
 
-struct StructWithAlias:
+struct StructWithAlias(Movable where False):
     comptime size_lit = 42  # IntLiteral type
     comptime size_int : Int = 42 # Int type
 
 # Make sure error messages include scope for auto parameters.
 # MOCO-970: "can't convert type to type" error stripped off full parameter name.
-struct TestAutoParamsAndSugar[f1: HasSize]:
+struct TestAutoParamsAndSugar[f1: HasSize](Movable where False):
     def method[f2: HasSize](self, f3: HasSize):
         # expected-error @+1 {{invalid call to 'takes4': value passed to 'x' cannot be converted from 'HasSize[size]' to 'HasSize[Int(4)]'}}
         takes4(HasSize[Self.f1.size]())
@@ -616,10 +616,10 @@ def test_differ_origins(a: Optional[UnsafePointer[Int, UntrackedOrigin[mut=True]
     var b : Optional[UnsafePointer[Int, MutAnyOrigin]] = a
 
 
-struct TakeAnything[T: AnyType, //, a: T]:
+struct TakeAnything[T: AnyType, //, a: T](Movable where False):
     def __init__(out self): pass
 
-struct SomeParamStruct[x: HasSize]: pass
+struct SomeParamStruct[x: HasSize](Movable where False): pass
 
 def auto_param_of_autoparam[a: SomeParamStruct]():
     # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[Int(4)]'}}
@@ -637,7 +637,7 @@ def test_unbound_pack_arg():
 
 
 @fieldwise_init
-struct SomeStruct[a: Int, b: Int, c: Int]:
+struct SomeStruct[a: Int, b: Int, c: Int](Movable where False):
     pass
 
 # expected-error @+1 {{parameter after `...` must be passed by keyword}}
@@ -645,7 +645,7 @@ comptime S = SomeStruct[..., 3]
 
 
 #expected-note @+1 {{'Foo' declared here}}
-struct Foo[a: Int, b: SomeStruct[a, 1, 1]]:
+struct Foo[a: Int, b: SomeStruct[a, 1, 1]](Movable where False):
     pass
 
 # expected-error @+1 {{failed to infer from type 'SomeStruct[Int(1), Int(1), Int(1)]', it overwrites an explicitly unbound parameter '_' at #0}}
@@ -656,18 +656,18 @@ def depends_on_a[a: Int]() -> Int:
     return a
 
 # expected-note @+1 {{'NestedDeps' declared here}}
-struct NestedDeps[a: Int, b: Int = depends_on_a[a]()]:
+struct NestedDeps[a: Int, b: Int = depends_on_a[a]()](Movable where False):
     pass
 
 
 @fieldwise_init
-struct AutoParamVA[*values: Int]:
+struct AutoParamVA[*values: Int](Movable where False):
     pass
 
 # expected-note @+1 {{'TakeAutoParamVA' declared here}}
 struct TakeAutoParamVA[
     shape: AutoParamVA = AutoParamVA[1, 2, 3](),
-]:
+](Movable where False):
     pass
 
 
@@ -683,10 +683,10 @@ comptime bad = TakeAutoParamVA[23456]
 comptime something = NestedDeps[_]
 
 # MOCO-3867: struct field with unbound parameter should emit error, not crash.
-struct UnboundFieldContainer[T: AnyType, size: Int]:
+struct UnboundFieldContainer[T: AnyType, size: Int](Movable where False):
     def __init__(out self): pass
 
-struct UnboundFieldHolder:
+struct UnboundFieldHolder(Movable where False):
     # expected-error @below {{'UnboundFieldContainer[Int, _]' is not concrete, use '[]' to bind missing parameters}}
     var data: UnboundFieldContainer[Int, _]
 

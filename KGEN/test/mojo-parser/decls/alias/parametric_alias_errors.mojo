@@ -93,7 +93,7 @@ comptime myIntAddTooManyParams = myIntAdd[1, 2,
 
 
 # COM: A type with dependent parameters.
-struct Dep[T: AnyType, v: T]:
+struct Dep[T: AnyType, v: T](Movable where False):
     pass
 
 
@@ -114,7 +114,7 @@ comptime MyDepGetAlias2 = MyDep[Int, 2].hello
 
 
 # COM: Using a generator as a struct field type should be rejected (MOCO-3514).
-struct FieldWithUnboundAlias:
+struct FieldWithUnboundAlias(Movable where False):
     # expected-error @below {{'MyDep' is not a concrete type, use '[]' to bind missing parameters}}
     # expected-note @below {{'MyDep' is aka 'comptime[T: AnyType, v: T] Dep[T, v]'}}
     var f: MyDep

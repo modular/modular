@@ -40,7 +40,7 @@ def ok_unavailable_string_return() -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-struct StringLike:
+struct StringLike(Movable where False):
     @unavailable("no length for 'StringLike'; use byte_length() or codepoint_length() instead")
     def __len__(self) -> Int:
         ...

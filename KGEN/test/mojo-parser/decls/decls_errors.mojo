@@ -6,11 +6,11 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s -I=%S/inputs
 
-struct HasIntParam[x: Int]:
+struct HasIntParam[x: Int](Movable where False):
   def __init__(out self): pass
 
 
-struct _MLIR:
+struct _MLIR(Movable where False):
     comptime KGENParamListType[elt_type: AnyType] = __mlir_type[
         `!kgen.param_list<`, elt_type, `>`
     ]
@@ -22,7 +22,7 @@ struct _MLIR:
 def missing_raises_is_ok():
   pass
 
-struct NotBoolConvertible: pass
+struct NotBoolConvertible(Movable where False): pass
 # expected-note @+1 {{function declared here}}
 def test_bool_context(a: NotBoolConvertible): pass
 
@@ -46,7 +46,7 @@ def callsWith():
   testAsyncInt() # expected-warning {{'Coroutine[Int, {}]' value is not awaited; use 'await' to get its result}}
 
 
-struct ThingWithStaticMethod:
+struct ThingWithStaticMethod(Movable where False):
    @staticmethod
    def splat(x: Int):
      pass
@@ -94,12 +94,12 @@ def bad_out5(out a: Int) -> Int: pass
 # expected-error @+1 {{functions must not declare both an 'out' argument and a return type; remove the '-> None' to fix it}}
 def bad_out6(out self) -> None: pass
 
-struct BadInitResult:
+struct BadInitResult(Movable where False):
   # expected-error @+1 {{__init__ method must return Self type with 'out' argument}}
   def __init__(mut self) raises -> None:
     pass
 
-struct BadInitType:
+struct BadInitType(Movable where False):
     # expected-error @below {{__init__ method must return Self type with 'out' argument}}
     # expected-error @below {{self argument must be present in instance method}}
     def __init__():
@@ -190,12 +190,12 @@ def ownedVariadicReg(var *args: WrongType): pass
 
 
 # expected-note @+1 {{struct declared here}}
-struct ParameterizedStruct[T: TrivialRegisterPassable]:
+struct ParameterizedStruct[T: TrivialRegisterPassable](Movable where False):
     # expected-note @+1 {{function declared here}}
     def __init__(out self, *args: Self.T) raises:
         pass
 
-struct BadResultParams[a: Int]:
+struct BadResultParams[a: Int](Movable where False):
   def __init__(out self: Self): pass # Ok.
   # expected-error @+1 {{cannot use Self parameter 'a' in constructor whose result defines it to '(a + Int(1))'}}
   def __init__(x: Int, out self: BadResultParams[Self.a + 1]): pass
@@ -212,7 +212,7 @@ def useBadResultParams():
   _ = BadResultParams[1]()
 
 @fieldwise_init
-struct TestTuple[*Ts: __mlir_type.`!kgen.type`]:
+struct TestTuple[*Ts: __mlir_type.`!kgen.type`](Movable where False):
     # expected-note @+1 {{function declared here}}
     def test[i: Int, j: Int](self):
         pass
@@ -308,7 +308,7 @@ def badPackCalls(value: Int):
   # expected-error @below {{invalid call to 'first_and_rest': failed to infer parameter 'T'}}
   first_and_rest(value)
 
-struct TestPackErrorMessage[*Ts: AnyType]:
+struct TestPackErrorMessage[*Ts: AnyType](Movable where False):
     # expected-error @below {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'VariadicPack[False, Ts]'}}
     # expected-error @below {{__init__ method must return Self type with 'out' argument}}
     def __init__(*args: *Self.Ts):
@@ -520,7 +520,7 @@ def overloadIntFloat32(a: Int, mut b: FloatDyn): pass
 # expected-note @below {{candidate declared here}}
 def overloadIntFloat32(a: Int, mut b: FloatDyn, c: Int, *args: Int): pass
 
-struct TestOverloading:
+struct TestOverloading(Movable where False):
   var a: Int   # expected-note {{cannot overload with this non-function definition}}
   def a(self):  # expected-error {{invalid redefinition of 'a'}}
     pass
@@ -536,7 +536,7 @@ struct TestOverloading:
     overloadIntFloat32(a, b)
 
 @fieldwise_init
-struct OverloadedKwArgs:
+struct OverloadedKwArgs(Movable where False):
     var vals: List[Int]
 
     # expected-note @below {{previous definition here}}
@@ -548,7 +548,7 @@ struct OverloadedKwArgs:
         return self.vals[idx] > 0
 
 # Test that static methods don't get dispatched if their first arg is self type.
-struct StructWithStaticMethod:
+struct StructWithStaticMethod(Movable where False):
     def __init__(out self): pass
 
     # expected-note @+2 {{function declared here}}
@@ -587,7 +587,7 @@ def test_missing_args():
   _ = missing_args(c=1, d=1)
 
 
-struct ConvertibleFromInt:
+struct ConvertibleFromInt(Movable where False):
   @implicit
   def __init__(out self, value: Int):
     pass
@@ -616,7 +616,7 @@ def testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
 
 # COM: https://github.com/modular/mojo/issues/1530
 # COM: Do not crash when explicitly unbound parameter cannot be deduced due to missing arguments.
-struct Parametric[a: Int]: pass
+struct Parametric[a: Int](Movable where False): pass
 
 # expected-note @below {{function declared here}}
 def takes_same_arg_types[x: Int](a: Parametric[x], b: Parametric[x]): pass
@@ -637,7 +637,7 @@ def test_param_deduction_failure[
     # expected-error @below {{invalid indirect call: value passed to 'c' cannot be converted from 'Int' to 'Parametric[func]', it depends on an unresolved parameter 'func'}}
     func[_](u, v)
 
-struct InitOverloaded:
+struct InitOverloaded(Movable where False):
   # expected-note @below {{value passed to 'a' cannot be converted from 'StringLiteral["foo"]' to 'Int'}}
   # expected-note @below {{value passed to 'a' cannot be converted from 'Parametric[Int(1)]' to 'Int'}}
   def __init__(out self, a: Int): pass
@@ -693,9 +693,9 @@ struct Rec2[
 
 
 # expected-error @+1 {{'def' statement must be on its own line}}
-struct Struct: def foo(mut self): pass
+struct Struct(Movable where False): def foo(mut self): pass
 
-struct ReturnFromStruct:
+struct ReturnFromStruct(Movable where False):
   # expected-error @+1 {{'return' must be inside a function; move this into a function body}}
   return 42
 
@@ -708,11 +708,11 @@ struct ReDef: pass # expected-error {{invalid redefinition of 'ReDef'}}
 def reference_redefined_struct(arg: ReDef):
   pass
 
-struct StructMemberRedefinition:
+struct StructMemberRedefinition(Movable where False):
   var x : __mlir_type.index  # expected-note {{previous definition here}}
   var x : __mlir_type.index  # expected-error {{invalid redefinition of 'x'}}
 
-struct SpecialFunctions:
+struct SpecialFunctions(Movable where False):
   # expected-error @+1 {{'__new__' is not supported on structs}}
   def __new__() -> Self:
     pass
@@ -736,7 +736,7 @@ struct SpecialFunctions:
   def __del__(deinit self) raises:
      pass
 
-struct TestOwnedDeinitErrors:
+struct TestOwnedDeinitErrors(Movable where False):
   # 'owned' is no longer a keyword; it is parsed as parameter name, then 'self' is unexpected
   # expected-error @+1 {{expected ')' in argument list}}
   def __del__(owned self): pass
@@ -764,7 +764,7 @@ struct WrongType(RegisterPassable):
   def __init__(out self, *, deinit move: Self): pass
 
 
-struct WrongSelfType[a: Int]:
+struct WrongSelfType[a: Int](Movable where False):
   # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]', but actually has type 'Int'}}
   def badMethod(self: Int): pass
   def goodMethod(mut self: WrongSelfType[Self.a]): pass
@@ -786,14 +786,14 @@ struct WrongSelfType[a: Int]:
   def __pow__(self, exp: Int, mod: Int, extra: Int): pass
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
-struct BadInit[size: __mlir_type.index]:
+struct BadInit[size: __mlir_type.index](Movable where False):
   @implicit
   def __init__(out self, elem: BadInit[Int(1).__mlir_index__()]) raises:
     var x : __mlir_type[`!kgen.simd<`, Self.size, `, FloatDyn>`]
     # expected-error @+1 {{cannot implicitly convert '__mlir_type.`!kgen.simd<size, FloatDyn>`' value to 'BadInit[size]'}}
     self = x
 
-struct MLIRAttrWithinStruct:
+struct MLIRAttrWithinStruct(Movable where False):
   # expected-error @below {{bare expressions must not appear within structs; use 'var' for a field or move this into a method body}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
@@ -801,7 +801,7 @@ trait BareExprInTrait:
   # expected-error @below {{bare expressions must not appear within traits; use 'comptime' for an associated type or move this into a method body}}
   1 + 1
 
-struct BareExprInExtension:
+struct BareExprInExtension(Movable where False):
   pass
 
 __extension BareExprInExtension:
@@ -810,7 +810,7 @@ __extension BareExprInExtension:
 
 
 # In register structs may only have stored properties of other in-reg values.
-struct InMemStruct: pass
+struct InMemStruct(Movable where False): pass
 
 # expected-error @+1 {{all members of 'RegisterPassable' struct must themselves be 'RegisterPassable'}}
 struct InRegStruct(RegisterPassable):
@@ -818,7 +818,7 @@ struct InRegStruct(RegisterPassable):
   # expected-error @+1 {{cannot synthesize move constructor because field 'y' has non-movable and non-implicitly-copyable type 'InMemStruct'}}
   var y: InMemStruct # expected-note {{'y' declared with type 'InMemStruct'}}
 
-struct OtherInMemStruct:
+struct OtherInMemStruct(Movable where False):
   var x: Int # ok
   var y: InMemStruct # ok
 
@@ -837,7 +837,7 @@ struct InvalidMember(TrivialRegisterPassable):
 
 def noop():  # expected-error {{body must not be empty; use 'pass' or check that the lines below are indented}}
 
-struct BadDtor1:
+struct BadDtor1(Movable where False):
   def __del__(self): # expected-error {{'self' argument must be passed as 'deinit'}}
     pass
 
@@ -852,13 +852,13 @@ struct BadDtor1:
 def invalid_deinit(deinit self: Int) raises:
     pass
 
-struct GoodDtor:
+struct GoodDtor(Movable where False):
    def __del__(deinit self): pass
    def explicit_dtor(deinit self): pass
    def explicit_dtor2(deinit self, deinit other: Self): pass
    def normal_var(var self): pass
 
-struct GoodDtor2[A: Int]:
+struct GoodDtor2[A: Int](Movable where False):
    def explicit_dtor(deinit self, deinit other: GoodDtor2[0]): pass
 
 def test_deinit_fn_types():
@@ -904,7 +904,7 @@ struct CantSynthesize(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct ResolveErrorIsBubbled:
+struct ResolveErrorIsBubbled(Movable where False):
    var x: Int
    @implicit
    def __init__(out self, x: unknown): # expected-error {{use of unknown declaration 'unknown'}}
@@ -915,7 +915,7 @@ def function_with_struct():
     var x: Int
 
 # https://github.com/modularml/modular/issues/12598
-struct not_nested_struct[*Ts: AnyType]:
+struct not_nested_struct[*Ts: AnyType](Movable where False):
     @implicit
     def __init__(out self, *args: *Self.Ts):
         pass
@@ -928,7 +928,7 @@ def function_with_struct2():
     var s2 = S2() # In issue https://github.com/modularml/modular/issues/12598 this was crashing.
 
 # https://github.com/modularml/modular/issues/33557
-struct HasBadCtor:
+struct HasBadCtor(Movable where False):
     var v: Int
     # expected-error @below {{functions must not declare both an 'out' argument and a return type}}
     def __init__(out self, v: Int) -> Self:
@@ -938,7 +938,7 @@ def useBadCtor() raises:
     # a spurious error about HasBadCtor not being constructable from IntLiteral
     var fromBadCtor = HasBadCtor(123)
 
-struct NotRegisterPassable:
+struct NotRegisterPassable(Movable where False):
     def __init__(out self):
         pass
 
@@ -992,7 +992,7 @@ struct OnlyCopyableField[T: Copyable & ImplicitlyDeletable](ImplicitlyCopyable w
 
 
 # MOCO-2186: Initializer syntax should reject incorrect result type
-struct StructWithSpecificInit[X: Int]:
+struct StructWithSpecificInit[X: Int](Movable where False):
     def __init__(out self: StructWithSpecificInit[4]): # expected-note {{function declared here}}
         pass
 def testStructWithSpecificInit() raises:
@@ -1038,11 +1038,11 @@ trait Shape(ImplicitlyCopyable):
 	    ...
 
 @fieldwise_init
-struct ShapeContainer:
+struct ShapeContainer(Movable where False):
     var shape: Shape # expected-error {{struct fields do not support trait types; 'Shape' is a trait, use a concrete type or compile-time generic}}
 
 # MSTDL-2267: Structs with "AnyOrigin" fields stop keeping things alive when passed to a function
-struct SwallowAnyOrigin:
+struct SwallowAnyOrigin(Movable where False):
     # expected-error @below {{struct fields cannot expose AnyOrigin in their type; foo has type 'UnsafePointer[Int, MutAnyOrigin]'}}
     # expected-note @below {{consider parameterizing enclosing struct with an Origin}}
     # expected-note @below {{alternatively, use UntrackedOrigin if lifetime is managed explicitly}}
@@ -1050,7 +1050,7 @@ struct SwallowAnyOrigin:
 
 # A field that opts into the legacy behavior with the
 # @__allow_legacy_any_origin_fields decorator is accepted without error.
-struct AllowedLegacyAnyOrigin:
+struct AllowedLegacyAnyOrigin(Movable where False):
     @__allow_legacy_any_origin_fields
     var foo: UnsafePointer[Int, MutAnyOrigin]
 
@@ -1058,14 +1058,14 @@ struct AllowedLegacyAnyOrigin:
 # result position does not expose AnyOrigin in the struct's own storage (the
 # struct holds a function, not a reference into that memory), so it is accepted
 # without the decorator.
-struct FnPtrAnyOriginArg:
+struct FnPtrAnyOriginArg(Movable where False):
     var cb_arg: def(UnsafePointer[Int, MutAnyOrigin]) thin -> None
     var cb_ret: def() thin -> UnsafePointer[Int, MutAnyOrigin]
 
 # A struct parameter bound by a function type that mentions AnyOrigin, with a
 # field of that parameter type, is likewise accepted: the AnyOrigin lives in the
 # parameter's bound, not in the field's own storage type.
-struct FnTypeParamBound[T: def(UnsafePointer[Int, MutAnyOrigin])]:
+struct FnTypeParamBound[T: def(UnsafePointer[Int, MutAnyOrigin])](Movable where False):
     var t: Self.T
 
 ##===----------------------------------------------------------------------===##
@@ -1115,10 +1115,10 @@ trait Father(GrandFather): # expected-note {{inherited through 'Father' here}}
     pass
 
 # expected-error @below {{'MissingInheriteddef' does not implement all requirements for 'GrandFather'}}
-struct MissingInheriteddef(Father, GrandFather):
+struct MissingInheriteddef(Father, GrandFather, Movable where False):
     pass
 
-struct InheritsTwice(Father, Father):
+struct InheritsTwice(Father, Father, Movable where False):
     def foo(self):
         pass
 
@@ -1131,7 +1131,7 @@ trait TraitWithIntParamOnMethodReallyLongName:
   def f[n: Int](self):
     ...
 # expected-error @below {{'UseTraitWithIntParamOnMethodReallyLongName' does not implement all requirements for 'TraitWithIntParamOnMethodReallyLongName'}}
-struct UseTraitWithIntParamOnMethodReallyLongName(TraitWithIntParamOnMethodReallyLongName):
+struct UseTraitWithIntParamOnMethodReallyLongName(TraitWithIntParamOnMethodReallyLongName, Movable where False):
   # expected-note @below {{candidate declared here with type 'def[n: Bool](self: UseTraitWithIntParamOnMethodReallyLongName) thin -> None'}}
   # expected-note @below {{.n of the first type is 'Int' but the second type is 'Bool'}}
   def f[n: Bool](self):
@@ -1151,14 +1151,14 @@ struct DTypePointer: # expected-error {{cannot define a struct here with name 'D
     pass
 
 # Issue #13321.
-struct copy_init_def:
+struct copy_init_def(Movable where False):
   var field: Int
 
   # expected-error @+1 {{copy constructor must not declare 'raises'; remove the 'raises' keyword}}
   def __init__(out self, *, copy: Self) raises:
     self.field = copy.field
 
-struct copy_init_raises:
+struct copy_init_raises(Movable where False):
   # expected-error @+1 {{copy constructor must not declare 'raises'; remove the 'raises' keyword}}
   def __init__(out self, *, copy: Self) raises:
      pass
@@ -1167,7 +1167,7 @@ struct copy_init_raises:
 # Order of declaration processing.
 # https://github.com/modular/mojo/issues/235
 @fieldwise_init
-struct Inner:
+struct Inner(Movable where False):
     pass
 
 @fieldwise_init
@@ -1188,14 +1188,14 @@ struct AnyTypeMember[T: AnyType & ImplicitlyDeletable](ImplicitlyCopyable):
 # Issue https://github.com/modular/mojo/issues/1675
 # Ensure @fieldwise_init fails gracefully in the presence of duplicate field names.
 @fieldwise_init
-struct BadStruct:
+struct BadStruct(Movable where False):
     var b: Int  # expected-note {{previous definition here}}
     var b: Int  # expected-error {{invalid redefinition of 'b'}}
 
 
 # Also ensure that @fieldwise_init doesn't fail if a method/alias shadows it.
 @fieldwise_init
-struct OtherBadStruct:
+struct OtherBadStruct(Movable where False):
     # expected-note @below {{previous definition here}}
     # expected-note @below {{cannot overload with this non-function definition}}
     var b: Int
@@ -1215,7 +1215,7 @@ def test_bad_struct():
 
 
 @fieldwise_init
-struct HasBoolParam[a: Bool]:
+struct HasBoolParam[a: Bool](Movable where False):
    pass
 
 def test(arg: HasBoolParam[True]):
@@ -1228,7 +1228,7 @@ struct Foo(ImplicitlyCopyable):
     var val: Int
 
 @fieldwise_init
-struct ContainsFoo:
+struct ContainsFoo(Movable where False):
     var foo: Foo
 
 # expected-note @+1 {{function declared here}}
@@ -1290,16 +1290,16 @@ top_level_func_param[a]()
 var globalVar = 1
 
 
-struct S[param: Int]: #expected-note {{previous definition here}}
+struct S[param: Int](Movable where False): #expected-note {{previous definition here}}
   def method[param: Int](self): # expected-error {{invalid redefinition of 'param'}}
     pass
 
-struct MyParam[p: Int]:
+struct MyParam[p: Int](Movable where False):
   pass
 
 
 #expected-note @below {{previous definition here}}
-struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]]:
+struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]](Movable where False):
   def method[p: Int](self): # expected-error {{invalid redefinition of 'p'}}
     pass
 

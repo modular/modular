@@ -18,7 +18,7 @@ comptime invalid_bare_fn_type: def(Int) -> Int = identity
 # // -----
 
 
-struct MemType:
+struct MemType(Movable where False):
     pass
 
 
@@ -63,7 +63,7 @@ def test_infer_variadic():
 # callee's variadic's element trait.
 
 
-struct ZInt:
+struct ZInt(Movable where False):
     pass
 
 
@@ -223,7 +223,7 @@ def main():
 
 
 @fieldwise_init
-struct ZBool:
+struct ZBool(Movable where False):
     pass
 
 
@@ -272,7 +272,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 
 
 @fieldwise_init
-struct ManagedLayoutTensor(ConvertibleToZLayoutTensor):
+struct ManagedLayoutTensor(ConvertibleToZLayoutTensor, Movable where False):
     def to_tensor(self) -> ZLayoutTensor:
         return ZLayoutTensor()
 
@@ -398,7 +398,7 @@ def test_duplicate_thin_with_abi_c():
 # regular conversion error instead of crashing in `matchFunctionTypes`.
 
 
-struct MyStruct:
+struct MyStruct(Movable where False):
     pass
 
 

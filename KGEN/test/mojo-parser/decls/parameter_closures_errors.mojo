@@ -39,7 +39,7 @@ def makeClosure(x: Int):
 
 
 @fieldwise_init
-struct MemType:
+struct MemType(Movable where False):
     var a: Int
 
     def foo(self) -> MemType:

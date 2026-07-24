@@ -376,11 +376,11 @@ def test_simple(a: Bool):
 ##===----------------------------------------------------------------------===##
 
 # This iterator returns elements by value.
-struct ValueIter:
+struct ValueIter(Movable where False):
     def __init__(out self): pass
     def __next__(mut self) raises StopIteration -> Int: return 0
 
-struct ListValueIter:
+struct ListValueIter(Movable where False):
     def __init__(out self): pass
     def __iter__(self) -> ValueIter: return ValueIter()
 
@@ -421,11 +421,11 @@ def for_range_loop():
 # This iterator returns elements by reference, using the mutability and origin
 # of the list.
 struct RefIter[list_mutability: Bool, //,
-               list_origin: Origin[mut=list_mutability]]:
+               list_origin: Origin[mut=list_mutability]](Movable where False):
     def __init__(out self): pass
     def __next__(mut self) raises StopIteration -> ref [Self.list_origin] Int: pass
 
-struct ListWithRefIter:
+struct ListWithRefIter(Movable where False):
     def __init__(out self): pass
     def __iter__(ref self) -> RefIter[origin_of(self)]:
         return RefIter[origin_of(self)]()

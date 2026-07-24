@@ -13,7 +13,7 @@ struct RP(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct NonRP:
+struct NonRP(Movable where False):
     pass
 
 
@@ -35,7 +35,7 @@ trait Foo:
 
 
 # CHECK-LABEL: lit.struct.decl @Bar
-struct Bar(Foo):
+struct Bar(Foo, Movable where False):
     # CHECK: lit.fn @"rp(default_trait_methods::Bar)Foo"{{.*}}([[SELF:%[^:]+]]: {{.*}}) -> !RP
     # CHECK: lit.call @default_trait_methods::@Foo::@"rp($0)"{{.*}}([[SELF]])
 
@@ -70,7 +70,7 @@ trait AA1:
 
 # Check that we handle traits with associated aliases properly
 # CHECK-LABEL: lit.struct.decl @TAA
-struct TAA(AA1):
+struct TAA(AA1, Movable where False):
     comptime X = Zork
 
     # CHECK: lit.fn @"zork(default_trait_methods::TAA,default_trait_methods::Zork)AA1"{{.*}}([[SELF:%[^:]+]]: {{.*}}, [[X:%[^:]+]]: {{.*}}, {{.*}}, [[RESULT:%[^:]+]]: {{.*}}) -> !kgen.none
@@ -102,7 +102,7 @@ trait ParamInputTrait:
 
 
 # CHECK-LABEL: lit.struct.decl @SimpleTestStruct
-struct SimpleTestStruct(ParamInputTrait):
+struct SimpleTestStruct(ParamInputTrait, Movable where False):
     # Check that we generate proper wrapper for parameterized input method
     # CHECK: lit.fn @"process_parameterized
     # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"process_parameterized
@@ -122,7 +122,7 @@ struct SimpleTestStruct(ParamInputTrait):
 # CHECK-LABEL: lit.struct.decl @ParamTestStruct
 # TODO(MOCO-3274): detect and raise a better error message when there is a name\
 # conflict between a struct parameter and a defaulted trait method parameter.
-struct ParamTestStruct[T1: Int, x1: Bool](ParamInputTrait):
+struct ParamTestStruct[T1: Int, x1: Bool](ParamInputTrait, Movable where False):
     # CHECK: lit.fn @"process_parameterized
     # CHECK-SAME: <T: !Barable_AnyType>
     # CHECK-SAME: %item: !lit.ref<:!Barable_AnyType T,
@@ -143,7 +143,7 @@ struct ParamTestStruct[T1: Int, x1: Bool](ParamInputTrait):
 
 
 @fieldwise_init
-struct BarableStruct(Barable):
+struct BarableStruct(Barable, Movable where False):
     def bar(self):
         pass
 
@@ -167,7 +167,7 @@ trait FooB(FooA):
 
 
 # CHECK-LABEL: lit.struct.decl @FooA_FooB_Struct(
-struct FooA_FooB_Struct(FooB):
+struct FooA_FooB_Struct(FooB, Movable where False):
     # CHECK-DAG: lit.fn @"foo(default_trait_methods::FooA_FooB_Struct)"[
     # CHECK-DAG: lit.fn @"bar(default_trait_methods::FooA_FooB_Struct)"[
     # CHECK-NOT: lit.fn @"foo(default_trait_methods::FooA_FooB_Struct)FooA"[
@@ -202,7 +202,7 @@ trait DefaultWithVariadicPack:
 
 # CHECK-LABEL: lit.struct.decl @UsingDefaultWithVariadicPack
 @fieldwise_init
-struct UsingDefaultWithVariadicPack(DefaultWithVariadicPack):
+struct UsingDefaultWithVariadicPack(DefaultWithVariadicPack, Movable where False):
     # CHECK: lit.fn @"variadic_method[{{.*}},*::AnyType{{.*}}](default_trait_methods::UsingDefaultWithVariadicPack
     # CHECK: lit.call @default_trait_methods::@DefaultWithVariadicPack::@"variadic_method
     # CHECK: kgen.conformance{{.*}}DefaultWithVariadicPack

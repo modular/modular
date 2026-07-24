@@ -111,7 +111,7 @@ def test_list_literal():
     impl_definition = [i for i in SimpleIntRange()]
 
 
-struct ParametricList[T: Movable]:
+struct ParametricList[T: Movable](Movable where False):
     def __init__(out self, var *elements: Self.T, __list_literal__: NoneType):
         pass
 
@@ -187,7 +187,7 @@ def test_list_comprehension():
 
 struct MyDict[
     K: Copyable & ImplicitlyDeletable, V: Copyable & ImplicitlyDeletable
-]:
+](Movable where False):
     def __init__(
         out self,
         var keys: List[Self.K],
@@ -197,7 +197,7 @@ struct MyDict[
         pass
 
 
-struct IntDict:
+struct IntDict(Movable where False):
     def __init__(
         out self,
         keys: IntList,
@@ -246,7 +246,7 @@ def test_dict_comprehension():
 # ===----------------------------------------------------------------------=== #
 
 
-struct MySet[T: AnyType]:
+struct MySet[T: AnyType](Movable where False):
     def __init__(out self, var *values: Self.T, __set_literal__: NoneType):
         pass
 
@@ -298,7 +298,7 @@ def test_set_comprehension():
 # ===----------------------------------------------------------------------=== #
 
 
-struct InitType[T: AnyType]:
+struct InitType[T: AnyType](Movable where False):
     def __init__(out self, value: Self.T):
         pass
 
@@ -327,7 +327,7 @@ def test_initializer_list():
 
 
 # This can be formed with any collection and has its own initializer list too.
-struct AnyCollection:
+struct AnyCollection(Movable where False):
     def __init__(out self):
         pass
 

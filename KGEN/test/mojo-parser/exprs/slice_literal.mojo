@@ -9,7 +9,7 @@
 from std.builtin.builtin_slice import ContiguousSlice
 
 
-struct Variant[*Ts: Movable]:
+struct Variant[*Ts: Movable](Movable where False):
     @implicit
     def __init__[T: Movable](out self, var value: T):
         pass

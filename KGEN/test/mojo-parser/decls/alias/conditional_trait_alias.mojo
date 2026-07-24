@@ -52,7 +52,7 @@ struct ConditionallyConformsParametric[value: Int](
 # `where Self.value > 0`, so the witness reduces to the unconstrained `!Int`.
 
 
-struct ConfListConditional[value: Int = -1](RequiresIntAlias where value > 0):
+struct ConfListConditional[value: Int = -1](RequiresIntAlias where value > 0, Movable where False):
     comptime Value: Int where Self.value > 0 = Self.value
     # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"
     # CHECK-NEXT: kgen.witness "Value" : !alias_Int1 = rebind(:!Int value)
@@ -63,7 +63,7 @@ struct ConfListConditional[value: Int = -1](RequiresIntAlias where value > 0):
 
 
 struct ConfListConditionalParametric[value: Int = -1](
-    RequiresParametricIntAlias where value > 0
+    RequiresParametricIntAlias where value > 0, Movable where False
 ):
     comptime Value[offset: Int]: Int where Self.value > 0 = Self.value + offset
     # CHECK: kgen.conformance @"{{.*}}RequiresParametricIntAlias"
@@ -77,7 +77,7 @@ struct ConfListConditionalParametric[value: Int = -1](
 
 
 struct ConfListConditionalConjunction[value: Int = -1, other: Int = -1](
-    RequiresIntAlias where value > 0 and other > 0
+    RequiresIntAlias where value > 0 and other > 0, Movable where False
 ):
     comptime Value: Int where Self.value > 0 = Self.value
     # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"

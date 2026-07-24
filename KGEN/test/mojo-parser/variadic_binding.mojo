@@ -13,7 +13,7 @@ struct SomeCopyable(Copyable):
 
 
 @fieldwise_init
-struct SomeVA[*elt_types: AnyType]:
+struct SomeVA[*elt_types: AnyType](Movable where False):
     def __getitem_param__[idx: Int](ref self) -> ref[self] Self.elt_types[idx]:
         pass
 

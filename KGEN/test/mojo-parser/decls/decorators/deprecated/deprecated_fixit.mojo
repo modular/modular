@@ -28,7 +28,7 @@ def deprecated_function():
 # ===----------------------------------------------------------------------=== #
 
 
-struct MethodTest:
+struct MethodTest(Movable where False):
     def __init__(out self):
         pass
 
@@ -45,7 +45,7 @@ struct MethodTest:
 # ===----------------------------------------------------------------------=== #
 
 
-struct StaticMethodTest:
+struct StaticMethodTest(Movable where False):
     @staticmethod
     def brand_new_static():
         pass
@@ -61,7 +61,7 @@ struct StaticMethodTest:
 # ===----------------------------------------------------------------------=== #
 
 
-struct OpTest:
+struct OpTest(Movable where False):
     def __init__(out self):
         pass
 
@@ -101,7 +101,7 @@ def takes_func(f: def() thin -> None):
     f()
 
 
-struct MethodCastTest:
+struct MethodCastTest(Movable where False):
     def __init__(out self):
         pass
 

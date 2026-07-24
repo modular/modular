@@ -12,14 +12,14 @@
 from test_std_mock import StableTrait, UnstableTrait
 
 
-struct ImplementsStableTrait(StableTrait):
+struct ImplementsStableTrait(StableTrait, Movable where False):
     """Implementing a stable trait should not trigger a warning."""
 
     pass
 
 
 # CHECK: warning: use of unstable API 'UnstableTrait'
-struct ImplementsUnstableTrait(UnstableTrait):
+struct ImplementsUnstableTrait(UnstableTrait, Movable where False):
     """Implementing an unstable trait should trigger a warning."""
 
     pass

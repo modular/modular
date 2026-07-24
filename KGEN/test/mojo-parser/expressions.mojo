@@ -35,7 +35,7 @@ struct MemoryOnlyInt(ImplicitlyCopyable):
 def consume(var a: MemoryOnlyInt): pass
 
 # This type is used to test implicit conversion from MemoryOnlyInt
-struct MemoryOnlyFloat64:
+struct MemoryOnlyFloat64(Movable where False):
   var x: Float64
   @implicit
   def __init__(out self, value: MemoryOnlyInt):
@@ -155,7 +155,7 @@ def memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: lit.return [[NONEVAL]]
   return v2
 
-struct DirectInit:
+struct DirectInit(Movable where False):
   def __init__(out self):
     pass
 
@@ -165,7 +165,7 @@ def direct_call_init():
   # expected-warning @+1 {{'DirectInit' value is unused; assign to '_' to discard the result}}
   value.__init__()
 
-struct DummyFunc:
+struct DummyFunc(Movable where False):
     @implicit
     def __init__(out self, f: def(Int) thin raises):
         pass
@@ -209,7 +209,7 @@ struct RegPassable(ImplicitlyCopyable, RegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam<comparator: !lit.generator
 # CHECK-SAME: <"T": !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable>(!kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>, |)
-struct StructWithFuncParam[comparator: def[T: TrivialRegisterPassable] (T) thin -> None]:
+struct StructWithFuncParam[comparator: def[T: TrivialRegisterPassable] (T) thin -> None](Movable where False):
     # CHECK-LABEL: lit.fn @"f
     # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.generator<<"T": !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable>(!kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>
     def f(self):
@@ -328,7 +328,7 @@ def precedence_associativity(a: Int):
   z = 0 if c == 10 else 1 if c == 11 else 2
 
 
-struct LHS:
+struct LHS(Movable where False):
   @implicit
   def __init__(out self, value: Int):
     pass
@@ -909,7 +909,7 @@ world"
 ##===----------------------------------------------------------------------===##
 
 # This is an array that has elements of MemoryOnlyInt.
-struct MemoryOnlyIntArray:
+struct MemoryOnlyIntArray(Movable where False):
   def __getitem__(mut self, x: Int) -> MemoryOnlyInt: pass
   def __setitem__(mut self, x: Int, var value: MemoryOnlyInt): pass
 
@@ -955,7 +955,7 @@ def testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, var moi: MemoryO
   arr[x].x += 1
 
 # CHECK-LABEL: lit.struct.decl @MyInlineIntInit
-struct MyInlineIntInit:
+struct MyInlineIntInit(Movable where False):
     var value: MemoryOnlyInt
     # CHECK-LABEL: lit.fn @"__init__(expressions::MemoryOnlyInt)"
     # CHECK-SAME: (%value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> read_mem, ?, %self: !lit.ref<!MyInlineIntInit, mut {{.*}}> byref_result) -> !kgen.none
@@ -972,7 +972,7 @@ struct ConstDynamicObject(RegisterPassable):
     def __getattr__(self, name: StringLiteral) -> Int:
         return 0
 
-struct DynamicObject:
+struct DynamicObject(Movable where False):
     def __init__(out self):
         pass
 
@@ -1001,7 +1001,7 @@ def dynamic_attribute():
     obj.some_attr = 42
 
 
-struct CallableStruct:
+struct CallableStruct(Movable where False):
     var value: Int
 
     @implicit
@@ -1018,7 +1018,7 @@ def test_call_method():
     var value = CallableStruct(5)
     _ = value(2)
 
-struct MemoryType:
+struct MemoryType(Movable where False):
   def __init__(out self, *, copy: Self):
     pass
 
@@ -1075,7 +1075,7 @@ def function_types():
 # CHECK-LABEL: lit.struct.decl @Mem
 # CHECK:         lit.alias.decl *"x{{.*}}": non_struct_type = <i8>
 # CHECK-NEXT:    lit.alias.decl *"B{{.*}}": non_struct_type = <!lit.generator<("foo": !kgen.param<:non_struct_type sugar_member_alias(!Mem, "x", i8)>) -> !kgen.none>>
-struct Mem:
+struct Mem(Movable where False):
    comptime x = __mlir_type.i8
    comptime B = def (foo: Self.x) thin -> None
 
@@ -1221,7 +1221,7 @@ def test_thing_taking_reference(mut x: String):
   # CHECK-NEXT: lit.call {{.*}}@Pointer::@"__init__
   thing_taking_pointer2(Pointer(to=x))
 
-struct StructWithStaticMethods:
+struct StructWithStaticMethods(Movable where False):
    @staticmethod
    def _init_op_state(state: Pointer[Int, _], foo: Int): pass
    def thing(self):
@@ -1251,7 +1251,7 @@ def infer_address_space[
 
 # https://linear.app/modularml/issue/MOCO-584/[references]-we-cannot-bind-litref-in-parameter-context
 # [References] We cannot bind !lit.ref in parameter context
-struct ThingWithMethodReferenceSelf:
+struct ThingWithMethodReferenceSelf(Movable where False):
     def method(ref a: Self):
       pass
 
@@ -1262,7 +1262,7 @@ def testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-SAME:     <:scalar<bool> false, :origin<false> #lit.comptime.origin>, store_to_mem(a))>
     comptime sizzle = a.method()
 
-struct HasOverloadedFooMethods:
+struct HasOverloadedFooMethods(Movable where False):
     def foo(ref self): pass
     def foo(var self): pass
 

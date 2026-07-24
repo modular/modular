@@ -13,37 +13,37 @@
 # Control flow statements in struct body
 ##===----------------------------------------------------------------------===##
 
-struct StructWithIf:
+struct StructWithIf(Movable where False):
     var x: Int
     # expected-error @below {{'if' must be contained in a function}}
     if True:
         pass
 
-struct StructWithFor:
+struct StructWithFor(Movable where False):
     var x: Int
     # expected-error @below {{'for' must be contained in a function}}
     for i in range(10):
         pass
 
-struct StructWithWhile:
+struct StructWithWhile(Movable where False):
     var x: Int
     # expected-error @below {{'while' must be contained in a function}}
     while True:
         pass
 
-struct StructWithComptimeIf:
+struct StructWithComptimeIf(Movable where False):
     var x: Int
     # expected-error @below {{'comptime if' must be contained in a function}}
     comptime if True:
         pass
 
-struct StructWithComptimeFor:
+struct StructWithComptimeFor(Movable where False):
     var x: Int
     # expected-error @below {{'comptime for' must be contained in a function}}
     comptime for i in range(10):
         pass
 
-struct StructWithWith:
+struct StructWithWith(Movable where False):
     var x: Int
     # expected-error @below {{'with' must be contained in a function}}
     with foo:
@@ -77,7 +77,7 @@ trait TraitWithWith:
 # Control flow statements in extension body
 ##===----------------------------------------------------------------------===##
 
-struct ExtendedStruct:
+struct ExtendedStruct(Movable where False):
     var x: Int
 
 __extension ExtendedStruct:
@@ -85,7 +85,7 @@ __extension ExtendedStruct:
     if True:
         pass
 
-struct ExtendedStruct2:
+struct ExtendedStruct2(Movable where False):
     var x: Int
 
 __extension ExtendedStruct2:
@@ -93,7 +93,7 @@ __extension ExtendedStruct2:
     for i in range(10):
         pass
 
-struct ExtendedStruct3:
+struct ExtendedStruct3(Movable where False):
     var x: Int
 
 __extension ExtendedStruct3:
@@ -101,7 +101,7 @@ __extension ExtendedStruct3:
     while True:
         pass
 
-struct ExtendedStruct4:
+struct ExtendedStruct4(Movable where False):
     var x: Int
 
 __extension ExtendedStruct4:
@@ -109,7 +109,7 @@ __extension ExtendedStruct4:
     comptime if True:
         pass
 
-struct ExtendedStruct5:
+struct ExtendedStruct5(Movable where False):
     var x: Int
 
 __extension ExtendedStruct5:
@@ -117,7 +117,7 @@ __extension ExtendedStruct5:
     comptime for i in range(10):
         pass
 
-struct ExtendedStruct6:
+struct ExtendedStruct6(Movable where False):
     var x: Int
 
 __extension ExtendedStruct6:

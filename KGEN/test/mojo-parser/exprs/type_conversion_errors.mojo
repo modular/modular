@@ -11,7 +11,7 @@ struct RP_NotTrivial(RegisterPassable):
     pass
 
 
-struct Foo:
+struct Foo(Movable where False):
     def __init__(out self):
         pass
 
@@ -39,13 +39,13 @@ def test_type_instead_of_instance() -> Foo:
 
 # COM: https://github.com/modularml/modular/issues/29438
 # COM: ensure we do not crash in the example below, but emit an error.
-struct MadeFromPack[*Ts: AnyType]:
+struct MadeFromPack[*Ts: AnyType](Movable where False):
     @implicit
     def __init__(out self, *args: * Self.Ts):
         pass
 
 
-struct WrapsMadeFromPack[*Ts: AnyType]:
+struct WrapsMadeFromPack[*Ts: AnyType](Movable where False):
     var data: MadeFromPack[*Self.Ts]
 
     @implicit
@@ -74,7 +74,7 @@ struct ConvertibleFromInt(ImplicitlyCopyable):
 @fieldwise_init
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{def __init__(out self, var a: ConvertibleFromInt, b: Int)    # note - generated function}}
-struct AmbiguousCtor:
+struct AmbiguousCtor(Movable where False):
     var a: ConvertibleFromInt
     var b: Int
 
@@ -83,13 +83,13 @@ struct AmbiguousCtor:
         pass
 
 
-struct AlsoConvertibleFromInt:
+struct AlsoConvertibleFromInt(Movable where False):
     @implicit
     def __init__(out self, arg: Int):
         pass
 
 
-struct AmbiguousConversion:
+struct AmbiguousConversion(Movable where False):
     @implicit
     # expected-note @below {{candidate declared here}}
     def __init__(out self, x: ConvertibleFromInt):
@@ -110,12 +110,12 @@ def ambiguous_ctor_call(x: Int):
 
 
 # MOCO-990: Conditional conformance trick fails on SIMD constructor from Bool
-struct MySIMD[value: Int]:
+struct MySIMD[value: Int](Movable where False):
     def __init__(out self: MySIMD[0], val: MyBool):
         pass
 
 
-struct MyBool:
+struct MyBool(Movable where False):
     @implicit
     def __init__(out self, value: MySIMD[0]):
         pass

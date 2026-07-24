@@ -8,12 +8,12 @@
 
 
 @fieldwise_init
-struct MyBoolableA:
+struct MyBoolableA(Movable where False):
     def __bool__(self) -> Bool:
         return Bool()
 
 
-struct MyBoolableB:
+struct MyBoolableB(Movable where False):
     def __bool__(self) -> Bool:
         return Bool()
 

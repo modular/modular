@@ -17,7 +17,7 @@ struct MyUnsafePointer[
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = False,
     alignment: Int = 1,
-]:
+](Movable where False):
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         Self.type,

@@ -28,7 +28,7 @@ comptime Traits123 = Trait1 & Trait2 & Trait3
 
 
 @fieldwise_init
-struct Struct4:
+struct Struct4(Movable where False):
     def f4(self):
         pass
 

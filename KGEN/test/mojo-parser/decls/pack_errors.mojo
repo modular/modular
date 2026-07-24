@@ -165,7 +165,7 @@ def test_unpack_twice[*Ts: AnyType](*pack: *Ts):
 
 
 # Splatting a non-VariadicPack type is not allowed.
-struct MyStruct:
+struct MyStruct(Movable where False):
     var x: Int
 
     def __init__(out self, x: Int):

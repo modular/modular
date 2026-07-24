@@ -8,7 +8,7 @@
 
 
 @fieldwise_init
-struct Foo:
+struct Foo(Movable where False):
     def __getitem_param__[T: AnyType](self) raises:
         pass
 

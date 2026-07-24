@@ -18,7 +18,7 @@ def test_simple_function():
 
 
 # CHECK-LABEL: lit.struct.decl @MyStruct
-struct MyStruct:
+struct MyStruct(Movable where False):
     # should return an empty string
     # CHECK: lit.alias.decl *"comptimeField`": !lit.struct<#StringLiteral <:string "">>
     comptime comptimeField = __get_current_function_name()
@@ -49,7 +49,7 @@ trait MyTrait:
         _ = name
 
 
-struct AnotherStruct(MyTrait):
+struct AnotherStruct(MyTrait, Movable where False):
     def __init__(out self):
         pass
 

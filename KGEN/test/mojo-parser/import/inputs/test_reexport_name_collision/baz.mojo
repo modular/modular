@@ -9,7 +9,7 @@
 # resolves to the struct, not the module.
 
 
-struct baz:
+struct baz(Movable where False):
     var x: Int
 
     def __init__(out self):

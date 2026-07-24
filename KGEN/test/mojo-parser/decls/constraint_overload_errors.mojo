@@ -86,10 +86,10 @@ def test_multi_fn_multi_inconclusive():
 ##===----------------------------------------------------------------------===##
 
 @fieldwise_init
-struct SourceStruct:
+struct SourceStruct(Movable where False):
     pass
 
-struct TargetStruct:
+struct TargetStruct(Movable where False):
     @implicit
     def __init__(out self, s: SourceStruct):
         pass

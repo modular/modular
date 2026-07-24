@@ -32,7 +32,7 @@ comptime AliasType = __mlir_type.`!kgen.non_struct_type`
 """This is an alias doc."""
 
 # This is needed by the compiler to synthesize trivial bit.
-struct Bool:
+struct Bool(Movable where False):
   """This is doc for Bool."""
 
     @implicit
@@ -44,17 +44,17 @@ struct Bool:
       """
       pass
 
-struct Struct:
+struct Struct(Movable where False):
   """This is a struct doc."""
 
     var value: __mlir_type.index
     """This is a struct field doc."""
 
-struct Int:
+struct Int(Movable where False):
   """A stub for the Int to allow decoupling from the builtins."""
   pass
 
-struct Error:
+struct Error(Movable where False):
   """A stub for the Int to allow decoupling from the builtins."""
   pass
 
@@ -76,7 +76,7 @@ trait Trait:
 
 # MOTO-869: A docstring ending with an example should pass validation.
 @fieldwise_init
-struct StructWithExamples:
+struct StructWithExamples(Movable where False):
     """A struct with a function in it."""
 
     def method_with_example(self, zot: Int) raises:
@@ -98,13 +98,13 @@ struct StructWithExamples:
 
 
 # MOTO-1120: Summaries ending with '!' or '?' should pass validation.
-struct StructWithExclamationSummary:
+struct StructWithExclamationSummary(Movable where False):
     """This struct has an exciting summary!"""
 
     pass
 
 
-struct StructWithQuestionSummary:
+struct StructWithQuestionSummary(Movable where False):
     """Does this struct have a valid summary?"""
 
     pass

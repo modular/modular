@@ -10,14 +10,14 @@
 
 
 @stable
-struct StableStruct:
+struct StableStruct(Movable where False):
     """A stable struct that should not trigger warnings."""
 
     def __init__(out self):
         pass
 
 
-struct UnstableStruct:
+struct UnstableStruct(Movable):
     """An unstable struct that should trigger warnings when used."""
 
     comptime UNSTABLE_CONST: Int = 99
@@ -33,7 +33,7 @@ struct UnstableStruct:
     comptime AliasedType = AnotherUnstableStruct
 
 
-struct AnotherUnstableStruct:
+struct AnotherUnstableStruct(Movable where False):
     """A second unstable struct, exposed via a comptime alias in UnstableStruct.
     """
 
@@ -80,7 +80,7 @@ trait UnstableTraitWithMembers:
 
 
 @stable
-struct StructWithMethods:
+struct StructWithMethods(Movable where False):
     """A stable struct with both stable and unstable methods."""
 
     var value: Int
@@ -157,7 +157,7 @@ comptime UNSTABLE_CONSTANT: Int = 100
 # For testing: stable struct implementing stable trait with stable method.
 # The struct's implementing method SHOULD be stable. If not, API author gets warning.
 @stable
-struct StableStructWithStableImpl(TraitWithStableMethod):
+struct StableStructWithStableImpl(TraitWithStableMethod, Movable where False):
     @stable
     def stable_required_method(self) -> Int:
         return 1
@@ -167,7 +167,7 @@ struct StableStructWithStableImpl(TraitWithStableMethod):
 # This SHOULD warn the API author (always, not just with --warn-on-unstable-apis).
 # The warning is tested by warn_api_author.mojo using FileCheck.
 @stable
-struct StableStructWithUnstableImpl(TraitWithStableMethod):
+struct StableStructWithUnstableImpl(TraitWithStableMethod, Movable where False):
     # Not marked @stable - this should warn!
     def stable_required_method(self) -> Int:
         return 2
@@ -222,7 +222,7 @@ trait TraitWithStableAlias:
 # For testing: stable struct implementing stable trait with UNSTABLE alias.
 # This SHOULD warn the API author (analogous to StableStructWithUnstableImpl).
 @stable
-struct StableStructWithUnstableAliasImpl(TraitWithStableAlias):
+struct StableStructWithUnstableAliasImpl(TraitWithStableAlias, Movable where False):
     # Note: The alias name includes a suffix like `Value`1` due to internal naming.
     # expected-warning-re @below {{stable struct 'StableStructWithUnstableAliasImpl' implements stable trait alias 'Value{{.*}}' with unstable implementation}}
     comptime Value: Int = 42
@@ -233,7 +233,7 @@ struct StableStructWithUnstableAliasImpl(TraitWithStableAlias):
 
 # For comparison: stable struct with stable alias implementation - no warning.
 @stable
-struct StableStructWithStableAliasImpl(TraitWithStableAlias):
+struct StableStructWithStableAliasImpl(TraitWithStableAlias, Movable where False):
     @stable
     comptime Value: Int = 100
 
@@ -248,7 +248,7 @@ struct StableStructWithStableAliasImpl(TraitWithStableAlias):
 # Since this package is opted-in, types without @stable are unstable.
 
 
-struct UnstableStructWithStableMember:
+struct UnstableStructWithStableMember(Movable where False):
     """An unstable struct that incorrectly has a @stable member."""
 
     def __init__(out self):

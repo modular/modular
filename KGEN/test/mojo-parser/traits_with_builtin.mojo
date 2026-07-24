@@ -36,7 +36,7 @@ trait AsyncTrait:
         ...
 
 
-struct AsyncStruct(AsyncTrait):
+struct AsyncStruct(AsyncTrait, Movable where False):
     async def foo(self) -> Int:
         pass
 
@@ -64,7 +64,7 @@ trait Implicit:
 
 
 @fieldwise_init
-struct Foo(Explicit, Implicit):
+struct Foo(Explicit, Implicit, Movable where False):
     def __int__(self) -> Int:
         return 42
 
@@ -72,7 +72,7 @@ struct Foo(Explicit, Implicit):
         return 42
 
 
-struct Bar:
+struct Bar(Movable where False):
     @implicit
     def __init__[T: Implicit](out self, value: T):
         pass

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct MyStruct:
+struct MyStruct(Movable where False):
     var value: Int
 
     def __init__(out self, value: Int):

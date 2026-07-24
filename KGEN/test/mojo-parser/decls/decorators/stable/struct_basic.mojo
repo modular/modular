@@ -13,14 +13,14 @@
 # CHECK: lit.struct.decl @StableStruct
 # CHECK-SAME: hasStableDecorator
 @stable
-struct StableStruct:
+struct StableStruct(Movable where False):
     pass
 
 
 # CHECK: lit.struct.decl @UnstableStruct
 # CHECK-NOT: hasStableDecorator
 # CHECK-SAME: sourceName
-struct UnstableStruct:
+struct UnstableStruct(Movable where False):
     pass
 
 

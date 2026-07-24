@@ -371,7 +371,7 @@ def loop_example(cond1: __mlir_type.`!kgen.scalar<bool>`, cond2: __mlir_type.`!k
 
 
 # CHECK-LABEL: lit.struct.decl @TestLoopWithWholeObjectBit
-struct TestLoopWithWholeObjectBit:
+struct TestLoopWithWholeObjectBit(Movable where False):
     var field: MemExample
 
     # CHECK: lit.fn @"__init__

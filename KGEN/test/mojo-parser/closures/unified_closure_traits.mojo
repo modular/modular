@@ -57,7 +57,7 @@ def repro_struct_attr():
 # S1-DAG: lit.call @unified_closure_traits::@"symbol_callee[::SIMD[::DType(int), ::SIMDLength(1)],def() -> Dispatch[identity] & ::AnyType & ::ImplicitlyDeletable & ::Movable]($1)"{{.*}}<:!Int {:scalar<index> 1}
 
 
-struct Dispatch[F: def(Int) thin -> Int]:
+struct Dispatch[F: def(Int) thin -> Int](Movable where False):
     var data: Int
 
     def __init__(out self, data: Int):
@@ -159,7 +159,7 @@ def test(x: s4_Foo):
     s4_dispatch(x)
 
 
-struct s4_Foo:
+struct s4_Foo(Movable where False):
     var x: Int
 
 

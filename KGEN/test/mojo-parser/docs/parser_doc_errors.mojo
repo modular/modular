@@ -10,11 +10,11 @@
 
 
 # expected-warning @below {{public symbol 'ArgStruct' is missing a doc string}}
-struct ArgStruct:
+struct ArgStruct(Movable where False):
     pass
 
 
-struct _ParamStruct_Private_Missing[_type: __mlir_type.`!kgen.dtype`]:
+struct _ParamStruct_Private_Missing[_type: __mlir_type.`!kgen.dtype`](Movable where False):
     """This is a private struct doc string.
 
     It doesn't need to include a `Parameters:` section.
@@ -24,13 +24,13 @@ struct _ParamStruct_Private_Missing[_type: __mlir_type.`!kgen.dtype`]:
 
 
 # expected-warning @below {{struct takes parameters, but has no 'Parameters' in doc string}}
-struct ParamStruct_Missing[_type: __mlir_type.`!kgen.dtype`]:
+struct ParamStruct_Missing[_type: __mlir_type.`!kgen.dtype`](Movable where False):
     """This doc string is missing a `Parameters:` section."""
 
     pass
 
 
-struct ParamStruct_Invalid[_type: __mlir_type.`!kgen.dtype`]:
+struct ParamStruct_Invalid[_type: __mlir_type.`!kgen.dtype`](Movable where False):
     """This is a class summary.
 
     # expected-warning-re @below {{parameter '{{.*}}_type' is not documented}}
@@ -42,7 +42,7 @@ struct ParamStruct_Invalid[_type: __mlir_type.`!kgen.dtype`]:
     pass
 
 
-struct ParamStruct_Duplicates[_type: __mlir_type.`!kgen.dtype`]:
+struct ParamStruct_Duplicates[_type: __mlir_type.`!kgen.dtype`](Movable where False):
     """This is a class summary.
 
     # expected-note @below {{see previous definition here}}
@@ -62,7 +62,7 @@ struct ParamStruct_Duplicates[_type: __mlir_type.`!kgen.dtype`]:
 
 struct ParamStruct_Order[
     param1: __mlir_type.`!kgen.dtype`, param2: __mlir_type.`!kgen.dtype`
-]:
+](Movable where False):
     """This is a class summary.
 
     Parameters:
@@ -74,7 +74,7 @@ struct ParamStruct_Order[
     pass
 
 
-struct StructWithMissingMethod:
+struct StructWithMissingMethod(Movable where False):
     """This defines methods with missing doc strings."""
 
     # expected-warning @below {{public symbol 'method_with_missing_doc_string' is missing a doc string}}
@@ -279,7 +279,7 @@ def fn_unified_thin_closure():
         return x
 
 
-struct Error:
+struct Error(Movable where False):
     """Error type stub to allow decoupling from the builtins."""
 
     pass
@@ -365,7 +365,7 @@ Parameters:
 # binding, the compiler generates autoparams for the unbound parameters.
 struct _AutoParamTest[
     a: __mlir_type.`!kgen.dtype`, b: __mlir_type.`!kgen.dtype`
-]:
+](Movable where False):
     pass
 
 
@@ -392,7 +392,7 @@ comptime doc_hidden_alias = 42
 
 # @doc_hidden on a struct field suppresses the missing doc string warning.
 # (MOTO-957: previously @doc_hidden caused a compiler error on struct fields)
-struct StructWithDocHiddenField:
+struct StructWithDocHiddenField(Movable where False):
     """A struct testing @doc_hidden on fields."""
 
     @doc_hidden
@@ -437,7 +437,7 @@ def fn_with_only_inferred_params[T: AnyType, //](arg: ArgStruct):
 
 
 # Structs: inferred parameters do not require documentation.
-struct StructWithInferredParam[T: AnyType, //, U: AnyType]:
+struct StructWithInferredParam[T: AnyType, //, U: AnyType](Movable where False):
     """A struct with an inferred and a regular parameter.
 
     Parameters:

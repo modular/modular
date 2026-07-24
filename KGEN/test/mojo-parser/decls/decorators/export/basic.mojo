@@ -21,7 +21,7 @@ def not_c_exported() abi("Mojo"):
     pass
 
 
-struct Thing:
+struct Thing(Movable where False):
     # CHECK: lit.fn export @"member
     @export
     def member(self) abi("Mojo"):

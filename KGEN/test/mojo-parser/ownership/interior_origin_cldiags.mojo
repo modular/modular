@@ -16,7 +16,7 @@ def use_any[*Ts: AnyType](*args: *Ts): pass
 # Test Type
 # ===----------------------------------------------------------------------=== #
 
-struct MyList[T: AnyType]:
+struct MyList[T: AnyType](Movable where False):
     var data: UnsafePointer[Self.T, UntrackedOrigin[mut=True]]
 
     def __init__(out self):
@@ -71,7 +71,7 @@ def test_if(cond: Bool):
     # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
     elt_ref2 += 4
 
-struct TwoIntLists:
+struct TwoIntLists(Movable where False):
    var first: MyList[Int]
    var second: MyList[Int]
 
@@ -195,7 +195,7 @@ def throwing_function(ref values: MyList[String]) raises -> ref[values[]] String
 def call_throwing_fn(list: MyList[String]) raises:
     _ = throwing_function(list)
 
-struct StructWithList:
+struct StructWithList(Movable where False):
     var data: MyList[String]
 
     def add_type(mut self) -> ref[self.data[]] String:

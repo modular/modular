@@ -60,7 +60,7 @@ def mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
 
 # Issue #6282: [Lit] Placeholder substitution does not work on nested types
 # CHECK-LABEL: lit.struct.decl @ComplexSubstitution<T: dtype>
-struct ComplexSubstitution[T: __mlir_type.`!kgen.dtype`]:
+struct ComplexSubstitution[T: __mlir_type.`!kgen.dtype`](Movable where False):
     # CHECK: lit.struct.field pointer : !kgen.pointer<scalar<T>>
     var pointer: __mlir_type[`!kgen.pointer<!kgen.scalar<`, Self.T, `>>`]
 

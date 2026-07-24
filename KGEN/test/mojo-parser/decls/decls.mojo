@@ -155,7 +155,7 @@ def callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:param_list<!Int> [a, b], {{.*}}>(%x)
     paramOverload[a, b](x)
 
-struct VariadicStruct[*Ts: TrivialRegisterPassable]:
+struct VariadicStruct[*Ts: TrivialRegisterPassable](Movable where False):
     def __init__(out self):
         pass
 
@@ -206,7 +206,7 @@ def orvalueInferType():
 
 # https://github.com/modular/mojo/issues/1152
 # Allow mutable self argument when overloading operators using dunder methods
-struct MutatingAdd:
+struct MutatingAdd(Movable where False):
     def __add__(mut self, x: MutatingAdd):
         pass
 
@@ -291,7 +291,7 @@ def ownedConventionReg(
     a.x = 1
 
 
-struct BorrowStruct:
+struct BorrowStruct(Movable where False):
     def testMethod(self):
         pass
 
@@ -316,7 +316,7 @@ def callerFn(arg0: BorrowStruct):
 ##===----------------------------------------------------------------------===##
 
 
-struct SomeResultType:
+struct SomeResultType(Movable where False):
     def __init__(out self):
         pass
 
@@ -370,7 +370,7 @@ def defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 
 
-struct MemoryType:
+struct MemoryType(Movable where False):
     var value: Int
 
     @implicit
@@ -417,7 +417,7 @@ def referencesDefaultArgumentFunction():
 
 
 # CHECK-LABEL: lit.struct.decl @Outer<X:
-struct Outer[X: Int]:
+struct Outer[X: Int](Movable where False):
     # CHECK: lit.fn @"nested
     # CHECK-SAME: %x: !Int = X)
     def nested(self, x: Int = Self.X):
@@ -434,13 +434,13 @@ def parameterizedVariadic[T: TrivialRegisterPassable](*args: T):
     pass
 
 
-struct ParameterizedStruct[T: TrivialRegisterPassable]:
+struct ParameterizedStruct[T: TrivialRegisterPassable](Movable where False):
     @implicit
     def __init__(out self, *args: Self.T):
         pass
 
 
-struct VarArgsParameterizedStruct[*Is: Int]:
+struct VarArgsParameterizedStruct[*Is: Int](Movable where False):
     def __init__(out self):
         pass
 
@@ -500,7 +500,7 @@ def callVariadic[p: Int](x: Int):
 
 # COM: Test variadic arguments in a parameter context.
 @fieldwise_init
-struct MemStruct:
+struct MemStruct(Movable where False):
     comptime t = 5
 
 def variadic_mem_only(*values: MemStruct) -> Int:
@@ -705,7 +705,7 @@ def call_parametric_raise_example[GenTy: AnyType](func_ptr: def () thin raises G
     parametric_raise_example(doesnt_raise)
 
 
-struct CutDownDict[V: Copyable]:
+struct CutDownDict[V: Copyable](Movable where False):
     # Throws an error that converts to Error. We don't care what it is, so long
     # as it isn't Error specifically.
     def __getitem__(ref self) raises StringLiteral["foo".value] -> ref [self] Self.V:
@@ -760,13 +760,13 @@ struct EmptyStruct(RegisterPassable):
 
 
 # CHECK-LABEL: lit.struct.decl @OneLineStruct<size: !Int>
-struct OneLineStruct[size: Int]:
+struct OneLineStruct[size: Int](Movable where False):
     pass
     pass
 
 
 # CHECK-LABEL: lit.struct.decl @StructWithInit
-struct StructWithInit:
+struct StructWithInit(Movable where False):
     var x: Int
     var y: Int
 
@@ -894,7 +894,7 @@ def initializersAsFunctions():
 
 # CHECK-LABEL: lit.struct.decl @DelegatingInitMem
 # Issue #12042
-struct DelegatingInitMem:
+struct DelegatingInitMem(Movable where False):
     var value: Int
 
     # CHECK: lit.fn @"__init__{{.*}}({{.*}}%self
@@ -913,12 +913,12 @@ def nameOutsideStruct(x: Int, y: Int):
     pass
 
 
-struct ShadowsOuterName:
+struct ShadowsOuterName(Movable where False):
     def nameOutsideStruct(self):
         nameOutsideStruct(1, 2)
 
 
-struct LegacyInOutInit:
+struct LegacyInOutInit(Movable where False):
     # This should be accepted for compatibility, but "out" is the preferred
     # spelling.
     def __init__(out self):
@@ -958,7 +958,7 @@ async def coroutine() -> Int:
 
 
 # CHECK-LABEL: lit.struct.decl @StructWithAsync
-struct StructWithAsync:
+struct StructWithAsync(Movable where False):
     # CHECK-LABEL: lit.fn @"do_something{{.*}}({{.*}}) async
     async def do_something(self: StructWithAsync):
         # CHECK-NEXT: [[CORO:%.*]] = lit.async.call[!lit.generator<[1](?, "__result__": !lit.ref<:meta<!Int> #alias_Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
@@ -974,7 +974,7 @@ async def call_struct_async(f: StructWithAsync):
     _ = f.do_something()
 
 
-struct Awaitable:
+struct Awaitable(Movable where False):
     def __init__(out self):
         pass
 
@@ -1087,7 +1087,7 @@ def topLevelFunction() -> Int:
 
 
 # CHECK-LABEL: lit.struct.decl @SomeStruct
-struct SomeStruct:
+struct SomeStruct(Movable where False):
     # CHECK-LABEL: @"someMethod({{.*}})"
     def someMethod(self) -> Int:
         var a = 0
@@ -1146,7 +1146,7 @@ def inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
 
 
 # CHECK-LABEL: lit.struct.decl @CapturingStruct
-struct CapturingStruct[a: Int]:
+struct CapturingStruct[a: Int](Movable where False):
     @staticmethod
     def takeClosure[
         origins: OriginSet, //,
@@ -1257,7 +1257,7 @@ def topLevelParamFn[a_param: __mlir_type.index]():
     comptime fatRef = capturingNestedFunction
 
 
-struct SomeParamStruct[c_param: Int]:
+struct SomeParamStruct[c_param: Int](Movable where False):
     # CHECK-LABEL: lit.fn @"topLevelParamFn{{.*}}<a_param: !Int>
     def topLevelParamFn[a_param: Int](self):
         def nestedFunction[b_param: Int]():
@@ -1285,7 +1285,7 @@ def my_extern_add_one(x: Int) abi("Mojo") -> Int:
 ##===----------------------------------------------------------------------===##
 
 
-struct MyStruct:
+struct MyStruct(Movable where False):
     def __init__(out self):
         pass
 
@@ -1312,7 +1312,7 @@ def callThing() -> MyStruct:
 ##===----------------------------------------------------------------------===##
 
 
-struct SomeType:
+struct SomeType(Movable where False):
     pass
 
 
@@ -1326,13 +1326,13 @@ def implicit_origin_as_param(
     pass
 
 
-struct Bound[T: AnyType]:
+struct Bound[T: AnyType](Movable where False):
     pass
 
 
 @fieldwise_init
 # CHECK: lit.struct.decl @Match
-struct Match[lt: __mlir_type.`!lit.origin<false>`]:
+struct Match[lt: __mlir_type.`!lit.origin<false>`](Movable where False):
     pass
     # CHECK: kgen.conformance {{.*}}::ImplicitlyDeletable
     # CHECK-NEXT: kgen.witness "__del__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<#Match <:origin<false> lt>>, mut *[0,0]> deinit_mem,
@@ -1348,12 +1348,12 @@ trait BarTrait:
     pass
 
 
-struct Bar[T: BarTrait]:
+struct Bar[T: BarTrait](Movable where False):
     def __init__(out self):
         pass
 
 
-struct BarSelf(BarTrait):
+struct BarSelf(BarTrait, Movable where False):
     var bar: Bar[Self]
 
     def __init__(out self):
@@ -1395,7 +1395,7 @@ def testRegPassableInitSelf():
     x.a = 1
 
 
-struct OverloadedKwArgs:
+struct OverloadedKwArgs(Movable where False):
     var val: Int
 
     def __init__(out self, single: Int):
@@ -1488,7 +1488,7 @@ def testOverloadKwArgs():
 
 
 # Can't generate the constructors for a type wrapping !lit.ref
-struct MOCO1320[mut: Bool, //, origin: Origin[mut=mut]]:
+struct MOCO1320[mut: Bool, //, origin: Origin[mut=mut]](Movable where False):
     comptime _mlir_type = __mlir_type[
         `!lit.ref<`,
         Int,
@@ -1505,7 +1505,7 @@ struct MOCO1320[mut: Bool, //, origin: Origin[mut=mut]]:
         self._value = __get_mvalue_as_litref(to)
 
 
-struct StructWithParam[a: Int]:
+struct StructWithParam[a: Int](Movable where False):
     pass
 
 
@@ -1555,7 +1555,7 @@ def bin_pred(x: Int, y: Int) -> Bool:
     return x > y
 
 @fieldwise_init
-struct BinStruct[x: Int, y: Int] where bin_pred(x, y):
+struct BinStruct[x: Int, y: Int] (Movable where False) where bin_pred(x, y):
     # Accessing the same parameter through an alias should work.
     comptime xx = Self.x
     # CHECK-LABEL: lit.fn @"get_with_z
@@ -1567,7 +1567,7 @@ struct BinStruct[x: Int, y: Int] where bin_pred(x, y):
 # Partially bound Contextual Types.
 ##===----------------------------------------------------------------------===##
 
-struct PartiallyBoundParam[T: AnyType]:
+struct PartiallyBoundParam[T: AnyType](Movable where False):
     @implicit
     def __init__(out self: PartiallyBoundParam[Self.T],  x:Self.T):
         pass

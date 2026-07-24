@@ -11,7 +11,7 @@
 ##===----------------------------------------------------------------------===##
 
 
-struct NotBool:
+struct NotBool(Movable where False):
     pass
 
 
@@ -30,7 +30,7 @@ def test_non_string_literal_message_error():
     comptime assert True, 42
 
 
-struct Notdef[x: Bool]:
+struct Notdef[x: Bool](Movable where False):
     # expected-error @below {{'comptime assert' must be inside a function; move this into a function body}}
     comptime assert x
 

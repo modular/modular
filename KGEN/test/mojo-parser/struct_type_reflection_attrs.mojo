@@ -77,7 +77,7 @@ struct MyParam[x: Int](HasInt, ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.struct.decl @MyWrapper
 @fieldwise_init
-struct MyWrapper[x: Int]:
+struct MyWrapper[x: Int](Movable where False):
     # CHECK: lit.struct.field nested : !MyStruct
     var nested: MyStruct
     # CHECK: lit.struct.field nested_param : !lit.struct<#MyParam <:!Int x>>

@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated --verify-diagnostics %s | FileCheck %s
 
 
-struct DT[a: Int]:
+struct DT[a: Int](Movable where False):
     pass
 
 
@@ -27,7 +27,7 @@ trait B:
 
 
 # CHECK-LABEL: lit.struct.decl @Foo
-struct Foo(B):
+struct Foo(B, Movable where False):
     comptime a: Int = 1
 
     # CHECK: lit.alias.decl *"c`2": !alias_Int1 = <sugar_member_alias(!Foo, "a", rebind(:!Int {:scalar<index> 1}))>
@@ -52,7 +52,7 @@ trait D(C):
     comptime T: AnyType = Int
 
 # CHECK-LABEL: lit.struct.decl @Bar
-struct Bar(D):
+struct Bar(D, Movable where False):
     # COM: The defaulted `T = Int` from D must materialize on the struct exactly
     # COM: once with `{defaultedAssociatedAlias}` preserved, and both conformances
     # COM: (to C, the abstract parent, and to D, the refining provider) must emit

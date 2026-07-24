@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-struct TakesIntParam[a: Int]:
+struct TakesIntParam[a: Int](Movable where False):
     pass
 
 
@@ -62,13 +62,13 @@ def inferred_partial_dependent[x: Int, //, y: Int, z: ParamType[x]]():
     pass
 
 
-struct InferredStruct[x: Int, //, y: Int, z: ParamType[x]]:
+struct InferredStruct[x: Int, //, y: Int, z: ParamType[x]](Movable where False):
     pass
 
 
 struct InferredStructConversion[
     x: Int, //, y: TrivialRegisterPassable, z: ParamType[x]
-]:
+](Movable where False):
     pass
 
 
@@ -139,7 +139,7 @@ struct MyFancyStruct(FancyTrait):
 
 
 @fieldwise_init
-struct MyOptional[T: ImplicitlyCopyable]:
+struct MyOptional[T: ImplicitlyCopyable](Movable where False):
     def __eq__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
         pass
 
@@ -161,7 +161,7 @@ def testMyOptional(a: MyOptional[MyFancyStruct]):
 
 # CHECK-LABEL: lit.fn @"findall
 # CHECK-NEXT: lit.call tail @std::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%self)
-struct DefBoxInference:
+struct DefBoxInference(Movable where False):
     def findall(self) raises -> DefBoxInferenceIter[origin_of(self)]:
         return DefBoxInferenceIter[origin_of(self)](Pointer(to=self))
 
@@ -169,7 +169,7 @@ struct DefBoxInference:
 @fieldwise_init
 struct DefBoxInferenceIter[
     origin: Origin[],
-]:
+](Movable where False):
     @implicit
     def __init__(out self, regex: Pointer[DefBoxInference, Self.origin]):
         pass
@@ -190,7 +190,7 @@ struct MyOriginTaking[
     mut: Bool,
     //,
     origin: Origin[mut=mut],
-]:
+](Movable where False):
     def __init__(
         ref[Self.origin] list: String, out self: MyOriginTaking[origin_of(list)]
     ):

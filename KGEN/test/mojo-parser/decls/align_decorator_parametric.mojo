@@ -13,7 +13,7 @@
 # CHECK-LABEL: lit.struct.decl @AlignedBuffer
 # CHECK-SAME: minAlignment = #kgen.cast_to_builtin<#lit.struct.extract<:!Int alignment, "_mlir_value"> : !kgen.scalar<index>> : index
 @align(alignment)
-struct AlignedBuffer[alignment: Int]:
+struct AlignedBuffer[alignment: Int](Movable where False):
     var data: Int
 
 
@@ -41,5 +41,5 @@ struct MultiParam[T: __mlir_type.`!kgen.type`, align_val: Int]:
 # CHECK-LABEL: lit.struct.decl @AlignedExpr
 # CHECK-SAME: minAlignment = #kgen.cast_to_builtin<#kgen.param.expr<mul, #lit.struct.extract<:!Int n, "_mlir_value"> : !kgen.scalar<index>, #kgen<simd 2> : !kgen.scalar<index>> : !kgen.scalar<index>> : index
 @align(n * 2)
-struct AlignedExpr[n: Int]:
+struct AlignedExpr[n: Int](Movable where False):
     var data: Int

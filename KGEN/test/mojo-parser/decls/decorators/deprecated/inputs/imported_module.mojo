@@ -10,5 +10,5 @@
 
 @deprecated("use of deprecated struct 'DeprecatedInAnotherModule'")
 # expected-note @below {{'DeprecatedInAnotherModule' declared here}}
-struct DeprecatedInAnotherModule:
+struct DeprecatedInAnotherModule(Movable where False):
     pass

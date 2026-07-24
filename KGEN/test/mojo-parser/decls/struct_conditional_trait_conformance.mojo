@@ -393,7 +393,7 @@ trait Moco4214Op:
 # CHECK-LABEL: lit.struct.decl @Moco4214List
 @fieldwise_init
 struct Moco4214List[T: AnyType](
-    Moco4214Op where conforms_to(T, Movable),
+    Moco4214Op where conforms_to(T, Movable), Movable where False,
 ):
     comptime Output: AnyType where conforms_to(Self.T, Movable) = Int
 
@@ -421,7 +421,7 @@ trait Moco4214ArgOp:
 # CHECK-LABEL: lit.struct.decl @Moco4214ArgList
 @fieldwise_init
 struct Moco4214ArgList[T: AnyType](
-    Moco4214ArgOp where conforms_to(T, Movable),
+    Moco4214ArgOp where conforms_to(T, Movable), Movable where False,
 ):
     comptime Output: AnyType where conforms_to(Self.T, Movable) = Int
 
@@ -447,7 +447,7 @@ trait Moco4214RaiseOp:
 # CHECK-LABEL: lit.struct.decl @Moco4214RaiseList
 @fieldwise_init
 struct Moco4214RaiseList[T: AnyType](
-    Moco4214RaiseOp where conforms_to(T, Movable),
+    Moco4214RaiseOp where conforms_to(T, Movable), Movable where False,
 ):
     comptime Output: AnyType where conforms_to(Self.T, Movable) = Moco4214Payload
 
@@ -481,7 +481,7 @@ struct Moco4296Collection[T: AnyType](Movable):
 
 
 @fieldwise_init
-struct Moco4296Iter[T: Movable & ImplicitlyDeletable]:
+struct Moco4296Iter[T: Movable & ImplicitlyDeletable](Movable where False):
     var _collection: Moco4296Collection[Self.T]
 
 
@@ -492,7 +492,7 @@ struct Moco4296Iter[T: Movable & ImplicitlyDeletable]:
 # Like MOCO-4296, but the `downcast` is not on a direct parameter binding of
 # the declared return type.
 @fieldwise_init
-struct InlineArray[ElementType: Movable, size: Int]:
+struct InlineArray[ElementType: Movable, size: Int](Movable where False):
     pass
 
 
@@ -502,7 +502,7 @@ struct MyPtr[type: AnyType](Copyable, Movable):
 
 
 @fieldwise_init
-struct MyIter[T: Copyable, size: Int]:
+struct MyIter[T: Copyable, size: Int](Movable where False):
     var ptr: MyPtr[InlineArray[Self.T, Self.size]]
 
 

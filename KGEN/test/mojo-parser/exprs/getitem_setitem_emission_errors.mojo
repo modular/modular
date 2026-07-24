@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
 
-struct WeirdArray:
+struct WeirdArray(Movable where False):
     # expected-note @+1 {{function declared here}}
     def __getitem__(self, x: Int) -> Int:
         return x
@@ -25,7 +25,7 @@ def test_getitem(var a: WeirdArray, f: float, x: Int):
     a[x] = x
 
 
-struct NotSettable:
+struct NotSettable(Movable where False):
     def __getitem__(self) -> Int:
         pass
 
@@ -39,7 +39,7 @@ def test_setitem_kwargs(ns: NotSettable, x: Int):
     ns[] = x
 
 @fieldwise_init
-struct VariadicIndexList:
+struct VariadicIndexList(Movable where False):
     def __getitem__(mut self, *indices: Int) -> Int:
         pass
 

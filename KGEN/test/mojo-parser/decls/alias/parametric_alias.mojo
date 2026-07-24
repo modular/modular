@@ -91,7 +91,7 @@ def implicit_nonparametric_where[cond: Bool]() where cond:
 
 
 @fieldwise_init
-struct PS[a: Int, b: Int, c: Int]:
+struct PS[a: Int, b: Int, c: Int](Movable where False):
     pass
 
 
@@ -112,8 +112,8 @@ trait MyTrait:
 
 
 # CHECK: lit.struct.decl @MyStruct
-struct MyStruct[a: Int, b: Int](MyTrait):
-    # CHECK-NEXT: lit.alias.decl *"ParamType{{.*}}": !lit.generator<<"a1": !Int>meta<!Int>> = <#kgen.gen<#alias_Int>>
+struct MyStruct[a: Int, b: Int](MyTrait, Movable where False):
+    # CHECK: lit.alias.decl *"ParamType{{.*}}": !lit.generator<<"a1": !Int>meta<!Int>> = <#kgen.gen<#alias_Int>>
     comptime ParamType[a1: Int] = Int
     # CHECK: kgen.conformance @"{{.*}}::MyTrait"
     # CHECK-NEXT: kgen.witness "ParamType" : !lit.generator<<"a": !Int>!AnyType> = #kgen.gen<!Int>
@@ -256,11 +256,11 @@ trait TraitWithParamAlias:
 
 
 @fieldwise_init
-struct MyElemType[m: Bool]:
+struct MyElemType[m: Bool](Movable where False):
     pass
 
 
-struct MyConformingStruct(TraitWithParamAlias):
+struct MyConformingStruct(TraitWithParamAlias, Movable where False):
     # The return type is a parametric type that references `m`. This tests that
     # such a parametric type can be instantiated by the trait method `getReturn`
     # to obtain the expected `getReturn` type from this struct.
@@ -276,11 +276,11 @@ struct MyConformingStruct(TraitWithParamAlias):
 
 
 @fieldwise_init
-struct ParamStructInferFrom[x: Int]:
+struct ParamStructInferFrom[x: Int](Movable where False):
     pass
 
 
-struct InferMeFromVariousStuff[x: Int]:
+struct InferMeFromVariousStuff[x: Int](Movable where False):
     def __init__(out self, p: ParamStructInferFrom[Self.x]):
         pass
 

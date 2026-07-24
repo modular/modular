@@ -28,7 +28,7 @@ trait LocalEquatable:
         return not self == other
 
 
-struct FieldValue(LocalEquatable):
+struct FieldValue(LocalEquatable, Movable where False):
     def __init__(out self):
         pass
 
@@ -36,7 +36,7 @@ struct FieldValue(LocalEquatable):
         return True
 
 
-struct LocalValue(LocalEquatable):
+struct LocalValue(LocalEquatable, Movable where False):
     var field: FieldValue
 
     def __init__(out self):

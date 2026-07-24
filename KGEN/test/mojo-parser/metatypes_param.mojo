@@ -137,7 +137,7 @@ struct ParamType[x: __mlir_type.index](RegisterPassable):
 
 struct DependentParam[
     a: __mlir_type.index, b: __mlir_type.index, c: ParamType[b]
-]:
+](Movable where False):
     pass
 
 

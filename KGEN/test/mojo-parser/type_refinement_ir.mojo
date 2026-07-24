@@ -66,7 +66,7 @@ def accepts_refined_param[T: RefinedParam]():
 
 
 @fieldwise_init
-struct GuardedParamBox[T: GuardedParam]:
+struct GuardedParamBox[T: GuardedParam](Movable where False):
     pass
 
 
@@ -80,7 +80,7 @@ def use_extra[T: Extra](read x: T):
 
 struct MiniPack[
     element_trait: type_of(AnyType), //, *element_types: element_trait
-]:
+](Movable where False):
     def get_element[
         index: Int
     ](self) -> ref[self] Self.element_types[index]:
@@ -100,7 +100,7 @@ struct MiniPack[
 
 struct BaseMiniPack[
     element_trait: type_of(Base), //, *element_types: element_trait
-]:
+](Movable where False):
     def get_element[
         index: Int
     ](self) -> ref[self] Self.element_types[index]:
@@ -199,7 +199,7 @@ def refine_type_value_alias_binding_preserves_original_bound[
         accepts_original_param[Alias]()
 
 
-struct OriginalParamPack[*Ts: OriginalParam]:
+struct OriginalParamPack[*Ts: OriginalParam](Movable where False):
     # CHECK-LABEL: lit.fn @"refine_type_value_variadic_binding_preserves_original_bound
     # CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!AnyType_RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!AnyType_OriginalParam #kgen.param_list.get<{{.*}}Ts.values{{.*}}))>
     # CHECK: lit.call{{.*}}@"accepts_original_param
@@ -308,7 +308,7 @@ def refine_after_comptime_assert_no_call[T: SomeTrait](var x: T):
 # A `where conforms_to(Self.T, Refined)` clause must widen the effective
 # trait bound of `Self.T` when matching it against a stricter declared
 # parameter bound.
-struct ParamBox[T: AnyType]:
+struct ParamBox[T: AnyType](Movable where False):
     pass
 
 
@@ -316,7 +316,7 @@ def accepts_refined_box[T: RefinedParam](box: ParamBox[T]):
     pass
 
 
-struct WhereParamMatcherContainer[T: OriginalParam]:
+struct WhereParamMatcherContainer[T: OriginalParam](Movable where False):
     def refine_where_during_nested_param_binding(
         self, box: ParamBox[Self.T]
     ) where conforms_to(Self.T, RefinedParam):

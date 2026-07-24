@@ -15,7 +15,7 @@ from std.testing import assert_equal, assert_true, TestSuite
 
 
 @align(alignment)
-struct AlignedBuffer[alignment: Int]:
+struct AlignedBuffer[alignment: Int](Movable where False):
     var data: Int
 
     def __init__(out self):
@@ -79,7 +79,7 @@ def test_different_instantiations() raises:
 
 
 @align(alignment)
-struct Outer[alignment: Int]:
+struct Outer[alignment: Int](Movable where False):
     """Struct that contains another parametrically-aligned struct."""
 
     var inner: AlignedBuffer[Self.alignment]
@@ -113,7 +113,7 @@ def test_parametric_align_default() raises:
     assert_true((addr & 7) == 0, "AlignedBuffer[1] should be 8-byte aligned")
 
 
-struct ContainsParametricAligned[alignment: Int]:
+struct ContainsParametricAligned[alignment: Int](Movable where False):
     """Container with a parametrically-aligned field as the second member."""
 
     var first: Int

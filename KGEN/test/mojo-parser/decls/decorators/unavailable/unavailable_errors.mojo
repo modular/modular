@@ -24,7 +24,7 @@ def normal_fn():
     pass
 
 
-struct StructWithUnavailableMembers:
+struct StructWithUnavailableMembers(Movable where False):
     def __init__(out self):
         pass
 
@@ -106,7 +106,7 @@ def test_unavailable_method_reference():
 
 # expected-error @below {{@unavailable can only be applied to functions and methods}}
 @unavailable("not allowed on structs")
-struct StructNotAllowed:
+struct StructNotAllowed(Movable where False):
     pass
 
 
@@ -128,7 +128,7 @@ def replacement_for_struct():
 
 # expected-error @below {{@unavailable can only be applied to functions and methods}}
 @unavailable(use=replacement_for_struct)
-struct StructUseNotAllowed:
+struct StructUseNotAllowed(Movable where False):
     pass
 
 
@@ -238,7 +238,7 @@ def some_top_level_func():
     pass
 
 
-struct InstanceMethodRefTopLevel:
+struct InstanceMethodRefTopLevel(Movable where False):
     # Instance methods cannot reference top-level functions as replacements.
     # expected-error @below {{cannot reference unknown value 'some_top_level_func'}}
     @unavailable(use=some_top_level_func)
@@ -276,7 +276,7 @@ trait Fooable:
 
 
 # expected-error @below {{unavailable trait method 'foo'}}
-struct UnavailableTraitImpl(Fooable):
+struct UnavailableTraitImpl(Fooable, Movable where False):
     def __init__(out self):
         pass
 

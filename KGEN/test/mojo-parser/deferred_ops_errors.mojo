@@ -12,7 +12,7 @@ def test1():
     _ = __mlir_attr.`#kgen.deferred 0 : index`
 
 
-struct DType:
+struct DType(Movable where False):
     comptime type = __mlir_type.`!kgen.dtype`
     var value: Self.type
 

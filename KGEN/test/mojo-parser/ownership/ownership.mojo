@@ -29,7 +29,7 @@ struct MemExample(ImplicitlyCopyable, Copyable):
 
 def consume(var a: MemExample): pass
 
-struct MemPair:
+struct MemPair(Movable where False):
   var a: MemExample
   var b: MemExample
   def __init__(out self):
@@ -152,7 +152,7 @@ def indirect_call[detail_fn: def() thin -> MemExample]():
        # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%mem)
 
 # CHECK-LABEL: lit.struct.decl @Parameterized<level: !Int>
-struct Parameterized[level: Int]:
+struct Parameterized[level: Int](Movable where False):
     def __init__(out self): pass
 
     def __del__(deinit self):
@@ -166,7 +166,7 @@ def test_parameterized():
   # CHECK: lit.call {{.*}}@"__init__{{.*}}(%x)
   # CHECK: lit.call {{.*}}__del__{{.*}}<:!Int {:scalar<index> 4}>(%x)
 
-struct Complicated:
+struct Complicated(Movable where False):
   var a: MemExample
   var b: MemExample
 
@@ -642,7 +642,7 @@ def sadge(ptr: MemExamplePtr[]):
 trait SomeTrait:
     pass
 
-struct GenericType(SomeTrait):
+struct GenericType(SomeTrait, Movable where False):
     def __del__(deinit self):
         pass
 
@@ -671,7 +671,7 @@ struct RegisterExistingDtor(RegisterPassable):
 struct RegisterNoDtor(RegisterPassable):
     pass
 
-struct MemoryNoDtor:
+struct MemoryNoDtor(Movable where False):
     pass
 
 
@@ -867,7 +867,7 @@ def test_partial_overwrite(cond: __mlir_type.`!kgen.scalar<bool>`):
   # CHECK-NEXT: }
 
 # CHECK-LABEL: lit.struct.decl @UninitField
-struct UninitField:
+struct UninitField(Movable where False):
   var field: MemExample
 
   # CHECK: lit.fn @"__init__()"
@@ -884,7 +884,7 @@ struct UninitField:
 def maybeMemExample() raises -> MemExample:
    return MemExample()
 
-struct HasMemExample:
+struct HasMemExample(Movable where False):
   var fh: MemExample
   # CHECK-LABEL: lit.fn @"destroyPotentiallyOverwrittenValueRegardlessOfOutcome
   def destroyPotentiallyOverwrittenValueRegardlessOfOutcome(mut self):
@@ -937,7 +937,7 @@ struct List(ImplicitlyCopyable):
      pass
 
 @fieldwise_init
-struct DoNotPropagateErrorStateIntoContinueSet:
+struct DoNotPropagateErrorStateIntoContinueSet(Movable where False):
   var dims: List
   # CHECK-LABEL: lit.fn @"__init__(
   def __init__(out self, cond: __mlir_type.`!kgen.scalar<bool>`, var list: List) raises:
@@ -1011,7 +1011,7 @@ def test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExamp
     return a if x else b
 
 
-struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable & ImplicitlyDeletable]:
+struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable & ImplicitlyDeletable](Movable where False):
     var a: Self.T
     var b: Self.T
 
@@ -1046,7 +1046,7 @@ def field_sensitive_ref_last_use(var write_state : IntAndOptional):
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%write_state)
 
 @fieldwise_init
-struct IntAndOptional:
+struct IntAndOptional(Movable where False):
     var handle: Int
     var error: Optional[String]
 
@@ -1181,7 +1181,7 @@ def handleAnyLifetime4():
   # CHECK: lit.var.lifetime.end %str
 
 
-struct A[origin: MutOrigin]:
+struct A[origin: MutOrigin](Movable where False):
     var data: UnsafePointer[Int, Self.origin]
     def __init__(out self):
         self.data = UnsafePointer[Int, Self.origin].unsafe_dangling()
@@ -1388,7 +1388,7 @@ def use_parameterized_field():
 
 # MOCO-1558: Failure handling sub-type elements
 # CHECK-LABEL: OuterStruct
-struct OuterStruct:
+struct OuterStruct(Movable where False):
     var outers_field: RefResultStruct
     # CHECK: lit.fn @"__del__
     def __del__(deinit self):
@@ -1398,7 +1398,7 @@ struct OuterStruct:
         # CHECK-NEXT: lit.call {{.*}}RefResultStruct::@"__del__{{.*}}([[TMP]])
         # CHECK: lit.ownership.mark_destroyed %self
 
-struct RefResultStruct:
+struct RefResultStruct(Movable where False):
   var x: String
   def __init__(out self):
     self.x = String()
@@ -1410,12 +1410,12 @@ def use(a: String): pass
 
 # https://github.com/modular/modular/issues/4163
 #  BUG] Mojo compiler error when two instance variables of type PythonObject are initialized by Python.import_module in a struct's __init__()
-struct SomeStruct:
+struct SomeStruct(Movable where False):
     var test_agent: SomeValue[Int]
     def __init__(out self) raises:
         self.test_agent = SomeValue(123)
 
-struct SomeValue[T: ImplicitlyCopyable & ImplicitlyDeletable]:
+struct SomeValue[T: ImplicitlyCopyable & ImplicitlyDeletable](Movable where False):
     var value: Self.T
     var name: String
     var tmp: Int
@@ -1475,7 +1475,7 @@ trait HasBarWVariadicPack:
     def method_with_pack[*Ts: AnyType](mut self, *args: *Ts):
         pass
 # CHECK-LABEL: lit.struct.decl @InheritDefaultFromHasBarWVariadicPack
-struct InheritDefaultFromHasBarWVariadicPack(HasBarWVariadicPack):
+struct InheritDefaultFromHasBarWVariadicPack(HasBarWVariadicPack, Movable where False):
     pass
 
 # CHECK: lit.fn @"method_with_pack{{.*}}(%self: !lit.ref<!InheritDefaultFromHasBarWVariadicPack, mut *"0_unnamed`"> mut,
@@ -1486,7 +1486,7 @@ struct InheritDefaultFromHasBarWVariadicPack(HasBarWVariadicPack):
 # https://github.com/modular/modular/issues/5722
 # `__del__` incorrectly runs when `__init__` raises before all fields are initialized.
 # CHECK-LABEL: lit.struct.decl @TestRaiseFromInit
-struct TestRaiseFromInit:
+struct TestRaiseFromInit(Movable where False):
     var x: Int
     var y: String
 
@@ -1500,7 +1500,7 @@ struct TestRaiseFromInit:
         raise 42
 
 # This is a type whose members are sometimes trivial!
-struct OccasionallyTrivial[a: Int]:
+struct OccasionallyTrivial[a: Int](Movable where False):
     # This is trivial when a == 0.
     def __del__(deinit self):
         pass
@@ -1529,7 +1529,7 @@ def test_is_trivial(var a0: OccasionallyTrivial[0],
 
 # CHECK-LABEL: lit.struct.decl @TestConditionallyLinearType
 struct TestConditionallyLinearType[T: Movable](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable), Movable where False
 ):
     var data: Self.T
 
@@ -1544,7 +1544,7 @@ struct TestConditionallyLinearType[T: Movable](
 
 # CHECK-LABEL: lit.struct.decl @TestSynthesizedConditionalDtor
 struct TestSynthesizedConditionalDtor[T: Movable & ImplicitlyDeletable](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable), Movable where False
 ):
     var data: Self.T
 
@@ -1575,11 +1575,11 @@ struct AConditionallyLinearType[T: AnyType](
 
 # MOCO-3880: The destructor for one value can extend the lifetime of another value.
 @fieldwise_init
-struct Driver:
+struct Driver(Movable where False):
     def __del__(deinit self): pass
 
 @fieldwise_init
-struct Event[origin: ImmOrigin]:
+struct Event[origin: ImmOrigin](Movable where False):
     def __del__(deinit self): pass
 
 def record_event(driver: Driver) -> Event[origin_of(driver)]:

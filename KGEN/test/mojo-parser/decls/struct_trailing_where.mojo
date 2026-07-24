@@ -22,23 +22,23 @@ trait Marker:
 # CHECK-LABEL: lit.struct.decl @SingleLineTrailingWhere
 # CHECK-SAME: <T: !AnyType_Base, {{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra))
 @fieldwise_init
-struct SingleLineTrailingWhere[T: Base] where conforms_to(T, Extra):
+struct SingleLineTrailingWhere[T: Base] (Movable where False) where conforms_to(T, Extra):
     pass
 
 
 # CHECK-LABEL: lit.struct.decl @TrailingWhereWithParent
 # CHECK-SAME: <T: !AnyType_Base, {{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra))
-# CHECK-SAME: (!AnyType_ImplicitlyDeletable_Marker)
+# CHECK-SAME: (!constrained_AnyType_ImplicitlyDeletable_Movable_Marker)
 @fieldwise_init
-struct TrailingWhereWithParent[T: Base](Marker) where conforms_to(T, Extra):
+struct TrailingWhereWithParent[T: Base](Marker, Movable where False) where conforms_to(T, Extra):
     pass
 
 
 # CHECK-LABEL: lit.struct.decl @MultilineParentTrailingWhere
 # CHECK-SAME: <T: !AnyType_Base, {{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra))
-# CHECK-SAME: (!AnyType_ImplicitlyDeletable_Marker)
+# CHECK-SAME: (!constrained_AnyType_ImplicitlyDeletable_Movable_Marker1)
 @fieldwise_init
-struct MultilineParentTrailingWhere[T: Base](Marker) where conforms_to(
+struct MultilineParentTrailingWhere[T: Base](Marker, Movable where False) where conforms_to(
     T, Extra
 ):
     pass
@@ -48,7 +48,7 @@ struct MultilineParentTrailingWhere[T: Base](Marker) where conforms_to(
 # CHECK-SAME: <T: !AnyType_Base, {{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra))
 # CHECK-SAME: conforms_to(:!AnyType_Base T, :meta<!{{.*}}Base> !{{.*}}Base))
 @fieldwise_init
-struct MultipleTrailingWhereClauses[T: Base] where conforms_to(
+struct MultipleTrailingWhereClauses[T: Base] (Movable where False) where conforms_to(
     T, Extra
 ) where conforms_to(T, Base):
     pass

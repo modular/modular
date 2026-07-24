@@ -14,7 +14,7 @@
 # Error: @stable with a positional (non-keyword) argument is not supported.
 # expected-error @+1 {{@stable requires a keyword argument ('since' or 'recursive'), not a positional argument}}
 @stable("since 1.0")
-struct StableWithArg:
+struct StableWithArg(Movable where False):
     pass
 
 
@@ -34,7 +34,7 @@ alias MY_STABLE_ALIAS = 42
 
 # Verify that @stable members in stable structs are allowed (no error).
 @stable
-struct LocalStableStruct:
+struct LocalStableStruct(Movable where False):
     @stable
     def stable_method_in_stable(self):
         pass
@@ -50,7 +50,7 @@ trait StableTrait:
 # Verify that @stable members in non-opted-in package types are allowed.
 # This file is not in an opted-in package, so structs/traits here are stable
 # by default, and @stable members should be allowed.
-struct StructInNonOptedInPackage:
+struct StructInNonOptedInPackage(Movable where False):
     @stable
     def stable_method(self):
         pass

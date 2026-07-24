@@ -7,11 +7,11 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-struct Foo:
+struct Foo(Movable where False):
     pass
 
 
-struct Baz:
+struct Baz(Movable where False):
     pass
 
 

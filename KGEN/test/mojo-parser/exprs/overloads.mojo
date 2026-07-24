@@ -69,7 +69,7 @@ def test_kw_args_param_infer(
 
 
 # COM: Test overloading precedence in the presence of static methods.
-struct StaticOverloadStruct:
+struct StaticOverloadStruct(Movable where False):
     def __init__(out self):
         pass
 
@@ -97,13 +97,13 @@ struct MyElement(TrivialRegisterPassable):
     pass
 
 
-struct ConvertibleFromInt:
+struct ConvertibleFromInt(Movable where False):
     @implicit
     def __init__(out self, a: Int):
         pass
 
 
-struct MyContainer[T: ImplicitlyCopyable & ImplicitlyDeletable]:
+struct MyContainer[T: ImplicitlyCopyable & ImplicitlyDeletable](Movable where False):
     var v: Self.T
 
     def foo(self, limits: ConvertibleFromInt):

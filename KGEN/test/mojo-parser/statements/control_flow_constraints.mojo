@@ -11,7 +11,7 @@
 ##===----------------------------------------------------------------------===##
 
 
-struct PStruct[*a: Int]:
+struct PStruct[*a: Int](Movable where False):
     @always_inline("builtin")
     @staticmethod
     def predicate() -> Bool:

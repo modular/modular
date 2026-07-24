@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-struct WeirdArray:
+struct WeirdArray(Movable where False):
     def __getitem__(self, x: Int) -> Int:
         return x
 
@@ -93,7 +93,7 @@ def test_getitem_slice(a: WeirdArray, i: Int, j: Int, k: Int):
     _ = a[i:j:k]
 
 
-struct IndexArray:
+struct IndexArray(Movable where False):
     def __getitem__(mut self, x: Int) -> Int:
         pass
 
@@ -101,7 +101,7 @@ struct IndexArray:
         pass
 
 
-struct IndexArrayArray:
+struct IndexArrayArray(Movable where False):
     def __getitem__(mut self, x: Int) -> IndexArray:
         pass
 
@@ -169,7 +169,7 @@ def test_dlvalue_to_pvalue[arr: RegWeirdArray, y: Int]():
     comptime x = arr[y]
 
 
-struct XYZ:
+struct XYZ(Movable where False):
     def __getattr_param__[name: StringLiteral](self) -> Int:
         comptime if name == "x":
             return 4
@@ -180,7 +180,7 @@ struct XYZ:
             return 8
 
 
-struct ParamIndex:
+struct ParamIndex(Movable where False):
     def __getitem_param__[a: Int, b: Int](self) -> Int:
         return 42
 
@@ -196,7 +196,7 @@ def test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
     _ = b[2, 4]
 
 
-struct TestCompTime[wa: WeirdArray, value: Int = wa[4]]:
+struct TestCompTime[wa: WeirdArray, value: Int = wa[4]](Movable where False):
     def test1[a: Int](self):
         var b: TestCompTime[Self.wa]
 
@@ -210,7 +210,7 @@ struct TestCompTime[wa: WeirdArray, value: Int = wa[4]]:
 
 
 @fieldwise_init
-struct VariadicIndexList:
+struct VariadicIndexList(Movable where False):
     def __getitem__(mut self, *indices: Int) -> Int:
         pass
 
@@ -237,7 +237,7 @@ def testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
 # MOCO-1244:
 
 
-struct RefResultInOverloaded:
+struct RefResultInOverloaded(Movable where False):
     var x: String
 
     def __getitem__(self) raises -> ref[self.x] String:
@@ -264,7 +264,7 @@ def testRefResultInOverloaded(
 # ===----------------------------------------------------------------------=== #
 
 
-struct MinimalDict:
+struct MinimalDict(Movable where False):
     var state: Int
 
     def __getitem__(self, key: Int) raises -> ref[self.state] Int:
@@ -306,7 +306,7 @@ trait FromInt:
         ...
 
 
-struct MyInt(FromInt):
+struct MyInt(FromInt, Movable where False):
     def __init__(out self, *, from_int: Int):
         pass
 
