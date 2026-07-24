@@ -175,6 +175,27 @@ LogicalResult CallOperands::assignToPogs(
         else // Unassigned positional operands are errors.
           break;
       }
+
+      // Can only forward a single '**', if there are additional operands, emit
+      // an error.
+      if (pogAssignment.kwVariadicIdxs.size() != 1) {
+        for (auto operandIdx : pogAssignment.kwVariadicIdxs) {
+          if (values[operandIdx].unpackStyle != ArgUnpackStyle::kStarStar)
+            continue;
+          auto &diag = getDiag(values[operandIdx].expr->getLoc());
+          diag << "combining a '**' unpack with other keyword arguments for "
+                  "'**kwargs' is not supported"
+               << values[operandIdx].expr->getRange();
+          for (auto otherIdx : pogAssignment.kwVariadicIdxs) {
+            if (otherIdx != operandIdx) {
+              diag.attachNote(values[otherIdx].expr->getLoc())
+                  << "other keyword argument specified here";
+              break;
+            }
+          }
+          return failure();
+        }
+      }
       continue;
     }
 
