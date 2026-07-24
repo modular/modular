@@ -146,10 +146,12 @@ LogicalResult CallOperands::assignToPogs(
     // For positional variadics and packs, consume any positional operands.
     if (pog.isPosVarArg() || pog.isPack()) {
       // Note that the contents will be captured in the posVariadicIdxs list.
-      // Note this captures individual values as well as unpacks.
+      // Note this captures individual values as well as unpacks. A '**'
+      // unpack carries no keyword name but binds only to '**kwargs'.
       pogAssignment.operandIdxs.push_back(PogAssignment::kPA_Variadic);
       while (opIdx != numOperands) {
-        if (!values[opIdx].keyword)
+        if (!values[opIdx].keyword &&
+            values[opIdx].unpackStyle != ArgUnpackStyle::kStarStar)
           pogAssignment.posVariadicIdxs.push_back(opIdx);
         else
           skippedKW.push_back(opIdx);

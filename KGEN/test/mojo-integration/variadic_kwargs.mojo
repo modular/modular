@@ -65,3 +65,44 @@ def main() raises:
     takes_mem_only_variadic_kwargs(y=m, fizzbuzz=MemOnly(13))
     # CHECK: m outside 42
     print("m outside", m.value)
+
+    forwards_both_variadics(1, 2, x=8, y=9)
+
+    kitchen_sink(1, 2, 3, 4, 5, named=6, opt=7, k=8, z=9)
+    forwards_to_kitchen_sink(40, 50, k=70, z=80)
+
+
+def takes_both_variadics(*args: Int, **kwargs: Int) raises:
+    # Two subscripts of one dict in a single call trip interior-origin
+    # exclusivity checking, so hoist them.
+    var x = kwargs["x"]
+    var y = kwargs["y"]
+    # CHECK: forwarded 1 2 8 9
+    print("forwarded", args[0], args[1], x, y)
+
+
+def forwards_both_variadics(*args: Int, **kwargs: Int) raises:
+    takes_both_variadics(*args, **kwargs^)
+
+
+# Every argument kind in one signature: positional-only ('/'), positional,
+# variadic, named keyword-only (required and defaulted), and **kwargs.
+def kitchen_sink(
+    a: Int,
+    b: Int,
+    /,
+    c: Int,
+    *args: Int,
+    named: Int,
+    opt: Int = 9,
+    **kwargs: Int,
+) raises:
+    var k = kwargs["k"]
+    var z = kwargs["z"]
+    # CHECK: sink 1 2 3 4 5 6 7 8 9
+    # CHECK: sink 1 2 3 40 50 6 9 70 80
+    print("sink", a, b, c, args[0], args[1], named, opt, k, z)
+
+
+def forwards_to_kitchen_sink(*args: Int, **kwargs: Int) raises:
+    kitchen_sink(1, 2, 3, *args, named=6, **kwargs^)

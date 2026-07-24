@@ -28,6 +28,26 @@ def test_unpack_twice(d: Int):
     test_unpack_twice(*d, *d)
 
 
+# `f(*args, **kwargs)` is valid; the reverse order is not, matching Python.
+def test_unpack_order(*args: Int, **kwargs: Int):
+    # expected-error @+1 {{positional unpack must not follow keyword unpacking; move it before the '**' unpack}}
+    test_unpack_order(**kwargs, *args)
+
+
+# expected-note @+1 {{function declared here}}
+def test_merge_kwargs(**kwargs: Int):
+    # expected-error @+2 {{combining a '**' unpack with other keyword arguments for '**kwargs' is not supported}}
+    # expected-note @+1 {{other keyword argument specified here}}
+    test_merge_kwargs(a=1, **kwargs^)
+
+
+# expected-note @+1 {{function declared here}}
+def test_two_kwargs_unpacks(**kwargs: Int):
+    # expected-error @+2 {{combining a '**' unpack with other keyword arguments for '**kwargs' is not supported}}
+    # expected-note @+1 {{other keyword argument specified here}}
+    test_two_kwargs_unpacks(**kwargs^, **kwargs^)
+
+
 # expected-note @below {{function declared here}}
 def test_sum_intable[*Ts: Intable](*pack: *Ts):
     pass
