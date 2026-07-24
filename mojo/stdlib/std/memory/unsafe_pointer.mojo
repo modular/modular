@@ -665,19 +665,21 @@ struct Pointer[
     @always_inline
     @doc_hidden
     def write_niche(
-        memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
+        memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _, _safe=True]
     ):
-        memory.bitcast[_Null[Self.T, Self.address_space]]().unsafe_write({})
+        memory.unsafe_bitcast[_Null[Self.T, Self.address_space]]().unsafe_write(
+            {}
+        )
 
     @staticmethod
     @always_inline
     @doc_hidden
     def isa_niche(
-        memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
+        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _, _safe=True]
     ) -> Bool:
         comptime NullType = _Null[Self.T, Self.address_space]
         comptime null_address = Int(NullType())
-        return Int(memory.bitcast[NullType]()[]) == null_address
+        return Int(memory.unsafe_bitcast[NullType]()[]) == null_address
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
