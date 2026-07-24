@@ -83,7 +83,7 @@ def test_load_store_non_float_dtype() raises:
 
 def test_offset() raises:
     var buf = InlineArray[Float32, 4](fill=0.0)
-    var storage = buf.unsafe_ptr()
+    var storage: UnsafePointer[Float32, origin_of(buf)] = buf.unsafe_ptr()
 
     # Clear the buffer, then write `9.0` two elements in via an offset handle.
     PointerStorage[element_width=1].store[alignment=ALIGN_F32](
@@ -162,7 +162,7 @@ def test_distance_offset_round_trip() raises:
 
 def test_unsafe_cast() raises:
     var buf = InlineArray[Float32, 2](fill=0.0)
-    var storage = buf.unsafe_ptr()
+    var storage: UnsafePointer[Float32, origin_of(buf)] = buf.unsafe_ptr()
     PointerStorage[element_width=1].store[alignment=ALIGN_F32](
         storage, Float32(1.5)
     )
@@ -186,7 +186,7 @@ def test_unsafe_cast() raises:
 
 def test_unsafe_ptr() raises:
     var buf = InlineArray[Float32, 4](fill=0.0)
-    var storage = buf.unsafe_ptr()
+    var storage: UnsafePointer[Float32, origin_of(buf)] = buf.unsafe_ptr()
     PointerStorage[element_width=1].store[alignment=ALIGN_F32](
         storage, SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
     )
@@ -205,7 +205,8 @@ def test_unsafe_ptr() raises:
 def test_unsafe_ptr_vectorized() raises:
     var buf = InlineArray[Float32, 4](fill=0.0)
     # A vectorized (element_width=2) storage handle over the same buffer.
-    var storage = buf.unsafe_ptr().bitcast[SIMD[DType.float32, 2]]()
+    var buf_ptr: UnsafePointer[Float32, origin_of(buf)] = buf.unsafe_ptr()
+    var storage = buf_ptr.bitcast[SIMD[DType.float32, 2]]()
 
     # `unsafe_ptr` bitcasts the SIMD-typed handle down to the scalar base,
     # which coincides with the buffer's own base address.

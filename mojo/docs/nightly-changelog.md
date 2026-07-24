@@ -476,6 +476,13 @@ This version is still a work in progress.
   (if present), without raising. This is a comptime-compatible version of
   the functionality.
 
+- `InlineArray.unsafe_ptr()` now returns a safe `Pointer` instead of an
+  `UnsafePointer`. The two share the same layout and convert implicitly, so
+  most code is unaffected. Code that called an unsafe-only pointer operation
+  directly on the result should switch to the ungated `unsafe_*` spelling, for
+  example `arr.unsafe_ptr() + i` becomes `arr.unsafe_ptr().unsafe_offset(i)`
+  and `arr.unsafe_ptr()[i]` becomes `arr.unsafe_ptr()[unsafe_offset=i]`.
+
 - When an unhandled error propagates out of `main` and no stack trace was
   collected, Mojo now prints a hint to set
   `MODULAR_DEBUG=stack-trace-on-error` to enable stack trace collection,

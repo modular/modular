@@ -168,7 +168,9 @@ def fp8_index_kernel[
         address_space=AddressSpace.SHARED,
     ](k_smem.unsafe_ptr())
 
-    var k_smem_ptr = k_smem.unsafe_ptr()
+    var k_smem_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(k_smem), address_space=AddressSpace.SHARED
+    ] = k_smem.unsafe_ptr()
 
     var q_ptr = q.ptr_at_offset(Index(start_of_seq + UInt32(seq_offset), 0, 0))
     var q_s_ptr = q_s.ptr_at_offset(Index(start_of_seq + UInt32(seq_offset), 0))
@@ -236,7 +238,9 @@ def fp8_index_kernel[
     # the tile shape per axis and silently stages NOTHING whenever
     # num_heads < 16 or depth // simd_width < 8 (e.g. depth == 64).
     comptime q_vecs = num_heads * depth // simd_width
-    var q_smem_dst = q_smem.unsafe_ptr()
+    var q_smem_dst: UnsafePointer[
+        Scalar[dtype], origin_of(q_smem), address_space=AddressSpace.SHARED
+    ] = q_smem.unsafe_ptr()
     for v in range(Int(tid), q_vecs, num_threads):
         q_smem_dst.store(
             v * simd_width, q_ptr.load[width=simd_width](v * simd_width)

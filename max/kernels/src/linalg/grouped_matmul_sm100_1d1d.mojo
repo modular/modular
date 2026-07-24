@@ -2172,15 +2172,36 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ref tmem_addr_storage = smem_storage.tmem_addr
     ref tmem_dealloc_mbar_storage = smem_storage.tmem_dealloc_mbar
 
-    var a_smem_base = a_smem_storage.unsafe_ptr().bitcast[Scalar[a_type]]()
-    var b_smem_base = b_smem_storage.unsafe_ptr().bitcast[Scalar[b_type]]()
-    var c_smem_base = c_smem_storage.unsafe_ptr().bitcast[Scalar[c_type]]()
-    var sfa_smem_base = sfa_smem_storage.unsafe_ptr().bitcast[
-        Scalar[sfa_dtype]
-    ]()
-    var sfb_smem_base = sfb_smem_storage.unsafe_ptr().bitcast[
-        Scalar[sfb_dtype]
-    ]()
+    var a_smem_ptr: UnsafePointer[
+        Scalar[a_type],
+        origin_of(a_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = a_smem_storage.unsafe_ptr()
+    var a_smem_base = a_smem_ptr.bitcast[Scalar[a_type]]()
+    var b_smem_ptr: UnsafePointer[
+        Scalar[b_type],
+        origin_of(b_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = b_smem_storage.unsafe_ptr()
+    var b_smem_base = b_smem_ptr.bitcast[Scalar[b_type]]()
+    var c_smem_ptr: UnsafePointer[
+        Scalar[c_type],
+        origin_of(c_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = c_smem_storage.unsafe_ptr()
+    var c_smem_base = c_smem_ptr.bitcast[Scalar[c_type]]()
+    var sfa_smem_ptr: UnsafePointer[
+        Scalar[sfa_dtype],
+        origin_of(sfa_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = sfa_smem_storage.unsafe_ptr()
+    var sfa_smem_base = sfa_smem_ptr.bitcast[Scalar[sfa_dtype]]()
+    var sfb_smem_ptr: UnsafePointer[
+        Scalar[sfb_dtype],
+        origin_of(sfb_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = sfb_smem_storage.unsafe_ptr()
+    var sfb_smem_base = sfb_smem_ptr.bitcast[Scalar[sfb_dtype]]()
 
     # Load warp as producer and mma warp as consumer
     # Dependence on MMA input in SMEM.
@@ -2204,7 +2225,11 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         ](),
     )
 
-    var ptr_tmem_addr = tmem_addr_storage.unsafe_ptr()
+    var ptr_tmem_addr: UnsafePointer[
+        UInt32,
+        origin_of(tmem_addr_storage),
+        address_space=AddressSpace.SHARED,
+    ] = tmem_addr_storage.unsafe_ptr()
 
     tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
 

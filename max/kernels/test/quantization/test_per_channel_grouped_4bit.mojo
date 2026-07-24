@@ -146,7 +146,13 @@ def _read_write_to_tensors[
     var data_matrix_backing = InlineArray[Float32, num_elements](
         uninitialized=True
     )
-    var data_matrix = TileTensor(data_matrix_backing, row_major[num_elements]())
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var data_matrix_ptr: UnsafePointer[
+        Float32, origin_of(data_matrix_backing)
+    ] = data_matrix_backing.unsafe_ptr()
+    var data_matrix = TileTensor(
+        ptr=data_matrix_ptr, layout=row_major[num_elements]()
+    )
     for i in range(num_elements):
         data_matrix[i] = Float32(i)
 

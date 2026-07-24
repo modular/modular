@@ -147,9 +147,9 @@ struct _DirHandle:
             if not ep:
                 break
             ref name = ep.unsafe_value().take_pointee().name
-            var name_ptr = name.unsafe_ptr().bitcast[Byte]()
+            var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
-                unsafe_from_utf8=Span(
+                unsafe_from_utf8=Span[Byte, origin_of(name)](
                     unsafe_ptr=name_ptr,
                     length=Int(
                         _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
@@ -177,9 +177,9 @@ struct _DirHandle:
             if not ep:
                 break
             ref name = ep.unsafe_value().take_pointee().name
-            var name_ptr = name.unsafe_ptr().bitcast[Byte]()
+            var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
-                unsafe_from_utf8=Span(
+                unsafe_from_utf8=Span[Byte, origin_of(name)](
                     unsafe_ptr=name_ptr,
                     length=Int(
                         _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)

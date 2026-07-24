@@ -203,16 +203,18 @@ struct qgemm_Q4_0(QuantizedGemm):
         )
 
         # Decode the bits of the weight data.
-        var q_packed_bits = (
-            block_ptr[]
-            .q_bits.unsafe_ptr()
-            .load[width=_block_Q4_0.group_size // 2]()
-        )
+        var q_bits_ptr: UnsafePointer[
+            UInt8, origin_of(block_ptr[].q_bits)
+        ] = block_ptr[].q_bits.unsafe_ptr()
+        var q_packed_bits = q_bits_ptr.load[width=_block_Q4_0.group_size // 2]()
 
+        var b_quant_data_ptr: UnsafePointer[
+            UInt8, origin_of(b_quant_data)
+        ] = b_quant_data.unsafe_ptr()
         for j in range(2):
             var idx = j * _block_Q4_0.group_size // 2
             var q_bits = (q_packed_bits >> UInt8(j * 4)) & 15
-            b_quant_data.unsafe_ptr().store(idx, q_bits)
+            b_quant_data_ptr.store(idx, q_bits)
 
         var sum: Int32 = 0
 
@@ -297,10 +299,14 @@ struct qgemm_Q4_K(QuantizedGemm):
         var a_block_sums = InlineArray[Int32, _block_Q4_K.group_count](
             uninitialized=True
         )
+        var a_quant_data_ptr: UnsafePointer[
+            Int8, origin_of(a_quant_data)
+        ] = a_quant_data.unsafe_ptr()
         for i in range(_block_Q4_K.group_count):
             a_block_sums[i] = (
-                a_quant_data.unsafe_ptr()
-                .load[width=_block_Q4_K.group_size](i * _block_Q4_K.group_size)
+                a_quant_data_ptr.load[width=_block_Q4_K.group_size](
+                    i * _block_Q4_K.group_size
+                )
                 .cast[DType.int32]()
                 .reduce_add()
             )
@@ -327,16 +333,21 @@ struct qgemm_Q4_K(QuantizedGemm):
         var b_quant_data = InlineArray[UInt8, _block_QK_K.quantized_k](
             uninitialized=True
         )
+        var b_quant_data_ptr: UnsafePointer[
+            UInt8, origin_of(b_quant_data)
+        ] = b_quant_data.unsafe_ptr()
 
         # Decode the bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 2, 32):
-            var q_bits_ptr = block_ptr[].q_bits.unsafe_ptr()
+            var q_bits_ptr: UnsafePointer[
+                UInt8, origin_of(block_ptr[].q_bits)
+            ] = block_ptr[].q_bits.unsafe_ptr()
             var q_packed_bits = q_bits_ptr.load[width=32](i)
 
             for j in range(2):
                 var idx = i * 2 + j * 32
                 var q_bits = (q_packed_bits >> UInt8(j * 4)) & 15
-                b_quant_data.unsafe_ptr().store(idx, q_bits)
+                b_quant_data_ptr.store(idx, q_bits)
 
         var sum2: Int32 = 0
 
@@ -428,27 +439,34 @@ struct qgemm_Q6_K(QuantizedGemm):
         var b_quant_data = InlineArray[UInt8, _block_QK_K.quantized_k](
             uninitialized=True
         )
+        var b_quant_data_ptr: UnsafePointer[
+            UInt8, origin_of(b_quant_data)
+        ] = b_quant_data.unsafe_ptr()
 
         # Decode the bottom bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 2, 64):
-            var q_bits_lo_ptr = block_ptr[].q_bits_lo.unsafe_ptr()
+            var q_bits_lo_ptr: UnsafePointer[
+                UInt8, origin_of(block_ptr[].q_bits_lo)
+            ] = block_ptr[].q_bits_lo.unsafe_ptr()
             var q_packed_bits = q_bits_lo_ptr.load[width=64](i)
 
             for j in range(2):
                 var idx = i * 2 + j * 64
                 var q_bits = (q_packed_bits >> UInt8(j * 4)) & 15
-                b_quant_data.unsafe_ptr().store(idx, q_bits)
+                b_quant_data_ptr.store(idx, q_bits)
 
         # Decode the top bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 4, 32):
-            var q_bits_hi_ptr = block_ptr[].q_bits_hi.unsafe_ptr()
+            var q_bits_hi_ptr: UnsafePointer[
+                UInt8, origin_of(block_ptr[].q_bits_hi)
+            ] = block_ptr[].q_bits_hi.unsafe_ptr()
             var q_packed_bits = q_bits_hi_ptr.load[width=32](i)
 
             for j in range(4):
                 var idx = i * 4 + j * 32
-                var q_bits_lo = b_quant_data.unsafe_ptr().load[width=32](idx)
+                var q_bits_lo = b_quant_data_ptr.load[width=32](idx)
                 var q_bits_hi = ((q_packed_bits >> UInt8(j * 2)) & 3) << 4
-                b_quant_data.unsafe_ptr().store(idx, q_bits_hi | q_bits_lo)
+                b_quant_data_ptr.store(idx, q_bits_hi | q_bits_lo)
 
         var sum = dot_product_QK_K[
             group_size=_block_Q6_K.group_size, b_zero_point=32

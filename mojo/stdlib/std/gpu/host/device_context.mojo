@@ -3467,7 +3467,7 @@ struct DeviceFunction[
                 if translated_arg_offset >= 0:
                     var first_word_addr = Pointer(
                         to=translated_args.unsafe_ptr()[
-                            translated_arg_offset + extra_align
+                            unsafe_offset=translated_arg_offset + extra_align
                         ]
                     ).unsafe_bitcast[NoneType]()
                     args[i]._to_device_type(

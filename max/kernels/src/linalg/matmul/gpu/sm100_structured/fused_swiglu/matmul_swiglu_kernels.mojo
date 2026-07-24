@@ -1603,7 +1603,11 @@ def blackwell_swiglu_warp_specialized_kernel[
         Scalar[DType.uint8], address_space=AddressSpace.SHARED, alignment=128
     ]()
     ref smem = smem_bytes.bitcast[SmemType]()[]
-    var ptr_tmem_addr = smem.tmem_addr.unsafe_ptr()
+    var ptr_tmem_addr: UnsafePointer[
+        UInt32,
+        origin_of(smem.tmem_addr),
+        address_space=AddressSpace.SHARED,
+    ] = smem.tmem_addr.unsafe_ptr()
     var tmem_dealloc_mbar = smem.tmem_dealloc_mbar.unsafe_ptr()
     var c_out_smem = (smem_bytes + c_out_smem_offset).bitcast[Scalar[c_type]]()
 
@@ -1885,10 +1889,13 @@ def blackwell_swiglu_warp_specialized_kernel[
                     var src_ptr = (
                         bias_1d_tile.ptr + gmem_offset + lane_start
                     ).address_space_cast[AddressSpace.GLOBAL]()
+                    var bias_smem_base: UnsafePointer[
+                        Scalar[c_type],
+                        origin_of(smem.bias_smem),
+                        address_space=AddressSpace.SHARED,
+                    ] = smem.bias_smem.unsafe_ptr()
                     var dst_ptr = (
-                        smem.bias_smem.unsafe_ptr()
-                        + Int(stage) * bias_dim
-                        + lane_start
+                        bias_smem_base + Int(stage) * bias_dim + lane_start
                     )
                     async_copy[bytes_per_lane, fill=Scalar[c_type](0)](
                         src_ptr, dst_ptr, src_size=src_bytes
@@ -1939,9 +1946,12 @@ def blackwell_swiglu_warp_specialized_kernel[
 
                 var epi_stage = Int(epi_load_pl.consumer_stage())
                 epi_load_pl.wait_producer()
-                var bias_smem_ptr = (
-                    smem.bias_smem.unsafe_ptr() + epi_stage * bias_dim
-                )
+                var bias_smem_base: UnsafePointer[
+                    Scalar[c_type],
+                    origin_of(smem.bias_smem),
+                    address_space=AddressSpace.SHARED,
+                ] = smem.bias_smem.unsafe_ptr()
+                var bias_smem_ptr = bias_smem_base + epi_stage * bias_dim
                 comptime if config.register_swiglu:
                     _swiglu_epilogue_gmem[
                         a_type,

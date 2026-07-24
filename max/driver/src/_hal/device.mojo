@@ -156,10 +156,9 @@ struct Device[spec: DeviceSpec](ImplicitlyDeletable, Movable):
     def get_name(self) raises HALError -> String:
         """Queries the device's human-readable name."""
         var buf = InlineArray[Int8, _DEVICE_PROPERTY_MAX_LEN](fill=0)
-        self._raw[].get_device_property_string["name"](
-            self._handle, buf.unsafe_ptr()
-        )
-        return String(unsafe_from_utf8_ptr=buf.unsafe_ptr().bitcast[c_char]())
+        var buf_ptr: UnsafePointer[Int8, origin_of(buf)] = buf.unsafe_ptr()
+        self._raw[].get_device_property_string["name"](self._handle, buf_ptr)
+        return String(unsafe_from_utf8_ptr=buf_ptr.bitcast[c_char]())
 
     def get_arch(self) raises HALError -> String:
         """Queries the device's compile-target architecture name.
@@ -169,7 +168,6 @@ struct Device[spec: DeviceSpec](ImplicitlyDeletable, Movable):
         plugin property.
         """
         var buf = InlineArray[Int8, _DEVICE_PROPERTY_MAX_LEN](fill=0)
-        self._raw[].get_device_property_string["arch"](
-            self._handle, buf.unsafe_ptr()
-        )
-        return String(unsafe_from_utf8_ptr=buf.unsafe_ptr().bitcast[c_char]())
+        var buf_ptr: UnsafePointer[Int8, origin_of(buf)] = buf.unsafe_ptr()
+        self._raw[].get_device_property_string["arch"](self._handle, buf_ptr)
+        return String(unsafe_from_utf8_ptr=buf_ptr.bitcast[c_char]())

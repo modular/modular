@@ -996,39 +996,115 @@ struct MLAPrefillSparseFP8[
         ref qkvo_union = smem.qkvo_union
 
         var full_q_ptr = qkvo_union.unsafe_get[Self.FULL_Q_TYPE]().unsafe_ptr()
-        var shared_qkv_ptr = qkvo_union.unsafe_get[
-            Self.SHARED_QKV_TYPE
-        ]().unsafe_ptr()
+        ref shared_qkv = qkvo_union.unsafe_get[Self.SHARED_QKV_TYPE]()
+        var shared_qkv_ptr: UnsafePointer[
+            Scalar[Self.qkv_dtype],
+            origin_of(shared_qkv),
+            address_space=AddressSpace.SHARED,
+        ] = shared_qkv.unsafe_ptr()
         var q_smem_ptr = shared_qkv_ptr
         var v_smem_ptr = shared_qkv_ptr + Self.SMemType.SHARED_Q_SIZE
         var k_smem_ptr = v_smem_ptr + Self.SMemType.V_SIZE
-        var o_ptr = qkvo_union.unsafe_get[Self.O_TYPE]().unsafe_ptr()
+        ref o_union = qkvo_union.unsafe_get[Self.O_TYPE]()
+        var o_ptr: UnsafePointer[
+            Scalar[Self.qkv_dtype],
+            origin_of(o_union),
+            address_space=AddressSpace.SHARED,
+        ] = o_union.unsafe_ptr()
         var scores_ptr = smem.scores.unsafe_ptr()
         var p_ptr = smem.p.unsafe_ptr()
         var prologue_q_ptr = smem.prologue_q.unsafe_ptr()
         var prologue_q_cp_ptr = smem.prologue_q_cp.unsafe_ptr()
-        var qk_ss_done_ptr = smem.qk_ss_done.unsafe_ptr()
-        var qk_ts_done_ptr = smem.qk_ts_done.unsafe_ptr()
-        var sv_p0_done_ptr = smem.sv_p0_done.unsafe_ptr()
-        var sv_p1_done_ptr = smem.sv_p1_done.unsafe_ptr()
-        var k_p0_ready_ptr = smem.k_p0_ready.unsafe_ptr()
-        var k_p1_ready_ptr = smem.k_p1_ready.unsafe_ptr()
-        var v_p0_ready_ptr = smem.v_p0_ready.unsafe_ptr()
-        var v_p1_ready_ptr = smem.v_p1_ready.unsafe_ptr()
-        var p_free_ptr = smem.p_free.unsafe_ptr()
-        var so_ready_ptr = smem.so_ready.unsafe_ptr()
-        var k_valid_ready_ptr = smem.k_valid_ready.unsafe_ptr()
-        var k_valid_free_ptr = smem.k_valid_free.unsafe_ptr()
-        var is_k_valid_ptr = smem.is_k_valid.unsafe_ptr()
+        var qk_ss_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.qk_ss_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem.qk_ss_done.unsafe_ptr()
+        var qk_ts_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.qk_ts_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem.qk_ts_done.unsafe_ptr()
+        var sv_p0_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.sv_p0_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem.sv_p0_done.unsafe_ptr()
+        var sv_p1_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.sv_p1_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem.sv_p1_done.unsafe_ptr()
+        var k_p0_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.k_p0_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.k_p0_ready.unsafe_ptr()
+        var k_p1_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.k_p1_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.k_p1_ready.unsafe_ptr()
+        var v_p0_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.v_p0_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.v_p0_ready.unsafe_ptr()
+        var v_p1_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.v_p1_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.v_p1_ready.unsafe_ptr()
+        var p_free_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.p_free),
+            address_space=AddressSpace.SHARED,
+        ] = smem.p_free.unsafe_ptr()
+        var so_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.so_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.so_ready.unsafe_ptr()
+        var k_valid_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.k_valid_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.k_valid_ready.unsafe_ptr()
+        var k_valid_free_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.k_valid_free),
+            address_space=AddressSpace.SHARED,
+        ] = smem.k_valid_free.unsafe_ptr()
+        var is_k_valid_ptr: UnsafePointer[
+            UInt8,
+            origin_of(smem.is_k_valid),
+            address_space=AddressSpace.SHARED,
+        ] = smem.is_k_valid.unsafe_ptr()
         var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
-        var rowwise_max_ptr = smem.rowwise_max.unsafe_ptr()
-        var rowwise_sum_ptr = smem.rowwise_sum.unsafe_ptr()
+        var rowwise_max_ptr: UnsafePointer[
+            Float32,
+            origin_of(smem.rowwise_max),
+            address_space=AddressSpace.SHARED,
+        ] = smem.rowwise_max.unsafe_ptr()
+        var rowwise_sum_ptr: UnsafePointer[
+            Float32,
+            origin_of(smem.rowwise_sum),
+            address_space=AddressSpace.SHARED,
+        ] = smem.rowwise_sum.unsafe_ptr()
 
         # FP8-specific SMEM pointers.
         var k_scales_ptr = smem_fp8.k_scales.unsafe_ptr()
         var v_scales_ptr = smem_fp8.v_scales.unsafe_ptr()
-        var k_fp8_tma_done_ptr = smem_fp8.k_fp8_tma_done.unsafe_ptr()
-        var v_fp8_tma_done_ptr = smem_fp8.v_fp8_tma_done.unsafe_ptr()
+        var k_fp8_tma_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem_fp8.k_fp8_tma_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem_fp8.k_fp8_tma_done.unsafe_ptr()
+        var v_fp8_tma_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem_fp8.v_fp8_tma_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem_fp8.v_fp8_tma_done.unsafe_ptr()
         # FP8 K staging: upper half of K SMEM (k_smem_ptr + K_SIZE FP8 bytes).
         # FP8 V staging: upper half of V SMEM (v_smem_ptr + V_SIZE FP8 bytes).
         var k_smem_fp8_ptr = (

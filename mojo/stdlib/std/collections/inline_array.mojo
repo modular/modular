@@ -169,8 +169,8 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
         self._index = move._index
         self._array = InlineArray[Self.T, Self.length](uninitialized=True)
         unsafe_uninit_move_n[overlapping=False](
-            dest=self._array.unsafe_ptr() + move._index,
-            src=move._array.unsafe_ptr() + move._index,
+            dest=self._array.unsafe_ptr().unsafe_offset(move._index),
+            src=move._array.unsafe_ptr().unsafe_offset(move._index),
             count=Self.length - move._index,
         )
 
@@ -182,7 +182,9 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
 
         # Destroy the remaining elements that have not yet been
         # iterated over.
-        unsafe_destroy_n(array.unsafe_ptr() + idx, Self.length - idx)
+        unsafe_destroy_n(
+            array.unsafe_ptr().unsafe_offset(idx), Self.length - idx
+        )
 
         # Mark the array as destroyed so InlineArray.__del__ doesn't
         # double-destroy the elements we already handled.
@@ -196,7 +198,11 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
         if self._index >= Self.length:
             raise StopIteration()
         self._index += 1
-        return (self._array.unsafe_ptr() + self._index - 1).take_pointee()
+        return (
+            self._array.unsafe_ptr()
+            .unsafe_offset(self._index - 1)
+            .unsafe_take_pointee()
+        )
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -404,7 +410,7 @@ struct InlineArray[T: AnyType, length: Int](
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         for i in range(Self.length):
-            (self.unsafe_ptr() + i).unsafe_write_move_from(
+            self.unsafe_ptr().unsafe_offset(i).unsafe_write_move_from(
                 unsafe_assume_initialized[i].unsafe_ptr()
             )
 
@@ -456,14 +462,14 @@ struct InlineArray[T: AnyType, length: Int](
         for _ in range(0, unroll_end, batch_size):
             comptime for _ in range(batch_size):
                 ptr.unsafe_write(copy=fill)
-                ptr += 1
+                ptr = ptr.unsafe_offset(1)
 
         # Fill the remainder
         comptime for _ in range(unroll_end, Self.length):
             ptr.unsafe_write(copy=fill)
-            ptr += 1
+            ptr = ptr.unsafe_offset(1)
         debug_assert(
-            ptr == (base + Self.length),
+            ptr == base.unsafe_offset(Self.length),
             "error during `InlineArray` initialization , please file a bug",
             " report.",
         )
@@ -522,7 +528,7 @@ struct InlineArray[T: AnyType, length: Int](
             ptr.unsafe_write_move_from(
                 Pointer(to=elems[i]).unsafe_bitcast[Self.T]()
             )
-            ptr += 1
+            ptr = ptr.unsafe_offset(1)
 
         # Do not destroy the elements when their backing storage goes away.
         # FIXME: Why doesn't consume_elements work here?
@@ -546,7 +552,7 @@ struct InlineArray[T: AnyType, length: Int](
         # clause above should make the downcasts below redundant, but the
         # compiler does not narrow `Self.T`'s bound from `Movable`
         # to `Copyable` when resolving downstream parametric overloads (e.g.
-        # `UnsafePointer.init_pointee_copy[T: Copyable]`). Drop the downcasts
+        # `Pointer.init_pointee_copy[T: Copyable]`). Drop the downcasts
         # once the compiler propagates `where`-clause evidence.
         comptime if is_trivially_copyable[Self.T]():
             self._array = copy._array
@@ -554,7 +560,7 @@ struct InlineArray[T: AnyType, length: Int](
             self = Self(uninitialized=True)
             var base = self.unsafe_ptr()
             for idx in range(Self.length):
-                (base + idx).unsafe_write(copy=copy.unsafe_get(idx))
+                base.unsafe_offset(idx).unsafe_write(copy=copy.unsafe_get(idx))
 
     def __init__(
         out self, *, deinit move: Self
@@ -573,8 +579,10 @@ struct InlineArray[T: AnyType, length: Int](
         else:
             self = Self(uninitialized=True)
             for idx in range(Self.length):
-                var other_ptr = move.unsafe_ptr() + idx
-                (self.unsafe_ptr() + idx).unsafe_write_move_from(other_ptr)
+                var other_ptr = move.unsafe_ptr().unsafe_offset(idx)
+                self.unsafe_ptr().unsafe_offset(idx).unsafe_write_move_from(
+                    other_ptr
+                )
 
     def __del__(
         deinit self,
@@ -595,11 +603,11 @@ struct InlineArray[T: AnyType, length: Int](
         """
         for idx in range(Self.length):
             # TODO(MOCO-4111): `deinit_func` cannot convert to
-            # `UnsafePointer.unsafe_deinit` since `UnsafePointer` is
+            # `Pointer.unsafe_deinit_pointee_with` since `Pointer` is
             # bound on `T: AnyType` but `InlineArray` has `T: Movable`.
             deinit_func(
                 __get_address_as_owned_value(
-                    (self.unsafe_ptr() + idx)._get_kgen_pointer()
+                    self.unsafe_ptr().unsafe_offset(idx)._get_kgen_pointer()
                 )
             )
 
@@ -780,7 +788,7 @@ struct InlineArray[T: AnyType, length: Int](
     @always_inline
     def unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
-    ](ref[origin, address_space] self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> Pointer[
         Self.T, origin, address_space=address_space
     ]:
         """Gets an unsafe pointer to the underlying array storage.
@@ -790,7 +798,7 @@ struct InlineArray[T: AnyType, length: Int](
             address_space: The address space of the array.
 
         Returns:
-            An `UnsafePointer` to the underlying array storage. The pointer's
+            A `Pointer` to the underlying array storage. The pointer's
             mutability matches that of the array reference.
 
         Examples:
