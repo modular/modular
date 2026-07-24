@@ -2084,6 +2084,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
     # Methods
     # ===------------------------------------------------------------------=== #
 
+    @__allow_legacy_custom_self_type
     def _decimal_digit_count(self: Int) -> Int:
         """
         Returns the number of decimal digits required to display this integer.

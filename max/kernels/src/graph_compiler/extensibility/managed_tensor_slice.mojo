@@ -1818,6 +1818,7 @@ struct ManagedTensorSlice[
 
         return Int(crd2idx[out_type=DType.int](index, shape, strides))
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def store[
         width: SIMDLength,
@@ -1848,6 +1849,7 @@ struct ManagedTensorSlice[
             element_alignment=element_alignment,
         ](self, ridx, val)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def store[
         width: SIMDLength,
@@ -1872,6 +1874,7 @@ struct ManagedTensorSlice[
             rebind[IndexList[Self.rank]](coord_to_index_list(index)), val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _fused_store[
         width: SIMDLength,
@@ -1896,6 +1899,7 @@ struct ManagedTensorSlice[
                 element_alignment=element_alignment,
             ](self, ridx, val)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _fused_store[
         width: SIMDLength,
@@ -1910,6 +1914,7 @@ struct ManagedTensorSlice[
             rebind[IndexList[Self.rank]](coord_to_index_list(index)), val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def _lambda_store[
         width: SIMDLength,
@@ -1934,6 +1939,7 @@ struct ManagedTensorSlice[
             ridx, val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _lambda_store[
         width: SIMDLength,
@@ -1951,6 +1957,7 @@ struct ManagedTensorSlice[
             rebind[IndexList[Self.rank]](coord_to_index_list(index)), val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _fused_compute_output_lambda[
         width: SIMDLength,
@@ -1972,6 +1979,7 @@ struct ManagedTensorSlice[
         else:
             return val
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _fused_compute_output_lambda[
         width: SIMDLength,
@@ -1986,6 +1994,7 @@ struct ManagedTensorSlice[
             width, element_alignment=element_alignment
         ](rebind[IndexList[Self.rank]](coord_to_index_list(index)), val)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _fused_compute_output_tile_lambda[
         _rank: Int,
@@ -2007,6 +2016,7 @@ struct ManagedTensorSlice[
         else:
             return val
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _fused_compute_output_tile_lambda[
         LayoutType: TensorLayout,

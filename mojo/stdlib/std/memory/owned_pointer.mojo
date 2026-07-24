@@ -217,6 +217,7 @@ struct OwnedPointer[T: AnyType](
             .unsafe_origin_cast[origin]()
         )
 
+    @__allow_legacy_custom_self_type
     def take[_T: Movable](deinit self: OwnedPointer[_T]) -> _T:
         """Move the value within the `OwnedPointer` out of it, consuming the
         `OwnedPointer` in the process.

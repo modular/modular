@@ -125,6 +125,22 @@ This version is still a work in progress.
   `@__allow_legacy_any_origin_fields` to ignore the compiler error, however this
   decorator is not stable and will eventually be removed.
 
+- Method `self` parameters must now have type `Self`. Custom `self` types are
+  now rejected unless the method is annotated with the (temporary)
+  `@__allow_legacy_custom_self_type` decorator. Switch to a `where` clause
+  instead.
+
+  ```mojo
+  struct Foo[T: AnyType]:
+      # ERROR:
+      def foo(self: Foo[Int]):
+          ...
+  # Migrate to
+  struct Foo[T: AnyType]:
+      def foo(self) where Self.T == Int:
+          ...
+  ```
+
 - Import resolution behavior has been made consistent. When resolving an import
   of a module or package, in any given directory the resolution in order of
   preference is: source packages; precompiled `.mojoc` files; source modules;

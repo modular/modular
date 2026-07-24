@@ -682,6 +682,7 @@ struct MemoryElement[
         """
         return type_of(result).load(self.ptr, self.runtime_layout)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def store(
         self: Self._AsMut,
@@ -702,6 +703,7 @@ struct MemoryElement[
         """
         return src.store(self.ptr)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def transfer(self: Self._AsMut, src: MemoryElement):
         """Transfers data from another `MemoryElement` to this one.

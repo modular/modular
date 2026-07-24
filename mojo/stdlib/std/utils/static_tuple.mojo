@@ -278,6 +278,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
 
         return Self(mlir_value=array)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __eq__[
         _E: Equatable & TrivialRegisterPassable, //
@@ -301,6 +302,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
                 return False
         return True
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __ne__[
         _E: Equatable & TrivialRegisterPassable, //
@@ -321,6 +323,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         return not (self == other)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __lt__[
         _E: Comparable & TrivialRegisterPassable, //
@@ -346,6 +349,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
                 return False
         return False
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __le__[
         _E: Comparable & TrivialRegisterPassable, //
@@ -367,6 +371,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         return not (other < self)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __gt__[
         _E: Comparable & TrivialRegisterPassable, //
@@ -387,6 +392,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         return other < self
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __ge__[
         _E: Comparable & TrivialRegisterPassable, //

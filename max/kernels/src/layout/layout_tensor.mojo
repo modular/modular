@@ -2445,6 +2445,7 @@ struct LayoutTensor[
             self._offset(coords)
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def store[
         width: SIMDLength, store_alignment: Int = Self.alignment
@@ -2522,6 +2523,7 @@ struct LayoutTensor[
             self._offset(m, n), val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def store[
         width: SIMDLength, store_alignment: Int = Self.alignment
@@ -2567,6 +2569,7 @@ struct LayoutTensor[
             self._offset(coords), val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def aligned_store[
         width: SIMDLength
@@ -5257,6 +5260,7 @@ struct LayoutTensor[
         """
         return self.CompositionType[rhs_layout, dst_layout](self.ptr)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def distance(
         self: Self.Immut,
@@ -5307,6 +5311,7 @@ struct LayoutTensor[
             Int(self.ptr) - Int(addr)
         ) // Scalar[Self.linear_idx_type](size_of[Self.dtype]())
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def distance[
         _layout: Layout,
@@ -5390,6 +5395,7 @@ struct LayoutTensor[
             )(rt)
             return idx
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def copy_from(self: Self._AsMut, other: LayoutTensor):
         """Copy data from another tensor to this tensor.
@@ -5735,6 +5741,7 @@ struct LayoutTensor[
                     dst_ptr + dst_idx,
                 )
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def fill[
         *,

@@ -1352,6 +1352,7 @@ struct Pointer[
             return Self(unsafe_from_address=address)
         return Self(unsafe_from_address=alignment)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def swap_pointees[
         U: Movable
@@ -1444,6 +1445,7 @@ struct Pointer[
         """
         return self.unsafe_as_noalias()
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def unsafe_load[
         dtype: DType,
@@ -1552,6 +1554,7 @@ struct Pointer[
             _check_not_poison[dtype, width](result)
         return result
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
     def load[
@@ -1574,6 +1577,7 @@ struct Pointer[
             non_temporal=non_temporal,
         ]()
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def unsafe_load[
         dtype: DType,
@@ -1622,6 +1626,7 @@ struct Pointer[
             non_temporal=non_temporal,
         ]()
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
     def load[
@@ -1647,6 +1652,7 @@ struct Pointer[
             non_temporal=non_temporal,
         ](offset)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def unsafe_load[
         I: Indexer,
@@ -1695,6 +1701,7 @@ struct Pointer[
             non_temporal=non_temporal,
         ]()
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
     def load[
@@ -1721,6 +1728,7 @@ struct Pointer[
             non_temporal=non_temporal,
         ](offset)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def unsafe_store[
         I: Indexer,
@@ -1766,6 +1774,7 @@ struct Pointer[
             alignment=alignment, volatile=volatile, non_temporal=non_temporal
         ](val)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def unsafe_store[
         dtype: DType,
@@ -1811,6 +1820,7 @@ struct Pointer[
             alignment=alignment, volatile=volatile, non_temporal=non_temporal
         ](val)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def unsafe_store[
         dtype: DType,
@@ -1863,6 +1873,7 @@ struct Pointer[
             alignment=alignment, volatile=volatile, non_temporal=non_temporal
         ](val)
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
     def store[
@@ -1886,6 +1897,7 @@ struct Pointer[
             non_temporal=non_temporal,
         ](offset, val)
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
     def store[
@@ -1909,6 +1921,7 @@ struct Pointer[
             non_temporal=non_temporal,
         ](offset, val)
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
     def store[
@@ -1929,6 +1942,7 @@ struct Pointer[
             non_temporal=non_temporal,
         ](val)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def _store[
         dtype: DType,
@@ -1959,6 +1973,7 @@ struct Pointer[
                 isNonTemporal=non_temporal.__mlir_i1__(),
             ](val, self.unsafe_bitcast[SIMD[dtype, width]]()._mlir_value)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def unsafe_strided_load[
         dtype: DType, S: Intable, //, width: Int
@@ -1987,6 +2002,7 @@ struct Pointer[
             self, Int(stride), SIMD[DType.bool, width](fill=True)
         )
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
     def strided_load[
@@ -1999,6 +2015,7 @@ struct Pointer[
     ] where type_of(self)._is_unsafe:
         return self.unsafe_strided_load[width=width](stride)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def unsafe_strided_store[
         dtype: DType,
@@ -2032,6 +2049,7 @@ struct Pointer[
             val, self, Int(stride), SIMD[DType.bool, width](fill=True)
         )
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
     def strided_store[
@@ -2046,6 +2064,7 @@ struct Pointer[
     ) where type_of(self)._is_unsafe:
         self.unsafe_strided_store[width=width](val, stride)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def unsafe_gather[
         dtype: DType,
@@ -2125,6 +2144,7 @@ struct Pointer[
         )
         return gather[alignment=alignment](base, mask, default)
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
     def gather[
@@ -2141,6 +2161,7 @@ struct Pointer[
     ) -> SIMD[dtype, width] where type_of(self)._is_unsafe:
         return self.unsafe_gather[alignment=alignment](offset, mask, default)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def unsafe_scatter[
         dtype: DType,
@@ -2217,6 +2238,7 @@ struct Pointer[
         )
         scatter[alignment=alignment](val, base, mask)
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
     def scatter[
@@ -2233,6 +2255,7 @@ struct Pointer[
     ) where type_of(self)._is_unsafe:
         self.unsafe_scatter[alignment=alignment](offset, val, mask)
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline
     def free(
@@ -2479,6 +2502,7 @@ struct Pointer[
     ] where type_of(self)._is_unsafe:
         return self.unsafe_address_space_cast[target_address_space]()
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline
     @deprecated(use=unsafe_deinit_pointee)
@@ -2487,6 +2511,7 @@ struct Pointer[
     ](self: Pointer[U, _, _safe=_]) where type_of(self).mut:
         _ = __get_address_as_owned_value(self._mlir_value)
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline
     @deprecated(use=unsafe_deinit_pointee_with)
@@ -2555,6 +2580,7 @@ struct Pointer[
         var this = self.unsafe_address_space_cast[AddressSpace.GENERIC]()
         deinit_func(__get_address_as_owned_value(this._mlir_value))
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def unsafe_take_pointee[
         U: Movable,
@@ -2584,6 +2610,7 @@ struct Pointer[
         """
         return __get_address_as_owned_value(self._mlir_value)
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline
     def take_pointee[
@@ -2594,6 +2621,7 @@ struct Pointer[
     )._is_unsafe:
         return self.unsafe_take_pointee()
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline
     @deprecated(use=unsafe_write)
@@ -2603,6 +2631,7 @@ struct Pointer[
     ](self: Pointer[U, _, _safe=_], var value: U) where type_of(self).mut:
         __get_address_as_uninit_lvalue(self._mlir_value) = value^
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def unsafe_write[
         U: Movable, //
@@ -2638,6 +2667,7 @@ struct Pointer[
         """
         __get_address_as_uninit_lvalue(self._mlir_value) = value^
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def unsafe_write[
         U: Copyable,
@@ -2668,6 +2698,7 @@ struct Pointer[
         """
         __get_address_as_uninit_lvalue(self._mlir_value) = copy.copy()
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline
     @deprecated(use=unsafe_write)
@@ -2677,6 +2708,7 @@ struct Pointer[
     ](self: Pointer[U, _, _safe=_], value: U) where type_of(self).mut:
         __get_address_as_uninit_lvalue(self._mlir_value) = value.copy()
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def unsafe_write_move_from[
         U: Movable,
@@ -2740,6 +2772,7 @@ struct Pointer[
             self._mlir_value
         ) = __get_address_as_owned_value(src._mlir_value)
 
+    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline
     @deprecated(use=unsafe_write_move_from)

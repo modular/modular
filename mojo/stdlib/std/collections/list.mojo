@@ -992,6 +992,7 @@ struct List[T: Movable, /](
             count=elements_len,
         )
 
+    @__allow_legacy_custom_self_type
     def extend[
         dtype: DType, //
     ](mut self: List[Scalar[dtype]], value: SIMD[dtype, _]):
@@ -1023,6 +1024,7 @@ struct List[T: Movable, /](
         self._unsafe_next_uninit_ptr().unsafe_store(value)
         self._len += value.size
 
+    @__allow_legacy_custom_self_type
     def extend[
         dtype: DType, //
     ](mut self: List[Scalar[dtype]], value: SIMD[dtype, _], *, count: Int):
