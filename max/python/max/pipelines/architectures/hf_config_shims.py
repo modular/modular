@@ -205,30 +205,6 @@ except ValueError:
     pass
 
 
-class ExaoneConfig(PretrainedConfig):
-    """Local config class for EXAONE 3.5 models.
-
-    The ``exaone`` model type is not natively registered in transformers, and the
-    remote ``configuration_exaone.py`` shipped in EXAONE 3.5 HuggingFace repos is
-    incompatible with the pinned transformers version.  Registering this minimal
-    subclass lets ``AutoConfig.from_pretrained`` load the repo's ``config.json``
-    without requiring ``trust_remote_code``.
-    """
-
-    model_type = "exaone"
-
-    @property
-    def num_hidden_layers(self) -> int:
-        """Aliases ``num_layers`` to the standard ``num_hidden_layers`` name."""
-        return self.num_layers
-
-
-try:
-    AutoConfig.register("exaone", ExaoneConfig)
-except ValueError:
-    pass
-
-
 class LagunaHFConfig(PretrainedConfig):
     """Local config class for poolside's Laguna models (``model_type: laguna``).
 

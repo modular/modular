@@ -22,6 +22,7 @@ from max.nn.comm.ep.ep_config import (
     calculate_ep_max_tokens_per_rank,
     estimate_ep_memory_usage,
 )
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.modeling.config_enums import (
@@ -227,13 +228,17 @@ class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
             else:
                 max_kv_length = pipeline_config.runtime.max_batch_total_tokens
 
+            cache_dtype = cache_dtype_for_encoding(
+                pipeline_config.model.quantization_encoding,
+                pipeline_config.model.kv_cache.kv_cache_format,
+            )
             mla_activation_memory += (
                 pipeline_config.model.data_parallel_degree
                 * 2  # 2 for K and V
                 * max_kv_length
                 * huggingface_config.num_attention_heads
                 * huggingface_config.qk_nope_head_dim
-                * pipeline_config.model.kv_cache.cache_dtype.size_in_bytes
+                * cache_dtype.size_in_bytes
             )
 
         # Estimate buffer and activation memory during Expert Parallel MoE.

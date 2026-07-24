@@ -49,8 +49,13 @@ class TextGenerationResponseFormat:
     type: str
     """The type of response format, for example, ``json_object`` or ``grammar``."""
 
-    json_schema: dict[str, Any] = field(default_factory=dict)
-    """A JSON schema dictionary that defines the structure and validation rules for the generated response."""
+    json_schema: dict[str, Any] | None = None
+    """A JSON schema dictionary that defines the structure and validation rules for the generated response.
+
+    ``None`` means no schema was provided (no structured-output enforcement). An
+    explicit ``{}`` means "any valid JSON value" and IS enforced (the grammar
+    forces exactly one well-formed JSON value); it is distinct from ``None``.
+    """
 
     grammar: str | None = None
     """Grammar for constrained decoding.

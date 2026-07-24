@@ -136,7 +136,10 @@ def bench_topk_batched[
 
     var max_k = Int(
         reduce_max(
-            Span(ptr=K_host_buffer.ptr, length=K_host_buffer.num_elements())
+            Span(
+                unsafe_ptr=K_host_buffer.ptr,
+                length=K_host_buffer.num_elements(),
+            )
         )
     )
 
@@ -321,7 +324,10 @@ def bench_topk_multi_rank[
     ctx.synchronize()
     var max_k = Int(
         reduce_max(
-            Span(ptr=K_host_buffer.ptr, length=K_host_buffer.num_elements())
+            Span(
+                unsafe_ptr=K_host_buffer.ptr,
+                length=K_host_buffer.num_elements(),
+            )
         )
     )
 

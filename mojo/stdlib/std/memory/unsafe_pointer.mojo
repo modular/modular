@@ -20,7 +20,14 @@ low-level memory operations, interfacing with C code, and building custom data
 structures.
 """
 
-from std.sys import align_of, is_apple_gpu, is_gpu, is_nvidia_gpu, size_of
+from std.sys import (
+    align_of,
+    bit_width_of,
+    is_apple_gpu,
+    is_gpu,
+    is_nvidia_gpu,
+    size_of,
+)
 from std.sys.intrinsics import (
     gather,
     scatter,
@@ -171,66 +178,6 @@ def unsafe_cast[
 @doc_hidden
 def pointer_to_int(pointer: OptionalUnsafePointer[...]) -> Int:
     return UnsafePointer(to=pointer).bitcast[Int]()[]
-
-
-# ===----------------------------------------------------------------------=== #
-# alloc
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-def alloc[
-    type: AnyType, /
-](count: Int, *, alignment: Int = align_of[type]()) -> UnsafePointer[
-    type, MutUntrackedOrigin
-]:
-    """Allocates contiguous storage for `count` elements of `type` with
-    alignment `alignment`.
-
-    Parameters:
-        type: The type of the elements to allocate storage for.
-
-    Args:
-        count: Number of elements to allocate.
-        alignment: The alignment of the allocation.
-
-    Returns:
-        A pointer to the newly allocated uninitialized array.
-
-    Constraints:
-        `count` must be positive and `size_of[type]()` must be > 0.
-
-    Safety:
-
-    - The returned memory is uninitialized; reading before writing is undefined.
-    - The returned pointer has an empty mutable origin; you must call `free()`
-      to release it.
-
-    Example:
-
-    ```mojo
-    var ptr = alloc[Int32](4)
-    ptr.store(0, Int32(42))
-    ptr.store(1, Int32(7))
-    ptr.store(2, Int32(9))
-    var a = ptr.load(0)
-    print(a[0], ptr.load(1)[0], ptr.load(2)[0])
-    ptr.free()
-    ```
-    """
-    comptime size_of_t = size_of[type]()
-    comptime type_name = reflect[type].name()
-    debug_assert(
-        count >= 0,
-        "alloc[",
-        type_name,
-        "]() count must be non-negative: ",
-        Int(count),
-    )
-    var pointer = _malloc[type](size_of_t * count, alignment=alignment)
-    if unlikely(not pointer):
-        abort("alloc failed: returned a null pointer")
-    return pointer.unsafe_value()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -584,6 +531,18 @@ struct Pointer[
             must also ensure the pointer's origin and mutability is valid for
             the address, failure to do may result in undefined behavior.
         """
+        # Some address spaces have pointers narrower than `Int` (for example,
+        # AMDGPU `SHARED` is 32-bit); reject addresses that don't fit. The
+        # guard also keeps `1 << bit_width_of[Self]()` from overflowing when
+        # the pointer is as wide as `Int`.
+        comptime if bit_width_of[Self]() < bit_width_of[Int]():
+            debug_assert(
+                UInt(unsafe_from_address)
+                <= (UInt(1) << UInt(bit_width_of[Self]())) - 1,
+                "address ",
+                unsafe_from_address,
+                " does not fit in this pointer's address space",
+            )
         self = UnsafePointer(to=unsafe_from_address).bitcast[type_of(self)]()[]
 
     @always_inline
@@ -706,19 +665,21 @@ struct Pointer[
     @always_inline
     @doc_hidden
     def write_niche(
-        memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
+        memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _, _safe=True]
     ):
-        memory.bitcast[_Null[Self.T, Self.address_space]]().unsafe_write({})
+        memory.unsafe_bitcast[_Null[Self.T, Self.address_space]]().unsafe_write(
+            {}
+        )
 
     @staticmethod
     @always_inline
     @doc_hidden
     def isa_niche(
-        memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
+        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _, _safe=True]
     ) -> Bool:
         comptime NullType = _Null[Self.T, Self.address_space]
         comptime null_address = Int(NullType())
-        return Int(memory.bitcast[NullType]()[]) == null_address
+        return Int(memory.unsafe_bitcast[NullType]()[]) == null_address
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -1669,7 +1630,7 @@ struct Pointer[
         I: Indexer,
         dtype: DType,
         //,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
@@ -1758,7 +1719,7 @@ struct Pointer[
     def unsafe_store[
         dtype: DType,
         //,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
@@ -1812,7 +1773,7 @@ struct Pointer[
         I: Indexer,
         dtype: DType,
         //,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
@@ -1857,7 +1818,7 @@ struct Pointer[
     def store[
         dtype: DType,
         //,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
@@ -1875,7 +1836,7 @@ struct Pointer[
     @always_inline("nodebug")
     def _store[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
@@ -1947,7 +1908,7 @@ struct Pointer[
         dtype: DType,
         S: Intable,
         //,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
     ](
         self: Pointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
@@ -1981,7 +1942,7 @@ struct Pointer[
         dtype: DType,
         S: Intable,
         //,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
     ](
         self: Pointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
@@ -1994,7 +1955,7 @@ struct Pointer[
         dtype: DType,
         //,
         *,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         alignment: Int = align_of[dtype](),
     ](
         self: Pointer[Scalar[dtype], ...],
@@ -2074,7 +2035,7 @@ struct Pointer[
         dtype: DType,
         //,
         *,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         alignment: Int = align_of[dtype](),
     ](
         self: Pointer[Scalar[dtype], ...],
@@ -2089,7 +2050,7 @@ struct Pointer[
         dtype: DType,
         //,
         *,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         alignment: Int = align_of[dtype](),
     ](
         self: Pointer[mut=True, Scalar[dtype], ...],
@@ -2166,7 +2127,7 @@ struct Pointer[
         dtype: DType,
         //,
         *,
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         alignment: Int = align_of[dtype](),
     ](
         self: Pointer[mut=True, Scalar[dtype], ...],

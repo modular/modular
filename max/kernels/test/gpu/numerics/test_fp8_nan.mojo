@@ -36,3 +36,4 @@ def test():
 def main() raises:
     with DeviceContext() as ctx:
         ctx.enqueue_function[test](grid_dim=1, block_dim=1)
+        ctx.synchronize()

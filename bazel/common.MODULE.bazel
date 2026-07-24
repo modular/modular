@@ -905,11 +905,6 @@ LOGIT_VERIFICATION_GOLDENS = [
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_idefics3_8b_llama3_golden/3/996834f83014e543593c5a9ae283b16e33e05575720cce9ec4e175c0ad3a5283/torch_idefics3_8b_llama3_golden.tar.gz",
     },
     {
-        "name": "torch_exaone_3_5_2_4b_instruct_float32_golden.tar.gz",
-        "sha256": "ae16f10ebd7514f5d60f25755babbcff9636a4fa1c68d1470f614474fa907427",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_exaone_3_5_2_4b_instruct_float32_golden/1/ae16f10ebd7514f5d60f25755babbcff9636a4fa1c68d1470f614474fa907427/torch_exaone_3_5_2_4b_instruct_float32_golden.tar.gz",
-    },
-    {
         "name": "torch_phi_3_5_mini_instruct_bfloat16_golden.tar.gz",
         "sha256": "23beeadd54f6b299463a0bb5c8d2bdbe010ba27dabb686f942d33e56ec4d0870",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_phi_3_5_mini_instruct_bfloat16_golden/1/23beeadd54f6b299463a0bb5c8d2bdbe010ba27dabb686f942d33e56ec4d0870/torch_phi_3_5_mini_instruct_bfloat16_golden.tar.gz",

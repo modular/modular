@@ -33,6 +33,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist; needs P2P
+    "gpu/comm/bench_reducescatter_rmsnorm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # No multi-GPU Metal machines exist; needs P2P
     "gpu/comm/bench_broadcast.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

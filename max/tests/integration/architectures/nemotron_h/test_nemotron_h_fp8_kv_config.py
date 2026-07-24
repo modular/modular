@@ -69,8 +69,7 @@ def _construct(
     """Runs ``construct_kv_params`` and returns the resolved cache dtype.
 
     ``cache_dtype`` is the dtype the pipeline would pass in (already resolved
-    from the encoding / explicit override by
-    ``set_cache_dtype_given_quantization_encoding``).
+    from the encoding / explicit override by ``cache_dtype_for_encoding``).
     """
     kv_cache_config = KVCacheConfig(kv_cache_format=kv_cache_format)
     # ``construct_kv_params`` only reads ``hybrid_override_pattern`` /

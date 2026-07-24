@@ -20,8 +20,13 @@ runs the dummy text-gen pipeline end to end over multi-process workers.
 
 from __future__ import annotations
 
+import os
+
 import pytest
-from max.experimental.cascade import GenerateRequest
+from max.experimental.cascade import GenerateRequest, Worker, worker_method
+from max.experimental.cascade.core.pipeline_method import (
+    _pipeline_method_scope,
+)
 from max.experimental.cascade.deployment.context_config import (
     CONTEXT_FACTORIES,
     ContextConfig,
@@ -41,6 +46,18 @@ from max.experimental.cascade.http_runtime import (
 from max.experimental.cascade.pipelines.dummy_textgen import (
     build_dummy_textgen_pipeline,
 )
+
+
+class _PidWorker(Worker):
+    """CPU worker that reports the OS PID of the process it runs in."""
+
+    def __init__(self) -> None:
+        super().__init__(deploy_hints=["cpu"])
+
+    @worker_method()
+    async def pid(self) -> int:
+        """Return the PID of the worker process handling this call."""
+        return os.getpid()
 
 
 def test_default_config() -> None:
@@ -124,3 +141,46 @@ async def test_open_context_runs_pipeline(transport: Transport) -> None:
         ]
 
     assert tokens == ["A"] * 5
+
+
+@pytest.mark.asyncio
+async def test_cpu_pool_spreads_calls_across_worker_processes() -> None:
+    """A cpu-hinted worker fans out across every local cpu worker process.
+
+    This is the property the serve CLI relies on to parallelize the non-GPU
+    pipeline stages (tokenization/detokenization) across multiple CPU workers:
+    deploying one worker onto an ``N``-way cpu pool round-robins its calls over
+    ``N`` distinct worker processes.
+    """
+    n_workers = 3
+    config = ContextConfig(local_cpu_workers=n_workers, local_gpu_workers=0)
+    async with config.open_context() as runtime, _pipeline_method_scope():
+        proxy = await runtime.deploy(_PidWorker())
+        pids = {await (await proxy.pid()) for _ in range(4 * n_workers)}
+
+    # Every cpu worker process handled at least one call.
+    assert len(pids) == n_workers
+
+
+@pytest.mark.asyncio
+async def test_open_context_runs_pipeline_multi_cpu_worker() -> None:
+    """The dummy pipeline serves text with multiple cpu (tokenizer) workers.
+
+    Mirrors the serve CLI's default topology for a real model: the cpu-hinted
+    tokenizer is replicated across several cpu worker processes while the
+    gpu-hinted transformer runs on its own worker. Several requests are served
+    to exercise the round-robin dispatch across the cpu workers.
+    """
+    config = ContextConfig(
+        transport="http", local_cpu_workers=3, local_gpu_workers=1
+    )
+    async with config.open_context() as runtime:
+        pipeline = await build_dummy_textgen_pipeline()
+        await pipeline.deploy(runtime)
+
+        req = GenerateRequest(num_tokens=5)
+        for _ in range(2 * 3):
+            tokens = [
+                token async for token in pipeline.generate_text(req, "hello, ")
+            ]
+            assert tokens == ["A"] * 5

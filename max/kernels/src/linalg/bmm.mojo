@@ -89,7 +89,7 @@ comptime logger = Logger()
 
 comptime elementwise_epilogue_type = def[
     c_type: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     rank: Int,
     *,
     alignment: Int = 1,
@@ -394,7 +394,7 @@ def _batched_matmul_cpu[
 
             @parameter
             def elementwise_lambda_2d[
-                c_type: DType, width: SIMDSize, *, alignment: Int = 1
+                c_type: DType, width: SIMDLength, *, alignment: Int = 1
             ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
                 # the caller provided the elementwise epilogue def over the original
                 # buffer rank, not the collapsed buffer rank
@@ -636,7 +636,7 @@ def batched_matmul_kernel_gpu[
 
     @parameter
     def elementwise_epilogue_fn_wrapper[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
         comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
@@ -740,7 +740,7 @@ def _batched_matmul_gpu[
                 @parameter
                 @__copy_capture(c_buf)
                 def elementwise_epilogue_fn_wrapper[
-                    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+                    dtype: DType, width: SIMDLength, *, alignment: Int = 1
                 ](
                     out_coords: IndexList[2], val: SIMD[dtype, width]
                 ) capturing -> None:
@@ -1163,7 +1163,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
 
     @parameter
     def elementwise_epilogue_fn_wrapper[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
         comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()

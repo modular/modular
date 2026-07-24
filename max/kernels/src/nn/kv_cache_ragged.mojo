@@ -51,6 +51,7 @@ from layout import (
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
 from linalg.fp4_quantization import block_scaled_matmul
+from internal_utils.fp8_utils import cast_saturating
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.attention.cpu.mha import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
@@ -905,7 +906,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
     @__copy_capture(q_dim, qk_offset, batch_size)
     @always_inline
     def write_to_cache[
-        _dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, width]):
         if idx[1] < q_dim:
             output.store[width=width](
@@ -1041,7 +1042,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     @__copy_capture(q_dim, qk_offset, batch_size)
     @always_inline
     def write_to_cache[
-        _dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, width]):
         var output_val = val + rebind[SIMD[_dtype, width]](
             bias.load[width=width](IndexList[1](idx[1]))
@@ -1199,7 +1200,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     )
     @always_inline
     def write_to_cache[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         var output_val: SIMD[dtype, width]
 
@@ -1360,7 +1361,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
     @__copy_capture(input_scale, weight_scale, q_dim, qk_offset, batch_size)
     @always_inline
     def write_to_cache[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         # Blockwise-scaled matmul epilogue: scatter Q to `output` and K/V into
         # the paged cache. Runs as the `elementwise_lambda_fn` of the
@@ -1408,7 +1409,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
             h_idx,
             cache_token_idx,
             hd_idx,
-            rebind[SIMD[kv_type, width]](output_val_out.cast[kv_type]()),
+            rebind[SIMD[kv_type, width]](cast_saturating[kv_type](val)),
         )
 
     comptime assert (
@@ -1420,7 +1421,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
     ](), "Blockwise scaled fp4 matmul only works on GPU."
 
     _matmul_blockwise_scaled_fp4_common[
-        output_dtype=cache_t.dtype,
+        output_dtype=output_dtype,
         target=target,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         elementwise_lambda_fn=write_to_cache,
@@ -1734,9 +1735,12 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
     comptime index_kv_type = index_cache_t.dtype
     comptime index_kv_params = index_cache_t.kv_params
 
+    # `index_kv_type` and `output_dtype` share the GEMM scratch buffer, so they
+    # must match. The main cache dtype may differ: the epilogue below
+    # saturating-casts K/V into `kv_type`.
     comptime assert (
-        kv_type == index_kv_type == output_dtype
-    ), "Main/index KV cache dtype must match the output dtype."
+        index_kv_type == output_dtype
+    ), "Index KV cache dtype must match the output dtype."
 
     # Boundaries over the concatenated N dimension. Q lands in `q_output`
     # ([M, q_dim]) and IndexQ in `iq_output` ([M, iq_dim]):
@@ -1788,7 +1792,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
     )
     @always_inline
     def write_to_caches[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         # The block-scaled matmul already applied the scales; the epilogue just
         # routes and casts. `idx[1]` is the column in the concatenated N space.
@@ -1839,7 +1843,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
                 h_idx,
                 cache_token_idx,
                 hd_idx,
-                rebind[SIMD[kv_type, width]](output_val_out.cast[kv_type]()),
+                rebind[SIMD[kv_type, width]](cast_saturating[kv_type](val)),
             )
         else:
             # IndexK band -> index cache, single shared head (head == 0).
@@ -2153,7 +2157,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
     )
     @always_inline
     def write_to_caches[
-        _dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, width]):
         # The matmul produced the projections; the epilogue just routes and
         # casts. `idx[1]` is the column in the concatenated N space.
@@ -2700,7 +2704,7 @@ def _matmul_kv_cache_ragged_impl[
     @__copy_capture(input_row_offsets, k_offset, batch_size)
     @always_inline
     def write_to_cache_common[
-        dtype: DType, cache_t: KVCacheT, width: SIMDSize
+        dtype: DType, cache_t: KVCacheT, width: SIMDLength
     ](
         k_cache: cache_t,
         v_cache: cache_t,
@@ -2748,7 +2752,7 @@ def _matmul_kv_cache_ragged_impl[
     @__copy_capture(k_cache_reg, v_cache_reg)
     @always_inline
     def write_to_cache_continuous[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         write_to_cache_common(k_cache_reg, v_cache_reg, idx, val)
 
@@ -2933,7 +2937,7 @@ def _matmul_k_cache_ragged_impl[
     @__copy_capture(batch_size)
     @always_inline
     def write_to_cache[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width],):
         comptime kv_type = cache_t.dtype
 
@@ -3127,7 +3131,7 @@ def _matmul_k_cache_ragged_scale_impl[
     @__copy_capture(input_scale, weight_scale, batch_size)
     @always_inline
     def write_to_cache[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width],):
         comptime kv_type = cache_t.dtype
 
@@ -3449,7 +3453,7 @@ def _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
     @__copy_capture(input_row_offsets, batch_size)
     @always_inline
     def write_to_cache_common[
-        dtype: DType, cache_t: KVCacheT, width: SIMDSize
+        dtype: DType, cache_t: KVCacheT, width: SIMDLength
     ](k_or_v_cache: cache_t, idx: IndexList[2], val: SIMD[dtype, width],):
         comptime k_or_v_type = cache_t.dtype
 
@@ -3483,7 +3487,7 @@ def _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
     @parameter
     @__copy_capture(k_or_v_cache)
     def write_to_k_or_v_cache_continuous[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         write_to_cache_common(k_or_v_cache, idx, val)
 

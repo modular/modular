@@ -21,13 +21,12 @@ from __future__ import annotations
 import dataclasses
 import logging
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from typing import Any
+from typing import Any, NamedTuple
 
 from max import driver, graph
 from max.driver import CPU, Accelerator, Buffer, DLPackArray
 from max.dtype import DType
 from max.engine import Model
-from max.experimental.functional import transfer_to
 from max.experimental.realization_context import (
     GraphRealizationContext,
     LazyRealizationContext,
@@ -520,47 +519,54 @@ def lower_subgraph(
     return unflatten_value_tree(list(results), out_def[0])
 
 
-def _flatten_named_buffers(
+def flatten_distributed_tensors(
     named_tensors: Iterable[tuple[str, Tensor]],
-) -> dict[str, DLPackArray]:
-    """Flattens named parameters to a ``name -> DLPackArray`` mapping.
+) -> dict[str, Tensor]:
+    """Flattens potentially distributed tensors.
 
-    The registry must contain host-resident buffers: ``Tensor._as_constant_external``
-    declares every parameter's external constant on CPU and the lowering emits
-    a ``host_to_device`` op to copy it to the target device, so the runtime
-    reads the registered pointer as a host pointer. Copy any non-CPU-resident
-    buffer to CPU here to honor that contract.
+    Distributed tensors are flattened into `{name}._shard.{i}` for each shard.
     """
     cpu = CPU()
-    result: dict[str, DLPackArray] = {}
-    for name, t in named_tensors:
-        if t.real:
-            bufs = t.buffers
-            for i, buf in enumerate(bufs):
-                key = f"{name}._shard.{i}" if len(bufs) > 1 else name
-                result[key] = buf if buf.device == cpu else buf.to(cpu)
+    result: dict[str, Tensor] = {}
+    for name, tensor in named_tensors:
+        if tensor.real:
+            local_shards = tensor.local_shards
+            for i, shard in enumerate(local_shards):
+                key = f"{name}._shard.{i}" if len(local_shards) > 1 else name
+                result[key] = shard if shard.device == cpu else shard.to(cpu)
         else:
-            result[name] = t
+            result[name] = tensor
     return result
 
 
-def _prepare_weight_for_parameter(
+class _PreparedWeight(NamedTuple):
+    weight: Tensor
+    """Tensor holding the weight value."""
+    cast_record: CastRecord | None
+    """Record of the cast applied, if any."""
+    transfer_needed: bool
+    """Whether the weight needs to be transferred to the parameter's device(s)."""
+
+
+def prepare_weight_for_parameter(
     name: str,
     weight: DLPackArray | Tensor,
     param: Tensor,
     *,
     auto_cast: bool,
-) -> tuple[Tensor, CastRecord | None]:
+) -> _PreparedWeight:
     """Validates and prepares a weight for a parameter.
 
-    Handles conversion, validation, and sharding:
+    Handles conversion and validation of the weight. Does not handle device
+    transfers; instead any device transfers are performed in the graph.
 
     1. Converts DLPack array to Tensor if needed
     2. When ``auto_cast`` is true, auto-casts dtype when both loaded and
        parameter dtypes are in the safe-cast whitelist (see
        ``_SAFE_CAST_DTYPES``)
     3. Validates shape and dtype match the parameter
-    4. For distributed parameters: validates mapping or shards single-device weights
+    4. For distributed parameters: validates if mapping matches the parameter's
+    mapping. If it doesn't match, then notes that a transfer is needed.
 
     Args:
         name: Parameter name for error messages.
@@ -569,11 +575,7 @@ def _prepare_weight_for_parameter(
         auto_cast: Whether to apply safe-cast-set dtype coercion.
 
     Returns:
-        A tuple ``(prepared, cast_record)`` where ``prepared`` is a Tensor
-        ready to be assigned to the parameter and ``cast_record`` is
-        ``(from_dtype, to_dtype)`` when a safe auto-cast was applied,
-        otherwise ``None``. Callers may aggregate ``cast_record`` values to
-        emit a single summary warning per load.
+        See :class:`_PreparedWeight`.
 
     Raises:
         ValueError: If shape, dtype, or distribution doesn't match.
@@ -597,7 +599,7 @@ def _prepare_weight_for_parameter(
     _validate_loaded_parameter(name, param, weight_tensor)
 
     if not param.is_distributed:
-        return weight_tensor, cast_record
+        return _PreparedWeight(weight_tensor, cast_record, False)
 
     assert param._mapping is not None
 
@@ -607,9 +609,9 @@ def _prepare_weight_for_parameter(
                 f"Weight '{name}' has incompatible distribution. "
                 f"Expected {param._mapping}, got {weight_tensor._mapping}."
             )
-        return weight_tensor, cast_record
+        return _PreparedWeight(weight_tensor, cast_record, False)
 
-    return transfer_to(weight_tensor, param._mapping), cast_record
+    return _PreparedWeight(weight_tensor, cast_record, True)
 
 
 def _emit_cast_summary(cast_counts: Mapping[CastRecord, int]) -> None:
@@ -632,31 +634,35 @@ def _emit_cast_summary(cast_counts: Mapping[CastRecord, int]) -> None:
     _logger.warning("load_state_dict auto-cast: %s.", "; ".join(parts))
 
 
-def _process_provided_weights(
+class _PreparedWeights(NamedTuple):
+    weights_registry: dict[str, Tensor]
+    """Processed weights that are ready to be assigned to the parameters."""
+
+    weights_to_transfer: dict[str, Tensor]
+    """The weights that need to be transferred to the parameters.
+    The keys are strictly a subset of `weights_registry`."""
+
+
+def prepare_weights_registry(
     weights: Mapping[str, DLPackArray],
     parameters: Iterable[tuple[str, Tensor]],
     *,
     auto_cast: bool,
-) -> dict[str, DLPackArray]:
-    """Processes user-provided weights based on parameter distribution.
-
-    Handles two cases for each parameter:
-
-    - **Non-distributed parameter**: Weight passes through as-is.
-    - **Distributed parameter**: If weight is a single-device buffer, shards
-      it using ``transfer_to()``. If weight is already a dtensor, extracts shards.
-      Both cases produce ``name._shard.N`` entries.
+) -> _PreparedWeights:
+    """Prepares the weight registry given input weights and module parameters.
 
     Args:
         weights: User-provided weight buffers keyed by parameter name.
         parameters: Module parameters with distribution metadata.
         auto_cast: Whether to permit safe-cast-set dtype coercion when
-            shapes match (see :func:`_prepare_weight_for_parameter`).
+            shapes match (see :func:`prepare_weight_for_parameter`).
 
     Returns:
-        A weights registry suitable for ``session.load(..., weights_registry=...)``.
+        A :class:`_PreparedWeights` containing the weights registry and
+        the weights that need to be transferred.
     """
-    result: dict[str, DLPackArray] = {}
+    weights_registry: dict[str, Tensor] = {}
+    weights_to_transfer: dict[str, Tensor] = {}
     cast_counts: dict[CastRecord, int] = {}
 
     for name, param in parameters:
@@ -665,21 +671,25 @@ def _process_provided_weights(
                 f"Weight '{name}' is missing from the provided weights mapping."
             )
 
-        prepared, cast_record = _prepare_weight_for_parameter(
+        prepared, cast_record, transfer_needed = prepare_weight_for_parameter(
             name, weights[name], param, auto_cast=auto_cast
         )
         if cast_record is not None:
             cast_counts[cast_record] = cast_counts.get(cast_record, 0) + 1
         shards = prepared.local_shards
 
-        if not param.is_distributed:
-            result[name] = shards[0]
+        if transfer_needed:
+            assert len(shards) == 1
+            weights_registry[name] = shards[0]
+            weights_to_transfer[name] = prepared
+        elif not param.is_distributed:
+            weights_registry[name] = shards[0]
         else:
             for i, shard in enumerate(shards):
-                result[f"{name}._shard.{i}"] = shard
+                weights_registry[f"{name}._shard.{i}"] = shard
 
     _emit_cast_summary(cast_counts)
-    return result
+    return _PreparedWeights(weights_registry, weights_to_transfer)
 
 
 def _detect_signals(

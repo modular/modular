@@ -240,17 +240,12 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         """
         self.value = value
 
-    # TODO(MSTDL-2876): The public static pointer overloads (load, store,
-    # fetch_add, compare_exchange, max, min) keep `UnsafePointer` until their
-    # external callers migrate off it; then respell to `Pointer`.
     @staticmethod
     @always_inline("nodebug")
     def load[
         *,
         ordering: Ordering = _DEFAULT_MEMORY_ORDERING,
-    ](ptr: UnsafePointer[mut=False, Scalar[Self.dtype], ...]) -> Scalar[
-        Self.dtype
-    ]:
+    ](ptr: Pointer[mut=False, Scalar[Self.dtype], ...]) -> Scalar[Self.dtype]:
         """Loads the current value from the atomic.
 
         Parameters:
@@ -296,7 +291,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     def fetch_add[
         *, ordering: Ordering = _DEFAULT_ARITHMETIC_ORDERING
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
+        ptr: Pointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
     ) -> Scalar[Self.dtype]:
         """Performs atomic in-place add.
@@ -383,7 +378,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     def store[
         *, ordering: Ordering = _DEFAULT_MEMORY_ORDERING
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
+        ptr: Pointer[mut=True, Scalar[Self.dtype], ...],
         value: Scalar[Self.dtype],
     ):
         """Performs an atomic store.
@@ -520,7 +515,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         failure_ordering: Ordering = _DEFAULT_COMPARISON_ORDERING,
         weak: Bool = False,
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
+        ptr: Pointer[mut=True, Scalar[Self.dtype], ...],
         mut expected: Scalar[Self.dtype],
         desired: Scalar[Self.dtype],
     ) -> Bool:
@@ -621,7 +616,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     def max[
         *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
+        ptr: Pointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
     ):
         """Performs atomic in-place max on the pointer.
@@ -677,7 +672,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     def min[
         *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
+        ptr: Pointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
     ):
         """Performs atomic in-place min on the pointer.

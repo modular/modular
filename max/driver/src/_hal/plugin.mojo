@@ -616,6 +616,25 @@ struct RawDriver(Movable):
             )
         return value.unsafe_assume_init_ref()
 
+    def get_device_property_string[
+        origin: MutOrigin, //, name: StringLiteral
+    ](
+        self, device: DeviceHandle, buf: UnsafePointer[Int8, origin]
+    ) raises HALError:
+        """Queries a string-valued device property into a caller-supplied
+        buffer of at least 256 bytes."""
+        var status = self._raw.device_property.f(
+            device, name.as_c_string_slice(), buf.bitcast[NoneType]()
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to get device property '{name}': {err.message}"
+                ),
+            )
+
     # ===-------------------------------------------------------------------===#
     # Copy operations
     # ===-------------------------------------------------------------------===#
@@ -838,6 +857,21 @@ struct RawDriver(Movable):
                 message=String(t"failed to fill memory: {err.message}"),
             )
 
+    def queue_wait_value64(
+        self, queue: QueueHandle, device_address: UInt64, value: UInt64
+    ) raises HALError:
+        """Enqueues a wait until the 64-bit slot at `device_address` equals
+        `value` (e.g. cuStreamWaitValue64 with EQ semantics)."""
+        var status = self._raw.queue_wait_value64.f(
+            queue, device_address, value
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to wait on value: {err.message}"),
+            )
+
     def queue_launch_host_func[
         origin: MutOrigin
     ](
@@ -981,6 +1015,27 @@ struct RawDriver(Movable):
                 ),
             )
         return func.unsafe_assume_init_ref()
+
+    def set_function_attribute(
+        self,
+        context: ContextHandle,
+        function: FunctionHandle,
+        attribute: Int32,
+        value: Int32,
+    ) raises HALError:
+        """Sets a backend function attribute (e.g. the dynamic shared-memory
+        cap) on a loaded function."""
+        var status = self._raw.function_set_attribute.f(
+            context, function, attribute, value
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to set function attribute: {err.message}"
+                ),
+            )
 
     def function_occupancy_max_active_blocks(
         self,
@@ -1537,6 +1592,15 @@ struct RawPlugin(Movable):
             context: ContextHandle, function: FunctionHandle
         ) thin -> PluginResultCode,
     ]
+    var function_set_attribute: HALFunction[
+        "M_driver_function_set_attribute",
+        def(
+            context: ContextHandle,
+            function: FunctionHandle,
+            attribute: Int32,
+            value: Int32,
+        ) thin -> PluginResultCode,
+    ]
     var function_occupancy_max_active_blocks: HALFunction[
         "M_driver_function_occupancy_max_active_blocks",
         def(
@@ -1672,6 +1736,14 @@ struct RawPlugin(Movable):
             queue: QueueHandle, is_stream: OutParam[Bool, _]
         ) thin -> PluginResultCode,
     ]
+    var queue_wait_value64: HALFunction[
+        "M_driver_queue_wait_value64",
+        def(
+            queue: QueueHandle,
+            device_address: UInt64,
+            value: UInt64,
+        ) thin -> PluginResultCode,
+    ]
     var queue_property: HALFunction[
         "M_driver_queue_property",
         def[
@@ -1803,6 +1875,9 @@ struct RawPlugin(Movable):
             handle, so_path
         )
         self.function_unload = type_of(self.function_unload)(handle, so_path)
+        self.function_set_attribute = type_of(self.function_set_attribute)(
+            handle, so_path
+        )
         self.function_occupancy_max_active_blocks = type_of(
             self.function_occupancy_max_active_blocks
         )(handle, so_path)
@@ -1826,6 +1901,9 @@ struct RawPlugin(Movable):
             handle, so_path
         )
         self.queue_is_stream = type_of(self.queue_is_stream)(handle, so_path)
+        self.queue_wait_value64 = type_of(self.queue_wait_value64)(
+            handle, so_path
+        )
         self.queue_property = type_of(self.queue_property)(handle, so_path)
         self.bundle_load = type_of(self.bundle_load)(handle, so_path)
         self.bundle_unload = type_of(self.bundle_unload)(handle, so_path)

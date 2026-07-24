@@ -109,7 +109,7 @@ struct _Accumulator[
 
     @always_inline
     def _partial_set[
-        partial_width: SIMDSize
+        partial_width: SIMDLength
     ](mut self, offset: Int, value: SIMD[Self.dtype, partial_width]):
         self._storage.store[width=partial_width](offset, value)
 
@@ -982,7 +982,7 @@ def _simd_load_maybe_partial[
 
 @always_inline
 def _simd_store_maybe_partial[
-    dt: DType, //, simd_width: SIMDSize, partial_store: Bool
+    dt: DType, //, simd_width: SIMDLength, partial_store: Bool
 ](
     ptr: UnsafePointer[mut=True, Scalar[dt], ...],
     offset: Int,

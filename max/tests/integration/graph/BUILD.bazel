@@ -9,6 +9,7 @@ package(default_visibility = [
 _NVIDIA_ONLY_TESTS = [
     "test_float8_e4m3fn.py",
     "test_irfft.py",
+    "test_static_scaled_fp8_quant_fusion.py",
 ]
 
 _AMD_ONLY_TESTS = [
@@ -208,8 +209,10 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/tests/integration/test_common:graph_utils",
         requirement("hypothesis"),
+        requirement("numpy"),
         requirement("torch"),
     ],
 )
@@ -291,8 +294,6 @@ modular_py_test(
     ],
 )
 
-# Disabled due to nondeterminism. Tracking: QUA-786
-# Re-enable tracking: https://linear.app/modularml/issue/GEX-3995
 modular_py_test(
     name = "test_buffer_create_init_gpu",
     size = "small",
@@ -302,7 +303,6 @@ modular_py_test(
     },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
-    target_compatible_with = ["@platforms//:incompatible"],
     deps = [
         ":buffer_create_init_shared",
         "//max/python/max/engine",

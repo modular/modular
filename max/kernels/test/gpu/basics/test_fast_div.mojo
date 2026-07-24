@@ -109,8 +109,8 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
 
     elementwise[simd_width=1, target="gpu"](func, Coord(length), ctx)
 
-    ctx.enqueue_copy(divisors.ptr, out_divisors)
-    ctx.enqueue_copy(remainders.ptr, out_remainders)
+    ctx.enqueue_copy(divisors._storage, out_divisors)
+    ctx.enqueue_copy(remainders._storage, out_remainders)
 
     ctx.synchronize()
 

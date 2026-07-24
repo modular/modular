@@ -285,7 +285,7 @@ def test_conv3d_gpu_dispatch[
     @always_inline
     @__copy_capture(output_lt)
     def scale_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
+        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
         output_lt.store[
@@ -442,7 +442,7 @@ def test_conv3d_im2col_multi_tile[
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
+            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
             output_lt.store[
@@ -619,7 +619,7 @@ def test_conv2d_im2col_multi_tile[
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
+            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
             output_lt.store[
@@ -778,7 +778,7 @@ def test_conv3d_1x1x1_matmul_direct[
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
+            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
             output_lt.store[

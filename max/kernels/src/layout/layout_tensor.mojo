@@ -2434,7 +2434,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     def store[
-        width: SIMDSize, store_alignment: Int = Self.alignment
+        width: SIMDLength, store_alignment: Int = Self.alignment
     ](
         self: LayoutTensor[mut=True, Self.dtype, ...],
         m: Int,
@@ -2511,7 +2511,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     def store[
-        width: SIMDSize, store_alignment: Int = Self.alignment
+        width: SIMDLength, store_alignment: Int = Self.alignment
     ](
         self: LayoutTensor[mut=True, Self.dtype, ...],
         coords: IndexList[...],
@@ -2556,7 +2556,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     def aligned_store[
-        width: SIMDSize
+        width: SIMDLength
     ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width]):
         """Store a SIMD vector with alignment guarantees to the tensor.
 
@@ -6880,7 +6880,7 @@ def copy_dram_to_sram_async[
     ](dst, src)
 
 
-comptime binary_op_type = def[dtype: DType, width: SIMDSize](
+comptime binary_op_type = def[dtype: DType, width: SIMDLength](
     lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]
 ) thin -> SIMD[dtype, width]
 """

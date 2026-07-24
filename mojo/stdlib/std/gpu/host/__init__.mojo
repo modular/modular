@@ -19,6 +19,7 @@ from .device_context import (
     CompletionFlag,
     DeviceBuffer,
     DeviceContext,
+    DeviceContextArray,
     DeviceContextList,
     DeviceEvent,
     DeviceFunction,

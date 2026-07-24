@@ -95,7 +95,7 @@ from std.builtin.rebind import (
     trait_downcast,
 )
 from std.builtin.reversed import ReversibleRange, reversed
-from std.builtin.simd_size import SIMDSize
+from std.builtin.simd_length import SIMDSize, SIMDLength
 from std.builtin.simd import (
     SIMD,
     BFloat16,

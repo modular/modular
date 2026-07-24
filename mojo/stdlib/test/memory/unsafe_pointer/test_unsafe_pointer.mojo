@@ -13,8 +13,9 @@
 
 from std.compile import compile_info
 from std.ffi import external_call
+from std.gpu.host import get_gpu_target
 from std.memory import UnsafeMaybeUninit
-from std.sys import align_of, size_of
+from std.sys import align_of, bit_width_of, size_of
 import std.memory.alloc
 
 from test_utils import (
@@ -601,6 +602,25 @@ def test_unsafe_from_address() raises:
     var ptr = UnsafePointer(to=x)
     var ptr2 = type_of(ptr)(unsafe_from_address=Int(ptr))
     assert_equal(ptr2[], 42)
+
+
+def test_unsafe_from_address_pointer_width() raises:
+    # `unsafe_from_address`'s bound is address-space specific: the overflow
+    # `debug_assert` is only compiled in when the pointer is narrower than
+    # `Int`. On an AMDGPU target, GENERIC pointers are 64-bit (as wide as
+    # `Int`, so the check is elided) while SHARED pointers are 32-bit.
+    comptime AMD_TARGET = get_gpu_target["mi355x"]()
+
+    comptime GenericPtr = UnsafePointer[Int, MutUntrackedOrigin]
+    comptime SharedPtr = UnsafePointer[
+        Int, MutUntrackedOrigin, address_space=AddressSpace.SHARED
+    ]
+
+    assert_equal(
+        bit_width_of[GenericPtr, target=AMD_TARGET](),
+        bit_width_of[Int, target=AMD_TARGET](),
+    )
+    assert_equal(bit_width_of[SharedPtr, target=AMD_TARGET](), 32)
 
 
 def test_write_to() raises:

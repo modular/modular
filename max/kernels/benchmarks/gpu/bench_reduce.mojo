@@ -41,7 +41,7 @@ def align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
 
 
 def run_reduce[
-    reduce_fn: def[dtype: DType, width: SIMDSize](
+    reduce_fn: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
@@ -85,7 +85,7 @@ def run_reduce[
     @always_inline
     @parameter
     def reduce_wrapper[
-        dtype: DType, width: SIMDSize, reduction_idx: Int
+        dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert reduction_idx < num_reductions, "invalid reduction idx"
 
@@ -94,7 +94,7 @@ def run_reduce[
     @__copy_capture(res_device)
     @parameter
     def output_fn[
-        _dtype: DType, width: SIMDSize, _rank: Int
+        _dtype: DType, width: SIMDLength, _rank: Int
     ](
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
@@ -170,7 +170,7 @@ def run_reduce[
 @parameter
 def reduce_add[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
 ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return x + y
 

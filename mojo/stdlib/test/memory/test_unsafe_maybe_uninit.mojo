@@ -16,7 +16,7 @@ from std.memory import (
     is_trivially_copyable,
     is_trivially_deletable,
     is_trivially_movable,
-    memcmp,
+    unsafe_memcmp,
 )
 from std.sys import size_of
 from test_utils import (
@@ -91,7 +91,7 @@ def test_zeroed() raises:
     var c = UnsafeMaybeUninit[String].zeroed()
     var arr = InlineArray[Byte, size_of[String]()](fill=0)
     assert_equal(
-        memcmp(
+        unsafe_memcmp(
             c.unsafe_ptr().unsafe_bitcast[Byte](),
             arr.unsafe_ptr(),
             size_of[String](),

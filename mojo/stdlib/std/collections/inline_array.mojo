@@ -42,12 +42,12 @@ from std.reflection import reflect
 from std.hashlib.hasher import Hasher
 from std.memory import (
     UnsafeMaybeUninit,
-    destroy_n,
     forget_deinit,
     is_trivially_copyable,
     is_trivially_deletable,
     is_trivially_movable,
-    uninit_move_n,
+    unsafe_destroy_n,
+    unsafe_uninit_move_n,
 )
 from std.memory.unsafe_maybe_uninit import (
     _is_trivially_copyable,
@@ -168,7 +168,7 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
         """
         self._index = move._index
         self._array = InlineArray[Self.T, Self.length](uninitialized=True)
-        uninit_move_n[overlapping=False](
+        unsafe_uninit_move_n[overlapping=False](
             dest=self._array.unsafe_ptr() + move._index,
             src=move._array.unsafe_ptr() + move._index,
             count=Self.length - move._index,
@@ -182,7 +182,7 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
 
         # Destroy the remaining elements that have not yet been
         # iterated over.
-        destroy_n(array.unsafe_ptr() + idx, Self.length - idx)
+        unsafe_destroy_n(array.unsafe_ptr() + idx, Self.length - idx)
 
         # Mark the array as destroyed so InlineArray.__del__ doesn't
         # double-destroy the elements we already handled.
@@ -410,7 +410,7 @@ struct InlineArray[T: AnyType, length: Int](
 
     @always_inline
     def __init__[
-        batch_size: SIMDSize = 64
+        batch_size: SIMDLength = 64
     ](out self, *, fill: Self.T) where conforms_to(Self.T, Copyable):
         """Constructs an array where each element is initialized to the supplied
         value.
@@ -507,7 +507,7 @@ struct InlineArray[T: AnyType, length: Int](
             # pointer's element view; drop the bitcast once the compiler
             # propagates `where`-clause evidence to the field type.
             ptr.unsafe_write_move_from(
-                UnsafePointer(to=elems[i]).bitcast[Self.T]()
+                Pointer(to=elems[i]).unsafe_bitcast[Self.T]()
             )
             ptr += 1
 
@@ -567,7 +567,7 @@ struct InlineArray[T: AnyType, length: Int](
         deinit self,
     ) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroys the array's elements."""
-        destroy_n(self.unsafe_ptr(), Self.length)
+        unsafe_destroy_n(self.unsafe_ptr(), Self.length)
 
     def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
         """Consumes this array and deinitializes its elements using the provided
@@ -657,10 +657,10 @@ struct InlineArray[T: AnyType, length: Int](
     @always_inline
     def _unchecked_get(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._array)._get_kgen_pointer(),
+            Pointer(to=self._array)._get_kgen_pointer(),
             index(idx).__mlir_index__(),
         )
-        return UnsafePointer[_, origin_of(self)](_mlir_value=ptr)[]
+        return Pointer[_, origin_of(self)](_mlir_value=ptr)[]
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
@@ -800,10 +800,10 @@ struct InlineArray[T: AnyType, length: Int](
             reference.
         """
         return (
-            UnsafePointer(to=self._array)
-            .bitcast[Self.T]()
+            Pointer(to=self._array)
+            .unsafe_bitcast[Self.T]()
             .unsafe_origin_cast[origin]()
-            .address_space_cast[address_space]()
+            .unsafe_address_space_cast[address_space]()
         )
 
     @always_inline

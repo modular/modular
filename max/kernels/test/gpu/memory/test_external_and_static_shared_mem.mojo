@@ -56,6 +56,7 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
     )
 
     ctx.enqueue_copy(res_host_ptr, res_device)
+    ctx.synchronize()
 
     for i in range(16):
         assert_equal(res_host_ptr[i], Float32(2 * i))

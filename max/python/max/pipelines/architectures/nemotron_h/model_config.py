@@ -30,6 +30,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
@@ -366,7 +367,10 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             pipeline_config=pipeline_config,
             devices=device_refs,
             kv_cache_config=model_config.kv_cache,
-            cache_dtype=model_config.kv_cache.cache_dtype,
+            cache_dtype=cache_dtype_for_encoding(
+                model_config.quantization_encoding,
+                model_config.kv_cache.kv_cache_format,
+            ),
         )
         return cls.from_hf(
             pipeline_config,

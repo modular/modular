@@ -44,7 +44,7 @@ from std.builtin.rebind import downcast
 from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
 
-from std.memory import alloc, dealloc, ThinAllocation, memset
+from std.memory import alloc, dealloc, ThinAllocation, unsafe_memset
 from std.memory.alloc import Layout
 
 from ._swisstable import (
@@ -197,10 +197,10 @@ struct _DictEntryIter[
                 self.index -= 1
 
             var slot = Int(self.src[]._order[idx])
-            if is_occupied(self.src[]._table._ctrl[slot]):
+            if is_occupied(self.src[]._table._ctrl[unsafe_offset=slot]):
                 self.seen += 1
                 return (
-                    (self.src[]._table._slots + slot)
+                    (self.src[]._table._slots.unsafe_offset(slot))
                     .unsafe_mut_cast[Self.mut]()
                     .unsafe_origin_cast[Self.origin]()[]
                 )
@@ -259,8 +259,10 @@ struct _TakeDictEntryIter[
             var slot = Int(self.src[]._order[self.index])
             self.index += 1
 
-            if is_occupied(self.src[]._table._ctrl[slot]):
-                var entry = (self.src[]._table._slots + slot).take_pointee()
+            if is_occupied(self.src[]._table._ctrl[unsafe_offset=slot]):
+                var entry = (
+                    self.src[]._table._slots.unsafe_offset(slot)
+                ).unsafe_take_pointee()
                 self.src[]._table.set_ctrl(slot, CTRL_DELETED)
                 self.src[]._table._len -= 1
                 return entry^
@@ -306,8 +308,10 @@ struct _DictEntryIterOwned[
             var slot = Int(self._dict._order[self._index])
             self._index += 1
 
-            if is_occupied(self._dict._table._ctrl[slot]):
-                var entry = (self._dict._table._slots + slot).take_pointee()
+            if is_occupied(self._dict._table._ctrl[unsafe_offset=slot]):
+                var entry = (
+                    self._dict._table._slots.unsafe_offset(slot)
+                ).unsafe_take_pointee()
                 self._dict._table.set_ctrl(slot, CTRL_DELETED)
                 self._dict._table._len -= 1
                 return entry^
@@ -448,9 +452,7 @@ struct _DictValueIter[
         ref entry_ref = self.iter.__next__()
         # Cast through a pointer to grant additional mutability because
         # _DictEntryIter.next erases it.
-        return UnsafePointer(to=entry_ref.value).unsafe_origin_cast[
-            Self.origin
-        ]()[]
+        return Pointer(to=entry_ref.value).unsafe_origin_cast[Self.origin]()[]
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -969,8 +971,10 @@ struct Dict[
         if found:
             # Overwrite: move the displaced entry out and return it (never
             # destroyed), then move the new entry into the slot.
-            var displaced = (self._table._slots + slot_idx).take_pointee()
-            (self._table._slots + slot_idx).unsafe_write(entry^)
+            var displaced = (
+                self._table._slots.unsafe_offset(slot_idx)
+            ).unsafe_take_pointee()
+            (self._table._slots.unsafe_offset(slot_idx)).unsafe_write(entry^)
             return displaced^
 
         # New entry.
@@ -979,7 +983,6 @@ struct Dict[
 
     def __contains__(self, key: Self.K) -> Bool:
         """Check if a given key is in the dictionary or not.
-
 
         Args:
             key: The key to check.
@@ -1291,10 +1294,10 @@ struct Dict[
 
         if found:
             assert is_occupied(
-                self._table._ctrl[slot_idx]
+                self._table._ctrl[unsafe_offset=slot_idx]
             ), "_find_slot returned found=True but ctrl byte is not occupied"
             return Pointer(
-                to=(self._table._slots + slot_idx)[].value
+                to=(self._table._slots.unsafe_offset(slot_idx))[].value
             )._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
 
         raise DictKeyError[Self.K]()
@@ -1436,9 +1439,11 @@ struct Dict[
 
         if found:
             assert is_occupied(
-                self._table._ctrl[slot_idx]
+                self._table._ctrl[unsafe_offset=slot_idx]
             ), "_find_slot returned found=True but ctrl byte is not occupied"
-            var entry = (self._table._slots + slot_idx).take_pointee()
+            var entry = (
+                self._table._slots.unsafe_offset(slot_idx)
+            ).unsafe_take_pointee()
             self._table.set_ctrl(slot_idx, CTRL_DELETED)
             self._table._len -= 1
             return entry^.reap_value()
@@ -1478,8 +1483,10 @@ struct Dict[
         var i = len(self._order) - 1
         while i >= 0:
             var slot = Int(self._order[i])
-            if is_occupied(self._table._ctrl[slot]):
-                var entry = (self._table._slots + slot).take_pointee()
+            if is_occupied(self._table._ctrl[unsafe_offset=slot]):
+                var entry = (
+                    self._table._slots.unsafe_offset(slot)
+                ).unsafe_take_pointee()
                 self._table.set_ctrl(slot, CTRL_DELETED)
                 self._table._len -= 1
                 return entry^
@@ -1753,16 +1760,16 @@ struct Dict[
                 key^, default^, unsafe_hash=h
             )
             self._table.set_ctrl(slot_idx, h2(h))
-            (self._table._slots + slot_idx).unsafe_write(entry^)
+            (self._table._slots.unsafe_offset(slot_idx)).unsafe_write(entry^)
             self._order.append(Int32(slot_idx))
             self._table._len += 1
             self._table._growth_left -= 1
         else:
             assert is_occupied(
-                self._table._ctrl[slot_idx]
+                self._table._ctrl[unsafe_offset=slot_idx]
             ), "_find_slot returned found=True but ctrl byte is not occupied"
         return Pointer(
-            to=(self._table._slots + slot_idx)[].value
+            to=(self._table._slots.unsafe_offset(slot_idx))[].value
         )._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
 
     # ===-------------------------------------------------------------------===#
@@ -1811,7 +1818,7 @@ struct Dict[
             entry: The new entry to store.
         """
         self._table.set_ctrl(slot_idx, h2(entry._hash))
-        (self._table._slots + slot_idx).unsafe_write(entry^)
+        (self._table._slots.unsafe_offset(slot_idx)).unsafe_write(entry^)
         self._order.append(Int32(slot_idx))
         self._table._len += 1
         self._table._growth_left -= 1
@@ -1837,8 +1844,8 @@ struct Dict[
 
         if found:
             # Update existing entry: destroy old, move new in
-            (self._table._slots + slot_idx).unsafe_deinit_pointee()
-            (self._table._slots + slot_idx).unsafe_write(entry^)
+            (self._table._slots.unsafe_offset(slot_idx)).unsafe_deinit_pointee()
+            (self._table._slots.unsafe_offset(slot_idx)).unsafe_write(entry^)
         else:
             # New entry
             self._place_new_entry(slot_idx, entry^)
@@ -1893,7 +1900,7 @@ struct Dict[
         var relocated_set = alloc(
             Layout[UInt8](count=old_capacity)
         ).unsafe_leak()
-        memset(relocated_set, 0, old_capacity)
+        unsafe_memset(relocated_set, 0, old_capacity)
         for i in range(len(relocations)):
             slot_map[relocations[i][0]] = Int32(relocations[i][1])
             relocated_set[relocations[i][0]] = 1
@@ -1927,7 +1934,7 @@ struct Dict[
         var compacted = List[Int32](capacity=self._table._len)
         for j in range(len(self._order)):
             var slot = Int(self._order[j])
-            if is_occupied(self._table._ctrl[slot]):
+            if is_occupied(self._table._ctrl[unsafe_offset=slot]):
                 compacted.append(self._order[j])
         self._order = compacted^
 
@@ -1936,7 +1943,7 @@ struct Dict[
 
         # Update _order with new slot indices
         for j in range(len(self._order)):
-            self._order[j] = slot_map[Int(self._order[j])]
+            self._order[j] = slot_map[unsafe_offset=Int(self._order[j])]
 
         assert (
             len(self._order) == self._table._len
@@ -1955,7 +1962,7 @@ struct Dict[
         var new_order = List[Int32](capacity=self._table._len)
         for i in range(len(self._order)):
             var slot = Int(self._order[i])
-            if is_occupied(self._table._ctrl[slot]):
+            if is_occupied(self._table._ctrl[unsafe_offset=slot]):
                 new_order.append(self._order[i])
         self._order = new_order^
 

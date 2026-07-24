@@ -14,7 +14,7 @@
 
 from std.algorithm import parallelize, sync_parallelize
 from std.collections import InlineArray
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextList
+from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from std.memory import unsafe_memcpy
 from extensibility import InputVariadicTensors, OutputVariadicTensors
 from std.utils import product
@@ -103,7 +103,7 @@ def _shard_and_stack_multi_device[
         rank=outputs.rank - 1,
         ...,
     ],
-    dev_ctxs_input: DeviceContextList,
+    dev_ctxs_input: DeviceContextArray,
 ) raises:
     """Multi-device implementation using H2D transfers.
 
@@ -261,7 +261,7 @@ def shard_and_stack[
         rank=outputs.rank - 1,
         ...,
     ],
-    dev_ctxs_input: DeviceContextList,
+    dev_ctxs_input: DeviceContextArray,
 ) raises:
     """Shard weight tensors across multiple devices for tensor parallelism.
 
@@ -280,7 +280,7 @@ def shard_and_stack[
     _validate_shard_and_stack[axis](outputs, inputs)
 
     # Check if outputs are on different devices than inputs (multi-device mode).
-    comptime is_multi_device = dev_ctxs_input.size > 1
+    comptime is_multi_device = dev_ctxs_input.length > 1
 
     comptime if is_multi_device:
         _shard_and_stack_multi_device[axis](outputs, inputs, dev_ctxs_input)

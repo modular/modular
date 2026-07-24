@@ -22,6 +22,8 @@ from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import Any, ClassVar, cast
 
+import numpy as np
+import numpy.typing as npt
 from max.driver import (
     Buffer,
     Device,
@@ -47,6 +49,7 @@ from max.nn.kv_cache import (
     KVCacheParamInterface,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -62,9 +65,8 @@ from max.pipelines.lib.eplb_stats import (
     EplbStatsMetadata,
     EplbStatsSnapshot,
 )
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
+from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.modeling.config_enums import is_float4_encoding
-from max.pipelines.request import RequestID
 from max.pipelines.weights.mxfp4_preshuffle import (
     preshuffle_mxfp4_b_experts,
     preshuffle_mxfp4_b_scales,
@@ -204,11 +206,6 @@ class KimiK2_5Model(
         self.session = session
         self._eplb_log2phy_buffers: list[Buffer] = []
         self._eplb_logcnt_buffers: list[Buffer] = []
-        self._ve_cache: VisionEncoderCache[KimiK2_5TextAndVisionContext] = (
-            VisionEncoderCache(
-                max_entries=pipeline_config.runtime.max_vision_cache_entries
-            )
-        )
         super().__init__(
             pipeline_config,
             session,
@@ -225,7 +222,6 @@ class KimiK2_5Model(
 
         if self._batch_processor is not None:
             assert isinstance(self._batch_processor, KimiK2_5BatchProcessor)
-            self._batch_processor.bind_vision_cache(self._ve_cache)
             assert self.model_config is not None
             self._batch_processor.bind_model_config(self.model_config)
             assert self.vision_model is not None
@@ -763,6 +759,68 @@ class KimiK2_5Model(
 
         return graph, {}
 
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[
+            tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> None:
+        """Kimi packs inline in :meth:`vision_execute` (chunked encode)."""
+        return None
+
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: None,
+    ) -> VisionEncodeResult:
+        """Run the chunked vision encoder over the cache-selected images.
+
+        The chunked encode (packing + per-chunk graph runs + re-concatenation to
+        per-image order) stays encapsulated in the batch processor; the cache
+        only ever sees the per-image-ordered output.
+        """
+        assert isinstance(self._batch_processor, KimiK2_5BatchProcessor)
+        embeddings, token_counts = (
+            self._batch_processor.encode_uncached_chunked(selection)
+        )
+        return VisionEncodeResult(
+            embeddings=embeddings, per_image_token_counts=token_counts
+        )
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device ``[0, hidden]`` image embeddings for non-vision steps.
+
+        Cached: this is hit on every text-only / decode step, so it must not
+        allocate per call.
+        """
+        if not hasattr(self, "_cached_empty_vision_embeddings"):
+            hidden_size = self.huggingface_config.text_config.hidden_size
+            host = Buffer.zeros(shape=[0, hidden_size], dtype=DType.bfloat16)
+            self._cached_empty_vision_embeddings = [host.to(d) for d in devices]
+        return self._cached_empty_vision_embeddings
+
+    def _empty_vision_scatter(self) -> list[Buffer]:
+        """Per-device empty scatter indices, cached for the decode hot path."""
+        if not hasattr(self, "_cached_empty_vision_scatter"):
+            host = Buffer.from_numpy(np.empty(0, dtype=np.int32)).to(
+                self.devices[0]
+            )
+            self._cached_empty_vision_scatter = [
+                host.to(d) for d in self.devices
+            ]
+        return self._cached_empty_vision_scatter
+
+    def _vision_scatter_to_devices(
+        self, scatter_np: npt.NDArray[np.int32]
+    ) -> list[Buffer]:
+        """Copy real scatter indices to each device."""
+        buf = Buffer.from_numpy(scatter_np.astype(np.int32)).to(self.devices[0])
+        return [buf.to(d) for d in self.devices]
+
     def execute(
         self,
         model_inputs: ModelInputs,
@@ -771,44 +829,22 @@ class KimiK2_5Model(
         assert model_inputs.kv_cache_inputs is not None, (
             "KimiK2_5 requires KV cache inputs"
         )
-        if model_inputs.has_vision_inputs:
-            assert self.vision_model is not None
-            assert model_inputs.image_token_indices is not None
-            assert model_inputs.pixel_values is not None
-            assert model_inputs.vision_position_ids is not None
-            assert model_inputs.cu_seqlens is not None
-            assert model_inputs.max_seqlen is not None
-            assert model_inputs.grid_thws is not None
-            assert self.model_config is not None
-
-            image_embeddings = self.vision_model.execute(
-                *model_inputs.pixel_values,
-                *model_inputs.grid_thws,
-                *model_inputs.cu_seqlens,
-                *model_inputs.max_seqlen,
-                *model_inputs.vision_position_ids,
-                *model_inputs.signal_buffers,
+        if model_inputs.vision_embeddings is not None:
+            model_inputs.language_image_embeddings = (
+                model_inputs.vision_embeddings
             )
-
-            assert len(image_embeddings) == len(self.devices)
-            for output in image_embeddings:
-                assert isinstance(output, Buffer)
-                assert (
-                    output.shape[1]
-                    == self.huggingface_config.text_config.hidden_size
-                )
-            assert (
-                model_inputs.image_token_indices[0].shape[0]
-                == image_embeddings[0].shape[0]
-            ), (
-                f"The size of scatter indices must match the number of image embeddings. "
-                f"Got: {model_inputs.image_token_indices[0].shape[0]} != {image_embeddings[0].shape[0]}"
-            )
-
-            # Update language model placeholders with actual vision outputs.
-            model_inputs.language_image_embeddings = image_embeddings
+            scatter_np = model_inputs.vision_scatter_indices
             model_inputs.language_image_token_indices = (
-                model_inputs.image_token_indices
+                self._vision_scatter_to_devices(scatter_np)
+                if scatter_np is not None and len(scatter_np) > 0
+                else self._empty_vision_scatter()
+            )
+        else:
+            model_inputs.language_image_embeddings = (
+                self.empty_vision_embeddings(self.devices)
+            )
+            model_inputs.language_image_token_indices = (
+                self._empty_vision_scatter()
             )
 
         if self._eplb_stats_accumulator is not None:
@@ -823,10 +859,6 @@ class KimiK2_5Model(
             )
         assert self.batch_processor is not None
         return self.batch_processor.process_outputs(model_outputs)
-
-    def release(self, request_id: RequestID) -> None:
-        """Release vision encoder cache entries for a completed request."""
-        self._ve_cache.release_request(request_id)
 
     @cached_property
     def _frozen_ep_inputs(self) -> tuple[Buffer, ...]:

@@ -96,7 +96,7 @@ struct Deque[ElementType: Movable](
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _data: UnsafePointer[Self.ElementType, MutUntrackedOrigin]
+    var _data: Pointer[Self.ElementType, MutUntrackedOrigin]
     """The underlying storage for the deque."""
 
     var _head: Int
@@ -215,7 +215,7 @@ struct Deque[ElementType: Movable](
 
         # Transfer all of the values into the deque.
         def init_elt(idx: Int, var elt: Self.ElementType) {ref}:
-            (self._data + idx).unsafe_write(elt^)
+            (self._data.unsafe_offset(idx)).unsafe_write(elt^)
 
         values^.consume_elements(init_elt)
 
@@ -248,7 +248,9 @@ struct Deque[ElementType: Movable](
 
         for i in range(len(copy)):
             offset = copy._physical_index(copy._head + i)
-            (self._data + i).unsafe_write(copy=(copy._data + offset)[])
+            (self._data.unsafe_offset(i)).unsafe_write(
+                copy=(copy._data.unsafe_offset(offset))[]
+            )
 
         self._tail = len(copy)
 
@@ -268,7 +270,7 @@ struct Deque[ElementType: Movable](
         """Destroys all elements in the deque and frees its memory."""
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            (self._data + offset).unsafe_deinit_pointee()
+            (self._data.unsafe_offset(offset)).unsafe_deinit_pointee()
         self^._unsafe_assume_destroyed_and_deallocate()
 
     def deinit_with(
@@ -288,7 +290,7 @@ struct Deque[ElementType: Movable](
             offset = self._physical_index(self._head + i)
             deinit_func(
                 __get_address_as_owned_value(
-                    (self._data + offset)._get_kgen_pointer()
+                    (self._data.unsafe_offset(offset))._get_kgen_pointer()
                 )
             )
         self^._unsafe_assume_destroyed_and_deallocate()
@@ -386,8 +388,8 @@ struct Deque[ElementType: Movable](
         for i in range(len(self)):
             offset_self = self._physical_index(self._head + i)
             offset_other = other._physical_index(other._head + i)
-            ref lhs = (self._data + offset_self)[]
-            ref rhs = (other._data + offset_other)[]
+            ref lhs = (self._data.unsafe_offset(offset_self))[]
+            ref rhs = (other._data.unsafe_offset(offset_other))[]
             if lhs != rhs:
                 return False
         return True
@@ -405,7 +407,7 @@ struct Deque[ElementType: Movable](
         """
         for i in range(len(self)):
             var offset = self._physical_index(self._head + i)
-            (self._data + offset)[].__hash__(hasher)
+            (self._data.unsafe_offset(offset))[].__hash__(hasher)
 
     def __contains__(
         self, value: Self.ElementType
@@ -420,7 +422,7 @@ struct Deque[ElementType: Movable](
         """
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            if (self._data + offset)[] == value:
+            if (self._data.unsafe_offset(offset))[] == value:
                 return True
         return False
 
@@ -610,10 +612,10 @@ struct Deque[ElementType: Movable](
         """
         # checking for positive _maxlen first is important for speed
         if self._maxlen > 0 and len(self) == self._maxlen:
-            (self._data + self._head).unsafe_deinit_pointee()
+            (self._data.unsafe_offset(self._head)).unsafe_deinit_pointee()
             self._head = self._physical_index(self._head + 1)
 
-        (self._data + self._tail).unsafe_write(value^)
+        (self._data.unsafe_offset(self._tail)).unsafe_write(value^)
         self._tail = self._physical_index(self._tail + 1)
 
         if self._head == self._tail:
@@ -634,10 +636,10 @@ struct Deque[ElementType: Movable](
         # checking for positive _maxlen first is important for speed
         if self._maxlen > 0 and len(self) == self._maxlen:
             self._tail = self._physical_index(self._tail - 1)
-            (self._data + self._tail).unsafe_deinit_pointee()
+            (self._data.unsafe_offset(self._tail)).unsafe_deinit_pointee()
 
         self._head = self._physical_index(self._head - 1)
-        (self._data + self._head).unsafe_write(value^)
+        (self._data.unsafe_offset(self._head)).unsafe_write(value^)
 
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
@@ -651,7 +653,7 @@ struct Deque[ElementType: Movable](
         """
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            (self._data + offset).unsafe_deinit_pointee()
+            (self._data.unsafe_offset(offset)).unsafe_deinit_pointee()
         dealloc(
             ThinAllocation(
                 unsafe_assume_ownership=self._data
@@ -678,7 +680,7 @@ struct Deque[ElementType: Movable](
         count = 0
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            if (self._data + offset)[] == value:
+            if (self._data.unsafe_offset(offset))[] == value:
                 count += 1
         return count
 
@@ -696,7 +698,7 @@ struct Deque[ElementType: Movable](
 
         # pop excess `self` elements
         for _ in range(n_pop_self):
-            (self._data + self._head).unsafe_deinit_pointee()
+            (self._data.unsafe_offset(self._head)).unsafe_deinit_pointee()
             self._head = self._physical_index(self._head + 1)
 
         # move from `self` to new location if we have to re-allocate
@@ -709,12 +711,14 @@ struct Deque[ElementType: Movable](
 
         # pop excess elements from `values`
         for i in range(n_pop_values):
-            (values_data + i).unsafe_deinit_pointee()
+            (values_data.unsafe_offset(i)).unsafe_deinit_pointee()
 
         # move remaining elements from `values`
-        src = values_data + n_pop_values
+        src = values_data.unsafe_offset(n_pop_values)
         for i in range(n_move_values):
-            (self._data + self._tail).unsafe_write_move_from(src + i)
+            (self._data.unsafe_offset(self._tail)).unsafe_write_move_from(
+                src.unsafe_offset(i)
+            )
             self._tail = self._physical_index(self._tail + 1)
 
         # free the list backing buffer
@@ -741,7 +745,7 @@ struct Deque[ElementType: Movable](
         # pop excess `self` elements
         for _ in range(n_pop_self):
             self._tail = self._physical_index(self._tail - 1)
-            (self._data + self._tail).unsafe_deinit_pointee()
+            (self._data.unsafe_offset(self._tail)).unsafe_deinit_pointee()
 
         # move from `self` to new location if we have to re-allocate
         if n_move_total >= self._capacity:
@@ -753,13 +757,15 @@ struct Deque[ElementType: Movable](
 
         # pop excess elements from `values`
         for i in range(n_pop_values):
-            (values_data + i).unsafe_deinit_pointee()
+            (values_data.unsafe_offset(i)).unsafe_deinit_pointee()
 
         # move remaining elements from `values`
-        src = values_data + n_pop_values
+        src = values_data.unsafe_offset(n_pop_values)
         for i in range(n_move_values):
             self._head = self._physical_index(self._head - 1)
-            (self._data + self._head).unsafe_write_move_from(src + i)
+            (self._data.unsafe_offset(self._head)).unsafe_write_move_from(
+                src.unsafe_offset(i)
+            )
 
         dealloc(
             ThinAllocation(
@@ -806,7 +812,7 @@ struct Deque[ElementType: Movable](
 
         for idx in range(start_normalized, stop_normalized):
             offset = self._physical_index(self._head + idx)
-            if (self._data + offset)[] == value:
+            if (self._data.unsafe_offset(offset))[] == value:
                 return idx
         raise "ValueError: Given element is not in deque"
 
@@ -834,17 +840,21 @@ struct Deque[ElementType: Movable](
             for i in range(idx):
                 src = self._physical_index(self._head + i)
                 dst = self._physical_index(src - 1)
-                (self._data + dst).unsafe_write_move_from(self._data + src)
+                (self._data.unsafe_offset(dst)).unsafe_write_move_from(
+                    self._data.unsafe_offset(src)
+                )
             self._head = self._physical_index(self._head - 1)
         else:
             for i in range(deque_len - idx):
                 dst = self._physical_index(self._tail - i)
                 src = self._physical_index(dst - 1)
-                (self._data + dst).unsafe_write_move_from(self._data + src)
+                (self._data.unsafe_offset(dst)).unsafe_write_move_from(
+                    self._data.unsafe_offset(src)
+                )
             self._tail = self._physical_index(self._tail + 1)
 
         offset = self._physical_index(self._head + idx)
-        (self._data + offset).unsafe_write(value^)
+        (self._data.unsafe_offset(offset)).unsafe_write(value^)
 
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
@@ -865,23 +875,23 @@ struct Deque[ElementType: Movable](
         deque_len = len(self)
         for idx in range(deque_len):
             offset = self._physical_index(self._head + idx)
-            if (self._data + offset)[] == value:
-                (self._data + offset).unsafe_deinit_pointee()
+            if (self._data.unsafe_offset(offset))[] == value:
+                (self._data.unsafe_offset(offset)).unsafe_deinit_pointee()
 
                 if idx < deque_len // 2:
                     for i in reversed(range(idx)):
                         src = self._physical_index(self._head + i)
                         dst = self._physical_index(src + 1)
-                        (self._data + dst).unsafe_write_move_from(
-                            self._data + src
+                        (self._data.unsafe_offset(dst)).unsafe_write_move_from(
+                            self._data.unsafe_offset(src)
                         )
                     self._head = self._physical_index(self._head + 1)
                 else:
                     for i in range(idx + 1, deque_len):
                         src = self._physical_index(self._head + i)
                         dst = self._physical_index(src - 1)
-                        (self._data + dst).unsafe_write_move_from(
-                            self._data + src
+                        (self._data.unsafe_offset(dst)).unsafe_write_move_from(
+                            self._data.unsafe_offset(src)
                         )
                     self._tail = self._physical_index(self._tail - 1)
 
@@ -910,7 +920,9 @@ struct Deque[ElementType: Movable](
         if self._head == self._tail:
             raise "IndexError: Deque is empty"
 
-        return (self._data + self._physical_index(self._tail - 1))[].copy()
+        return (
+            self._data.unsafe_offset(self._physical_index(self._tail - 1))
+        )[].copy()
 
     def peekleft(
         self,
@@ -926,7 +938,7 @@ struct Deque[ElementType: Movable](
         if self._head == self._tail:
             raise "IndexError: Deque is empty"
 
-        return (self._data + self._head)[].copy()
+        return (self._data.unsafe_offset(self._head))[].copy()
 
     def pop(mut self) raises -> Self.ElementType:
         """Removes and returns the element from the right side of the deque.
@@ -941,7 +953,7 @@ struct Deque[ElementType: Movable](
             raise "IndexError: Deque is empty"
 
         self._tail = self._physical_index(self._tail - 1)
-        element = (self._data + self._tail).take_pointee()
+        element = (self._data.unsafe_offset(self._tail)).unsafe_take_pointee()
 
         if (
             self._shrink
@@ -964,7 +976,7 @@ struct Deque[ElementType: Movable](
         if self._head == self._tail:
             raise "IndexError: Deque is empty"
 
-        element = (self._data + self._head).take_pointee()
+        element = (self._data.unsafe_offset(self._head)).unsafe_take_pointee()
         self._head = self._physical_index(self._head + 1)
 
         if (
@@ -982,9 +994,11 @@ struct Deque[ElementType: Movable](
         for i in range(len(self) // 2):
             src = self._physical_index(self._head + i)
             dst = self._physical_index(last - i)
-            tmp = (self._data + dst).take_pointee()
-            (self._data + dst).unsafe_write_move_from(self._data + src)
-            (self._data + src).unsafe_write(tmp^)
+            tmp = (self._data.unsafe_offset(dst)).unsafe_take_pointee()
+            (self._data.unsafe_offset(dst)).unsafe_write_move_from(
+                self._data.unsafe_offset(src)
+            )
+            (self._data.unsafe_offset(src)).unsafe_write(tmp^)
 
     def rotate(mut self, n: Int = 1):
         """Rotates the deque by `n` steps.
@@ -998,8 +1012,8 @@ struct Deque[ElementType: Movable](
         """
         if n < 0:
             for _ in range(-n):
-                (self._data + self._tail).unsafe_write_move_from(
-                    self._data + self._head
+                (self._data.unsafe_offset(self._tail)).unsafe_write_move_from(
+                    self._data.unsafe_offset(self._head)
                 )
                 self._tail = self._physical_index(self._tail + 1)
                 self._head = self._physical_index(self._head + 1)
@@ -1007,8 +1021,8 @@ struct Deque[ElementType: Movable](
             for _ in range(n):
                 self._tail = self._physical_index(self._tail - 1)
                 self._head = self._physical_index(self._head - 1)
-                (self._data + self._head).unsafe_write_move_from(
-                    self._data + self._tail
+                (self._data.unsafe_offset(self._head)).unsafe_write_move_from(
+                    self._data.unsafe_offset(self._tail)
                 )
 
     def _compute_pop_and_move_counts(
@@ -1081,7 +1095,9 @@ struct Deque[ElementType: Movable](
 
         for i in range(n_retain):
             offset = self._physical_index(self._head + i)
-            (new_data + i).unsafe_write_move_from(self._data + offset)
+            (new_data.unsafe_offset(i)).unsafe_write_move_from(
+                self._data.unsafe_offset(offset)
+            )
 
         if self._capacity > 0:
             dealloc(
@@ -1117,15 +1133,15 @@ struct Deque[ElementType: Movable](
             Layout[Self.ElementType](count=new_capacity)
         ).unsafe_leak()
 
-        src = self._data + self._head
+        src = self._data.unsafe_offset(self._head)
         dsc = new_data
         for i in range(head_len):
-            (dsc + i).unsafe_write_move_from(src + i)
+            (dsc.unsafe_offset(i)).unsafe_write_move_from(src.unsafe_offset(i))
 
         src = self._data
-        dsc = new_data + head_len
+        dsc = new_data.unsafe_offset(head_len)
         for i in range(tail_len):
-            (dsc + i).unsafe_write_move_from(src + i)
+            (dsc.unsafe_offset(i)).unsafe_write_move_from(src.unsafe_offset(i))
 
         self._head = 0
         self._tail = deque_len
@@ -1184,7 +1200,7 @@ struct _DequeIter[
             var idx = self.index
             self.index += 1
             var offset = self.src[]._physical_index(self.src[]._head + idx)
-            return self.src[]._data[offset]
+            return self.src[]._data[unsafe_offset=offset]
         else:
             if self.index <= 0:
                 raise StopIteration()
@@ -1192,7 +1208,7 @@ struct _DequeIter[
             var offset = self.src[]._physical_index(
                 self.src[]._head + self.index
             )
-            return self.src[]._data[offset]
+            return self.src[]._data[unsafe_offset=offset]
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -1229,7 +1245,7 @@ struct _DequeIterOwned[T: Movable & ImplicitlyDeletable](
         # _head/_tail are never modified, so len(self._deque) stays constant.
         for i in range(self._index, len(self._deque)):
             var phys = self._deque._physical_index(self._deque._head + i)
-            (self._deque._data + phys).unsafe_deinit_pointee()
+            (self._deque._data.unsafe_offset(phys)).unsafe_deinit_pointee()
         # Zero out head/tail so Deque.__del__ only frees memory.
         self._deque._head = 0
         self._deque._tail = 0
@@ -1243,7 +1259,7 @@ struct _DequeIterOwned[T: Movable & ImplicitlyDeletable](
             raise StopIteration()
         var phys = self._deque._physical_index(self._deque._head + self._index)
         self._index += 1
-        return (self._deque._data + phys).take_pointee()
+        return (self._deque._data.unsafe_offset(phys)).unsafe_take_pointee()
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:

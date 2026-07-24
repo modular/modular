@@ -153,8 +153,8 @@ def fragment_load_kernel(
     var offset_lo = Int(rb) * row_stride + Int(cb)
     var offset_hi = offset_lo + 8 * row_stride
 
-    var lo = (tile.ptr + offset_lo).load[width=4]()
-    var hi = (tile.ptr + offset_hi).load[width=4]()
+    var lo = (tile._storage + offset_lo).load[width=4]()
+    var hi = (tile._storage + offset_hi).load[width=4]()
     var frag = lo.join(hi)
 
     # Write 8 elements to output at offset tid * 8

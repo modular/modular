@@ -163,6 +163,7 @@ def _run_preb[
     b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
     cluster_drain_sched: Bool = False,
     mfma_cluster: Int = 4,
+    pipeline_depth: Int = 2,
     waves_per_eu: Int = 0,
     wg_per_cu: Int = 2,  # struct param — sizes the persistent grid
     static_grid_z: Bool = False,  # comptime grid.z = n_local_experts (direct)
@@ -373,6 +374,7 @@ def _run_preb[
         b_cache_policy=b_cache_policy,
         cluster_drain_sched=cluster_drain_sched,
         mfma_cluster=mfma_cluster,
+        pipeline_depth=pipeline_depth,
         waves_per_eu=waves_per_eu,
         static_grid_z=static_grid_z,
     ](
@@ -433,6 +435,7 @@ def test_persistent[
     b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
     cluster_drain_sched: Bool = False,
     mfma_cluster: Int = 4,
+    pipeline_depth: Int = 2,
     waves_per_eu: Int = 0,
     wg_per_cu: Int = 2,
 ](
@@ -463,6 +466,7 @@ def test_persistent[
         b_cache_policy=b_cache_policy,
         cluster_drain_sched=cluster_drain_sched,
         mfma_cluster=mfma_cluster,
+        pipeline_depth=pipeline_depth,
         waves_per_eu=waves_per_eu,
         wg_per_cu=wg_per_cu,
     ](name, num_tokens_by_expert, expert_ids_list, ctx)
@@ -480,6 +484,7 @@ def test_direct[
     b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
     cluster_drain_sched: Bool = False,
     mfma_cluster: Int = 4,
+    pipeline_depth: Int = 2,
     waves_per_eu: Int = 0,
     wg_per_cu: Int = 2,
     static_grid_z: Bool = False,
@@ -511,6 +516,7 @@ def test_direct[
         b_cache_policy=b_cache_policy,
         cluster_drain_sched=cluster_drain_sched,
         mfma_cluster=mfma_cluster,
+        pipeline_depth=pipeline_depth,
         waves_per_eu=waves_per_eu,
         wg_per_cu=wg_per_cu,
         static_grid_z=static_grid_z,
@@ -1626,5 +1632,47 @@ def main() raises:
         wg_per_cu=1,
         b_cache_policy=SX,
     ]("M3 down etm<=2 decode BN64/wg1 (2 experts)", [1, 1], [0, 1], ctx)
+
+    # ----------------------------------------------------------------- #
+    # Pipeline-depth parameterization (deeper-prefetch lever).
+    # `pipeline_depth > 2` sizes the B-fragment ring to `pipeline_depth`
+    # slots and swaps the b_prefetch steady loop's end-of-iter draining
+    # barrier() for the non-draining `s_waitcnt[lgkmcnt=0]` + bare s_barrier.
+    # This is the CORRECTNESS gate for the depth plumbing + barrier seam: at
+    # depth 3/4 the deeper ring is allocated and the non-draining barrier
+    # engages, and the result must still match the per-expert reference.
+    #
+    # FALSE-NEGATIVE GUARD: this is numerics-only. A build that (regressively)
+    # left the draining barrier in place would ALSO pass here — the perf
+    # effect (B loads actually staying outstanding) is NOT observable from
+    # numerics and MUST be rocprof-verified on GPU when depth is raised in a
+    # dispatch band. Passing this test alone does not prove the lever works.
+    #
+    # M3 decode-band tiles (N=6144; up K=6144, down K=3072), a few active
+    # experts + an inactive slot, on both the persistent and direct grids.
+    print("---- pipeline_depth > 2 (deeper prefetch) correctness ----")
+    # M3 up decode tile, depth 3 and 4 (persistent).
+    test_persistent[
+        4, 6144, 6144, BM=16, BN=64, BK_ELEMS=512, WN=16, pipeline_depth=3
+    ]("M3 up decode depth=3", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4, 6144, 6144, BM=16, BN=64, BK_ELEMS=512, WN=16, pipeline_depth=4
+    ]("M3 up decode depth=4", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # M3 up decode tile, BN128/WN32 variant, depth 3 (persistent).
+    test_persistent[
+        4, 6144, 6144, BM=16, BN=128, BK_ELEMS=512, WN=32, pipeline_depth=3
+    ]("M3 up decode BN128 depth=3", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # M3 down decode tile, depth 3 (persistent).
+    test_persistent[
+        4, 6144, 3072, BM=16, BN=64, BK_ELEMS=512, WN=16, pipeline_depth=3
+    ]("M3 down decode depth=3", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # Direct grid at depth 3 and 4 — a larger single expert so the steady
+    # loop (where the non-draining barrier lives) runs many iterations.
+    test_direct[
+        1, 6144, 6144, BM=64, BN=128, BK_ELEMS=512, WN=64, pipeline_depth=3
+    ]("M3 up direct depth=3", [512], [0], ctx)
+    test_direct[
+        1, 6144, 6144, BM=64, BN=128, BK_ELEMS=512, WN=64, pipeline_depth=4
+    ]("M3 up direct depth=4", [512], [0], ctx)
 
     print("==== all preb grouped MXFP4 kernel tests passed ====")

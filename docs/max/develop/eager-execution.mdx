@@ -25,7 +25,7 @@ A [`Tensor`](/max/api/python/generated/max.experimental.tensor.Tensor/) is the
 fundamental data structure for eager execution. This example creates a `Tensor`
 with hard-coded data:
 
-{/* @sync: _examples/index/eager_simple.py */}
+{/* @sync: ../../code/develop/index/eager_simple.py */}
 
 ```python
 from max.driver import CPU
@@ -49,7 +49,7 @@ complex computation.
 
 Here's how to perform arithmetic operations using Python operators:
 
-{/* @sync: _examples/index/arithmetic_ops.py */}
+{/* @sync: ../../code/develop/index/arithmetic_ops.py */}
 
 ```python
 from max.experimental.tensor import Tensor
@@ -68,7 +68,7 @@ Here are some
 [`max.experimental.functional`](/max/api/python/experimental.functional) APIs
 in use:
 
-{/* @sync: _examples/index/functional_api.py */}
+{/* @sync: ../../code/develop/index/functional_api.py */}
 
 ```python
 from max.experimental import functional as F
@@ -93,7 +93,7 @@ intermediate values at any point in your code. Use this capability to verify
 that intermediate computations match your expectations as you build up a
 forward pass.
 
-{/* @sync: _examples/index/when_to_use_eager.py */}
+{/* @sync: ../../code/develop/index/when_to_use_eager.py */}
 
 ```python
 from max.experimental import functional as F
@@ -133,7 +133,7 @@ A forward pass strings together everything you've seen so far into the shape of
 a single neural network layer. Here's a realistic example with random weights,
 a matmul, an activation, and a reduction.
 
-{/* @sync: _examples/index/eager_workflow.py */}
+{/* @sync: ../../code/develop/index/eager_workflow.py */}
 
 ```python
 from max.experimental import functional as F

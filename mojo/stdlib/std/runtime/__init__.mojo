@@ -20,5 +20,9 @@ various profiling backends.
 
 Use this package for implementing async patterns, managing concurrent
 execution, or when you need detailed profiling and performance analysis of your
-Mojo programs.
+Mojo programs. It also provides `initialize_runtime()` for initializing the
+runtime explicitly when Mojo code built as a shared library is called from a
+non-Mojo host program.
 """
+
+from .asyncrt import initialize_runtime

@@ -1054,7 +1054,7 @@ class Tensor(DLPackArray, HasTensorValue):
     ) -> Tensor:
         """Creates a tensor from a scalar, array, or nested list.
 
-        .. deprecated::
+        .. deprecated:: 26.2
             Use ``Tensor(value, dtype=dtype, device=device)`` instead.
             ``Tensor.constant`` will be removed in a future release.
 

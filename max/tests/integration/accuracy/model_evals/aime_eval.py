@@ -23,6 +23,15 @@ Run locally against a server on ``localhost:8000``::
     ./bazelw run //max/tests/integration/accuracy/model_evals:aime_eval -- \\
         --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 \\
         --sample-size 2 --seed 0 --out-dir /tmp/aime25
+
+Results stream to ``<out-dir>/results.jsonl`` as each request completes, so a
+killed/crashed run keeps everything already finished. To debug specific
+problems (e.g. re-run exactly the ones that errored or looked wrong last
+time), pass ``--row-ids`` instead of ``--sample-size``::
+
+    ./bazelw run //max/tests/integration/accuracy/model_evals:aime_eval -- \\
+        --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 \\
+        --row-ids 3,17,42 --out-dir /tmp/aime25-debug
 """
 
 from __future__ import annotations
@@ -39,11 +48,11 @@ from eval_common import (
     GenParams,
     build_chat_kwargs,
     exact_match_score,
+    expand_repeats,
     make_client,
-    make_repeat_samples,
     run_parallel,
+    select_rows,
     strip_think,
-    subsample,
     write_outputs,
 )
 
@@ -142,37 +151,42 @@ def infer(
 
 def run_eval(
     client: ChatClient,
-    dataset: list[dict[str, Any]],
+    indexed_dataset: list[tuple[int, dict[str, Any]]],
     model: str,
     repeats: int,
     workers: int,
     params: GenParams,
     root_preamble: str,
     system_prompt: str,
+    out_dir: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Runs AIME25 over ``dataset`` with ``repeats`` and returns results + score.
+    """Runs AIME25 over ``indexed_dataset`` with ``repeats``.
 
     Each ``(repeat, problem)`` pair is submitted independently so a row can be
     tied back to its problem and repeat regardless of completion order. A
     failed/timed-out request is recorded as an incorrect row, never dropped.
+    When ``out_dir`` is set, results stream to ``results.jsonl`` as they
+    complete, so a crash mid-run doesn't lose already-finished samples.
 
     Args:
         client: OpenAI-compatible chat client (real or fake).
-        dataset: Already-subsampled list of problems.
+        indexed_dataset: ``(original_index, problem)`` pairs, already narrowed
+            by :func:`eval_common.select_rows`.
         model: Served model name to request.
         repeats: Repeats per problem (``temperature`` makes each independent).
         workers: Max concurrent in-flight requests.
         params: Generation/sampling parameters.
         root_preamble: MiniMax root turn (empty to omit).
         system_prompt: System turn content.
+        out_dir: When set, stream results to ``<out_dir>/results.jsonl``.
 
     Returns:
         A ``(results, score)`` tuple.
     """
-    samples = make_repeat_samples(dataset, repeats)
+    samples = expand_repeats(indexed_dataset, repeats)
     print(
-        f"AIME25: evaluating {len(dataset)} problems x {repeats} repeats "
-        f"= {len(samples)} total samples"
+        f"AIME25: evaluating {len(indexed_dataset)} problems x {repeats} "
+        f"repeats = {len(samples)} total samples"
     )
 
     def fn(item: tuple[int, int, dict[str, Any]]) -> dict[str, Any]:
@@ -190,7 +204,9 @@ def run_eval(
             "correct": False,
         }
 
-    results, errors = run_parallel(samples, fn, on_error, workers, "AIME25")
+    results, errors = run_parallel(
+        samples, fn, on_error, workers, "AIME25", out_dir=out_dir
+    )
     return results, exact_match_score(results, len(samples), errors)
 
 
@@ -205,7 +221,16 @@ def run_eval(
     "--sample-size",
     type=int,
     default=None,
-    help="Max problems (evenly sampled). Empty = full dataset. Applied before repeats.",
+    help="Max problems (evenly sampled). Empty = full dataset. Applied "
+    "before repeats. Mutually exclusive with --row-ids.",
+)
+@click.option(
+    "--row-ids",
+    default=None,
+    help="Explicit comma-separated dataset row indices to evaluate, e.g. "
+    "'3,17,42' (indices into the full dataset, order/duplicates preserved). "
+    "Mutually exclusive with --sample-size — use this to re-run exactly the "
+    "problems that errored or looked wrong last time.",
 )
 @click.option("--repeats", type=int, default=16, help="Repeats per problem.")
 @click.option(
@@ -240,6 +265,7 @@ def main(
     base_url: str,
     model: str,
     sample_size: int | None,
+    row_ids: str | None,
     repeats: int,
     seed: int | None,
     workers: int,
@@ -253,19 +279,20 @@ def main(
 ) -> None:
     """Runs AIME25 against a running OpenAI-compatible server and scores it."""
     client = make_client(base_url)
-    dataset = subsample(load_aime_dataset(), sample_size)
+    indexed_dataset = select_rows(load_aime_dataset(), sample_size, row_ids)
     params = GenParams(
         max_tokens=max_tokens, temperature=temperature, top_p=top_p, seed=seed
     )
     results, summary = run_eval(
         client,
-        dataset,
+        indexed_dataset,
         model,
         repeats,
         workers,
         params,
         root_preamble,
         system_prompt,
+        out_dir=out_dir,
     )
     write_outputs(out_dir, results, summary, metric_prefix)
 

@@ -525,7 +525,7 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(output_dyn)
     def output_fn[
-        c_type: DType, _rank: Int, width: SIMDSize, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output_dyn.flat_rank >= coord.flat_rank
@@ -636,7 +636,7 @@ def test_concat_with_epilogue(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(output_dyn)
     def epilogue_scale_by_2[
-        c_type: DType, _rank: Int, width: SIMDSize, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output_dyn.flat_rank >= coord.flat_rank

@@ -168,6 +168,11 @@ This version is still a work in progress.
 
 ## Language changes
 
+- Predefined and reserved words (for example `class`, `del`, `match`, `yield`)
+  can no longer be used as the name of a free function. Doing so now errors at
+  the declaration instead of silently producing a function that could never be
+  called.
+
 - User-written structs must now explicitly declare closure-trait conformance
   in their inheritance list to satisfy a `def(...) -> ...` closure trait.
   Previously a struct with a compatible `__call__` was accepted implicitly
@@ -363,6 +368,33 @@ This version is still a work in progress.
   dir.nested_dir.package.foo() # error
   ```
 
+- Importing functions with the same name from different modules, combining
+  them into one overload set, is now deprecated and emits a warning. The
+  overload sets still merge for now, but a future release will reject the
+  second import; import the name from a single module instead:
+
+  ```mojo
+  from module1 import foo # e.g., foo(x: Int)
+  from module2 import foo # e.g., foo(x: Bool) - deprecation warning
+  ```
+
+  Requiring an overload set to resolve from one location better corresponds
+  with the pre-existing behaviour for sourcing overload sets in other cases:
+
+  1. local function vs imported function; error
+  2. local function vs wildcard; local definition shadows
+  3. wildcard vs wildcard; last import shadows
+
+- Mojo now resolves wildcard imports latest first, textually. This means that
+  those imported last "win" when shadowing other decls. Notably this includes
+  those implicitly imported into programs from `std.prelude`:
+
+  ```mojo
+  from a import *
+  from b import *
+  from a import * # <- decls here shadow those from b and from std.prelude
+  ```
+
 ## Library stabilizations
 <!-- rumdl-disable MD013 -->
 
@@ -394,6 +426,60 @@ This version is still a work in progress.
 <!-- rumdl-enable MD013 -->
 
 ## Library changes
+
+- `List.unsafe_ptr()` now returns a safe `Pointer` instead of an
+  `UnsafePointer`. The two share the same layout and convert implicitly, so
+  most code is unaffected. Code that called an unsafe-only pointer operation
+  directly on the result should switch to the ungated `unsafe_*` spelling, for
+  example `list.unsafe_ptr() + i` becomes `list.unsafe_ptr().unsafe_offset(i)`
+  and `list.unsafe_ptr()[i]` becomes `list.unsafe_ptr()[unsafe_offset=i]`.
+- `CStringSlice.unsafe_ptr()` now returns a safe `Pointer` instead of an
+  `UnsafePointer`. The two share the same layout and convert implicitly, so most
+  code is unaffected. Code that called an unsafe-only pointer operation directly
+  on the result should switch to the ungated `unsafe_*` spelling, for example
+  `ptr + i` becomes `ptr.unsafe_offset(i)`.
+
+- Added
+  [`runtime.initialize_runtime()`](/docs/std/runtime/asyncrt/initialize_runtime/),
+  which initializes the Mojo runtime when Mojo code built as a shared library
+  (`mojo build --emit shared-lib`) is called from a non-Mojo host program such
+  as C or C++. In that situation no Mojo `main()` function runs, so the runtime
+  was never initialized and parallel or asynchronous APIs such as
+  `parallelize()` crashed. Call `initialize_runtime()` before using any
+  runtime-dependent API; the call is idempotent, and a single call covers all
+  threads in the process. See
+  [Call a Mojo shared library from C or C++](/docs/tools/compilation/#call-a-mojo-shared-library-from-c-or-c)
+  for details.
+
+- Add `List.try_index` to allow getting the index of a value in a list
+  (if present), without raising. This is a comptime-compatible version of
+  the functionality.
+
+- When an unhandled error propagates out of `main` and no stack trace was
+  collected, Mojo now prints a hint to set
+  `MODULAR_DEBUG=stack-trace-on-error` to enable stack trace collection,
+  rather than printing only the error message.
+
+- `Variant` now accepts element types that are not `Movable`. Its type list is
+  bounded by `AnyType`, and `Variant` conditionally conforms to `Movable`,
+  `Copyable`, and related traits only when all of its element types do. A
+  value whose type is not `Movable` can be stored in place with the new
+  closure-based constructor and `set()` overload, which construct the value
+  directly into the variant's storage (placement-new) rather than moving it:
+
+  ```mojo
+  from std.utils import Variant
+
+  @fieldwise_init
+  struct Pinned(Movable where False):
+      var value: Int
+
+  def make() -> Pinned:
+      return Pinned(7)
+
+  var v = Variant[Pinned, Int](call=make)  # construct in place
+  v.set(call=make)                         # replace in place
+  ```
 
 - Various datatypes have adopted interior origins for increased memory safety,
   including `List`, `Deque`, `Variant`, `String`, `Dict`, `LinkedList`,
@@ -445,6 +531,17 @@ This version is still a work in progress.
 - `InlineArray`'s first parameter is renamed from `ElementType` to `T`.
   Any explicit usages must be updated.
 
+- `Span`'s pointer-and-length constructor argument is renamed from `ptr` to
+  `unsafe_ptr`, to flag that this construction path is memory-unsafe: the caller
+  must ensure the pointer addresses at least `length` valid elements. Update
+  `Span(ptr=..., length=...)` to `Span(unsafe_ptr=..., length=...)`.
+
+- `DeviceContextList` is renamed to `DeviceContextArray`, and its parameter is
+  renamed from `size` to `length`. The old struct name remains as a
+  deprecated alias, and `DeviceContextArray.size` remains as a deprecated
+  alias for `DeviceContextArray.length`; update any explicit
+  `DeviceContextList[size=N]` to `DeviceContextArray[length=N]`.
+
 - `List.capacity` is now a `capacity()` method instead of a public field. This
   keeps the allocated capacity out of the stable public field surface, since it
   should only change indirectly through operations like `append()`. Replace
@@ -476,6 +573,23 @@ This version is still a work in progress.
   `SIMD[...]` form. This only affects `repr()`; `String(...)` / `print(...)`
   output is unchanged.
 
+- Renamed `memmove` to `unsafe_memmove` to make its unsafety explicit. The old
+  `memmove` name is deprecated and will be removed in a future release.
+
+- Renamed `memset` and `memset_zero` to `unsafe_memset` and
+  `unsafe_memset_zero` to make their unsafety explicit. The old names are
+  deprecated and will be removed in a future release.
+
+- Renamed `memcmp` to `unsafe_memcmp` to make its unsafety explicit. The old
+  `memcmp` name is deprecated and will be removed in a future release.
+
+- Renamed `uninit_move_n` and `uninit_copy_n` to `unsafe_uninit_move_n` and
+  `unsafe_uninit_copy_n` to make their unsafety explicit. The old names are
+  deprecated and will be removed in a future release.
+
+- Renamed `destroy_n` to `unsafe_destroy_n` to make its unsafety explicit. The
+  old `destroy_n` name is deprecated and will be removed in a future release.
+
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not
@@ -494,6 +608,13 @@ This version is still a work in progress.
   var displaced = d.insert(1, 10)  # None — key 1 was absent
   displaced = d.insert(1, 20)      # the displaced (1, 10) entry
   ```
+
+- Added `Set.insert(element)` and `Set.clear_with(destroy_func)`, mirroring the
+  `Dict` methods above, so a `Set` whose element type is not
+  `ImplicitlyDeletable` can now be populated and cleared. `insert` moves any
+  displaced equal element out and returns it as an `Optional[T]` instead of
+  destroying it in place; `clear_with` hands each element to `destroy_func`
+  while retaining capacity.
 
 - `Dict.fromkeys(keys, value)` has been generalized from taking a `List` to
   accepting any iterable of keys. Both forms require the key and
@@ -553,11 +674,11 @@ This version is still a work in progress.
   to this `Scalar` type. Because of this some conversions have become more
   strict.
 
-  A new `SIMDSize` type has been added for the width of `SIMD` itself and must
+  A new `SIMDLength` type has been added for the width of `SIMD` itself and must
   be used when inferring a parameter based on a SIMD argument like so:
 
   ```mojo
-  def frob[w: SIMDSize](v: SIMD[DType.int, w]): ...
+  def frob[w: SIMDLength](v: SIMD[DType.int, w]): ...
   ```
 
   Alternatively the width can be unbound if you simply want to be parametric
@@ -568,6 +689,9 @@ This version is still a work in progress.
   ```
 
   The new `Int` should still be used in all other situations.
+
+  This type was briefly named `SIMDSize` earlier in this nightly cycle;
+  `SIMDSize` remains as a deprecated alias for `SIMDLength`.
 
 - `chdir` has been added to the `std.os` module and an `fchdir` method has been
   added to `io.FileDescriptor`. These are wrappers for the corresponding POSIX
@@ -634,6 +758,11 @@ This version is still a work in progress.
 
 - The `value` argument of `List.resize` has been renamed to `fill` to match
   List's constructor.
+
+- `List.insert()` and `LinkedList.insert()` no longer normalize negative
+  indices. Mojo collections are moving away from negative indexing, so the
+  valid index range is now `[0, len(self)]`; a negative index is out of bounds
+  and aborts (checked when asserts are enabled).
 
 - The `Reflected.field_type[name]` reflection member has been renamed to
   `Reflected.field[name]`, because it returns a chainable `Reflected` handle
@@ -716,6 +845,13 @@ This version is still a work in progress.
     - Consuming iteration (`for x in set^`) is likewise conditional, requiring
       `ElementType` to be `ImplicitlyDeletable`.
 
+- `OwnedPointer[T]` now *conditionally* conforms to `ImplicitlyDeletable`,
+  conforming only when `T` does, so it can hold a non-`ImplicitlyDeletable`
+  (linear) value. Such an `OwnedPointer` is itself linear and must be consumed
+  explicitly with `take()` (for a `Movable` `T`) or `steal_data()` rather than
+  dropped implicitly. For deletable element types (the common case) this is
+  transparent.
+
 - `InlineArray`'s element type bound loosened from `Movable` to `AnyType`, so an
   `InlineArray` can now hold a non-`Movable` element type. The `Movable`
   conformance is now conditional on the element: move construction (including
@@ -723,6 +859,15 @@ This version is still a work in progress.
   while indexing, by-reference iteration, and destruction do not. Code that
   uses `Movable` element types is unaffected, since a `Movable` element still
   yields a movable array.
+
+- `Optional` gained `deinit_assert_empty()`, which destroys an empty linear
+  `Optional` without a caller-provided deinitializer, aborting in safe-assert
+  builds if it is non-empty.
+
+- `Optional.map()` and `Optional.and_then()` now work when the element type is
+  linear (not `ImplicitlyDeletable`): they move the contained value out and
+  destroy the emptied `Optional` explicitly, so a linear value can be
+  transformed and handed back to the caller.
 
 - Is is now possible to iterate over owned elements in
   `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`
@@ -795,7 +940,7 @@ This version is still a work in progress.
    var my_coord = coord[1, 2, 3]
    ```
 
-   to create a `Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]]`
+  to create a `Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]]`
 
 - Removed `trait_downcast_var()`. Improvements to type refinement based on
   `where conforms_to(..)` and `comptime assert conforms_to(..)` make explicit
@@ -921,6 +1066,16 @@ This version is still a work in progress.
   `-check-docstrings` when launching `mojo-lsp-server` from the command line
   to re-enable the previous behavior. We plan to make this checking more
   robust and re-enable it by default over time.
+
+- Added a `--fp-mode` CLI flag that controls floating-point behavior as a
+  comma-separated list of items. The only supported feature now is `contract`,
+  one of `fast` (default) or `off`. `contract=fast` is like Clang's
+  `-ffp-contract=fast`: `a + b*c` can fuse into a fused multiply-add across
+  statements and breaking strict IEEE compliance;
+  `contract=off` disables contraction for stricter floating-point semantics.
+  The same `contract=fast|off` item is also accepted in the `emission_option`
+  of a `kgen.compile_offload` operation, to control contraction of an
+  individual offload kernel.
 
 ## GPU programming
 
@@ -1051,6 +1206,8 @@ This version is still a work in progress.
 
 - Added support for the Steam Deck's RDNA2 Van Gogh APU.
 
+- The `layout` package is now bundled with MAX instead of Mojo.
+
 ## Removed
 
 - Removed the `UInt`-returning GPU indexing accessors (`thread_idx_uint`,
@@ -1078,6 +1235,22 @@ This version is still a work in progress.
   those keyword accessors instead (for example, on a `StaticString`).
 
 ## Fixed
+
+- Code folding in VSCode now works for Mojo files. `mojo-lsp-server` no longer
+  advertises folding-range support, which only produced docstring ranges and
+  caused VSCode to disable its built-in indentation-based folding — leaving
+  functions, structs, and blocks unfoldable. Editors now fall back to
+  indentation-based folding until the server returns structural folding
+  ranges.
+
+- Fixed `print()` and `debug_assert()` emitting garbled output on AMD GPUs when
+  a printed string's byte length was an exact multiple of 8. The AMDGPU
+  `hostcall` printf interface reads each string up to its nul terminator, and
+  the terminator was being dropped in that case, so the host read past the
+  payload.
+
+- `base64.b16decode` now raises on invalid input instead of silently producing
+  corrupt output.
 
 - [#6784](https://github.com/modular/modular/issues/6784),
   [#6434](https://github.com/modular/modular/issues/6434) - `math.sqrt` on
@@ -1192,12 +1365,25 @@ This version is still a work in progress.
       var y: One
   ```
 
+- `CPython.PyCapsule_New` now takes its `name` argument as a `StaticString`
+  instead of an owned `String`. CPython stores the `name` pointer directly in
+  the capsule rather than copying it, so an owned `String` argument left the
+  capsule holding a dangling pointer once the temporary was destroyed.
+
 - A failed import no longer poisons its name for the rest of the compilation.
   Previously, after something like `import pkg.util` failed to resolve, a
   later `import util` would silently bind the cached failure even when a real
   `util.mojo` exists on the search path, making the module unimportable with
   no diagnostic.
 
-- [#6485](https://github.com/modular/modular/issues/6485) - `Optional[T]` and
-  `Variant[...]` no longer corrupt data for payload types that include a
-  `Bool` field. The fix changes how unions are lowered to LLVM.
+- Struct extensions are no longer imported onto structs which happen to share a
+  name with their intended struct, when the extensions' intended struct is
+  shadowed by another:
+
+  ```mojo
+  from pkg_a import *   # defines a Foo and extensions on it
+  from pkg_b import Foo # defines another Foo and extensions on it
+  ```
+
+  Previously in the above example, the extensions defined by `pkg_a` would be
+  imported and callable on the unrelated `Foo` struct imported from `pkg_b`.

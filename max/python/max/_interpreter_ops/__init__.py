@@ -30,7 +30,6 @@ from max._core.driver import Buffer
 from . import (  # type: ignore[attr-defined]
     argnonzero_ops,
     band_part_ops,
-    bottomk_ops,
     conv_gc,
     data_movement_ops,
     elementwise_binary_gc,
@@ -49,7 +48,7 @@ from . import (  # type: ignore[attr-defined]
     roi_align_ops,
     select_ops,
     shape_rearrange_gc,
-    topk_ops,
+    topk_gc,
     unary_elementwise_gc,
 )
 

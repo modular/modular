@@ -19,7 +19,6 @@ from std.memory import OwnedPointer
 ```
 """
 
-from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 from std.format._utils import (
     Repr,
@@ -34,7 +33,12 @@ from std.memory.alloc import (
 )
 
 
+@explicit_destroy(
+    "Use `take()` (for a `Movable` `T`) or `steal_data()` to consume an"
+    " `OwnedPointer` whose element type is not `ImplicitlyDeletable`"
+)
 struct OwnedPointer[T: AnyType](
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     RegisterPassable,
     Writable where conforms_to(T, Writable),
 ):
@@ -49,7 +53,10 @@ struct OwnedPointer[T: AnyType](
     pointers](/docs/manual/pointers/) in the Mojo Manual.
 
     Parameters:
-        T: The type to be stored in the `OwnedPointer`.
+        T: The type to be stored in the `OwnedPointer`. When `T` is not
+            `ImplicitlyDeletable`, the `OwnedPointer` has no implicit
+            destructor and must be consumed with `take()` (for a `Movable`
+            `T`) or `steal_data()`.
     """
 
     var _inner: ThinAllocation[Self.T]
@@ -114,21 +121,21 @@ struct OwnedPointer[T: AnyType](
     def __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutUntrackedOrigin],
+        unsafe_from_raw_pointer: Pointer[Self.T, MutUntrackedOrigin],
     ):
-        """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
+        """Construct a new `OwnedPointer` by taking ownership of the provided `Pointer`.
 
         Args:
-            unsafe_from_raw_pointer: The `UnsafePointer` to take ownership of.
+            unsafe_from_raw_pointer: The `Pointer` to take ownership of.
 
         Safety:
 
-        This function is unsafe as the provided `UnsafePointer` must be initialize with a single valid `T`
+        This function is unsafe as the provided `Pointer` must be initialize with a single valid `T`
         initially allocated with this `OwnedPointer`'s backing allocator.
         This function is unsafe as other memory problems can arise such as a double-free if this function
         is called twice with the same pointer or a user manually deallocates the same data.
 
-        After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
+        After using this constructor, the `Pointer` is assumed to be owned by this `OwnedPointer`.
         In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
         """
         self._inner = ThinAllocation(
@@ -156,16 +163,14 @@ struct OwnedPointer[T: AnyType](
             unsafe_from_raw_pointer=ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         )
 
-    def __del__(deinit self):
-        """Destroy the OwnedPointer[]."""
-        _constrained_conforms_to[
-            conforms_to(Self.T, ImplicitlyDeletable),
-            Parent=Self,
-            Element=Self.T,
-            ParentConformsTo="ImplicitlyDeletable",
-        ]()
-        comptime assert conforms_to(Self.T, ImplicitlyDeletable)
+    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+        """Destroy the `OwnedPointer`, running the destructor of its value.
 
+        Constraints:
+            `T` must be `ImplicitlyDeletable`. When it is not, the
+            `OwnedPointer` has no implicit destructor and must be consumed
+            with `take()` (for a `Movable` `T`) or `steal_data()`.
+        """
         self._inner.unsafe_ptr().unsafe_deinit_pointee()
         dealloc(self._inner^.unsafe_with_layout(Layout[Self.T].single()))
 

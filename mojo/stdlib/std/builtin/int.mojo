@@ -76,7 +76,7 @@ def index[T: Indexer](idx: T, /) -> Int:
     Returns:
         An `__mlir_type` representing the index value.
     """
-    return Int(SIMDSize(mlir_value=idx.__mlir_index__()))
+    return Int(SIMDLength(mlir_value=idx.__mlir_index__()))
 
 
 # ===----------------------------------------------------------------------=== #

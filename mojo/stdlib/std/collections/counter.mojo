@@ -223,9 +223,7 @@ struct Counter[
             _DictEntryIter(
                 0,
                 0,
-                UnsafePointer(to=self._data).unsafe_origin_cast[
-                    origin_of(self)
-                ]()[],
+                Pointer(to=self._data).unsafe_origin_cast[origin_of(self)]()[],
             )
         )
 

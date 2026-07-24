@@ -18,7 +18,7 @@ model:
     device_memory_utilization: 0.8
 
 runtime:
-  ep_size: 1
+  ep_size: 8
   max_batch_input_tokens: 1024
   prefer_module_v3: true
   device_graph_capture: true

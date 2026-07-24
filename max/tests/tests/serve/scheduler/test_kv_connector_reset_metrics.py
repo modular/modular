@@ -22,6 +22,11 @@ from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 
@@ -48,8 +53,8 @@ class _CountingConnector:
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
-    ) -> int:
-        return 0
+    ) -> KVConnectorTransfer:
+        return CompletedTransfer(TransferDirection.LOAD)
 
     def offload(
         self,
@@ -57,8 +62,8 @@ class _CountingConnector:
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
-    ) -> None:
-        pass
+    ) -> KVConnectorTransfer:
+        return CompletedTransfer(TransferDirection.OFFLOAD)
 
     def count_cached_prefix(
         self, block_hashes: Sequence[bytes]

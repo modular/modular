@@ -493,6 +493,7 @@ def _make_metrics(
     *,
     completed: int = 10,
     failures: int = 0,
+    excluded_successful: int = 0,
     total_input: int = 500,
     total_output: int = 200,
     max_output: int = 50,
@@ -523,6 +524,7 @@ def _make_metrics(
             duration=10.0,
             completed=completed,
             failures=failures,
+            excluded_successful=excluded_successful,
             request_throughput=request_throughput,
             latency_ms=StandardPercentileMetrics(
                 latency_values, scale_factor=1000.0, unit="ms"
@@ -573,6 +575,38 @@ def test_zero_completed_detected() -> None:
     ok, errors = _make_metrics(completed=0).validate_metrics()
     assert ok is False
     assert any("completed=0" in e for e in errors)
+
+
+def test_all_excluded_by_skip_reports_insufficient_data() -> None:
+    """Successes eaten by the skip windows report one insufficient-data error.
+
+    Mirrors the Meta-Llama-3.1 multi-turn-v2 mc=64 failure: 91 successful turns, all
+    excluded by skip_first=64 + skip_last=64. The server completed requests,
+    so "No requests completed" / "No output tokens generated" would misread
+    as a dead server.
+    """
+    ok, errors = _make_metrics(
+        completed=0,
+        excluded_successful=91,
+        total_output=0,
+        request_throughput=0.0,
+    ).validate_metrics()
+    assert ok is False
+    assert len(errors) == 1
+    assert "Insufficient data" in errors[0]
+    assert "91" in errors[0]
+    assert not any("No requests completed" in e for e in errors)
+    assert not any("total_output" in e for e in errors)
+
+
+def test_partial_exclusion_does_not_mask_other_errors() -> None:
+    """A nonzero measured set keeps normal validation even with exclusions."""
+    ok, errors = _make_metrics(
+        completed=5, excluded_successful=100, total_output=0
+    ).validate_metrics()
+    assert ok is False
+    assert any("total_output=0" in e for e in errors)
+    assert not any("Insufficient data" in e for e in errors)
 
 
 def test_zero_output_tokens_detected() -> None:

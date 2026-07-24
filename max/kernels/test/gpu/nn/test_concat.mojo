@@ -124,7 +124,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(output_dyn)
     def epilogue_plus_one[
-        c_type: DType, _rank: Int, width: SIMDSize, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output_dyn.flat_rank >= coord.flat_rank

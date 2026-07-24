@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -13,11 +14,10 @@ modular_py_library(
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
-        "@rules_python//python/runfiles",
     ],
 )
 
-modular_py_test(
+modular_eager_py_test(
     name = "tests",
     size = "large",
     srcs = glob(
@@ -32,18 +32,11 @@ modular_py_test(
             "test_reduce_add_rmsnorm_fusion.py",
         ],
     ),
-    data = [
-        "//max/tests/integration/Inputs/kernel_verification_ops",
-        # CPU-only target, so just the CPU warm (see test_interpreter_ops).
-        "//max/tests/integration/xarch_warm:warm_cpu",
-    ],
+    # CPU-only suite (GPU test files are separate targets below).
+    cpu_only = True,
+    data = ["//max/tests/integration/Inputs/kernel_verification_ops"],
     env = {
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
-        # Batch-compile the GC matrix once at import, not lazily per dispatch.
-        "MAX_EAGER_OP_PRECOMPILE": "1",
-        # Opt in to force-load adoption of the CPU warm above.
-        "MODULAR_EAGER_WARM_ADOPT_ASSERTED": "1",
-        "XARCH_WARM_RLOCATION": "$(rlocationpath //max/tests/integration/xarch_warm:warm_cpu)",
     },
     ignore_extra_deps = [
         # lazy import

@@ -396,6 +396,13 @@ class ModelWorker:
                 get_reset_prefix_cache_backend(pipeline, zmq_endpoint_base)
             )
 
+            # Tear down the KV connector when the worker exits (normal exit,
+            # exception, or SIGTERM-driven cancellation). This drains host/disk
+            # transfers and, for the tiered connector, removes the on-disk
+            # offload directory so it isn't leaked across restarts.
+            if kv_cache is not None:
+                exit_stack.callback(kv_cache.shutdown)
+
             # Get the EPLB stats accumulator (None unless profiling is
             # enabled and the pipeline supports it).
             eplb_stats_accumulator = _get_eplb_stats_accumulator(

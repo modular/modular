@@ -147,6 +147,7 @@ struct PreShuffledBGroupedGEMM[
         cluster_drain_sched: Bool = False,
         mfma_cluster: Int = 4,
         deep_prime: Bool = False,
+        pipeline_depth: Int = 2,
         waves_per_eu: Int = 0,
     ](
         c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
@@ -177,6 +178,7 @@ struct PreShuffledBGroupedGEMM[
             cluster_drain_sched=cluster_drain_sched,
             mfma_cluster=mfma_cluster,
             deep_prime=deep_prime,
+            pipeline_depth=pipeline_depth,
         ]
         # K_SCALES (= K / 32) derived from A-data packed_K (= K / 2). The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
@@ -349,6 +351,7 @@ struct PreShuffledBGroupedGEMM[
         cluster_drain_sched: Bool = False,
         mfma_cluster: Int = 4,
         deep_prime: Bool = False,
+        pipeline_depth: Int = 2,
         waves_per_eu: Int = 0,
     ](
         c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
@@ -379,6 +382,7 @@ struct PreShuffledBGroupedGEMM[
             cluster_drain_sched=cluster_drain_sched,
             mfma_cluster=mfma_cluster,
             deep_prime=deep_prime,
+            pipeline_depth=pipeline_depth,
         ]
         # K_SCALES (= K / 32) derived from A-data packed_K (= K / 2). The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
@@ -453,6 +457,7 @@ struct PreShuffledBGroupedGEMM[
         cluster_drain_sched: Bool = False,
         mfma_cluster: Int = 4,
         deep_prime: Bool = False,
+        pipeline_depth: Int = 2,
         waves_per_eu: Int = 0,
         static_grid_z: Bool = False,
     ](
@@ -483,6 +488,7 @@ struct PreShuffledBGroupedGEMM[
             cluster_drain_sched=cluster_drain_sched,
             mfma_cluster=mfma_cluster,
             deep_prime=deep_prime,
+            pipeline_depth=pipeline_depth,
         ]
 
         comptime N = c.static_shape[1]
@@ -545,6 +551,7 @@ struct PreShuffledBGroupedGEMM[
                 cluster_drain_sched,
                 mfma_cluster,
                 deep_prime,
+                pipeline_depth,
                 waves_per_eu,
             ]
             ctx.enqueue_function[kernel](
@@ -581,6 +588,7 @@ struct PreShuffledBGroupedGEMM[
                 cluster_drain_sched,
                 mfma_cluster,
                 deep_prime,
+                pipeline_depth,
                 waves_per_eu,
             ]
             # grid.y cap: decode cap when supplied, else full A-scale stride.
@@ -998,6 +1006,7 @@ def mxfp4_grouped_matmul_amd_preb(
         deep_prime: Bool = False,
         wg_per_cu: Int = 2,
         use_decode_cap: Bool = False,
+        pipeline_depth: Int = 2,
     ]() raises:
         # Decode bands (use_decode_cap) pass the decode cap; others pass -1.
         var grid_m_cap = decode_grid_m_cap if use_decode_cap else -1
@@ -1011,6 +1020,7 @@ def mxfp4_grouped_matmul_amd_preb(
             persistent=persistent,
             b_cache_policy=b_cache_policy,
             deep_prime=deep_prime,
+            pipeline_depth=pipeline_depth,
             static_grid_z=use_decode_cap,
         ](
             c,
@@ -1065,18 +1075,25 @@ def mxfp4_grouped_matmul_amd_preb(
 
     comptime if N == 6144 and packed_K == (6144 // 2):  # MiniMax-M3 gate+up
         if etm <= 256:
-            # Decode: direct capped grid beats persistent; needs a valid cap,
-            # else route to persistent.
+            # Decode: direct capped grid (pipeline_depth=3) beats persistent, else persistent.
             if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
                 return run_kernel[
-                    16, 64, 512, 16, False, STREAM, use_decode_cap=True
+                    16,
+                    64,
+                    512,
+                    16,
+                    False,
+                    STREAM,
+                    use_decode_cap=True,
+                    pipeline_depth=3,
                 ]()
             return run_kernel[16, 128, 512, 32, True, STREAM]()
         elif etm <= 512:
             return run_kernel[32, 128, 512, 32, True, STREAM]()
         elif etm <= 1023:
             return run_kernel[64, 128, 512, 32, True]()
-        elif etm <= 2047:
+        elif etm <= 2100:
+            # Keep BM64 across the etm~2048 pothole (BM128 under-fills the grid there).
             return run_kernel[64, 128, 512, 64, True]()
         elif etm <= 4095:
             return run_kernel[128, 128, 512, 64, True]()
@@ -1085,16 +1102,23 @@ def mxfp4_grouped_matmul_amd_preb(
 
     comptime if N == 6144 and packed_K == (3072 // 2):  # MiniMax-M3 down
         if etm <= 256:
-            # Decode: direct capped grid beats persistent; needs a valid cap,
-            # else route to persistent.
+            # Decode: direct capped grid (pipeline_depth=3) beats persistent, else persistent.
             if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
                 return run_kernel[
-                    16, 64, 512, 16, False, STREAM, use_decode_cap=True
+                    16,
+                    64,
+                    512,
+                    16,
+                    False,
+                    STREAM,
+                    use_decode_cap=True,
+                    pipeline_depth=3,
                 ]()
             return run_kernel[16, 128, 512, 32, True, STREAM]()
         elif etm <= 512:
             return run_kernel[32, 128, 512, 32, True, STREAM]()
-        elif etm <= 2047:
+        elif etm <= 2100:
+            # Keep BM64 across the etm~2048 pothole (BM128 under-fills the grid there).
             return run_kernel[64, 128, 512, 32, True]()
         else:
             return run_kernel[128, 128, 512, 64, True]()

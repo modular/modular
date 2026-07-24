@@ -239,5 +239,6 @@ def from_numpy_array[
     # against the `array` binding.
     var ptr = array.ctypes.data.unsafe_get_as_pointer[dtype]()
     return Span[Scalar[dtype], origin](
-        ptr=ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[origin](), length=n
+        unsafe_ptr=ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[origin](),
+        length=n,
     )

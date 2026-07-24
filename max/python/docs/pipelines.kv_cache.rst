@@ -69,3 +69,13 @@ Factory functions
 
    available_port
    load_kv_manager
+
+Utilities
+---------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   cache_dtype_for_encoding

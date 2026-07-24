@@ -31,8 +31,6 @@ from max.experimental.cascade.pipelines.all_pipelines import build_pipeline
 from max.experimental.cascade.pipelines.common_textgen import (
     CommonTextGenPipeline,
 )
-from max.experimental.cascade.workers.max_model_worker import MAXModelWorker
-from max.experimental.cascade.workers.max_tokenizer import MAXTokenizer
 from max.pipelines.lib import PipelineConfig, generate_local_model_path
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
@@ -51,13 +49,17 @@ def _model_path() -> str:
         return REPO_ID
 
 
-def _cpu_pipeline_config(model_path: str) -> PipelineConfig:
-    """Build a fresh CPU float32 config, as the entrypoint/CLI would.
+async def _text_pipeline(model_path: str) -> CommonTextGenPipeline:
+    """Build the cascade text pipeline for the test model (CPU, float32).
 
-    ``MAXModelWorker`` resolves the config in place on deploy, so each test
-    gets its own instance.
+    Goes through ``build_pipeline``, which resolves the config and builds/binds
+    the model factory exactly as the serve entrypoint does. Tests reuse this
+    single path -- including the ones that exercise ``MAXModelWorker.decode``
+    directly, via the pipeline's already-bound ``model`` worker -- rather than
+    re-implementing resolution/binding. A fresh config per call gives each test
+    its own instance.
     """
-    return PipelineConfig(
+    config = PipelineConfig(
         models=ModelManifest(
             {
                 "main": MAXModelConfig(
@@ -74,6 +76,9 @@ def _cpu_pipeline_config(model_path: str) -> PipelineConfig:
             enable_in_flight_batching=False,
         ),
     )
+    pipeline = await build_pipeline(config)
+    assert isinstance(pipeline, CommonTextGenPipeline)
+    return pipeline
 
 
 @pytest.fixture(scope="module")
@@ -86,10 +91,10 @@ async def test_decode_streams_requested_token_count(model_path: str) -> None:
     # A short prompt of valid, low token ids; content is irrelevant since
     # ``ignore_eos`` forces exactly ``num_tokens`` to be generated.
     prompt = np.array([1, 2, 3, 4], dtype=np.int32)
-    worker = MAXModelWorker(_cpu_pipeline_config(model_path))
+    pipeline = await _text_pipeline(model_path)
 
     async with LocalRuntime() as rt, _pipeline_method_scope():
-        proxy = await rt.deploy(worker)
+        proxy = await rt.deploy(pipeline.model)
 
         # One deploy (one model-worker subprocess), several decode requests.
         for num_tokens in (4, 8):
@@ -107,10 +112,10 @@ async def test_decode_streams_requested_token_count(model_path: str) -> None:
 @pytest.mark.asyncio
 async def test_decode_stops_on_eos(model_path: str) -> None:
     prompt = np.array([1, 2, 3, 4], dtype=np.int32)
-    worker = MAXModelWorker(_cpu_pipeline_config(model_path))
+    pipeline = await _text_pipeline(model_path)
 
     async with LocalRuntime() as rt, _pipeline_method_scope():
-        proxy = await rt.deploy(worker)
+        proxy = await rt.deploy(pipeline.model)
         req = GenerateRequest(num_tokens=16, ignore_eos=False)
         chunks = [chunk async for chunk in await proxy.decode(req, prompt)]
         generated = (
@@ -128,12 +133,11 @@ async def test_greedy_decode_answers_capital_of_france(model_path: str) -> None:
     # greedily decodes (temperature 0), and the tokenizer worker decodes the
     # generated ids back to text. Confirm the model answers "Paris".
     messages = [{"role": "user", "content": "What is the capital of France?"}]
+    pipeline = await _text_pipeline(model_path)
 
     async with LocalRuntime() as rt, _pipeline_method_scope():
-        tokenizer = await rt.deploy(MAXTokenizer(model_path))
-        model = await rt.deploy(
-            MAXModelWorker(_cpu_pipeline_config(model_path))
-        )
+        tokenizer = await rt.deploy(pipeline.tokenizer)
+        model = await rt.deploy(pipeline.model)
 
         prompt = await (await tokenizer.encode(messages))
         req = GenerateRequest(num_tokens=20, temperature=0.0)
@@ -152,11 +156,8 @@ async def test_pipeline_answers_capital_of_france(model_path: str) -> None:
     # ``CommonTextGenPipeline`` that ``build_pipeline`` selects from the model
     # path, so tokenization and detokenization run as pipeline workers rather
     # than being driven by the test.
-    config = _cpu_pipeline_config(model_path)
-    pipeline = await build_pipeline(config)
+    pipeline = await _text_pipeline(model_path)
     messages = [{"role": "user", "content": "What is the capital of France?"}]
-
-    assert isinstance(pipeline, CommonTextGenPipeline)
 
     async with LocalRuntime() as rt:
         await pipeline.deploy(rt)

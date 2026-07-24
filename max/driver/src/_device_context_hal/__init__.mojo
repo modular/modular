@@ -16,12 +16,13 @@
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
 from std.collections.optional import OptionalReg
-from std.ffi import CStringSlice, _CPointer, c_size_t, external_call
+from std.ffi import CStringSlice, _CPointer, _Global, c_size_t, external_call
 from std.compile import CompiledFunctionInfo
 from std.math import align_up
 from std.memory import (
     alloc,
     dealloc,
+    memcpy,
     ThinAllocation,
     ArcPointer,
     Layout,
@@ -32,10 +33,11 @@ from std.memory.unsafe import bitcast
 from std.pathlib import Path
 from std.utils import Variant
 from std.memory import stack_allocation
-from std.os import getenv
+from std.memory.pointer import AddressSpace
+from std.os import abort, getenv
 from std.reflection import call_location, reflect, SourceLocation
 from std.sys import bit_width_of, size_of
-from std.sys.info import _TargetType, _current_target
+from std.sys.info import _TargetType, _current_target, is_gpu
 from std.time import monotonic
 from std.gpu.host._hal import (
     Buffer,
@@ -137,11 +139,7 @@ trait _HALFunctionEnqueuer:
 
 
 @fieldwise_init
-struct _DeviceFunctionInner[
-    func_type: TrivialRegisterPassable,
-    //,
-    func: func_type,
-](Movable):
+struct _DeviceFunctionInner(Movable):
     """Wrapper around a HAL-loaded `FunctionHandle`.
 
     Owns the function handle, the `RuntimeBundle` it was loaded from, and
@@ -151,19 +149,99 @@ struct _DeviceFunctionInner[
     """
 
     var _func_handle: FunctionHandle
-    var _compiled: Tuple[
-        RuntimeBundle,
-        CompiledFunctionInfo[
-            Self.func_type, Self.func, get_device_spec[0]()._mlir_target()
-        ],
-    ]
+    var _bundle: RuntimeBundle
     var _context: ArcPointer[Context[get_device_spec[0]()]]
+    # Stable copy of the kernel's per-capture byte sizes, taken at
+    # `DeviceFunction.__init__`. `CompiledFunctionInfo.capture_sizes` points at
+    # elaborator stack storage that may be clobbered by the time the  HAL launch
+    # path reads it.
+    var _capture_sizes: UnsafePointer[UInt64, MutUntrackedOrigin]
+    var _num_captures: Int
 
     def __del__(deinit self):
         try:
             self._context[].unload_function(self._func_handle)
         except e:
             print("warning: unload_function failed:", e)
+        dealloc(
+            ThinAllocation(
+                unsafe_assume_ownership=self._capture_sizes
+            ).unsafe_with_layout({count = max(self._num_captures, 1)})
+        )
+        # Unloading must precede the bundle release (the bundle owns the
+        # loaded binary), and the context must outlive both.
+        _ = self._bundle^
+        _ = self._context^
+
+
+def _driver_satisfies_api(driver_name: String, api: String) -> Bool:
+    """Reports whether the single loaded HAL driver satisfies a requested API.
+
+    The HAL backend loads exactly one accelerator driver. A request is
+    satisfied by a case-insensitive match against the driver's name (for
+    example `"cuda" == "cuda"`), or by the generic accelerator alias `"gpu"`,
+    which any loaded GPU driver answers regardless of its concrete vendor name.
+    """
+    var d = driver_name.lower()
+    var a = api.lower()
+    if a == "gpu":
+        return d != "cpu"
+    return d == a
+
+
+def _load_gpu_driver() -> Optional[ArcPointer[Driver]]:
+    """Loads the accelerator plugin named by `MODULAR_DRIVER_PLUGINS`.
+
+    Used as the one-time initializer for `_GPU_DRIVER`; see that global. It
+    backs a `_Global` initializer, so it must not raise: a missing or
+    unloadable plugin is reported as an empty `Optional`.
+    """
+    var plugin_spec = getenv("MODULAR_DRIVER_PLUGINS")
+    if not plugin_spec:
+        return None
+    try:
+        # The spec may list several plugins ("CUDA@/x.so;CPU@/y.so"); load the
+        # first accelerator (non-CPU) entry.
+        for entry in plugin_spec.split(";"):
+            var name = String(entry.split("@")[0])
+            if _driver_satisfies_api(name, "gpu"):
+                return Optional(Driver.create(String(entry)))
+        return None
+    except:
+        return None
+
+
+comptime _GPU_DRIVER = _Global["MODULAR_HAL_GPU_DRIVER", _load_gpu_driver]
+
+
+@fieldwise_init
+struct StreamPriorityRange(TrivialRegisterPassable, Writable):
+    """Represents the range of valid stream priorities for a GPU device.
+
+    Stream priorities control the scheduling of GPU operations, with higher
+    priority streams being executed preferentially over lower priority streams.
+    """
+
+    var least: Int
+    """The lowest (numerically smallest) priority value."""
+
+    var greatest: Int
+    """The highest (numerically largest) priority value."""
+
+    @always_inline
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes the stream priority range to the given writer.
+
+        Args:
+            writer: The writer to output the stream priority range to.
+        """
+        writer.write(
+            "StreamPriorityRange(least=",
+            self.least,
+            ", greatest=",
+            self.greatest,
+            ")",
+        )
 
 
 struct DeviceContext(
@@ -262,12 +340,30 @@ struct DeviceContext(
         if not plugin_spec:
             raise Error("MODULAR_DRIVER_PLUGINS not set")
 
-        self._handle = None
-        self._driver = Driver.create(plugin_spec)
+        # The spec may list several plugins ("CUDA@/x.so;CPU@/y.so"); load the
+        # first whose name satisfies the requested api (its concrete vendor
+        # name, "cpu", or the generic accelerator alias "gpu").
+        var chosen = String("")
+        for entry in plugin_spec.split(";"):
+            var name = String(entry.split("@")[0])
+            if _driver_satisfies_api(name, api):
+                chosen = String(entry)
+                break
+        if not chosen:
+            raise Error(
+                String(
+                    t"Requested API {api} not provided by"
+                    t" MODULAR_DRIVER_PLUGINS"
+                )
+            )
 
-        # Validate that the loaded plugin matches the requested api.
+        self._handle = None
+        self._driver = Driver.create(chosen)
+
+        # Validate that the loaded plugin satisfies the requested api (its
+        # concrete vendor name, or the generic accelerator alias "gpu").
         var driver_name = self._driver[].get_name()
-        if String(driver_name).lower() != String(api).lower():
+        if not _driver_satisfies_api(String(driver_name), api):
             raise Error(
                 String(
                     t"Requested API {api} not supported by driver {driver_name}"
@@ -444,8 +540,13 @@ struct DeviceContext(
     ) -> ArcPointer[Stream[get_device_spec[0]()]]:
         return self._stream
 
-    def create_stream(self) raises -> DeviceStream:
+    def create_stream(self, *, priority: Int = 0) raises -> DeviceStream:
         """Creates a new stream associated with the given device context.
+
+        Args:
+            priority: Scheduling priority for the stream. The HAL queue API
+                has no priority support, so this is accepted for parity with
+                the legacy backend and ignored.
 
         Returns:
             The newly created device stream.
@@ -494,7 +595,19 @@ struct DeviceContext(
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) thin -> None,
-    ](self) raises -> DeviceFunction[func, declared_arg_types]:
+        # Passthrough parameters, accepted for API parity with the legacy
+        # backend and ignored: the HAL compile path derives compile options
+        # from the device spec and does not emit asm/LLVM/SASS dumps or honor
+        # link options.
+        compile_options: StaticString = "",
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self, *, func_attribute: OptionalReg[FuncAttribute] = None
+    ) raises -> DeviceFunction[func, declared_arg_types]:
         """Compiles the provided function for execution on this device.
 
         Parameters:
@@ -507,7 +620,44 @@ struct DeviceContext(
         Raises:
             If the operation fails.
         """
-        return DeviceFunction[func, declared_arg_types](self)
+        return DeviceFunction[func, declared_arg_types](
+            self, func_attribute=func_attribute
+        )
+
+    @always_inline
+    def compile_function[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        func: def(* args: * declared_arg_types) capturing -> None,
+        # Passthrough parameters, accepted for API parity with the legacy
+        # backend and ignored: the HAL compile path derives compile options
+        # from the device spec and does not emit asm/LLVM/SASS dumps or honor
+        # link options.
+        compile_options: StaticString = "",
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self, *, func_attribute: OptionalReg[FuncAttribute] = None
+    ) raises -> DeviceFunction[func, declared_arg_types]:
+        """Compiles the provided `capturing` function for execution on this
+        device.
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device function.
+            func: The function to compile.
+
+        Returns:
+            The compiled function.
+
+        Raises:
+            If the operation fails.
+        """
+        return DeviceFunction[func, declared_arg_types](
+            self, func_attribute=func_attribute
+        )
 
     @parameter
     @always_inline
@@ -695,6 +845,14 @@ struct DeviceContext(
         //,
         func: def(* args: * declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
+        # Debug/link passthrough parameters, accepted for API parity with the
+        # legacy backend and ignored (the HAL compile path does not emit
+        # asm/LLVM/SASS dumps or honor link options).
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
     ](
         self,
         *args: *actual_arg_types,
@@ -704,6 +862,7 @@ struct DeviceContext(
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
         location: OptionalReg[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
@@ -763,7 +922,18 @@ struct DeviceContext(
         _check_dim["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
-        var gpu_kernel = self.compile_function[func]()
+        var inferred_func_attribute = func_attribute
+        if not func_attribute and shared_mem_bytes:
+            var max_shared = self._get_max_dynamic_shared_memory_bytes(
+                shared_mem_bytes.value()
+            )
+            if max_shared > 0:
+                inferred_func_attribute = (
+                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
+                )
+        var gpu_kernel = self.compile_function[func](
+            func_attribute=inferred_func_attribute
+        )
         gpu_kernel._call_with_pack_checked(
             self,
             *args,
@@ -784,8 +954,8 @@ struct DeviceContext(
         func: def(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         # Debug/link passthrough params, accepted for API parity with the
-        # AsyncRT backend. The HAL compile path does not emit asm/LLVM/SASS dumps
-        # or honor link options, so these are ignored.
+        # legacy backend and ignored (the HAL compile path does not emit
+        # asm/LLVM/SASS dumps or honor link options).
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -800,6 +970,7 @@ struct DeviceContext(
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
         location: OptionalReg[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a `capturing` kernel for execution on this
@@ -838,7 +1009,18 @@ struct DeviceContext(
         _check_dim["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
-        var gpu_kernel = DeviceFunction[func, declared_arg_types](self)
+        var inferred_func_attribute = func_attribute
+        if not func_attribute and shared_mem_bytes:
+            var max_shared = self._get_max_dynamic_shared_memory_bytes(
+                shared_mem_bytes.value()
+            )
+            if max_shared > 0:
+                inferred_func_attribute = (
+                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
+                )
+        var gpu_kernel = DeviceFunction[func, declared_arg_types](
+            self, func_attribute=inferred_func_attribute
+        )
         gpu_kernel._call_with_pack_checked(
             self,
             *args,
@@ -1169,6 +1351,33 @@ struct DeviceContext(
         dtype: DType
     ](
         self,
+        dst_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+        src_ptr: UnsafePointer[Scalar[dtype], _],
+        size: Int,
+    ) raises:
+        """Enqueues an async copy of `size` elements from a device pointer to
+        another device pointer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_ptr: Host pointer to copy to.
+            src_ptr: Device pointer to copy from.
+            size: Number of elements (of the specified `DType`) to copy.
+
+        Raises:
+            If the operation fails.
+        """
+        self.enqueue_copy(
+            DeviceBuffer[dtype](self, dst_ptr, size, owning=False),
+            DeviceBuffer[dtype](self, src_ptr, size, owning=False),
+        )
+
+    def enqueue_copy[
+        dtype: DType
+    ](
+        self,
         dst_buf: DeviceBuffer[dtype],
         src_ptr: UnsafePointer[Scalar[dtype], _],
     ) raises:
@@ -1481,6 +1690,84 @@ struct DeviceContext(
         # them lowercased so dispatchers can match `ctx.api() == "cuda"`.
         return String(self._driver[].get_name()).lower()
 
+    def _get_max_dynamic_shared_memory_bytes(
+        self, requested_bytes: Int
+    ) -> UInt32:
+        """Gets the maximum dynamic shared memory bytes for this device.
+
+        For NVIDIA GPUs, dynamic shared memory defaults to 48KB max. For larger
+        allocations, we set MAX_DYNAMIC_SHARED_SIZE_BYTES to the minimum of:
+        - The device's maximum opt-in shared memory per block
+        - The requested size rounded up to nearest 1KB boundary
+
+        For smaller allocations (<= 48KB), we return 0 to skip setting the
+        attribute (avoiding unnecessary API calls and potential errors).
+
+        For AMD GPUs, the MAX_SHARED_MEMORY_PER_BLOCK_OPTIN attribute doesn't
+        exist, so we return 0 (no automatic inference) and rely on explicit
+        func_attribute settings when needed.
+
+        Args:
+            requested_bytes: The amount of shared memory requested by the kernel.
+
+        Returns:
+            Maximum dynamic shared memory bytes to set, or 0 if not needed.
+        """
+        # NVIDIA GPUs have a 48KB default limit for dynamic shared memory
+        comptime NVIDIA_DEFAULT_DYNAMIC_SHARED_LIMIT = 48 * 1024
+
+        # Only set the attribute if we need more than the default limit
+        if requested_bytes <= NVIDIA_DEFAULT_DYNAMIC_SHARED_LIMIT:
+            return 0
+
+        # Try to query the maximum opt-in shared memory limit from the device.
+        # This attribute is NVIDIA-specific (via cudaFuncSetAttribute) and may
+        # not be available on AMD GPUs or other vendors.
+        try:
+            var capacity = self.get_attribute(
+                DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK_OPTIN
+            )
+
+            # Sanity check: capacity should be reasonable (at least 48KB)
+            if capacity < NVIDIA_DEFAULT_DYNAMIC_SHARED_LIMIT:
+                # If the opt-in capacity is less than the default, something is wrong.
+                # Fall back to not setting the attribute.
+                return 0
+
+            # Round requested_bytes up to nearest 1KB and use the minimum of
+            # that and the device capacity minus 1KB system reservation
+            var rounded_request = ((requested_bytes + 1023) // 1024) * 1024
+            return UInt32(min(rounded_request, capacity - 1024))
+        except:
+            # Attribute not available (e.g., on AMD GPUs). Return 0 to skip
+            # automatic inference. Code that needs >48KB on AMD should explicitly
+            # set func_attribute.
+            return 0
+
+    def enqueue_copy_no_cross_stream_sync[
+        dtype: DType
+    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype],) raises:
+        """Enqueues a device-to-device copy without cross-stream synchronization.
+
+        This behaves like `enqueue_copy` for two device buffers, except that
+        when the source and destination are on different streams the driver does
+        not insert its own cross-stream synchronization; the caller is
+        responsible for ordering (for example via explicit device-wait ops).
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Destination device buffer.
+            src_buf: Source device buffer.
+
+        Raises:
+            If the operation fails.
+        """
+        # The HAL copy path never inserts cross-stream synchronization, so the
+        # plain device-to-device copy already has the required semantics.
+        self.enqueue_copy(dst_buf, src_buf)
+
     def enqueue_cpu_range[
         func: def(count: Int) capturing -> None,
     ](self, count: Int) raises:
@@ -1725,6 +2012,228 @@ struct DeviceContext(
             UInt64(size_of[dtype]()),
         )
 
+    @staticmethod
+    def enable_all_peer_access() raises:
+        """Enables peer-to-peer access between all accelerators.
+
+        The HAL backend manages a single device, so there are no peers to
+        enable and this is a no-op."""
+        pass
+
+    @staticmethod
+    def all_peer_access_enabled() raises -> Bool:
+        """Returns whether peer-to-peer access is enabled between all GPU pairs.
+
+        The HAL backend manages a single device (fewer than two GPUs), so this
+        returns False, matching the AsyncRT semantics for that case."""
+        return False
+
+    def enqueue_wait_for(self, other: DeviceContext) raises:
+        """Enqueues a wait operation for another device context to complete its work.
+
+        This method creates a dependency between two device contexts, ensuring that operations
+        in the current context will not begin execution until all previously enqueued operations
+        in the other context have completed. This is useful for synchronizing work across
+        multiple devices or streams.
+
+        Args:
+            other: The device context whose operations must complete before operations in this context can proceed.
+
+        Raises:
+            If there's an error enqueuing the wait operation or if the operation
+            is not supported by the underlying device API.
+
+        Example:
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+
+        # Create two device contexts
+        var ctx1 = DeviceContext(0)  # First GPU
+        var ctx2 = DeviceContext(1)  # Second GPU
+
+        # Enqueue operations on ctx1
+        # ...
+
+        # Make ctx2 wait for ctx1 to complete before proceeding
+        ctx2.enqueue_wait_for(ctx1)
+
+        # Enqueue operations on ctx2 that depend on ctx1's completion
+        # ...
+        ```
+        """
+        # Compose existing primitives: record an event on `other`'s default
+        # stream, then make this context's stream wait on it.
+        var event = other.create_event()
+        other.stream().record_event(event)
+        self.stream().enqueue_wait_for(event)
+
+    @staticmethod
+    def number_of_devices(
+        *, var api: String = String(Self.default_device_info.api)
+    ) -> Int:
+        """Returns the number of devices available that support the specified API.
+
+        Args:
+            api: Requested device API (for example, "cuda" or "hip"). Defaults
+                to the device API specified by the current target accelerator.
+
+        Returns:
+            The number of devices, or 0 if no driver plugin is available or the
+            loaded plugin does not support the requested API.
+        """
+        # The built-in host (CPU) backend always provides a single device and
+        # needs no plugin spec.
+        if api.lower() == "cpu":
+            return 1
+        try:
+            if not getenv("MODULAR_DRIVER_PLUGINS"):
+                return 0
+            # Reuse the process-global accelerator driver (loaded once).
+            var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
+            if not maybe_driver[]:
+                return 0
+            var driver = maybe_driver[].value()
+            if not _driver_satisfies_api(driver[].get_name(), api):
+                return 0
+            return Int(driver[].get_device_count())
+        except:
+            return 0
+
+    def name(self) raises -> String:
+        """Returns the device name as reported by the native driver.
+
+        Returns:
+            The device name (e.g. "NVIDIA B200").
+        """
+        return self._device[].get_name()
+
+    @doc_hidden
+    def __init__(out self, ctx_ptr: _DeviceContextPtr[mut=True]):
+        """Create a Mojo DeviceContext from the opaque device-context handle
+        carried by the runtime."""
+        self = Self._from_unsafe_cpp_handle(
+            ctx_ptr.unsafe_value().bitcast[NoneType]()
+        )
+
+    @always_inline
+    def __init__(out self, handle: OpaquePointer[MutUntrackedOrigin]):
+        """Reconstructs a `DeviceContext` from an opaque runtime handle.
+
+        The graph runtime hands op code the opaque device-context handle; this
+        recovers the Mojo `DeviceContext` it wraps.
+
+        Args:
+            handle: The opaque device-context handle carried by the runtime.
+        """
+        self = Self._from_unsafe_cpp_handle(handle)
+
+    @staticmethod
+    def _from_unsafe_cpp_handle(
+        handle: OpaquePointer[MutUntrackedOrigin],
+    ) -> DeviceContext:
+        return handle.bitcast[DeviceContext]()[]
+
+    def is_compatible(self) -> Bool:
+        """Returns True if this device is compatible with MAX.
+
+        This method checks whether the current device is compatible with the
+        Modular Accelerated Execution (MAX) runtime. It's useful for validating
+        that the device can execute the compiled code before attempting operations.
+
+        Returns:
+            True if the device is compatible with MAX, False otherwise.
+
+        Example:
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+        print("Device is compatible with MAX:", ctx.is_compatible())
+        ```
+        """
+        # TODO: HAL stub - always returns True. Hook this up to a plugin-side
+        # compute-capability + driver-version check when real semantics
+        # are needed.
+        return True
+
+    def stream_priority_range(self) raises -> StreamPriorityRange:
+        """Returns the range of stream priorities supported by this device context.
+
+        Returns:
+            A StreamPriorityRange object containing the minimum and maximum stream priorities.
+
+        Raises:
+            If the operation fails.
+        """
+        # TODO: HAL stub - returns the trivial range.
+        return StreamPriorityRange(0, 0)
+
+    def get_api_version(self) raises -> Int:
+        """Returns the API version associated with this device.
+
+        This method retrieves the version number of the GPU driver currently installed
+        on the system for the device associated with this context. The version is
+        returned as an integer that can be used to check compatibility with specific
+        features or to troubleshoot driver-related issues.
+
+        Returns:
+            An integer representing the driver version.
+
+        Raises:
+            If the driver version cannot be retrieved or if the device context is invalid.
+
+        Example:
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+
+        with DeviceContext() as ctx:
+            # Get the API version
+            var api_version = ctx.get_api_version()
+            print("GPU API version:", api_version)
+        ```
+        """
+        # TODO: HAL stub - returns 0. Plumb plugin-side `cuDriverGetVersion`
+        # / `hipDriverGetVersion` when callers actually need to gate on
+        # driver version.
+        return 0
+
+    def run_healthcheck(self) raises:
+        """Runs lightweight GPU health validation.
+
+        Checks for hardware throttling, uncorrectable ECC errors, and stuck
+        VRAM. Raises an error if the GPU is unhealthy. The healthcheck runs
+        automatically during device initialization; this method allows
+        re-running it explicitly.
+
+        Disable with `MODULAR_DEVICE_CONTEXT_DISABLE_HEALTHCHECK=true`.
+
+        Raises:
+            Error: If the GPU is in an unhealthy state.
+        """
+        # TODO: HAL stub - no-op. Port AsyncRT's `evaluateGPUHealth` when
+        # the healthcheck signal is required.
+        pass
+
+    def arch_name(self) raises -> String:
+        """Returns the architecture name of this device.
+
+        This internal method retrieves the architecture name of AMD GPUs.
+
+        Returns:
+            The compute capability as a string (e.g., `gfx942` for `MI300`).
+
+        Raises:
+            If there's an error retrieving the compute capability.
+
+        Notes:
+
+        This is a private method intended for internal use only.
+        """
+        return self._device[].get_arch()
+
 
 struct _DeviceContextScopeHAL(Movable):
     var _device_context: DeviceContext
@@ -1809,32 +2318,81 @@ struct DeviceFunction[
     """
 
     var _ctx: DeviceContext
-    var _inner: ArcPointer[_DeviceFunctionInner[Self.func]]
+    var _inner: ArcPointer[_DeviceFunctionInner]
     # Null until the C++ runtime shim provides it; read by the CUDA/HIP
     # interop accessors (`_nvidia_cuda` / `_amdgpu_hip`).
     var _handle: _DeviceFunctionPtr[mut=True]
+    # Hold the `CompiledFunctionInfo` by value so the closure environment of
+    # `Self.func` travels with this `DeviceFunction` value.
+    var _func_info: CompiledFunctionInfo[
+        Self.func_type, Self.func, get_device_spec[0]()._mlir_target()
+    ]
 
     @doc_hidden
-    def __init__(out self, ctx: DeviceContext) raises:
+    @always_inline
+    def __init__(
+        out self,
+        ctx: DeviceContext,
+        *,
+        func_attribute: OptionalReg[FuncAttribute] = None,
+    ) raises:
         """Compiles `Self.func` for `ctx`'s device and loads the function.
 
         Args:
             ctx: The device context to compile for.
+            func_attribute: Optional attribute to apply to the loaded function
+                (for example a raised dynamic shared-memory cap).
 
         Raises:
-            If compilation or function loading fails.
+            If compilation or function loading fails, or if an unsupported
+            function attribute is provided.
         """
-        var compiled = ctx._context[].compile[Self.func_type, Self.func]()
+        # Compile and load the bundle as two steps (exactly what
+        # `Context.compile` does internally).
+        var info = ctx._context[]._compile_inner[Self.func_type, Self.func]()
+        var bundle = ctx._context[].load_bundle(info.asm)
         var func_handle = ctx._context[].load_function(
-            compiled[0], compiled[1].function_name
+            bundle, info.function_name
         )
+        # Snapshot the per-capture byte sizes into stable heap storage now,
+        # while `info.capture_sizes` is still valid. It points at elaborator
+        # stack storage that is not guaranteed to survive to launch time.
+        var snap_num_captures = max(0, info.num_captures)
+        var snap_capture_sizes = alloc(
+            Layout[UInt64](count=max(snap_num_captures, 1))
+        ).unsafe_leak()
+        for i in range(snap_num_captures):
+            snap_capture_sizes[i] = info.capture_sizes[i]
+        if func_attribute:
+            if (
+                func_attribute.value().attribute
+                == Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
+            ):
+                ctx._context[].set_function_attribute(
+                    func_handle,
+                    func_attribute.value().attribute.code,
+                    Int32(func_attribute.value().value),
+                )
+            else:
+                raise Error(
+                    "the function attribute '",
+                    func_attribute.value().attribute,
+                    "' is not currently supported",
+                )
         self._ctx = ctx
         self._handle = None
+        self._func_info = info
         # The `RuntimeBundle` owns the loaded binary; the function handle is
-        # only valid while the bundle is alive. Move the whole tuple into
-        # the refcounted inner struct.
+        # only valid while the bundle is alive. Move it into the refcounted
+        # inner struct.
         self._inner = ArcPointer(
-            _DeviceFunctionInner(func_handle, compiled^, ctx._context)
+            _DeviceFunctionInner(
+                func_handle,
+                bundle^,
+                ctx._context,
+                snap_capture_sizes,
+                snap_num_captures,
+            )
         )
 
     @always_inline
@@ -1989,7 +2547,7 @@ struct DeviceFunction[
         var num_translated_args = validated_args[0]
         var translated_arg_offsets = validated_args[1].copy()
 
-        ref func_info = self._inner[]._compiled[1]
+        ref func_info = self._func_info
         var num_captures = max(0, func_info.num_captures)
         comptime populate = type_of(func_info).populate
         comptime num_captures_static = 16
@@ -2036,6 +2594,51 @@ struct DeviceFunction[
             for i in range(num_captures_static + num_passed_args):
                 dense_args_sizes[i] = 0
 
+        # Unlike the legacy path — whose `ctx.enqueue` is `@always_inline`, so
+        # the launch reads that storage in the same frame — HAL dispatches the
+        # launch through a chain of non-inlined calls (`Stream.execute` ->
+        # `Queue.execute` -> plugin -> C ABI). The compiler treats `populate`'s
+        # alloca as dead once `populate` returns and reuses the storage for
+        # those call frames, corrupting the kernel-param values. Copy the
+        # capture values into stable heap storage right after `populate` and
+        # repoint `dense_args_addrs` at the copies so they survive dispatch.
+        # Capture byte sizes come from the `_DeviceFunctionInner` snapshot taken
+        # in `DeviceFunction.__init__`.
+        var capture_blob = Optional[UnsafePointer[Byte, MutUntrackedOrigin]]()
+        var capture_blob_size = 0
+        if num_captures > 0:
+            for i in range(num_captures):
+                dense_args_sizes[
+                    num_passed_args + i
+                ] = self._inner[]._capture_sizes[i]
+                capture_blob_size = align_up(capture_blob_size, 16) + Int(
+                    self._inner[]._capture_sizes[i]
+                )
+            var capture_args_start = dense_args_addrs + num_translated_args
+            populate(
+                capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
+            )
+
+            var blob = alloc(
+                Layout[Byte](count=max(capture_blob_size, 1))
+            ).unsafe_leak()
+            var blob_off = 0
+            for i in range(num_captures):
+                blob_off = align_up(blob_off, 16)
+                var sz = Int(self._inner[]._capture_sizes[i])
+                memcpy(
+                    dest=blob + blob_off,
+                    src=dense_args_addrs[num_translated_args + i].bitcast[
+                        Byte
+                    ](),
+                    count=sz,
+                )
+                dense_args_addrs[num_translated_args + i] = (
+                    (blob + blob_off).bitcast[NoneType]().as_unsafe_any_origin()
+                )
+                blob_off += sz
+            capture_blob = Optional(blob)
+
         var translated_arg_idx = 0
 
         var device_type_encoder = DefaultDeviceTypeEncoder()
@@ -2061,25 +2664,18 @@ struct DeviceFunction[
                 )
                 translated_arg_idx += 1
 
-        if num_captures > 0:
-            for i in range(num_captures):
-                dense_args_sizes[num_passed_args + i] = func_info.capture_sizes[
-                    i
-                ]
-            var capture_args_start = dense_args_addrs + num_translated_args
-            populate(
-                capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
-            )
-
-        # Kernels that use `with PDL()` emit `griddepcontrol` instructions
-        # and require the launch to be configured with the matching attribute;
+        # Kernels that use `with PDL()` emit `griddepcontrol` instructions and
+        # require the launch to be configured with the matching attribute;
         # dropping it faults the launch.
         var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
         if len(attributes) > 0:
+            var attributes_ptr: UnsafePointer[
+                attributes.T, origin_of(attributes)
+            ] = attributes.unsafe_ptr()
             attr_ptr = OptionalReg(
-                attributes.unsafe_ptr()
-                .bitcast[NoneType]()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
+                attributes_ptr.bitcast[NoneType]().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ]()
             )
 
         ctx._hal_stream()[].execute(
@@ -2096,6 +2692,18 @@ struct DeviceFunction[
             num_attributes=UInt32(len(attributes)),
         )
 
+        # Keep `attributes` and the marshaled arg bytes alive past the launch:
+        # `attr_ptr` and `dense_args_addrs` point into them, and ASAP-drop
+        # would otherwise release the storage before the plugin reads it.
+        _ = attributes^
+        _ = translated_args^
+
+        if capture_blob:
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=capture_blob.value()
+                ).unsafe_with_layout({count = max(capture_blob_size, 1)})
+            )
         if num_captures > num_captures_static:
             dealloc(
                 ThinAllocation(
@@ -2141,7 +2749,7 @@ struct DeviceFunction[
             )
 
         comptime num_args = Ts.size
-        ref func_info = self._inner[]._compiled[1]
+        ref func_info = self._func_info
         var num_captures = max(0, func_info.num_captures)
         comptime populate = type_of(func_info).populate
         comptime num_captures_static = 16
@@ -2186,23 +2794,60 @@ struct DeviceFunction[
         comptime for i in range(num_args):
             _populate_arg_sizes[i]()
 
+        # See `_call_with_pack_checked`: `populate`'s stack capture storage
+        # does not survive HAL's non-inlined launch chain, so copy the capture
+        # values into a stable heap blob and repoint `dense_args_addrs` at the
+        # copies.
+        #
+        # Unchecked path: this is reached via `enqueue_function(func_value)`,
+        # so the `DeviceFunction` outlives the frame that filled
+        # `func_info.capture_sizes` (elaborator stack storage) — by here it
+        # has been reused/clobbered. Use the `_DeviceFunctionInner` snapshot
+        # taken at `__init__` instead, which captured the sizes while they
+        # were valid.
+        var capture_blob = Optional[UnsafePointer[Byte, MutUntrackedOrigin]]()
+        var capture_blob_size = 0
         if num_captures > 0:
             for i in range(num_captures):
-                dense_args_sizes[num_args + i] = func_info.capture_sizes[i]
+                dense_args_sizes[num_args + i] = self._inner[]._capture_sizes[i]
+                capture_blob_size = align_up(capture_blob_size, 16) + Int(
+                    self._inner[]._capture_sizes[i]
+                )
             var capture_args_start = dense_args_addrs + num_args
             populate(
                 capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
             )
+
+            var blob = alloc(
+                Layout[Byte](count=max(capture_blob_size, 1))
+            ).unsafe_leak()
+            var blob_off = 0
+            for i in range(num_captures):
+                blob_off = align_up(blob_off, 16)
+                var sz = Int(self._inner[]._capture_sizes[i])
+                memcpy(
+                    dest=blob + blob_off,
+                    src=dense_args_addrs[num_args + i].bitcast[Byte](),
+                    count=sz,
+                )
+                dense_args_addrs[num_args + i] = (
+                    (blob + blob_off).bitcast[NoneType]().as_unsafe_any_origin()
+                )
+                blob_off += sz
+            capture_blob = Optional(blob)
 
         # Kernels that use `with PDL()` emit `griddepcontrol` instructions and
         # require the launch to be configured with the matching attribute;
         # dropping it faults the launch.
         var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
         if len(attributes) > 0:
+            var attributes_ptr: UnsafePointer[
+                attributes.T, origin_of(attributes)
+            ] = attributes.unsafe_ptr()
             attr_ptr = OptionalReg(
-                attributes.unsafe_ptr()
-                .bitcast[NoneType]()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
+                attributes_ptr.bitcast[NoneType]().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ]()
             )
 
         ctx._hal_stream()[].execute(
@@ -2229,6 +2874,15 @@ struct DeviceFunction[
             num_attributes=UInt32(len(attributes)),
         )
 
+        # Keep `attributes` alive past the launch
+        _ = attributes^
+
+        if capture_blob:
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=capture_blob.value()
+                ).unsafe_with_layout({count = max(capture_blob_size, 1)})
+            )
         if num_captures > num_captures_static:
             dealloc(
                 ThinAllocation(
@@ -2258,7 +2912,7 @@ struct DeviceFunction[
         _check_device_context_hal_only_supported_exec_config(execution_config)
 
         comptime num_args = Ts.size
-        ref func_info = self._inner[]._compiled[1]
+        ref func_info = self._func_info
         var num_captures = max(0, func_info.num_captures)
         comptime populate = type_of(func_info).populate
         comptime num_captures_static = 16
@@ -2303,13 +2957,38 @@ struct DeviceFunction[
         comptime for i in range(num_args):
             _populate_arg_sizes[i]()
 
+        # See `_call_with_pack_checked`: keep capture data alive once
+        # `populate`'s stack storage is dead.
+        var capture_blob = Optional[UnsafePointer[Byte, MutUntrackedOrigin]]()
+        var capture_blob_size = 0
         if num_captures > 0:
             for i in range(num_captures):
-                dense_args_sizes[num_args + i] = func_info.capture_sizes[i]
+                dense_args_sizes[num_args + i] = self._inner[]._capture_sizes[i]
+                capture_blob_size = align_up(capture_blob_size, 16) + Int(
+                    self._inner[]._capture_sizes[i]
+                )
             var capture_args_start = dense_args_addrs + num_args
             populate(
                 capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
             )
+
+            var blob = alloc(
+                Layout[Byte](count=max(capture_blob_size, 1))
+            ).unsafe_leak()
+            var blob_off = 0
+            for i in range(num_captures):
+                blob_off = align_up(blob_off, 16)
+                var sz = Int(self._inner[]._capture_sizes[i])
+                memcpy(
+                    dest=blob + blob_off,
+                    src=dense_args_addrs[num_args + i].bitcast[Byte](),
+                    count=sz,
+                )
+                dense_args_addrs[num_args + i] = (
+                    (blob + blob_off).bitcast[NoneType]().as_unsafe_any_origin()
+                )
+                blob_off += sz
+            capture_blob = Optional(blob)
 
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
@@ -2323,6 +3002,12 @@ struct DeviceFunction[
             num_args=UInt32(num_args + num_captures),
         )
 
+        if capture_blob:
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=capture_blob.value()
+                ).unsafe_with_layout({count = max(capture_blob_size, 1)})
+            )
         if num_captures > num_captures_static:
             dealloc(
                 ThinAllocation(
@@ -2479,10 +3164,13 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         # dropping it faults the launch.
         var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
         if len(attributes) > 0:
+            var attributes_ptr: UnsafePointer[
+                attributes.T, origin_of(attributes)
+            ] = attributes.unsafe_ptr()
             attr_ptr = OptionalReg(
-                attributes.unsafe_ptr()
-                .bitcast[NoneType]()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
+                attributes_ptr.bitcast[NoneType]().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ]()
             )
 
         ctx._hal_stream()[].execute(
@@ -2741,6 +3429,39 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
         event._event[] = Optional(hal_event^)
 
     @doc_hidden
+    def wait_for_host_value(
+        self,
+        flag: CompletionFlag,
+        value: UInt64,
+    ) raises:
+        """Stalls the stream until a host-visible flag reaches a given value.
+
+        Corresponds to CUDA's `cuStreamWaitValue64` on the slot owned by
+        `flag`.
+
+        Args:
+            flag: A non-owning handle to a ``M::Driver::CompletionFlag``.
+            value: The 64-bit value to wait for.
+
+        Raises:
+            If the underlying device does not support stream memory ops,
+            or if enqueueing the wait fails.
+        """
+        # The flag's value slot lives inside a C++-driver-owned object; the
+        # exchange becomes functional once the HAL C++ runtime shim lands.
+        raise Error("wait_for_host_value requires the HAL C++ runtime shim")
+
+    def _native_stream[
+        origin: Origin, //
+    ](ref[origin] self) raises -> OpaquePointer[origin]:
+        """Returns this stream's native driver-level handle (for example a
+        `CUstream`), tied to this borrow of `self` so the owning queue stays
+        alive while the handle is in use."""
+        var handle = self._stream[].native_handle()
+        if not handle:
+            raise Error("this device's stream has no native driver handle")
+        return OpaquePointer[origin](unsafe_from_address=Int(handle.value()))
+
     def _hal_stream(
         self,
     ) -> ArcPointer[Stream[get_device_spec[0]()]]:
@@ -3233,12 +3954,21 @@ struct _HALBufferInner(Movable):
     var _buffer: Buffer[get_device_spec[0]()]
     var _context: ArcPointer[Context[get_device_spec[0]()]]
     var _device_addr: UInt64
+    # For sub-buffer views: keeps the parent allocation alive for the view's
+    # lifetime (a view's own `_buffer` is a non-owning wrapper). A `List` (heap
+    # storage) rather than `Optional` so the struct does not embed itself.
+    var _parent: List[ArcPointer[_HALBufferInner]]
+    # Same, for views over a `HostBuffer`'s pinned allocation (a different
+    # inner type; see `HostBuffer.create_sub_buffer`).
+    var _parent_host: List[ArcPointer[_HostBufferInner]]
 
     def __del__(deinit self):
         try:
             self._context[].free_sync(self._buffer^)
         except e:
             print("warning: free_sync failed:", e)
+        # Release the parent only after the view's wrapper is freed.
+        _ = self._parent^
 
 
 struct DeviceBuffer[dtype: DType](
@@ -3270,7 +4000,10 @@ struct DeviceBuffer[dtype: DType](
         """Device dtype mapping from `DeviceBuffer` to the device's
         `UnsafePointer`.
         """
-        self.unsafe_ptr()._to_device_type(encoder, target)
+        try:
+            encoder.encode_device_ptr(self.device_ptr(), target)
+        except:
+            pass
 
     @staticmethod
     def get_type_name() -> String:
@@ -3282,6 +4015,13 @@ struct DeviceBuffer[dtype: DType](
         """
         return String(t"DeviceBuffer[{Self.dtype}]")
 
+    comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
+
+    # `_device_ptr` must be the first member in the struct. Kernel dispatch code
+    # `rebind`s a `DeviceBuffer` directly to its `device_type` (an
+    # `UnsafePointer`), which reinterprets the struct's initial data as the
+    # device address.
+    var _device_ptr: Self._DevicePtr
     # Wrap the inner buffer in an ArcPointer so copies of this DeviceBuffer hold
     # a reference to the same underlying buffer.
     var _ctx: DeviceContext
@@ -3298,13 +4038,85 @@ struct DeviceBuffer[dtype: DType](
         var addr = UInt64(0)
         if byte_size > 0:
             addr = ctx._context[].memory_get_address(buffer)
+        self._device_ptr = Self._DevicePtr(unsafe_from_address=Int(addr))
         self._ctx = ctx
-        self._inner = ArcPointer(_HALBufferInner(buffer^, ctx._context, addr))
+        self._inner = ArcPointer(
+            _HALBufferInner(buffer^, ctx._context, addr, [], [])
+        )
+
+    @doc_hidden
+    def __init__(
+        out self,
+        ctx: DeviceContext,
+        ptr: UnsafePointer[Scalar[Self.dtype], ...],
+        size: Int,
+        *,
+        owning: Bool,
+    ):
+        """Constructs a `DeviceBuffer` that wraps an externally-managed device
+        pointer.
+
+        When `owning` is True the wrapper takes ownership of the underlying
+        allocation and will free it when the last reference drops. When
+        `owning` is False the wrapper is non-owning; releasing it leaves the
+        underlying pointer to whoever allocated it.
+
+        This mirrors the non-raising legacy constructor; a wrap failure
+        aborts rather than raising.
+
+        Args:
+            ctx: The device context the pointer belongs to.
+            ptr: The device pointer to wrap.
+            size: Number of elements addressable through the pointer.
+            owning: Whether releasing this buffer should free the pointer.
+        """
+        var byte_size = UInt64(size * size_of[Self.dtype]())
+        var addr = UInt64(Int(ptr))
+        try:
+            # The plugin rejects wrapping a null address; represent the empty
+            # buffer the way a zero-byte allocation does (null memory handle).
+            var buffer = ctx._context[].alloc_sync(
+                0
+            ) if addr == 0 else ctx._context[].wrap_memory(
+                addr, byte_size, owning=owning
+            )
+            self._device_ptr = Self._DevicePtr(unsafe_from_address=Int(addr))
+            self._ctx = ctx
+            self._inner = ArcPointer(
+                _HALBufferInner(buffer^, ctx._context, addr, [], [])
+            )
+        except e:
+            abort("DeviceBuffer: failed to wrap external memory")
 
     @staticmethod
     @doc_hidden
-    def empty(context: DeviceContext) raises -> Self:
-        return Self(context, 0)
+    def empty(context: DeviceContext) -> Self:
+        return Self(
+            context,
+            Self._DevicePtr.unsafe_dangling(),
+            0,
+            owning=False,
+        )
+
+    def device_ptr(
+        ref self,
+    ) raises -> DevicePointer[Self.dtype, origin_of(self)]:
+        """Returns a `DevicePointer` referencing the start of this buffer.
+
+        The returned `DevicePointer` is a non-owning borrow of this
+        `DeviceBuffer` and must not outlive it. A function that returns a
+        `DevicePointer` must also return (or otherwise keep alive) the backing
+        `DeviceBuffer`; returning a pointer into a buffer created locally within
+        the function is a borrow-check error.
+
+        Returns:
+            A `DevicePointer` referencing offset 0 of this buffer.
+
+        Raises:
+            If this buffer has size 0.
+        """
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        return DevicePointer[Self.dtype, origin_of(self)](self)
 
     def context(self) -> DeviceContext:
         """Returns the device context associated with this buffer.
@@ -3340,16 +4152,97 @@ struct DeviceBuffer[dtype: DType](
         exactly one live reference transfers, net-zero.
         """
         var box = alloc[DeviceBuffer[Self.dtype]](1)
-        box.unsafe_write(self^)
+        box.init_pointee_move(self^)
         return _DeviceBufferPtr[mut=True](
             box.bitcast[_DeviceBufferCpp]().unsafe_origin_cast[
                 UntrackedOrigin[mut=True]
             ]()
         )
 
+    def take_ptr(
+        var self,
+    ) -> Self._DevicePtr:
+        """Takes ownership of the device pointer from this buffer.
+
+        This method releases the device pointer from the buffer's control and
+        returns it to the caller. After this call, the buffer no longer owns
+        the pointer, and the caller is responsible for managing its lifecycle.
+
+        Returns:
+            The raw device pointer that was owned by this buffer.
+        """
+        # Ownership of the underlying allocation transfers to the caller: the
+        # wrapper handle (freed when the last reference drops) no longer frees
+        # the memory.
+        try:
+            _ = self._ctx._context[].unwrap_memory(self._inner[]._buffer)
+        except e:
+            abort("DeviceBuffer.take_ptr: failed to release ownership")
+        return Self._DevicePtr(
+            unsafe_from_address=Int(self._inner[]._device_addr)
+        )
+
+    def enqueue_fill(self, val: Scalar[Self.dtype]) raises:
+        """Enqueues an operation to fill this buffer with a specified value.
+
+        This method schedules a memory set operation that fills the entire buffer
+        with the specified value. The operation is asynchronous and will be executed
+        in the stream associated with this buffer's context.
+
+        Args:
+            val: The value to fill the buffer with.
+
+        Raises:
+            If the operation fails.
+        """
+        self._ctx.enqueue_memset(self, val)
+
+    @always_inline
+    def create_sub_buffer[
+        view_type: DType
+    ](self, offset: Int, size: Int) raises -> DeviceBuffer[view_type]:
+        """Creates a sub-buffer view of this buffer with a different element dtype.
+
+        This method creates a new buffer that references a subset of the memory in this
+        buffer, potentially with a different element dtype. The sub-buffer shares the
+        underlying memory with the original buffer.
+
+        Parameters:
+            view_type: The data type for elements in the new sub-buffer.
+
+        Args:
+            offset: The starting offset, in view_type elements, from the beginning of this buffer.
+            size: The number of elements in the new sub-buffer.
+
+        Returns:
+            A new DeviceBuffer referencing the specified region with the specified element dtype.
+
+        Raises:
+            If the operation fails.
+        """
+        comptime elem_size = size_of[view_type]()
+        var byte_offset = UInt64(offset * elem_size)
+        var byte_size = UInt64(size * elem_size)
+        if byte_offset + byte_size > self._inner[]._buffer.byte_size:
+            raise Error("create_sub_buffer: view is out of range")
+        var view = DeviceBuffer[view_type](
+            self._ctx,
+            UnsafePointer[Scalar[view_type], MutUntrackedOrigin](
+                unsafe_from_address=Int(
+                    self._inner[]._device_addr + byte_offset
+                )
+            ),
+            size,
+            owning=False,
+        )
+        # The view's wrapper is non-owning; retaining the parent's inner keeps
+        # the shared allocation alive for the view's lifetime.
+        view._inner[]._parent = [self._inner]
+        return view^
+
     def unsafe_ptr(
         self,
-    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]:
         """Returns the raw device pointer without transferring ownership.
 
         This method provides direct access to the underlying device pointer
@@ -3358,9 +4251,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The raw device pointer owned by this buffer.
         """
-        return UnsafePointer[Scalar[Self.dtype], MutAnyOrigin](
-            unsafe_from_address=Int(self._inner[]._device_addr)
-        )
+        return self._device_ptr
 
     def _tensor_map_encode_tiled(
         self,
@@ -3431,6 +4322,53 @@ struct DeviceBuffer[dtype: DType](
             l2_promotion,
             oob_fill,
         )
+
+    def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype]) raises:
+        """Enqueues an asynchronous copy from this buffer to another device buffer.
+
+        This method schedules a memory copy operation from this buffer to the
+        destination buffer. The operation is asynchronous and will be executed
+        in the stream associated with this buffer's context.
+
+        Args:
+            dst: The destination device buffer to copy data to.
+
+        Raises:
+            If the operation fails.
+        """
+        self._ctx.enqueue_copy(dst, self)
+
+    def enqueue_copy_from(self, src: DeviceBuffer[Self.dtype]) raises:
+        """Enqueues an asynchronous copy to this buffer from another device buffer.
+
+        This method schedules a memory copy operation to this buffer from the
+        source buffer. The operation is asynchronous and will be executed in
+        the stream associated with this buffer's context.
+
+        Args:
+            src: The source device buffer to copy data from.
+
+        Raises:
+            If the operation fails.
+        """
+        self._ctx.enqueue_copy(self, src)
+
+    def enqueue_copy_from(
+        self, src_ptr: UnsafePointer[Scalar[Self.dtype], _]
+    ) raises:
+        """Enqueues an asynchronous copy to this buffer from host memory.
+
+        This method schedules a memory copy operation to this buffer from the
+        given host pointer. The operation is asynchronous and will be executed
+        in the stream associated with this buffer's context.
+
+        Args:
+            src_ptr: The source host pointer to copy data from.
+
+        Raises:
+            If the operation fails.
+        """
+        self._ctx.enqueue_copy(self, src_ptr)
 
     def enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to a host buffer.
@@ -3613,7 +4551,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
 
     def unsafe_ptr(
         self,
-    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]:
         """Returns the raw device pointer without transferring ownership.
 
         This method provides direct access to the underlying device pointer
@@ -3625,7 +4563,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         return (
             self._inner[]
             ._host_ptr.bitcast[Scalar[Self.dtype]]()
-            .as_unsafe_any_origin()
+            .unsafe_origin_cast[MutUntrackedOrigin]()
         )
 
     def __getitem__(self, idx: Int) -> Scalar[Self.dtype]:
@@ -3669,11 +4607,55 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         # Safety: We are casting the pointer to the mutability and origin of
         # self and the pointer is already mutable.
         return {
-            ptr = self.unsafe_ptr()
+            unsafe_ptr = self.unsafe_ptr()
             .unsafe_mut_cast[mut]()
             .unsafe_origin_cast[origin](),
             length = len(self),
         }
+
+    def create_sub_buffer[
+        view_type: DType
+    ](self, offset: Int, size: Int) raises -> DeviceBuffer[view_type]:
+        """Creates a sub-buffer view of this buffer with a different element dtype.
+
+        This method creates a new buffer that references a subset of the memory in this
+        buffer, potentially with a different element dtype. The sub-buffer shares the
+        underlying memory with the original buffer.
+
+        Parameters:
+            view_type: The data type for elements in the new sub-buffer.
+
+        Args:
+            offset: The starting offset, in view_type elements, from the beginning of this buffer.
+            size: The number of elements in the new sub-buffer.
+
+        Returns:
+            A new DeviceBuffer referencing the specified region with the specified element dtype.
+
+        Raises:
+            If the operation fails.
+        """
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        comptime elem_size = size_of[view_type]()
+        var byte_offset = offset * elem_size
+        var byte_size = size * elem_size
+        if byte_offset + byte_size > len(self) * size_of[Self.dtype]():
+            raise Error("create_sub_buffer: view is out of range")
+        # The view is a plain `DeviceBuffer` over the pinned host region
+        # (host-pinned memory is device-visible), mirroring the legacy
+        # implementation where host sub-buffers are `DeviceBuffer`s. The
+        # wrapper is non-owning; retaining this buffer's inner keeps the
+        # pinned allocation alive for the view's lifetime.
+        var view = DeviceBuffer[view_type](
+            self._ctx,
+            (self._inner[]._host_ptr + byte_offset).bitcast[
+                Scalar[view_type]
+            ](),
+            size,
+            owning=False,
+        )
+        view._inner[]._parent_host = [self._inner]
+        return view^
 
     def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to a device buffer.
@@ -3955,45 +4937,83 @@ struct DefaultDeviceTypeEncoder(DeviceTypeEncoder):
 # ===-----------------------------------------------------------------------===#
 
 
-struct DevicePointer[dtype: DType](DevicePassable, ImplicitlyCopyable):
-    """A host-side handle to device memory within an owning `DeviceBuffer`.
+struct DevicePointer[
+    mut: Bool,
+    //,
+    dtype: DType,
+    origin: Origin[mut=mut],
+](
+    DevicePassable,
+    Equatable,
+    ImplicitlyCopyable,
+    TrivialRegisterPassable,
+    Writable,
+):
+    """A host-side representation of a pointer to device memory that resides
+    within a `DeviceBuffer`.
 
-    At the kernel-execution boundary a `DevicePointer` is lowered to an
-    `UnsafePointer` on the device. This is the HAL-backed counterpart of the
-    AsyncRT `DevicePointer`.
+    A `DevicePointer` is a non-owning borrow of a `DeviceBuffer`; it must not
+    outlive the buffer it points into.
+
+    - Supports pointer arithmetic which may result in a new `DevicePointer`
+      instance referring to the same `DeviceBuffer` with a new offset.
+    - Supports equality comparison and ordering of `DevicePointer`s pointing
+      into the same `DeviceBuffer`.
+    - May support accessing device pointer address on supported hardware.
+    - Does not support load/store operations.
+
+    At the device function execution boundary a `DevicePointer` is transformed
+    into an `UnsafePointer` on the device at the point of being handed over to
+    the device driver.
 
     Parameters:
-        dtype: Data dtype the pointer addresses.
+        mut: Whether the borrow of the underlying `DeviceBuffer` is mutable
+            (inferred from `origin`).
+        dtype: Data dtype to be stored in the pointer.
+        origin: The origin of the borrowed `DeviceBuffer`.
     """
 
-    var _buffer: DeviceBuffer[Self.dtype]
+    var _buffer: Pointer[DeviceBuffer[Self.dtype], Self.origin]
     var _offset: Int
+    var _size: Int
 
-    def __init__(out self, buffer: DeviceBuffer[Self.dtype]) raises:
-        """Constructs a `DevicePointer` to the start of `buffer`.
+    # ===------------------------------------------------------------------=== #
+    # Constructors
+    # ===------------------------------------------------------------------=== #
+
+    def __init__(
+        out self, ref[Self.origin] buffer: DeviceBuffer[Self.dtype]
+    ) raises:
+        """Constructs a `DevicePointer` referencing the start of `buffer`.
 
         Args:
-            buffer: The owning `DeviceBuffer`.
+            buffer: The `DeviceBuffer` this pointer references. Must outlive
+                the resulting `DevicePointer`.
 
         Raises:
             If `buffer` has size 0.
         """
-        if len(buffer) == 0:
+        var size = len(buffer)
+        if size == 0:
             raise Error("DevicePointer: size of DeviceBuffer must not be 0")
-        self._buffer = buffer
+        self._buffer = Pointer(to=buffer)
         self._offset = 0
+        self._size = size
 
     def __init__(
-        out self, buffer: DeviceBuffer[Self.dtype], offset: Int
+        out self, ref[Self.origin] buffer: DeviceBuffer[Self.dtype], offset: Int
     ) raises:
-        """Constructs a `DevicePointer` into `buffer` at `offset` elements.
+        """Constructs a `DevicePointer` into `buffer` at `offset` with `size`
+        elements in range.
 
         Args:
-            buffer: The owning `DeviceBuffer`.
+            buffer: The `DeviceBuffer` this pointer references. Must outlive
+                the resulting `DevicePointer`.
             offset: Element offset from the start of `buffer`.
 
         Raises:
-            If `buffer` has size 0 or `offset` is outside `[0, len(buffer))`.
+            If `buffer` has size 0, or if `offset` is outside the half-open
+            range `[0, len(buffer))`.
         """
         var size = len(buffer)
         if size == 0:
@@ -4003,16 +5023,24 @@ struct DevicePointer[dtype: DType](DevicePassable, ImplicitlyCopyable):
                 t"DevicePointer: invalid offset '{offset}' for DeviceBuffer of"
                 t" size '{size}'"
             )
-        self._buffer = buffer
+        self._buffer = Pointer(to=buffer)
         self._offset = offset
+        self._size = size
 
-    def buffer(self) -> DeviceBuffer[Self.dtype]:
-        """Returns the owning `DeviceBuffer`.
+    # ===------------------------------------------------------------------=== #
+    # Accessors
+    # ===------------------------------------------------------------------=== #
+
+    def buffer(self) -> ref[Self.origin] DeviceBuffer[Self.dtype]:
+        """Returns a reference to the `DeviceBuffer` this pointer references.
+
+        The reference is non-owning; the underlying `DeviceBuffer` must
+        outlive `self`.
 
         Returns:
-            The owning `DeviceBuffer`.
+            A reference to the referenced `DeviceBuffer`.
         """
-        return self._buffer
+        return self._buffer[]
 
     def offset(self) -> Int:
         """Returns the element offset from the start of the owning buffer.
@@ -4026,14 +5054,273 @@ struct DevicePointer[dtype: DType](DevicePassable, ImplicitlyCopyable):
     def unsafe_ptr(
         ref self,
     ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
-        """Returns the raw device pointer adjusted by the current offset.
+        """Returns the raw device pointer, if supported by the target.
+
+        On targets that expose raw device pointers (for example CUDA and HIP),
+        this returns the underlying address adjusted by the current offset.
+        On targets that do not (for example Metal), this raises an error.
 
         Returns:
             The raw device pointer.
         """
-        return self._buffer.unsafe_ptr() + self._offset
+        # TODO: GEX-3693: Assert/raise when target doesn't support raw device
+        # pointer access
+        # `DeviceBuffer.unsafe_ptr()` now ties its mutability to the borrow of
+        # the buffer; force mutable to preserve this helper's `MutAnyOrigin`
+        # contract.
+        return (
+            (self._buffer[].unsafe_ptr() + self._offset)
+            .unsafe_mut_cast[True]()
+            .as_unsafe_any_origin()
+        )
 
-    # Implementation of `DevicePassable`
+    # ===------------------------------------------------------------------=== #
+    # Pointer arithmetic
+    # ===------------------------------------------------------------------=== #
+
+    def __add__(self, n: Int) raises -> Self:
+        """Returns a new `DevicePointer` offset forward by `n` elements.
+
+        Args:
+            n: Number of elements to offset by.
+
+        Returns:
+            A new `DevicePointer` referencing the same `DeviceBuffer` at the
+            new offset.
+
+        Raises:
+            If the resulting offset is outside the bounds of the owning
+            `DeviceBuffer`.
+        """
+        var offset = self._offset + n
+        if offset < 0 or offset >= self._size:
+            raise Error(
+                t"DevicePointer: addition of '{n}' results in invalid offset of"
+                t" '{offset}' for DeviceBuffer of size {self._size}"
+            )
+        return DevicePointer(self._buffer[], offset)
+
+    def __sub__(self, n: Int) raises -> Self:
+        """Returns a new `DevicePointer` offset backward by `n` elements.
+
+        Args:
+            n: Number of elements to offset by.
+
+        Returns:
+            A new `DevicePointer` referencing the same `DeviceBuffer` at the
+            new offset.
+
+        Raises:
+            If the resulting offset is outside the bounds of the owning
+            `DeviceBuffer`.
+        """
+        var offset = self._offset - n
+        if offset < 0 or offset >= self._size:
+            raise Error(
+                t"DevicePointer: subtraction of '{n}' results in invalid offset"
+                t" of '{offset}' for DeviceBuffer of size {self._size}"
+            )
+        return DevicePointer(self._buffer[], offset)
+
+    def __iadd__(mut self, n: Int) raises:
+        """Offsets this `DevicePointer` forward by `n` elements in place.
+
+        Args:
+            n: Number of elements to offset by.
+
+        Raises:
+            If the resulting offset is outside the bounds of the owning
+            `DeviceBuffer`.
+        """
+        var offset = self._offset + n
+        if offset < 0 or offset >= self._size:
+            raise Error(
+                t"DevicePointer: addition of '{n}' results in invalid offset of"
+                t" '{offset}' for DeviceBuffer of size {self._size}"
+            )
+        self._offset = offset
+
+    def __isub__(mut self, n: Int) raises:
+        """Offsets this `DevicePointer` backward by `n` elements in place.
+
+        Args:
+            n: Number of elements to offset by.
+
+        Raises:
+            If the resulting offset is outside the bounds of the owning
+            `DeviceBuffer`.
+        """
+        var offset = self._offset - n
+        if offset < 0 or offset >= self._size:
+            raise Error(
+                t"DevicePointer: subtraction of '{n}' results in invalid offset"
+                t" of '{offset}' for DeviceBuffer of size {self._size}"
+            )
+        self._offset = offset
+
+    # ===------------------------------------------------------------------=== #
+    # Comparison
+    # ===------------------------------------------------------------------=== #
+
+    @__unsafe_nested_origins_read_only
+    def __eq__(self, other: Self) -> Bool:
+        """Returns `True` if `self` and `other` reference the same buffer and
+        offset.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if equal.
+        """
+        # Buffer identity = base device address (HAL buffers have no C++ handle).
+        return (
+            self._buffer[]._device_ptr == other._buffer[]._device_ptr
+            and self._offset == other._offset
+        )
+
+    @__unsafe_nested_origins_read_only
+    def __eq__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
+        """Returns `True` if `self` and `other` reference the same buffer and
+        offset.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if equal.
+        """
+        return (
+            self._buffer[]._device_ptr == other._buffer[]._device_ptr
+            and self._offset == other._offset
+        )
+
+    @__unsafe_nested_origins_read_only
+    def __ne__(self, other: Self) -> Bool:
+        """Returns `True` if `self` and `other` differ in buffer or offset.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if not equal.
+        """
+        return not (self == other)
+
+    @__unsafe_nested_origins_read_only
+    def __ne__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
+        """Returns `True` if `self` and `other` differ in buffer or offset.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if not equal.
+        """
+        return not (self == other)
+
+    @__unsafe_nested_origins_read_only
+    def __lt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
+        """Returns `True` if `self` precedes `other` within the same buffer.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if `self` is ordered before `other`.
+
+        Raises:
+            If `self` and `other` reference different `DeviceBuffer`s.
+        """
+        if self._buffer[]._device_ptr != other._buffer[]._device_ptr:
+            raise Error(
+                "DevicePointer: less than comparison not supported when the"
+                " underlying DeviceBuffer does not match"
+            )
+        return self._offset < other._offset
+
+    @__unsafe_nested_origins_read_only
+    def __le__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
+        """Returns `True` if `self` precedes or equals `other` within the
+        same buffer.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if `self` is ordered before or equal to `other`.
+
+        Raises:
+            If `self` and `other` reference different `DeviceBuffer`s.
+        """
+        if self._buffer[]._device_ptr != other._buffer[]._device_ptr:
+            raise Error(
+                "DevicePointer: less than or equal comparison not supported"
+                " when the underlying DeviceBuffer does not match"
+            )
+        return self._offset <= other._offset
+
+    @__unsafe_nested_origins_read_only
+    def __gt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
+        """Returns `True` if `self` follows `other` within the same buffer.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if `self` is ordered after `other`.
+
+        Raises:
+            If `self` and `other` reference different `DeviceBuffer`s.
+        """
+        if self._buffer[]._device_ptr != other._buffer[]._device_ptr:
+            raise Error(
+                "DevicePointer: greater than comparison not supported when the"
+                " underlying DeviceBuffer does not match"
+            )
+        return self._offset > other._offset
+
+    @__unsafe_nested_origins_read_only
+    def __ge__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
+        """Returns `True` if `self` follows or equals `other` within the same
+        buffer.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if `self` is ordered after or equal to `other`.
+
+        Raises:
+            If `self` and `other` reference different `DeviceBuffer`s.
+        """
+        if self._buffer[]._device_ptr != other._buffer[]._device_ptr:
+            raise Error(
+                "DevicePointer: greater than or equal comparison not supported"
+                " when the underlying DeviceBuffer does not match"
+            )
+        return self._offset >= other._offset
+
+    # ===------------------------------------------------------------------=== #
+    # Writable
+    # ===------------------------------------------------------------------=== #
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of this `DevicePointer` to `writer`.
+
+        Args:
+            writer: The writer to output the formatted string to.
+        """
+        writer.write(
+            t"DevicePointer[{Self.dtype}]("
+            t"buffer=DeviceBuffer(size={len(self._buffer[])}), "
+            t"offset={self._offset})"
+        )
+
+    # ===------------------------------------------------------------------=== #
+    # DevicePassable
+    # ===------------------------------------------------------------------=== #
+
     comptime device_type: AnyType = UnsafePointer[
         mut=True, Scalar[Self.dtype], AnyOrigin[mut=True]
     ]
@@ -4041,18 +5328,12 @@ struct DevicePointer[dtype: DType](DevicePassable, ImplicitlyCopyable):
     accelerator devices."""
 
     def _to_device_type(
-        self,
-        mut encoder: Some[DeviceTypeEncoder],
-        target: MutOpaquePointer[_],
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        """Device dtype mapping from `DevicePointer` to the device's
+        """Device type mapping from `DevicePointer` to the device's
         `UnsafePointer`.
-
-        Lowered directly via the underlying pointer (as `DeviceBuffer` does)
-        rather than through `DeviceTypeEncoder.encode_device_ptr`, whose
-        signature is bound to the AsyncRT `DevicePointer` type.
         """
-        self.unsafe_ptr()._to_device_type(encoder, target)
+        encoder.encode_device_ptr(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -4108,7 +5389,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         )
 
 
-struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):
+struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
     """A fixed-size collection of `DeviceContext` values.
 
     Used by multi-device custom-op `execute` methods to receive one
@@ -4117,15 +5398,23 @@ struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):
     operation.
 
     Parameters:
-        size: The number of `DeviceContext` values in the collection.
+        length: The number of `DeviceContext` values in the collection.
     """
 
-    var device_contexts: InlineArray[DeviceContext, Self.size]
+    @deprecated(
+        "`DeviceContextArray.size` is deprecated, use"
+        " `DeviceContextArray.length`."
+    )
+    comptime size = Self.length
+    """The number of `DeviceContext` values in the collection. Deprecated
+    alias for `length`."""
+
+    var device_contexts: InlineArray[DeviceContext, Self.length]
     """The underlying storage for the per-device contexts."""
 
     @always_inline
     def __init__(
-        out self, device_contexts: InlineArray[DeviceContext, Self.size]
+        out self, device_contexts: InlineArray[DeviceContext, Self.length]
     ):
         """Initialize from an `InlineArray` of `DeviceContext` values.
 
@@ -4143,15 +5432,15 @@ struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):
         """Initialize from a variadic sequence of `DeviceContext` values.
 
         Args:
-            device_contexts: One `DeviceContext` per device, exactly `size` of
-                them.
+            device_contexts: One `DeviceContext` per device, exactly `length`
+                of them.
             __list_literal__: Marker that lets this constructor accept
                 list-literal syntax.
         """
         assert (
-            len(device_contexts) == Self.size
+            len(device_contexts) == Self.length
         ), "mismatch in the number of elements"
-        self.device_contexts = InlineArray[DeviceContext, Self.size](
+        self.device_contexts = InlineArray[DeviceContext, Self.length](
             *device_contexts^, __list_literal__=None
         )
 
@@ -4184,16 +5473,16 @@ struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):
         """Get the number of `DeviceContext` values in the collection.
 
         Returns:
-            The size of the collection as specified by the `size` parameter.
+            The size of the collection as specified by the `length` parameter.
         """
-        return Self.size
+        return Self.length
 
     def filter_gpu_contexts[
         num_gpu_devices: Int
     ](self) raises -> InlineArray[DeviceContext, num_gpu_devices]:
         """Filters CPU contexts out and returns the GPU contexts in order.
 
-        Some kernels receive a `DeviceContextList` that mixes GPU contexts
+        Some kernels receive a `DeviceContextArray` that mixes GPU contexts
         with CPU contexts carrying host-side pointers. Most kernels only
         want the GPU contexts in launch order, packed into a fixed-size
         `InlineArray`.
@@ -4214,7 +5503,7 @@ struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):
         # array to `unsafe_assume_initialized=` would still be UB at the
         # eventual destruction of the returned `InlineArray`.
         var gpu_count = 0
-        for i in range(Self.size):
+        for i in range(Self.length):
             if self[i].api() != "cpu":
                 gpu_count += 1
         if gpu_count != num_gpu_devices:
@@ -4229,13 +5518,21 @@ struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):
             UnsafeMaybeUninit[DeviceContext], num_gpu_devices
         ](uninitialized=True)
         var dev_idx = 0
-        for i in range(Self.size):
+        for i in range(Self.length):
             if self[i].api() != "cpu":
                 staging[dev_idx].init_from(DeviceContext(copy=self[i]))
                 dev_idx += 1
         return InlineArray[DeviceContext, num_gpu_devices](
             unsafe_assume_initialized=staging^
         )
+
+
+@deprecated(use=DeviceContextArray)
+comptime DeviceContextList = DeviceContextArray
+"""Deprecated: A fixed-size collection of `DeviceContext` values.
+
+This struct has been renamed to `DeviceContextArray`. This alias will be
+removed in a future version of Mojo."""
 
 
 struct DeviceMulticastBuffer[dtype: DType]:

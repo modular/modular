@@ -42,7 +42,7 @@ def test_pad_1d() raises:
     var constant = Scalar[DType.int](5)
 
     # pad
-    pad_constant(output, input, paddings.ptr, constant)
+    pad_constant(output, input, paddings._storage, constant)
 
     # output should have form
     # [5, 1, 2, 3, 5, 5]
@@ -79,7 +79,7 @@ def test_pad_reflect_1d() raises:
     var paddings = TileTensor(paddings_stack, row_major[2]())
 
     # pad
-    pad_reflect(output, input, paddings.ptr)
+    pad_reflect(output, input, paddings._storage)
 
     # output should have form
     # [2, 3, 2, 1, 2, 3, 2, 1]
@@ -118,7 +118,7 @@ def test_pad_repeat_1d() raises:
     var paddings = TileTensor(paddings_stack, row_major[2]())
 
     # pad
-    pad_repeat(output, input, paddings.ptr)
+    pad_repeat(output, input, paddings._storage)
 
     # output should have form
     # [1, 1, 1, 1, 2, 3, 3, 3]
@@ -162,7 +162,7 @@ def test_pad_2d() raises:
     var constant = Scalar[DType.int](6)
 
     # pad
-    pad_constant(output, input, paddings.ptr, constant)
+    pad_constant(output, input, paddings._storage, constant)
 
     # output should have form
     # [[6, 6, 6, 6]
@@ -213,7 +213,7 @@ def test_pad_reflect_2d() raises:
     var output = TileTensor(output_stack, row_major[6, 3]()).fill(0)
 
     # pad
-    pad_reflect(output, input, paddings.ptr)
+    pad_reflect(output, input, paddings._storage)
 
     # output should have form
     # [[2 1 2]
@@ -273,7 +273,7 @@ def test_pad_repeat_2d() raises:
     var output = TileTensor(output_stack, row_major[6, 3]()).fill(0)
 
     # pad
-    pad_repeat(output, input, paddings.ptr)
+    pad_repeat(output, input, paddings._storage)
 
     # output should have form
     # [[1, 1, 2],
@@ -335,7 +335,7 @@ def test_pad_3d() raises:
     var constant = Scalar[DType.int](7)
 
     # pad
-    pad_constant(output, input, paddings.ptr, constant)
+    pad_constant(output, input, paddings._storage, constant)
 
     # output should have form
     # [[[7, 7, 7]
@@ -407,7 +407,7 @@ def test_pad_reflect_3d() raises:
     var output = TileTensor(output_stack, row_major[4, 3, 3]()).fill(0)
 
     # pad
-    pad_reflect(output, input, paddings.ptr)
+    pad_reflect(output, input, paddings._storage)
 
     # output should have form
     # [[[2 1 2]
@@ -492,7 +492,7 @@ def test_pad_reflect_3d_singleton() raises:
     var output = TileTensor(output_stack, row_major[2, 2, 5]()).fill(0)
 
     # pad
-    pad_reflect(output, input, paddings.ptr)
+    pad_reflect(output, input, paddings._storage)
 
     # output should have the form
     # [[[1 1 1 1 1]
@@ -552,7 +552,7 @@ def test_pad_reflect_4d_big_input() raises:
     var output = TileTensor(output_ptr, row_major[2, 3, 1024, 1024]())
 
     # pad
-    pad_reflect(output, input, paddings.ptr)
+    pad_reflect(output, input, paddings._storage)
 
     assert_equal(output[0, 0, 0, 0], 1)
     _ = output_ptr^
@@ -589,7 +589,7 @@ def test_pad_repeat_3d() raises:
     var output = TileTensor(output_stack, row_major[5, 4, 3]()).fill(0)
 
     # pad
-    pad_repeat(output, input, paddings.ptr)
+    pad_repeat(output, input, paddings._storage)
 
     # output should have form
     # [[[1, 2, 2],

@@ -12,11 +12,9 @@ modular_py_library(
         # Provided transitively by the parent //max/python/max/pipelines/kv_cache
         # target. Declaring them here would create a circular dependency
         # since kv_cache depends on this package.
-        "max.pipelines.kv_cache",
         "max.nn",
         "max._core",
         "max.driver",
-        "max.interfaces",
         "max.profiler",
         "msgspec",
         # The high-level connector client (pyo3 module), provided at runtime
@@ -26,5 +24,12 @@ modular_py_library(
     tags = [
         "no-mypy",
         "no-pydeps",
+    ],
+    deps = [
+        # The connector interface only (KVConnector / KVConnectorTransfer /
+        # CompletedTransfer). This is the lightweight interface target, not the
+        # full kv_cache library, so there is no cycle (kv_cache depends on this
+        # package, but this package depends only on the interface).
+        "//max/python/max/pipelines/kv_cache:kv_connector",
     ],
 )

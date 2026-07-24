@@ -94,9 +94,10 @@ views and search results.
 |                     |                                   | `Supports hashing to a fixed-size integer digest.`    |
 | Field or `comptime` | Noun phrase                       | `The red channel, in [0, 255].`                       |
 
-Separate the summary from additional body text with a blank line.
-Start the summary with a capital letter and end it with a period.
-Avoid repeating the declaration name.
+Separate the summary from additional body text with a blank line. Start
+the summary with a capital letter and avoid repeating the declaration
+name. Prefer ending the summary with a period; the compiler also accepts
+`!`, `?`, or a closing backtick (see [Compiler checks](#compiler-checks)).
 
 ## Labeled content
 
@@ -216,15 +217,28 @@ print(numbers)  # [1, 2, 4, 9]
 
 ### Custom labels
 
-Mojo supports custom section labels. Common examples include
-`Performance:`, `Safety:`, `Notes:`, and `See:`.
+Mojo supports custom section labels. The following are recommended
+conventions:
 
-| Label           | Documents                                     |
-|-----------------|-----------------------------------------------|
-| `Performance:`  | Performance characteristics and tradeoffs     |
-| `Safety:`       | Safety requirements and undefined behavior    |
-| `Notes:`        | Additional information                        |
-| `See:`          | Related APIs, concepts, and references        |
+| Label            | Documents                                    |
+|------------------|----------------------------------------------|
+| `Preconditions:` | Runtime conditions the caller must satisfy   |
+| `Performance:`   | Performance characteristics and tradeoffs    |
+| `Safety:`        | Safety requirements and undefined behavior   |
+| `See:`           | Related APIs, concepts, and references       |
+
+Use `Preconditions:` for runtime conditions the caller must satisfy
+before calling, where a violation aborts the program (for example, a
+runtime assertion) rather than raising a catchable error.
+
+Choose among `Preconditions:`, `Constraints:`, and `Raises:` by how the
+condition is enforced:
+
+- `Preconditions:` for a runtime condition on the caller that aborts
+  execution when violated and can't be caught.
+- `Constraints:` for a compile-time requirement that fails compilation
+  when violated.
+- `Raises:` for a runtime condition that raises a catchable error.
 
 Use `Performance:` for complexity and for runtime behavior that is not
 obvious from complexity alone, such as allocation behavior, vectorization,
@@ -235,11 +249,22 @@ Use `Safety:` for requirements, invariants, and operations that can
 lead to undefined behavior, memory safety issues, invalid references,
 or other unsafe states when used incorrectly.
 
-Use `Notes:` for additional information that doesn't fit other
-sections.
-
 Use `See:` to link to related APIs, standards documents, algorithms,
 and external references.
+
+Mojo also accepts other labels, such as `Notes:`, but prefer putting that
+information in the docstring body rather than in a separate `Notes:`
+section.
+
+### Section order
+
+Mojo doesn't enforce an order among sections, but a consistent order helps
+readers scan. Recommended order:
+
+`Parameters:` → `Args:` → `Returns:` → `Raises:` → `Preconditions:` →
+`Constraints:` → `Safety:` → `Performance:` → `See:` → `Examples:`
+
+Include only the sections that apply, and put `Examples:` last.
 
 ## Hidden elements
 

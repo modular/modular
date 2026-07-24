@@ -121,7 +121,7 @@ def hash[
 
 def hash[
     HasherType: Hasher = default_hasher
-](bytes: UnsafePointer[mut=False, UInt8, _], n: Int) -> UInt64:
+](bytes: Pointer[mut=False, UInt8, _], n: Int) -> UInt64:
     """Hash a sequence of bytes using the specified hasher.
 
     Parameters:
@@ -135,6 +135,6 @@ def hash[
         A 64-bit integer hash value.
     """
     var hasher = HasherType()
-    hasher._update_with_bytes(Span(ptr=bytes, length=n))
+    hasher._update_with_bytes(Span(unsafe_ptr=bytes, length=n))
     var value = hasher^.finish()
     return value

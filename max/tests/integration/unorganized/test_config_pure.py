@@ -25,6 +25,7 @@ from max.dtype import DType
 from max.graph.weights import WeightsFormat
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.context import SamplingParamsGenerationConfigDefaults
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
@@ -420,18 +421,25 @@ class TestPipelineConfigUtilityMethods:
 
         config = PipelineConfig.from_flat_kwargs(**kwargs)
         assert config.model.quantization_encoding == "float4_e2m1fnx2"
-        # The KV cache dtype initially has a default value.
-        assert config.model.kv_cache.cache_dtype == DType.float32
 
         assert config.draft_model is not None
         assert config.draft_model.quantization_encoding == "float8_e4m3fn"
-        # The draft model KV cache dtype initially has a default value.
-        assert config.draft_model.kv_cache.cache_dtype == DType.float32
 
-        config.model.set_cache_dtype_given_quantization_encoding()
-        config.draft_model.set_cache_dtype_given_quantization_encoding()
-        assert config.model.kv_cache.cache_dtype == DType.bfloat16
-        assert config.draft_model.kv_cache.cache_dtype == DType.bfloat16
+        # The KV cache dtype is derived from the quantization encoding on demand.
+        assert (
+            cache_dtype_for_encoding(
+                config.model.quantization_encoding,
+                config.model.kv_cache.kv_cache_format,
+            )
+            == DType.bfloat16
+        )
+        assert (
+            cache_dtype_for_encoding(
+                config.draft_model.quantization_encoding,
+                config.draft_model.kv_cache.kv_cache_format,
+            )
+            == DType.bfloat16
+        )
 
     @mock_pipeline_config_resolve
     def test_denoising_cache_survives_runtime_kwargs(self) -> None:
@@ -1162,7 +1170,13 @@ def test_config__test_quantization_encoding_with_dtype_casting(
             prefer_module_v3=True,
         ),
     )
-    assert config.model.kv_cache.cache_dtype == DType.float32
+    assert (
+        cache_dtype_for_encoding(
+            config.model.quantization_encoding,
+            config.model.kv_cache.kv_cache_format,
+        )
+        == DType.float32
+    )
 
 
 @pytest.mark.skip(
@@ -1192,7 +1206,13 @@ def test_config__test_quantization_encoding_with_dtype_casting2(
             prefer_module_v3=True,
         ),
     )
-    assert config.model.kv_cache.cache_dtype == DType.float32
+    assert (
+        cache_dtype_for_encoding(
+            config.model.quantization_encoding,
+            config.model.kv_cache.kv_cache_format,
+        )
+        == DType.float32
+    )
 
 
 @pytest.mark.skip(
@@ -1222,7 +1242,13 @@ def test_config__test_quantization_encoding_with_dtype_casting3(
             prefer_module_v3=True,
         ),
     )
-    assert config.model.kv_cache.cache_dtype == DType.bfloat16
+    assert (
+        cache_dtype_for_encoding(
+            config.model.quantization_encoding,
+            config.model.kv_cache.kv_cache_format,
+        )
+        == DType.bfloat16
+    )
 
 
 @pytest.mark.skip(

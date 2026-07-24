@@ -398,7 +398,6 @@
                 "max/api/python/pipelines.architectures.diffusion_gemma",
                 "max/api/python/pipelines.architectures.eagle3_deepseekV3",
                 "max/api/python/pipelines.architectures.eagle_llama3",
-                "max/api/python/pipelines.architectures.exaone",
                 "max/api/python/pipelines.architectures.flux2",
                 "max/api/python/pipelines.architectures.gemma3",
                 "max/api/python/pipelines.architectures.gemma3multimodal",

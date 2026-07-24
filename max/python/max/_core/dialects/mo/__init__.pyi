@@ -471,6 +471,46 @@ class CompositeDistributedMatmulReduceScatterSumOp(max._core.Operation):
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
 
+class CompositeDistributedReduceScatterRmsNormOp(max._core.Operation):
+    """
+    ReduceScatter takes in inputs each coming from a different device and
+    partitions the reduction so each device receives a disjoint row shard of the
+    sum. This op keeps that shard's sum in f32 registers and RMSNorm-normalizes
+    it in the same launch, avoiding the HBM round-trip of a separate norm kernel.
+
+    It returns both the normed shard (`output`, fed to the next layer) and the
+    reduce-scatter sum shard (`outResidual`, the residual stream). The norm is
+    inherently `multiply_before_cast=true`: gamma is folded in f32 and the value
+    is cast to the input dtype once, last. bf16 in/out only (no quantization).
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: Sequence[max._core.Type],
+        out_residual: Sequence[max._core.Type],
+        out_chain: ChainType,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        gamma: Sequence[max._core.Value[max._core.Type]],
+        epsilon: Sequence[max._core.Value[max._core.Type]],
+        weight_offset: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def gamma(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def epsilon(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def weight_offset(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+
 class CompositeConcatSliceOp(max._core.Operation):
     """
     This operation performs two operations at once:
@@ -902,46 +942,6 @@ class CompositeNoMaskFlashAttentionCpuOp(max._core.Operation):
     def value(self) -> max._core.Value[TensorType]: ...
     @property
     def scale(self) -> max._core.Value[TensorType]: ...
-
-class CompositeRmsNormFusedQuantizeDynamicBlockScaledOp(max._core.Operation):
-    """
-    Fused operation computing block-scaled MXFP8 quantization of an
-    RMS-normalized input:
-
-      normed = rms_norm(input, weight, epsilon, weight_offset)
-                 {multiply_before_cast = true}
-      output, scale = quantize.dynamic.block.scaled(normed)
-                        {SF_VECTOR_SIZE}
-
-    Returns the E4M3 quantized output and its E8M0 per-block scale tensor in the
-    rank-5 interleaved layout the SM100 block-scaled GEMM consumes. `output` and
-    `scale` are numerically identical to the unfused
-    `rms_norm -> quantize.dynamic.block.scaled` (MXFP8) pipeline. The fusion
-    pattern attaches the block size as an `SF_VECTOR_SIZE` attribute (32 for
-    MXFP8), which the MOGG lowering forwards to the kernel as a compile-time
-    parameter. Produced by the RMS-norm + MXFP8-block-quantize fusion pattern
-    (GPU only).
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        output: TensorType,
-        scale: TensorType,
-        input: max._core.Value[TensorType],
-        weight: max._core.Value[TensorType],
-        epsilon: max._core.Value[TensorType],
-        weight_offset: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-    @property
-    def weight(self) -> max._core.Value[TensorType]: ...
-    @property
-    def epsilon(self) -> max._core.Value[TensorType]: ...
-    @property
-    def weight_offset(self) -> max._core.Value[TensorType]: ...
 
 class CompositeRmsNormFusedQuantizeDynamicScaledFp8Op(max._core.Operation):
     """

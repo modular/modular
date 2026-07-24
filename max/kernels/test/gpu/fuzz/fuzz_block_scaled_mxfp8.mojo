@@ -175,8 +175,8 @@ def run_one_case(
 
     # Operands: uniform [0,1) fp8, matching the unit test (keeps cuBLAS ref in
     # the validated tolerance band).
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
 
     # E8M0 block scales: random powers of two in-range, 0.0 for padding.
     # NOTE: unused (padding) scales MUST be 0.0 or accuracy breaks (see the

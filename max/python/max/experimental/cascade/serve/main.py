@@ -37,6 +37,10 @@ Examples:
       --transport grpc \
       --local-cpu-workers 4 \
       --remote-cpu-workers '["host-a:9001", "host-b:9001"]'
+
+    # Echo mode: real tokenizer, no model -- measures cascade overhead
+    br //max/python/max/experimental/cascade/serve:main -- \
+      --models.main.model-path echo:meta-llama/Llama-3.1-8B-Instruct
 """
 
 from __future__ import annotations

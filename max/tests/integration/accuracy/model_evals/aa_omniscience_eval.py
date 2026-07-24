@@ -26,6 +26,15 @@ Run locally against a server on ``localhost:8000``::
     ./bazelw run //max/tests/integration/accuracy/model_evals:aa_omniscience_eval -- \\
         --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 \\
         --sample-size 2 --out-dir /tmp/aa-omniscience
+
+Results stream to ``<out-dir>/results.jsonl`` as each request completes, so a
+killed/crashed run keeps everything already finished. To debug specific
+samples (e.g. re-run exactly the ones that errored or looked wrong last
+time), pass ``--row-ids`` instead of ``--sample-size``::
+
+    ./bazelw run //max/tests/integration/accuracy/model_evals:aa_omniscience_eval -- \\
+        --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 \\
+        --row-ids 3,17,42 --out-dir /tmp/aa-omniscience-debug
 """
 
 from __future__ import annotations
@@ -45,8 +54,8 @@ from eval_common import (
     judge,
     make_client,
     run_parallel,
+    select_rows,
     strip_think,
-    subsample,
     token_stats,
     truncation_stats,
 )
@@ -153,10 +162,11 @@ def parse_verdict(raw_verdict: str) -> str:
 def infer(
     client: ChatClient,
     model: str,
-    sample: dict[str, Any],
+    item: tuple[int, dict[str, Any]],
     params: GenParams,
 ) -> dict[str, Any]:
     """Runs one factual question then letter-grades the answer via self-judge."""
+    prompt_index, sample = item
     question = sample.get("question", "")
     reference = sample.get("answer", sample.get("ground_truth", ""))
     resp = client.chat.completions.create(
@@ -177,6 +187,7 @@ def infer(
         seed=params.seed,
     ).upper()
     return {
+        "prompt_index": prompt_index,
         "question": question[:200],
         "reference": reference,
         "prediction": prediction[:500],
@@ -225,29 +236,44 @@ def score(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 def run_eval(
     client: ChatClient,
-    dataset: list[dict[str, Any]],
+    indexed_dataset: list[tuple[int, dict[str, Any]]],
     model: str,
     workers: int,
     params: GenParams,
+    out_dir: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Runs AA-Omniscience over ``dataset`` (one pass) and returns results + score.
+    """Runs AA-Omniscience over ``indexed_dataset`` (one pass) + returns score.
 
     A failed/timed-out request is recorded as an ``ERROR`` row (kept in the
-    denominator, neither correct nor a hallucination), never dropped.
+    denominator, neither correct nor a hallucination), never dropped. When
+    ``out_dir`` is set, results stream to ``results.jsonl`` as they complete,
+    so a crash mid-run doesn't lose already-finished samples.
 
     Returns:
         A ``(results, score)`` tuple.
     """
-    print(f"AA-Omniscience: evaluating {len(dataset)} samples")
+    print(f"AA-Omniscience: evaluating {len(indexed_dataset)} samples")
 
-    def fn(sample: dict[str, Any]) -> dict[str, Any]:
-        return infer(client, model, sample, params)
+    def fn(item: tuple[int, dict[str, Any]]) -> dict[str, Any]:
+        return infer(client, model, item, params)
 
-    def on_error(sample: dict[str, Any], exc: Exception) -> dict[str, Any]:
-        return {"verdict": "ERROR", "error": str(exc)}
+    def on_error(
+        item: tuple[int, dict[str, Any]], exc: Exception
+    ) -> dict[str, Any]:
+        prompt_index, _sample = item
+        return {
+            "prompt_index": prompt_index,
+            "verdict": "ERROR",
+            "error": str(exc),
+        }
 
     results, _errors = run_parallel(
-        dataset, fn, on_error, workers, "AA-Omniscience"
+        indexed_dataset,
+        fn,
+        on_error,
+        workers,
+        "AA-Omniscience",
+        out_dir=out_dir,
     )
     return results, score(results)
 
@@ -263,7 +289,16 @@ def run_eval(
     "--sample-size",
     type=int,
     default=None,
-    help="Max samples (evenly sampled). Empty = full dataset.",
+    help="Max samples (evenly sampled). Empty = full dataset. Mutually "
+    "exclusive with --row-ids.",
+)
+@click.option(
+    "--row-ids",
+    default=None,
+    help="Explicit comma-separated dataset row indices to evaluate, e.g. "
+    "'3,17,42' (indices into the full dataset, order/duplicates preserved). "
+    "Mutually exclusive with --sample-size — use this to re-run exactly the "
+    "samples that errored or looked wrong last time.",
 )
 @click.option(
     "--seed",
@@ -287,6 +322,7 @@ def main(
     base_url: str,
     model: str,
     sample_size: int | None,
+    row_ids: str | None,
     seed: int | None,
     workers: int,
     out_dir: str,
@@ -297,18 +333,21 @@ def main(
 ) -> None:
     """Runs AA-Omniscience against a running OpenAI-compatible server and scores it."""
     client = make_client(base_url)
-    dataset = subsample(
+    indexed_dataset = select_rows(
         list(
             load_dataset(
                 "ArtificialAnalysis/AA-Omniscience-Public", split="train"
             )
         ),
         sample_size,
+        row_ids,
     )
     params = GenParams(
         max_tokens=max_tokens, temperature=temperature, top_p=top_p, seed=seed
     )
-    results, summary = run_eval(client, dataset, model, workers, params)
+    results, summary = run_eval(
+        client, indexed_dataset, model, workers, params, out_dir=out_dir
+    )
     dump_jsonl(out_dir, results)
     dump_score(out_dir, summary)
     print(

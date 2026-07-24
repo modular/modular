@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import destroy_n
+from std.memory import unsafe_destroy_n
 from std.memory.alloc import (
     alloc,
     dealloc,
@@ -223,7 +223,7 @@ def test_destroy_n_runs_pointee_destructors_before_dealloc() raises:
     var obs = ObservableDel(Pointer(to=deleted).as_unsafe_any_origin())
     var a = alloc(Layout[type_of(obs)](count=1))
     a.unsafe_ptr().unsafe_write(obs^)
-    destroy_n(a.unsafe_ptr(), 1)
+    unsafe_destroy_n(a.unsafe_ptr(), 1)
     var ran = deleted
     dealloc(a^)
     assert_true(ran)

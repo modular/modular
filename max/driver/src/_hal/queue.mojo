@@ -309,6 +309,13 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             src=src,
         )
 
+    def wait_value64(
+        self, device_address: UInt64, value: UInt64
+    ) raises HALError:
+        """Enqueues a wait until the 64-bit slot at `device_address` equals
+        `value` (e.g. cuStreamWaitValue64 with EQ semantics)."""
+        self._raw[].queue_wait_value64(self._handle, device_address, value)
+
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,
     ](self, out event: Event[flags]) raises HALError:

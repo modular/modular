@@ -452,15 +452,55 @@ def test_and_then_with_none() raises:
     assert_false(result)
 
 
+def _unwrap_linear(var x: ExplicitDelOnly) -> Int:
+    var data = x.data
+    x^.destroy()
+    return data
+
+
+def _unwrap_linear_opt(var x: ExplicitDelOnly) -> Optional[Int]:
+    var data = x.data
+    x^.destroy()
+    return data
+
+
+def test_map_linear_type() raises:
+    # `map` moves the linear value out and consumes the `Optional`; the
+    # emptied `Optional` is destroyed without instantiating `Variant.__del__`.
+    var opt = Optional(ExplicitDelOnly(5))
+    var result = opt^.map(_unwrap_linear)
+    assert_equal(result.value(), 5)
+
+    # The empty branch is destroyed without calling `_unwrap_linear`.
+    var empty = Optional[ExplicitDelOnly](None)
+    assert_false(empty^.map(_unwrap_linear))
+
+
+def test_and_then_linear_type() raises:
+    var opt = Optional(ExplicitDelOnly(7))
+    var result = opt^.and_then(_unwrap_linear_opt)
+    assert_equal(result.value(), 7)
+
+    var empty = Optional[ExplicitDelOnly](None)
+    assert_false(empty^.and_then(_unwrap_linear_opt))
+
+
 def test_optional_linear_type_deinit_with() raises:
-    # `Optional` holding a linear value is retired via `deinit_with`.
+    # `Optional` holding a linear value is destroyed via `deinit_with`.
     var v1 = Optional(ExplicitDelOnly(5))
     v1^.deinit_with(ExplicitDelOnly.destroy)
 
-    # `Optional[T]` holding `None` is retired without invoking
+    # `Optional[T]` holding `None` is destroyed without invoking
     # `deinit_func`.
     var v2 = Optional[ExplicitDelOnly](None)
     v2^.deinit_with(ExplicitDelOnly.destroy)
+
+
+def test_optional_linear_type_deinit_assert_empty() raises:
+    # An empty `Optional` holding a linear type is destroyed without a
+    # caller-provided deinitializer via `deinit_assert_empty`.
+    var v = Optional[ExplicitDelOnly](None)
+    v^.deinit_assert_empty()
 
 
 def test_optional_deinit_with_runs_exactly_once() raises:

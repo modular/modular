@@ -568,7 +568,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     def _load_storage[
-        width: SIMDSize,
+        width: SIMDLength,
         alignment: Int,
         invariant: Bool = False,
         non_temporal: Bool = False,
@@ -795,7 +795,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     def load[
-        width: SIMDSize = Self.element_size,
+        width: SIMDLength = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]]() if is_gpu() else 1,
         invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
@@ -834,7 +834,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     def store[
-        width: SIMDSize = Self.element_size,
+        width: SIMDLength = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]]() if is_gpu() else 1,
         non_temporal: Bool = False,
     ](self, coord: Coord, value: SIMD[Self.dtype, width]) where Self.mut:
@@ -893,7 +893,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     def load_linear[
-        width: SIMDSize = Self.element_size,
+        width: SIMDLength = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
         invariant: Bool = _default_invariant[Self.mut](),
     ](self, idx: IndexList[_, ...]) -> SIMD[Self.dtype, width]:
@@ -919,7 +919,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     def store_linear[
-        width: SIMDSize = Self.element_size,
+        width: SIMDLength = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
     ](
         self: TileTensor[mut=True, Self.dtype, ...],
@@ -943,7 +943,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     def raw_load[
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         alignment: Int = align_of[Self.dtype](),
         invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
@@ -979,7 +979,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     def raw_store[
-        width: SIMDSize = 1,
+        width: SIMDLength = 1,
         alignment: Int = align_of[Self.dtype](),
         non_temporal: Bool = False,
     ](

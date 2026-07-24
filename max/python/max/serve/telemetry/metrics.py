@@ -232,12 +232,15 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="blocks",
         description="Total number of blocks or pages, measured at the scheduler after batch work.",
     ),  # type: ignore
-    "maxserve.cache.hit_rate": _meter.create_histogram(
-        "maxserve.cache.hit_rate",
-        unit="percent_utilization",
+    "maxserve.cache.request_prefix_coverage": _meter.create_histogram(
+        "maxserve.cache.request_prefix_coverage",
+        unit="percent",
         description=(
-            "Per-request KV cache hit rate (cached prefix tokens / prompt "
-            "tokens), emitted once per admitted request."
+            "Per-request prefix cache coverage (cached prefix tokens / "
+            "prompt tokens), emitted once per admitted request and "
+            "unweighted by request size. For the token-weighted cache hit "
+            "rate, derive it from maxserve.cache.hits and "
+            "maxserve.cache.misses instead."
         ),
     ),  # type: ignore
     "maxserve.cache.preemption_count": _meter.create_counter(
@@ -875,10 +878,12 @@ class _AsyncMetrics:
             ),
         )
 
-    def cache_hit_rate(self, hit_rate: float) -> None:
+    def cache_request_prefix_coverage(self, coverage: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.hit_rate", hit_rate, self.extra_attributes
+                "maxserve.cache.request_prefix_coverage",
+                coverage,
+                self.extra_attributes,
             ),
         )
 

@@ -362,7 +362,7 @@ def _dot_accum[
     a_type: DType,
     b_type: DType,
     accum_type: DType,
-    width: SIMDSize,
+    width: SIMDLength,
 ](
     a: SIMD[a_type, width], b: SIMD[b_type, width], acc: Scalar[accum_type]
 ) -> Scalar[accum_type]:
@@ -1550,7 +1550,7 @@ def gemv[
     @always_inline
     @parameter
     def output_fn[
-        out_type: DType, width: SIMDSize, rank: Int
+        out_type: DType, width: SIMDLength, rank: Int
     ](idx: IndexList[rank], value: SIMD[out_type, width]):
         comptime if elementwise_lambda_fn:
             comptime func = elementwise_lambda_fn.value()
@@ -1565,7 +1565,7 @@ def gemv[
     @always_inline
     @parameter
     def reduce_impl[
-        ty: DType, width: SIMDSize
+        ty: DType, width: SIMDLength
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 

@@ -60,6 +60,7 @@ from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.memory_estimation import MemoryEstimator, _MemoryPlan
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
+from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
@@ -592,6 +593,7 @@ def _run_memory_planning(
         devices,
         arch_config,
         signal_buffer_size,
+        available_cache_memory=plan.available_cache_memory,
     ):
         if model_config.max_length is None:
             model_config.max_length = clamped_max_seq_len
@@ -604,16 +606,8 @@ def _run_memory_planning(
             model_config.max_length = clamped_max_seq_len
 
     # For speculative decoding, clamp max_length to the draft model's limit
-    # and zero out its cache memory (it shares the target model's KV cache).
+    # (the draft shares the target model's KV cache).
     if draft_arch is not None and pipeline_config.draft_model is not None:
-        if (
-            pipeline_config.draft_model.kv_cache._available_cache_memory
-            is not None
-        ):
-            raise ValueError(
-                "Expected draft model's available_cache_memory to be None"
-            )
-        pipeline_config.draft_model.kv_cache._available_cache_memory = 0
         draft_arch_config = draft_arch.config.initialize(
             pipeline_config, model_config=pipeline_config.draft_model
         )
@@ -643,6 +637,16 @@ def _run_memory_planning(
             model_config.max_length,
         )
         pipeline_config.runtime.max_batch_total_tokens = model_config.max_length
+
+    # TODO(MXF-517): Fold this into a consolidated startup logger that reports
+    # all resolved runtime values together. It logs here, from the planner that
+    # computes the budget, because the value is no longer mutated onto the config
+    # for log_basic_config to read.
+    if plan.available_cache_memory is not None:
+        logger.info(
+            "cache_memory: %s",
+            to_human_readable_bytes(plan.available_cache_memory),
+        )
 
     return plan
 

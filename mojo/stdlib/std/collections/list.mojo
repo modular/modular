@@ -30,10 +30,10 @@ from std.sys import size_of
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 from std.memory import (
     Pointer,
-    destroy_n,
+    unsafe_destroy_n,
     unsafe_memcpy,
-    uninit_copy_n,
-    uninit_move_n,
+    unsafe_uninit_copy_n,
+    unsafe_uninit_move_n,
 )
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
@@ -120,8 +120,8 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
     def __del__(deinit self):
         # Destroy the remaining elements that have not yet been
         # iterated over.
-        destroy_n(
-            self._list.unsafe_ptr() + self._index,
+        unsafe_destroy_n(
+            self._list.unsafe_ptr().unsafe_offset(self._index),
             count=len(self._list) - self._index,
         )
         self._list._len = 0
@@ -134,7 +134,11 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
         if self._index >= len(self._list):
             raise StopIteration()
         self._index += 1
-        return (self._list.unsafe_ptr() + self._index - 1).unsafe_take_pointee()
+        return (
+            self._list.unsafe_ptr()
+            .unsafe_offset(self._index - 1)
+            .unsafe_take_pointee()
+        )
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -529,7 +533,7 @@ struct List[T: Movable, /](
     @stable(since="1.0")
     def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroy all elements in the list and free its memory."""
-        destroy_n(
+        unsafe_destroy_n(
             self._data,
             count=len(self),
         )
@@ -839,7 +843,7 @@ struct List[T: Movable, /](
     def _realloc(mut self, new_capacity: Int):
         var new_data = alloc(Layout[Self.T](count=new_capacity)).unsafe_leak()
 
-        uninit_move_n[overlapping=False](
+        unsafe_uninit_move_n[overlapping=False](
             dest=new_data, src=self._data, count=len(self)
         )
 
@@ -887,7 +891,7 @@ struct List[T: Movable, /](
         `a.insert(len(a), value)` is equivalent to `a.append(value)`.
 
         Args:
-            i: The index for the value.
+            i: The index for the value. Must be in the range `[0, len(self)]`.
             value: The value to insert.
 
         Examples:
@@ -898,18 +902,14 @@ struct List[T: Movable, /](
         print(list) # ['one', 'two', 'three']
         ```
         """
-        var normalized_idx = i
-        if i < 0:
-            normalized_idx = max(len(self) + i, 0)
-        # Bounds-check after normalizing, since `check_bounds` rejects
-        # negatives; the valid range is `[0, len(self)]` (`len(self)` appends).
-        check_bounds(normalized_idx, len(self) + 1)
+        # Valid range is `[0, len(self)]` (`len(self)` appends).
+        check_bounds(i, len(self) + 1)
 
         var earlier_idx = len(self)
         var later_idx = len(self) - 1
         self.append(value^)
 
-        for _ in range(normalized_idx, len(self) - 1):
+        for _ in range(i, len(self) - 1):
             var earlier_ptr = self._data.unsafe_offset(earlier_idx)
             var later_ptr = self._data.unsafe_offset(later_idx)
 
@@ -947,7 +947,7 @@ struct List[T: Movable, /](
         var src_ptr = other.unsafe_ptr()
         self._annotate_increase(other_len)
 
-        uninit_move_n[overlapping=False](
+        unsafe_uninit_move_n[overlapping=False](
             dest=dest_ptr, src=src_ptr, count=other_len
         )
 
@@ -986,7 +986,7 @@ struct List[T: Movable, /](
         var i = self._len
         self._len = new_num_elts
 
-        uninit_copy_n[overlapping=False](
+        unsafe_uninit_copy_n[overlapping=False](
             dest=self._data.unsafe_offset(i),
             src=elements.unsafe_ptr(),
             count=elements_len,
@@ -1096,7 +1096,7 @@ struct List[T: Movable, /](
         """
         check_bounds(i, len(self))
         var ret_val = self._data.unsafe_offset(i).unsafe_take_pointee()
-        uninit_move_n[overlapping=True](
+        unsafe_uninit_move_n[overlapping=True](
             dest=self._data.unsafe_offset(i),
             src=self._data.unsafe_offset(i + 1),
             count=len(self) - i - 1,
@@ -1219,7 +1219,7 @@ struct List[T: Movable, /](
                 " size is smaller than the current size."
             )
 
-        destroy_n(
+        unsafe_destroy_n(
             self._data.unsafe_offset(new_length),
             count=len(self) - new_length,
         )
@@ -1257,6 +1257,54 @@ struct List[T: Movable, /](
             earlier_idx += 1
             later_idx -= 1
 
+    def try_index(
+        ref self,
+        value: Self.T,
+        start: Int = 0,
+        stop: Optional[Int] = None,
+    ) -> Optional[Int] where conforms_to(Self.T, Equatable):
+        """Returns the index of the first occurrence of a value in a list
+        restricted by the range given the start and stop bounds.
+
+        Args:
+            value: The value to search for.
+            start: The starting index of the search, treated as a slice index
+                (defaults to 0).
+            stop: The ending index of the search, treated as a slice index
+                (defaults to None, which means the end of the list).
+
+        Returns:
+            The index of the first occurrence of the value in the list or `None` if the value is not found.
+
+        Examples:
+
+        ```mojo
+        var my_list = [1, 2, 3]
+        print(my_list.index(2)) # prints `1`
+        ```
+        """
+        var start_normalized = start
+
+        var stop_normalized: Int
+        if stop is None:
+            # Default end
+            stop_normalized = len(self)
+        else:
+            stop_normalized = stop.value()
+
+        if start_normalized < 0:
+            start_normalized += len(self)
+        if stop_normalized < 0:
+            stop_normalized += len(self)
+
+        start_normalized = _clip(start_normalized, 0, len(self))
+        stop_normalized = _clip(stop_normalized, 0, len(self))
+
+        for i in range(start_normalized, stop_normalized):
+            if self[i] == value:
+                return i
+        return None
+
     def index(
         ref self,
         value: Self.T,
@@ -1286,27 +1334,10 @@ struct List[T: Movable, /](
         print(my_list.index(2)) # prints `1`
         ```
         """
-        var start_normalized = start
-
-        var stop_normalized: Int
-        if stop is None:
-            # Default end
-            stop_normalized = len(self)
-        else:
-            stop_normalized = stop.value()
-
-        if start_normalized < 0:
-            start_normalized += len(self)
-        if stop_normalized < 0:
-            stop_normalized += len(self)
-
-        start_normalized = _clip(start_normalized, 0, len(self))
-        stop_normalized = _clip(stop_normalized, 0, len(self))
-
-        for i in range(start_normalized, stop_normalized):
-            if self[i] == value:
-                return i
-        raise "ValueError: Given element is not in list"
+        var result = self.try_index(value, start=start, stop=stop)
+        if result is None:
+            raise "ValueError: Given element is not in list"
+        return result.value()
 
     def clear(
         mut self,
@@ -1322,7 +1353,7 @@ struct List[T: Movable, /](
         print(len(list))  # 0
         ```
         """
-        destroy_n(self._data, count=self._len)
+        unsafe_destroy_n(self._data, count=self._len)
         var old_size: Int = self._len
         self._len = 0
         self._annotate_shrink(old_size)
@@ -1398,7 +1429,7 @@ struct List[T: Movable, /](
         """
         var start, end = slice.indices(len(self))
         return Span[Self.T, origin_of(self)._get_owned_interior["element"]](
-            ptr=UnsafePointer(
+            unsafe_ptr=UnsafePointer(
                 to=self.unsafe_ptr()
                 .unsafe_offset(start)
                 ._get_ref_with_unsafe_interior_origin[
@@ -1552,7 +1583,7 @@ struct List[T: Movable, /](
 
     def unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
-    ](ref[origin, address_space] self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> Pointer[
         Self.T, origin, address_space=address_space
     ]:
         """Retrieves a pointer to the underlying memory, or a dangling pointer

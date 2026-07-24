@@ -97,8 +97,8 @@ def test_warp_specialize_gemm_with_multicasting[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Initialize matmul operands
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
 
     _ = c_host.fill(0)
     _ = c_host_ref.fill(0)
@@ -201,13 +201,16 @@ def test_warp_specialize_gemm_with_multicasting[
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.ptr, c_host_ref.ptr, c_host.num_elements(), threshold=0.001
+        c_host._storage,
+        c_host_ref._storage,
+        c_host.num_elements(),
+        threshold=0.001,
     )
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,

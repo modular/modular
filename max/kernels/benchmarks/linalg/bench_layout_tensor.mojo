@@ -20,7 +20,7 @@ import std.benchmark
 from std.algorithm import Static2DTileUnitFunc as Tile2DFunc
 from std.algorithm import sync_parallelize, vectorize
 from layout import *
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from std.python import Python
 
 comptime M = 512  # rows of A and C
@@ -36,7 +36,7 @@ struct Matrix[rows: Int, cols: Int]:
     # Initialize zeroeing all values
     def __init__(out self):
         self.data = alloc[Scalar[dtype]](Self.rows * Self.cols)
-        memset_zero(self.data, Self.rows * Self.cols)
+        unsafe_memset_zero(self.data, Self.rows * Self.cols)
 
     # Initialize taking a pointer, don't set any elements
     def __init__(

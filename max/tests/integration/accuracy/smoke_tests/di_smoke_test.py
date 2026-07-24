@@ -197,7 +197,7 @@ def di_smoke_test(
 
     Example:
         ./bazelw run //...:di_smoke_test -- \\
-            max/examples/internal/di/configs/1p1d-intranode.yaml
+            max/examples/internal/di/configs/llama-1p1d-intranode.yaml
     """
     validate_hf_token()
 

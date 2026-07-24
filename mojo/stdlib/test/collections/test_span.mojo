@@ -313,11 +313,11 @@ def test_reverse() raises:
 
 def test_apply() raises:
     @parameter
-    def _twice[D: DType, w: SIMDSize](x: SIMD[D, w]) -> SIMD[D, w]:
+    def _twice[D: DType, w: SIMDLength](x: SIMD[D, w]) -> SIMD[D, w]:
         return x * 2
 
     @parameter
-    def _where[D: DType, w: SIMDSize](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
+    def _where[D: DType, w: SIMDLength](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
         return (x % 2).eq(0)
 
     def _test[D: DType]() raises:
@@ -372,7 +372,7 @@ def test_apply() raises:
 
 
 def test_count_func() raises:
-    def is_2[w: SIMDSize](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
+    def is_2[w: SIMDLength](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
         return v.eq(2)
 
     var data = Span([Byte(0), 1, 2, 1, 2, 1, 2])
@@ -598,7 +598,7 @@ def test_span_hashable_non_copyable() raises:
     var ptr = alloc[HashableOnly](2)
     ptr.unsafe_write(HashableOnly(1))
     (ptr + 1).unsafe_write(HashableOnly(2))
-    var span = Span(ptr=ptr, length=2)
+    var span = Span(unsafe_ptr=ptr, length=2)
     _ = hash(span)
     (ptr + 1).unsafe_deinit_pointee()
     ptr.unsafe_deinit_pointee()
@@ -608,7 +608,7 @@ def test_span_hashable_non_copyable() raises:
 def test_span_with_move_only_type() raises:
     var ptr = alloc[MoveOnly[Int]](1)
     ptr.unsafe_write(MoveOnly(42))
-    var span = Span(ptr=ptr, length=1)
+    var span = Span(unsafe_ptr=ptr, length=1)
     assert_equal(span[0].data, 42)
     ptr.unsafe_deinit_pointee()
     ptr.free()
@@ -620,7 +620,7 @@ struct NonMovable:
 
 def test_span_with_non_movable_type() raises:
     var ptr = alloc[NonMovable](1)
-    var _span = Span(ptr=ptr, length=0)
+    var _span = Span(unsafe_ptr=ptr, length=0)
     ptr.free()
 
 

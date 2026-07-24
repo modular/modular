@@ -245,8 +245,8 @@ def source_loc_with_debug() -> SourceLocation:
     ]()
 
     return SourceLocation(
-        SIMDSize(mlir_value=line),
-        SIMDSize(mlir_value=col),
+        SIMDLength(mlir_value=line),
+        SIMDLength(mlir_value=col),
         StaticString(file_name),
     )
 

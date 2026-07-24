@@ -123,6 +123,20 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added opt-in token-balanced CE scheduling across data-parallel replicas.
+  With `--dp-ce-balance-timeout-ms` >= 0 (default -1 = off), new context
+  encoding requests wait in an unbound pool and are placed by a per-step
+  planner that prices them at their post-prefix-cache length (a read-only
+  probe of each replica's device cache and the shared host/disk tiers) and
+  binds them to the least-loaded replica when first scheduled. Unbalanced CE
+  work may be deferred up to the timeout while its replica runs decode
+  instead, until per-step occupancy reaches `--dp-ce-balance-threshold`
+  (default 0.8). A below-threshold step with CE work on two or more replicas
+  still runs immediately with each replica's chunk size reduced to the
+  balance level, so only the excess defers
+  (`--dp-ce-balance-enable-dynamic-chunk-size`, default on; skipped when the
+  balance level is under half the CE chunk target, where the extra chunks
+  would cost more than the imbalance).
 - Added `--chunked-prefill-min-chunk-size` (config key
   `runtime.chunked_prefill_min_chunk_size`, default 0 = off) to set a floor,
   in tokens, on any chunk created by chunked prefill. When splitting a
@@ -300,14 +314,6 @@ This version is still a work in progress.
   `reasoning_content` instead of `reasoning` (the two are never emitted
   together). This restores the `reasoning_content` field for clients that
   require it; it remains off by default, so responses emit `reasoning` only.
-- Requests whose text contains an unpaired UTF-16 surrogate (valid JSON but not
-  valid UTF-8, for example an emoji split by client-side truncation) are now
-  handled gracefully. By default the surrogate is normalized to the Unicode
-  replacement character (U+FFFD) and the request proceeds, instead of failing
-  with a 500 or a misleading "Invalid JSON." 400. A new opt-in
-  `MAX_SERVE_REJECT_INVALID_UTF8` server config instead rejects such requests
-  with an accurate 400 that names the offending position, identically across the
-  streaming and non-streaming chat paths and `/v1/completions`.
 - Improved time-to-first-token for multimodal requests by making the image and
   video preprocessor reject and decode media more efficiently. Oversized media
   is now rejected before its bytes are fully materialized: an `http(s)` download
@@ -435,6 +441,14 @@ This version is still a work in progress.
   but the code within it is not.
 
 ### Python API
+
+- Added `max.graph.ops.reduce_scatter_rms_norm`, a distributed op that
+  reduce-scatters a bfloat16 tensor across devices and RMSNorm-normalizes each
+  device's row shard in a single collective launch, keeping the reduced sum in
+  float32 registers so there is no global-memory round-trip between the
+  reduce-scatter and the norm. It returns both the normed shard and the
+  reduce-scatter sum (residual) shard, and is numerically identical to a
+  standalone reduce-scatter followed by `rms_norm`.
 
 - Added an optional `init_value` argument to `max.graph.ops.buffer_create`.
   When set, the buffer becomes persistent state: it is allocated and filled
@@ -579,6 +593,13 @@ This version is still a work in progress.
   a graph-compiler gap. CPU float16 isn't supported (a graph-compiler
   limitation); GPU float16 still works.
 
+- The eager interpreter's `top_k`/`bottom_k` ops now run through pre-compiled
+  graph-compiler models instead of hand-written Mojo bindings. `k` stays a
+  runtime operand, so one compiled graph per `(op, device, dtype)` serves
+  every `k`. CPU float16 isn't supported (a graph-compiler limitation); GPU
+  narrows integers to 32/64-bit (the same shuffle-kernel limitation as the
+  reduce migration).
+
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
   machine's devices and drops a stamp. A later lazy eager process on the same
@@ -667,9 +688,16 @@ This version is still a work in progress.
   negative-zero sentinel, so its communication region is now initialized when
   pipeline signal buffers are allocated; without that the region read as
   already-written and produced non-deterministic results.
+- The `layout` package is now bundled with MAX instead of Mojo.
 
 ## Breaking changes
 
+- MAX Serve now fails at startup when the device KV cache cannot hold a
+  single request at the configured max sequence length. Previously this
+  condition only logged a warning, and a request approaching the max
+  sequence length would exhaust the KV cache pool at runtime and crash the
+  model worker with `InsufficientBlocksError`. The startup error reports the
+  largest `--max-length` that fits in the allocated KV cache pool.
 - `max.nn.Module.build_subgraph()` now takes representative input *values*
   (`inputs=`) instead of input *types* (`input_types=`). Each argument may be a
   single `Value`, a nested list/tuple of values, or a structured
@@ -703,9 +731,28 @@ This version is still a work in progress.
   example `Tensor[IOSpec.Input, spec]`.
 - The `compiler` Mojo package has been removed. It only re-exported 4 symbols
   from `extensibility`, please use that directly instead.
+- Renamed the MAX Serve metric `maxserve_cache_hit_rate_percent_utilization`
+  (OTEL name `maxserve.cache.hit_rate`) to
+  `maxserve_cache_request_prefix_coverage_percent` (OTEL name
+  `maxserve.cache.request_prefix_coverage`). The old name was misread as a
+  token-weighted cache hit rate; it's actually an unweighted average of each
+  admitted request's `cached_prefix_length / prompt_length`, so it can read
+  much lower than the true hit rate on workloads with many short, low-overlap
+  requests. Derive the token-weighted cache hit rate from
+  `maxserve_cache_hits_tokens` and `maxserve_cache_misses_tokens` instead.
 
 ## Fixes
 
+- Fixed MAX Serve container pods ignoring `SIGTERM` during the model
+  cold-start window. The serving image ran Python directly as PID 1, and the
+  Linux kernel silently discards a default-disposition signal sent to a
+  namespaced PID 1 — so a `SIGTERM` arriving before the server installed its
+  handler (for example, during the long graph compile) was dropped, leaving
+  pods stuck `Terminating` until the termination grace period elapsed (holding
+  GPUs during rollouts). The container now runs under `dumb-init` as PID 1,
+  which handles `SIGTERM` (a signal the kernel otherwise drops when sent to
+  PID 1) and reaps the process tree, so the pod shuts down promptly and
+  releases its GPU.
 - Fixed a graph-compilation failure on B200 (`constraint failed: split-K (M2)
   supports only check_mask==False masks`) for models whose attention uses a
   materialized attention mask, such as the padded text encoders in diffusion
@@ -860,5 +907,12 @@ This version is still a work in progress.
   against available memory (including the process cgroup limit) and the disk
   budget against filesystem free space, raising an actionable error before
   allocating.
+
+- Fixed grouped (`groups > 1`) `ops.conv2d`/`ops.conv3d` on CPU raising
+  `grouped conv requires packed filter` whenever the filter was a non-constant
+  graph value, even with a fully static graph. The compiler only pre-packed
+  the filter into the layout the grouped-conv kernel requires when the filter
+  traced back to a compile-time constant; it now also packs a non-constant
+  filter when `groups > 1`, since the kernel cannot run without one.
 
 ## Mojo language

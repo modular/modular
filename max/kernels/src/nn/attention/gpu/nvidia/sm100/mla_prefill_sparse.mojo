@@ -293,7 +293,7 @@ struct MLAPrefillSparse[
             Int32(Self.config.num_threads)
         )
     )
-    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDLength(1))
     @__name(
         t"mla_prefill_sparse_{Self.qkv_dtype}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )

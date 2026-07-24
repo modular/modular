@@ -98,6 +98,16 @@ class KVConnectorType(str, Enum):
     and a ``disk_offload_dir`` on the connector config.
     """
 
+    rust_tiered = "rust_tiered"
+    """Tiers evicted pages across host memory and disk, backed by the Rust
+    ``kv_tier_connector`` extension.
+
+    The performant, CUDA-only successor to :attr:`tiered`: it runs its copies
+    and disk I/O on Rust threads (no GIL contention) and overlaps onloads with
+    GPU compute via asynchronous transfer handles. Same config requirements as
+    :attr:`tiered`. Falls back with an error on non-CUDA devices.
+    """
+
     dkv = "dkv"
     """Routes pages through a distributed KV block store.
 
@@ -713,6 +723,7 @@ class KVCacheParams(KVCacheParamInterface):
         if self.kv_connector in (
             KVConnectorType.local,
             KVConnectorType.tiered,
+            KVConnectorType.rust_tiered,
         ):
             if not self.enable_prefix_caching:
                 raise ValueError(
@@ -983,6 +994,7 @@ class KVCacheParams(KVCacheParamInterface):
             if self.kv_connector in (
                 KVConnectorType.local,
                 KVConnectorType.tiered,
+                KVConnectorType.rust_tiered,
                 KVConnectorType.dkv,
             ):
                 # KVCacheBuffer.all_buffers / to_memory enumerate only the
@@ -1294,7 +1306,10 @@ class MHAKVCacheParams(KVCacheParams):
                 ),
                 lookup_table=TensorType(
                     DType.uint32,
-                    shape=[prefix + "batch_size", prefix + "max_num_pages"],
+                    shape=[
+                        prefix + "batch_size",
+                        prefix + page_namespace + "max_num_pages",
+                    ],
                     device=device,
                 ),
                 max_prompt_length=TensorType(
@@ -1468,7 +1483,10 @@ class MLAKVCacheParams(KVCacheParams):
                 ),
                 lookup_table=TensorType(
                     DType.uint32,
-                    shape=[prefix + "batch_size", prefix + "max_num_pages"],
+                    shape=[
+                        prefix + "batch_size",
+                        prefix + page_namespace + "max_num_pages",
+                    ],
                     device=device,
                 ),
                 max_prompt_length=TensorType(
@@ -1914,6 +1932,7 @@ def compute_num_device_blocks(
     available_cache_memory: int,
     max_batch_size: int | None,
     max_seq_len: int | None,
+    require_max_seq_len_fits: bool = False,
 ) -> int:
     """Computes the number of blocks that can be allocated based on the available cache memory.
 
@@ -1924,6 +1943,10 @@ def compute_num_device_blocks(
         available_cache_memory: The amount of cache memory available across all devices.
         max_batch_size: The maximum batch size, or None.
         max_seq_len: The maximum sequence length, or None.
+        require_max_seq_len_fits: When True, raise instead of warn if a single
+            request at ``max_seq_len`` cannot fit in the allocable device
+            blocks. Memory estimation deliberately probes oversized configs,
+            so only the actual cache-allocation path should set this.
 
     Returns:
         The number of blocks that can be allocated for a single replica.
@@ -1986,7 +2009,7 @@ def compute_num_device_blocks(
         memory_needed_str = to_human_readable_bytes(
             max_blocks_per_req * params.bytes_per_block
         )
-        logger.warning(
+        msg = (
             "Insufficient cache memory to support a batch containing one"
             f" request at the max sequence length of {max_seq_len} tokens. Need"
             f" to allocate at least {max_blocks_per_req} pages"
@@ -1994,6 +2017,16 @@ def compute_num_device_blocks(
             f" {num_allocable_blocks} pages"
             f" ({cache_memory_str}{across_x_devices_str})."
         )
+        if require_max_seq_len_fits:
+            raise RuntimeError(
+                msg + " A request approaching the max sequence length would"
+                " exhaust the KV cache and crash the model worker. Reduce"
+                " --max-length to at most"
+                f" {num_allocable_blocks * params.page_size} or increase the"
+                " available KV cache memory (e.g. raise"
+                " --device-memory-utilization)."
+            )
+        logger.warning(msg)
 
     return num_blocks
 
@@ -2066,6 +2099,7 @@ def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
     if params.kv_connector not in (
         KVConnectorType.local,
         KVConnectorType.tiered,
+        KVConnectorType.rust_tiered,
     ):
         return 0
     assert params.host_kvcache_swap_space_gb is not None

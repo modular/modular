@@ -162,8 +162,8 @@ def test_fp8_multistage_gemm[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=0.01,

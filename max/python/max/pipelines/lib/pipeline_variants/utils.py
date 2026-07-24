@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 from max.pipelines.context import (
+    FUTURE_TOKEN,
     GenerationStatus,
     LogProbabilities,
     StructuredOutputRegionDelimiters,
@@ -135,20 +136,15 @@ def build_response(
             upper_bound=max_seq_len, default=context.max_length
         )
 
-        # Mark as done once the per-request cap is actually reached. Unlike
-        # the hard model/KV limit below, no growth slack is reserved here:
-        # the per-token accept loop above already truncates the final
-        # accepted chunk to land exactly on this cap, so reserving a full
-        # worst-case spec chunk of slack against it would stop the request
-        # up to `max_growth_per_step` tokens early (CENG-827).
+        # If current length has hit the per-request cap, we're done.
+        # Note: the per-request cap can be much shorter than the model
+        # max-len, due to user-supplied settings such as
+        # `max_completion_tokens`.
         current_length = context.tokens.processed_length + 1
         if current_length >= context_max_length:
             context.status = GenerationStatus.MAXIMUM_LENGTH
-        # Mark as done if the next step's worst-case growth (all drafts
-        # accepted + bonus token) would exceed the hard model/KV capacity.
-        # The KV pool reserves `max_seq_len + spec_slack` up front (see
-        # overlap_text_generation.py), so running one more speculative step
-        # here can never overflow it.
+        # If another step would exceed max_seq_len, we're done. This can stop
+        # spec-decode requests just short of max_seq_len; MXSERV-284 tracks it.
         elif current_length + max_growth_per_step > max_seq_len:
             context.status = GenerationStatus.MAXIMUM_LENGTH
 
@@ -459,7 +455,7 @@ class StructuredOutputHelper:
             # Parsers that opt into enforcement-to-EOS get no end tag:
             # enforcement stays on after the section closes, so the
             # completed grammar masks everything but EOS and the turn
-            # ends with its single section (e.g. MiniMax-M3; CENG-718).
+            # ends with its single section (e.g. MiniMax-M3).
             if parser_cls.ENFORCE_TOOL_REGION_TO_EOS:
                 return (parser_cls.SECTION_BEGIN, None)
             return (parser_cls.SECTION_BEGIN, parser_cls.SECTION_END)
@@ -502,6 +498,8 @@ class StructuredOutputHelper:
             backend_name or DEFAULT_STRUCTURED_OUTPUT_BACKEND,
             tokenizer_delegate,
             vocab_size,
+            # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
+            reject_unsupported=(tool_parser_name == "gemma4"),
         )
 
         # Extract structural tags from tool parser if available
@@ -600,7 +598,7 @@ class StructuredOutputHelper:
 
         # Fall back to json_schema if no grammar
         # json_schema requires enable_response_format_schema (--enable-structured-output flag)
-        elif context.json_schema and context.matcher is None:
+        elif context.json_schema is not None and context.matcher is None:
             if not self.enable_response_format_schema:
                 raise InputError(
                     "json_schema provided but structured output is not enabled. "
@@ -919,23 +917,6 @@ class StructuredOutputHelper:
                 # Advance the enforcement state machine through committed
                 # tokens, one at a time so special tokens (e.g. tool-call
                 # structural tags) can flip grammar enforcement mid-sequence.
-                # This mirrors the synchronous ``advance_fsm`` in
-                # ``context.py`` exactly:
-                #
-                #   * EOS-class tokens are not part of the grammar — they
-                #     signal end of generation. Skip the matcher so it
-                #     stays in a clean terminal state rather than getting
-                #     a spurious rejection.
-                #   * For everything else, gate on
-                #     ``update_enforcement_state``'s return value, not on
-                #     ``grammar_enforced``. The return value distinguishes
-                #     ``</think>`` (flip enforcement on, do NOT consume —
-                #     the thinking delimiter isn't grammar content) from
-                #     ``<|tool_calls_section_end|>`` (flip enforcement
-                #     off, DO consume — it's the grammar's terminal).
-                #   * If the matcher rejects, log and disable enforcement
-                #     for the rest of the request — continuing against a
-                #     desynced matcher produces schema-shaped nonsense.
                 n_accepted = int(num_accepted[ctx_idx])
                 bonus_token = int(bonus_tokens[ctx_idx])
                 committed_tokens = [
@@ -943,11 +924,20 @@ class StructuredOutputHelper:
                     for j in range(n_accepted)
                 ]
                 committed_tokens.append(bonus_token)
-
+                gen = ctx.tokens.generated
+                prior_generated = (
+                    gen[:-1] if len(gen) and gen[-1] == FUTURE_TOKEN else gen
+                )
+                eos_offset = ctx.eos_tracker.first_eos_offset(
+                    prior_generated, committed_tokens
+                )
                 for committed_idx, token in enumerate(committed_tokens):
-                    if token in ctx.eos_tracker.eos_token_ids:
+                    # Generation stops at the first terminating token; tokens
+                    # after it are never emitted, so disable enforcement and
+                    # stop rather than advancing the matcher through them.
+                    if committed_idx == eos_offset:
                         ctx.grammar_enforced = False
-                        continue
+                        break
                     was_enforced = ctx.grammar_enforced
                     if not ctx.update_enforcement_state(token):
                         continue
@@ -1115,7 +1105,7 @@ class StructuredOutputHelper:
             # Initialize matchers for contexts with json_schema or grammar
             for ctx in context_batch:
                 needs_matcher = ctx.matcher is None and (
-                    ctx.json_schema or ctx.grammar is not None
+                    ctx.json_schema is not None or ctx.grammar is not None
                 )
                 if needs_matcher:
                     self.update_context(

@@ -517,19 +517,19 @@ def test_kv_cache_2m_iadd_cpu[
         dtype, num_heads, head_dim, page_size
     ](
         LayoutTensor[dtype, Layout.row_major[6]()](
-            kv_block_paged_host.ptr,
+            kv_block_paged_host._storage,
             RuntimeLayout[Layout.row_major[6]()].row_major(
                 kv_block_paged_shape
             ),
         ),
         LayoutTensor[mut=False, DType.uint32, Layout(UNKNOWN_VALUE)](
-            cache_lengths_host.ptr,
+            cache_lengths_host._storage,
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 IndexList[1](batch_size)
             ),
         ),
         LayoutTensor[mut=False, DType.uint32, Layout.row_major[2]()](
-            paged_lut_host.ptr,
+            paged_lut_host._storage,
             RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape),
         ),
         max_prompt_length,
@@ -552,14 +552,14 @@ def test_kv_cache_2m_iadd_cpu[
             dtype,
             Layout.row_major(UNKNOWN_VALUE, num_heads * head_dim),
         ](
-            a_host.ptr,
+            a_host._storage,
             RuntimeLayout[
                 Layout.row_major(UNKNOWN_VALUE, num_heads * head_dim)
             ].row_major(a_shape),
         ),
         kv_collection_host,
         LayoutTensor[mut=False, DType.uint32, Layout(UNKNOWN_VALUE)](
-            input_row_offsets_slice_host.ptr,
+            input_row_offsets_slice_host._storage,
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 coord_to_index_list(
                     input_row_offsets_slice_host.layout.shape_coord(),
@@ -567,7 +567,7 @@ def test_kv_cache_2m_iadd_cpu[
             ),
         ),
         LayoutTensor[mut=False, DType.int64, Layout(UNKNOWN_VALUE)](
-            lora_end_idx_host.ptr,
+            lora_end_idx_host._storage,
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 coord_to_index_list(
                     lora_end_idx_host.layout.shape_coord(),
@@ -575,7 +575,7 @@ def test_kv_cache_2m_iadd_cpu[
             ),
         ),
         LayoutTensor[mut=False, DType.int64, Layout(UNKNOWN_VALUE)](
-            batch_seq_len_host.ptr,
+            batch_seq_len_host._storage,
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 coord_to_index_list(
                     batch_seq_len_host.layout.shape_coord(),
@@ -588,19 +588,19 @@ def test_kv_cache_2m_iadd_cpu[
 
     _verify_kv_cache[dtype, num_heads, head_dim, page_size, batch_size](
         LayoutTensor[dtype, Layout.row_major[6]()](
-            kv_block_paged_host.ptr,
+            kv_block_paged_host._storage,
             RuntimeLayout[Layout.row_major[6]()].row_major(
                 kv_block_paged_shape
             ),
         ),
         LayoutTensor[mut=False, DType.uint32, Layout(UNKNOWN_VALUE)](
-            cache_lengths_host.ptr,
+            cache_lengths_host._storage,
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 IndexList[1](batch_size)
             ),
         ),
         LayoutTensor[mut=False, DType.uint32, Layout.row_major[2]()](
-            paged_lut_host.ptr,
+            paged_lut_host._storage,
             RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape),
         ),
         prompt_lens,

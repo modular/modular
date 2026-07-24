@@ -131,7 +131,7 @@ def _resolve_kvconnector_config(kv: KVCacheConfig) -> None:
     # Ensure a config object exists for connectors that need one.
     cfg = kv.kv_connector_config or KVConnectorConfig()
 
-    if connector == KVConnectorType.tiered:
+    if connector in (KVConnectorType.tiered, KVConnectorType.rust_tiered):
         if cfg.disk_offload_dir is None:
             cfg.disk_offload_dir = tempfile.mkdtemp(prefix="max_kv_tiered_")
             logger.info(
@@ -465,6 +465,7 @@ class PipelineConfig(ConfigFileModel):
         if self.model.kv_cache.kv_connector in {
             KVConnectorType.tiered,
             KVConnectorType.local,
+            KVConnectorType.rust_tiered,
         }:
             # BlockOffloadEngine only allocates signal buffers when its
             # broadcast path is active (replicate_kv_across_tp = is_mla AND
@@ -635,7 +636,9 @@ class PipelineConfig(ConfigFileModel):
 
         # Apply KV cache config to main model
         if kv_cache_kwargs and "main" in self.models:
-            self.model.create_kv_cache_config(**kv_cache_kwargs)
+            self.models = self.models.with_override(
+                "main", kv_cache=KVCacheConfig(**kv_cache_kwargs)
+            )
 
         # Extract draft model kwargs and add via with_override
         draft_kwargs = PipelineConfig._extract_kwargs_for_config(
@@ -655,10 +658,10 @@ class PipelineConfig(ConfigFileModel):
             # "draft" overrides are applied after inheritance so explicit
             # user intent wins over copied target-model defaults.
             draft_kwargs.update(component_overrides.get("draft", {}))
+            if kv_cache_kwargs:
+                draft_kwargs["kv_cache"] = KVCacheConfig(**kv_cache_kwargs)
 
             draft_config = MAXModelConfig(**draft_kwargs)
-            if kv_cache_kwargs:
-                draft_config.create_kv_cache_config(**kv_cache_kwargs)
             self.models = self.models.with_override(
                 "draft", config=draft_config
             )
@@ -1506,10 +1509,6 @@ class PipelineConfig(ConfigFileModel):
             default_encoding=arch.default_encoding
         )
 
-        # The quantization encoding has been resolved at this point.
-        # This means that a KV cache dtype can be determined, assuming an override wasn't provided.
-        model_config.set_cache_dtype_given_quantization_encoding()
-
         # by this point, the quantization_encoding must be provided. verify it is supported.
         if model_config.quantization_encoding not in arch.supported_encodings:
             raise ValueError(
@@ -1654,6 +1653,7 @@ class PipelineConfig(ConfigFileModel):
                 enable_overlap_scheduler=args.enable_overlap_scheduler,
                 dp_ce_balance_timeout_ms=args.dp_ce_balance_timeout_ms,
                 dp_ce_balance_threshold=args.dp_ce_balance_threshold,
+                dp_ce_balance_enable_dynamic_chunk_size=args.dp_ce_balance_enable_dynamic_chunk_size,
                 allow_unsupported_logprobs=args.allow_unsupported_logprobs,
                 allow_extra_request_fields=args.allow_extra_request_fields,
                 prefer_module_v3=args.prefer_module_v3,

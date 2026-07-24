@@ -43,19 +43,10 @@ from max.pipelines.context import (
 )
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.modeling.types import RequestID
-from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
-from max.serve.worker_interface import ModelWorkerProxy
-from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
-from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 
 logger = logging.getLogger(__name__)
 
 Int32Array = npt.NDArray[np.int32]
-
-_ModelWorkerProxy = ModelWorkerProxy[
-    TextAndVisionContext | TextContext, TextGenerationOutput
-]
 
 
 def _sampling_params_input(req: GenerateRequest) -> SamplingParamsInput:
@@ -102,45 +93,71 @@ class MAXModelWorker(Worker):
         super().__init__(deploy_hints=["cpu"] if on_cpu else ["gpu"])
         self.pipeline_config = pipeline_config
 
-        self.max_length: int | None = None
-        self._eos_token_ids: set[int] = set()
-        self._proxy: _ModelWorkerProxy | None = None
-
-    @contextlib.asynccontextmanager
-    async def open(self) -> AsyncIterator[MAXModelWorker]:
-        """Resolve the config, bring up the model-worker subprocess and proxy.
-
-        The telemetry consumer, model-worker subprocess and proxy (with its
-        single response fan-out task) stay alive for the worker's lifetime.
-        These are the same async context managers used by
-        ``max.entrypoints.LLM`` and ``max.serve.api_server``.
-        """
-        t0 = time.monotonic()
-        register_all_models()
-
-        pipeline_config = self.pipeline_config
-
-        # Materialize the (tokenizer, factory) pair on this side. The factory is
-        # sent via pickle to the worker subprocess where it is invoked to
-        # actually load the model on the target device. ``retrieve_factory``
-        # performs the architecture lookup and resolves ``pipeline_config`` in
-        # place (including ``max_length``).
         tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config
         )
-        resolved_max_length = pipeline_config.model.max_length
-        assert resolved_max_length is not None
-        self.max_length = resolved_max_length
+        eos_token_ids = frozenset(
+            getattr(tokenizer, "_default_eos_token_ids", ())
+        )
+
+        # ``max_length`` is read off the resolved config in open().
+        self.max_length: int | None = None
+        self._eos_token_ids: set[int] = set(eos_token_ids)
+        self._model_factory = model_factory
+
+        # lazy import to avoid circular imports when defining
+        # CascadePipelines in model arch.py layers
+        from max.serve.worker_interface import ModelWorkerProxy
+
+        self._proxy: (
+            ModelWorkerProxy[
+                TextAndVisionContext | TextContext, TextGenerationOutput
+            ]
+            | None
+        ) = None
+
+    @contextlib.asynccontextmanager
+    async def open(self) -> AsyncIterator[MAXModelWorker]:
+        """Bring up the model-worker subprocess and proxy.
+
+        Mirrors ``max.serve.api_server``: the config was already resolved and
+        the factory built in the orchestrator (passed to the constructor), so
+        here we only spawn the ``max.serve`` model-worker subprocess with that
+        factory and resolved config -- the worker never resolves or mutates the
+        config. ``retrieve_pipeline_task``/``retrieve_context_type`` are plain
+        registry lookups (no config mutation, no network). The telemetry
+        consumer, model-worker subprocess and proxy (with its single response
+        fan-out task) stay alive for the worker's lifetime -- the same async
+        context managers used by ``max.entrypoints.LLM`` and
+        ``max.serve.api_server``.
+        """
+        # lazy import to avoid circular imports when defining
+        # CascadePipelines in model arch.py layers
+        from max.serve.config import MetricRecordingMethod, Settings
+        from max.serve.pipelines.model_worker import start_model_worker
+        from max.serve.pipelines.telemetry_worker import (
+            start_telemetry_consumer,
+        )
+        from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
+        from max.serve.worker_interface.zmq_interface import (
+            ZmqModelWorkerInterface,
+        )
+
+        assert self._model_factory is not None, (
+            "MAXModelWorker needs a model_factory to deploy; construct it via "
+            "build_pipeline, which resolves the config and builds the factory."
+        )
+        max_length = self.pipeline_config.model.max_length
+        assert max_length is not None, "pipeline_config must be resolved"
+        self.max_length = max_length
+        t0 = time.monotonic()
+        register_all_models()
 
         pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(
-            pipeline_config.models.main_architecture_name
+            self.pipeline_config.models.main_architecture_name
         )
-        context_type = PIPELINE_REGISTRY.retrieve_context_type(pipeline_config)
-
-        # Tokenization happens upstream (this worker receives token ids), so we
-        # only need the eos set to terminate generation in the worker.
-        self._eos_token_ids = set(
-            getattr(tokenizer, "_default_eos_token_ids", set())
+        context_type = PIPELINE_REGISTRY.retrieve_context_type(
+            self.pipeline_config
         )
 
         settings = Settings(
@@ -156,20 +173,14 @@ class MAXModelWorker(Worker):
             context_type=context_type,
         )
 
-        # Deferred to break an import cycle: architectures that declare a
-        # cascade_pipeline_factory import this module, and register_all_models()
-        # can reach those architectures while max.serve.pipelines.model_worker
-        # is still initializing.
-        from max.serve.pipelines.model_worker import start_model_worker
-
         async with contextlib.AsyncExitStack() as exit_stack:
             metric_client = await exit_stack.enter_async_context(
                 start_telemetry_consumer(settings)
             )
             self._proxy = await exit_stack.enter_async_context(
                 start_model_worker(
-                    model_factory=model_factory,
-                    pipeline_config=pipeline_config,
+                    model_factory=self._model_factory,
+                    pipeline_config=self.pipeline_config,
                     settings=settings,
                     metric_client=metric_client,
                     model_worker_interface=model_worker_interface,

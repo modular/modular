@@ -100,16 +100,20 @@ def top_k_shape_impl[
         The output shape.
     """
 
-    # Clamp max_k
-    var bound_max_k = Int(input.dim(axis)) if max_k == -1 else max_k
+    # Normalize a negative axis up front, matching what `top_k()` itself does;
+    # `TileTensor.dim()` has no negative-index case and would abort otherwise.
+    var normalized_axis = normalize_neg_index(axis, input.rank)
 
-    if bound_max_k < 0 or bound_max_k > Int(input.dim(axis)):
+    # Clamp max_k
+    var bound_max_k = Int(input.dim(normalized_axis)) if max_k == -1 else max_k
+
+    if bound_max_k < 0 or bound_max_k > Int(input.dim(normalized_axis)):
         raise Error("[top/bottom-k] k must be within [0, input_shape[axis]]")
 
     var shape = rebind[IndexList[input.rank]](
         coord_to_index_list(input.layout.shape_coord())
     )
-    shape[normalize_neg_index(axis, input.rank)] = bound_max_k
+    shape[normalized_axis] = bound_max_k
 
     return shape
 
@@ -345,10 +349,13 @@ def _top_k_cpu[
                             break
                         num_equal += 1
                     if num_equal > 1:
-                        var ptr = idxs.unsafe_ptr() + i
+                        var idxs_ptr: UnsafePointer[
+                            idxs.T, origin_of(idxs)
+                        ] = idxs.unsafe_ptr()
+                        var ptr = idxs_ptr + i
                         sort(
                             Span[idxs.T, origin_of(idxs)](
-                                ptr=ptr, length=num_equal
+                                unsafe_ptr=ptr, length=num_equal
                             )
                         )
                     i += num_equal
@@ -814,7 +821,7 @@ def _warp_reduce_topk[
     # Shuffle function for TopK_2 structure
     @parameter
     def shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
-        comptime fn_type = def[dtype: DType, simd_width: SIMDSize](
+        comptime fn_type = def[dtype: DType, simd_width: SIMDLength](
             val: SIMD[dtype, simd_width], offset: UInt32
         ) thin -> SIMD[dtype, simd_width]
         comptime xor_fn: fn_type = warp.shuffle_xor

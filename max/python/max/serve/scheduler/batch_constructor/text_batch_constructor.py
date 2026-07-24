@@ -23,6 +23,7 @@ from enum import Enum
 from max.pipelines.context import TextGenerationOutput
 from max.pipelines.context.context import TextContext
 from max.pipelines.kv_cache import InsufficientBlocksError, PagedKVCacheManager
+from max.pipelines.kv_cache.kv_connector import KVConnectorTransfer
 from max.pipelines.lib import LoRAManager
 from max.pipelines.modeling.types import (
     Pipeline,
@@ -64,6 +65,20 @@ class _PendingCERequest:
 
     ctx: TextContext
     weights: list[int]
+
+
+@dataclass
+class _OnloadingRequest:
+    """A CE request cordoned out of the batch while its KV onload is in flight.
+
+    The request is already bound to ``replica_idx`` and fully allocated (its
+    blocks are pinned by ``event``); it is held here, out of any run queue,
+    until ``event`` polls complete, then re-admitted to the replica's CE queue.
+    """
+
+    ctx: TextContext
+    replica_idx: int
+    event: KVConnectorTransfer
 
 
 @dataclass
@@ -437,6 +452,11 @@ class TextBatchConstructor:
         self._request_id_to_replica_idx: dict[RequestID, int] = {}
         self._request_id_to_lora_name: dict[RequestID, str | None] = {}
 
+        # CE requests cordoned out of the batch while their KV onload is in
+        # flight, keyed by request id. Re-admitted to their replica's CE queue
+        # once the onload completes (see ``_readmit_completed_onloads``).
+        self._onloading_reqs: dict[RequestID, _OnloadingRequest] = {}
+
         # DP-balanced CE deferral state. New CE requests wait in
         # ``_ce_pending`` unbound to any replica (insertion order == arrival
         # order); binding happens at the step the planner first schedules
@@ -454,6 +474,11 @@ class TextBatchConstructor:
         )
         self._ce_arrival: dict[RequestID, float] = {}
         self._ce_deferred_replicas: set[int] = set()
+        # Per-replica CE token quota for this iteration, set by
+        # ``_plan_ce_step`` when it reduces a below-threshold step's chunk
+        # size to its balance level. ``None`` means no quota (full CE chunk
+        # budget).
+        self._ce_step_quota: list[int] | None = None
         self._probe_failure_logged = False
 
         self.total_preemption_count: int = 0
@@ -463,10 +488,16 @@ class TextBatchConstructor:
         self._prev_dp_padding: DPPaddingInfo | None = None
         self._current_dp_padding: DPPaddingInfo | None = None
 
-    def _create_new_token_budget(self) -> TokenBudgetCollection:
+    def _create_new_token_budget(
+        self, ce_capacity: int | None = None
+    ) -> TokenBudgetCollection:
         token_budgets: list[TokenBudget] = [
             ActiveTokenBudget(
-                capacity=self.scheduler_config.target_tokens_per_batch_ce,
+                capacity=(
+                    ce_capacity
+                    if ce_capacity is not None
+                    else self.scheduler_config.target_tokens_per_batch_ce
+                ),
                 allow_chunking=self.scheduler_config.enable_chunked_prefill,
                 applicable_types=RequestType.all(),
                 min_chunk_tokens=self.scheduler_config.chunked_prefill_min_chunk_size,
@@ -654,6 +685,7 @@ class TextBatchConstructor:
         return (
             request_id in self._request_id_to_replica_idx
             or request_id in self._ce_pending
+            or request_id in self._onloading_reqs
         )
 
     def release_request(self, request_id: RequestID) -> None:
@@ -679,6 +711,11 @@ class TextBatchConstructor:
             return
 
         self._ce_arrival.pop(request_id, None)
+
+        # Drop any cordon entry; the request's blocks are freed by the normal
+        # release path below (its pending onload keeps them pinned until it
+        # completes, after which poll_transfers unpins them).
+        self._onloading_reqs.pop(request_id, None)
 
         # Retrieve the replica index for the request
         replica_idx = self._request_id_to_replica_idx[request_id]
@@ -751,6 +788,11 @@ class TextBatchConstructor:
         reqs.update(
             (req_id, pending.ctx)
             for req_id, pending in self._ce_pending.items()
+        )
+        # Cordoned onloading requests are still pending CE work.
+        reqs.update(
+            (req_id, onloading.ctx)
+            for req_id, onloading in self._onloading_reqs.items()
         )
         return reqs
 
@@ -829,9 +871,12 @@ class TextBatchConstructor:
         return RequestType.CE
 
     def _inflight_kv_transfer_count(self) -> int:
+        # Cordoned onloading requests hold KV blocks while their H2D is in
+        # flight, so count them alongside any external (DI prefill) transfers.
+        count = len(self._onloading_reqs)
         if self._get_inflight_kv_transfer_count is not None:
-            return self._get_inflight_kv_transfer_count()
-        return 0
+            count += self._get_inflight_kv_transfer_count()
+        return count
 
     def _add_ce_requests(self, batch: ReplicaBatch, replica_idx: int) -> None:
         # Deferred by the DP CE balancer this iteration (also covers paths
@@ -897,16 +942,34 @@ class TextBatchConstructor:
                     break
 
                 try:
-                    self.kv_cache.alloc(ctx, replica_idx=replica_idx)
+                    onload_event = self.kv_cache.alloc(
+                        ctx, replica_idx=replica_idx
+                    )
                 except InsufficientBlocksError:
+                    # Only a genuine OOM (nothing else to run and no in-flight
+                    # transfer that will free blocks once it lands) is fatal.
+                    # Otherwise requeue and retry next iteration; poll_transfers
+                    # unpins completed transfers' blocks in the meantime.
                     if (
                         len(replica_requests.tg_reqs) == 0
                         and len(batch) == 0
                         and self._inflight_kv_transfer_count() == 0
+                        and not self.kv_cache.pending_transfers_exist(
+                            replica_idx
+                        )
                     ):
                         raise
                     self._return_to_request_queue(ctx, replica_idx)
                     break
+
+                # Cordon the request if its KV onload has not landed: hold it
+                # out of the batch (keeping its allocated/pinned blocks) so the
+                # GPU runs other ready work while the H2D completes.
+                if not onload_event.is_complete():
+                    self._onloading_reqs[req_id] = _OnloadingRequest(
+                        ctx=ctx, replica_idx=replica_idx, event=onload_event
+                    )
+                    continue
 
             # Check if it fits within the token budget
             match batch.token_budget.status_after_context(
@@ -977,10 +1040,18 @@ class TextBatchConstructor:
                     break
                 except InsufficientBlocksError:
                     if len(candidate_ids) == 0:
-                        if len(batch) == 0:
+                        # Only a genuine OOM is fatal: nothing left to preempt,
+                        # an empty batch, and no in-flight transfer that will
+                        # free blocks once it lands.
+                        if (
+                            len(batch) == 0
+                            and self._inflight_kv_transfer_count() == 0
+                            and not self.kv_cache.pending_transfers_exist(
+                                replica_idx
+                            )
+                        ):
                             raise
-                        else:
-                            return
+                        return
 
                     # Pop the oldest candidate id
                     oldest_id = candidate_ids.pop()
@@ -1023,10 +1094,21 @@ class TextBatchConstructor:
                 automatically based on queue state and scheduler configuration.
         """
 
-        # Initialize batch
+        # Initialize batch. When the DP CE balancer set a step quota for this
+        # replica, it becomes the CE budget capacity, sizing this step's
+        # chunks to the balance level instead of the full chunk target.
+        ce_capacity: int | None = None
+        if (
+            self._ce_step_quota is not None
+            and self._ce_step_quota[replica_idx] > 0
+            # Under in-flight batching the TG batch shares this budget; a
+            # small CE quota must not truncate it.
+            and not self.scheduler_config.enable_in_flight_batching
+        ):
+            ce_capacity = self._ce_step_quota[replica_idx]
         batch = ReplicaBatch(
             batch={},
-            token_budget=self._create_new_token_budget(),
+            token_budget=self._create_new_token_budget(ce_capacity),
         )
 
         # Use override if provided, otherwise identify priority automatically
@@ -1076,10 +1158,19 @@ class TextBatchConstructor:
         The assembled step is committed when the floor is non-empty (those
         tokens run regardless, so riders only improve the step), when its
         occupancy meets ``dp_ce_balance_threshold``, or when the fleet has
-        nothing else to do. Otherwise every deferrable piece waits: deferred
-        replicas run TG this iteration and pooled requests stay unbound.
+        nothing else to do. With ``dp_ce_balance_enable_dynamic_chunk_size``,
+        a below-threshold step with CE work on two or more replicas also
+        commits, at a reduced chunk size: each working replica's CE quota
+        (``_ce_step_quota``, enforced as that replica's CE budget capacity)
+        is reduced to the lightest working replica's level — never below a
+        replica's floor — so the balanced portion runs now as a shorter,
+        ~fully-occupied step and only the excess is deferred. Only a single
+        replica's deferrable work with no partner anywhere is held outright:
+        deferred replicas run TG this iteration and pooled requests stay
+        unbound.
         """
         self._ce_deferred_replicas.clear()
+        self._ce_step_quota = None
         if not self._dp_ce_balance_enabled:
             return
         if not self._ce_pending and not any(
@@ -1101,8 +1192,8 @@ class TextBatchConstructor:
         # into idleness loses throughput for nothing).
         #
         # ``step_load`` is this step's projection (capped at the CE chunk
-        # budget), used for occupancy. ``total_load`` is the uncapped
-        # per-replica queue total, used for binding decisions.
+        # budget), used for occupancy and quotas. ``total_load`` is the
+        # uncapped per-replica queue total, used for binding decisions.
         floor = [0] * self.num_replicas
         total_load = [0] * self.num_replicas
         deferrable_tails: list[tuple[int, int]] = []  # (step_tokens, replica)
@@ -1184,24 +1275,88 @@ class TextBatchConstructor:
         fleet_idle = not floor_exists and all(
             not replica.tg_reqs for replica in self.replicas
         )
+        threshold = self.scheduler_config.dp_ce_balance_threshold
+        occupancy = _occupancy(step_load)
+        # A below-threshold step with work on 2+ replicas need not be held:
+        # reducing the heavy replicas' chunk size to the balance level runs
+        # the balanced portion now (a shorter, ~100%-occupancy step) and
+        # defers only the excess. The balance level must be substantial
+        # (>= half the chunk target): each extra chunk re-reads the
+        # request's full context in attention, so undersized chunks cost
+        # more than the imbalance they avoid. The level never drops below
+        # any replica's floor (expired work is not deferrable and runs to
+        # the full chunk budget regardless).
+        loads_with_work = [tokens for tokens in step_load if tokens > 0]
+        balance_level = (
+            max(max(floor), min(loads_with_work)) if loads_with_work else 0
+        )
+        can_reduce_chunk_size = (
+            self.scheduler_config.dp_ce_balance_enable_dynamic_chunk_size
+            and len(loads_with_work) > 1
+            and balance_level >= target // 2
+        )
         if (
             floor_exists
             or fleet_idle
-            or _occupancy(step_load)
-            >= self.scheduler_config.dp_ce_balance_threshold
+            or occupancy >= threshold
+            or can_reduce_chunk_size
         ):
             for req_id, replica_idx in pool_binds:
                 pending = self._ce_pending.pop(req_id)
                 self._bind_request(pending.ctx, replica_idx)
             self._ce_deferred_replicas = deferred
+
+            if (
+                occupancy < threshold
+                and can_reduce_chunk_size
+                and not fleet_idle
+            ):
+                quotas = [
+                    self.scheduler_config.target_tokens_per_batch_ce
+                ] * self.num_replicas
+                for replica_idx in range(self.num_replicas):
+                    if step_load[replica_idx] > 0:
+                        quotas[replica_idx] = max(
+                            floor[replica_idx],
+                            min(step_load[replica_idx], balance_level),
+                        )
+                self._ce_step_quota = quotas
         else:
-            # Hold everything deferrable for a better-balanced step.
+            # No worthwhile balanced step exists (lone replica, or a balance
+            # level too small to shrink chunks to): hold everything
+            # deferrable for a better step.
             self._ce_deferred_replicas = {
                 replica_idx for _, replica_idx in deferrable_tails
             }
 
+    def _readmit_completed_onloads(self) -> None:
+        """Re-admits cordoned requests whose KV onload has completed.
+
+        Runs once per iteration. Completed requests return to the front of their
+        replica's CE queue (FIFO by arrival) so the next batch pass can schedule
+        them; their onloaded prefix is now device-resident.
+        """
+        if not self._onloading_reqs:
+            return
+        completed = [
+            req_id
+            for req_id, onloading in self._onloading_reqs.items()
+            if onloading.event.is_complete()
+        ]
+        for req_id in completed:
+            onloading = self._onloading_reqs.pop(req_id)
+            replica = self.replicas[onloading.replica_idx]
+            replica.ce_reqs[req_id] = onloading.ctx
+            replica.ce_reqs.move_to_end(req_id, last=False)
+
     def construct_batch(self) -> TextGenerationInputs[TextContext]:
         """Constructs Pipeline Inputs which includes a batch for each replica."""
+
+        # Re-admit any cordoned requests whose KV onload has landed. The
+        # block-level drain (unpin/commit/reclaim) is handled inside
+        # ``kv_cache.alloc`` itself, so the scheduler only tracks the
+        # request-level side here.
+        self._readmit_completed_onloads()
 
         # DP-balanced CE deferral: decide this iteration's CE work (late
         # binding + per-replica deferral) before priorities are identified.

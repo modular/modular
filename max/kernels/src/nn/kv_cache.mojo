@@ -43,6 +43,7 @@ from layout import (
     row_major,
     stack_allocation,
 )
+from internal_utils.fp8_utils import cast_saturating
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.attention.cpu.mha import (
@@ -362,7 +363,7 @@ def _fused_qkv_matmul_kv_cache_impl[
     @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache, valid_lengths)
     @always_inline
     def write_to_cache[
-        dtype_: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype_: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype_, width]):
         var b_idx, t_idx = udivmod(idx[0], SEQ_LEN)
         if idx[1] < q_dim:
@@ -1357,7 +1358,7 @@ def _fused_qk_rms_norm_rope_process_row[
                 tok_idx=post_seq_idx,
                 head_idx=head_idx,
                 head_dim_idx=idx,
-                val=res.cast[cache_t.dtype](),
+                val=cast_saturating[cache_t.dtype](res),
             )
         else:
             q_output.store[width=simd_width](
@@ -1378,7 +1379,7 @@ def _fused_qk_rms_norm_rope_process_row[
                         tok_idx=post_seq_idx,
                         head_idx=head_idx,
                         head_dim_idx=idx,
-                        val=passthrough.cast[cache_t.dtype](),
+                        val=cast_saturating[cache_t.dtype](passthrough),
                     )
                 else:
                     q_output.store[width=simd_width](
@@ -1412,14 +1413,14 @@ def _fused_qk_rms_norm_rope_process_row[
                 tok_idx=post_seq_idx,
                 head_idx=head_idx,
                 head_dim_idx=h_re,
-                val=output_re.cast[cache_t.dtype](),
+                val=cast_saturating[cache_t.dtype](output_re),
             )
             k_cache.store(
                 bs=batch_idx,
                 tok_idx=post_seq_idx,
                 head_idx=head_idx,
                 head_dim_idx=h_im,
-                val=output_im.cast[cache_t.dtype](),
+                val=cast_saturating[cache_t.dtype](output_im),
             )
         else:
             q_output.store(
@@ -1587,10 +1588,10 @@ def fused_qk_rms_norm_rope_ragged_paged[
     comptime assert (
         input_row_offsets.flat_rank == 1
     ), "input_row_offsets must be rank 1"
-    comptime assert cache_dtype == dtype, (
-        "fused_qk_rms_norm_rope_ragged_paged requires Q and K cache dtype to"
-        " match"
-    )
+    # The Q compute dtype may differ from the K cache dtype: the
+    # kernel loads K in fp32, applies norm + RoPE, and saturating-casts it back
+    # to `cache_dtype` in the epilogue (Q is written out at `dtype`), so an FP8
+    # K cache pairs with a BF16 Q.
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     # Derived from `q_output` (identical shape to Q) rather than passed in, so
@@ -1977,10 +1978,11 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     comptime assert (
         input_row_offsets.flat_rank == 1
     ), "input_row_offsets must be rank 1"
-    comptime assert main_cache_dtype == dtype and index_cache_dtype == dtype, (
-        "fused_dual_qk_rms_norm_rope_ragged_paged requires Q and both K caches"
-        " to share the Q dtype"
-    )
+    # The Q compute dtype may differ from either K cache dtype: the kernel
+    # loads each band's K in fp32, applies norm + RoPE, and saturating-casts
+    # it back to that band's own cache dtype in the epilogue (Q and both DPS
+    # Q outputs are written out at `dtype`), so e.g. an FP8 main-K cache can
+    # pair with a BF16 index-K cache and BF16 Q.
 
     # Both bands must share the per-head RoPE geometry for a single kernel
     # instantiation (one freqs table, one comptime `rope_dim`) to be valid.
@@ -2266,7 +2268,7 @@ def rms_norm_kv_cache_ragged_paged[
     @parameter
     @__copy_capture(k_cache)
     def key_cache_output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
@@ -2320,7 +2322,7 @@ def rms_norm_kv_cache_ragged_paged[
         @parameter
         @always_inline
         def key_cache_output_fn_coord[
-            width: SIMDSize, alignment: Int
+            width: SIMDLength, alignment: Int
         ](coords: Coord, val: SIMD[dtype, width]) -> None:
             key_cache_output_fn[width, alignment](
                 rebind[IndexList[rank]](coord_to_index_list(coords)), val
@@ -2438,7 +2440,7 @@ def rms_norm_value_cache_ragged_paged[
     @parameter
     @__copy_capture(v_cache)
     def value_cache_output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
@@ -2490,7 +2492,7 @@ def rms_norm_value_cache_ragged_paged[
         @parameter
         @always_inline
         def value_cache_output_fn_coord[
-            width: SIMDSize, alignment: Int
+            width: SIMDLength, alignment: Int
         ](coords: Coord, val: SIMD[dtype, width]) -> None:
             value_cache_output_fn[width, alignment](
                 rebind[IndexList[rank]](coord_to_index_list(coords)), val

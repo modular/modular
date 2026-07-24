@@ -70,7 +70,7 @@ def partial_simd_load[
 
 @always_inline
 def partial_simd_store[
-    dtype: DType, //, width: SIMDSize
+    dtype: DType, //, width: SIMDLength
 ](
     storage: UnsafePointer[mut=True, Scalar[dtype], ...],
     lbound: Int,
@@ -108,11 +108,11 @@ def partial_simd_store[
 
 
 comptime elementwise_epilogue_type = def[
-    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](IndexList[2], SIMD[dtype, width]) capturing -> None
 
 comptime elementwise_compute_lambda_type = def[
-    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 

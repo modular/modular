@@ -22,14 +22,14 @@ from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 from std.utils import IndexList
 
 comptime epilogue_func_type = def[
-    type: DType, width: SIMDSize, *, alignment: Int = 1
+    type: DType, width: SIMDLength, *, alignment: Int = 1
 ](IndexList[2], IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
 
 
 @parameter
 @always_inline
 def epilogue_test_fn[
-    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](
     idx: IndexList[2],
     dim_space: IndexList[2],

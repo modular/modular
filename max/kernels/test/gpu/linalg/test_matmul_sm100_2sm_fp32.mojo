@@ -131,13 +131,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         for m in range(M):
             for k in range(K):
                 var idx = a_host.layout(Coord(m, k))
-                a_host.ptr[idx] = Float32(k).cast[a_type]()
+                a_host._storage[idx] = Float32(k).cast[a_type]()
         for n in range(N):
             for k in range(K):
                 b_host[n, k] = Float32(1 if n == k else 0).cast[b_type]()
     else:
-        rand(a_host.ptr, a_host.num_elements())
-        rand(b_host.ptr, b_host.num_elements())
+        rand(a_host._storage, a_host.num_elements())
+        rand(b_host._storage, b_host.num_elements())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -172,7 +172,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     @always_inline
     @__copy_capture(c_tensor_lt)
     def epilogue_fn[
-        _dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         c_tensor_lt.store[store_alignment=alignment * size_of[c_type]()](
             idx, rebind[SIMD[c_type, width]](val)
@@ -183,7 +183,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     @always_inline
     @__copy_capture(c_tensor_lt)
     def compute_fn[
-        _dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
         _dtype, width
     ]:
@@ -241,8 +241,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,

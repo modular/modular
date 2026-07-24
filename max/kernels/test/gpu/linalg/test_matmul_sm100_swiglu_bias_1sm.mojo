@@ -159,9 +159,9 @@ def test_swiglu_bias[
     var full_tensor = TileTensor(full_device, full_shape)
     var c_device = ctx.enqueue_create_buffer[dtype](c_size)
 
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
-    rand(bias_host.ptr, bias_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
+    rand(bias_host._storage, bias_host.num_elements())
 
     ctx.enqueue_copy(a_device, a_host_buf)
     ctx.enqueue_copy(b_device, b_host_buf)
@@ -180,12 +180,16 @@ def test_swiglu_bias[
     ctx.synchronize()
 
     swiglu_bias_reference(
-        full_host.ptr, bias_host.ptr, c_ref.ptr.as_unsafe_any_origin(), M, N
+        full_host._storage,
+        bias_host._storage,
+        c_ref._storage.as_unsafe_any_origin(),
+        M,
+        N,
     )
 
     var c_tensor = TileTensor(c_device, c_shape)
     var bias_immut_ptr = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-        bias_tensor.ptr
+        bias_tensor._storage
     )
     matmul_swiglu_dispatch_sm100[config](
         c_tensor, a_tensor, b_tensor, ctx, OptionalReg(bias_immut_ptr)
@@ -194,7 +198,9 @@ def test_swiglu_bias[
     ctx.enqueue_copy(c_host_buf, c_device)
     ctx.synchronize()
 
-    assert_almost_equal(c_host.ptr, c_ref.ptr, c_size, atol=1e-2, rtol=1e-2)
+    assert_almost_equal(
+        c_host._storage, c_ref._storage, c_size, atol=1e-2, rtol=1e-2
+    )
     print("    PASSED")
 
     _ = a_device^

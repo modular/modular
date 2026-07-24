@@ -461,6 +461,7 @@ def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     )
 
     ctx.enqueue_copy(mat_c_ptr, mat_c_dev)
+    ctx.synchronize()
 
     for m in range(M):
         for n in range(N):

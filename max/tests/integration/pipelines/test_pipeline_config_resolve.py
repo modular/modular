@@ -18,6 +18,7 @@ SupportedArchitecture instances registered in PIPELINE_REGISTRY.
 No network access required.
 """
 
+import dataclasses
 import json
 import os
 import struct
@@ -41,6 +42,7 @@ from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.sampling import SamplingConfig
 from test_common.pipeline_model_dummy import (
     DUMMY_GEMMA_ARCH,
     DUMMY_LLAMA_ARCH,
@@ -628,6 +630,50 @@ class TestRopeTypeResolution:
             assert _model(config).rope_type is None
 
 
+class TestStructuredOutputBackendResolution:
+    """Architecture default for ``sampling.structured_output_backend``."""
+
+    @prepare_registry
+    def test_backend_resolved_from_architecture(self) -> None:
+        """Arch's default_structured_output_backend applies when user is unset."""
+        arch = dataclasses.replace(
+            DUMMY_GEMMA_ARCH, default_structured_output_backend="xgrammar"
+        )
+        PIPELINE_REGISTRY.register(arch)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=_GEMMA_CONFIG,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(tmpdir)
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+            assert config.sampling.structured_output_backend == "xgrammar"
+
+    @prepare_registry
+    def test_explicit_backend_value_wins(self) -> None:
+        """An explicit user backend is never overridden by the arch default."""
+        arch = dataclasses.replace(
+            DUMMY_GEMMA_ARCH, default_structured_output_backend="xgrammar"
+        )
+        PIPELINE_REGISTRY.register(arch)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=_GEMMA_CONFIG,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(tmpdir)
+            # Constructing with the field set records it in model_fields_set.
+            config.sampling = SamplingConfig(
+                structured_output_backend="llguidance"
+            )
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+            assert config.sampling.structured_output_backend == "llguidance"
+
+
 # ---------------------------------------------------------------------------
 # Category G: Cache Dtype Resolution
 # ---------------------------------------------------------------------------
@@ -640,6 +686,7 @@ class TestCacheDtypeResolution:
     def test_cache_dtype_bf16_for_bf16_encoding(self) -> None:
         """BF16 encoding should result in bfloat16 cache dtype."""
         from max.dtype import DType
+        from max.pipelines.kv_cache import cache_dtype_for_encoding
 
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -650,7 +697,13 @@ class TestCacheDtypeResolution:
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
                 _resolve_config(config)
-            assert _model(config).kv_cache._cache_dtype == DType.bfloat16
+            assert (
+                cache_dtype_for_encoding(
+                    _model(config).quantization_encoding,
+                    _model(config).kv_cache.kv_cache_format,
+                )
+                == DType.bfloat16
+            )
 
 
 # ---------------------------------------------------------------------------

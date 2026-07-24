@@ -290,10 +290,13 @@ class DecodeScheduler(Scheduler):
             # the prefill node generates extra KV entries for draft tokens,
             # so we must allocate matching blocks on the decode side.
             try:
-                self.kv_cache.alloc(
+                load_event = self.kv_cache.alloc(
                     context,
                     replica_idx=replica_idx,
                 )
+                # TODO: cordon the request (like the CE batch constructor) so the
+                # onload overlaps GPU execution instead of blocking here.
+                load_event.synchronize()
             except InsufficientBlocksError:
                 # If we don't have enough space, we will return this to the request queue.
                 self.pending_reqs[req_id] = context

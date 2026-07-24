@@ -202,14 +202,18 @@ def test[
     @__copy_capture(c_dev_tile)
     @parameter
     def epilogue_fn[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
 
         comptime for i in range(width):
             new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
 
-        ptr = c_dev_tile.ptr.bitcast[Scalar[out_type]]() + idx[0] * N + idx[1]
+        ptr = (
+            c_dev_tile._storage.bitcast[Scalar[out_type]]()
+            + idx[0] * N
+            + idx[1]
+        )
 
         ptr.store[width=width, alignment=alignment](new_val.cast[out_type]())
 
@@ -217,7 +221,7 @@ def test[
     @__copy_capture(c_dev_tile, total_num_tokens)
     @parameter
     def perm_dim_fn[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
         var i = idx[0]
@@ -229,7 +233,7 @@ def test[
         # The permdim tensor has the shape 3 x M x N, so the index is then
         # [new_j, i, new_k].
         ptr = (
-            c_dev_tile.ptr.bitcast[Scalar[out_type]]()
+            c_dev_tile._storage.bitcast[Scalar[out_type]]()
             + new_j * total_num_tokens * N
             + i * N
             + new_k

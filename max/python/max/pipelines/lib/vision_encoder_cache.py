@@ -30,6 +30,7 @@ from max.driver import Buffer, Device
 from max.pipelines.context import (
     ImageMetadata,
     TextAndVisionContext,
+    TextContext,
     VLMContextType,
 )
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
@@ -635,12 +636,23 @@ class VisionEncoderCache(Generic[VLMContextType]):
             for img in ctx.images:
                 assert img.image_hash is not None
                 entry = self.lookup(img.image_hash)
-                assert entry is not None, (
-                    f"Image {img.image_hash} not in cache — "
-                    "_cache_and_split must be called first"
-                )
-                for d in range(n_devices):
-                    all_device_bufs[d].append(entry.embeddings[d])
+                if entry is None:
+                    assert img.end_idx <= ctx.tokens.processed_length, (
+                        f"Active image {img.image_hash} not in cache"
+                    )
+                    count = img.end_idx - img.start_idx
+                    for d in range(n_devices):
+                        base = empty_embeddings[d]
+                        all_device_bufs[d].append(
+                            Buffer.zeros(
+                                shape=[count, int(base.shape[1])],
+                                dtype=base.dtype,
+                                device=base.device,
+                            )
+                        )
+                else:
+                    for d in range(n_devices):
+                        all_device_bufs[d].append(entry.embeddings[d])
 
         if not any(len(dl) > 0 for dl in all_device_bufs):
             return empty_embeddings
@@ -718,3 +730,51 @@ class VisionEncoderCache(Generic[VLMContextType]):
             empty_embeddings=empty_embeddings,
         )
         return result
+
+    @traced
+    def run_vision_encode(
+        self,
+        model: SupportsVisionEncoding[PackedVisionInputsT],
+        replica_batches: Sequence[Sequence[VLMContextType]],
+        devices: list[Device],
+    ) -> tuple[list[Buffer], npt.NDArray[np.int32]] | None:
+        """Drive one batch's vision encode + cache assembly (pipeline-owned).
+
+        Runs between prep and the language forward: select the uncached images,
+        pack them (prep already ran, so this is the pixel h2d), run the encoder,
+        then store and assemble. Returns ``(embeddings, scatter_indices)`` for a
+        batch that has vision this step, or ``None`` for a decode / text-only
+        step (the model uses its own empties).
+        """
+        context_batch = [ctx for replica in replica_batches for ctx in replica]
+        if not any(ctx.needs_vision_encoding for ctx in context_batch):
+            return None
+        empty = model.empty_vision_embeddings(devices)
+        selection = self.select(context_batch)
+        if selection:
+            packed = model.pack_vision_inputs(selection, devices)
+            result = model.vision_execute(selection, devices, packed)
+        else:
+            result = VisionEncodeResult(embeddings=empty)
+        return self.cache_vision_embeddings(
+            context_batch, selection, result, empty
+        )
+
+
+def as_vision_context_batches(
+    replica_batches: Sequence[Sequence[TextContext]],
+) -> list[list[TextAndVisionContext]]:
+    """Narrow generic pipeline batches to vision contexts (runtime-checked).
+
+    The text-generation pipelines are generic over ``TextContext``; the vision
+    drive only runs for VLM models, whose contexts are all
+    ``TextAndVisionContext``. Asserts that invariant rather than casting it.
+    """
+    narrowed: list[list[TextAndVisionContext]] = []
+    for batch in replica_batches:
+        vision_batch: list[TextAndVisionContext] = []
+        for ctx in batch:
+            assert isinstance(ctx, TextAndVisionContext)
+            vision_batch.append(ctx)
+        narrowed.append(vision_batch)
+    return narrowed

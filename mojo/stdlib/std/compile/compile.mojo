@@ -280,7 +280,7 @@ def compile_info[
         asm=StaticString(offload.asm),
         function_name=get_linkage_name[func, target=target](),
         module_name=StaticString(offload.module_name),
-        num_captures=Int(SIMDSize(mlir_value=offload.num_captures)),
+        num_captures=Int(SIMDLength(mlir_value=offload.num_captures)),
         capture_sizes=offload.capture_sizes,
         emission_kind=emission_kind,
     )

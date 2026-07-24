@@ -949,7 +949,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
     @always_inline("nodebug")
     def store[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         cache_policy: CacheOperation = CacheOperation.ALWAYS,
     ](
@@ -1294,7 +1294,7 @@ def permlane_swap[
 
 
 def permlane_shuffle[
-    dtype: DType, simd_width: SIMDSize, //, stride: Int
+    dtype: DType, simd_width: SIMDLength, //, stride: Int
 ](val: SIMD[dtype, simd_width], out res: type_of(val)):
     """Shuffles SIMD values across lanes using AMD permlane operations.
 

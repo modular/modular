@@ -208,61 +208,24 @@ def test_reset_clears_all(cache_dir: str) -> None:
     tier.shutdown()
 
 
-# -- Metadata persistence across DiskTier instances --
+# -- shutdown removes the cache directory --
 
 
-def test_persistence_reload(cache_dir: str) -> None:
-    tier1 = DiskTier(
+def test_shutdown_removes_cache_dir(cache_dir: str) -> None:
+    """The disk cache is ephemeral: shutdown deletes the whole cache_dir tree."""
+    tier = DiskTier(
         cache_dir=cache_dir,
         block_nbytes=16,
         max_disk_size_bytes=10_000,
     )
-    src = _make_block(16, seed=99)
-    tier1.write_block_async(block_hash=_int_block_hash(99), src=src)
-    tier1.shutdown()
-
-    # Create a new DiskTier pointing to same dir
-    tier2 = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=16,
-        max_disk_size_bytes=10_000,
+    tier.write_block_async(
+        block_hash=_int_block_hash(1), src=_make_block(16, seed=1)
     )
-    assert tier2.contains(_int_block_hash(99))
+    tier.wait_for_writes()
+    assert Path(cache_dir).exists()
 
-    # Verify data is readable
-    dest = np.zeros(16, dtype=np.uint8)
-    future = tier2.read_block_async(block_hash=_int_block_hash(99), dest=dest)
-    future.result()
-    np.testing.assert_array_equal(src, dest)
-
-    tier2.shutdown()
-
-
-def test_block_size_change_is_not_detected(cache_dir: str) -> None:
-    """Reusing a cache_dir across a block_nbytes change is unsupported.
-
-    No metadata is persisted, so a block-size change is not detected and the
-    stale blocks remain indexed. Callers must point a changed configuration at
-    a fresh cache_dir.
-    """
-    tier1 = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=16,
-        max_disk_size_bytes=10_000,
-    )
-    tier1.write_block_async(
-        block_hash=_int_block_hash(7), src=_make_block(16, seed=7)
-    )
-    tier1.wait_for_writes()
-    tier1.shutdown()
-
-    tier2 = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=32,
-        max_disk_size_bytes=10_000,
-    )
-    assert tier2.contains(_int_block_hash(7))
-    tier2.shutdown()
+    tier.shutdown()
+    assert not Path(cache_dir).exists()
 
 
 # -- Duplicate write detection --
@@ -367,8 +330,8 @@ def test_returns_none_for_pending_block(cache_dir: str) -> None:
     tier.shutdown()
 
 
-def test_rebuild_after_concurrent_writes(cache_dir: str) -> None:
-    """A fresh instance rebuilds the index from disk after concurrent writes."""
+def test_concurrent_writes_all_committed(cache_dir: str) -> None:
+    """Every block from a batch of concurrent writes lands in the index."""
     tier = DiskTier(
         cache_dir=cache_dir,
         block_nbytes=16,
@@ -387,42 +350,11 @@ def test_rebuild_after_concurrent_writes(cache_dir: str) -> None:
     for f in futures:
         f.result()
 
+    assert tier.num_used_blocks == num_blocks
     for h in range(num_blocks):
         assert tier.contains(_int_block_hash(h))
 
     tier.shutdown()
-
-    tier2 = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=16,
-        max_disk_size_bytes=10_000,
-    )
-    assert tier2.num_used_blocks == num_blocks
-    for h in range(num_blocks):
-        assert tier2.contains(_int_block_hash(h))
-    tier2.shutdown()
-
-
-def test_scan_ignores_non_block_files(cache_dir: str) -> None:
-    """The startup scan skips non-'.bin' and malformed-hash files."""
-    tier = DiskTier(
-        cache_dir=cache_dir, block_nbytes=16, max_disk_size_bytes=10_000
-    )
-    tier.write_block_async(
-        block_hash=_int_block_hash(1), src=_make_block(16, seed=1)
-    )
-    tier.wait_for_writes()
-    tier.shutdown()
-
-    (Path(cache_dir) / "notes.txt").write_text("junk")
-    (Path(cache_dir) / "zzzz.bin").write_text("non-hex stem")
-
-    tier2 = DiskTier(
-        cache_dir=cache_dir, block_nbytes=16, max_disk_size_bytes=10_000
-    )
-    assert tier2.num_used_blocks == 1
-    assert tier2.contains(_int_block_hash(1))
-    tier2.shutdown()
 
 
 # -- Async eviction (off the scheduler critical path) --
@@ -550,26 +482,3 @@ def test_blocks_stored_in_shard_subdirs(cache_dir: str) -> None:
     assert sharded[0].parent.name == f"{block_hash[0]:02x}"
 
     tier.shutdown()
-
-
-def test_legacy_flat_file_ignored_on_warm_start(cache_dir: str) -> None:
-    """A file left by the old flat layout is not indexed (cold start)."""
-    tier = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=16,
-        max_disk_size_bytes=10_000,
-    )
-    tier.shutdown()
-
-    # Drop a legacy flat-layout file at the cache root (not in a bucket).
-    legacy_hash = _int_block_hash(0xABC)
-    (Path(cache_dir) / f"{legacy_hash.hex()}.bin").write_bytes(b"\x00" * 16)
-
-    tier2 = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=16,
-        max_disk_size_bytes=10_000,
-    )
-    assert not tier2.contains(legacy_hash)
-    assert tier2.num_used_blocks == 0
-    tier2.shutdown()

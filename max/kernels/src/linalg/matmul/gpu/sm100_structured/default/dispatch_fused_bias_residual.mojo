@@ -123,7 +123,7 @@ def fused_bias_residual_matmul_dispatch_sm100[
     @always_inline
     @__copy_capture(c, epilogue_tensor)
     def bias_residual_elementwise_lambda[
-        _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+        _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[_dtype, _width]):
         var row = 0 if epilogue_is_1d else coords[0]
         var resid = rebind[SIMD[_dtype, _width]](

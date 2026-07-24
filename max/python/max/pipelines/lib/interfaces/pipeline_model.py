@@ -22,6 +22,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
 
+import numpy as np
+import numpy.typing as npt
 from max.driver import (
     Buffer,
     Device,
@@ -41,7 +43,10 @@ from max.nn.kv_cache import (
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContextType, LogProbabilities
-from max.pipelines.kv_cache.config import KVCacheConfig
+from max.pipelines.kv_cache.config import (
+    KVCacheConfig,
+    cache_dtype_for_encoding,
+)
 from max.pipelines.lib.utils import (
     CompilationTimer,
     parse_state_dict_from_weights,
@@ -192,6 +197,16 @@ class ModelInputs:
 
     lora: LoRAInputs | None = None
     """Per-batch LoRA adapter buffers, or ``None`` when LoRA is disabled."""
+
+    vision_embeddings: list[Buffer] | None = None
+    """Assembled per-device vision embeddings for this step, set by the
+    pipeline from the ``VisionEncoderCache`` (an input, like
+    :attr:`kv_cache_inputs`). ``None`` on text-only / no-vision steps, where
+    the model uses its own empties."""
+
+    vision_scatter_indices: npt.NDArray[np.int32] | None = None
+    """Scatter (merge) indices for :attr:`vision_embeddings`, set by the
+    pipeline alongside it; the model copies them to device."""
 
     hidden_states: Buffer | list[Buffer] | None = None
     """Hidden states for a variable number of tokens per sequence.
@@ -756,7 +771,10 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             pipeline_config=self.pipeline_config,
             devices=self.device_refs,
             kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
+            cache_dtype=cache_dtype_for_encoding(
+                self.pipeline_config.model.quantization_encoding,
+                self.pipeline_config.model.kv_cache.kv_cache_format,
+            ),
         )
 
     def _unflatten_kv_inputs(
