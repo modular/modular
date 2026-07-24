@@ -630,9 +630,15 @@ def q6_k_dequantize_impl[
 
         var d = src_ptr[].base_scale.cast[DType.float32]()
 
-        var ql = src_ptr[].q_bits_lo.unsafe_ptr()
-        var qh = src_ptr[].q_bits_hi.unsafe_ptr()
-        var sc = src_ptr[].q_scales.unsafe_ptr()
+        var ql: UnsafePointer[
+            UInt8, origin_of(src_ptr[].q_bits_lo)
+        ] = src_ptr[].q_bits_lo.unsafe_ptr()
+        var qh: UnsafePointer[
+            UInt8, origin_of(src_ptr[].q_bits_hi)
+        ] = src_ptr[].q_bits_hi.unsafe_ptr()
+        var sc: UnsafePointer[
+            Int8, origin_of(src_ptr[].q_scales)
+        ] = src_ptr[].q_scales.unsafe_ptr()
 
         # Process 8 groups at a time.
         comptime for _ in range(0, block_Q6_K.group_count, 8):

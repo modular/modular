@@ -44,7 +44,8 @@ def test_distribute() raises:
     comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var array = InlineArray[UInt32, 16](fill=-1)
-    var ptr = array.unsafe_ptr()
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var ptr: UnsafePointer[UInt32, origin_of(array)] = array.unsafe_ptr()
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
@@ -90,7 +91,8 @@ def test_distribute_with_swizzle() raises:
     comptime swizzle = Swizzle(1, 0, 2)
 
     var array = InlineArray[UInt32, 16](fill=-1)
-    var ptr = array.unsafe_ptr()
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var ptr: UnsafePointer[UInt32, origin_of(array)] = array.unsafe_ptr()
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
@@ -143,11 +145,17 @@ def test_distribute_swizzle_vs_no_swizzle() raises:
 
     # Array without swizzle
     var array_no_swizzle = InlineArray[UInt32, 16](fill=0)
-    var ptr_no_swizzle = array_no_swizzle.unsafe_ptr()
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var ptr_no_swizzle: UnsafePointer[
+        UInt32, origin_of(array_no_swizzle)
+    ] = array_no_swizzle.unsafe_ptr()
 
     # Array with swizzle
     var array_with_swizzle = InlineArray[UInt32, 16](fill=0)
-    var ptr_with_swizzle = array_with_swizzle.unsafe_ptr()
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var ptr_with_swizzle: UnsafePointer[
+        UInt32, origin_of(array_with_swizzle)
+    ] = array_with_swizzle.unsafe_ptr()
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
@@ -607,7 +615,8 @@ def test_distribute_runtime_dims() raises:
     comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var array = InlineArray[UInt32, 16](fill=-1)
-    var ptr = array.unsafe_ptr()
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var ptr: UnsafePointer[UInt32, origin_of(array)] = array.unsafe_ptr()
 
     # Create 4x4 tensor with runtime first dim.
     var layout_tensor = TileTensor(
@@ -638,7 +647,8 @@ def test_distribute_with_offset_runtime_dims() raises:
     comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var array = InlineArray[UInt32, 16](fill=-1)
-    var ptr = array.unsafe_ptr()
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var ptr: UnsafePointer[UInt32, origin_of(array)] = array.unsafe_ptr()
 
     # Create 4x4 tensor with runtime dims.
     var layout_tensor = TileTensor(
@@ -849,8 +859,10 @@ def test_load_store_linear_non_trivial_stride() raises:
     # Column-major layout: stride[0]=1, stride[1]=2
     comptime col_major_shape = Coord[ComptimeInt[2], ComptimeInt[3]]
     comptime col_major_stride = Coord[ComptimeInt[1], ComptimeInt[2]]
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var data_ptr: UnsafePointer[Int32, origin_of(data)] = data.unsafe_ptr()
     var tensor = TileTensor(
-        ptr=data.unsafe_ptr(),
+        ptr=data_ptr,
         layout=TileLayout(
             shape=col_major_shape(Idx[2], Idx[3]),
             stride=col_major_stride(Idx[1], Idx[2]),
@@ -1271,8 +1283,12 @@ def test_copy_from_respects_non_contiguous_layout() raises:
 
     comptime padded_shape = Coord[ComptimeInt[2], ComptimeInt[3]]
     comptime padded_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var dst_data_ptr: UnsafePointer[
+        Int32, origin_of(dst_data)
+    ] = dst_data.unsafe_ptr()
     var dst = TileTensor(
-        ptr=dst_data.unsafe_ptr(),
+        ptr=dst_data_ptr,
         layout=TileLayout(
             shape=padded_shape(Idx[2], Idx[3]),
             stride=padded_stride(Idx[4], Idx[1]),

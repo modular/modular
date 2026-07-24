@@ -105,7 +105,9 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         comptime assert Self.bit_width == 4
         comptime assert (Self.block_m % (2 * Self._tuple_width)) == 0
 
-        var bits_ptr = self.bits.unsafe_ptr()
+        var bits_ptr: UnsafePointer[
+            UInt8, origin_of(self.bits)
+        ] = self.bits.unsafe_ptr()
 
         for _m in range(0, Self.block_m, 2 * Self._tuple_width):
             comptime for col in range(Self._tile_n):
@@ -129,7 +131,9 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         comptime assert Self.bit_width == 4
         comptime assert (Self.block_m % (2 * Self._tuple_width)) == 0
 
-        var bits_ptr = self.bits.unsafe_ptr()
+        var bits_ptr: UnsafePointer[
+            UInt8, origin_of(self.bits)
+        ] = self.bits.unsafe_ptr()
 
         for _ in range(0, Self.block_m, 2 * Self._tuple_width):
             comptime for col in range(Self._tile_n):
@@ -155,7 +159,9 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         comptime assert Self.bit_width == 6
         comptime assert (Self.block_m % (4 * Self._tuple_width)) == 0
 
-        var bits_ptr = self.bits.unsafe_ptr()
+        var bits_ptr: UnsafePointer[
+            UInt8, origin_of(self.bits)
+        ] = self.bits.unsafe_ptr()
 
         for _m in range(0, Self.block_m, 4 * Self._tuple_width):
             var src_col_ptr = src_ptr
@@ -187,7 +193,9 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         comptime assert Self.bit_width == 6
         comptime assert (Self.block_m % (4 * Self._tuple_width)) == 0
 
-        var bits_ptr = self.bits.unsafe_ptr()
+        var bits_ptr: UnsafePointer[
+            UInt8, origin_of(self.bits)
+        ] = self.bits.unsafe_ptr()
 
         for _m in range(0, Self.block_m, 4 * Self._tuple_width):
             var dst_col_ptr = dst_ptr
@@ -297,7 +305,9 @@ def _quantize_a_Q8_K[
             var block_ptr = packed_ptr.bitcast[
                 _block_Q8_K_packed[group_size, tile_m]
             ]()
-            var q_bits_ptr = block_ptr[].q_bits.unsafe_ptr()
+            var q_bits_ptr: UnsafePointer[
+                Int8, origin_of(block_ptr[].q_bits)
+            ] = block_ptr[].q_bits.unsafe_ptr()
 
             for row in range(tile_m):
                 var max_value_simd = SIMD[dtype, group_size](Scalar[dtype].MIN)
@@ -416,9 +426,15 @@ def _pack_block_Q4_K[
     var q_mins_buf = InlineArray[UInt8, group_count * block_n](
         uninitialized=True
     )
+    var q_mins_ptr: UnsafePointer[
+        UInt8, origin_of(q_mins_buf)
+    ] = q_mins_buf.unsafe_ptr()
     var q_bits_block_buf = InlineArray[
         UInt8, _block_QK_K.quantized_k * block_n
     ](uninitialized=True)
+    var q_bits_block_ptr: UnsafePointer[
+        UInt8, origin_of(q_bits_block_buf)
+    ] = q_bits_block_buf.unsafe_ptr()
 
     for n in range(block_n):
         dst_ptr[].base_scales[n] = src_ptr[].base_scale
@@ -450,7 +466,7 @@ def _pack_block_Q4_K[
         )
         _copy_column_q_bits_to_block[block_n](
             q_bits_column_buf.unsafe_ptr(),
-            q_bits_block_buf.unsafe_ptr() + n * 4,
+            q_bits_block_ptr + n * 4,
         )
 
         src_ptr += stride
@@ -461,10 +477,11 @@ def _pack_block_Q4_K[
     var q_scales_and_mins_buf = InlineArray[UInt8, 2 * group_count * block_n](
         uninitialized=True
     )
-    var q_scales_reorder_buf = q_scales_and_mins_buf.unsafe_ptr()
-    var q_mins_reorder_buf = (
-        q_scales_and_mins_buf.unsafe_ptr() + group_count * block_n
-    )
+    var q_scales_and_mins_ptr: UnsafePointer[
+        UInt8, origin_of(q_scales_and_mins_buf)
+    ] = q_scales_and_mins_buf.unsafe_ptr()
+    var q_scales_reorder_buf = q_scales_and_mins_ptr
+    var q_mins_reorder_buf = q_scales_and_mins_ptr + group_count * block_n
 
     # Scales are not currently transformed.
     unsafe_memcpy(
@@ -486,7 +503,7 @@ def _pack_block_Q4_K[
     # two rows are split across the lower and upper halves of the register:
     #       [n0_g0 n1_g0 n2_g0 n3_g0 : n0_g1 n1_g1 n2_g1 n3_g1]
     for g in range(0, group_count, 2):
-        var q_mins_row_0_ptr = q_mins_buf.unsafe_ptr() + g * block_n
+        var q_mins_row_0_ptr = q_mins_ptr + g * block_n
         var q_mins_row_1_ptr = q_mins_row_0_ptr + block_n
         for n in range(block_n):
             var q_mins_row_0_val = q_mins_row_0_ptr[n]
@@ -1055,7 +1072,9 @@ def _matmul_Q4_K_tile[
 
     c_int32_block.init()
 
-    var a_q_bits_ptr = a_tile_ptr[].q_bits.unsafe_ptr()
+    var a_q_bits_ptr: UnsafePointer[
+        Int8, origin_of(a_tile_ptr[].q_bits)
+    ] = a_tile_ptr[].q_bits.unsafe_ptr()
 
     for g in range(group_count):
         var c_int32_group = _Accumulator[
@@ -1132,7 +1151,9 @@ def _matmul_Q4_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr()
+        var b_q_bits_ptr: UnsafePointer[
+            UInt8, origin_of(b_tile_ptr[].q_bits.bits)
+        ] = b_tile_ptr[].q_bits.bits.unsafe_ptr()
 
         @parameter
         def matmul_group_packed(
@@ -1289,7 +1310,9 @@ def _matmul_Q6_K_tile[
 
     c_int32_block.init()
 
-    var a_q_bits_ptr = a_tile_ptr[].q_bits.unsafe_ptr()
+    var a_q_bits_ptr: UnsafePointer[
+        Int8, origin_of(a_tile_ptr[].q_bits)
+    ] = a_tile_ptr[].q_bits.unsafe_ptr()
 
     for g in range(group_count):
         var c_int32_group = _Accumulator[
@@ -1319,7 +1342,9 @@ def _matmul_Q6_K_tile[
 
         a_q_bits_ptr += tile_m * group_size
 
-        var b_q_scales_ptr = b_tile_ptr[].q_scales.unsafe_ptr()
+        var b_q_scales_ptr: UnsafePointer[
+            Int8, origin_of(b_tile_ptr[].q_scales)
+        ] = b_tile_ptr[].q_scales.unsafe_ptr()
 
         # Scale the accumulator for this group and add to the block level
         # accumulators.
@@ -1376,7 +1401,9 @@ def _matmul_Q6_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr()
+        var b_q_bits_ptr: UnsafePointer[
+            UInt8, origin_of(b_tile_ptr[].q_bits.bits)
+        ] = b_tile_ptr[].q_bits.bits.unsafe_ptr()
 
         @parameter
         def matmul_group_packed(

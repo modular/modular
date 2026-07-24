@@ -531,7 +531,7 @@ struct _WriteBufferStack[
             self.flush()
         # Continue writing to buffer
         unsafe_memcpy(
-            dest=self.data.unsafe_ptr() + self.pos,
+            dest=self.data.unsafe_ptr().unsafe_offset(self.pos),
             src=string.unsafe_ptr(),
             count=len_bytes,
         )
@@ -650,19 +650,19 @@ def _write_hex[
         var buf = InlineArray[Byte, 4](uninitialized=True)
         buf[0] = `\\`
         buf[1] = `x`
-        (buf.unsafe_ptr() + 2).store(chars)
+        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
         writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
     elif amnt_hex_bytes == 4:
         var chars = _hex_digits_to_hex_chars(UInt16(decimal))
         var buf = InlineArray[Byte, 6](uninitialized=True)
         buf[0] = `\\`
         buf[1] = `u`
-        (buf.unsafe_ptr() + 2).store(chars)
+        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
         writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
     else:
         var chars = _hex_digits_to_hex_chars(UInt32(decimal))
         var buf = InlineArray[Byte, 10](uninitialized=True)
         buf[0] = `\\`
         buf[1] = `U`
-        (buf.unsafe_ptr() + 2).store(chars)
+        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
         writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))

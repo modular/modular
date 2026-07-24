@@ -725,26 +725,98 @@ struct MLAPrefillSparseQKVFP8[
         ]().bitcast[Self.SMemType]()[]
 
         var q_ptr = smem.q.unsafe_ptr()
-        var kv_ptr = smem.kv.unsafe_ptr()
-        var v_ptr = smem.v.unsafe_ptr()
-        var p_ptr = smem.p.unsafe_ptr()
-        var d_indices_ptr = smem.d_indices.unsafe_ptr()
-        var d_indices_v_ptr = smem.d_indices_v.unsafe_ptr()
-        var rowwise_max_ptr = smem.rowwise_max.unsafe_ptr()
-        var rowwise_sum_ptr = smem.rowwise_sum.unsafe_ptr()
-        var is_k_valid_ptr = smem.is_k_valid.unsafe_ptr()
+        var kv_ptr: UnsafePointer[
+            Scalar[FP8_TYPE],
+            origin_of(smem.kv),
+            address_space=AddressSpace.SHARED,
+        ] = smem.kv.unsafe_ptr()
+        var v_ptr: UnsafePointer[
+            Scalar[FP8_TYPE],
+            origin_of(smem.v),
+            address_space=AddressSpace.SHARED,
+        ] = smem.v.unsafe_ptr()
+        var p_ptr: UnsafePointer[
+            Scalar[FP8_TYPE],
+            origin_of(smem.p),
+            address_space=AddressSpace.SHARED,
+        ] = smem.p.unsafe_ptr()
+        var d_indices_ptr: UnsafePointer[
+            Int32,
+            origin_of(smem.d_indices),
+            address_space=AddressSpace.SHARED,
+        ] = smem.d_indices.unsafe_ptr()
+        var d_indices_v_ptr: UnsafePointer[
+            Int32,
+            origin_of(smem.d_indices_v),
+            address_space=AddressSpace.SHARED,
+        ] = smem.d_indices_v.unsafe_ptr()
+        var rowwise_max_ptr: UnsafePointer[
+            Float32,
+            origin_of(smem.rowwise_max),
+            address_space=AddressSpace.SHARED,
+        ] = smem.rowwise_max.unsafe_ptr()
+        var rowwise_sum_ptr: UnsafePointer[
+            Float32,
+            origin_of(smem.rowwise_sum),
+            address_space=AddressSpace.SHARED,
+        ] = smem.rowwise_sum.unsafe_ptr()
+        var is_k_valid_ptr: UnsafePointer[
+            UInt8,
+            origin_of(smem.is_k_valid),
+            address_space=AddressSpace.SHARED,
+        ] = smem.is_k_valid.unsafe_ptr()
         var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
         var prologue_q_ptr = smem.prologue_q.unsafe_ptr()
-        var qk_done_ptr = smem.qk_done.unsafe_ptr()
-        var sv_done_ptr = smem.sv_done.unsafe_ptr()
-        var kv_ready_ptr = smem.kv_ready.unsafe_ptr()
-        var p_free_ptr = smem.p_free.unsafe_ptr()
-        var so_ready_ptr = smem.so_ready.unsafe_ptr()
-        var k_valid_ready_ptr = smem.k_valid_ready.unsafe_ptr()
-        var k_valid_free_ptr = smem.k_valid_free.unsafe_ptr()
-        var k_ready_ptr = smem.k_ready.unsafe_ptr()
-        var v_ready_ptr = smem.v_ready.unsafe_ptr()
-        var v_tma_done_ptr = smem.v_tma_done.unsafe_ptr()
+        var qk_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.qk_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem.qk_done.unsafe_ptr()
+        var sv_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.sv_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem.sv_done.unsafe_ptr()
+        var kv_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.kv_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.kv_ready.unsafe_ptr()
+        var p_free_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.p_free),
+            address_space=AddressSpace.SHARED,
+        ] = smem.p_free.unsafe_ptr()
+        var so_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.so_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.so_ready.unsafe_ptr()
+        var k_valid_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.k_valid_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.k_valid_ready.unsafe_ptr()
+        var k_valid_free_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.k_valid_free),
+            address_space=AddressSpace.SHARED,
+        ] = smem.k_valid_free.unsafe_ptr()
+        var k_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.k_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.k_ready.unsafe_ptr()
+        var v_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.v_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.v_ready.unsafe_ptr()
+        var v_tma_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.v_tma_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem.v_tma_done.unsafe_ptr()
 
         if warp_idx == 0:
             if elect_one_sync():

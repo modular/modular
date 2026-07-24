@@ -40,7 +40,11 @@ def test_convtranspose_pads():
     var input_stack = InlineArray[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var input_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(input_stack)
+    ] = input_stack.unsafe_ptr()
+    var input = TileTensor(input_stack_ptr, input_layout)
     for i in range(9):
         input.raw_store(i, Float32(i))
 
@@ -48,14 +52,22 @@ def test_convtranspose_pads():
     var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    var filter = TileTensor(filter_stack.unsafe_ptr(), filter_layout)
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var filter_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(filter_stack)
+    ] = filter_stack.unsafe_ptr()
+    var filter = TileTensor(filter_stack_ptr, filter_layout)
     _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 7, 3, 2]()
     var output_stack = InlineArray[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var output_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(output_stack)
+    ] = output_stack.unsafe_ptr()
+    var output = TileTensor(output_stack_ptr, output_layout)
 
     var stride = Index(1, 3, 2)
     var dilation = Index(1, 1, 1)
@@ -112,7 +124,11 @@ def test_convtranspose():
     var input_stack = InlineArray[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var input_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(input_stack)
+    ] = input_stack.unsafe_ptr()
+    var input = TileTensor(input_stack_ptr, input_layout)
     for i in range(9):
         input.raw_store(i, Float32(i))
 
@@ -120,14 +136,22 @@ def test_convtranspose():
     var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    var filter = TileTensor(filter_stack.unsafe_ptr(), filter_layout)
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var filter_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(filter_stack)
+    ] = filter_stack.unsafe_ptr()
+    var filter = TileTensor(filter_stack_ptr, filter_layout)
     _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 5, 5, 2]()
     var output_stack = InlineArray[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var output_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(output_stack)
+    ] = output_stack.unsafe_ptr()
+    var output = TileTensor(output_stack_ptr, output_layout)
 
     var stride = Index(1, 1, 1)
     var dilation = Index(1, 1, 1)
@@ -179,7 +203,11 @@ def test_convtranspose_dilation():
     var input_stack = InlineArray[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var input_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(input_stack)
+    ] = input_stack.unsafe_ptr()
+    var input = TileTensor(input_stack_ptr, input_layout)
     input.raw_store(0, 3)
     input.raw_store(1, 8)
     input.raw_store(2, 1)
@@ -194,7 +222,11 @@ def test_convtranspose_dilation():
     var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    var filter = TileTensor(filter_stack.unsafe_ptr(), filter_layout)
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var filter_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(filter_stack)
+    ] = filter_stack.unsafe_ptr()
+    var filter = TileTensor(filter_stack_ptr, filter_layout)
     filter.raw_store(0, 7)
     filter.raw_store(1, 2)
     filter.raw_store(2, 1)
@@ -204,7 +236,11 @@ def test_convtranspose_dilation():
     var output_stack = InlineArray[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var output_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(output_stack)
+    ] = output_stack.unsafe_ptr()
+    var output = TileTensor(output_stack_ptr, output_layout)
     var stride = Index(1, 1, 1)
     var dilation = Index(1, 2, 2)
     var pad_d = Index(0, 0)
@@ -270,7 +306,11 @@ def test_convtranspose_attributes():
     var input_stack = InlineArray[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var input_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(input_stack)
+    ] = input_stack.unsafe_ptr()
+    var input = TileTensor(input_stack_ptr, input_layout)
     for i in range(9):
         input.raw_store(i, Float32(i))
 
@@ -278,14 +318,22 @@ def test_convtranspose_attributes():
     var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    var filter = TileTensor(filter_stack.unsafe_ptr(), filter_layout)
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var filter_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(filter_stack)
+    ] = filter_stack.unsafe_ptr()
+    var filter = TileTensor(filter_stack_ptr, filter_layout)
     _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 10, 8, 2]()
     var output_stack = InlineArray[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var output_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(output_stack)
+    ] = output_stack.unsafe_ptr()
+    var output = TileTensor(output_stack_ptr, output_layout)
 
     var stride = Index(1, 3, 2)
     var dilation = Index(1, 1, 1)

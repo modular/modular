@@ -171,21 +171,21 @@ def test_array_int_pointer() raises:
     var arr: InlineArray[Int, 3] = [0, 10, 20]
 
     var ptr = arr.unsafe_ptr()
-    assert_equal(ptr[0], 0)
-    assert_equal(ptr[1], 10)
-    assert_equal(ptr[2], 20)
+    assert_equal(ptr[unsafe_offset=0], 0)
+    assert_equal(ptr[unsafe_offset=1], 10)
+    assert_equal(ptr[unsafe_offset=2], 20)
 
-    ptr[0] = 0
-    ptr[1] = 1
-    ptr[2] = 2
+    ptr[unsafe_offset=0] = 0
+    ptr[unsafe_offset=1] = 1
+    ptr[unsafe_offset=2] = 2
 
     assert_equal(arr[0], 0)
     assert_equal(arr[1], 1)
     assert_equal(arr[2], 2)
 
-    assert_equal(ptr[0], 0)
-    assert_equal(ptr[1], 1)
-    assert_equal(ptr[2], 2)
+    assert_equal(ptr[unsafe_offset=0], 0)
+    assert_equal(ptr[unsafe_offset=1], 1)
+    assert_equal(ptr[unsafe_offset=2], 2)
 
     # We make sure it lives long enough
     _ = arr
@@ -260,7 +260,7 @@ def test_unsafe_ptr() raises:
 
     var ptr = arr.unsafe_ptr()
     for i in range(N):
-        assert_equal(arr[i], ptr[i])
+        assert_equal(arr[i], ptr[unsafe_offset=i])
 
 
 def _test_size_of_array[current_type: Copyable, capacity: Int]() raises:

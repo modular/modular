@@ -27,7 +27,9 @@ def standardize_string_slice(
     var std_x_ptr = standardized_x.unsafe_ptr()
     var x_len = x.byte_length()
     unsafe_memcpy(
-        dest=std_x_ptr + CONTAINER_SIZE - x_len, src=x.unsafe_ptr(), count=x_len
+        dest=std_x_ptr.unsafe_offset(CONTAINER_SIZE - x_len),
+        src=x.unsafe_ptr(),
+        count=x_len,
     )
     return standardized_x^
 
@@ -68,7 +70,7 @@ def to_integer(
     var std_x_ptr = standardized_x.unsafe_ptr()
     # This could be done with simd if we see it's a bottleneck.
     for i in range(CONTAINER_SIZE):
-        if not (Byte(ord("0")) <= std_x_ptr[i] <= Byte(ord("9"))):
+        if not (Byte(ord("0")) <= std_x_ptr[unsafe_offset=i] <= Byte(ord("9"))):
             var num_str = StringSlice(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=std_x_ptr, length=len(standardized_x)
@@ -115,12 +117,16 @@ def to_integer(
     comptime vector_with_exponents = get_vector_with_exponents()
 
     comptime for i in range(CONTAINER_SIZE // simd_width):
-        var ascii_vector = (std_x_ptr + i * simd_width).load[width=simd_width]()
+        var ascii_vector = std_x_ptr.unsafe_offset(i * simd_width).unsafe_load[
+            width=simd_width
+        ]()
         var as_digits = ascii_vector - SIMD[DType.uint8, simd_width](ord("0"))
         var as_digits_index = as_digits.cast[DType.uint64]()
-        comptime vector_slice = (
-            vector_with_exponents.unsafe_ptr() + i * simd_width
-        ).load[width=simd_width]()
+        comptime vector_slice = vector_with_exponents.unsafe_ptr().unsafe_offset(
+            i * simd_width
+        ).unsafe_load[
+            width=simd_width
+        ]()
         accumulator += as_digits_index * vector_slice
     return UInt64(Int(accumulator.reduce_add()))
 

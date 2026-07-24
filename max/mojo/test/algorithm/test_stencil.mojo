@@ -105,11 +105,12 @@ def test_stencil_avg_pool() raises:
         dtype, simd_width
     ]:
         var linear_idx = _linear_index(point, input_shape)
-        var r = (
-            input_stack.unsafe_ptr()
-            .load[width=simd_width](linear_idx)
-            ._refine[dtype]()
-        )
+        var input_stack_ptr: UnsafePointer[
+            input_stack.T, origin_of(input_stack)
+        ] = input_stack.unsafe_ptr()
+        var r = input_stack_ptr.load[width=simd_width](linear_idx)._refine[
+            dtype
+        ]()
 
         return r
 
@@ -229,11 +230,12 @@ def test_stencil_avg_pool_padded() raises:
         dtype, simd_width
     ]:
         var linear_idx = _linear_index(point, input_shape)
-        return (
-            input_stack.unsafe_ptr()
-            .load[width=simd_width](linear_idx)
-            ._refine[dtype]()
-        )
+        var input_stack_ptr: UnsafePointer[
+            input_stack.T, origin_of(input_stack)
+        ] = input_stack.unsafe_ptr()
+        return input_stack_ptr.load[width=simd_width](linear_idx)._refine[
+            dtype
+        ]()
 
     @always_inline
     def avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
@@ -351,11 +353,12 @@ def test_stencil_avg_pool_stride_2() raises:
         dtype, simd_width
     ]:
         var linear_idx = _linear_index(point, input_shape)
-        return (
-            input_stack.unsafe_ptr()
-            .load[width=simd_width](linear_idx)
-            ._refine[dtype]()
-        )
+        var input_stack_ptr: UnsafePointer[
+            input_stack.T, origin_of(input_stack)
+        ] = input_stack.unsafe_ptr()
+        return input_stack_ptr.load[width=simd_width](linear_idx)._refine[
+            dtype
+        ]()
 
     @always_inline
     def avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
@@ -475,11 +478,12 @@ def test_stencil_max_pool_dilation_2() raises:
         dtype, simd_width
     ]:
         var linear_idx = _linear_index(point, input_shape)
-        return (
-            input_stack.unsafe_ptr()
-            .load[width=simd_width](linear_idx)
-            ._refine[dtype]()
-        )
+        var input_stack_ptr: UnsafePointer[
+            input_stack.T, origin_of(input_stack)
+        ] = input_stack.unsafe_ptr()
+        return input_stack_ptr.load[width=simd_width](linear_idx)._refine[
+            dtype
+        ]()
 
     @always_inline
     def max_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:

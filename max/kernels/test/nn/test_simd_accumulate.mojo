@@ -45,8 +45,9 @@ def test_accumulate[
     #     [ 2.0, 2.0 ],
     #     [ 3.0, 3.0 ]]
     var a = InlineArray[Scalar[type], 2 * num_rows * length](uninitialized=True)
+    var a_base_ptr: UnsafePointer[Scalar[type], origin_of(a)] = a.unsafe_ptr()
     for i in range(2 * num_rows):
-        var a_ptr = a.unsafe_ptr() + i * length
+        var a_ptr = a_base_ptr + i * length
         a_ptr[0] = Scalar[type](i)
         a_ptr[1] = Scalar[type](i)
 
@@ -56,9 +57,10 @@ def test_accumulate[
     comptime b_size = 2 * num_cols * simd_size * length
     comptime kernel_width = num_cols * simd_size
     var b = InlineArray[Scalar[type], b_size](uninitialized=True)
+    var b_base_ptr: UnsafePointer[Scalar[type], origin_of(b)] = b.unsafe_ptr()
 
     for i in range(2 * length):
-        var b_ptr = b.unsafe_ptr() + i * num_cols * simd_size
+        var b_ptr = b_base_ptr + i * num_cols * simd_size
 
         comptime for j in range(num_cols):
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
@@ -85,7 +87,7 @@ def test_accumulate[
         length,
         a.unsafe_ptr(),
         2 * length,
-        b.unsafe_ptr() + kernel_width,
+        b_base_ptr + kernel_width,
         kernel_width,
     )
 
@@ -105,9 +107,9 @@ def test_accumulate[
 
     acc.accumulate(
         length,
-        a.unsafe_ptr() + length,
+        a_base_ptr + length,
         2 * length,
-        b.unsafe_ptr() + kernel_width,
+        b_base_ptr + kernel_width,
         2 * kernel_width,
     )
 
@@ -136,8 +138,9 @@ def test_accumulate_with_offsets[
     #     [ 2.0, 2.0 ],
     #     [ 3.0, 3.0 ]]
     var a = InlineArray[Scalar[type], 2 * num_rows * length](uninitialized=True)
+    var a_base_ptr: UnsafePointer[Scalar[type], origin_of(a)] = a.unsafe_ptr()
     for i in range(2 * num_rows):
-        var a_ptr = a.unsafe_ptr() + i * length
+        var a_ptr = a_base_ptr + i * length
         a_ptr[0] = Scalar[type](i)
         a_ptr[1] = Scalar[type](i)
 
@@ -147,9 +150,10 @@ def test_accumulate_with_offsets[
     comptime b_size = 2 * num_cols * simd_size * length
     comptime kernel_width = num_cols * simd_size
     var b = InlineArray[Scalar[type], b_size](uninitialized=True)
+    var b_base_ptr: UnsafePointer[Scalar[type], origin_of(b)] = b.unsafe_ptr()
 
     for i in range(2 * length):
-        var b_ptr = b.unsafe_ptr() + i * num_cols * simd_size
+        var b_ptr = b_base_ptr + i * num_cols * simd_size
 
         comptime for j in range(num_cols):
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
@@ -188,7 +192,7 @@ def test_accumulate_with_offsets[
         a.unsafe_ptr(),
         a_base_offsets,
         0,
-        b.unsafe_ptr() + kernel_width,
+        b_base_ptr + kernel_width,
         kernel_width,
     )
 
@@ -216,7 +220,7 @@ def test_accumulate_with_offsets[
         a.unsafe_ptr(),
         a_base_offsets,
         0,
-        b.unsafe_ptr() + kernel_width,
+        b_base_ptr + kernel_width,
         2 * kernel_width,
     )
 
@@ -248,17 +252,18 @@ def test_load_store[
     comptime residual_vec = SIMD[type, simd_size](-1.0, 0.0, 0.0, 0.0)
 
     var a = InlineArray[Scalar[type], num_rows * row_size](uninitialized=True)
+    var a_ptr: UnsafePointer[Scalar[type], origin_of(a)] = a.unsafe_ptr()
 
     # A: [[ 4x0.0, 4x1.0, -1.0],
     #     [ 4x1.0, 4x2.0, -1.0]]
     comptime for i in range(num_rows):
         comptime for j in range(num_cols):
-            a.unsafe_ptr().store(
+            a_ptr.store(
                 i * row_size + j * simd_size,
                 SIMD[type, simd_size](i + j),
             )
 
-        a.unsafe_ptr().store(
+        a_ptr.store(
             i * row_size + num_cols * simd_size,
             SIMD[type, residual](-1.0),
         )
@@ -317,11 +322,9 @@ def test_load_store[
     #            [ 4x1.0, 4x1.0, -2.0]]
     tile1.store[partial_store=True](a.unsafe_ptr(), row_size, residual)
 
+    assert_equal(a_ptr.load[width=residual](row_size - residual), residual_vec1)
     assert_equal(
-        a.unsafe_ptr().load[width=residual](row_size - residual), residual_vec1
-    )
-    assert_equal(
-        a.unsafe_ptr().load[width=residual](2 * row_size - residual),
+        a_ptr.load[width=residual](2 * row_size - residual),
         residual_vec1,
     )
 
