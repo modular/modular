@@ -20,6 +20,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/TypedPointerType.h"
+#include "llvm/Support/ErrorHandling.h"
 
 using namespace llvm;
 using namespace M::KGEN;
@@ -76,24 +77,35 @@ static bool demotePointerConstantAggregates(Module &module) {
 
 // Demote all constant expressions that produce pointers, to their
 // corresponding instructions so that we can more easily rewrite them.
+// getAsInstruction() only unwraps one level, so nested ConstantExprs get
+// pushed back onto the worklist. Defensive backstop.
+static constexpr unsigned kMaxPointerConstexprNestingDepth = 64;
+
 static bool demotePointerConstexprs(Module &module) {
-  SmallVector<std::pair<Instruction *, int>, 8> worklist;
+  // (instruction, operand index, nesting depth within its ConstantExpr chain)
+  SmallVector<std::tuple<Instruction *, int, unsigned>, 8> worklist;
   for (Function &func : module)
     for (BasicBlock &bb : func)
       for (Instruction &inst : bb)
         for (const Use &op : inst.operands())
           if (isa<ConstantExpr>(op))
-            worklist.push_back({&inst, op.getOperandNo()});
+            worklist.push_back({&inst, op.getOperandNo(), 0});
   if (worklist.empty())
     return false;
 
-  for (auto item : worklist) {
-    Instruction *inst = item.first;
-    int opIdx = item.second;
+  while (!worklist.empty()) {
+    auto [inst, opIdx, depth] = worklist.pop_back_val();
+    if (depth > kMaxPointerConstexprNestingDepth)
+      report_fatal_error(
+          "PointerRewriter: compiler pointer constant-expression nesting "
+          "exceeded the expected depth. Please file a bug report.");
     ConstantExpr *ce = cast<ConstantExpr>(inst->getOperand(opIdx));
     Instruction *newInst = ce->getAsInstruction();
     newInst->insertBefore(inst->getIterator());
     inst->setOperand(opIdx, newInst);
+    for (const Use &innerOp : newInst->operands())
+      if (isa<ConstantExpr>(innerOp))
+        worklist.push_back({newInst, innerOp.getOperandNo(), depth + 1});
   }
   return true;
 }
