@@ -56,11 +56,11 @@ os.environ.setdefault("ABSL_MIN_LOG_LEVEL", "2")
 
 import grpc
 from max.experimental.cascade.core import Runtime, Worker
+from max.experimental.cascade.core.type_hints import CascadeValue
 
 from . import cascade_runtime_v1_pb2 as pb
 from . import cascade_runtime_v1_pb2_grpc as rpc
 from .codec import (
-    CascadeValue,
     decode_error,
     decode_value_slot,
     encode_args,
