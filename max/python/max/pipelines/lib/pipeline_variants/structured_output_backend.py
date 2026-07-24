@@ -470,13 +470,10 @@ class XgrammarBackend(GrammarBackend[Any]):
             if isinstance(json_schema, str)
             else json.dumps(json_schema)
         )
-        # any_whitespace=True allows flexible whitespace (including none); it
-        # enforces the schema structure without blocking valid JSON. NOTE:
-        # any_whitespace=False is NOT "compact" — it mandates a space after
-        # ':'/',' and would reject compact output. This matches vLLM's default.
         return self._compiler.compile_json_schema(
             schema,
-            any_whitespace=True,
+            any_whitespace=False,
+            separators=(",", ":"),
             # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
             reject_unsupported=self._reject_unsupported,
         )
@@ -575,6 +572,8 @@ def build_xgrammar_tool_grammar(
         # out of the alternation -- Sequence([prefix, Or([tool_section, json])]).
         json_branch = JSONSchemaFormat(
             json_schema=response_format_schema,
+            any_whitespace=False,
+            separators=(",", ":"),
             # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
             reject_unsupported=(model_format == "gemma_4"),
         )
