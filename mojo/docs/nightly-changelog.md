@@ -1407,6 +1407,10 @@ This version is still a work in progress.
   `util.mojo` exists on the search path, making the module unimportable with
   no diagnostic.
 
+- [#6485](https://github.com/modular/modular/issues/6485) - `Optional[T]` and
+  `Variant[...]` no longer corrupt data for payload types that include a
+  `Bool` field. The fix changes how unions are lowered to LLVM.
+
 - Struct extensions are no longer imported onto structs which happen to share a
   name with their intended struct, when the extensions' intended struct is
   shadowed by another:
