@@ -279,16 +279,17 @@ kgen.func @union_constant_1() -> !pop.union<struct<(i32, i64, i32)>, struct<(f64
 }
 
 // CHECK-LABEL: @union_constant_2
+// All members are sub-byte-width (i1..i6): falls back to i8, not the old i6.
 kgen.func @union_constant_2() -> !pop.union<i1, i2, i3, i4, i5, i6> {
-  // CHECK-DAG:  %[[VAL_0:.*]] = llvm.mlir.undef : !llvm.struct<(i6)>
+  // CHECK-DAG:  %[[VAL_0:.*]] = llvm.mlir.undef : !llvm.struct<(i8)>
   // CHECK-DAG:  %[[VAL_1:.*]] = llvm.mlir.constant(1 : i4) : i4
-  // CHECK-DAG:  %[[VAL_2:.*]] = llvm.mlir.constant(0 : i6) : i6
+  // CHECK-DAG:  %[[VAL_2:.*]] = llvm.mlir.constant(0 : i8) : i8
   // CHECK-DAG:  %[[VAL_3:.*]] = llvm.mlir.constant(0 : i4) : i4
   // CHECK:      %[[VAL_4:.*]] = llvm.lshr %[[VAL_1]], %[[VAL_3]] : i4
-  // CHECK:      %[[VAL_5:.*]] = llvm.zext %[[VAL_4]] : i4 to i6
-  // CHECK:      %[[VAL_6:.*]] = llvm.shl %[[VAL_5]], %[[VAL_2]] : i6
-  // CHECK:      %[[VAL_7:.*]] = llvm.or %[[VAL_2]], %[[VAL_6]] : i6
-  // CHECK:      %[[VAL_8:.*]] = llvm.insertvalue %[[VAL_7]], %[[VAL_0]][0] : !llvm.struct<(i6)>
+  // CHECK:      %[[VAL_5:.*]] = llvm.zext %[[VAL_4]] : i4 to i8
+  // CHECK:      %[[VAL_6:.*]] = llvm.shl %[[VAL_5]], %[[VAL_2]] : i8
+  // CHECK:      %[[VAL_7:.*]] = llvm.or %[[VAL_2]], %[[VAL_6]] : i8
+  // CHECK:      %[[VAL_8:.*]] = llvm.insertvalue %[[VAL_7]], %[[VAL_0]][0] : !llvm.struct<(i8)>
   %0 = kgen.param.constant: union<i1, i2, i3, i4, i5, i6> = <{:i4 1}>
   kgen.return %0 : !pop.union<i1, i2, i3, i4, i5, i6>
 }
@@ -357,6 +358,98 @@ kgen.func @union_unwrap_nonempty_with_empty_sibling(%arg0: !pop.union<struct<(i8
   kgen.return %0 : !kgen.struct<(i8)>
 }
 
+// Regression test for MOCO-3900: representative must be i8, not i1.
+// CHECK-LABEL: @union_wrap_struct_with_trailing_bool
+// CHECK-SAME:  -> !llvm.struct<(i8, array<1 x i8>)>
+kgen.func @union_wrap_struct_with_trailing_bool(%arg0: !kgen.struct<(i8, i1)>) -> !pop.union<struct<(i8, i1)>> {
+  // CHECK:      llvm.store %arg0, %{{.*}} : !llvm.struct<(i8, i1)>, !llvm.ptr
+  // CHECK:      %[[V:.*]] = llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i8, array<1 x i8>)>
+  // CHECK:      llvm.return %[[V]] : !llvm.struct<(i8, array<1 x i8>)>
+  %0 = pop.union.wrap %arg0 : !kgen.struct<(i8, i1)> as <struct<(i8, i1)>>
+  kgen.return %0 : !pop.union<struct<(i8, i1)>>
+}
+
+// CHECK-LABEL: @union_unwrap_struct_with_trailing_bool
+// CHECK-SAME:  -> !llvm.struct<(i8, i1)>
+kgen.func @union_unwrap_struct_with_trailing_bool(%arg0: !pop.union<struct<(i8, i1)>>) -> !kgen.struct<(i8, i1)> {
+  // CHECK:      %[[V:.*]] = llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i8, i1)>
+  // CHECK:      llvm.return %[[V]] : !llvm.struct<(i8, i1)>
+  %0 = pop.union.unwrap %arg0 : <struct<(i8, i1)>> as !kgen.struct<(i8, i1)>
+  kgen.return %0 : !kgen.struct<(i8, i1)>
+}
+
+// Same regression, compile-time-constant path. 170 = 0xAA = -86 as i8.
+// CHECK-LABEL: @union_constant_struct_with_trailing_bool
+kgen.func @union_constant_struct_with_trailing_bool() -> !pop.union<struct<(i8, i1)>> {
+  // CHECK-DAG:  %[[UNDEF:.*]] = llvm.mlir.undef : !llvm.struct<(i8, array<1 x i8>)>
+  // CHECK-DAG:  %[[BYTE:.*]] = llvm.mlir.constant(-86 : i8) : i8
+  // CHECK:      %[[F0:.*]] = llvm.insertvalue %{{.*}}, %[[UNDEF]][0] : !llvm.struct<(i8, array<1 x i8>)>
+  // CHECK:      %{{.*}} = llvm.insertvalue %{{.*}}, %[[F0]][1] : !llvm.struct<(i8, array<1 x i8>)>
+  %0 = kgen.param.constant: union<struct<(i8, i1)>> = <{:struct<(i8, i1)> { 170, 1 }}>
+  kgen.return %0 : !pop.union<struct<(i8, i1)>>
+}
+
+// Reversed field order: proves the fix is order-independent.
+// CHECK-LABEL: @union_wrap_struct_with_leading_bool
+// CHECK-SAME:  -> !llvm.struct<(i8, array<1 x i8>)>
+kgen.func @union_wrap_struct_with_leading_bool(%arg0: !kgen.struct<(i1, i8)>) -> !pop.union<struct<(i1, i8)>> {
+  // CHECK:      llvm.store %arg0, %{{.*}} : !llvm.struct<(i1, i8)>, !llvm.ptr
+  // CHECK:      %[[V:.*]] = llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i8, array<1 x i8>)>
+  // CHECK:      llvm.return %[[V]] : !llvm.struct<(i8, array<1 x i8>)>
+  %0 = pop.union.wrap %arg0 : !kgen.struct<(i1, i8)> as <struct<(i1, i8)>>
+  kgen.return %0 : !pop.union<struct<(i1, i8)>>
+}
+
+// CHECK-LABEL: @union_unwrap_struct_with_leading_bool
+// CHECK-SAME:  -> !llvm.struct<(i1, i8)>
+kgen.func @union_unwrap_struct_with_leading_bool(%arg0: !pop.union<struct<(i1, i8)>>) -> !kgen.struct<(i1, i8)> {
+  // CHECK:      %[[V:.*]] = llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i1, i8)>
+  // CHECK:      llvm.return %[[V]] : !llvm.struct<(i1, i8)>
+  %0 = pop.union.unwrap %arg0 : <struct<(i1, i8)>> as !kgen.struct<(i1, i8)>
+  kgen.return %0 : !kgen.struct<(i1, i8)>
+}
+
+// CHECK-LABEL: @union_constant_struct_with_leading_bool
+kgen.func @union_constant_struct_with_leading_bool() -> !pop.union<struct<(i1, i8)>> {
+  // CHECK-DAG:  %[[UNDEF:.*]] = llvm.mlir.undef : !llvm.struct<(i8, array<1 x i8>)>
+  // CHECK-DAG:  %[[BYTE:.*]] = llvm.mlir.constant(-86 : i8) : i8
+  // CHECK:      llvm.insertvalue %{{.*}}[0] : !llvm.struct<(i8, array<1 x i8>)>
+  // CHECK:      llvm.insertvalue %{{.*}}[1] : !llvm.struct<(i8, array<1 x i8>)>
+  %0 = kgen.param.constant: union<struct<(i1, i8)>> = <{:struct<(i1, i8)> { 1, 170 }}>
+  kgen.return %0 : !pop.union<struct<(i1, i8)>>
+}
+
+// Same check with i8/i1 as direct union members, not nested in a struct.
+// CHECK-LABEL: @union_wrap_direct_i8_i1
+// CHECK-SAME:  -> !llvm.struct<(i8)>
+kgen.func @union_wrap_direct_i8_i1(%arg0: i8) -> !pop.union<i8, i1> {
+  // CHECK:      llvm.store %arg0, %{{.*}} : i8, !llvm.ptr
+  // CHECK:      %[[V:.*]] = llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i8)>
+  // CHECK:      llvm.return %[[V]] : !llvm.struct<(i8)>
+  %0 = pop.union.wrap %arg0 : i8 as <i8, i1>
+  kgen.return %0 : !pop.union<i8, i1>
+}
+
+// CHECK-LABEL: @union_wrap_direct_i1_i8
+// CHECK-SAME:  -> !llvm.struct<(i8)>
+kgen.func @union_wrap_direct_i1_i8(%arg0: i8) -> !pop.union<i1, i8> {
+  // CHECK:      llvm.store %arg0, %{{.*}} : i8, !llvm.ptr
+  // CHECK:      %[[V:.*]] = llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i8)>
+  // CHECK:      llvm.return %[[V]] : !llvm.struct<(i8)>
+  %0 = pop.union.wrap %arg0 : i8 as <i1, i8>
+  kgen.return %0 : !pop.union<i1, i8>
+}
+
+// A real Optional/Variant is a struct containing a union field; guards that
+// no trailing padding field is emitted for it (MOCO-4405).
+// CHECK-LABEL: @variant_in_struct
+// CHECK-SAME:  (%{{.*}}: !llvm.struct<(struct<(f64)>, i8)> {{.*}}) -> !llvm.struct<(struct<(f64)>, i8)>
+// CHECK-NOT:   array<
+kgen.func @variant_in_struct(%arg0: !kgen.struct<(union<i64, f64>, i8)>) -> !kgen.struct<(union<i64, f64>, i8)> {
+  // CHECK:      llvm.return %arg0 : !llvm.struct<(struct<(f64)>, i8)>
+  kgen.return %arg0 : !kgen.struct<(union<i64, f64>, i8)>
+}
+
 // Regression test: `f80`'s alloc size (padded for alignment) is wider than
 // its store size, which previously undersized the tail array and crashed.
 // CHECK-LABEL: @union_f80
@@ -364,6 +457,27 @@ kgen.func @union_unwrap_nonempty_with_empty_sibling(%arg0: !pop.union<struct<(i8
 kgen.func @union_f80(%arg0: !pop.union<f80>) -> !pop.union<f80> {
   // CHECK: llvm.return %arg0 : !llvm.struct<(f80)>
   kgen.return %arg0 : !pop.union<f80>
+}
+
+// Regression test: `i15` is excluded as a representative (unsafe), but its
+// true alignment (2 bytes) exceeds the safe fallback `i8`'s (1 byte). The
+// representative is widened to `i16` -- matching the union's true alignment
+// natively, with no tail array needed -- rather than silently under-reporting
+// it. Order-independent, both declaration orders synthesize the same `i16`.
+// CHECK-LABEL: @union_i8_i15
+// CHECK-SAME:  -> !llvm.struct<(i16)>
+kgen.func @union_i8_i15(%arg0: i8) -> !pop.union<i8, i15> {
+  // CHECK: llvm.return %{{.*}} : !llvm.struct<(i16)>
+  %0 = pop.union.wrap %arg0 : i8 as <i8, i15>
+  kgen.return %0 : !pop.union<i8, i15>
+}
+
+// CHECK-LABEL: @union_i15_i8
+// CHECK-SAME:  -> !llvm.struct<(i16)>
+kgen.func @union_i15_i8(%arg0: i8) -> !pop.union<i15, i8> {
+  // CHECK: llvm.return %{{.*}} : !llvm.struct<(i16)>
+  %0 = pop.union.wrap %arg0 : i8 as <i15, i8>
+  kgen.return %0 : !pop.union<i15, i8>
 }
 
 }

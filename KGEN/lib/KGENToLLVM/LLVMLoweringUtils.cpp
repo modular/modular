@@ -101,6 +101,13 @@ LLVMDataLayout::getTypeABIAlignAndType(Type type) const {
   llvm::report_fatal_error("unsupported LLVM dialect type");
 }
 
+/// Whether `type`'s value fills its own storage, e.g. false for `i1` (1 bit
+/// in a whole byte). Reusing an unsafe type as a union's representative
+/// field truncates a sibling's data.
+static bool isSafeUnionReprType(const LLVMDataLayout &dl, Type type) {
+  return dl.getTypeSizeInBits(type) == 8 * dl.getTypeStoreSize(type);
+}
+
 //===----------------------------------------------------------------------===//
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
@@ -349,14 +356,11 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
         return {};
       maxSize = std::max(maxSize, getTypeAllocSize(type));
 
-      // Record the max aligned member field. Skip members whose converted type
-      // is null (e.g. empty structs): getTypeABIAlignAndType returns
-      // {1, nullptr} for an empty LLVM struct, and allowing that to win via
-      // '>=' would overwrite a valid type entry with a null, causing a null
-      // dereference in getTypeSizeInBits when the null type is later used as
-      // the first field of the lowered union struct.
+      // Record the max-aligned member field, skipping null candidates
+      // (MOCO-3275) and unsafe representative types (MOCO-3900).
       auto curAlignAndMember = getTypeABIAlignAndType(type);
       if (curAlignAndMember.second &&
+          isSafeUnionReprType(*this, curAlignAndMember.second) &&
           curAlignAndMember.first >= maxAlignAndType.first)
         maxAlignAndType = curAlignAndMember;
     }
@@ -366,7 +370,23 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     // Lower union to {max_align_t, [(max_size - sizeof(max_align_t)) x i8]}.
     // `max_align_t` ensure whole structure alignment, the tailing array ensures
     // that we allocate enough memory to hold the maximum variant of the union.
-    Type maxAlignTp = maxAlignAndType.second;
+    // Fall back to i8 if no member offered a safe representative type.
+    Type maxAlignTp = maxAlignAndType.second
+                          ? maxAlignAndType.second
+                          : IntegerType::get(&getContext(), 8);
+
+    // The chosen representative can still under-report the union's true
+    // alignment (e.g. a wider member was excluded as unsafe). Try to synthesize
+    // a plain integer matching the true alignment in that case.
+    if (auto trueAlign = unionType.getTypeAlign(getTarget());
+        trueAlign && *trueAlign > getTypeABIAlign(maxAlignTp)) {
+      Type widened = IntegerType::get(&getContext(), 8 * *trueAlign);
+      // FIXME(MOCO-4441): Depending on the exact target, the integer may or may
+      // not have the desired alignment. Use widened only when it succeeds.
+      if (getTypeABIAlign(widened) >= *trueAlign)
+        maxAlignTp = widened;
+    }
+
     SmallVector<Type, 2> structElemTp;
     structElemTp.push_back(maxAlignTp);
 
