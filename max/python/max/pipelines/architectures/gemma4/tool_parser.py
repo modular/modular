@@ -410,13 +410,9 @@ class Gemma4ToolParser(StructuralTagToolParser):
                 "backend; run with --structured-output-backend=xgrammar."
             )
         normalized_choice = tool_choice if tool_choice is not None else "auto"
-        forced = normalized_choice == "required" or isinstance(
-            normalized_choice, dict
-        )
         return build_xgrammar_tool_grammar(
             Gemma4ToolParser.XGRAMMAR_FORMAT,
             tools or [],
             normalized_choice,
-            reasoning=not forced,
             response_format_schema=response_format_schema,
         )

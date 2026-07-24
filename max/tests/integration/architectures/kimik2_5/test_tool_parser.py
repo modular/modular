@@ -1056,10 +1056,9 @@ def test_combined_grammar_still_accepts_tool_call(
 ) -> None:
     """Adding response_format must not break the tool-call branch.
 
-    Reasoning framing differs by backend: the xgrammar built-in Kimi envelope
-    requires a ``</think>`` reasoning close before the section under auto tool
-    choice, whereas llguidance keeps the reasoning block optional. Both must
-    still accept a complete tool call.
+    Reasoning is handled by the runtime tool/thinking region mechanism, not
+    the grammar, so on both backends the grammar starts at the tool-call
+    section itself and must accept a complete tool call.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
         tools=_tools("get_weather"),
@@ -1072,8 +1071,7 @@ def test_combined_grammar_still_accepts_tool_call(
     )
 
     section = _section("get_weather", 0, json.dumps({"location": "NYC"}))
-    tool_text = (THINK_END + section) if backend == "xgrammar" else section
-    tokens = minimal_tokenizer(tool_text)
+    tokens = minimal_tokenizer(section)
     consumed = matcher.try_consume_tokens(tokens)
     assert consumed == len(tokens), (
         f"[{backend}] rejected a tool call in the combined grammar at offset "
@@ -1087,11 +1085,12 @@ def test_combined_grammar_still_accepts_tool_call(
 def test_combined_grammar_xgrammar_structural_tag_shape(
     mock_tokenizer: PipelineTokenizer[Any, Any, Any],
 ) -> None:
-    """The combined grammar allows an optional reasoning prefix followed by
-    either a tool call or a schema-conforming JSON response.
+    """The combined grammar is a plain alternation of a tool call and a
+    schema-conforming JSON response.
 
-    Verifies the serialized StructuralTag has that shape: a reasoning prefix,
-    then an ``or`` between the tool section and the response ``json_schema``.
+    Verifies the serialized StructuralTag has that shape: an ``or`` between
+    the tool section and the response ``json_schema``, with no reasoning
+    prefix (reasoning is handled by the runtime region mechanism).
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
         tools=_tools("get_weather"),
@@ -1100,8 +1099,7 @@ def test_combined_grammar_xgrammar_structural_tag_shape(
         backend="xgrammar",
     )
     tag = xgrammar.StructuralTag.model_validate_json(grammar)
-    assert tag.format.type == "sequence"
-    or_format = tag.format.elements[-1]
+    or_format = tag.format
     assert or_format.type == "or"
     element_types = {element.type for element in or_format.elements}
     assert "json_schema" in element_types
@@ -1113,17 +1111,17 @@ def test_combined_grammar_xgrammar_structural_tag_shape(
     assert json_branch.json_schema == _COMBINED_RESPONSE_SCHEMA
 
 
-def test_combined_grammar_xgrammar_accepts_reasoned_json_response(
+def test_combined_grammar_xgrammar_rejects_reasoning_prefix(
     ll_tokenizer: LLTokenizer,
     minimal_tokenizer: _MinimalTokenizer,
     mock_tokenizer: PipelineTokenizer[Any, Any, Any],
 ) -> None:
-    """xgrammar: a reasoning preamble may precede the JSON response branch.
+    """xgrammar: the grammar admits no reasoning preamble.
 
-    The reasoning prefix is factored outside the tool/json alternation, so the
-    model may emit ``</think>`` and then a schema-conforming JSON response — not
-    only a tool call. Without this the JSON branch would be unreachable once the
-    model reasons, forcing a tool call.
+    Reasoning is handled by the runtime thinking-region mechanism, which
+    suspends enforcement until ``</think>``. The grammar itself must start at
+    the tool call or JSON response — a ``</think>`` token is not grammar
+    content and is rejected outright.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
         tools=_tools("get_weather"),
@@ -1139,12 +1137,9 @@ def test_combined_grammar_xgrammar_accepts_reasoned_json_response(
         THINK_END + json.dumps({"answer": "sunny"}, separators=(",", ":"))
     )
     consumed = matcher.try_consume_tokens(tokens)
-    assert consumed == len(tokens), (
-        f"reasoned JSON response rejected at offset {consumed} of "
-        f"{len(tokens)}; error: {matcher.get_error()}"
-    )
-    assert matcher.is_accepting(), (
-        "matcher not accepting after a reasoned schema-conforming JSON response"
+    assert consumed == 0, (
+        f"grammar consumed {consumed} tokens of a reasoning-prefixed "
+        f"response; reasoning must not be grammar content"
     )
 
 
@@ -1304,11 +1299,15 @@ def test_grammar_accepts_interleaved_thinking(
     minimal_tokenizer: _MinimalTokenizer,
     mock_tokenizer: PipelineTokenizer[Any, Any, Any],
 ) -> None:
-    """Matcher accepts ``<think>...</think>`` blocks between tool sections.
+    """Interleaved thinking between sections never desyncs the matcher.
 
-    This is Kimi's interleaved thinking: reason, call, reason, call. The
-    reasoning body is byte-level freeform text terminated atomically by
-    ``</think>`` and may contain ``<`` and markup.
+    Kimi interleaves ``<think>...</think>`` blocks between tool sections.
+    Reasoning is not grammar content — under ``tool_choice=auto`` the
+    enforcement state machine has enforcement OFF between sections, so
+    reasoning (and any other inter-section text) is never fed to the
+    matcher. This drives the production enforcement path over an
+    interleaved stream and asserts no token the state machine feeds is
+    rejected.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
         tools=_tools("get_weather", "search"),
@@ -1316,19 +1315,26 @@ def test_grammar_accepts_interleaved_thinking(
         backend="llguidance",
     )
     matcher = LLMatcher(ll_tokenizer, grammar)
+    state = GrammarEnforcementState(
+        grammar_enforced=False,
+        tools_forced=False,
+        tool_region=StructuredOutputRegionDelimiters(
+            start_token_ids=minimal_tokenizer(TOOL_CALLS_SECTION_BEGIN),
+            end_token_ids=minimal_tokenizer(TOOL_CALLS_SECTION_END),
+        ),
+    )
 
     interleaved = (
         _section("get_weather", 0, '{"location": "NYC"}')
         + f"{THINK_START}Now let me search for x < y markup</p>{THINK_END}"
         + _section("search", 1, '{"q": "if (a < b)"}')
-        + IM_END
     )
-    tokens = minimal_tokenizer(interleaved)
-    consumed = matcher.try_consume_tokens(tokens)
-    assert consumed == len(tokens), (
-        f"matcher should accept interleaved think+sections+im_end but "
-        f"rejected at offset {consumed} of {len(tokens)}; "
-        f"error: {matcher.get_error()}"
+    rejected, token = _simulate_auto_enforcement(
+        state, matcher, minimal_tokenizer, interleaved
+    )
+    assert not rejected, (
+        f"matcher rejected token {token} on an interleaved think+sections "
+        f"stream; error: {matcher.get_error()}"
     )
 
 
