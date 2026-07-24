@@ -249,6 +249,21 @@ def whitespace(
         ):
             return SPACE
 
+        # Keep a space after the `lambda` keyword before its signature, so a Mojo
+        # lambda reads `lambda (x: Int) -> R: e` / `lambda [N: Int](...): e`, not
+        # `lambda(...)`. (The Python form `lambda x: e` gets its space by default.)
+        # Guard on the parent being a lambdef (or old_lambdef, the mirrored
+        # comprehension-position production) so `lambda` used as a method name
+        # (`def lambda(self)`, `x.lambda()`) is left untouched.
+        if (
+            t in {token.LPAR, token.LSQB}
+            and prevp.type == token.NAME
+            and prevp.value == "lambda"
+            and prevp.parent
+            and prevp.parent.type in {syms.lambdef, syms.old_lambdef}
+        ):
+            return SPACE
+
         if t == token.COLON:
             if prevp.type == token.COLON:
                 return NO
