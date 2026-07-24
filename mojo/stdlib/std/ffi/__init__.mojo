@@ -487,7 +487,7 @@ struct OwnedDLHandle(Movable):
     def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> Optional[
-        UnsafePointer[result_type, MutUntrackedOrigin]
+        Pointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -506,7 +506,7 @@ struct OwnedDLHandle(Movable):
     def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: Pointer[mut=False, Int8, _]) -> Optional[
-        UnsafePointer[result_type, MutUntrackedOrigin]
+        Pointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -759,7 +759,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
     def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> Optional[
-        UnsafePointer[result_type, MutUntrackedOrigin]
+        Pointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -781,7 +781,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
     def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: Pointer[mut=False, Int8, _]) -> Optional[
-        UnsafePointer[result_type, MutUntrackedOrigin]
+        Pointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -814,7 +814,9 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         # Clear any pre-existing error.
         _ = dlerror()
 
-        var res = dlsym[result_type](self.handle, cstr_name)
+        var res: Optional[Pointer[result_type, MutUntrackedOrigin]] = dlsym[
+            result_type
+        ](self.handle, cstr_name)
 
         if not res:
             # Result is NULL — check if it's an error or a valid NULL symbol.

@@ -1478,12 +1478,9 @@ struct PythonObject(
                 )
             )
 
-    # TODO(MSTDL-2875): the public `downcast_value_ptr` now returns a safe
-    # `Pointer` (this result decays into it); the `Optional[UnsafePointer]`
-    # return here is migrated separately.
     def _try_downcast_value[
         T: ImplicitlyDeletable
-    ](var self) raises -> Optional[UnsafePointer[T, MutAnyOrigin]]:
+    ](var self) raises -> Optional[Pointer[T, MutAnyOrigin]]:
         """Try to get a pointer to the expected contained Mojo value of type `T`.
 
         None will be returned if the type of this object does not match the
@@ -1505,9 +1502,7 @@ struct PythonObject(
         if type == expected_type:
             ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]().value()[]
             if mojo_obj.is_initialized:
-                return UnsafePointer(
-                    to=mojo_obj.mojo_value
-                ).as_unsafe_any_origin()
+                return Pointer(to=mojo_obj.mojo_value).as_unsafe_any_origin()
         return None
 
     def unchecked_downcast_value_ptr[
