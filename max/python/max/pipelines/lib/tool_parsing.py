@@ -203,6 +203,7 @@ class StreamingToolCallState:
     id: str = ""
     name: str = ""
     arguments_sent: str = ""
+    opener_sent: bool = False
 
 
 @dataclass
@@ -367,13 +368,6 @@ class StructuralTagToolParser(ABC):
                     if tool_id and tool_name:
                         tc_state.id = tool_id
                         tc_state.name = tool_name
-                        deltas.append(
-                            ParsedToolCallDelta(
-                                index=i,
-                                id=tool_id,
-                                name=tool_name,
-                            )
-                        )
 
                 if args is not None:
                     args_str = self._format_args_for_streaming(
@@ -382,6 +376,19 @@ class StructuralTagToolParser(ABC):
                     if args_str:
                         args_diff = self._compute_args_diff(i, args_str)
                         if args_diff:
+                            if (
+                                not tc_state.opener_sent
+                                and tc_state.id
+                                and tc_state.name
+                            ):
+                                deltas.append(
+                                    ParsedToolCallDelta(
+                                        index=i,
+                                        id=tc_state.id,
+                                        name=tc_state.name,
+                                    )
+                                )
+                                tc_state.opener_sent = True
                             deltas.append(
                                 ParsedToolCallDelta(
                                     index=i, arguments=args_diff

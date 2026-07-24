@@ -368,23 +368,33 @@ def test_reset_clears_buffer() -> None:
 
 
 def test_parse_delta_accumulates() -> None:
-    """Test that parse_delta suppresses partial tool-call content."""
+    """Test that streamed deltas accumulate into the right id/name/arguments."""
     parser = Gemma4ToolParser()
 
     # First chunk opens the tool call — no name yet, so suppression only.
     result1 = parser.parse_delta("<|tool_call>")
     assert result1 == []
 
-    # Second chunk delivers the header (call:test{). The base class emits
-    # the name as soon as the header is parseable.
+    # Second chunk delivers the header (call:test{). Under the deferred-opener
+    # contract the opener (id + name) is withheld until the first non-empty
+    # args delta, so a header-only chunk (no args yet) yields no opener.
     result2 = parser.parse_delta("call:test{")
-    assert result2 is not None
-    assert len(result2) == 1
-    assert result2[0].name == "test"
-    assert result2[0].id is not None
-    assert result2[0].arguments is None
+    assert result2 == []
 
     assert parser._buffer == "<|tool_call>call:test{"
+
+    # Feeding enough to complete the call surfaces the opener (id + name)
+    # together with the arguments in the same flush.
+    result3 = parser.parse_delta('key:<|"|>value<|"|>}<tool_call|>')
+    assert result3 is not None
+
+    id_name_deltas = [d for d in result3 if d.name is not None]
+    assert len(id_name_deltas) == 1
+    assert id_name_deltas[0].name == "test"
+    assert id_name_deltas[0].id is not None
+
+    args = "".join(d.arguments for d in result3 if d.arguments is not None)
+    assert json.loads(args) == {"key": "value"}
 
 
 def test_parse_delta_returns_none_outside_tool_section() -> None:
@@ -404,32 +414,40 @@ def test_parse_delta_returns_none_outside_tool_section() -> None:
 
 
 def test_parse_delta_emits_complete_tool_call() -> None:
-    """parse_delta emits name early, then arguments on close marker."""
+    """parse_delta surfaces the opener (id + name) and arguments for a
+    complete call. Under the deferred-opener contract the opener rides with
+    the first non-empty args delta, so we assemble the deltas rather than
+    asserting name arrives strictly before any arguments."""
     parser = Gemma4ToolParser()
 
     assert parser.parse_delta("<|tool_call>") == []
 
-    # Name is emitted as soon as the header (call:NAME{) is parseable.
-    name_result = parser.parse_delta('call:get_weather{location:<|"|>Paris')
-    assert name_result is not None
-    assert len(name_result) == 1
-    assert name_result[0].name == "get_weather"
-    assert name_result[0].id is not None
+    # Header parses (name known) but arguments stay withheld until the close
+    # marker, so no opener is surfaced yet.
+    assert parser.parse_delta('call:get_weather{location:<|"|>Paris') == []
 
-    # Arguments are emitted atomically when the close marker arrives.
-    args_result = parser.parse_delta('<|"|>}<tool_call|>')
-    assert args_result is not None
-    assert len(args_result) == 1
-    assert args_result[0].index == 0
-    assert args_result[0].arguments is not None
-    assert json.loads(args_result[0].arguments) == {"location": "Paris"}
-    # Name/id not re-emitted on the args delta.
-    assert args_result[0].name is None
-    assert args_result[0].id is None
+    # The close marker completes the call: opener (id + name) and arguments
+    # surface together.
+    result = parser.parse_delta('<|"|>}<tool_call|>')
+    assert result is not None
+    assert all(d.index == 0 for d in result)
+
+    id_name_deltas = [d for d in result if d.name is not None]
+    assert len(id_name_deltas) == 1
+    assert id_name_deltas[0].name == "get_weather"
+    assert id_name_deltas[0].id is not None
+
+    args = "".join(d.arguments for d in result if d.arguments is not None)
+    assert json.loads(args) == {"location": "Paris"}
 
 
 def test_parse_delta_emits_content_before_tool_call() -> None:
-    """parse_delta emits leading plain content then enters tool mode."""
+    """parse_delta emits leading plain content, then surfaces a complete call.
+
+    Gemma-4 treats a call as complete only at the ``<tool_call|>`` close
+    marker, so the call body must include it for the opener + arguments to
+    surface.
+    """
     parser = Gemma4ToolParser()
 
     result = parser.parse_delta("preamble<|tool_call>")
@@ -437,12 +455,15 @@ def test_parse_delta_emits_content_before_tool_call() -> None:
     assert result is not None
     assert len(result) == 1
     assert result[0].content == "preamble"
-    # Next chunk delivers a complete call body: name is emitted in the first
-    # delta and the args (empty dict) are emitted in the second delta because
-    # the closing "}" is already present.
-    name_result = parser.parse_delta("call:f{}")
-    assert name_result is not None
-    assert any(d.name == "f" for d in name_result)
+
+    # A complete empty-args call (closed with <tool_call|>) surfaces the
+    # opener (id + name) and the empty-object arguments together.
+    call_result = parser.parse_delta("call:f{}<tool_call|>")
+    assert call_result is not None
+    assert any(d.name == "f" for d in call_result)
+
+    args = "".join(d.arguments for d in call_result if d.arguments is not None)
+    assert json.loads(args) == {}
 
 
 def test_streaming_args_openai_contract_full_stream() -> None:
@@ -484,6 +505,100 @@ def test_streaming_args_openai_contract_full_stream() -> None:
     assert parsed == {"location": "Chicago", "unit": "fahrenheit"}, (
         f"accumulated arguments do not match expected: {accumulated!r}"
     )
+
+
+def _assemble_streamed_tool_calls(
+    parser: Gemma4ToolParser, token_chunks: list[str]
+) -> list[dict[str, str]]:
+    """Feed ``token_chunks`` through ``parse_delta`` and reconstruct the
+    per-index tool calls a streaming client would see.
+
+    Mirrors how the serving layer assembles streamed tool calls: an opener
+    delta carries ``id``/``name``; subsequent deltas append ``arguments``.
+    Returns one dict per surfaced tool call with keys ``id``, ``name``,
+    ``arguments`` (arguments is the concatenation of all argument deltas,
+    ``""`` if none arrived).
+    """
+    calls: dict[int, dict[str, str]] = {}
+    for chunk in token_chunks:
+        result = parser.parse_delta(chunk)
+        if not result:
+            continue
+        for delta in result:
+            if (
+                delta.id is None
+                and delta.name is None
+                and delta.content is None
+            ):
+                if delta.arguments is None:
+                    continue
+            if delta.content is not None:
+                continue
+            call = calls.setdefault(
+                delta.index, {"id": "", "name": "", "arguments": ""}
+            )
+            if delta.id is not None:
+                call["id"] = delta.id
+            if delta.name is not None:
+                call["name"] = delta.name
+            if delta.arguments is not None:
+                call["arguments"] += delta.arguments
+    return [calls[i] for i in sorted(calls)]
+
+
+def test_streaming_incomplete_call_not_surfaced() -> None:
+    """A tool call that opens but is cut off before ``<tool_call|>`` must not
+    surface a dangling call with empty ``arguments``.
+
+    Simulates generation halting after the opener: the header ``call:emit{``
+    parses (name known) but the close marker never arrives, so no arguments are
+    ever emitted. Non-streaming discards such incomplete calls; streaming must
+    not leak a ``{id, name, arguments: ""}`` entry to the client.
+    """
+    parser = Gemma4ToolParser()
+
+    # Runaway with multiple emit calls; the LAST one opens then is cut off.
+    token_chunks = [
+        "<|tool_call>",
+        'call:emit{value:<|"|>a<|"|>}',
+        "<tool_call|>",
+        "<|tool_call>",
+        'call:emit{value:<|"|>b<|"|>}',
+        "<tool_call|>",
+        "<|tool_call>",
+        "call:emit{",  # opens but never closes — generation cut off here
+    ]
+
+    streamed = _assemble_streamed_tool_calls(parser, token_chunks)
+
+    dangling = [c for c in streamed if c["arguments"] == ""]
+    assert not dangling, (
+        "streaming surfaced tool call(s) with empty arguments (dangling "
+        f"incomplete call leaked): {dangling}"
+    )
+
+
+def test_streaming_complete_call_surfaces_name_and_args() -> None:
+    """A complete tool call streams its opener (id + name) AND arguments.
+
+    Guards that suppressing dangling incomplete calls does not suppress
+    legitimate, fully-closed tool calls.
+    """
+    parser = Gemma4ToolParser()
+
+    token_chunks = [
+        "<|tool_call>",
+        'call:emit{value:<|"|>hi<|"|>}',
+        "<tool_call|>",
+    ]
+
+    streamed = _assemble_streamed_tool_calls(parser, token_chunks)
+
+    assert len(streamed) == 1
+    call = streamed[0]
+    assert call["name"] == "emit"
+    assert call["id"]
+    assert json.loads(call["arguments"]) == {"value": "hi"}
 
 
 def test_number_parameters() -> None:
