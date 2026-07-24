@@ -590,10 +590,16 @@ class ConstraintAttr(max._core.Attribute):
 
     The proposition is an i1-typed parameter expression.
 
+    The optional message is a user-provided string (from
+    `where (cond, "message")` syntax) that is surfaced in the diagnostic when
+    the constraint fails. It is null for constraints without a user message
+    (including all compiler-synthesized constraints).
+
     Example:
 
     ```mlir
     #kgen.constraint<1, loc("file.mojo":10:5)>
+    #kgen.constraint<1, loc("file.mojo":10:5), "must be positive">
     ```
     """
 
@@ -602,17 +608,21 @@ class ConstraintAttr(max._core.Attribute):
         self,
         proposition: max._core.dialects.builtin.TypedAttr,
         loc: max._core.LocationAttr,
+        message: max._core.dialects.builtin.StringAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         proposition: max._core.dialects.builtin.TypedAttr,
         loc: max._core.LocationAttr,
+        message: max._core.dialects.builtin.StringAttr,
     ) -> None: ...
     @property
     def proposition(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def loc(self) -> max._core.LocationAttr: ...
+    @property
+    def message(self) -> max._core.dialects.builtin.StringAttr: ...
 
 class DTypeConstantAttr(max._core.Attribute):
     """

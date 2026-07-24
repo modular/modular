@@ -10,6 +10,27 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- `where` clauses now accept an optional string-literal message, written
+  `where (condition, "message")`. The message is included in the compiler
+  diagnostic when the constraint fails, and is supported everywhere `where`
+  clauses are allowed: trailing function and struct constraints, struct
+  conditional-conformance clauses, and `alias`/`comptime` declarations.
+
+  ```mojo
+  def foo[sc: Int]() where (sc > 1, "scaling factor must be greater than 1"):
+      ...
+  ```
+
+  Calling `foo[0]()` now reports the message in the note:
+
+  ```plaintext
+  note: constraint declared here evaluated to False, expected '(sc > Int(1))':
+  scaling factor must be greater than 1
+  ```
+
+  The message must be a string literal; a non-literal message is
+  reported as an error.
+
 - Mojo supports an (internal only for now) feature known as *interior origins*,
   which allows collections to protect from a common class of memory unsafety
   problems. `List`, for example, now returns element references bound
