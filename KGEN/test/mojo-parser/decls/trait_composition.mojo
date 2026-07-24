@@ -180,6 +180,7 @@ struct Struct12(Traits12):
 # conditional method
 @fieldwise_init
 struct Wrapper[T: AnyType](Movable where False):
+    @__allow_legacy_custom_self_type
     def cond1[Trait: Trait1](self: Wrapper[Trait], other: Wrapper[Trait]):
         pass
 

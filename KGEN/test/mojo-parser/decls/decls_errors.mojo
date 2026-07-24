@@ -309,8 +309,9 @@ def badPackCalls(value: Int):
   first_and_rest(value)
 
 struct TestPackErrorMessage[*Ts: AnyType](Movable where False):
-    # expected-error @below {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'VariadicPack[False, Ts]'}}
-    # expected-error @below {{__init__ method must return Self type with 'out' argument}}
+    # expected-error @+3 {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'VariadicPack[False, Ts]'}}
+    # expected-error @+2 {{__init__ method must return Self type with 'out' argument}}
+    @__allow_legacy_custom_self_type
     def __init__(*args: *Self.Ts):
          pass
 
@@ -749,8 +750,9 @@ struct TestOwnedDeinitErrors(Movable where False):
 
 # expected-note @+1 {{previous definition here}}
 struct WrongType(RegisterPassable):
-  # expected-error @+2 {{__init__ method must return Self type with 'out' argument}}
-  # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'None'}}
+  # expected-error @+3 {{__init__ method must return Self type with 'out' argument}}
+  # expected-error @+2 {{'self' argument must have type 'WrongType', but actually has type 'None'}}
+  @__allow_legacy_custom_self_type
   def __init__(self: None) raises: pass
 
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'Int'}}
@@ -765,7 +767,8 @@ struct WrongType(RegisterPassable):
 
 
 struct WrongSelfType[a: Int](Movable where False):
-  # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]', but actually has type 'Int'}}
+  # expected-error @+2 {{'self' argument must have type 'WrongSelfType[a]', but actually has type 'Int'}}
+  @__allow_legacy_custom_self_type
   def badMethod(self: Int): pass
   def goodMethod(mut self: WrongSelfType[Self.a]): pass
 

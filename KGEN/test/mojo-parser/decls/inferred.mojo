@@ -140,10 +140,12 @@ struct MyFancyStruct(FancyTrait):
 
 @fieldwise_init
 struct MyOptional[T: ImplicitlyCopyable](Movable where False):
+    @__allow_legacy_custom_self_type
     def __eq__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
         pass
 
     # CHECK-LABEL: lit.fn @"__ne__
+    @__allow_legacy_custom_self_type
     def __ne__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
         # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%self, %rhs)
         return not (self == rhs)

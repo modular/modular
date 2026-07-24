@@ -309,6 +309,9 @@ public:
   /// is null.
   ASTType selfType;
 
+  /// Whether `@__allow_legacy_custom_self_type` was specified.
+  bool allowCustomSelfType = false;
+
   // This is the type checked declared argument type, e.g. "String" or "Int".
   SmallVector<Type> argTypes;
   /// Default values for args.

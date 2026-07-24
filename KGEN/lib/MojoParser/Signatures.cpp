@@ -2819,6 +2819,13 @@ void TypeCheckedFnSignature::checkSelfArgument(ASTDecl &decl,
     return shared.emitError(loc);
   };
 
+  if (!isSelfResult && !allowCustomSelfType) {
+    emitErrorLoc(selfArg.loc)
+        << "'self' argument must have type 'Self'; use a 'where' clause "
+           "to constrain the 'Self' type instead";
+    return;
+  }
+
   // It is ok if the self type has different parameters than the
   // declaration, this is a form of conditional conformance.
   if (selfType.getDecl(shared) != selfArgType.getDecl(shared)) {

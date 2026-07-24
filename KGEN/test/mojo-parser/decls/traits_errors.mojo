@@ -15,7 +15,8 @@ trait MyMovable:
 
 
 trait ErroneousTrait:
-    # expected-error @+1 {{'self' argument must have type 'Self' in trait method declaration, but actually has type 'Int'}}
+    # expected-error @+2 {{'self' argument must have type 'Self' in trait method declaration, but actually has type 'Int'}}
+    @__allow_legacy_custom_self_type
     def add(self: Int):
         ...
 
