@@ -17,9 +17,9 @@ force-exclude = '''
     | third-party/vllm-benchmarks
     | \.derived
     | venv
-    | utils/mblack
     | KGEN/test/mojo-parser
     | KGEN/test/mojo-tool/format
+    | KGEN/tools/mblack
     | max/python/max/serve/schemas
     | utils/packaging/tests
     | Faux/mojo_llm_from_scratch
@@ -50,7 +50,7 @@ extend-exclude = [
   "*max/python/max/_xgrammar/builtin_structural_tag.py",
   "*max/python/max/_xgrammar/openai_tool_call_schema.py",
   "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
-  "utils/mblack/tests",
+  "KGEN/tools/mblack/tests",
   "Faux/mojo_llm_from_scratch/**", # Experimental from-scratch LLM project
   # SOL-ExecBench candidate reproduction packages: frozen byte-faithful
   # snapshots of tuned candidates (solution + custom ops + gate + verbatim
