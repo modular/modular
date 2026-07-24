@@ -230,6 +230,16 @@ http_archive(
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/ucx_prebuilt/501d8fd1611247ac46efb1a56fca3b16b9feae2f/5e3488de55c83f8a6440c597063117721319fa8433c0d35a66c1a14702f7d46c/ucx-prebuilt-linux-x86-64.tar.gz",
 )
 
+# UCCL transport library for the AMD NIXL UCCL backend. Built by
+# utils/build-uccl.sh (on an AMD ROCm box) at the pinned UCCL revision in the
+# version segment of the URL below; bump that + the sha256 to update UCCL.
+http_archive(
+    name = "uccl_prebuilt",
+    build_file = "//bazel/public-patches:uccl_prebuilt.BUILD",
+    sha256 = "d27db64e4d88db03f2c0c61ffa1a9681c93a6aa023298c110b659749101ac985",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/uccl_prebuilt/66170bc299205228f0170bc1638594a39af9ffd5/d27db64e4d88db03f2c0c61ffa1a9681c93a6aa023298c110b659749101ac985/uccl-prebuilt-rocm-linux-x86-64.tar.gz",
+)
+
 http_archive(
     name = "efa_libfabric_prebuilt",
     build_file = "//bazel/public-patches:efa_libfabric_prebuilt.BUILD",
