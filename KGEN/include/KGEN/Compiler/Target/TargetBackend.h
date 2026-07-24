@@ -51,9 +51,10 @@ namespace M::KGEN {
 
 class MCLinker;
 
-/// Creates an LLVM TargetMachine from already-effective `options` (no
-/// target-specific adjustment). Used by `TargetBackend::createTargetMachine`
-/// and as the fallback for triples with no registered backend.
+/// Creates an LLVM TargetMachine from already-effective `options`.
+/// Runs entirely in the host's LLVM instance (it uses the target registry,
+/// which is only initialized here). Callers that need target-specific tweaks
+/// should apply `TargetBackend::adjustOptionsForTargetMachine` first.
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 defaultCreateTargetMachine(const CompilationOptions &options, bool isJIT);
 
@@ -195,17 +196,13 @@ public:
   prepareModuleForLowering(mlir::Operation *module,
                            const CompilationOptions &options) const {}
 
-  /// Options used for `createTargetMachine`; the identity by default.
+  /// Adjusts `options` before `defaultCreateTargetMachine` builds the machine;
+  /// the identity by default.
   virtual CompilationOptions
   adjustOptionsForTargetMachine(const CompilationOptions &options,
                                 llvm::StringRef moduleTriple) const {
     return options;
   }
-  /// Creates the LLVM TargetMachine for `options`. The base implementation
-  /// applies `adjustOptionsForTargetMachine` and uses the generic
-  /// TargetRegistry path; backends may override for full control.
-  virtual ErrorOr<std::unique_ptr<llvm::TargetMachine>>
-  createTargetMachine(const CompilationOptions &options, bool isJIT) const;
   /// Fixes up `module` after the TargetMachine is created.
   virtual void finalizeModuleForTarget(llvm::Module &module,
                                        llvm::TargetMachine &tm,

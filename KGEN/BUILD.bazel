@@ -993,12 +993,13 @@ modular_shared_library(
 
 modular_cc_library(
     name = "Support",
-    srcs = glob(["lib/Support/*.cpp"]),
+    srcs = glob(
+        ["lib/Support/**/*.cpp"],
+        exclude = ["lib/Support/ForceLinkMLIRC/**"],
+    ),
     hdrs = glob(
-        ["include/KGEN/Support/*.h"],
-        exclude = [
-            "include/KGEN/Support/ForceLinkMLIRC.h",
-        ],
+        ["include/KGEN/Support/**/*.h"],
+        exclude = ["include/KGEN/Support/ForceLinkMLIRC.h"],
     ),
     local_defines = CONFIG_SECTION_LOCAL_DEFINES + [
         "MODULAR_KGEN_PROFILING_ENABLED=1",
