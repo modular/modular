@@ -226,7 +226,9 @@ def test_array_alignment() raises:
     """
     # Allocate array - base pointer should be 64-byte aligned
     var arr_alloc = alloc[CacheAligned]({count = 4}).into_deletable()
-    var arr = arr_alloc.unsafe_ptr()
+    var arr: UnsafePointer[
+        CacheAligned, origin_of(arr_alloc)
+    ] = arr_alloc.unsafe_ptr()
     var base_addr = Int(arr)
     assert_true(
         (base_addr & 63) == 0,
