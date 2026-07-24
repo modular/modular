@@ -1596,7 +1596,7 @@ def get_glm_4_7_structural_tag(
 
 
 @register_model_structural_tag("gemma_4")
-def _get_gemma_4_structural_tag(
+def get_gemma_4_structural_tag(
     tools: Optional[List[FunctionToolParam]] = None,
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
