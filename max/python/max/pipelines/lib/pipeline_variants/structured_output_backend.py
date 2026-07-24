@@ -366,6 +366,32 @@ class XgrammarMatcher:
         return XgrammarMatcher(self._matcher.fork())
 
 
+def _content_stripped_special_token_ids(
+    tokenizer: PreTrainedTokenizerBase,
+) -> list[int]:
+    """Return the ids of special/added tokens that carry no string content.
+
+    A control/special token that decodes to the empty string with
+    ``skip_special_tokens=True`` is never valid JSON string content: if left in
+    the byte-level content vocabulary it can satisfy a character-count minimum
+    while decoding to nothing, silently bypassing ``minLength``. Marking such
+    ids special excludes them from byte-content matching while keeping them
+    emittable at grammar positions that reference them by id. Sourced generally
+    from the tokenizer's own special/added-token metadata plus a decode-strip
+    check -- no model-specific id list.
+    """
+    candidates: set[int] = set()
+    for tid in getattr(tokenizer, "all_special_ids", None) or []:
+        candidates.add(int(tid))
+    for tid in getattr(tokenizer, "added_tokens_decoder", None) or {}:
+        candidates.add(int(tid))
+    return sorted(
+        tid
+        for tid in candidates
+        if tokenizer.decode([tid], skip_special_tokens=True) == ""
+    )
+
+
 # xgrammar's compiled-grammar cache is unbounded by default; a long-running
 # server accumulating unique schemas would grow it without limit. Bound it like
 # vLLM does (its VLLM_XGRAMMAR_CACHE_MB, default 512 MB); override the MB budget
@@ -410,7 +436,11 @@ class XgrammarBackend(GrammarBackend[Any]):
         """Build the xgrammar tokenizer info and compiler from a delegate."""
         if isinstance(tokenizer_delegate, PreTrainedTokenizerFast):
             tokenizer_info = xgrammar.TokenizerInfo.from_huggingface(
-                tokenizer_delegate, vocab_size=vocab_size
+                tokenizer_delegate,
+                vocab_size=vocab_size,
+                special_token_ids=_content_stripped_special_token_ids(
+                    tokenizer_delegate
+                ),
             )
         else:
             adapter = _TikTokenAdapter(tokenizer_delegate)

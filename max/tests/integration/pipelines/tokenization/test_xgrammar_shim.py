@@ -1327,6 +1327,7 @@ def _gemma_compiler() -> xgr.GrammarCompiler:
         _GEMMA_VOCAB,
         vocab_type=xgr.VocabType.RAW,
         stop_token_ids=[_GEMMA_ID["<eos>"]],
+        special_token_ids=[_GEMMA_ID[tok] for tok in _GEMMA_SPECIALS],
     )
     return xgr.GrammarCompiler(info)
 
@@ -1379,6 +1380,33 @@ def test_gemma_4_accepts_delimiters_as_single_tokens() -> None:
     assert matcher.is_completed()
 
 
+def _gemma_bit_set(bitmask: np.ndarray, token_id: int) -> bool:
+    return bool((int(bitmask[token_id // 32]) >> (token_id % 32)) & 1)
+
+
+def test_gemma_4_bitmask_allows_special_tokens_only_where_referenced() -> None:
+    # The filled bitmask (production guidance path) must stay consistent with
+    # accept_token: a special token is allowed exactly where the grammar
+    # references it by id, and masked as string content everywhere else.
+    matcher = _gemma_matcher(_SIMPLE_TOOL)
+    size = xgr.get_bitmask_size(len(_GEMMA_VOCAB))
+
+    # At the start the begin marker is the only structural opener.
+    bitmask = np.full((size,), -1, dtype=np.int32)
+    assert matcher.fill_next_token_bitmask(bitmask)
+    assert _gemma_bit_set(bitmask, _GEMMA_ID["<|tool_call>"])
+    assert not _gemma_bit_set(bitmask, _GEMMA_ID["a"])
+
+    # After opening a string, the delimiter (id-referenced) is allowed and plain
+    # content is allowed, but the tool-call marker is masked out of the body.
+    assert _accept_ids(matcher, _gemma_encode('<|tool_call>call:f{x:<|"|>'))
+    bitmask = np.full((size,), -1, dtype=np.int32)
+    assert matcher.fill_next_token_bitmask(bitmask)
+    assert _gemma_bit_set(bitmask, _GEMMA_ID['<|"|>'])
+    assert _gemma_bit_set(bitmask, _GEMMA_ID["a"])
+    assert not _gemma_bit_set(bitmask, _GEMMA_ID["<|tool_call>"])
+
+
 def test_gemma_4_string_content_excludes_marker_token_not_text() -> None:
     # Inside a string body the tool-call marker is excluded as a single TOKEN,
     # but the same characters emitted as ordinary text tokens are allowed -- a
@@ -1416,6 +1444,341 @@ def test_gemma_4_max_length_string_excludes_marker_token() -> None:
     assert not matcher.accept_token(_GEMMA_ID["<|tool_call>"])
 
 
+def test_gemma_4_max_length_rejects_overlong_string() -> None:
+    # maxLength counts characters, not tokens.
+    tool = [
+        {
+            "type": "function",
+            "function": {
+                "name": "f",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"x": {"type": "string", "maxLength": 5}},
+                    "required": ["x"],
+                },
+            },
+        }
+    ]
+    m = _gemma_matcher(tool)
+    assert _accept_ids(m, _gemma_encode('<|tool_call>call:f{x:<|"|>'))
+    accepted = all(m.accept_token(t) for t in _gemma_encode("abcdef"))
+    assert not accepted  # 6 chars > maxLength 5
+
+
+def test_gemma_4_max_length_accepts_string_within_bound() -> None:
+    # The complement of the reject case: a string at the maxLength bound (built
+    # from a single multi-char token) is accepted and the value can close.
+    tool = [
+        {
+            "type": "function",
+            "function": {
+                "name": "f",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"x": {"type": "string", "maxLength": 5}},
+                    "required": ["x"],
+                },
+            },
+        }
+    ]
+    m = _gemma_matcher(tool)
+    assert _accept_ids(m, _gemma_encode('<|tool_call>call:f{x:<|"|>'))
+    assert _accept_ids(m, _gemma_encode('abcde<|"|>'))  # 5 chars == maxLength
+
+
+def test_gemma_4_min_length_rejects_too_short_string() -> None:
+    # minLength is likewise a CHARACTER count: closing the string delimiter before
+    # the minimum number of characters is reached must be rejected, while a string
+    # meeting the minimum is accepted.
+    tool = [
+        {
+            "type": "function",
+            "function": {
+                "name": "f",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"x": {"type": "string", "minLength": 3}},
+                    "required": ["x"],
+                },
+            },
+        }
+    ]
+    short = _gemma_matcher(tool)
+    assert _accept_ids(short, _gemma_encode('<|tool_call>call:f{x:<|"|>ab'))
+    assert not short.accept_token(
+        _GEMMA_ID['<|"|>']
+    )  # only 2 chars < minLength
+
+    ok = _gemma_matcher(tool)
+    assert _accept_ids(ok, _gemma_encode('<|tool_call>call:f{x:<|"|>abc'))
+    assert ok.accept_token(_GEMMA_ID['<|"|>'])  # 3 chars == minLength
+
+
+def test_gemma_4_min_length_bitmask_forbids_early_close_delimiter() -> None:
+    # Fill/accept consistency guard for the FILL/BITMASK path (the path the
+    # server constrains generation through -- fill_next_token_bitmask, not
+    # accept_string). The close delimiter <|"|> is a special token re-enabled by
+    # SetSpecialTokenBitmaskBits; that re-enabling scans the current parser
+    # state set, so it honors the {min,} repeat gate exactly like accept_token:
+    # the delimiter bit stays FORBIDDEN before minLength is met (else the model
+    # could sample it early and close the string below minLength). This asserts
+    # fill and accept agree at the min boundary so a future change to the
+    # special-token re-enabling cannot silently diverge from acceptance.
+    tool = [
+        {
+            "type": "function",
+            "function": {
+                "name": "f",
+                "parameters": {
+                    "properties": {
+                        "bar": {
+                            "type": "string",
+                            "minLength": 4,
+                            "default": "bad",
+                        }
+                    }
+                },
+            },
+        }
+    ]
+    size = xgr.get_bitmask_size(len(_GEMMA_VOCAB))
+    delim = _GEMMA_ID['<|"|>']
+    base = '<|tool_call>call:f{bar:<|"|>'
+
+    # Sweep every body length 0..5 across the minLength=4 boundary. At each
+    # position the filled bitmask's close-delimiter bit must equal what
+    # accept_token would allow: FORBIDDEN below 4 chars, ALLOWED at/above 4.
+    for ncontent in range(6):
+        prefix = base + "a" * ncontent
+        ids = _gemma_encode(prefix)
+
+        m = _gemma_matcher(tool)
+        assert _accept_ids(m, ids)
+        bitmask = np.full((size,), -1, dtype=np.int32)
+        assert m.fill_next_token_bitmask(bitmask)
+        fill_allows_close = _gemma_bit_set(bitmask, delim)
+
+        accept = _gemma_matcher(tool)
+        assert _accept_ids(accept, ids)
+        accept_allows_close = accept.accept_token(delim)
+
+        assert fill_allows_close == accept_allows_close, (
+            f"fill/accept disagree on close delimiter at {ncontent} chars"
+        )
+        assert accept_allows_close == (ncontent >= 4), (
+            f"close delimiter gate wrong at {ncontent} chars"
+        )
+        # Content is always still allowed below the (unbounded) max.
+        assert _gemma_bit_set(bitmask, _GEMMA_ID["a"])
+
+
+# Control/special tokens that the real Gemma tokenizer decodes to the empty
+# string with skip_special_tokens=True (channel/turn/tool/think markers, etc.).
+# The production backend derives exactly these from the tokenizer and force-marks
+# them special so they are masked out of byte-level string content -- otherwise
+# each one satisfies a character-minimum while decoding to nothing, silently
+# bypassing minLength.
+# <|channel>/<channel|> are also the reasoning-prefix markers, referenced by
+# token id, so marking them special must not break tool_choice=auto/reasoning.
+_GEMMA_CONTROL_TOKENS = (
+    "<|channel>",
+    "<channel|>",
+    "<|turn>",
+    "<turn|>",
+    "<|think|>",
+    "<|tool>",
+    "<tool|>",
+)
+_GEMMA_CTRL_VOCAB = (
+    [chr(c) for c in range(32, 127)]
+    + ["\n"]  # the reasoning-prefix "thought\n" literal needs a newline token
+    + ["<|tool_call>", "<tool_call|>", '<|"|>']
+    + list(_GEMMA_CONTROL_TOKENS)
+    + ["<eos>"]
+)
+# All the multi-char markers/control tokens are single vocab entries here, mirror
+# the tokenizer; every one of them is force-marked special.
+_GEMMA_CTRL_SPECIALS = (
+    "<|tool_call>",
+    "<tool_call|>",
+    '<|"|>',
+    *_GEMMA_CONTROL_TOKENS,
+)
+_GEMMA_CTRL_ID = {tok: i for i, tok in enumerate(_GEMMA_CTRL_VOCAB)}
+
+
+def _gemma_ctrl_compiler() -> xgr.GrammarCompiler:
+    info = xgr.TokenizerInfo(
+        _GEMMA_CTRL_VOCAB,
+        vocab_type=xgr.VocabType.RAW,
+        stop_token_ids=[_GEMMA_CTRL_ID["<eos>"]],
+        special_token_ids=[_GEMMA_CTRL_ID[tok] for tok in _GEMMA_CTRL_SPECIALS],
+    )
+    return xgr.GrammarCompiler(info)
+
+
+def _gemma_ctrl_encode(s: str) -> list[int]:
+    multi = sorted(
+        {*_GEMMA_CTRL_SPECIALS, *_GEMMA_CONTROL_TOKENS}, key=len, reverse=True
+    )
+    out: list[int] = []
+    i = 0
+    while i < len(s):
+        for tok in multi:
+            if s.startswith(tok, i):
+                out.append(_GEMMA_CTRL_ID[tok])
+                i += len(tok)
+                break
+        else:
+            out.append(_GEMMA_CTRL_ID[s[i]])
+            i += 1
+    return out
+
+
+def _gemma_ctrl_matcher(
+    tools: list[dict[str, Any]],
+    tool_choice: Any = "required",
+    reasoning: bool = False,
+) -> xgr.GrammarMatcher:
+    tag = xgr.get_builtin_structural_tag(
+        "gemma_4", tools=tools, tool_choice=tool_choice, reasoning=reasoning
+    )
+    return xgr.GrammarMatcher(
+        _gemma_ctrl_compiler().compile_structural_tag(tag)
+    )
+
+
+def test_gemma_4_control_tokens_forbidden_as_string_content() -> None:
+    # The realistic-tokenizer regression the toy 3-marker vocab missed: with a
+    # full control-token set force-marked special, every decode-to-empty control
+    # token must be FORBIDDEN inside a minLength-gated string body, so "hi"+<ctrl>
+    # cannot satisfy the character minimum by decoding to nothing.
+    tool = [
+        {
+            "type": "function",
+            "function": {
+                "name": "f",
+                "parameters": {
+                    "properties": {
+                        "bar": {
+                            "type": "string",
+                            "minLength": 4,
+                            "default": "bad",
+                        }
+                    }
+                },
+            },
+        }
+    ]
+    for ctrl in _GEMMA_CONTROL_TOKENS:
+        m = _gemma_ctrl_matcher(tool)
+        assert _accept_ids(
+            m, _gemma_ctrl_encode('<|tool_call>call:f{bar:<|"|>hi')
+        )
+        # Two chars in; a control token decodes to nothing, so admitting it as
+        # content would let the string close below minLength: it must be rejected.
+        assert not m.accept_token(_GEMMA_CTRL_ID[ctrl]), (
+            f"control token {ctrl!r} leaked into string content"
+        )
+
+
+def test_gemma_4_control_special_still_emits_tool_calls() -> None:
+    # Force-marking the control tokens special (including <|channel>/<channel|>)
+    # must not break tool-call emission for auto / required / named tool choice.
+    call = '<|tool_call>call:f{x:<|"|>hi<|"|>}<tool_call|>'
+    named: dict[str, Any] = {
+        "type": "function",
+        "function": {"name": "f"},
+    }
+    for tool_choice in ("auto", "required", named):
+        m = _gemma_ctrl_matcher(_SIMPLE_TOOL, tool_choice=tool_choice)
+        assert _accept_ids(m, _gemma_ctrl_encode(call)), tool_choice
+        assert m.is_completed(), tool_choice
+
+
+def test_gemma_4_control_special_reasoning_prefix_opens_and_closes() -> None:
+    # The reasoning prefix references <|channel>/<channel|> by token id, so with
+    # those markers force-marked special the prefix must still open, carry free
+    # thinking text, close, and let a following tool call complete.
+    m = _gemma_ctrl_matcher(
+        _SIMPLE_TOOL, tool_choice="required", reasoning=True
+    )
+    prefix = "<|channel>thought\nlet me think<channel|>"
+    assert _accept_ids(m, _gemma_ctrl_encode(prefix))
+    call = '<|tool_call>call:f{x:<|"|>hi<|"|>}<tool_call|>'
+    assert _accept_ids(m, _gemma_ctrl_encode(call))
+    assert m.is_completed()
+
+
+# A vocab carrying a multi-CHARACTER content token ("word", 4 chars, one token)
+# so the character-vs-token distinction is observable: single-char content tokens
+# count identically as chars and as tokens, so they cannot tell a per-CHARACTER
+# body apart from a per-TOKEN one. A genuine multi-char content token can.
+_GEMMA_MULTICHAR_CONTENT = "word"
+_GEMMA_MC_VOCAB = _GEMMA_VOCAB[:-1] + [_GEMMA_MULTICHAR_CONTENT] + ["<eos>"]
+_GEMMA_MC_ID = {tok: i for i, tok in enumerate(_GEMMA_MC_VOCAB)}
+
+
+def _gemma_mc_compiler() -> xgr.GrammarCompiler:
+    info = xgr.TokenizerInfo(
+        _GEMMA_MC_VOCAB,
+        vocab_type=xgr.VocabType.RAW,
+        stop_token_ids=[_GEMMA_MC_ID["<eos>"]],
+        special_token_ids=[_GEMMA_MC_ID[tok] for tok in _GEMMA_SPECIALS],
+    )
+    return xgr.GrammarCompiler(info)
+
+
+def _gemma_mc_encode(s: str) -> list[int]:
+    # Greedy: prefer the multi-char content token and the multi-char specials.
+    multi = sorted(
+        [*_GEMMA_SPECIALS, _GEMMA_MULTICHAR_CONTENT], key=len, reverse=True
+    )
+    out: list[int] = []
+    i = 0
+    while i < len(s):
+        for tok in multi:
+            if s.startswith(tok, i):
+                out.append(_GEMMA_MC_ID[tok])
+                i += len(tok)
+                break
+        else:
+            out.append(_GEMMA_MC_ID[s[i]])
+            i += 1
+    return out
+
+
+def test_gemma_4_min_length_counts_characters_not_tokens() -> None:
+    # minLength is a character count: a string meeting it via a single
+    # multi-character token must be accepted.
+    tool = [
+        {
+            "type": "function",
+            "function": {
+                "name": "f",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"x": {"type": "string", "minLength": 4}},
+                    "required": ["x"],
+                },
+            },
+        }
+    ]
+    tag = xgr.get_builtin_structural_tag(
+        "gemma_4", tools=tool, tool_choice="required", reasoning=False
+    )
+    matcher = xgr.GrammarMatcher(
+        _gemma_mc_compiler().compile_structural_tag(tag)
+    )
+    # "word" is 4 characters but a single token: char-counting accepts and can
+    # close (4 chars == minLength); token-counting would reject (1 token < 4).
+    assert _accept_ids(
+        matcher, _gemma_mc_encode('<|tool_call>call:f{x:<|"|>word<|"|>}')
+    )
+    assert _accept_ids(matcher, _gemma_mc_encode("<tool_call|>"))
+    assert matcher.is_completed()
+
+
 def test_gemma_4_matcher_rejects_json_quoting() -> None:
     # Standard-JSON quoted key `"x"` must be rejected: Gemma keys are bare.
     matcher = _gemma_matcher(_SIMPLE_TOOL)
@@ -1424,10 +1787,13 @@ def test_gemma_4_matcher_rejects_json_quoting() -> None:
 
 def test_gemma_4_requires_delimiter_token_in_vocab() -> None:
     # No byte-literal fallback: a vocab without the <|"|> token is a hard error.
+    # The tool-call markers are present (they are referenced by token id too), so
+    # resolution reaches the missing string delimiter and fails on it.
     info = xgr.TokenizerInfo(
-        [chr(c) for c in range(32, 127)] + ["<eos>"],
+        [chr(c) for c in range(32, 127)]
+        + ["<|tool_call>", "<tool_call|>", "<eos>"],
         vocab_type=xgr.VocabType.RAW,
-        stop_token_ids=[95],
+        stop_token_ids=[97],
     )
     tag = xgr.get_builtin_structural_tag(
         "gemma_4", tools=_SIMPLE_TOOL, tool_choice="required", reasoning=False

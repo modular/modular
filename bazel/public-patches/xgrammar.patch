@@ -185,8 +185,130 @@ index 5cf140d..5d7ef98 100644
    );
  }
  
+diff --git a/cpp/grammar_matcher.cc b/cpp/grammar_matcher.cc
+index d68479f..360396f 100644
+--- a/cpp/grammar_matcher.cc
++++ b/cpp/grammar_matcher.cc
+@@ -509,6 +509,15 @@ class GrammarMatcher::Impl : public EarleyParser {
+       bool allow_special_token = false
+   );
+ 
++  /*!
++   * \brief Set the bitmask bits for special tokens the given states accept via an
++   * explicit token-id edge (Token()/ExcludeToken()). Special tokens are excluded
++   * from the byte-content mask, so this re-enables them only where referenced.
++   */
++  void SetSpecialTokenBitmaskBits(
++      int32_t* bitmask_data_ptr, const std::vector<ParserState>& states
++  );
++
+   /*!
+    * \brief Accept the stop token and terminates the matcher.
+    * \returns Whether the stop token can be accepted.
+@@ -640,14 +649,14 @@ bool GrammarMatcher::Impl::AcceptToken(int32_t token_id, bool debug_print) {
+     return accepted;
+   }
+ 
++  // A special token is never matched byte-by-byte (it must not appear as string
++  // content). It stays emittable at grammar positions that reference it with an
++  // explicit token-id edge (Token()/ExcludeToken()), which the atomic path below
++  // handles. This makes special tokens position-aware instead of rejecting them
++  // everywhere.
+   const auto& special_token_ids = tokenizer_info_.GetSpecialTokenIds();
+-  if (std::find(special_token_ids.begin(), special_token_ids.end(), token_id) !=
+-      special_token_ids.end()) {
+-    XGRAMMAR_LOG(WARNING) << "GrammarMatcher cannot accept special token id " << token_id << ": "
+-                          << tokenizer_info_.GetDecodedVocab()[token_id]
+-                          << ". Rejecting the token.";
+-    return false;
+-  }
++  bool is_special_token = std::find(special_token_ids.begin(), special_token_ids.end(), token_id) !=
++                          special_token_ids.end();
+ 
+   const auto& token = tokenizer_info_.GetDecodedVocab()[token_id];
+ 
+@@ -664,15 +673,19 @@ bool GrammarMatcher::Impl::AcceptToken(int32_t token_id, bool debug_print) {
+     PopLastStates(1);
+   }
+ 
+-  // Phase 2: Try byte-by-byte path (from the same original state)
++  // Phase 2: Try byte-by-byte path (from the same original state). Special tokens
++  // skip this path so they can never be admitted as raw string content.
+   int pos = 0;
+-  bool byte_path_success = true;
+-  for (auto char_value : token) {
+-    if (!Advance(char_value, debug_print)) {
+-      byte_path_success = false;
+-      break;
++  bool byte_path_success = false;
++  if (!is_special_token) {
++    byte_path_success = true;
++    for (auto char_value : token) {
++      if (!Advance(char_value, debug_print)) {
++        byte_path_success = false;
++        break;
++      }
++      ++pos;
+     }
+-    ++pos;
+   }
+ 
+   // Phase 3: Combine results (no priority — merge with deduplication)
+@@ -955,12 +968,52 @@ bool GrammarMatcher::Impl::FillNextTokenBitmask(
+   SetTokenBitmask(
+       bitmask_data_ptr, tmp_accepted_bitset_, tmp_rejected_indices_, can_reach_end, false
+   );
++  // Special tokens are dropped from sorted_decoded_vocab_, so SetTokenBitmask
++  // never sets them. Re-enable each special token the current position accepts
++  // via an explicit token-id edge (Token()/ExcludeToken()) — mirroring the atomic
++  // path in AcceptToken — so a special token stays emittable exactly where the
++  // grammar references it, while remaining masked as string content everywhere else.
++  SetSpecialTokenBitmaskBits(bitmask_data_ptr, latest_states);
+   if (debug_print) {
+     XGRAMMAR_LOG(INFO) << "Filled bitmask: " << PrintBitmask(bitmask_data_ptr, tokenizer_info_);
+   }
+   return !IsTokenBitmaskAllTrue(bitmask_data_ptr);
+ }
+ 
++void GrammarMatcher::Impl::SetSpecialTokenBitmaskBits(
++    int32_t* bitmask_data_ptr, const std::vector<ParserState>& states
++) {
++  const auto& special_token_ids = tokenizer_info_.GetSpecialTokenIds();
++  if (special_token_ids.empty()) return;
++  DynamicBitset next_token_bitset(
++      tokenizer_info_.GetVocabSize(), reinterpret_cast<uint32_t*>(bitmask_data_ptr)
++  );
++  for (int32_t token_id : special_token_ids) {
++    if (next_token_bitset[token_id]) continue;
++    bool accepted = false;
++    for (const auto& state : states) {
++      if (state.rule_id == -1) continue;
++      if (!grammar_->per_rule_fsms[state.rule_id].has_value()) continue;
++      const auto& fsm = grammar_->per_rule_fsms[state.rule_id].value();
++      for (const auto& edge : fsm.GetFsm().GetFsm().GetEdges(state.element_id)) {
++        if (edge.IsToken()) {
++          if (fsm.GetFsm().GetFsm().GetTokenEdgeInfo(edge.GetAuxIndex()).Contains(token_id)) {
++            accepted = true;
++            break;
++          }
++        } else if (edge.IsExcludeToken()) {
++          if (fsm.GetFsm().GetFsm().GetExcludeTokenEdgeInfo(edge.GetAuxIndex()).Accepts(token_id)) {
++            accepted = true;
++            break;
++          }
++        }
++      }
++      if (accepted) break;
++    }
++    if (accepted) next_token_bitset.Set(token_id, true);
++  }
++}
++
+ std::string GrammarMatcher::Impl::FindJumpForwardString() {
+   XGRAMMAR_CHECK(!IsStopTokenAccepted())
+       << "GrammarMatcher has terminated after accepting the stop token, but is trying to "
 diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
-index da8b516..9d9bad9 100644
+index da8b516..50fb6f4 100644
 --- a/cpp/json_schema_converter.cc
 +++ b/cpp/json_schema_converter.cc
 @@ -149,6 +149,15 @@ class SchemaParser {
@@ -1144,7 +1266,7 @@ index da8b516..9d9bad9 100644
  std::string JSONSchemaConverter::GetBasicAnyRuleName() const { return kBasicAny; }
  
  void JSONSchemaConverter::AddCache(const std::string& key, const std::string& value) {
-@@ -1491,41 +2158,155 @@ std::string JSONSchemaConverter::GenerateNumber(
+@@ -1491,41 +2158,152 @@ std::string JSONSchemaConverter::GenerateNumber(
    return "\"-\"? (\"0\" | [1-9] [0-9]*) (\".\" [0-9]+)? ([eE] [+-]? [0-9]+)?";
  }
  
@@ -1188,15 +1310,12 @@ index da8b516..9d9bad9 100644
 +
 +std::string JSONSchemaConverter::GenerateStringLengthBody(int min_length, int max_length) const {
 +  if (!in_bare_key_mode_ && string_value_delimiter_token_id_ >= 0) {
-+    const std::string exclude = "ExcludeToken(" + ExcludeStringContentArgs() + ")";
-+    if (max_length == -1) {
-+      return exclude + "{" + std::to_string(min_length) + "} " + exclude + "*";
-+    }
-+    if (min_length == 0) {
-+      return exclude + "{0," + std::to_string(max_length) + "}";
-+    }
-+    return exclude + "{" + std::to_string(min_length) + "} " + exclude + "{0," +
-+           std::to_string(max_length - min_length) + "}";
++    const std::string char_class = "[^" + StringPatternForbiddenChars() + "]";
++    const std::string repetition = max_length == -1
++                                       ? "{" + std::to_string(min_length) + ",}"
++                                       : "{" + std::to_string(min_length) + "," +
++                                             std::to_string(max_length) + "}";
++    return char_class + repetition;
 +  }
 +  std::string char_class =
 +      in_bare_key_mode_ ? "[^" + bare_key_pattern_forbidden_ + "]" : "[^\"\\\\\\r\\n]";
@@ -1314,7 +1433,7 @@ index da8b516..9d9bad9 100644
  }
  
  std::string JSONSchemaConverter::GenerateBoolean(
-@@ -1641,6 +2422,11 @@ std::string JSONSchemaConverter::GenerateArray(
+@@ -1641,6 +2419,11 @@ std::string JSONSchemaConverter::GenerateArray(
  }
  
  std::string JSONSchemaConverter::FormatPropertyKey(const std::string& key) {
@@ -1326,7 +1445,7 @@ index da8b516..9d9bad9 100644
    return "\"" + JSONStrToPrintableStr(picojson::value(key).serialize()) + "\"";
  }
  
-@@ -2133,8 +2919,8 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2133,8 +2916,8 @@ std::string JSONSchemaConverter::GenerateObject(
        for (size_t i = 0; i < spec.pattern_properties.size(); ++i) {
          const auto& pp = spec.pattern_properties[i];
          std::string value = CreateRule(pp.schema, rule_name + "_pp_" + std::to_string(i));
@@ -1337,7 +1456,7 @@ index da8b516..9d9bad9 100644
          if (i != 0) pp_body += " | ";
          pp_body += pp_single;
        }
-@@ -2156,7 +2942,7 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2156,7 +2939,7 @@ std::string JSONSchemaConverter::GenerateObject(
        // propertyNames constrains keys of additional properties.
        // Only apply when additional properties are allowed — when additionalProperties
        // is false, no extra keys beyond named properties should be permitted.
@@ -1346,7 +1465,7 @@ index da8b516..9d9bad9 100644
        std::string val_rule = CreateRule(effective_additional, rule_name + "_" + effective_suffix);
        pp_override = key_pattern + " " + colon_pattern_ + " " + val_rule;
        effective_suffix = "pn";
-@@ -2183,8 +2969,8 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2183,8 +2966,8 @@ std::string JSONSchemaConverter::GenerateObject(
          for (size_t i = 0; i < spec.pattern_properties.size(); ++i) {
            const auto& pp = spec.pattern_properties[i];
            std::string value = CreateRule(pp.schema, rule_name + "_prop_" + std::to_string(i));
@@ -1357,7 +1476,7 @@ index da8b516..9d9bad9 100644
            if (i != 0) {
              property_rule_body += " | ";
            }
-@@ -2192,7 +2978,7 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2192,7 +2975,7 @@ std::string JSONSchemaConverter::GenerateObject(
          }
          property_rule_body += ")";
        } else {
@@ -1366,7 +1485,7 @@ index da8b516..9d9bad9 100644
          property_rule_body +=
              beg_seq + " " + key_pattern + " " + colon_pattern_ + " " + GetBasicAnyRuleName() + ")";
        }
-@@ -2274,12 +3060,35 @@ std::string JSONSchemaConverter::GenerateAny(const AnySpec& spec, const std::str
+@@ -2274,12 +3057,35 @@ std::string JSONSchemaConverter::GenerateAny(const AnySpec& spec, const std::str
  std::string JSONSchemaConverter::GenerateConst(
      const ConstSpec& spec, const std::string& rule_name
  ) {
@@ -1402,7 +1521,7 @@ index da8b516..9d9bad9 100644
    std::string result = "";
    for (size_t i = 0; i < spec.json_values.size(); ++i) {
      if (i != 0) {
-@@ -2391,7 +3200,10 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
+@@ -2391,7 +3197,10 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
          ")";
      m["email"] = "^(" + dot_string + "|" + quoted_string + ")@" + domain + "$";
  
@@ -1414,7 +1533,7 @@ index da8b516..9d9bad9 100644
      m["time"] =
          "^([01]\\d|2[0-3]):[0-5]\\d:([0-5]\\d|60)(\\.\\d+)?(Z|[+-]([01]\\d|2[0-3]):[0-5]\\d)$";
      m["date-time"] =
-@@ -3328,7 +4140,14 @@ std::string JSONSchemaToEBNF(
+@@ -3328,7 +4137,14 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
@@ -1430,7 +1549,7 @@ index da8b516..9d9bad9 100644
  ) {
    picojson::value schema_value;
    std::string err = picojson::parse(schema_value, schema);
-@@ -3342,7 +4161,14 @@ std::string JSONSchemaToEBNF(
+@@ -3342,7 +4158,14 @@ std::string JSONSchemaToEBNF(
        strict_mode,
        max_whitespace_cnt,
        json_format,
@@ -1446,7 +1565,7 @@ index da8b516..9d9bad9 100644
    );
  }
  
-@@ -3354,10 +4180,26 @@ std::string JSONSchemaToEBNF(
+@@ -3354,10 +4177,26 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
@@ -1476,7 +1595,7 @@ index da8b516..9d9bad9 100644
    auto spec_result = parser.Parse(schema, "root");
    if (spec_result.IsErr()) {
      XGRAMMAR_LOG(FATAL) << std::move(spec_result).UnwrapErr().what();
-@@ -3372,11 +4214,28 @@ std::string JSONSchemaToEBNF(
+@@ -3372,11 +4211,28 @@ std::string JSONSchemaToEBNF(
      return std::move(r).Unwrap();
    };
  
@@ -1506,7 +1625,7 @@ index da8b516..9d9bad9 100644
        );
        return converter.Convert(spec);
      }
-@@ -3391,7 +4250,11 @@ std::string JSONSchemaToEBNF(
+@@ -3391,7 +4247,11 @@ std::string JSONSchemaToEBNF(
            max_whitespace_cnt,
            ref_resolver,
            json_format,
@@ -1519,7 +1638,7 @@ index da8b516..9d9bad9 100644
        );
        return converter.Convert(spec);
      }
-@@ -3414,7 +4277,9 @@ std::string GenerateFloatRangeRegex(
+@@ -3414,7 +4274,9 @@ std::string GenerateFloatRangeRegex(
    );
  }
  
@@ -1530,7 +1649,7 @@ index da8b516..9d9bad9 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3428,11 +4293,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
+@@ -3428,11 +4290,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
        true,
        std::nullopt,
        JSONFormat::kQwenXML,
@@ -1549,7 +1668,7 @@ index da8b516..9d9bad9 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3446,11 +4316,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
+@@ -3446,11 +4313,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
        true,
        std::nullopt,
        JSONFormat::kMiniMaxXML,
@@ -1568,7 +1687,7 @@ index da8b516..9d9bad9 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3464,11 +4339,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
+@@ -3464,11 +4336,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
        true,
        std::nullopt,
        JSONFormat::kDeepSeekXML,
@@ -1587,7 +1706,7 @@ index da8b516..9d9bad9 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3482,7 +4362,10 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
+@@ -3482,7 +4359,10 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
        true,
        std::nullopt,
        JSONFormat::kGlmXML,
@@ -2787,6 +2906,79 @@ index 88e990e..e956f74 100644
    picojson::value ToJSON() const;
  };
  
+diff --git a/cpp/tokenizer_info.cc b/cpp/tokenizer_info.cc
+index 24f5d27..f1406b3 100644
+--- a/cpp/tokenizer_info.cc
++++ b/cpp/tokenizer_info.cc
+@@ -13,6 +13,7 @@
+ #include <stack>
+ #include <string>
+ #include <unordered_map>
++#include <unordered_set>
+ #include <variant>
+ #include <vector>
+ 
+@@ -268,11 +269,22 @@ TokenizerInfo::Impl::Impl(
+     VocabType vocab_type,
+     std::optional<int> vocab_size,
+     std::optional<std::vector<int32_t>> stop_token_ids,
+-    bool add_prefix_space
++    bool add_prefix_space,
++    std::optional<std::vector<int32_t>> special_token_ids
+ )
+     : vocab_type_(vocab_type),
+       vocab_size_(vocab_size.value_or(encoded_vocab.size())),
+       add_prefix_space_(add_prefix_space) {
++  // Caller-provided special token ids are force-marked special: excluded from
++  // byte-content matching (dropped from sorted_decoded_vocab_) but still
++  // emittable at explicit Token()-referenced grammar positions.
++  std::unordered_set<int32_t> forced_special_ids;
++  if (special_token_ids) {
++    for (int32_t id : *special_token_ids) {
++      XGRAMMAR_CHECK(id >= 0) << "Received a negative special token id";
++      forced_special_ids.insert(id);
++    }
++  }
+   decoded_vocab_.reserve(encoded_vocab.size());
+   sorted_decoded_vocab_.reserve(encoded_vocab.size());
+   for (int i = 0; i < static_cast<int>(encoded_vocab.size()); ++i) {
+@@ -282,7 +294,7 @@ TokenizerInfo::Impl::Impl(
+         (stop_token_ids &&
+          std::find(stop_token_ids->begin(), stop_token_ids->end(), i) != stop_token_ids->end())) {
+       stop_token_ids_.push_back(i);
+-    } else if (IsSpecialToken(token)) {
++    } else if (forced_special_ids.count(i) || IsSpecialToken(token)) {
+       special_token_ids_.push_back(i);
+     } else {
+       sorted_decoded_vocab_.push_back({i, token});
+@@ -452,10 +464,11 @@ TokenizerInfo::TokenizerInfo(
+     VocabType vocab_type,
+     std::optional<int> vocab_size,
+     std::optional<std::vector<int32_t>> stop_token_ids,
+-    bool add_prefix_space
++    bool add_prefix_space,
++    std::optional<std::vector<int32_t>> special_token_ids
+ )
+     : pimpl_(std::make_shared<Impl>(
+-          encoded_vocab, vocab_type, vocab_size, stop_token_ids, add_prefix_space
++          encoded_vocab, vocab_type, vocab_size, stop_token_ids, add_prefix_space, special_token_ids
+       )) {}
+ 
+ int TokenizerInfo::GetVocabSize() const { return pimpl_->GetVocabSize(); }
+diff --git a/cpp/tokenizer_info_impl.h b/cpp/tokenizer_info_impl.h
+index d490b15..8eb50dd 100644
+--- a/cpp/tokenizer_info_impl.h
++++ b/cpp/tokenizer_info_impl.h
+@@ -23,7 +23,8 @@ class TokenizerInfo::Impl {
+       VocabType vocab_type,
+       std::optional<int> vocab_size,
+       std::optional<std::vector<int32_t>> stop_token_ids,
+-      bool add_prefix_space
++      bool add_prefix_space,
++      std::optional<std::vector<int32_t>> special_token_ids = std::nullopt
+   );
+ 
+   VocabType GetVocabType() const { return vocab_type_; }
 diff --git a/include/xgrammar/compiler.h b/include/xgrammar/compiler.h
 index 9f2caf2..6cc094b 100644
 --- a/include/xgrammar/compiler.h
@@ -2817,3 +3009,17 @@ index 4796b62..14e3016 100644
    );
  
    /*!
+diff --git a/include/xgrammar/tokenizer_info.h b/include/xgrammar/tokenizer_info.h
+index 6a8e674..1a24754 100644
+--- a/include/xgrammar/tokenizer_info.h
++++ b/include/xgrammar/tokenizer_info.h
+@@ -32,7 +32,8 @@ class TokenizerInfo {
+       VocabType vocab_type = VocabType::RAW,
+       std::optional<int> vocab_size = std::nullopt,
+       std::optional<std::vector<int32_t>> stop_token_ids = std::nullopt,
+-      bool add_prefix_space = false
++      bool add_prefix_space = false,
++      std::optional<std::vector<int32_t>> special_token_ids = std::nullopt
+   );
+ 
+   VocabType GetVocabType() const;

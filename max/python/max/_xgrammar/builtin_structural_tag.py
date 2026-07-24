@@ -39,6 +39,8 @@ from .structural_tag import (
     StructuralTag,
     TagFormat,
     TagsWithSeparatorFormat,
+    TokenFormat,
+    TokenTriggeredTagsFormat,
     TriggeredTagsFormat,
 )
 
@@ -1637,86 +1639,109 @@ def _get_gemma_4_structural_tag(
     StructuralTag
         A structural tag for Gemma 4 function calling format.
     """
-    TOOL_CALL_BEGIN_PREFIX = "<|tool_call>call:"
-    TOOL_CALL_END = "<tool_call|>"
-    TOOL_CALL_TRIGGER = "<|tool_call>"
-    THINK_TAG_BEGIN = "<|channel>thought\n"
-    THINK_TAG_END = "<channel|>"
-    EXCLUDE_TOKENS = ["<|channel>", "<channel|>"]
+    # The tool-call section markers and the string-value delimiter are emitted as
+    # single tokens by the Gemma tokenizer. They are referenced by token ID
+    # (TokenFormat begin/end, token-triggered dispatch, and the string
+    # delimiter/exclude config) so the grammar keeps matching the model's natural
+    # tokens even after they are marked special (masked out of byte-level string
+    # content). The "call:" literal that follows the begin marker moves into the
+    # tag content so the marker stays a standalone token reference.
+    TOOL_CALL_BEGIN_MARKER = "<|tool_call>"
+    TOOL_CALL_CONTENT_PREFIX = "call:"
+    TOOL_CALL_END_MARKER = "<tool_call|>"
+    # The reasoning-channel markers are single Gemma tokens too, so -- like the
+    # tool-call markers -- they are referenced by token ID (TokenFormat begin/end
+    # and id-resolved exclude_tokens) rather than byte literals. That keeps them
+    # emittable at their structural positions after they are marked special
+    # (masked out of byte-level content). The "thought\n" text that follows the
+    # begin marker moves into the tag content so the marker stays a standalone
+    # token reference.
+    THINK_CHANNEL_BEGIN_MARKER = "<|channel>"
+    THINK_CHANNEL_CONTENT_PREFIX = "thought\n"
+    THINK_CHANNEL_END_MARKER = "<channel|>"
+    EXCLUDE_TOKENS = [THINK_CHANNEL_BEGIN_MARKER, THINK_CHANNEL_END_MARKER]
     JSON_CONFIG: dict[str, Any] = {
         "style": "json",
         "string_value_delimiter_token": '<|"|>',
         "string_value_exclude_tokens": ["<|tool_call>", "<tool_call|>"],
         "bare_key_terminal": r"[a-zA-Z_][-a-zA-Z0-9_.]*",
         "bare_key_literal_forbidden": r":{},\x00-\x20\x7f",
-        "bare_key_pattern_forbidden": r' \t\n\r\f:{},\"\\\x00-\x1f',
+        "bare_key_pattern_forbidden": r" \t\n\r\f:{},\"\\\x00-\x1f",
         "max_whitespace_cnt": 1,
         # TODO(CENG-813): these per-model enables become redundant once the flags default on for all models.
         "require_object_root": True,
         "reject_unsupported": True,
     }
 
+    def _tool_call_tag(name: str, parameters: dict[str, Any]) -> TagFormat:
+        return TagFormat(
+            begin=TokenFormat(token=TOOL_CALL_BEGIN_MARKER),
+            content=SequenceFormat(
+                elements=[
+                    ConstStringFormat(value=TOOL_CALL_CONTENT_PREFIX + name),
+                    JSONSchemaFormat(json_schema=parameters, **JSON_CONFIG),
+                ]
+            ),
+            end=TokenFormat(token=TOOL_CALL_END_MARKER),
+        )
+
     tools = tools or []
     builtin_tools = builtin_tools or []
     if tool_choice == "auto":
-        tags = []
-        for tool in tools:
-            function = tool.function
-            parameters = _get_function_parameters(function)
-            name = function.name
-            tags.append(
-                TagFormat(
-                    begin=TOOL_CALL_BEGIN_PREFIX + name,
-                    content=JSONSchemaFormat(
-                        json_schema=parameters, **JSON_CONFIG
-                    ),
-                    end=TOOL_CALL_END,
-                )
+        tags = [
+            _tool_call_tag(
+                tool.function.name, _get_function_parameters(tool.function)
             )
+            for tool in tools
+        ]
 
         if len(tags) > 0:
-            suffix_tag = TriggeredTagsFormat(
-                triggers=[TOOL_CALL_TRIGGER], tags=tags, excludes=EXCLUDE_TOKENS
+            suffix_tag = TokenTriggeredTagsFormat(
+                trigger_tokens=[TOOL_CALL_BEGIN_MARKER],
+                tags=tags,
+                exclude_tokens=EXCLUDE_TOKENS,
             )
         else:
             suffix_tag = AnyTextFormat(excludes=EXCLUDE_TOKENS)
 
     elif tool_choice == "forced":
         if not tools:
-            raise ValueError("Forced tool choice must resolve to exactly one tool.")
+            raise ValueError(
+                "Forced tool choice must resolve to exactly one tool."
+            )
         function = tools[0].function
-        suffix_tag = TagFormat(
-            begin=TOOL_CALL_BEGIN_PREFIX + function.name,
-            content=JSONSchemaFormat(
-                json_schema=_get_function_parameters(function),
-                **JSON_CONFIG,
-            ),
-            end=TOOL_CALL_END,
+        suffix_tag = _tool_call_tag(
+            function.name, _get_function_parameters(function)
         )
 
     elif tool_choice == "required":
-        tags = []
-        for tool in tools:
-            function = tool.function
-            parameters = _get_function_parameters(function)
-            name = function.name
-            tags.append(
-                TagFormat(
-                    begin=TOOL_CALL_BEGIN_PREFIX + name,
-                    content=JSONSchemaFormat(
-                        json_schema=parameters, **JSON_CONFIG
-                    ),
-                    end=TOOL_CALL_END,
-                )
+        tags = [
+            _tool_call_tag(
+                tool.function.name, _get_function_parameters(tool.function)
             )
+            for tool in tools
+        ]
         assert len(tags) > 0
-        suffix_tag = TagsWithSeparatorFormat(tags=tags, separator="", at_least_one=True)
+        suffix_tag = TagsWithSeparatorFormat(
+            tags=tags, separator="", at_least_one=True
+        )
 
     if not reasoning:
         return StructuralTag(format=suffix_tag)
 
-    prefix_tag = TagFormat(begin=THINK_TAG_BEGIN, content=AnyTextFormat(), end=THINK_TAG_END)
-    return StructuralTag(format=SequenceFormat(elements=[prefix_tag, suffix_tag]))
+    prefix_tag = TagFormat(
+        begin=TokenFormat(token=THINK_CHANNEL_BEGIN_MARKER),
+        content=SequenceFormat(
+            elements=[
+                ConstStringFormat(value=THINK_CHANNEL_CONTENT_PREFIX),
+                AnyTextFormat(),
+            ]
+        ),
+        end=TokenFormat(token=THINK_CHANNEL_END_MARKER),
+    )
+    return StructuralTag(
+        format=SequenceFormat(elements=[prefix_tag, suffix_tag])
+    )
 
 
 @register_model_structural_tag("deepseek_v4")

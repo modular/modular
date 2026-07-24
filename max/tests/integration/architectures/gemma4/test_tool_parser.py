@@ -617,6 +617,7 @@ def _gemma_matcher(
         _GEMMA_VOCAB,
         vocab_type=xgr.VocabType.RAW,
         stop_token_ids=[_CHAR_ID["<eos>"]],
+        special_token_ids=[_CHAR_ID[tok] for tok in _GEMMA_SPECIALS],
     )
     compiled = xgr.GrammarCompiler(info).compile_structural_tag(tag)
     return xgr.GrammarMatcher(compiled)
@@ -669,11 +670,13 @@ def test_xgrammar_string_rejects_tool_call_start_marker() -> None:
 def test_xgrammar_minlength_string_rejects_tool_call_end_marker() -> None:
     """A ``minLength`` string's unbounded tail must not admit the end marker.
 
-    The ``minLength`` path builds a separate string-content body
-    (``GenerateStringLengthBody``): an exact ``{min}`` char prefix followed by
-    an unbounded ``ExcludeToken(...)`` tail. The tail must exclude the section
-    markers too, or a runaway string past ``minLength`` can swallow the end
-    marker exactly like the default string body.
+    The ``minLength`` path builds a separate string-content body that counts
+    characters via a byte char-class rather than an ``ExcludeToken(...)`` tail:
+    an exact ``{min}`` char prefix followed by an unbounded byte char-class
+    tail. Excluding the section markers is delegated to the xgrammar
+    special-token machinery (the markers are registered as ``special_token_ids``
+    on ``TokenizerInfo``), so a runaway string past ``minLength`` cannot swallow
+    the end marker.
     """
     schema = {
         "type": "object",

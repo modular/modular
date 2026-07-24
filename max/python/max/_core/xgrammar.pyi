@@ -37,6 +37,7 @@ class TokenizerInfo:
         vocab_size: int | None = None,
         stop_token_ids: Sequence[int] | None = None,
         add_prefix_space: bool = False,
+        special_token_ids: Sequence[int] | None = None,
     ) -> None: ...
     @property
     def vocab_type(self) -> VocabType: ...

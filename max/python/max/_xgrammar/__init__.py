@@ -139,6 +139,7 @@ class TokenizerInfo:
         vocab_size: int | None = None,
         stop_token_ids: list[int] | None = None,
         add_prefix_space: bool = False,
+        special_token_ids: list[int] | None = None,
     ) -> None:
         self._impl = _core.TokenizerInfo(
             list(encoded_vocab),
@@ -146,6 +147,7 @@ class TokenizerInfo:
             vocab_size,
             stop_token_ids,
             add_prefix_space,
+            special_token_ids,
         )
 
     @property
@@ -168,18 +170,28 @@ class TokenizerInfo:
     def stop_token_ids(self) -> list[int]:
         return self._impl.stop_token_ids
 
+    @property
+    def special_token_ids(self) -> list[int]:
+        return self._impl.special_token_ids
+
     @staticmethod
     def from_huggingface(
         tokenizer: PreTrainedTokenizerBase,
         *,
         vocab_size: int | None = None,
         stop_token_ids: list[int] | int | None = None,
+        special_token_ids: list[int] | None = None,
     ) -> TokenizerInfo:
         """Build a :class:`TokenizerInfo` from a HuggingFace tokenizer.
 
         Ported from upstream xgrammar ``TokenizerInfo.from_huggingface``,
         re-pointed onto the binding. Pure Python over the tokenizer object --
         no torch.
+
+        ``special_token_ids`` force-marks the given ids special: they are
+        excluded from byte-level string-content matching but stay emittable at
+        grammar positions that reference them by id (``TokenFormat`` /
+        ``ExcludeToken`` / string-value delimiter).
         """
         if isinstance(stop_token_ids, int):
             stop_token_ids = [stop_token_ids]
@@ -190,8 +202,8 @@ class TokenizerInfo:
             vocab_dict = tokenizer.get_vocab()
         except AttributeError as e:
             raise ValueError(
-                f"Cannot get the vocabulary of the tokenizer {type(tokenizer)}. "
-                "The tokenizer should have a get_vocab method."
+                f"Cannot get the vocabulary of the tokenizer {type(tokenizer)}."
+                " The tokenizer should have a get_vocab method."
             ) from e
 
         # max_id can exceed len(vocab) when ids are sparse; size to fit both.
@@ -219,6 +231,7 @@ class TokenizerInfo:
                 vocab_size=vocab_size,
                 stop_token_ids=stop_token_ids,
                 add_prefix_space=metadata["add_prefix_space"],
+                special_token_ids=special_token_ids,
             )
 
         if _is_tiktoken_tokenizer(tokenizer):
@@ -237,6 +250,7 @@ class TokenizerInfo:
                 vocab_size=vocab_size,
                 stop_token_ids=stop_token_ids,
                 add_prefix_space=False,
+                special_token_ids=special_token_ids,
             )
 
         if _is_sentencepiece_tokenizer(tokenizer):
@@ -269,6 +283,7 @@ class TokenizerInfo:
                 vocab_size=vocab_size,
                 stop_token_ids=stop_token_ids,
                 add_prefix_space=True,
+                special_token_ids=special_token_ids,
             )
 
         raise ValueError(f"Unsupported tokenizer type: {type(tokenizer)}")
