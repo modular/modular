@@ -32,6 +32,8 @@ decorators: decorator+
 decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt NEWLINE | alias_stmt NEWLINE | comptime_stmt)
 async_funcdef: ASYNC funcdef
 where_clause: WHERE top_test
+# Mojo terms: metaparams [..] = parameter list; parameters (..) = argument list;
+# captures {..} = capture list (production names kept from black's Python grammar).
 funcdef: ('def' | MLIR_REGION) NAME [metaparams] parameters [named_effect*] [global_effects] [captures] ['->' result_type] (where_clause)* ':' suite
 global_effects: global_effect_keyword*
 global_effect_keyword: 'raises' [raises_type] | 'escaping' | 'capturing'
@@ -178,7 +180,12 @@ suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 # (But not a mix of the two)
 testlist_safe: old_test [(',' old_test)+ [',']]
 old_test: or_test | old_lambdef
-old_lambdef: 'lambda' [varargslist] ':' old_test
+# old_lambdef mirrors lambdef's Mojo signature extension (see the comment at lambdef)
+# so a Mojo lambda also parses where old_test is reached (e.g. a comprehension's `if`).
+# Only the header is mirrored: the body stays old_test, which cannot be a bare
+# conditional, so a trailing `if` stays the comprehension's filter instead of
+# becoming a ternary that would swallow it.
+old_lambdef: 'lambda' ([metaparams] [parameters [named_effect*] [global_effects]] [captures] ['->' result_type] | [varargslist]) ':' old_test
 
 namedexpr_test: asexpr_test [':=' asexpr_test]
 
@@ -214,7 +221,17 @@ atom: ('(' [yield_expr|testlist_gexp] ')' |
        NAME | NUMBER | STRING+ | '.' '.' '.')
 listmaker: (namedexpr_test|star_expr) ( old_comp_for | (',' (namedexpr_test|star_expr))* [','] )
 testlist_gexp: (namedexpr_test|star_expr) ( old_comp_for | (',' (namedexpr_test|star_expr))* [','] )
-lambdef: 'lambda' [varargslist] ':' test
+# A Mojo lambda mirrors the `funcdef` signature (optional metaparams, an optional
+# parenthesized arg list, captures, and return type), with an expression body instead
+# of a suite. The whole arg list is optional (`lambda {} -> R: e`, `lambda -> R: e`,
+# `lambda: e` are all valid); effects nest under it because the compiler only accepts
+# them after a parenthesized arg list. The Mojo branch and the Python `varargslist`
+# branch overlap: both can start with `(` (Python via a tuple-arg `vfpdef`) and both
+# are nullable. pgen merges the shared transitions; the token after `(` (typed vs bare
+# name) picks the reading, and both format identically, so the merge is benign. Only
+# `[` / `{` / `->` are unique to the Mojo branch; a bare NAME / `*` / `**` stays
+# exclusively Python — making the whole production a superset of Python's form.
+lambdef: 'lambda' ([metaparams] [parameters [named_effect*] [global_effects]] [captures] ['->' result_type] | [varargslist]) ':' test
 trailer: '(' [arglist] ')' | '{' [dictsetmaker] '}' | '[' [subscriptlist] ']' | '.' NAME
 subscriptlist: (subscript|star_expr) (',' (subscript|star_expr))* [',']
 subscript: test [':=' test] | [test] ':' [test] [sliceop] | test ['=' [test] ':' [test] [sliceop]] | test ['=' test] | '**' test
