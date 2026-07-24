@@ -243,11 +243,11 @@ def test_encode_fields_dispatches_static_tuple_field() raises:
 
 # `InlineArray[ScaledInt, N].device_type` is `InlineArray[Int, N]`, so the
 # encoded buffer is read back through that device type.
-def test_encode_inline_array_dispatches_device_passable_element() raises:
+def test_encode_array_dispatches_device_passable_element() raises:
     var arr: InlineArray[ScaledInt, 2] = [ScaledInt(raw=4), ScaledInt(raw=5)]
     var buf = alloc[InlineArray[Int, 2]](1)
     var encoder = DefaultDeviceTypeEncoder()
-    encoder.encode_inline_array(arr, buf.unsafe_bitcast[NoneType]())
+    encoder.encode_array(arr, buf.unsafe_bitcast[NoneType]())
     # Each element is `DevicePassable`, so `ScaledInt._to_device_type` runs and
     # doubles every `raw`.
     assert_equal(buf[][0], 8)
@@ -266,13 +266,13 @@ def test_inline_array_to_device_type_dispatches_elements() raises:
     buf.free()
 
 
-def test_encode_inline_array_identity_scalar() raises:
+def test_encode_array_identity_scalar() raises:
     var arr: InlineArray[Int, 3] = [10, 20, 30]
     var buf = alloc[InlineArray[Int, 3]](1)
     var encoder = DefaultDeviceTypeEncoder()
     # `Int` is `DevicePassable` with an identity `device_type`, so element-wise
     # encoding reproduces the values unchanged.
-    encoder.encode_inline_array(arr, buf.unsafe_bitcast[NoneType]())
+    encoder.encode_array(arr, buf.unsafe_bitcast[NoneType]())
     assert_equal(buf[][0], 10)
     assert_equal(buf[][1], 20)
     assert_equal(buf[][2], 30)

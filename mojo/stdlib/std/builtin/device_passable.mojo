@@ -16,7 +16,7 @@ from std.sys import size_of
 from std.sys.info import _TargetType
 from std.builtin.rebind import downcast
 from std.gpu.host.device_context import DeviceBuffer, DevicePointer
-from std.collections.inline_array import InlineArray
+from std.collections.array import InlineArray
 from std.reflection import reflect
 from std.utils.static_tuple import StaticTuple, _StaticTupleTraits
 
@@ -352,7 +352,7 @@ trait DeviceTypeEncoder:
             else:
                 self.encode(elem, sub)
 
-    def encode_inline_array[
+    def encode_array[
         ElementType: Movable,
         size: Int,
         //,

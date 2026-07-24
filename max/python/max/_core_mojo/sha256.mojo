@@ -15,7 +15,7 @@
 
 from std.collections import Span
 from std.bit import rotate_bits_right
-from std.collections.inline_array import InlineArray
+from std.collections.array import InlineArray
 
 # FIPS 180-4 initial hash values
 

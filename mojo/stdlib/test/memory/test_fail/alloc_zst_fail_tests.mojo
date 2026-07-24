@@ -33,7 +33,7 @@ def test_alloc_zst_count_zero_fails() raises:
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."
 
-    # CHECK_1: Assert Error: alloc(Layout[std.collections.inline_array.InlineArray[SIMD[DType.int, 1], 0 : SIMD[DType.int, 1]]](count=0, alignment=8)): count must be > 0
+    # CHECK_1: Assert Error: alloc(Layout[std.collections.array.Array[SIMD[DType.int, 1], 0 : SIMD[DType.int, 1]]](count=0, alignment=8)): count must be > 0
     var layout = Layout[ZST](count=0)
     var ptr = alloc(layout).unsafe_leak()
 
@@ -51,7 +51,7 @@ def test_alloc_zst_count_negative_fails() raises:
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."
 
-    # CHECK_2: Assert Error: alloc(Layout[std.collections.inline_array.InlineArray[SIMD[DType.int, 1], 0 : SIMD[DType.int, 1]]](count=-1, alignment=8)): count must be > 0
+    # CHECK_2: Assert Error: alloc(Layout[std.collections.array.Array[SIMD[DType.int, 1], 0 : SIMD[DType.int, 1]]](count=-1, alignment=8)): count must be > 0
     var layout = Layout[ZST](count=-1)
     var ptr = alloc(layout).unsafe_leak()
 

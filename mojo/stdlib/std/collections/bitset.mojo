@@ -38,7 +38,7 @@ from std.bit import log2_floor, pop_count
 from std.format._utils import FormatStruct
 from std.memory import pack_bits
 
-from .inline_array import InlineArray
+from .array import InlineArray
 
 # ===-----------------------------------------------------------------------===#
 # Utilities
