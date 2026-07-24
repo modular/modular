@@ -52,8 +52,11 @@ modular_py_test(
         # Each sparse decode test compiles its own graph (~120-220s under CI
         # contention); shard so those compiles run in parallel.
         "test_mla_sparse_decode_graph_gpu.py": 3,
-        # 4 tests, 9 parametrized graph compiles.
-        "test_mla_sparse_prefill_graph_gpu.py": 5,
+    },
+    # `manual` keeps this out of `//...` wildcards and CI while still runnable
+    # explicitly.
+    per_test_tags = {
+        "test_mla_sparse_prefill_graph_gpu.py": ["manual"],
     },
     tags = [
         "gpu",
