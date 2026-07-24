@@ -6,10 +6,10 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
-struct SomeStruct:
+struct SomeStruct(Movable where False):
     def __init__(out self): pass
 
-struct SomeOtherStruct: pass
+struct SomeOtherStruct(Movable where False): pass
 
 
 def var_decl_without_type():
