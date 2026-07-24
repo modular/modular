@@ -31,14 +31,22 @@ from .stream import Stream
 
 from .status import STATUS_SUCCESS, HALError
 
+from std.atomic import Atomic
+from std.collections import Dict
+from std.collections.optional import OptionalReg
 from std.memory import (
     ImmPointer,
     ArcPointer,
+    Layout,
     MutOpaquePointer,
+    ThinAllocation,
     UnsafePointer,
     UnsafeMaybeUninit,
+    alloc,
+    dealloc,
 )
 from std.memory.arc_pointer import WeakPointer
+from std.utils.lock import SpinWaiter
 
 from std.compile import CompiledFunctionInfo
 
@@ -62,6 +70,16 @@ def _bundle_file_type[target: _TargetType]() -> StaticString:
 
 
 @fieldwise_init
+struct _CachedFunction(Movable):
+    """One cached loaded function: the handle and the bundle that defines it.
+    The bundle must outlive the handle, so the entry keeps both and both are
+    released together at context teardown."""
+
+    var handle: FunctionHandle
+    var bundle: RuntimeBundle
+
+
+@fieldwise_init
 struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     """A context loaded on a specific device.
 
@@ -81,6 +99,14 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     var _device: ArcPointer[Device[Self.device_spec]]
     var _raw: ArcPointer[RawDriver]
     var _self_ref: WeakPointer[Self]
+    # Loaded-function cache. The cache is 1:1 -- the key embeds the code
+    # buffer's address and length plus the linkage name and optional
+    # function attributes, which together fully determine the loaded function.
+    # `StaticString` code is program global and immutable, so key equality is an
+    # exact code match (an address can never hold different bytes later).
+    # Entries own their handle and bundle, released at context teardown.
+    var _function_cache: Dict[String, _CachedFunction]
+    var _function_cache_lock: UnsafePointer[Int64, MutUntrackedOrigin]
 
     @staticmethod
     def _create(
@@ -97,6 +123,9 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         self._device = device._self_ref.try_upgrade().value()
         self._raw = device._raw
         self._self_ref = WeakPointer[Self]()
+        self._function_cache = {}
+        self._function_cache_lock = alloc(Layout[Int64](count=1)).unsafe_leak()
+        self._function_cache_lock[] = 0
 
         ref raw = self._raw[]
 
@@ -117,6 +146,21 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         self._handle = context_handle_uninit.unsafe_assume_init_ref()
 
     def __del__(deinit self):
+        while len(self._function_cache) > 0:
+            try:
+                var entry = self._function_cache.popitem()
+                try:
+                    self.unload_function(entry.value.handle)
+                except e:
+                    print("warning: unload_function failed:", e)
+                _ = entry^
+            except e:
+                break
+        dealloc(
+            ThinAllocation(
+                unsafe_assume_ownership=self._function_cache_lock
+            ).unsafe_with_layout({count = 1})
+        )
         try:
             self._raw[].destroy_context(self._handle)
         except e:
@@ -451,6 +495,110 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         """Sets a backend function attribute (e.g. the dynamic shared-memory
         cap) on a loaded function."""
         self._raw[].set_function_attribute(self._handle, func, attribute, value)
+
+    def _function_cache_lock_acquire(self):
+        var expected = Int64(0)
+        var waiter = SpinWaiter()
+        while not Atomic.compare_exchange(
+            self._function_cache_lock, expected, 1
+        ):
+            waiter.wait()
+            expected = 0
+
+    def _function_cache_lock_release(self):
+        Atomic.store(self._function_cache_lock, 0)
+
+    def _function_cache_find(
+        mut self, key: String
+    ) -> OptionalReg[FunctionHandle]:
+        """Cache lookup; acquires and releases the cache lock.
+
+        The key fully identifies the loaded function (see
+        `get_or_load_function`), so this is a plain 1:1 lookup."""
+        self._function_cache_lock_acquire()
+        var result = OptionalReg[FunctionHandle]()
+        try:
+            result = self._function_cache._find_ref(key).handle
+        except e:
+            pass
+        self._function_cache_lock_release()
+        return result
+
+    def _function_cache_insert(
+        mut self,
+        var key: String,
+        var entry: _CachedFunction,
+    ) -> OptionalReg[FunctionHandle]:
+        """Inserts `entry` under `key`, re-checking for a load race; acquires
+        and releases the cache lock.
+
+        If another thread cached `key` while the caller was loading, discards
+        the duplicate, unloading its function BEFORE its `entry` (and so
+        the bundle that defines the function) is destroyed, and returns the
+        cached entry's handle. Otherwise inserts `entry` and returns None."""
+        self._function_cache_lock_acquire()
+        var raced = OptionalReg[FunctionHandle]()
+        try:
+            raced = self._function_cache._find_ref(key).handle
+        except e:
+            pass
+        if raced:
+            self._function_cache_lock_release()
+            # The duplicate's function must be unloaded before `entry` --
+            # and with it the `RuntimeBundle` defining that function -- is
+            # destroyed; destroying the bundle first invalidates the
+            # handle.
+            try:
+                self.unload_function(entry.handle)
+            except e:
+                print("warning: unload_function failed:", e)
+            _ = entry^
+            return raced
+        self._function_cache[key^] = entry^
+        self._function_cache_lock_release()
+        return None
+
+    def get_or_load_function(
+        mut self,
+        asm: StaticString,
+        name: String,
+        attr_code: OptionalReg[Int32] = None,
+        attr_value: Int32 = 0,
+    ) raises HALError -> FunctionHandle:
+        """Returns the loaded function for `name`, loading `asm` on first use.
+
+        The lookup key embeds the code buffer's address and length plus `name`
+        (a unique linkage name) and the optional function attribute, which
+        together fully determine the loaded function. Loads happen outside the
+        cache lock so first loads of different kernels proceed in parallel.
+
+        `asm` must be `StaticString`: the key identifies code by buffer address,
+        which is only sound for static strings with global lifetime. Cached
+        handles and bundles live until the context is destroyed.
+        """
+        var key = String(t"{Int(asm.unsafe_ptr())}:{asm.byte_length()}:{name}")
+        if attr_code:
+            key += String(t"#{attr_code.value()}={attr_value}")
+
+        var found = self._function_cache_find(key)
+        if found:
+            return found.value()
+
+        # Load outside the lock so concurrent first-launches don't serialize.
+        var bundle = self.load_bundle(asm)
+        var func = self.load_function(bundle, name.copy())
+        if attr_code:
+            self.set_function_attribute(func, attr_code.value(), attr_value)
+
+        var raced = self._function_cache_insert(
+            key^,
+            _CachedFunction(func, bundle^),
+        )
+        if raced:
+            # Another thread cached this function while we were loading;
+            # the insert discarded our duplicate load. Use the cached one.
+            return raced.value()
+        return func
 
     def unload_function(self, func: FunctionHandle) raises HALError:
         self._raw[].unload_function(self._handle, func)
