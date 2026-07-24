@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import traceback
 from typing import Any
 
 import torch
@@ -50,8 +51,12 @@ try:
     )
 
     _CustomAllreduceClass = CustomAllreduce
-except ImportError:
-    pass
+except (ImportError, RuntimeError):
+    traceback.print_exc()
+    print(
+        "[bench_allreduce_subgraph] sglang CustomAllreduce unavailable,"
+        " falling back to NCCL-only"
+    )
 
 # Fall back to low-level sgl_kernel API if high-level not available
 if _CustomAllreduceClass is None:
