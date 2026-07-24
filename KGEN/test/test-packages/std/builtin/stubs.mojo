@@ -704,13 +704,15 @@ struct List[T: Copyable](Copyable, Iterable):
     def __init__(out self, var *elements: Self.T, __list_literal__: NoneType):
         pass
 
-    def append(mut self, var value: Self.T):
+    def append(
+        mut self, var value: Self.T
+    ) where conforms_to(Self.T, ImplicitlyDeletable):
         pass
 
     def __getitem__(
         ref self, idx: Int
     ) -> ref[origin_of(self)._get_owned_interior["element"]] Self.T:
-        pass
+        abort()
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -718,6 +720,9 @@ struct List[T: Copyable](Copyable, Iterable):
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         abort()
+
+    def __len__(self) -> Int:
+        return 0
 
 
 struct Set[T: AnyType]:
