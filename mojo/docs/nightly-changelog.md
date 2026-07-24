@@ -313,7 +313,10 @@ This version is still a work in progress.
   ```
 
   Using `@explicit_destroy` without an argument error string is now an error, as
-  it would have no effect or purpose.
+  it would have no effect or purpose. This applies to both `struct` and `trait`
+  declarations. A `trait` is already linear when it neither conforms to
+  `ImplicitlyDeletable` nor is `@explicit_destroy`, so the bare decorator on a
+  trait had no effect and should simply be removed.
 
   `@explicit_destroy("custom error")` can still be used to provide additional
   instruction to users when an instance cannot be deleted implicitly.
