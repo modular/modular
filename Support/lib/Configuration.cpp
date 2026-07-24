@@ -663,9 +663,18 @@ bool M::isMaxInstalled() {
   std::optional<StringRef> packageRoot =
       configOr->maybeGetValue("max.package_root");
   if (packageRoot.has_value()) {
-    return std::filesystem::exists(
+    std::filesystem::path libmaxPath =
         std::filesystem::path(packageRoot.value().str()) / "lib" /
-        ("libmax" + kSharedLibExt.str()));
+        ("libmax" + kSharedLibExt.str());
+    bool exists = std::filesystem::exists(libmaxPath);
+    // Breadcrumb for CI flakes (MXF-560): unconditional since a flake can't
+    // opt in after the fact.
+    if (!exists) {
+      llvm::errs() << "isMaxInstalled: max.package_root resolved to "
+                   << packageRoot.value() << " but " << libmaxPath.string()
+                   << " does not exist\n";
+    }
+    return exists;
   } else {
     // No value, so probably in bazel, pretend we have MAX.
     return true;
