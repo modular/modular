@@ -410,6 +410,7 @@ def calculate_metrics(
         completed=measured_count,
         failures=failures,
         request_throughput=measured_count / measured_duration,
+        excluded_successful=total_successful - measured_count,
         # A metric is ``None`` when it has no samples (empty data list),
         # rather than a NaN-filled placeholder: NaN serializes to JSON
         # ``null`` (both via ``model_dump_json`` and BigQuery ingest),
