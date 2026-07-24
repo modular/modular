@@ -37,6 +37,7 @@ from layout import (
     IntTuple,
     Layout,
     MixedLayout,
+    PointerStorage,
     RuntimeLayout,
     RuntimeTuple,
     TensorLayout,
@@ -569,6 +570,7 @@ struct FragmentToSMemWriter[
             dtype=Self.c_type,
             origin=MutAnyOrigin,
             address_space=AddressSpace.SHARED,
+            Storage=PointerStorage[element_width=1],
             ...,
         ],
         data: SIMD[Self.c_type, elements_per_op],
@@ -594,7 +596,7 @@ struct FragmentToSMemWriter[
 
         # Execute st.matrix hardware instruction
         st_matrix[simd_width=packed_width, transpose=Self.swapAB](
-            smem_tile.ptr + swizzled_offset, packed_data
+            smem_tile._storage + swizzled_offset, packed_data
         )
 
     @always_inline
@@ -627,7 +629,7 @@ struct FragmentToSMemWriter[
             origin=MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](
-            self.c_tile.ptr + tile_linear_idx * elements_per_tile,
+            self.c_tile._storage + tile_linear_idx * elements_per_tile,
             flat_tile_layout,
         )
 
