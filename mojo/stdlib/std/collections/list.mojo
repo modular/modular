@@ -30,10 +30,10 @@ from std.sys import size_of
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 from std.memory import (
     Pointer,
-    destroy_n,
+    unsafe_destroy_n,
     unsafe_memcpy,
-    uninit_copy_n,
-    uninit_move_n,
+    unsafe_uninit_copy_n,
+    unsafe_uninit_move_n,
 )
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
@@ -120,7 +120,7 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
     def __del__(deinit self):
         # Destroy the remaining elements that have not yet been
         # iterated over.
-        destroy_n(
+        unsafe_destroy_n(
             self._list.unsafe_ptr() + self._index,
             count=len(self._list) - self._index,
         )
@@ -529,7 +529,7 @@ struct List[T: Movable, /](
     @stable(since="1.0")
     def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroy all elements in the list and free its memory."""
-        destroy_n(
+        unsafe_destroy_n(
             self._data,
             count=len(self),
         )
@@ -839,7 +839,7 @@ struct List[T: Movable, /](
     def _realloc(mut self, new_capacity: Int):
         var new_data = alloc(Layout[Self.T](count=new_capacity)).unsafe_leak()
 
-        uninit_move_n[overlapping=False](
+        unsafe_uninit_move_n[overlapping=False](
             dest=new_data, src=self._data, count=len(self)
         )
 
@@ -882,12 +882,12 @@ struct List[T: Movable, /](
         self._len += 1
 
     @always_inline
-    def insert(mut self, i: Int, var value: Self.T):
+    def insert(mut self, i: Int, var value: Self.T, /):
         """Inserts a value to the list at the given index.
         `a.insert(len(a), value)` is equivalent to `a.append(value)`.
 
         Args:
-            i: The index for the value.
+            i: The index for the value. Must be in the range `[0, len(self)]`.
             value: The value to insert.
 
         Examples:
@@ -898,31 +898,25 @@ struct List[T: Movable, /](
         print(list) # ['one', 'two', 'three']
         ```
         """
-        var normalized_idx = i
-        if i < 0:
-            normalized_idx = max(len(self) + i, 0)
-        # Bounds-check after normalizing, since `check_bounds` rejects
-        # negatives; the valid range is `[0, len(self)]` (`len(self)` appends).
-        check_bounds(normalized_idx, len(self) + 1)
+        # Valid range is `[0, len(self)]` (`len(self)` appends).
+        check_bounds(i, len(self) + 1)
 
         var earlier_idx = len(self)
         var later_idx = len(self) - 1
         self.append(value^)
 
-        for _ in range(normalized_idx, len(self) - 1):
+        for _ in range(i, len(self) - 1):
             var earlier_ptr = self._data.unsafe_offset(earlier_idx)
             var later_ptr = self._data.unsafe_offset(later_idx)
 
             var tmp = earlier_ptr.unsafe_take_pointee()
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_ method
-            MutUnsafePointer(earlier_ptr).init_pointee_move_from(
-                MutUnsafePointer(later_ptr)
-            )
+            earlier_ptr.unsafe_write_move_from(later_ptr)
             later_ptr.unsafe_write(tmp^)
 
             earlier_idx -= 1
             later_idx -= 1
 
+    @stable(since="1.0")
     def extend(mut self, var other: Self):
         """Extends this list by consuming the elements of `other`.
 
@@ -949,7 +943,7 @@ struct List[T: Movable, /](
         var src_ptr = other.unsafe_ptr()
         self._annotate_increase(other_len)
 
-        uninit_move_n[overlapping=False](
+        unsafe_uninit_move_n[overlapping=False](
             dest=dest_ptr, src=src_ptr, count=other_len
         )
 
@@ -988,7 +982,7 @@ struct List[T: Movable, /](
         var i = self._len
         self._len = new_num_elts
 
-        uninit_copy_n[overlapping=False](
+        unsafe_uninit_copy_n[overlapping=False](
             dest=self._data.unsafe_offset(i),
             src=elements.unsafe_ptr(),
             count=elements_len,
@@ -1098,7 +1092,7 @@ struct List[T: Movable, /](
         """
         check_bounds(i, len(self))
         var ret_val = self._data.unsafe_offset(i).unsafe_take_pointee()
-        uninit_move_n[overlapping=True](
+        unsafe_uninit_move_n[overlapping=True](
             dest=self._data.unsafe_offset(i),
             src=self._data.unsafe_offset(i + 1),
             count=len(self) - i - 1,
@@ -1221,7 +1215,7 @@ struct List[T: Movable, /](
                 " size is smaller than the current size."
             )
 
-        destroy_n(
+        unsafe_destroy_n(
             self._data.unsafe_offset(new_length),
             count=len(self) - new_length,
         )
@@ -1253,10 +1247,7 @@ struct List[T: Movable, /](
             var later_ptr = self._data.unsafe_offset(later_idx)
 
             var tmp = earlier_ptr.unsafe_take_pointee()
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_ method
-            MutUnsafePointer(earlier_ptr).init_pointee_move_from(
-                MutUnsafePointer(later_ptr)
-            )
+            earlier_ptr.unsafe_write_move_from(later_ptr)
             later_ptr.unsafe_write(tmp^)
 
             earlier_idx += 1
@@ -1327,7 +1318,7 @@ struct List[T: Movable, /](
         print(len(list))  # 0
         ```
         """
-        destroy_n(self._data, count=self._len)
+        unsafe_destroy_n(self._data, count=self._len)
         var old_size: Int = self._len
         self._len = 0
         self._annotate_shrink(old_size)
@@ -1403,7 +1394,7 @@ struct List[T: Movable, /](
         """
         var start, end = slice.indices(len(self))
         return Span[Self.T, origin_of(self)._get_owned_interior["element"]](
-            ptr=UnsafePointer(
+            unsafe_ptr=UnsafePointer(
                 to=self.unsafe_ptr()
                 .unsafe_offset(start)
                 ._get_ref_with_unsafe_interior_origin[
@@ -1438,6 +1429,10 @@ struct List[T: Movable, /](
         ref self, idx: Some[Indexer]
     ) -> ref[self.unsafe_get(index(idx))] Self.T:
         """Gets the list element at the given index.
+
+        Unlike when subscripting using slices negative indices are
+        considered out of bounds. They will be checked in the same situations
+        as "off the end" indexing.
 
         Args:
             idx: The index of the element.

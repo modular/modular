@@ -5073,7 +5073,7 @@ def conv_gpu[
                     @__copy_capture(hw, out_w)
                     def sm100_void_epilogue[
                         _dtype: DType,
-                        _width: SIMDSize,
+                        _width: SIMDLength,
                         *,
                         alignment: Int = 1,
                     ](coords_2d: IndexList[2], val: SIMD[_dtype, _width],):
@@ -5411,7 +5411,7 @@ def conv_gpu[
                 @__copy_capture(_amd_4wave_hw, _amd_4wave_out_w)
                 def _amd_4wave_void_epilogue[
                     _dtype: DType,
-                    _width: SIMDSize,
+                    _width: SIMDLength,
                     *,
                     alignment: Int = 1,
                 ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
@@ -5677,7 +5677,7 @@ def conv_gpu[
                     @__copy_capture(_amd_3d_DHW, _amd_3d_HW, _amd_3d_W_out)
                     def amd_3d_void_epilogue[
                         _dtype: DType,
-                        _width: SIMDSize,
+                        _width: SIMDLength,
                         *,
                         alignment: Int = 1,
                     ](coords_2d: IndexList[2], val: SIMD[_dtype, _width],):

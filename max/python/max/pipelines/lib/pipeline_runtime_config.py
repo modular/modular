@@ -123,6 +123,23 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    chunked_prefill_min_chunk_size: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Floor, in tokens, on any chunk created by chunked prefill. "
+            "When splitting a request against the CE token budget, the cut "
+            "is moved earlier so that neither the chunk nor the remainder "
+            "is smaller than this; if no legal cut point exists within the "
+            "remaining budget, the request is left unsplit for a later "
+            "step. 0 (default) disables the floor: cuts land exactly on "
+            "the budget boundary, which can produce very small chunks. "
+            "Values above ``max_batch_input_tokens / 2`` forbid most "
+            "splits; a sane range is roughly 64-1024."
+        ),
+    )
+    """Minimum tokens in any chunk created by chunked prefill (0 = off)."""
+
     enable_in_flight_batching: bool = Field(
         default=False,
         description=(
@@ -334,6 +351,19 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
     """Occupancy threshold (0-1) that schedules CE work without deferral."""
+
+    dp_ce_balance_enable_dynamic_chunk_size: bool = Field(
+        default=True,
+        description=(
+            "Whether a below-threshold CE step with work on 2+ replicas "
+            "runs immediately with each replica's chunk size reduced to "
+            "the balance level, deferring only the excess. When False, "
+            "such steps are held whole until the threshold is met, a "
+            "deadline expires, or there is nothing else to run. Only "
+            "consulted when ``dp_ce_balance_timeout_ms`` > 0."
+        ),
+    )
+    """Whether below-threshold CE steps run at a reduced chunk size."""
 
     allow_unsupported_logprobs: bool = Field(
         default=False,

@@ -421,7 +421,7 @@ Python as well, using
 
 Currently, Mojo methods being exposed to Python must be written with a
 modification compared to normal Mojo methods: they must be a `@staticmethod`
-that takes either `py_self: PythonObject` or `self_ptr: UnsafePointer[Self]`:
+that takes either `py_self: PythonObject` or `self_ptr: Pointer[Self]`:
 
 ```mojo
 from std.python import PythonObject
@@ -453,7 +453,7 @@ struct Person(Writable):
 
     @staticmethod
     def set_age(
-        self_ptr: UnsafePointer[mut=True, Self],
+        self_ptr: Pointer[mut=True, Self],
         new_age: PythonObject,
     ) raises:
         self_ptr[].age = Int(new_age)
@@ -465,7 +465,7 @@ struct Person(Writable):
 
 Taking `py_self: PythonObject` allows access to the full `PythonObject`
 allocation that a Mojo object instance is stored inside of. Typically though,
-taking `py_self: UnsafePointer[Self]` will minimize boilerplate in the common
+taking `self_ptr: Pointer[Self]` will minimize boilerplate in the common
 case that a method merely needs to access the fields of an object.
 
 Mojo methods called from Python are currently required to take non-standard self

@@ -176,7 +176,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     @always_inline
     @__copy_capture(c_tensor_lt)
     def epilogue_fn[
-        _dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         c_tensor_lt.store[store_alignment=alignment * size_of[c_type]()](
             idx, rebind[SIMD[c_type, width]](val)
@@ -187,7 +187,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     @always_inline
     @__copy_capture(c_tensor_lt)
     def compute_fn[
-        _dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
         _dtype, width
     ]:

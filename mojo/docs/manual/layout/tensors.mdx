@@ -200,11 +200,12 @@ comptime columns = 1024
 comptime buf_size = rows * columns
 comptime layout = Layout.row_major(rows, columns)
 var ptr = alloc[Float32](buf_size)
-memset(ptr, 0, buf_size)
+unsafe_memset(ptr, 0, buf_size)
 var tensor = LayoutTensor[DType.float32, layout](ptr)
 ```
 
-Note that this example uses [`memset()`](/docs/std/memory/memory/memset/)
+Note that this example uses
+[`unsafe_memset()`](/docs/std/memory/memory/unsafe_memset/)
 instead of the `LayoutTensor` `fill()` method. The `fill()` method performs
 elementwise initialization of the tensor, so it may be slow for large tensors.
 

@@ -2,6 +2,32 @@ load("//bazel:api.bzl", "mojo_library")
 
 package(default_visibility = ["//max:consumers"])
 
+exports_files(
+    [
+        "matmul/gpu/sm90/tuning.mojo.snippet",
+        "matmul/gpu/sm90/tuning_configs.mojo",
+        "matmul/gpu/sm90/tuning_custom.mojo.snippet",
+        "matmul/gpu/sm90/tuning_custom_grid.mojo.snippet",
+        "matmul/gpu/sm90/tuning_custom_scaled.mojo.snippet",
+        "matmul/gpu/sm90/tuning_custom_scaled_grid.mojo.snippet",
+        "matmul/gpu/sm90/tuning_table_bf16.yaml",
+        "matmul/gpu/sm100_structured/default/tuning_configs.mojo",
+        "matmul/gpu/sm100_structured/default/tuning_fp8.mojo.snippet",
+        "matmul/gpu/sm100_structured/default/tuning_fp8_ranged.mojo.snippet",
+        "matmul/gpu/sm100_structured/default/tuning_small_mn.mojo.snippet",
+        "matmul/gpu/sm100_structured/default/tuning_sm100.mojo.snippet",
+        "matmul/gpu/sm100_structured/default/tuning_table_sm100_batched_bf16.yaml",
+        "matmul/gpu/sm100_structured/default/tuning_table_sm100_batched_fp8.yaml",
+        "matmul/gpu/sm100_structured/default/tuning_table_sm100_bf16.yaml",
+        "matmul/gpu/sm100_structured/default/tuning_table_sm100_fp8.yaml",
+        "matmul/gpu/sm100_structured/default/tuning_table_sm100_mxfp4.yaml",
+        "matmul/gpu/sm100_structured/default/tuning_table_sm100_mxfp8.yaml",
+        "matmul/gpu/sm100_structured/default/tuning_table_sm100_nvfp4.yaml",
+        "matmul/gpu/sm100_structured/default/tuning_table_sm100_small_mn_bf16.yaml",
+    ],
+    visibility = ["//max/kernels/benchmarks/autotune:__pkg__"],
+)
+
 # Raw sources for the LSP parse-smoke test.
 filegroup(
     name = "srcs",

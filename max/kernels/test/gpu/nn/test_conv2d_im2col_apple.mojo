@@ -134,7 +134,7 @@ def test_conv2d_fused_apple_dynamic_round(
     @always_inline
     @__copy_capture(out_ptr, W_out_i, HW_out_i, C_out_i)
     def round_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
+        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         # FLUX conv_out-style tail: scale, shift, clamp to [0,255], round.
         var x = val.cast[DType.float32]()
@@ -328,7 +328,7 @@ def test_conv2d_im2col_direct[
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
+            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
             output_lt.store[
@@ -488,7 +488,7 @@ def test_conv2d_fused_apple[
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
+            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
             output_lt.store[
@@ -643,7 +643,7 @@ def test_conv2d_gpu_dispatch[
     @always_inline
     @__copy_capture(output_lt)
     def scale_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
+        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
         output_lt.store[

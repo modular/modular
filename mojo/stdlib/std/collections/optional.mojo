@@ -101,9 +101,10 @@ struct Optional[T: Movable](
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
     IterableOwned,
-    Iterator,
+    Iterator where conforms_to(T, ImplicitlyDeletable),
     Movable,
     RegisterPassable where conforms_to(T, RegisterPassable),
     Writable where conforms_to(T, Writable),
@@ -244,7 +245,7 @@ struct Optional[T: Movable](
     ) where conforms_to(Self.T, TrivialRegisterPassable):
         """Implicitly cast an `OptionalReg[T]` to an `Optional[T]`."""
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        UnsafePointer(to=self).bitcast[OptionalReg[Self.T]]()[] = optional_reg
+        Pointer(to=self).unsafe_bitcast[OptionalReg[Self.T]]()[] = optional_reg
 
     # -------
     # Special temporary constructors while Pointer unification is happening
@@ -265,7 +266,7 @@ struct Optional[T: Movable](
             UnsafePointer[U, origin, address_space=address_space]
         ],
     ):
-        self = UnsafePointer(to=other).bitcast[type_of(self)]()[]
+        self = Pointer(to=other).unsafe_bitcast[type_of(self)]()[]
 
     # TODO(MSTDL-2846): Remove this constructor when `_safe` is no longer needed for UnsafePointer.
     # Allows implicitly converting from Optional[UnsafePointer] -> Optional[Pointer]
@@ -280,7 +281,7 @@ struct Optional[T: Movable](
         other: Optional[UnsafePointer[U, origin, address_space=address_space]],
         out self: Optional[Pointer[U, origin, address_space=address_space]],
     ):
-        self = UnsafePointer(to=other).bitcast[type_of(self)]()[]
+        self = Pointer(to=other).unsafe_bitcast[type_of(self)]()[]
 
     # TODO(MSTDL-2846): Remove this constructor when `_safe` is no longer needed for UnsafePointer.
     # Allows `Pointer` -> `Optional[UnsafePointer]`
@@ -753,6 +754,28 @@ struct Optional[T: Movable](
             # trivially destructible, so `_NoneType.__del__` is a no-op.
             self._value^.deinit_with[_NoneType](_NoneType.__del__)
 
+    def deinit_assert_empty(deinit self):
+        """Destroys an empty `Optional`, asserting that it holds no value.
+
+        Use this on an `Optional[T]` whose element type is not
+        `ImplicitlyDeletable` when the value is known to be empty. Unlike
+        `deinit_with`, it takes no deinitializer function (there is no live
+        value to destroy). In safe-assert builds it aborts if the `Optional`
+        is non-empty.
+
+        Examples:
+
+        ```mojo
+        var opt: Optional[ExplicitDeinit] = None
+        opt^.deinit_assert_empty()
+        ```
+        """
+        debug_assert[assert_mode="safe"](
+            not self,
+            "`deinit_assert_empty()` called on a non-empty `Optional`",
+        )
+        self._value^.deinit_with[_NoneType](_NoneType.__del__)
+
     def or_else(
         deinit self, var default: Self.T
     ) -> Self.T where conforms_to(Self.T, Movable & ImplicitlyDeletable):
@@ -825,7 +848,7 @@ struct Optional[T: Movable](
         self: Optional[UnsafePointer[U, origin, address_space=address_space]],
         out result: type_of(self).T,
     ):
-        result = UnsafePointer(to=self).bitcast[type_of(result)]()[]
+        result = Pointer(to=self).unsafe_bitcast[type_of(result)]()[]
 
     def map[
         To: Movable,
@@ -869,8 +892,11 @@ struct Optional[T: Movable](
         ```
         """
         if self:
-            return {mapper(self.unsafe_take())}
+            return {mapper(self._value^.unsafe_take[Self.T]())}
         else:
+            # Destroy the empty `Optional` explicitly: an implicit drop here
+            # would require `T: ImplicitlyDeletable`, ruling out linear `T`.
+            self^.deinit_assert_empty()
             return None
 
     def and_then[
@@ -923,8 +949,11 @@ struct Optional[T: Movable](
         ```
         """
         if self:
-            return mapper(self.unsafe_take())
+            return mapper(self._value^.unsafe_take[Self.T]())
         else:
+            # Destroy the empty `Optional` explicitly: an implicit drop here
+            # would require `T: ImplicitlyDeletable`, ruling out linear `T`.
+            self^.deinit_assert_empty()
             return None
 
 
@@ -956,27 +985,27 @@ struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
     @always_inline
     def __init__(out self):
         self._value = __mlir_op.`kgen.variant.create`[
-            _type=Self._mlir_type, index=SIMDSize(1)._mlir_value
+            _type=Self._mlir_type, index=SIMDLength(1)._mlir_value
         ](__mlir_attr.false)
 
     @always_inline
     def __init__[U: TrivialRegisterPassable](out self, value: U):
         comptime assert U == Self.T
         self._value = __mlir_op.`kgen.variant.create`[
-            _type=Self._mlir_type, index=SIMDSize(0)._mlir_value
+            _type=Self._mlir_type, index=SIMDLength(0)._mlir_value
         ](rebind[Self.T](value))
 
     @always_inline
     def value[U: TrivialRegisterPassable](self) -> U:
         comptime assert U == Self.T
-        var value = __mlir_op.`kgen.variant.get`[index=SIMDSize(0)._mlir_value](
-            self._value
-        )
+        var value = __mlir_op.`kgen.variant.get`[
+            index=SIMDLength(0)._mlir_value
+        ](self._value)
         return rebind[U](value)
 
     @always_inline
     def __bool__(self) -> Bool:
-        return __mlir_op.`kgen.variant.is`[index=SIMDSize(0)._mlir_value](
+        return __mlir_op.`kgen.variant.is`[index=SIMDLength(0)._mlir_value](
             self._value
         )
 
@@ -994,7 +1023,7 @@ struct _NicheableOptionalRegStorage[
     @always_inline
     def __init__(out self):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        var ptr = UnsafePointer(to=self.storage).bitcast[
+        var ptr = Pointer(to=self.storage).unsafe_bitcast[
             UnsafeMaybeUninit[Self.T]
         ]()
         Self.T.write_niche[index=0](ptr)
@@ -1003,17 +1032,17 @@ struct _NicheableOptionalRegStorage[
     def __init__[U: TrivialRegisterPassable](out self, value: U):
         comptime assert U == Self.T
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        var ptr = UnsafePointer(to=self.storage).bitcast[Self.T]()
+        var ptr = Pointer(to=self.storage).unsafe_bitcast[Self.T]()
         ptr.unsafe_write(rebind[Self.T](value))
 
     @always_inline
     def value[U: TrivialRegisterPassable](self) -> U:
         comptime assert U == Self.T
-        return UnsafePointer(to=self.storage).bitcast[U]()[]
+        return Pointer(to=self.storage).unsafe_bitcast[U]()[]
 
     @always_inline
     def __bool__(self) -> Bool:
-        var ptr = UnsafePointer(to=self.storage).bitcast[
+        var ptr = Pointer(to=self.storage).unsafe_bitcast[
             UnsafeMaybeUninit[Self.T]
         ]()
         return Self.T.classify_niche(ptr) == NicheIndex.NotANiche
@@ -1207,7 +1236,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
         ],
         out result: type_of(self).T,
     ):
-        result = UnsafePointer(to=self).bitcast[type_of(result)]()[]
+        result = Pointer(to=self).unsafe_bitcast[type_of(result)]()[]
 
     @deprecated(
         "Cannot directly dereference an `OptionalReg[UnsafePointer]`."

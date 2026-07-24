@@ -396,7 +396,7 @@ def bench_manual[
     @__copy_capture(scale)
     def scale_compute_lambda[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[

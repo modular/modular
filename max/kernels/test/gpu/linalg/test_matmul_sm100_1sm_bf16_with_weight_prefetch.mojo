@@ -275,7 +275,7 @@ def test_rmsnorm_then_matmul[
     @__copy_capture(a_normed_vendor_tensor)
     @parameter
     def output_fn_vendor[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[a_type, width]) -> None:
         a_normed_vendor_tensor.raw_store[width=width, alignment=alignment](
             a_normed_vendor_tensor.layout(coords), val
@@ -298,7 +298,7 @@ def test_rmsnorm_then_matmul[
     @__copy_capture(a_normed_ours_tensor)
     @parameter
     def output_fn_ours[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[a_type, width]) -> None:
         a_normed_ours_tensor.raw_store[width=width, alignment=alignment](
             a_normed_ours_tensor.layout(coords), val
@@ -325,7 +325,7 @@ def test_rmsnorm_then_matmul[
     @__copy_capture(c_ours_tensor)
     def epilogue_fn[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:

@@ -45,61 +45,12 @@ _EXTRA_MOJO_TEST_CONSTRAINTS = {
     for src in glob(
         ["**/*.mojo"],
         exclude = [
-            "test_device_context_hal.mojo",
             "test_device_external_function.mojo",
             "test_function_error.mojo",
             "test_function_error_sync_mode.mojo",
         ],
     )
 ]
-
-# Tests for the HAL-backed `DeviceContext` require the appropriate neo-driver
-# plugin to be available.
-mojo_test(
-    name = "test_device_context_hal.mojo.test",
-    size = "large",
-    srcs = ["test_device_context_hal.mojo"],
-    data = select({
-        "//:nvidia_gpu": ["//Target:CUDAPlugin.so"],
-        "//:apple_gpu": ["//Target:MetalPlugin.so"],
-        "//:amd_gpu": ["//Target:HIPPlugin.so"],
-        "//conditions:default": [],
-    }),
-    env = select({
-        "//:nvidia_gpu": {
-            "MODULAR_DRIVER_PLUGINS": "CUDA@$(rootpath //Target:CUDAPlugin.so)",
-        },
-        "//:apple_gpu": {
-            "MODULAR_DRIVER_PLUGINS": "Metal@$(rootpath //Target:MetalPlugin.so)",
-        },
-        "//:amd_gpu": {
-            "MODULAR_DRIVER_PLUGINS": "HIP@$(rootpath //Target:HIPPlugin.so)",
-        },
-        "//conditions:default": {},
-    }),
-    exec_properties = {"test.resources:gpu-memory": "1"},
-    tags = ["gpu"],
-    target_compatible_with = ["//:has_gpu"] + select({
-        "//:nvidia_gpu": [],
-        "//:apple_gpu": [],
-        "//:amd_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }) + select({
-        # TODO(KERN-2927): Hangs >1h on macOS BuildBuddy workers then SIGSEGV's
-        # remote-exec. Likely Metal HAL driver issue. Re-enable when fixed.
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        "//max:_device_context_hal",
-        "//max:internal_utils",
-        "//max:kv_cache",
-        "//max:linalg",
-        "//max:nn",
-        "//max:quantization",
-        "@mojo//:std",
-    ],
-)
 
 filegroup(
     name = "vec_add_cubin_sm80",

@@ -40,7 +40,7 @@ from std.utils import IndexList
 def rope_value[
     dtype: DType,
     freq_dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
 ](val: SIMD[dtype, width], freq: SIMD[freq_dtype, width]) -> SIMD[dtype, width]:
     """Applies a rotary position embedding transformation to a SIMD vector.
 
@@ -113,7 +113,7 @@ def rope_q_proj[
     dtype: DType,
     freq_dtype: DType,
     rank: Int,
-    width: SIMDSize,
+    width: SIMDLength,
     output_dtype: DType,
     //,
     *,
@@ -218,7 +218,7 @@ def rope_q_proj[
 def rope_k_cache[
     freq_dtype: DType,
     cache_t: KVCacheT,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     *,
     interleaved: Bool,

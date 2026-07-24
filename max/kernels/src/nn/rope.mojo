@@ -37,7 +37,7 @@ from std.utils import IndexList
 def _rope[
     dtype: DType,
     freq_dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
 ](val: SIMD[dtype, width], freq: SIMD[freq_dtype, width]) -> SIMD[dtype, width]:
     x_re, x_im = val.cast[freq_dtype]().deinterleave()
     f_re, f_im = freq.deinterleave()
@@ -66,14 +66,14 @@ def get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
 def apply_rope[
     dtype: DType,
     freq_dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     *,
     interleaved: Bool,
     alignment: Int,
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: SIMDSize, alignment: Int](
+    & def[width: SIMDLength, alignment: Int](
         idx: IndexList[3], val: SIMD[dtype, width]
     ) -> None,
 ](
@@ -124,7 +124,7 @@ def rope_ragged[
     target: StaticString,
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: SIMDSize, alignment: Int](
+    & def[width: SIMDLength, alignment: Int](
         idx: IndexList[3], val: SIMD[dtype, width]
     ) -> None,
     mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[

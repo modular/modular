@@ -21,7 +21,7 @@ from std.memory import Pointer
 
 from std._plugin import CurrentPlugin
 from std.format._utils import FormatStruct, Named, TypeNames
-from std.builtin.simd_size import SIMDSize
+from std.builtin.simd_length import SIMDLength
 from std.memory import UnsafeMaybeUninit
 from std.memory.unsafe_pointer import Pointer as _CommonPointer
 from std.utils._nicheable import UnsafeSingleNicheable, NicheIndex
@@ -46,11 +46,11 @@ struct AddressSpace(
     performance characteristics.
     """
 
-    var _value: SIMDSize
+    var _value: SIMDLength
 
     # CPU address space
     comptime GENERIC = AddressSpace(
-        __mlir_attr[`#lit.struct<{_mlir_value = 0}> : `, SIMDSize]
+        __mlir_attr[`#lit.struct<{_mlir_value = 0}> : `, SIMDLength]
     )
     """Generic address space. Used for CPU memory and default GPU memory."""
 
@@ -58,7 +58,7 @@ struct AddressSpace(
     # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
     # And https://llvm.org/docs/AMDGPUUsage.html#address-spaces
     comptime GLOBAL = AddressSpace(
-        __mlir_attr[`#lit.struct<{_mlir_value = 1}> : `, SIMDSize]
+        __mlir_attr[`#lit.struct<{_mlir_value = 1}> : `, SIMDLength]
     )
     """Global GPU memory address space."""
     comptime SHARED = AddressSpace(3)
@@ -100,7 +100,7 @@ struct AddressSpace(
             comptime assert False, "unknown address space: '" + name + "'"
 
     @always_inline("builtin")
-    def __init__(out self, value: SIMDSize):
+    def __init__(out self, value: SIMDLength):
         """Initializes the address space from the underlying integral value.
 
         Args:
@@ -109,7 +109,7 @@ struct AddressSpace(
         self._value = value
 
     @always_inline("builtin")
-    def value(self) -> SIMDSize:
+    def value(self) -> SIMDLength:
         """The integral value of the address space.
 
         Returns:

@@ -1538,3 +1538,76 @@ def test_prepare_vision_outputs_splits_by_passed_selection() -> None:
     entry_b = cache.lookup(0xB)
     assert entry_b is not None and entry_b.num_tokens == 3  # B stored
     assert int(embeddings[0].shape[0]) == 5  # A(2, cached) + B(3) assembled
+
+
+def test_assemble_tolerates_evicted_prior_image_row_aligned() -> None:
+    """A prefix-hit prior image evicted from the vision cache must not
+    crash assembly. Its tokens are all outside the active window (OOB in the
+    merge indices), so it gets shape-correct placeholder rows and
+    image_embeddings stays row-aligned with those indices."""
+    cache = _make_cache()
+    hidden = 4
+    img_a = _make_image_meta(0, 2, image_hash=0xA)  # prior chunk, evicted
+    img_b = _make_image_meta(2, 5, image_hash=0xB)  # encoded this step
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[img_a, img_b],
+        next_images=[img_b],
+        # Realistic: placeholder tokens span BOTH images (A at 0-1, B at 2-4).
+        image_token_indices=np.array([0, 1, 2, 3, 4], dtype=np.int32),
+        processed_length=2,  # A fully processed (end_idx 2); B in the window
+        active_length=3,
+    )
+    # A is NOT inserted -> evicted. Encoder output covers only B (3 rows).
+    vision_embeds = [
+        Buffer.from_numpy(np.full((3, hidden), 7.0, dtype=np.float32))
+    ]
+    embeddings, indices = cache.prepare_vision_outputs(
+        context_batch=_as_vlm_batch([ctx]),
+        uncached_contexts=_as_vlm_batch([ctx]),
+        uncached_images=[[img_b]],
+        vision_embeds=vision_embeds,
+        per_image_token_counts=[3],
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    arr = embeddings[0].to_numpy()
+    # The invariant that was violated: one embedding row per merge index.
+    assert arr.shape == (5, hidden)
+    assert len(indices) == arr.shape[0]
+    # A's placeholder rows are zeros (OOB in indices); B's rows are the encoder
+    # output (its indices are valid).
+    np.testing.assert_array_equal(arr[:2], 0.0)
+    np.testing.assert_allclose(arr[2:], 7.0)
+    oob = np.iinfo(np.int32).min
+    assert (indices[:2] == oob).all()
+    assert (indices[2:] >= 0).all()
+    # B is cached; A is never fabricated into the cache.
+    assert cache.lookup(0xB) is not None
+    assert cache.lookup(0xA) is None
+
+
+def test_assemble_missing_active_image_still_raises() -> None:
+    """A missing image whose tokens are in the active window is a genuine
+    _cache_and_split bug and must still fail loudly, not get silent filler."""
+    cache = _make_cache()
+    hidden = 4
+    img_a = _make_image_meta(0, 3, image_hash=0xA)  # active, never stored
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[img_a],
+        next_images=[img_a],
+        image_token_indices=np.array([0, 1, 2], dtype=np.int32),
+        processed_length=0,  # in the active window, not prior
+        active_length=3,
+    )
+    with pytest.raises(AssertionError, match="Active image"):
+        cache.prepare_vision_outputs(
+            context_batch=_as_vlm_batch([ctx]),
+            uncached_contexts=_as_vlm_batch([ctx]),
+            uncached_images=[[]],
+            vision_embeds=[_make_buffer(0, hidden)],
+            per_image_token_counts=[],
+            n_devices=1,
+            empty_embeddings=[_make_buffer(0, hidden)],
+        )

@@ -27,7 +27,7 @@ memory via a poisoned-padding stress test.
 
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from std.sys.defines import get_defined_int
 from std.utils import IndexList
 
@@ -141,7 +141,7 @@ def run_one[
     var blocks_runtime = RuntimeLayout[blocks_layout].row_major(blocks_shape)
     var blocks = ManagedLayoutTensor[dtype, blocks_layout](blocks_runtime, ctx)
     var blocks_host = blocks.tensor[update=False]()
-    memset_zero(blocks_host.ptr, blocks_runtime.size())
+    unsafe_memset_zero(blocks_host.ptr, blocks_runtime.size())
 
     # Output buffer: enough for the largest `num_pages` we'll ever request.
     comptime _MAX_PAGES = 16

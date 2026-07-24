@@ -98,7 +98,7 @@ struct TypeList[
     )
     """The number of types in the list."""
 
-    comptime __getitem_param__[idx: SIMDSize] = __mlir_attr[
+    comptime __getitem_param__[idx: SIMDLength] = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,
         ` `,
@@ -127,8 +127,8 @@ struct TypeList[
     """Gets a type at the given raw `index`.
 
     Unlike `__getitem_param__`, this accepts a raw `!kgen.index` so callers can
-    index without constructing a `SIMDSize` (and thus without pulling in
-    `SIMDSize` comparison machinery). Used by the stdlib plugin router during
+    index without constructing a `SIMDLength` (and thus without pulling in
+    `SIMDLength` comparison machinery). Used by the stdlib plugin router during
     bootstrap.
 
     Parameters:
@@ -798,7 +798,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         ref static_array = global_constant[array]()
         # Get a pointer to the first element, not the whole array.
         var first_elt = Pointer(to=static_array).unsafe_bitcast[Self.type]()
-        return Span(ptr=first_elt, length=Self.size)
+        return Span(unsafe_ptr=first_elt, length=Self.size)
 
     @always_inline
     def __getitem__(self, idx: Int) -> ref[ImmStaticOrigin] Self.type:
@@ -812,7 +812,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         """
         return self.get_span()[idx]
 
-    comptime __getitem_param__[idx: SIMDSize]: Self.type = __mlir_attr[
+    comptime __getitem_param__[idx: SIMDLength]: Self.type = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,
         ` `,
@@ -942,7 +942,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         PrevV: FromAndTo,
         VA: Self._mlir_type,
         idx: __mlir_type.index,
-    ] = ToWrap[PrevV, Self.__getitem_param__[SIMDSize(mlir_value=idx)]]
+    ] = ToWrap[PrevV, Self.__getitem_param__[SIMDLength(mlir_value=idx)]]
     """Takes an index because kgen.variadic.reduce passes it but we don't want it"""
 
     # TODO: This isn't returning a ParamList, so it should really be a 'def' so
@@ -1276,7 +1276,7 @@ struct VariadicList[
                 Int(0).__mlir_index__(),
             )
         ).unsafe_bitcast[Self._EltPointerType]()
-        self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size))
+        self._value = Span(unsafe_ptr=elt_ptr, length=Int(mlir_value=size))
 
     # The destructor for this type is trivial if not an "owned" list.
     comptime __del__is_trivial: Bool = not Self.is_owned

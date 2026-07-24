@@ -47,7 +47,7 @@ def _unsafe_normalize_neg_index(idx: Int, dim_size: Int) -> Int:
 
 @always_inline
 def _unsafe_normalize_neg_index[
-    dtype: DType, width: SIMDSize, out_type: DType = DType.int
+    dtype: DType, width: SIMDLength, out_type: DType = DType.int
 ](idx: SIMD[dtype, width], dim_size: Int) -> SIMD[out_type, width]:
     return idx.lt(0).select(
         idx.cast[out_type]() + Scalar[out_type](dim_size),
@@ -73,7 +73,7 @@ def normalize_neg_index(idx: Int, dim_size: Int) raises -> Int:
 
 @always_inline
 def normalize_neg_index[
-    dtype: DType, width: SIMDSize, out_type: DType = DType.int
+    dtype: DType, width: SIMDLength, out_type: DType = DType.int
 ](idx: SIMD[dtype, width], dim_size: Int) raises -> SIMD[out_type, width]:
     """Indices passed to gather and scatter ops may be negative. This performs
     a normalization so that they can be used to index into a buffer.
@@ -141,7 +141,7 @@ def gather_reduce[
     gather_axis: Int,
     reduce_axis: Int,
     simd_width: Int,
-    reduce_fn: def[dtype: DType, width: SIMDSize](
+    reduce_fn: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](
@@ -427,7 +427,7 @@ def gather[
 
     @always_inline
     def output_fn[
-        width: SIMDSize, _rank: Int, element_alignment: Int
+        width: SIMDLength, _rank: Int, element_alignment: Int
     ](index: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
         var coords = Coord(index)
         comptime assert output.flat_rank >= coords.flat_rank
@@ -510,7 +510,7 @@ def gather_elementwise_fn_wrapper[
     & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[indices_type, width],
     OutputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: SIMDSize, rank: Int, element_alignment: Int](
+    & def[width: SIMDLength, rank: Int, element_alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) -> None,
     *,
@@ -650,7 +650,7 @@ def gather[
     & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[indices_type, width],
     OutputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: SIMDSize, rank: Int, element_alignment: Int](
+    & def[width: SIMDLength, rank: Int, element_alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) -> None,
     *,
@@ -819,7 +819,7 @@ struct ScatterOobIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
 def _atomic_reduce[
     dtype: DType,
     //,
-    reduction_fn: def[dtype: DType, width: SIMDSize](
+    reduction_fn: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], update: Scalar[dtype]):
@@ -857,7 +857,7 @@ def scatter_nd_generator[
     target: StaticString = "cpu",
     reduce_fn: OptionalReg[
         def[
-            dtype: DType, width: SIMDSize
+            dtype: DType, width: SIMDLength
         ](SIMD[dtype, width], SIMD[dtype, width]) thin -> SIMD[dtype, width]
     ] = None,
     *,
@@ -931,6 +931,14 @@ def scatter_nd_generator[
         )
         var data_flat = TileTensor(data.ptr, row_major(data.num_elements()))
 
+        var output_strides = IndexList[data.rank]()
+        for i in range(data.rank):
+            output_strides[i] = Int(output.dynamic_stride(i))
+
+        var updates_strides = IndexList[updates.rank]()
+        for i in range(updates.rank):
+            updates_strides[i] = Int(updates.dynamic_stride(i))
+
         # Always copy input to output first.
         comptime if is_gpu[target]():
             # TODO: Does it matter if output.data or output_flat.data (and data)?
@@ -976,6 +984,7 @@ def scatter_nd_generator[
         #   sheet (r_minus_m = 2),
         #   cuboid (r_minus_m = 3), etc.
         var r_minus_m = data.rank - last_shape_of_indices
+        comptime updates_rank = updates.rank
 
         @always_inline
         def update_func[
@@ -987,10 +996,10 @@ def scatter_nd_generator[
             var data_shape,
             var last_shape_of_indices,
             var output_flat,
+            var output_strides,
             var updates_flat,
+            var updates_strides,
             var indices,
-            var updates,
-            var output,
         }:
             # Calculate how many elements to copy (this is from the innermost
             # dimensions, and is continuous memory locations).
@@ -1005,7 +1014,7 @@ def scatter_nd_generator[
 
             # Stores the full index on updates, where to copy from.
             # Zeroing here to avoid doing it selectively within the nested loop below.
-            var updates_index_tensor = IndexList[updates.rank](0)
+            var updates_index_tensor = IndexList[updates_rank](0)
 
             # Construct the full index on updates tensor, i.e., where to copy from.
             for dim in range(_indices_coords.rank):
@@ -1043,10 +1052,10 @@ def scatter_nd_generator[
             # Calculate the updates_offset from where to copy the updates.
             var updates_offset = 0
 
-            for i in range(updates.rank):
+            for i in range(updates_rank):
                 updates_offset = (
                     updates_offset
-                    + Int(updates.dynamic_stride(i)) * updates_index_tensor[i]
+                    + updates_strides[i] * updates_index_tensor[i]
                 )
 
             # Calculate the output_offset to where to copy the updates.
@@ -1054,8 +1063,7 @@ def scatter_nd_generator[
 
             for i in range(data.rank):
                 output_offset = (
-                    output_offset
-                    + Int(output.dynamic_stride(i)) * output_index_tensor[i]
+                    output_offset + output_strides[i] * output_index_tensor[i]
                 )
 
             comptime if reduce_fn:
@@ -1079,10 +1087,10 @@ def scatter_nd_generator[
             var data_shape,
             var last_shape_of_indices,
             var output_flat,
+            var output_strides,
             var updates_flat,
+            var updates_strides,
             var indices,
-            var updates,
-            var output,
         }:
             # One update element per invocation: the leading coordinates
             # select the index row, the last coordinate selects the element
@@ -1114,9 +1122,9 @@ def scatter_nd_generator[
                     ) or idx_on_axis >= Scalar[indices_type](input_ax_dim):
                         return
 
-                output_base = output_base + Int(
-                    output.dynamic_stride(dim)
-                ) * Int(_unsafe_normalize_neg_index(idx_on_axis, input_ax_dim))
+                output_base = output_base + output_strides[dim] * Int(
+                    _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
+                )
 
             # Base offset on updates for this row; the copied slice occupies
             # the trailing dimensions contiguously. Both `updates_base + elem`
@@ -1127,9 +1135,7 @@ def scatter_nd_generator[
             # produce wrong results.
             var updates_base = 0
             for i in range(indices.rank - 1):
-                updates_base = (
-                    updates_base + Int(updates.dynamic_stride(i)) * coords[i]
-                )
+                updates_base = updates_base + updates_strides[i] * coords[i]
 
             # The launch below only selects simd_width > 1 when slice_elems,
             # the row strides, and the base pointers are all multiples of the
@@ -1399,7 +1405,7 @@ def scatter_elements[
     *,
     reduce_fn: OptionalReg[
         def[
-            dtype: DType, width: SIMDSize
+            dtype: DType, width: SIMDLength
         ](SIMD[dtype, width], SIMD[dtype, width]) thin -> SIMD[dtype, width]
     ] = None,
 ](

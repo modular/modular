@@ -135,9 +135,16 @@ def build_response(
             upper_bound=max_seq_len, default=context.max_length
         )
 
-        # Mark as done if the next step would exceed the max length.
+        # If current length has hit the per-request cap, we're done.
+        # Note: the per-request cap can be much shorter than the model
+        # max-len, due to user-supplied settings such as
+        # `max_completion_tokens`.
         current_length = context.tokens.processed_length + 1
-        if current_length + max_growth_per_step > context_max_length:
+        if current_length >= context_max_length:
+            context.status = GenerationStatus.MAXIMUM_LENGTH
+        # If another step would exceed max_seq_len, we're done. This can stop
+        # spec-decode requests just short of max_seq_len; MXSERV-284 tracks it.
+        elif current_length + max_growth_per_step > max_seq_len:
             context.status = GenerationStatus.MAXIMUM_LENGTH
 
         output = context.to_generation_output()

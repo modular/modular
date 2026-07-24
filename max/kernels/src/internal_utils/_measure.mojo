@@ -354,7 +354,7 @@ def _sum[
 ](src: UnsafePointer[mut=False, Scalar[dtype], _], len: Int) raises -> Scalar[
     dtype
 ]:
-    return sum(Span[Scalar[dtype]](ptr=src, length=len))
+    return sum(Span[Scalar[dtype]](unsafe_ptr=src, length=len))
 
 
 def _mean[
@@ -362,7 +362,7 @@ def _mean[
 ](src: UnsafePointer[mut=False, Scalar[dtype], _], len: Int) raises -> Scalar[
     dtype
 ]:
-    return mean(Span[Scalar[dtype]](ptr=src, length=len))
+    return mean(Span[Scalar[dtype]](unsafe_ptr=src, length=len))
 
 
 def _dot[

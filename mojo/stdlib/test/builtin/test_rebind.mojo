@@ -21,7 +21,7 @@ from test_utils import MoveCopyCounter, DelCounter
 # ===----------------------------------------------------------------------=== #
 
 
-def indirect_rebind_reg[X: SIMDSize](a: SIMD[DType.int32, X]) -> String:
+def indirect_rebind_reg[X: SIMDLength](a: SIMD[DType.int32, X]) -> String:
     return String(rebind[SIMD[DType.int32, 4]](a))
 
 

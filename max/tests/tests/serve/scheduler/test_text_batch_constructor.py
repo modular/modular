@@ -1614,6 +1614,7 @@ def create_dp_balance_constructor(
     dp: int = 2,
     timeout_ms: float = 10_000.0,
     threshold: float = 0.8,
+    enable_dynamic_chunk_size: bool = True,
     hit_counts: list[PrefixCacheHits] | None = None,
 ) -> TextBatchConstructor:
     """A DP constructor with the CE balancer on and a stubbed cache probe."""
@@ -1632,6 +1633,7 @@ def create_dp_balance_constructor(
         data_parallel_degree=dp,
         dp_ce_balance_timeout_ms=timeout_ms,
         dp_ce_balance_threshold=threshold,
+        dp_ce_balance_enable_dynamic_chunk_size=enable_dynamic_chunk_size,
     )
     return TextBatchConstructor(
         scheduler_config=scheduler_config,
@@ -1764,3 +1766,79 @@ def test_dp_ce_balance__release_pooled_request() -> None:
 
     inputs = batch_constructor.construct_batch()
     assert all(len(batch) == 0 for batch in inputs.batches)
+
+
+def _add_deferrable_ce(
+    batch_constructor: TextBatchConstructor, replica_idx: int, seq_len: int
+) -> TextContext:
+    """A TG request plus an unexpired mid-CE request pinned to a replica."""
+    tg_ctx = create_lora_context(is_tg=True)
+    batch_constructor.enqueue_new_request(tg_ctx, replica_idx=replica_idx)
+    ce_ctx = create_lora_context(seq_len=seq_len)
+    batch_constructor.enqueue_new_request(ce_ctx, replica_idx=replica_idx)
+    batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic()
+    return ce_ctx
+
+
+def test_dp_ce_balance__reduces_chunk_size_to_balance_level() -> None:
+    batch_constructor = create_dp_balance_constructor(threshold=0.9)
+    heavy_ce = _add_deferrable_ce(batch_constructor, replica_idx=0, seq_len=96)
+    light_ce = _add_deferrable_ce(batch_constructor, replica_idx=1, seq_len=60)
+
+    # Occupancy (96+60)/(2*96) = 0.81 misses the 0.9 threshold, but both
+    # replicas have CE work and the balance level (60) is at least half the
+    # 100-token chunk target, so the step runs with a 60-token chunk size
+    # per replica: the heavy request is chunked at the quota and only its
+    # excess defers.
+    inputs = batch_constructor.construct_batch()
+    assert batch_constructor._ce_step_quota == [60, 60]
+    assert batch_constructor._ce_deferred_replicas == set()
+    assert has_request(inputs.batches[0], heavy_ce.request_id)
+    assert heavy_ce.tokens.active_length == 60
+    assert has_request(inputs.batches[1], light_ce.request_id)
+
+
+def test_dp_ce_balance__dynamic_chunk_size_disabled_holds_step() -> None:
+    batch_constructor = create_dp_balance_constructor(
+        threshold=0.9, enable_dynamic_chunk_size=False
+    )
+    heavy_ce = _add_deferrable_ce(batch_constructor, replica_idx=0, seq_len=96)
+    light_ce = _add_deferrable_ce(batch_constructor, replica_idx=1, seq_len=60)
+
+    # Same step as above, but with dynamic chunk sizing off it is held whole.
+    inputs = batch_constructor.construct_batch()
+    assert batch_constructor._ce_step_quota is None
+    assert batch_constructor._ce_deferred_replicas == {0, 1}
+    assert not has_request(inputs.batches[0], heavy_ce.request_id)
+    assert not has_request(inputs.batches[1], light_ce.request_id)
+
+
+def test_dp_ce_balance__no_chunk_size_reduction_below_half_target() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    _add_deferrable_ce(batch_constructor, replica_idx=0, seq_len=96)
+    _add_deferrable_ce(batch_constructor, replica_idx=1, seq_len=30)
+
+    # The balance level (30) is under half the 100-token chunk target:
+    # chunks that small cost more in extra steps than the imbalance they
+    # avoid, so the work is held instead.
+    batch_constructor.construct_batch()
+    assert batch_constructor._ce_step_quota is None
+    assert batch_constructor._ce_deferred_replicas == {0, 1}
+
+
+def test_dp_ce_balance__quota_never_below_floor() -> None:
+    batch_constructor = create_dp_balance_constructor(threshold=0.9)
+    # Replica 0's CE deadline is blown: it is floor work that runs to the
+    # full chunk budget, and the balance level cannot drop below it.
+    tg_ctx = create_lora_context(is_tg=True)
+    batch_constructor.enqueue_new_request(tg_ctx, replica_idx=0)
+    expired_ce = create_lora_context(seq_len=96)
+    batch_constructor.enqueue_new_request(expired_ce, replica_idx=0)
+    batch_constructor._ce_arrival[expired_ce.request_id] = (
+        time.monotonic() - 60.0
+    )
+    _add_deferrable_ce(batch_constructor, replica_idx=1, seq_len=60)
+
+    batch_constructor.construct_batch()
+    assert batch_constructor._ce_step_quota == [96, 60]
+    assert batch_constructor._ce_deferred_replicas == set()

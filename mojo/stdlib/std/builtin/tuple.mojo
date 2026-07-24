@@ -181,11 +181,7 @@ struct Tuple[*element_types: Movable](
         comptime for i in range(Self.__len__()):
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
-            # method.
-            MutUnsafePointer(Pointer(to=self[i])).init_pointee_move_from(
-                MutUnsafePointer(Pointer(to=move[i]))
-            )
+            Pointer(to=self[i]).unsafe_write_move_from(Pointer(to=move[i]))
         # Note: The destructor on `move` is auto-disabled in a moveinit.
 
     @always_inline("builtin")
@@ -468,9 +464,7 @@ struct Tuple[*element_types: Movable](
         )
 
         comptime for i in range(type_of(result).__len__()):
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
-            # method.
-            MutUnsafePointer(Pointer(to=result[i])).init_pointee_move_from(
+            Pointer(to=result[i]).unsafe_write_move_from(
                 rebind[Pointer[type_of(result[i]), origin_of(self)]](
                     Pointer(to=self[Self.element_types.size - 1 - i])
                 )
@@ -515,20 +509,14 @@ struct Tuple[*element_types: Movable](
         comptime self_len = Self.__len__()
 
         comptime for i in range(self_len):
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
-            # method.
-            MutUnsafePointer(Pointer(to=result[i])).init_pointee_move_from(
+            Pointer(to=result[i]).unsafe_write_move_from(
                 rebind[Pointer[type_of(result[i]), origin_of(self)]](
                     Pointer(to=self[i])
                 )
             )
 
         comptime for i in range(type_of(other).__len__()):
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
-            # method.
-            MutUnsafePointer(
-                Pointer(to=result[self_len + i])
-            ).init_pointee_move_from(
+            Pointer(to=result[self_len + i]).unsafe_write_move_from(
                 rebind[
                     Pointer[type_of(result[self_len + i]), origin_of(other)]
                 ](Pointer(to=other[i]))

@@ -163,17 +163,16 @@ def test_sha256_64_negative_int_hash_filename_is_canonical(
 
     sha256_64 truncates a 32-byte SHA-256 digest to 8 bytes; for roughly
     half of all inputs the resulting 8-byte hash has its high bit set (i.e.
-    is negative when viewed as a signed int64). Block hashes are now produced
-    as raw ``bytes`` upstream — the signed-int64 boundary coercion that used
-    to live in ``kv_connector.to_block_hash_bytes`` was removed — so the disk
-    tier receives the raw 8 bytes directly. This pins that the DiskTier maps
-    such a high-bit-set 8-byte key to the matching hex filename, i.e. the
-    on-disk schema that ``_load_existing`` has to round-trip across restarts.
+    is negative when viewed as a signed int64). Block hashes are produced as
+    raw ``bytes`` upstream by the block hasher — with no signed-int64 boundary
+    coercion — so the disk tier receives the raw 8 bytes directly. This pins
+    that the DiskTier maps such a high-bit-set 8-byte key to the matching hex
+    filename, i.e. the on-disk schema that ``_load_existing`` has to round-trip
+    across restarts.
 
     The former int64-boundary-sentinel and bytes-passthrough assertions only
-    exercised ``to_block_hash_bytes``'s removed int-encoding branch, so they
-    are dropped; the disk-tier filename derivation below is the code under
-    test.
+    exercised an int-encoding branch that no longer exists, so they are
+    dropped; the disk-tier filename derivation below is the code under test.
     """
     # A high-bit-set 8-byte hash (the bytes image of int64 -1), produced as
     # raw bytes upstream rather than via an int->bytes coercion helper.

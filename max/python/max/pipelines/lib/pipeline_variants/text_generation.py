@@ -234,7 +234,7 @@ class TextGenerationPipeline(
             max_batch_size=max_batch_size,
         )
 
-        available_cache_memory = model_config.kv_cache._available_cache_memory
+        available_cache_memory = memory_plan.available_cache_memory
         kv_params = self._pipeline_model.kv_params
         self._kv_manager = load_kv_manager(
             params=kv_params,

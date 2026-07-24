@@ -114,21 +114,21 @@ struct OwnedPointer[T: AnyType](
     def __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutUntrackedOrigin],
+        unsafe_from_raw_pointer: Pointer[Self.T, MutUntrackedOrigin],
     ):
-        """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
+        """Construct a new `OwnedPointer` by taking ownership of the provided `Pointer`.
 
         Args:
-            unsafe_from_raw_pointer: The `UnsafePointer` to take ownership of.
+            unsafe_from_raw_pointer: The `Pointer` to take ownership of.
 
         Safety:
 
-        This function is unsafe as the provided `UnsafePointer` must be initialize with a single valid `T`
+        This function is unsafe as the provided `Pointer` must be initialize with a single valid `T`
         initially allocated with this `OwnedPointer`'s backing allocator.
         This function is unsafe as other memory problems can arise such as a double-free if this function
         is called twice with the same pointer or a user manually deallocates the same data.
 
-        After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
+        After using this constructor, the `Pointer` is assumed to be owned by this `OwnedPointer`.
         In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
         """
         self._inner = ThinAllocation(
@@ -173,20 +173,20 @@ struct OwnedPointer[T: AnyType](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     def __getitem__(
         ref[AddressSpace.GENERIC] self,
-    ) -> ref[self._inner, AddressSpace.GENERIC] Self.T:
+    ) -> ref[
+        origin_of(self)._get_owned_interior["value"], AddressSpace.GENERIC
+    ] Self.T:
         """Returns a reference to the pointers's underlying data with parametric mutability.
 
         Returns:
             A reference to the data underlying the `OwnedPointer`.
         """
-        # This should have a widening conversion here that allows
-        # the mutable ref that is always (potentially unsafely)
-        # returned from UnsafePointer to be guarded behind the
-        # aliasing guarantees of the origin system here.
-        # All of the magic happens above in the function signature
-        return self._inner.unsafe_ptr()[]
+        return self._inner.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
+            "value", origin_of(self)
+        ]()
 
     # ===-------------------------------------------------------------------===#
     # Methods

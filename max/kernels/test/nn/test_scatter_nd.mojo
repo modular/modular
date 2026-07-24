@@ -19,7 +19,7 @@ from std.testing import assert_equal
 
 @always_inline
 def use_update[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]) -> SIMD[
     dtype, width
 ]:
@@ -429,7 +429,7 @@ def main() raises:
 
         @always_inline
         def _add[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
@@ -641,7 +641,7 @@ def main() raises:
 
         @always_inline
         def _max[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
@@ -853,7 +853,7 @@ def main() raises:
 
         @always_inline
         def _min[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return min(v1, v2)
 
@@ -1065,7 +1065,7 @@ def main() raises:
 
         @always_inline
         def _mul[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 * v2
 
@@ -1111,7 +1111,7 @@ def main() raises:
 
         @always_inline
         def _add[
-            ty: DType, width: SIMDSize
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 

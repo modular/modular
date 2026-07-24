@@ -61,7 +61,7 @@ def block_reduce_sum_and_max[
     @always_inline
     @parameter
     def _reduce_fn[
-        dtype: DType, width: SIMDSize, reduction_idx: Int
+        dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
         comptime if reduction_idx == 0:
             return warp.sum(v)

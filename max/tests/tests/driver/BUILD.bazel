@@ -14,6 +14,8 @@ modular_py_test(
             "test_device_event.py",
             "test_buffer_device_pinned.py",
             "test_host_func.py",
+            "test_gpt2_default.py",
+            "test_gpt2_hal.py",
         ],
     ),
     tags = [
@@ -62,6 +64,152 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        requirement("numpy"),
+    ],
+)
+
+# End-to-end GPT-2 greedy-decode on a HAL-backed accelerator. The HAL
+# `DeviceContext` is selected purely by `MODULAR_DRIVER_PLUGINS`; the test code
+# is hardware-agnostic and uses the standard `max.driver.Accelerator()`. The
+# per-vendor `data`/`env` select supplies the matching neo-driver plugin and
+# points `MODULAR_DRIVER_PLUGINS` at it (`<API>@<plugin path>`).
+#
+# Weights are the real `openai-community/gpt2` safetensors, downloaded and
+# cached from HuggingFace on first run (set `GPT2_SAFETENSORS_PATH` to run
+# offline against a local copy). A failed download is a hard error, not a skip.
+# `requires-network`/`no-sandbox` give the test network access for the download
+# (the default sandbox has none); this mirrors the HF-downloading tests under
+# //max/tests/integration.
+modular_py_test(
+    name = "gpt2_hal",
+    # The per-module CPU-vs-device conformance tests compile many graphs
+    # (including several full 12-layer models), on top of the end-to-end
+    # decode, so the suite needs more than the default `medium` (300s) budget.
+    size = "large",
+    srcs = ["test_gpt2_hal.py"],
+    data = select({
+        "//:nvidia_gpu": [
+            "//Target:CPUPlugin.so",
+            "//Target:CUDAPlugin.so",
+        ],
+        "//:apple_gpu": [
+            "//Target:CPUPlugin.so",
+            "//Target:MetalPlugin.so",
+        ],
+        "//:amd_gpu": [
+            "//Target:CPUPlugin.so",
+            "//Target:HIPPlugin.so",
+        ],
+        "//conditions:default": [],
+    }),
+    env = select({
+        "//:nvidia_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "CUDA@$(rootpath //Target:CUDAPlugin.so);CPU@$(rootpath //Target:CPUPlugin.so)",
+        },
+        "//:apple_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "Metal@$(rootpath //Target:MetalPlugin.so);CPU@$(rootpath //Target:CPUPlugin.so)",
+        },
+        "//:amd_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "HIP@$(rootpath //Target:HIPPlugin.so);CPU@$(rootpath //Target:CPUPlugin.so)",
+        },
+        "//conditions:default": {},
+    }),
+    env_inherit = ["HF_TOKEN"],
+    ignore_extra_deps = [
+        # Lazy import inside the experimental interpreter path.
+        "//max/python/max/_interpreter_ops",
+    ],
+    tags = [
+        "gpu",
+        # Downloads real gpt2 weights and runs a large end-to-end decode, so
+        # keep it out of wildcard runs (`//...`); trigger explicitly by target.
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:nvidia_gpu": [],
+        "//:apple_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }) + select({
+        # Only built/run under `--config=hal-device-context`, which flips
+        # `--//:hal_device_context=true`. The HAL DeviceContext graph-execution
+        # path this test exercises is only available under that config.
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+    ],
+)
+
+# AsyncRT counterpart to `gpt2_hal`: the same end-to-end GPT-2 greedy decode and
+# CPU-reference comparison, but on the DEFAULT device context. Built/run WITHOUT
+# `--config=hal-device-context` (and without `MODULAR_DRIVER_PLUGINS`, which the
+# AsyncRT backend ignores — it links its driver directly), so
+# `max.driver.Accelerator()` is the AsyncRT GPU context. Run both `gpt2_hal`
+# (under `--config=hal-device-context`) and `gpt2_default` (default config) and
+# confirm identical tokens to compare the HAL and AsyncRT device-context paths.
+modular_py_test(
+    name = "gpt2_default",
+    # The per-module CPU-vs-device conformance tests compile many graphs
+    # (including several full 12-layer models), on top of the end-to-end
+    # decode, so the suite needs more than the default `medium` (300s) budget.
+    size = "large",
+    srcs = ["test_gpt2_default.py"],
+    # GPT-2-small in float32 (~0.5GB of weights, plus the eager interpreter's
+    # live intermediates) far exceeds the default per-test AsyncRT memory-manager
+    # budget (`DEFAULT_GPU_MEMORY` 0.8GB minus 0.6GB overhead = 0.2GB). The
+    # default test env runs the manager in strict mode
+    # (`MEMORY_MANAGER_ONLY=true`), which hard-fails any single allocation larger
+    # than that budget. Override to `false` so the AsyncRT allocator falls back
+    # to direct driver allocation for the large tensors (the same way the HAL
+    # backend allocates), rather than crashing. (`gpt2_hal` needs no override:
+    # the HAL backend bypasses this manager entirely.)
+    env = {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
+    },
+    env_inherit = ["HF_TOKEN"],
+    ignore_extra_deps = [
+        # Lazy import inside the experimental interpreter path.
+        "//max/python/max/_interpreter_ops",
+    ],
+    tags = [
+        "gpu",
+        # Downloads real gpt2 weights and runs a large end-to-end decode, so
+        # keep it out of wildcard runs (`//...`); trigger explicitly by target.
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:nvidia_gpu": [],
+        "//:apple_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }) + select({
+        # AsyncRT (default) device context only; the HAL variant is `gpt2_hal`.
+        # Under `--config=hal-device-context` the std overlay is HAL, so this
+        # target would no longer exercise AsyncRT — exclude it there.
+        "//:hal_device_context_enabled": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        requirement("huggingface-hub"),
         requirement("numpy"),
     ],
 )

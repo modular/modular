@@ -1,5 +1,5 @@
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -111,4 +111,23 @@ sh_binary(
         ":hle_eval",
     ],
     tags = ["manual"],
+)
+
+# Suite-level score consolidation for the full-accuracy-eval orchestrator.
+# Stdlib-only: the CI collector job runs it with a bare python3, no bazel.
+modular_py_binary(
+    name = "collect_scores",
+    testonly = True,
+    srcs = ["collect_scores.py"],
+    imports = ["."],
+    main = "collect_scores.py",
+)
+
+modular_py_test(
+    name = "test_collect_scores",
+    size = "small",
+    srcs = ["test_collect_scores.py"],
+    deps = [
+        ":collect_scores",
+    ],
 )

@@ -309,6 +309,15 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
+    chunked_prefill_min_chunk_size: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Floor, in tokens, on any chunk created by chunked prefill "
+            "(neither a chunk nor its remainder may be smaller). 0 disables."
+        ),
+    )
+
     enable_in_flight_batching: bool = Field(
         default=False,
         description=(
@@ -453,6 +462,15 @@ class PipelineArgs(ConfigFileModel):
         description=(
             "Per-step CE occupancy across DP replicas (0-1) at or above "
             "which CE work is scheduled without further deferral."
+        ),
+    )
+
+    dp_ce_balance_enable_dynamic_chunk_size: bool = Field(
+        default=True,
+        description=(
+            "Whether below-threshold multi-replica CE steps run immediately "
+            "with chunk sizes reduced to the balance level (False = hold "
+            "whole)."
         ),
     )
 
@@ -732,7 +750,7 @@ class PipelineArgs(ConfigFileModel):
         etc.) instead of duplicating it. It is not a general round-trip:
         ``pipeline_config`` is expected to be freshly constructed and not
         yet resolved. Resolution-derived state (e.g. an applied dtype cast
-        recorded by ``MAXModelConfig.resolve()``) is *not* preserved --
+        recorded during architecture-level resolution) is *not* preserved --
         :class:`PipelineArgs` is deliberately isolated from resolution
         mutations (see #90128), so passing an already-resolved
         ``pipeline_config`` here will silently drop that state.
@@ -796,6 +814,7 @@ class PipelineArgs(ConfigFileModel):
             ce_delay_ms=runtime.ce_delay_ms,
             enable_prioritize_first_decode=runtime.enable_prioritize_first_decode,
             enable_chunked_prefill=runtime.enable_chunked_prefill,
+            chunked_prefill_min_chunk_size=runtime.chunked_prefill_min_chunk_size,
             enable_in_flight_batching=runtime.enable_in_flight_batching,
             eplb_replicas_per_gpu=runtime.eplb_replicas_per_gpu,
             max_num_steps=runtime.max_num_steps,
@@ -816,6 +835,7 @@ class PipelineArgs(ConfigFileModel):
             enable_overlap_scheduler=runtime.enable_overlap_scheduler,
             dp_ce_balance_timeout_ms=runtime.dp_ce_balance_timeout_ms,
             dp_ce_balance_threshold=runtime.dp_ce_balance_threshold,
+            dp_ce_balance_enable_dynamic_chunk_size=runtime.dp_ce_balance_enable_dynamic_chunk_size,
             allow_unsupported_logprobs=runtime.allow_unsupported_logprobs,
             allow_extra_request_fields=runtime.allow_extra_request_fields,
             prefer_module_v3=runtime.prefer_module_v3,

@@ -94,6 +94,11 @@ class EPConfig:
 
     use_allreduce: bool = False
     """Whether to use allreduce for the cross-device communication."""
+
+    max_batch_size: int = 0
+    """Decode concurrency cap sizing the AMD MXFP4 preb direct grid.y on the
+    decode bands. 0 disables (full-stride fallback)."""
+
     # EPLB parameters (used only when eplb_enabled is True)
     eplb_enabled: bool = False
     """When true, EPBatchManager exposes log2phy / logcnt input buffer. """

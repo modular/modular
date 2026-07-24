@@ -13,7 +13,7 @@
 
 
 def concat[
-    dtype: DType, ls_size: SIMDSize, rh_size: SIMDSize, //
+    dtype: DType, ls_size: SIMDLength, rh_size: SIMDLength, //
 ](lhs: SIMD[dtype, ls_size], rhs: SIMD[dtype, rh_size]) -> SIMD[
     dtype, ls_size + rh_size
 ]:

@@ -654,7 +654,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
     def _write(
         self,
-        ptr: UnsafePointer[mut=False, UInt8, _, address_space=_],
+        ptr: Pointer[mut=False, UInt8, _, address_space=_],
         len: Int,
     ) raises:
         """Write the data to the file, handling partial writes automatically.
@@ -673,7 +673,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         var total_written = 0
 
         while total_written < len:
-            var current_ptr = ptr + total_written
+            var current_ptr = ptr.unsafe_offset(total_written)
             var bytes_written = external_call["write", c_ssize_t](
                 fd, current_ptr, len - total_written
             )

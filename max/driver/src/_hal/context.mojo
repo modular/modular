@@ -210,6 +210,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         complete. `value_size` must be one of 1, 2, 4, or 8."""
         self._raw[].fill_sync(self._handle, dst._view, value, value_size)
 
+    @always_inline
     def _compile_inner[
         fn_type: TrivialRegisterPassable,
         func: fn_type,
@@ -243,6 +244,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             emission_kind="object",
         )
 
+    @always_inline
     def compile[
         fn_type: TrivialRegisterPassable,
         func: fn_type,
@@ -442,6 +444,13 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         self, bundle: RuntimeBundle, var name: String
     ) raises HALError -> FunctionHandle:
         return self._raw[].load_function(self._handle, bundle._handle, name)
+
+    def set_function_attribute(
+        self, func: FunctionHandle, attribute: Int32, value: Int32
+    ) raises HALError:
+        """Sets a backend function attribute (e.g. the dynamic shared-memory
+        cap) on a loaded function."""
+        self._raw[].set_function_attribute(self._handle, func, attribute, value)
 
     def unload_function(self, func: FunctionHandle) raises HALError:
         self._raw[].unload_function(self._handle, func)

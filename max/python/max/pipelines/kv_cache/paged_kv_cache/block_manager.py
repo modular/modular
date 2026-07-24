@@ -37,7 +37,7 @@ from max.pipelines.context import (
     TextContext,
     TokenHashOverride,
 )
-from max.pipelines.kv_cache.kv_connector import KVConnector, to_block_hash_bytes
+from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
@@ -667,7 +667,7 @@ class BlockManager:
         block_ids = [b.bid for b in blocks]
         num_loaded = connector.load(
             block_ids,
-            [to_block_hash_bytes(h) for h in desired_hashes],
+            desired_hashes,
             replica_idx=replica_idx,
         )
 
@@ -754,7 +754,7 @@ class BlockManager:
         num_disk_hits = 0
         if len(remaining) > 0 and self.connector.num_host_blocks > 0:
             num_host_hits, num_disk_hits = self.connector.count_cached_prefix(
-                [to_block_hash_bytes(h) for h in remaining]
+                remaining
             )
 
         return PrefixCacheHits(
@@ -827,7 +827,7 @@ class BlockManager:
                 : num_committed_blocks + len(device_blocks) + len(host_blocks)
             ]
             self.connector.touch(
-                [to_block_hash_bytes(h) for h in cached_hashes],
+                cached_hashes,
                 replica_idx=replica_idx,
             )
 
@@ -923,10 +923,8 @@ class BlockManager:
             if block_hashes:
                 connector.offload(
                     block_ids,
-                    [to_block_hash_bytes(h) for h in block_hashes],
-                    None
-                    if parent_seq_hash is None
-                    else to_block_hash_bytes(parent_seq_hash),
+                    block_hashes,
+                    parent_seq_hash,
                     replica_idx=replica_idx,
                 )
         self._pending_offloads[replica_idx].clear()

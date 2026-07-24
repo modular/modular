@@ -268,7 +268,7 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     @__copy_capture(c_device_lt)
     def epilogue_fn[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:

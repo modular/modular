@@ -20,13 +20,7 @@ import queue
 import re
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import (
-    AsyncGenerator,
-    Iterable,
-    Mapping,
-    MutableMapping,
-    Sequence,
-)
+from collections.abc import AsyncGenerator, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from json.decoder import JSONDecodeError
@@ -57,7 +51,6 @@ from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline_variants.structured_output_backend import (
     GrammarValidator,
 )
-from max.pipelines.lib.tokenizer import replace_unpaired_surrogates
 from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lib.tool_parsing import (
     maybe_name_from_tool,
@@ -91,7 +84,10 @@ from max.serve.parser.tool_call_normalization import (
     _normalize_tools_parameters,
     normalize_response_format_schema,
 )
-from max.serve.parser.tool_call_validation import check_tool_call_conformance
+from max.serve.parser.tool_call_validation import (
+    check_response_format_conformance,
+    check_tool_call_conformance,
+)
 from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
@@ -414,6 +410,7 @@ class OpenAIChatResponseGenerator(
         tools: list[TextGenerationRequestTool] | None = None,
         fold_reasoning_into_content: bool = False,
         emit_reasoning_content: bool = False,
+        response_format_json_schema: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
@@ -450,6 +447,13 @@ class OpenAIChatResponseGenerator(
         # Per-call streaming accumulators for end-of-stream conformance check.
         self._stream_tool_names: dict[int, str] = {}
         self._stream_tool_args: dict[int, list[str]] = {}
+        # Schema behind response_format json_schema/json_object, used only for
+        # observability-only conformance logging of the final content (the
+        # response_format counterpart of _tool_schemas). Captured before any
+        # combined tools+response_format grammar rewrite discards it.
+        self._response_format_json_schema = response_format_json_schema
+        # Pre-<think>-fold content accumulator for the end-of-stream check.
+        self._stream_response_content: list[str] = []
 
     def _log_tool_call_conformance(
         self,
@@ -467,13 +471,47 @@ class OpenAIChatResponseGenerator(
             # JSON paths stay in the log line to keep label cardinality bounded.
             METRICS.tool_call_conformance_error(result.outcome)
             logger.warning(
-                "tool_call_conformance req=%s stream=%s fn=%s outcome=%s errors=%s",
+                "tool_call_conformance req=%s stream=%s fn=%s outcome=%s "
+                "errors=%s additional=%d",
                 request_id,
                 is_streaming,
                 result.function,
                 result.outcome,
                 ",".join(result.errors) if result.errors else "-",
+                result.additional_error_count,
             )
+
+    def _log_response_format_conformance(
+        self,
+        content: str,
+        request_id: str,
+        is_streaming: bool,
+        finish_reason: str | None,
+    ) -> None:
+        """Checks final content against the response_format schema.
+
+        Observability-only: never mutates the response and never raises into
+        the request path. Only the failing validator keywords and JSON paths
+        are logged, never content values."""
+        assert self._response_format_json_schema is not None
+        result = check_response_format_conformance(
+            content, self._response_format_json_schema
+        )
+        if result.outcome == "valid":
+            return
+        # Count by the bounded outcome only; the failing JSON paths and
+        # finish_reason stay in the log line to keep label cardinality bounded.
+        METRICS.response_format_conformance_error(result.outcome)
+        logger.warning(
+            "response_format_conformance req=%s stream=%s outcome=%s "
+            "finish_reason=%s errors=%s additional=%d",
+            request_id,
+            is_streaming,
+            result.outcome,
+            finish_reason,
+            ",".join(result.errors) if result.errors else "-",
+            result.additional_error_count,
+        )
 
     def _fold_reasoning_delta(
         self, reasoning_text: str | None, content_text: str | None
@@ -532,6 +570,8 @@ class OpenAIChatResponseGenerator(
         n_cached_prompt_tokens = 0
         status_code = 200
         has_emitted_tool_calls = False
+        final_finish_reason: str | None = None
+        self._stream_response_content.clear()
 
         # Reset parser state for new streaming session
         if self.parse_tool_calls:
@@ -654,6 +694,13 @@ class OpenAIChatResponseGenerator(
                     elif tool_call_chunks:
                         content = None
 
+                    # Accumulate pre-fold content for the end-of-stream
+                    # response_format conformance check, matching the
+                    # non-streaming path, which validates the message before
+                    # any <think> fold.
+                    if content and self._response_format_json_schema:
+                        self._stream_response_content.append(content)
+
                     # MiniMax ``reasoning_split=False``: fold reasoning into the
                     # content stream wrapped in ``<think>...</think>`` and drop
                     # the dedicated reasoning field. Tool-call deltas are left
@@ -671,6 +718,8 @@ class OpenAIChatResponseGenerator(
                         allow_none=True,
                         has_tool_calls=has_emitted_tool_calls,
                     )
+                    if finish_reason is not None:
+                        final_finish_reason = finish_reason
                     # While tokens are captured and hidden during tool-call
                     # generation, the resolved delta can be empty: the parser
                     # consumed the chunk (merged_stream_content is not None) but
@@ -715,6 +764,7 @@ class OpenAIChatResponseGenerator(
                         allow_none=False,
                         has_tool_calls=has_emitted_tool_calls,
                     )
+                    final_finish_reason = finish_reason
 
                     choices = [
                         ChatCompletionStreamResponseChoice(
@@ -767,6 +817,18 @@ class OpenAIChatResponseGenerator(
                 request,
                 n_reasoning_tokens + n_tokens,
             )
+
+            # End-of-stream response_format conformance check. Skipped when
+            # the model emitted tool calls: a combined tools+response_format
+            # grammar is single-shot (one tool section OR one schema JSON), so
+            # tool-call output owes nothing to the response_format schema.
+            if self._response_format_json_schema and not has_emitted_tool_calls:
+                self._log_response_format_conformance(
+                    "".join(self._stream_response_content),
+                    request_id=str(request.request_id),
+                    is_streaming=True,
+                    finish_reason=final_finish_reason,
+                )
 
             # If `include_usage=True`, send a final chunk with usage statistics
             if self.stream_options and self.stream_options.get("include_usage"):
@@ -966,6 +1028,17 @@ class OpenAIChatResponseGenerator(
                     )
 
             if not response_choices:
+                # Text (non-tool-call) response: check final content against
+                # the response_format schema. Tool-call responses owe nothing
+                # to the schema -- a combined tools+response_format grammar is
+                # single-shot (one tool section OR one schema JSON).
+                if self._response_format_json_schema:
+                    self._log_response_format_conformance(
+                        response_message,
+                        request_id=str(request.request_id),
+                        is_streaming=False,
+                        finish_reason=finish_reason,
+                    )
                 self._handle_text_response(
                     response_message,
                     response_choices,
@@ -1208,144 +1281,6 @@ def _coerce_optional_str(value: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _sanitize_text(text: str, source: str, *, reject: bool) -> str:
-    """Returns ``text`` made UTF-8 encodable, or raises when ``reject`` is set.
-
-    A lone UTF-16 surrogate is valid in JSON and in a Python ``str`` but is not
-    encodable as UTF-8, so it would otherwise crash the fast tokenizer. When
-    ``reject`` is False each unpaired surrogate is replaced with U+FFFD; when
-    True the request is rejected with a client-facing ``InputError`` naming the
-    offending position. Well-formed text takes the fast path unchanged.
-    """
-    if text.isascii():
-        return text
-    try:
-        text.encode("utf-8")
-    except UnicodeEncodeError as e:
-        if reject:
-            raise InputError(
-                f"{source} contains an unpaired UTF-16 surrogate at position "
-                f"{e.start}; the text is valid JSON but not valid UTF-8."
-            ) from None
-        return replace_unpaired_surrogates(text)
-    return text
-
-
-def _sanitize_message_in_place(
-    message: MutableMapping[str, Any], *, reject: bool
-) -> None:
-    """Sanitizes every text field of a chat message that reaches the tokenizer.
-
-    Mutates ``message`` (a per-request dict) so the sanitized text reaches every
-    model, including architectures whose tokenizer overrides the base encode
-    path. Normalizes by default; raises ``InputError`` when ``reject`` is set.
-    """
-    content = message.get("content")
-    if isinstance(content, str):
-        message["content"] = _sanitize_text(
-            content, "message content", reject=reject
-        )
-    elif isinstance(content, list):
-        for part in content:
-            if isinstance(part, MutableMapping) and part.get("type") == "text":
-                text = part.get("text")
-                if isinstance(text, str):
-                    part["text"] = _sanitize_text(
-                        text, "message content", reject=reject
-                    )
-    # ``tool_call_id`` is deliberately left untouched: it is an opaque
-    # correlation key matched against the assistant ``tool_calls[].id`` (which
-    # is not sanitized), so normalizing only one side would desync the match.
-    for key in ("reasoning_content", "reasoning"):
-        value = message.get(key)
-        if isinstance(value, str):
-            message[key] = _sanitize_text(
-                value, "reasoning content", reject=reject
-            )
-    tool_calls = message.get("tool_calls")
-    if isinstance(tool_calls, list):
-        for tool_call in tool_calls:
-            if not isinstance(tool_call, MutableMapping):
-                continue
-            function = tool_call.get("function")
-            if not isinstance(function, MutableMapping):
-                continue
-            # Some chat templates (e.g. Kimi) render the call's function name
-            # as well as its arguments, so both reach the tokenizer.
-            for field, label in (
-                ("name", "tool call name"),
-                ("arguments", "tool call arguments"),
-            ):
-                value = function.get(field)
-                if isinstance(value, str):
-                    function[field] = _sanitize_text(
-                        value, label, reject=reject
-                    )
-
-
-def _sanitize_stop(
-    stop: str | list[str] | None, *, reject: bool
-) -> str | list[str] | None:
-    """Sanitizes stop-sequence text, which the tokenizer also encodes.
-
-    Stop strings reach the tokenizer via ``_encode_stop_criteria``, so an
-    unpaired surrogate here must be handled at the boundary alongside the
-    prompt and message content.
-    """
-    if isinstance(stop, str):
-        return _sanitize_text(stop, "stop sequence", reject=reject)
-    if isinstance(stop, list):
-        return [
-            _sanitize_text(s, "stop sequence", reject=reject)
-            if isinstance(s, str)
-            else s
-            for s in stop
-        ]
-    return stop
-
-
-def _sanitize_json_in_place(
-    value: object, source: str, *, reject: bool
-) -> object:
-    """Recursively sanitizes every string leaf of a JSON-like value.
-
-    Used for a tool definition's ``parameters`` schema, whose nested
-    descriptions and enum values are rendered into some chat templates.
-    """
-    if isinstance(value, str):
-        return _sanitize_text(value, source, reject=reject)
-    if isinstance(value, MutableMapping):
-        for key, item in list(value.items()):
-            value[key] = _sanitize_json_in_place(item, source, reject=reject)
-    elif isinstance(value, list):
-        for i, item in enumerate(value):
-            value[i] = _sanitize_json_in_place(item, source, reject=reject)
-    return value
-
-
-def _sanitize_tool_in_place(
-    tool: MutableMapping[str, Any], *, reject: bool
-) -> None:
-    """Sanitizes a tool definition's rendered text (name, description, schema).
-
-    Tool definitions are passed to ``apply_chat_template`` and tokenized, so a
-    tokenizer that overrides the base encode path would otherwise still crash on
-    an unpaired surrogate in a tool name, description, or parameter schema.
-    """
-    function = tool.get("function")
-    if not isinstance(function, MutableMapping):
-        return
-    for key in ("name", "description"):
-        value = function.get(key)
-        if isinstance(value, str):
-            function[key] = _sanitize_text(
-                value, "tool definition", reject=reject
-            )
-    parameters = function.get("parameters")
-    if parameters is not None:
-        _sanitize_json_in_place(parameters, "tool definition", reject=reject)
-
-
 def _validate_tool_message_consistency(
     messages: Sequence[Mapping[str, Any]],
 ) -> None:
@@ -1440,22 +1375,6 @@ async def openai_parse_chat_completion_request(
     declare them via ``extra_chat_roles``).
     """
     _validate_tool_message_consistency(completion_request.messages)
-    for message in completion_request.messages:
-        # ``ChatCompletionMessageParam`` is a union of TypedDicts; at runtime
-        # each is a plain dict we mutate through a ``MutableMapping`` view.
-        _sanitize_message_in_place(
-            cast(MutableMapping[str, Any], message),
-            reject=settings.reject_invalid_utf8,
-        )
-    completion_request.stop = _sanitize_stop(
-        completion_request.stop, reject=settings.reject_invalid_utf8
-    )
-    for tool in completion_request.tools or []:
-        if isinstance(tool, MutableMapping):
-            _sanitize_tool_in_place(
-                cast(MutableMapping[str, Any], tool),
-                reject=settings.reject_invalid_utf8,
-            )
     if allowed_roles is not None:
         for m in completion_request.messages:
             role = m.get("role")
@@ -1836,6 +1755,15 @@ async def openai_create_chat_completion(
             enable_response_format_schema=pipeline_config.sampling.enable_structured_output,
             grammar_validator=request.app.state.grammar_validator,
         )
+        # Keep the user's schema for the observability-only conformance check
+        # of the final content: a combined tools+response_format request
+        # replaces ``response_format`` below with a type="grammar" one whose
+        # json_schema is empty.
+        response_format_json_schema = (
+            response_format.json_schema
+            if response_format is not None and response_format.json_schema
+            else None
+        )
 
         # For architectures with a grammar-based tool parser (e.g., Kimi),
         # generate constrained decoding grammars for tool calls and/or
@@ -1947,6 +1875,7 @@ async def openai_create_chat_completion(
             tools=tools,
             fold_reasoning_into_content=fold_reasoning_into_content,
             emit_reasoning_content=pipeline_config.runtime.emit_reasoning_content,
+            response_format_json_schema=response_format_json_schema,
         )
         # Use request-level sampling params if provided, else server defaults.
         temp = (
@@ -2869,18 +2798,7 @@ async def openai_create_completion(
         response_generator = OpenAICompletionResponseGenerator(
             pipeline, stream_options=completion_request.stream_options
         )
-        reject_invalid_utf8 = request.app.state.settings.reject_invalid_utf8
-        prompts: list[str | Sequence[int]] = [
-            _sanitize_text(prompt, "prompt", reject=reject_invalid_utf8)
-            if isinstance(prompt, str)
-            else prompt
-            for prompt in get_prompts_from_openai_request(
-                completion_request.prompt
-            )
-        ]
-        completion_request.stop = _sanitize_stop(
-            completion_request.stop, reject=reject_invalid_utf8
-        )
+        prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []
         # Use request-level sampling params if provided, else server defaults.
         temp = (

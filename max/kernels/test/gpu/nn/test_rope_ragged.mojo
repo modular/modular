@@ -177,7 +177,7 @@ def _test_rope_ragged_gpu_impl[
 
     @always_inline
     def output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](idx: IndexList[3], val: SIMD[dtype, width]) {
         var q_out_device_tensor
     } -> None:

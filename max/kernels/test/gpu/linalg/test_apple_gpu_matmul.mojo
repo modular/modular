@@ -254,7 +254,7 @@ def _run_8x8_bias_case[
     @always_inline
     @__copy_capture(d_ptr, bias_ptr, row_stride)
     def bias_epilogue[
-        dt: DType, w: SIMDSize, *, alignment: Int = 1
+        dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
         var bias = (bias_ptr + coords[1]).load[width=w]()
@@ -1381,6 +1381,73 @@ def test_kernel_128x128x32_nn_bf16(ctx: DeviceContext) raises:
     print("PASS")
 
 
+def test_kernel_ragged_100x200x64_nn_bf16_clamp_chain(
+    ctx: DeviceContext,
+) raises:
+    """D[100,200] = A[100,64] @ B[64,200], NN, bf16->fp32, via `enqueue_apple_matmul`.
+
+    Shape hits the `clamp_v2` + chained-K route: M and N are both ragged, so
+    both axes clamp, and grid_m=2/grid_n=4 cover every clamp/neighbor/interior
+    tile combination in one shape. K=64 gives a real 2-strip-per-pass split
+    without tripping the split-K heuristic.
+    """
+    print("== test_kernel_ragged_100x200x64_nn_bf16_clamp_chain")
+    comptime M = 100
+    comptime N = 200
+    comptime K = 64
+
+    var a_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[DType.bfloat16](K * N)
+    for i in range(M * K):
+        a_host[i] = Scalar[DType.bfloat16](
+            random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
+        )
+    for i in range(K * N):
+        b_host[i] = Scalar[DType.bfloat16](
+            random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
+        )
+
+    var a_dev = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
+    var b_dev = ctx.enqueue_create_buffer[DType.bfloat16](K * N)
+    var d_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(b_dev, b_host)
+
+    _launch[DType.bfloat16, False](
+        ctx,
+        d_dev,
+        a_dev,
+        b_dev,
+        M,
+        N,
+        K,
+    )
+
+    var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    ctx.enqueue_copy(d_host, d_dev)
+    ctx.synchronize()
+
+    # DRIV-199 workaround: keep device buffers alive past `synchronize`, else
+    # ASAP destruction frees them mid-kernel and the suite flakes.
+    _ = a_dev^
+    _ = b_dev^
+    _ = d_dev^
+
+    var pass_ = True
+    for i in range(M):
+        for j in range(N):
+            var exp = _host_matmul_nn[DType.bfloat16, DType.bfloat16](
+                a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
+            )
+            var got = d_host[i * N + j]
+            if abs(got - exp) > Float32(0.5):
+                print("FAIL:", i, j, "got", got, "expected", exp)
+                pass_ = False
+    if not pass_:
+        raise Error("FAILED (see FAIL lines above)")
+    print("PASS")
+
+
 def test_kernel_128x128x32_nn_fp32(ctx: DeviceContext) raises:
     """D[128,128] = A[128,32] @ B[32,128], NN, fp32 input + accum."""
     print("== test_kernel_128x128x32_nn_fp32")
@@ -1661,7 +1728,7 @@ def _run_bias_epilogue_test[
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: SIMDSize, *, alignment: Int = 1
+        dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -1888,7 +1955,7 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
     @always_inline
     @__copy_capture(d_ptr)
     def relu_compose_epilogue[
-        dt: DType, w: SIMDSize, *, alignment: Int = 1
+        dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var relu_val = max(v_fp16, SIMD[DType.float16, w](0))
@@ -1973,7 +2040,7 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_relu_compose_epilogue[
-        dt: DType, w: SIMDSize, *, alignment: Int = 1
+        dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -2064,7 +2131,7 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: SIMDSize, *, alignment: Int = 1
+        dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -2215,7 +2282,7 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: SIMDSize, *, alignment: Int = 1
+        dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var b = (bias_ptr + coords[1]).load[width=w]()
         var v_c = rebind[SIMD[DType.float16, w]](val)
@@ -2346,6 +2413,7 @@ def main() raises:
     test_partial_m_decode_nt_bf16(ctx)
     test_kernel_128x128x32_nt_fp16(ctx)
     test_kernel_128x128x32_nn_bf16(ctx)
+    test_kernel_ragged_100x200x64_nn_bf16_clamp_chain(ctx)
     test_kernel_128x128x32_nn_fp32(ctx)
     test_enqueue_helper_fp16(ctx)
     test_kernel_128_nn_fp16_fp16_no_lambda(ctx)

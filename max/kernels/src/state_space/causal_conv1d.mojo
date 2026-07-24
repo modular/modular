@@ -1445,7 +1445,7 @@ def causal_conv1d_channel_last_fwd_gpu[
                     )
                     input_window[w] = Scalar[x_dtype](x.raw_load(load_offset))
 
-            var tmp: SIMD[output_dtype, kWidth] = rebind[type_of(tmp)](
+            var tmp = rebind[SIMD[output_dtype, kWidth]](
                 input_window * rebind[type_of(input_window)](W)
             )
             conv_sum = conv_sum + tmp.reduce_add[1]()
@@ -1630,7 +1630,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
                     )
                     input_window[w] = Scalar[x_dtype](x.raw_load(load_offset))
 
-            var tmp: SIMD[output_dtype, kWidth] = rebind[type_of(tmp)](
+            var tmp = rebind[SIMD[output_dtype, kWidth]](
                 input_window * rebind[type_of(input_window)](W)
             )
             conv_sum = conv_sum + tmp.reduce_add[1]()

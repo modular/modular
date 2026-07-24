@@ -202,81 +202,58 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
     @mock_pipeline_config_resolve
     def test_subfolder_prepended_to_weight_path(self) -> None:
         """Test that user-provided weight_path gets subfolder prefix."""
-        config = MAXModelConfig(
-            model_path="org/model",
-            subfolder="vae",
-            weight_path=[Path("model.safetensors")],
-        )
-        # Call resolve with mocked dependencies.
-        with (
-            patch(
-                "max.pipelines.lib.config.model_config.WeightPathParser.parse",
-                return_value=([Path("model.safetensors")], None),
-            ),
-            patch(
-                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
-            ),
+        # Subfolder prepending happens during construction; wrap it in the
+        # WeightPathParser mock to avoid touching the filesystem/network.
+        with patch(
+            "max.pipelines.lib.config.model_config.WeightPathParser.parse",
+            return_value=([Path("model.safetensors")], None),
         ):
-            config.resolve()
-            assert config.weight_path == [Path("vae/model.safetensors")]
+            config = MAXModelConfig(
+                model_path="org/model",
+                subfolder="vae",
+                weight_path=[Path("model.safetensors")],
+            )
+        assert config.weight_path == [Path("vae/model.safetensors")]
 
-    @mock_pipeline_config_resolve
     def test_subfolder_not_double_prepended(self) -> None:
         """Test that paths already containing subfolder are not double-prefixed."""
-        config = MAXModelConfig(
-            model_path="org/model",
-            subfolder="vae",
-            weight_path=[Path("vae/model.safetensors")],
-        )
-        with (
-            patch(
-                "max.pipelines.lib.config.model_config.WeightPathParser.parse",
-                return_value=([Path("vae/model.safetensors")], None),
-            ),
-            patch(
-                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
-            ),
+        with patch(
+            "max.pipelines.lib.config.model_config.WeightPathParser.parse",
+            return_value=([Path("vae/model.safetensors")], None),
         ):
-            config.resolve()
-            assert config.weight_path == [Path("vae/model.safetensors")]
+            config = MAXModelConfig(
+                model_path="org/model",
+                subfolder="vae",
+                weight_path=[Path("vae/model.safetensors")],
+            )
+        assert config.weight_path == [Path("vae/model.safetensors")]
 
-    @mock_pipeline_config_resolve
     def test_subfolder_skips_absolute_paths(self) -> None:
         """Test that absolute paths are not prefixed with subfolder."""
         with tempfile.NamedTemporaryFile(suffix=".safetensors") as tmp:
             abs_path = Path(tmp.name)
-            config = MAXModelConfig(
-                model_path="org/model",
-                subfolder="vae",
-                weight_path=[abs_path],
-            )
-            with (
-                patch(
-                    "max.pipelines.lib.config.model_config.WeightPathParser.parse",
-                    return_value=([abs_path], None),
-                ),
+            with patch(
+                "max.pipelines.lib.config.model_config.WeightPathParser.parse",
+                return_value=([abs_path], None),
             ):
-                config.resolve()
-                assert config.weight_path == [abs_path]
+                config = MAXModelConfig(
+                    model_path="org/model",
+                    subfolder="vae",
+                    weight_path=[abs_path],
+                )
+            assert config.weight_path == [abs_path]
 
-    @mock_pipeline_config_resolve
     def test_no_subfolder_leaves_weight_path_unchanged(self) -> None:
         """Test that without subfolder, weight_path is not modified."""
-        config = MAXModelConfig(
-            model_path="org/model",
-            weight_path=[Path("model.safetensors")],
-        )
-        with (
-            patch(
-                "max.pipelines.lib.config.model_config.WeightPathParser.parse",
-                return_value=([Path("model.safetensors")], None),
-            ),
-            patch(
-                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
-            ),
+        with patch(
+            "max.pipelines.lib.config.model_config.WeightPathParser.parse",
+            return_value=([Path("model.safetensors")], None),
         ):
-            config.resolve()
-            assert config.weight_path == [Path("model.safetensors")]
+            config = MAXModelConfig(
+                model_path="org/model",
+                weight_path=[Path("model.safetensors")],
+            )
+        assert config.weight_path == [Path("model.safetensors")]
 
 
 def _write_fake_safetensors(path: str, dtype: str = "BF16") -> None:

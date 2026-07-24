@@ -26,7 +26,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from nn.attention.gpu.mha import (
     _naive_attention_with_transpose,
     flash_attention,

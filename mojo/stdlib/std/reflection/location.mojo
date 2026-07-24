@@ -217,8 +217,8 @@ def source_location() -> SourceLocation:
     ]()
 
     return SourceLocation(
-        Int(SIMDSize(mlir_value=line)),
-        Int(SIMDSize(mlir_value=col)),
+        Int(SIMDLength(mlir_value=line)),
+        Int(SIMDLength(mlir_value=col)),
         StaticString(file_name),
     )
 
@@ -281,7 +281,7 @@ def call_location[*, inline_count: Int = 1]() -> SourceLocation:
     ]()
 
     return SourceLocation(
-        Int(SIMDSize(mlir_value=line)),
-        Int(SIMDSize(mlir_value=col)),
+        Int(SIMDLength(mlir_value=line)),
+        Int(SIMDLength(mlir_value=col)),
         StaticString(file_name),
     )

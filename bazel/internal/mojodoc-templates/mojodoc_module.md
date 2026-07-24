@@ -72,14 +72,7 @@ description: {% if decl.summary
 {# Spaces between the double-backticks and content need to be balanced, #}
 {# so we either add them manually (as here) or use pad_backticks filter. #}
 
-{% set _alias_full = alias.signature + " = " + alias.value %}
-{% if _alias_full | length > 80 %}
-```mojo
-{{ alias.signature }}
-```
-{% else %}
-`` {{ _alias_full }} ``
-{% endif %}
+`` {{ alias.signature }} = {{ alias.value }} ``
 
 </div>
 
@@ -116,7 +109,7 @@ description: {% if decl.summary
         {%- else -%}
             ``{{ param.type | pad_backticks }}``
         {%- endif -%}
-    {%- endif %}){{ (": " + param.description) if param.description else "" }}
+    {%- endif %}): {{ param.description }}
 {% endfor %}
 {% endif %}
 </div>

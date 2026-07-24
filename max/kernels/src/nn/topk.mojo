@@ -348,7 +348,7 @@ def _top_k_cpu[
                         var ptr = idxs.unsafe_ptr() + i
                         sort(
                             Span[idxs.T, origin_of(idxs)](
-                                ptr=ptr, length=num_equal
+                                unsafe_ptr=ptr, length=num_equal
                             )
                         )
                     i += num_equal
@@ -814,7 +814,7 @@ def _warp_reduce_topk[
     # Shuffle function for TopK_2 structure
     @parameter
     def shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
-        comptime fn_type = def[dtype: DType, simd_width: SIMDSize](
+        comptime fn_type = def[dtype: DType, simd_width: SIMDLength](
             val: SIMD[dtype, simd_width], offset: UInt32
         ) thin -> SIMD[dtype, simd_width]
         comptime xor_fn: fn_type = warp.shuffle_xor

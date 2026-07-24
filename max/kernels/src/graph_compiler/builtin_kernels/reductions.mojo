@@ -256,7 +256,7 @@ struct Mean:
         @parameter
         @always_inline
         def output_fn[
-            width: SIMDSize, rank: Int
+            width: SIMDLength, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -576,7 +576,7 @@ struct ReduceAdd:
         @parameter
         @always_inline
         def output_fn[
-            width: SIMDSize, rank: Int
+            width: SIMDLength, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -659,7 +659,7 @@ struct ReduceMul:
         @parameter
         @always_inline
         def output_fn[
-            width: SIMDSize, rank: Int
+            width: SIMDLength, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -743,7 +743,7 @@ struct ReduceMax:
         @parameter
         @always_inline
         def output_fn[
-            width: SIMDSize, rank: Int
+            width: SIMDLength, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -826,7 +826,7 @@ struct ReduceMin:
         @parameter
         @always_inline
         def output_fn[
-            width: SIMDSize, rank: Int
+            width: SIMDLength, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -934,7 +934,7 @@ struct LayerNorm:
         @parameter
         @always_inline
         def output_fn[
-            width: SIMDSize, _rank: Int, alignment: Int
+            width: SIMDLength, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
@@ -1036,7 +1036,7 @@ struct ReduceRMSNorm:
         @parameter
         @always_inline
         def output_fn[
-            width: SIMDSize, _rank: Int, alignment: Int
+            width: SIMDLength, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
@@ -1349,7 +1349,7 @@ struct ReduceMinAndMax:
         @parameter
         @always_inline
         def output_0_fn[
-            width: SIMDSize, rank: Int
+            width: SIMDLength, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._fused_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -1367,7 +1367,7 @@ struct ReduceMinAndMax:
         @parameter
         def output_0_fn_wrapper[
             _type: DType,
-            width: SIMDSize,
+            width: SIMDLength,
             rank: Int,
         ](
             indices: IndexList[rank],
@@ -1391,7 +1391,7 @@ struct ReduceMinAndMax:
         @parameter
         def reduce_fn[
             ty: DType,
-            width: SIMDSize,
+            width: SIMDLength,
             reduction_idx: Int,
         ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
             comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
@@ -1518,7 +1518,7 @@ struct ReduceRMSNormFusedResidualAdd:
         @parameter
         @always_inline
         def output_fn[
-            width: SIMDSize, _rank: Int, alignment: Int
+            width: SIMDLength, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             output._fused_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
@@ -1528,7 +1528,7 @@ struct ReduceRMSNormFusedResidualAdd:
         @parameter
         @always_inline
         def residual_output_fn[
-            width: SIMDSize, _rank: Int, alignment: Int
+            width: SIMDLength, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             residual_output._fused_store[
                 width=width, element_alignment=alignment
@@ -1661,7 +1661,7 @@ struct RMSNormResidualAdd:
             @parameter
             @always_inline
             def output_fn[
-                width: SIMDSize, _rank: Int, alignment: Int
+                width: SIMDLength, _rank: Int, alignment: Int
             ](coords: IndexList[_rank], val: SIMD[dtype, width]):
                 output._fused_store[width=width, element_alignment=alignment](
                     rebind[IndexList[output.rank]](coords),
@@ -1671,7 +1671,7 @@ struct RMSNormResidualAdd:
             @parameter
             @always_inline
             def residual_output_fn[
-                width: SIMDSize, _rank: Int, alignment: Int
+                width: SIMDLength, _rank: Int, alignment: Int
             ](coords: IndexList[_rank], val: SIMD[dtype, width]):
                 residual_output._fused_store[
                     width=width, element_alignment=alignment
@@ -1720,7 +1720,7 @@ struct RMSNormResidualAdd:
 
             @always_inline
             def output_fn_cpu[
-                width: SIMDSize, alignment: Int
+                width: SIMDLength, alignment: Int
             ](coords: IndexList[rank], val: SIMD[dtype, width]) {
                 var output
             } -> None:
@@ -1731,7 +1731,7 @@ struct RMSNormResidualAdd:
 
             @always_inline
             def residual_output_fn_cpu[
-                width: SIMDSize, alignment: Int
+                width: SIMDLength, alignment: Int
             ](coords: IndexList[rank], val: SIMD[dtype, width]) {
                 var residual_output
             } -> None:

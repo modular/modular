@@ -13,7 +13,7 @@
 
 from std.hashlib._fnv1a import Fnv1a
 
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from test_utils import (
     assert_dif_hashes,
     assert_fill_factor,
@@ -62,7 +62,7 @@ def test_avalanche() raises:
     hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))
 
     for i in range(256):
-        memset_zero(buffer.unsafe_ptr(), 256)
+        unsafe_memset_zero(buffer.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         buffer[i >> 3] = UInt8(v)
         hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))

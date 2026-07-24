@@ -75,7 +75,7 @@ def run_rms_norm_cpu[
     @__copy_capture(output_buf)
     @parameter
     def identity_output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = output_buf.layout(Coord(coords))
         output_buf.raw_store[width=width, alignment=alignment](idx, val)

@@ -114,7 +114,7 @@ def test_partial_n_tile_compute_epilogue[
     @__copy_capture(c_tensor_lt)
     def in_bounds_compute_lambda[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -179,7 +179,7 @@ def test_partial_n_tile_compute_epilogue[
     @__copy_capture(c_host_copy_lt)
     def in_bounds_compute_lambda_local[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[

@@ -73,7 +73,7 @@ def run_layer_norm_cpu[
     @always_inline
     @parameter
     def output_fn[
-        width: SIMDSize, _rank: Int, alignment: Int
+        width: SIMDLength, _rank: Int, alignment: Int
     ](coords: IndexList[_rank], val: SIMD[dtype, width]):
         var idx = output_buf.layout(Coord(coords))
         output_buf.raw_store[width=width, alignment=alignment](

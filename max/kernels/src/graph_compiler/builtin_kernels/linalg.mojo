@@ -246,7 +246,7 @@ struct Matmul:
         @parameter
         @always_inline
         def epilogue_fn[
-            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+            _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_dtype, _width]):
             c._lambda_store[width=_width, element_alignment=alignment](
                 coords,
@@ -256,7 +256,7 @@ struct Matmul:
         @parameter
         @always_inline
         def output_compute_fn[
-            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+            _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
             _dtype, _width
         ]:
@@ -321,7 +321,7 @@ struct BatchMatmul:
         @parameter
         @always_inline
         def output_fn[
-            _type: DType, _width: SIMDSize, _rank: Int, *, alignment: Int = 1
+            _type: DType, _width: SIMDLength, _rank: Int, *, alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
             comptime has_compute_lambda = type_of(c)._has_compute_fusion
 
@@ -825,6 +825,7 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
         max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
         estimated_total_m: UInt32,
+        decode_grid_m_cap: UInt32,
         context: DeviceContext,
     ) raises:
         """Executes grouped block-scaled matrix multiplication.
@@ -850,6 +851,9 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
                 used by the preb dispatcher to pick the persistent vs direct
                 kernel path. Pass 0 to default to persistent. Ignored when
                 `preshuffled_b == False`.
+            decode_grid_m_cap: Per-expert decode cap sizing the direct grid.y
+                on the decode bands. 0 disables (full-stride fallback). Ignored
+                when `preshuffled_b == False`.
             context: The device context pointer.
         """
         comptime assert is_gpu[
@@ -875,6 +879,8 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
                 Int(num_active_experts),
                 context,
                 Int(estimated_total_m),
+                # 0 = unset -> -1 (full-stride fallback).
+                -1 if decode_grid_m_cap == 0 else Int(decode_grid_m_cap),
             )
         else:
             # Dense row-major B path. Safe default for arbitrary callers.
@@ -983,7 +989,7 @@ struct Struct_matmul_dynamic_block_scaled:
         @parameter
         @always_inline
         def epilogue_fn[
-            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+            _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_dtype, _width]):
             c._lambda_store[width=_width, element_alignment=alignment](
                 coords,
@@ -993,7 +999,7 @@ struct Struct_matmul_dynamic_block_scaled:
         @parameter
         @always_inline
         def output_compute_fn[
-            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+            _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
             _dtype, _width
         ]:
@@ -1550,7 +1556,7 @@ struct MatmulStaticScaledFloat8:
             @always_inline
             def scaled_compute_fn[
                 dtype: DType,
-                width: SIMDSize,
+                width: SIMDLength,
                 *,
                 alignment: Int = align_of[SIMD[dtype, width]](),
             ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> SIMD[
@@ -1579,7 +1585,7 @@ struct MatmulStaticScaledFloat8:
             @__copy_capture(output_tt, input_scale, weight_scale)
             @always_inline
             def scaled_output_fn[
-                dtype: DType, width: SIMDSize, *, alignment: Int = 1
+                dtype: DType, width: SIMDLength, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 var scale = (
                     input_scale.cast[dtype]() * weight_scale.cast[dtype]()

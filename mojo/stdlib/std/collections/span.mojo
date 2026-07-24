@@ -27,7 +27,7 @@ from std.memory import (
     is_trivially_copyable,
     is_trivially_deletable,
     pack_bits,
-    uninit_copy_n,
+    unsafe_uninit_copy_n,
 )
 from std.collections import check_bounds
 from std.builtin.rebind import downcast
@@ -256,19 +256,20 @@ struct Span[
         """
         self = rebind[type_of(self)](other)
 
-    # TODO(MSTDL-2879): Rename `ptr` to `unsafe_ptr` to flag the raw-pointer
-    # memory-unsafety of this constructor.
     @always_inline("builtin")
     def __init__(
-        out self, *, ptr: UnsafePointer[Self.T, Self.origin], length: Int
+        out self,
+        *,
+        unsafe_ptr: UnsafePointer[Self.T, Self.origin],
+        length: Int,
     ):
         """Unsafe construction from a pointer and length.
 
         Args:
-            ptr: The underlying pointer of the span.
+            unsafe_ptr: The underlying pointer of the span.
             length: The length of the view.
         """
-        self._data = ptr
+        self._data = unsafe_ptr
         self._len = length
 
     @always_inline
@@ -359,7 +360,9 @@ struct Span[
         """
         var start, end = slc.indices(len(self))
 
-        return Self(ptr=self._data.unsafe_offset(start), length=end - start)
+        return Self(
+            unsafe_ptr=self._data.unsafe_offset(start), length=end - start
+        )
 
     @always_inline
     def __iter__(var self) -> Self.IteratorOwnedType:
@@ -419,6 +422,7 @@ struct Span[
         """
         return self._len
 
+    @stable(since="1.0")
     def __contains__[
         dtype: DType, //
     ](self: Span[Scalar[dtype], _], value: Scalar[dtype]) -> Bool:
@@ -458,6 +462,7 @@ struct Span[
                 return True
         return False
 
+    @stable(since="1.0")
     def __contains__(
         self, value: Self.T
     ) -> Bool where conforms_to(Self.T, Equatable):
@@ -603,14 +608,14 @@ struct Span[
             other: The `Span` to copy all elements from.
         """
         assert len(self) == len(other), "Spans must be of equal length"
-        # For trivial types, uninit_copy_n is a single memcpy (no destroy
+        # For trivial types, unsafe_uninit_copy_n is a single memcpy (no destroy
         # needed). For non-trivial types, we keep the single-pass assignment
-        # loop rather than destroy_n + uninit_copy_n, which would be two
-        # passes over memory with worse cache locality.
+        # loop rather than unsafe_destroy_n + unsafe_uninit_copy_n, which would
+        # be two passes over memory with worse cache locality.
         comptime if is_trivially_copyable[Self.T]() and is_trivially_deletable[
             Self.T
         ]():
-            uninit_copy_n[overlapping=False](
+            unsafe_uninit_copy_n[overlapping=False](
                 # TODO(MOCO-4220) once fixed remove the unsafe_mut_cast
                 dest=self.unsafe_ptr().unsafe_mut_cast[True](),
                 src=other.unsafe_ptr(),
@@ -767,9 +772,9 @@ struct Span[
             A pointer merged with the specified `other_type`.
         """
         return {
-            ptr = self._data.unsafe_mut_cast[result.mut]().unsafe_origin_cast[
-                result.origin
-            ](),
+            unsafe_ptr = self._data.unsafe_mut_cast[
+                result.mut
+            ]().unsafe_origin_cast[result.origin](),
             length = self._len,
         }
 
@@ -806,15 +811,13 @@ struct Span[
             var middle_prev = ptr.unsafe_offset(middle - 1).unsafe_origin_cast[
                 MutAnyOrigin
             ]()
-            # TODO(MSTDL-2852): Remove UnsafePointer usage and use unsafe_
-            # method.
-            ptr.unsafe_offset(middle + 1).init_pointee_move_from(middle_prev)
+            ptr.unsafe_offset(middle + 1).unsafe_write_move_from(middle_prev)
             middle_prev.unsafe_write(value)
 
     def apply[
         dtype: DType,
         //,
-        func: def[w: SIMDSize](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+        func: def[w: SIMDLength](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
     ](self: Span[mut=True, Scalar[dtype], _]):
         """Apply the function to the `Span` inplace.
 
@@ -845,9 +848,11 @@ struct Span[
     def apply[
         dtype: DType,
         //,
-        func: def[w: SIMDSize](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+        func: def[w: SIMDLength](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
         *,
-        cond: def[w: SIMDSize](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+        cond: def[w: SIMDLength](SIMD[dtype, w]) capturing -> SIMD[
+            DType.bool, w
+        ],
     ](self: Span[mut=True, Scalar[dtype], _]):
         """Apply the function to the `Span` inplace where the condition is
         `True`.
@@ -881,7 +886,7 @@ struct Span[
     def count[
         dtype: DType,
         //,
-        F: def[w: SIMDSize](v: SIMD[dtype, w]) -> SIMD[DType.bool, w],
+        F: def[w: SIMDLength](v: SIMD[dtype, w]) -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype], _], func: F) -> Int:
         """Count the amount of times the function returns `True`.
 
@@ -929,7 +934,7 @@ struct Span[
             offset,
         )
         assert 0 <= offset + length <= len(self), "subspan out of bounds."
-        return Self(ptr=self._data.unsafe_offset(offset), length=length)
+        return Self(unsafe_ptr=self._data.unsafe_offset(offset), length=length)
 
     def _binary_search_index[
         dtype: DType,

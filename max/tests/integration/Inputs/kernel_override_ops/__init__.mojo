@@ -37,7 +37,7 @@ struct AddOverride(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs + rhs + 1000
 

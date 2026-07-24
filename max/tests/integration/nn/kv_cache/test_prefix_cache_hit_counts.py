@@ -32,7 +32,6 @@ import numpy as np
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
-from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
     BlockManager,
@@ -276,11 +275,8 @@ def test_count_continues_into_host_and_disk_tiers() -> None:
     # Block 0 on device, block 1 on host, block 2 on disk, block 3 missing,
     # block 4 on host (unreachable past the gap).
     _seed_device_prefix_cache(bm, hashes[:1])
-    connector._host_hashes = {
-        to_block_hash_bytes(hashes[1]),
-        to_block_hash_bytes(hashes[4]),
-    }
-    connector._disk_hashes = {to_block_hash_bytes(hashes[2])}
+    connector._host_hashes = {hashes[1], hashes[4]}
+    connector._disk_hashes = {hashes[2]}
 
     hits = bm.count_cached_prefix_blocks(hashes)
 
@@ -289,9 +285,7 @@ def test_count_continues_into_host_and_disk_tiers() -> None:
     )
     assert hits.total_blocks == 3
     # The connector must only be asked about the run after the device prefix.
-    assert connector.received_hashes == [
-        to_block_hash_bytes(h) for h in hashes[1:]
-    ]
+    assert connector.received_hashes == list(hashes[1:])
 
 
 def test_count_all_device_hits_skips_connector() -> None:

@@ -2358,7 +2358,9 @@ def get_waves_per_eu(depth: Int) -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-@__llvm_metadata(`rocdl.waves_per_eu`=SIMDSize(get_waves_per_eu(config.depth)))
+@__llvm_metadata(
+    `rocdl.waves_per_eu`=SIMDLength(get_waves_per_eu(config.depth))
+)
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(config.num_threads())
@@ -2372,7 +2374,7 @@ def get_waves_per_eu(depth: Int) -> Int:
 # `IntervalMap.h "Overlapping insert"` variant covered by
 # `test_mha_gemma4_sink_repro.mojo`). Harmless on NVIDIA — the attribute is
 # AMDGPU-specific and ignored elsewhere.
-@__llvm_metadata(`rocdl.no_agpr`=SIMDSize(1))
+@__llvm_metadata(`rocdl.no_agpr`=SIMDLength(1))
 @__name(
     t"mha_depth{config.depth}_{q_type}_{output_type}_{ragged}_{is_shared_kv}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
 )
@@ -4083,7 +4085,7 @@ def mha_single_batch_pipelined[
 
 
 # Entry point for mha_decoding with batch_size > 1.
-@__llvm_metadata(`rocdl.waves_per_eu`=SIMDSize(get_waves_per_eu(depth)))
+@__llvm_metadata(`rocdl.waves_per_eu`=SIMDLength(get_waves_per_eu(depth)))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )

@@ -26,7 +26,7 @@ from std.memory import (
     UnsafeMaybeUninit,
 )
 from std.memory.arc_pointer import WeakPointer
-from _hal.execution_config import (
+from .execution_config import (
     ExecutionConfig,
     BlockExecutionConfig,
     GridBlockExecutionConfig,
@@ -239,6 +239,15 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         """
         self._chain_wait()
         self._queue[].copy(dst=dst, src=src)
+        self._chain_signal()
+
+    def wait_value64(
+        mut self, device_address: UInt64, value: UInt64
+    ) raises HALError:
+        """Enqueues a wait until the 64-bit slot at `device_address` equals
+        `value`. Runs after all previous Stream ops."""
+        self._chain_wait()
+        self._queue[].wait_value64(device_address, value)
         self._chain_signal()
 
     def record_event[

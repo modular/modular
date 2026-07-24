@@ -57,15 +57,23 @@ async def _read_framed(stream: aiohttp.StreamReader) -> AsyncIterator[bytes]:
         yield await stream.readexactly(length)
 
 
+# aiohttp's default connection-pool limit is 100. Streaming ``call_method``
+# calls hold a connection open for the whole generation, so under concurrent
+# serving that cap deadlocks dispatch well before the model saturates (e.g. 600
+# in-flight requests starve on 100 connections). ``limit=0`` removes the cap;
+# the model worker's own scheduler bounds real concurrency downstream.
+_CONNECTION_LIMIT = 0
+
+
 def _connector_for(address: str) -> aiohttp.BaseConnector:
     """Build the right aiohttp connector for an ``http://`` or ``unix://`` URL."""
     parsed = urlparse(address)
     if parsed.scheme == "http":
-        return aiohttp.TCPConnector()
+        return aiohttp.TCPConnector(limit=_CONNECTION_LIMIT)
     if parsed.scheme == "unix":
         if not parsed.path:
             raise ValueError(f"unix:// address requires a path: {address!r}")
-        return aiohttp.UnixConnector(path=parsed.path)
+        return aiohttp.UnixConnector(path=parsed.path, limit=_CONNECTION_LIMIT)
     raise ValueError(f"Unsupported address scheme: {address!r}")
 
 

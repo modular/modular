@@ -278,7 +278,9 @@ def _write_int[
         # ptr=digit_chars_array,
         writer.write(
             StringSlice(
-                unsafe_from_utf8=Span(ptr=zero_buf.unsafe_ptr(), length=1)
+                unsafe_from_utf8=Span(
+                    unsafe_ptr=zero_buf.unsafe_ptr(), length=1
+                )
             )
         )
 

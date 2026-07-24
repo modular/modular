@@ -382,6 +382,9 @@ This version is still a work in progress.
   - `def __getitem__[origin: Origin, //](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin_of(self)._get_owned_interior["element"]]:`
   - `def __init__(out self, *, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable):`
   - `def __iadd__(mut self, var other: Self, /) where conforms_to(Self.T, Copyable):`
+  - `def extend(mut self, var other: Self):`
+  - `def __contains__[dtype: DType, //](self: Span[Scalar[dtype], _]. value: Scalar[dtype]) -> Bool`
+  - `def __contains__(self, value: Self.T) -> Bool where conforms_to(Self.T, Equatable)`
 
 - Bool
 - Span
@@ -392,42 +395,56 @@ This version is still a work in progress.
 
 ## Library changes
 
+- When an unhandled error propagates out of `main` and no stack trace was
+  collected, Mojo now prints a hint to set
+  `MODULAR_DEBUG=stack-trace-on-error` to enable stack trace collection,
+  rather than printing only the error message.
+
+- `Variant` now accepts element types that are not `Movable`. Its type list is
+  bounded by `AnyType`, and `Variant` conditionally conforms to `Movable`,
+  `Copyable`, and related traits only when all of its element types do. A
+  value whose type is not `Movable` can be stored in place with the new
+  closure-based constructor and `set()` overload, which construct the value
+  directly into the variant's storage (placement-new) rather than moving it:
+
+  ```mojo
+  from std.utils import Variant
+
+  @fieldwise_init
+  struct Pinned(Movable where False):
+      var value: Int
+
+  def make() -> Pinned:
+      return Pinned(7)
+
+  var v = Variant[Pinned, Int](call=make)  # construct in place
+  v.set(call=make)                         # replace in place
+  ```
+
 - Various datatypes have adopted interior origins for increased memory safety,
-  including `List`, `Deque`, `Variant`, `String` and `Dict`. Slicing a `List`
-  (`list[start:end]`) now returns a `Span` that carries an interior origin, so a
-  slice held across a list mutation is rejected by the lifetime checker instead
-  of silently dangling after a reallocation:
+  including `List`, `Deque`, `Variant`, `String`, `Dict`, `LinkedList`,
+  `OwnedPointer`, and `HostBuffer`. A reference or view into one of these
+  containers now carries an interior origin, so one held across a mutation is
+  rejected by the lifetime checker instead of silently dangling after a
+  reallocation. For example, indexing a `List` (`list[i]`) returns a reference
+  bound to the list:
 
   ```mojo
   var list = [1, 2, 3]
-  var s = list[:]
-  list.append(4)  # may reallocate, invalidating `s`
+  ref elem = list[0]
+  list.append(4)  # may reallocate, invalidating `elem`
+  print(elem)     # error: use of invalidated interior reference
+  ```
+
+  `HostBuffer.as_span()` now returns a `Span` bound to an interior origin of the
+  buffer instead of the whole-buffer origin, so a span held across a mutation of
+  the buffer is rejected by the lifetime checker:
+
+  ```mojo
+  var buf = ctx.enqueue_create_host_buffer[DType.float32](4)
+  var s = buf.as_span()
+  buf[0] = 1.0    # mutates the buffer, invalidating `s`
   print(s[0])     # error: use of invalidated interior reference
-  ```
-
-  `Dict`'s reference-returning accessors (`d[key]`, `setdefault()`) now return a
-  reference bound to an interior origin of the dictionary, so such a reference
-  is invalidated by any mutating operation, including an insert via
-  `setdefault()`:
-
-  ```mojo
-  var d = Dict[String, Int]()
-  d["a"] = 1
-  ref value = d["a"]
-  _ = d.setdefault("b", 2)  # inserts (mutates), invalidating `value`
-  print(value)              # error: use of invalidated interior reference
-  ```
-
-  `String`'s view-returning accessors (`as_bytes()`, `s[byte=...]`,
-  `s[codepoint=...]`, and similar) now return `StringSlice`/`Span` views bound
-  to an interior origin of the string, so such a view is invalidated when the
-  string is mutated:
-
-  ```mojo
-  var s = String("hello world")
-  var view = s[byte=0:5]
-  s += "!"      # may reallocate, invalidating `view`
-  print(view)   # error: use of invalidated interior reference
   ```
 
 - Added `Tuple.consume_elements`, which moves each element out of a tuple into a
@@ -450,6 +467,20 @@ This version is still a work in progress.
   `InlineArray.size` remains as a deprecated alias for `InlineArray.length`;
   update any explicit `InlineArray[T, size=N]` to `InlineArray[T, length=N]`,
   and `.size` reads to `.length`.
+
+- `InlineArray`'s first parameter is renamed from `ElementType` to `T`.
+  Any explicit usages must be updated.
+
+- `Span`'s pointer-and-length constructor argument is renamed from `ptr` to
+  `unsafe_ptr`, to flag that this construction path is memory-unsafe: the caller
+  must ensure the pointer addresses at least `length` valid elements. Update
+  `Span(ptr=..., length=...)` to `Span(unsafe_ptr=..., length=...)`.
+
+- `DeviceContextList` is renamed to `DeviceContextArray`, and its parameter is
+  renamed from `size` to `length`. The old struct name remains as a
+  deprecated alias, and `DeviceContextArray.size` remains as a deprecated
+  alias for `DeviceContextArray.length`; update any explicit
+  `DeviceContextList[size=N]` to `DeviceContextArray[length=N]`.
 
 - `List.capacity` is now a `capacity()` method instead of a public field. This
   keeps the allocated capacity out of the stable public field surface, since it
@@ -482,6 +513,23 @@ This version is still a work in progress.
   `SIMD[...]` form. This only affects `repr()`; `String(...)` / `print(...)`
   output is unchanged.
 
+- Renamed `memmove` to `unsafe_memmove` to make its unsafety explicit. The old
+  `memmove` name is deprecated and will be removed in a future release.
+
+- Renamed `memset` and `memset_zero` to `unsafe_memset` and
+  `unsafe_memset_zero` to make their unsafety explicit. The old names are
+  deprecated and will be removed in a future release.
+
+- Renamed `memcmp` to `unsafe_memcmp` to make its unsafety explicit. The old
+  `memcmp` name is deprecated and will be removed in a future release.
+
+- Renamed `uninit_move_n` and `uninit_copy_n` to `unsafe_uninit_move_n` and
+  `unsafe_uninit_copy_n` to make their unsafety explicit. The old names are
+  deprecated and will be removed in a future release.
+
+- Renamed `destroy_n` to `unsafe_destroy_n` to make its unsafety explicit. The
+  old `destroy_n` name is deprecated and will be removed in a future release.
+
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not
@@ -500,6 +548,13 @@ This version is still a work in progress.
   var displaced = d.insert(1, 10)  # None — key 1 was absent
   displaced = d.insert(1, 20)      # the displaced (1, 10) entry
   ```
+
+- Added `Set.insert(element)` and `Set.clear_with(destroy_func)`, mirroring the
+  `Dict` methods above, so a `Set` whose element type is not
+  `ImplicitlyDeletable` can now be populated and cleared. `insert` moves any
+  displaced equal element out and returns it as an `Optional[T]` instead of
+  destroying it in place; `clear_with` hands each element to `destroy_func`
+  while retaining capacity.
 
 - `Dict.fromkeys(keys, value)` has been generalized from taking a `List` to
   accepting any iterable of keys. Both forms require the key and
@@ -559,11 +614,11 @@ This version is still a work in progress.
   to this `Scalar` type. Because of this some conversions have become more
   strict.
 
-  A new `SIMDSize` type has been added for the width of `SIMD` itself and must
+  A new `SIMDLength` type has been added for the width of `SIMD` itself and must
   be used when inferring a parameter based on a SIMD argument like so:
 
   ```mojo
-  def frob[w: SIMDSize](v: SIMD[DType.int, w]): ...
+  def frob[w: SIMDLength](v: SIMD[DType.int, w]): ...
   ```
 
   Alternatively the width can be unbound if you simply want to be parametric
@@ -574,6 +629,9 @@ This version is still a work in progress.
   ```
 
   The new `Int` should still be used in all other situations.
+
+  This type was briefly named `SIMDSize` earlier in this nightly cycle;
+  `SIMDSize` remains as a deprecated alias for `SIMDLength`.
 
 - `chdir` has been added to the `std.os` module and an `fchdir` method has been
   added to `io.FileDescriptor`. These are wrappers for the corresponding POSIX
@@ -640,6 +698,11 @@ This version is still a work in progress.
 
 - The `value` argument of `List.resize` has been renamed to `fill` to match
   List's constructor.
+
+- `List.insert()` and `LinkedList.insert()` no longer normalize negative
+  indices. Mojo collections are moving away from negative indexing, so the
+  valid index range is now `[0, len(self)]`; a negative index is out of bounds
+  and aborts (checked when asserts are enabled).
 
 - The `Reflected.field_type[name]` reflection member has been renamed to
   `Reflected.field[name]`, because it returns a chainable `Reflected` handle
@@ -722,6 +785,23 @@ This version is still a work in progress.
     - Consuming iteration (`for x in set^`) is likewise conditional, requiring
       `ElementType` to be `ImplicitlyDeletable`.
 
+- `InlineArray`'s element type bound loosened from `Movable` to `AnyType`, so an
+  `InlineArray` can now hold a non-`Movable` element type. The `Movable`
+  conformance is now conditional on the element: move construction (including
+  list-literal construction such as `[a, b, c]`) requires a `Movable` element,
+  while indexing, by-reference iteration, and destruction do not. Code that
+  uses `Movable` element types is unaffected, since a `Movable` element still
+  yields a movable array.
+
+- `Optional` gained `deinit_assert_empty()`, which destroys an empty linear
+  `Optional` without a caller-provided deinitializer, aborting in safe-assert
+  builds if it is non-empty.
+
+- `Optional.map()` and `Optional.and_then()` now work when the element type is
+  linear (not `ImplicitlyDeletable`): they move the contained value out and
+  destroy the emptied `Optional` explicitly, so a linear value can be
+  transformed and handed back to the caller.
+
 - Is is now possible to iterate over owned elements in
   `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`
   when the element type is not `Copyable`:
@@ -793,7 +873,7 @@ This version is still a work in progress.
    var my_coord = coord[1, 2, 3]
    ```
 
-   to create a `Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]]`
+  to create a `Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]]`
 
 - Removed `trait_downcast_var()`. Improvements to type refinement based on
   `where conforms_to(..)` and `comptime assert conforms_to(..)` make explicit
@@ -814,6 +894,22 @@ This version is still a work in progress.
 - Added `raise_python_exception()` to `std.python.bindings`, which translates a
   Mojo `Error` into a Python exception via `PyErr_SetString` and returns a null
   `PyObjectPtr`.
+
+- The `PyCFunctionFast` calling convention used by
+  `PythonModuleBuilder.def_py_c_function()` for `METH_FASTCALL` callbacks now
+  declares its argument array as a safe
+  `Pointer[PyObjectPtr, MutUntrackedOrigin]` instead of an `UnsafePointer`.
+  The two types share the same layout, so the C ABI is unchanged; hand-written
+  fastcall callbacks only need to update the parameter's spelling in their
+  signature and read the borrowed arguments with `args[unsafe_offset=i]`.
+
+- Typed-self methods registered through `PythonTypeBuilder.def_method()` now
+  declare their self parameter as a safe `Pointer[Self]` instead of an
+  `UnsafePointer[Self]`, and the extension argument helpers
+  `check_and_get_arg()` and `check_and_get_or_convert_arg()` return a safe
+  `Pointer`. The two pointer types share the same layout, so behavior is
+  unchanged; update method signatures to spell `Pointer` (for example,
+  `self_ptr: Pointer[mut=True, Self]`).
 
 - Iterating over a `String`, `StringSlice`, or `StringLiteral` now yields
   grapheme clusters by default. Their `__iter__()` and `__reversed__()` methods
@@ -859,6 +955,20 @@ This version is still a work in progress.
   remain gated behind an unsafe pointer type; prefer the `unsafe_`-prefixed
   names going forward. Each method's docstring documents the exact `Safety:`
   requirements the caller must uphold.
+
+- `UnsafePointer.init_pointee_move_from()` is now deprecated in favor of the new
+  `unsafe_write_move_from()` method, which moves the value out of a source
+  pointer into the uninitialized memory `self` points to (leaving the source
+  uninitialized):
+
+  ```mojo
+  dst.unsafe_write_move_from(src)
+  ```
+
+  Like `unsafe_write()` and `unsafe_take_pointee()`, this method works on any
+  `Pointer` — the old `init_pointee_move_from()` was gated behind an unsafe
+  pointer type, so callers no longer need to wrap safe pointers in
+  `MutUnsafePointer` to move a value between them.
 
 - `OwnedDLHandle.get_function` now returns a callable that keeps the owning
   handle alive while it runs, fixing a crash where the library could be
@@ -1019,6 +1129,8 @@ This version is still a work in progress.
 
 - Added support for the Steam Deck's RDNA2 Van Gogh APU.
 
+- The `layout` package is now bundled with MAX instead of Mojo.
+
 ## Removed
 
 - Removed the `UInt`-returning GPU indexing accessors (`thread_idx_uint`,
@@ -1040,7 +1152,28 @@ This version is still a work in progress.
   `DType._from_str()` now returns an `Optional[DType]` (`None` when the string
   does not name a dtype) rather than `DType.invalid`.
 
+- Removed positional indexing on `StringLiteral` (`literal[i]`). It allowed
+  out-of-bounds reads and was inconsistent with the `[byte=]`, `[codepoint=]`,
+  and `[grapheme=]` indexing scheme used by `String` and `StringSlice`. Use
+  those keyword accessors instead (for example, on a `StaticString`).
+
 ## Fixed
+
+- Code folding in VSCode now works for Mojo files. `mojo-lsp-server` no longer
+  advertises folding-range support, which only produced docstring ranges and
+  caused VSCode to disable its built-in indentation-based folding — leaving
+  functions, structs, and blocks unfoldable. Editors now fall back to
+  indentation-based folding until the server returns structural folding
+  ranges.
+
+- Fixed `print()` and `debug_assert()` emitting garbled output on AMD GPUs when
+  a printed string's byte length was an exact multiple of 8. The AMDGPU
+  `hostcall` printf interface reads each string up to its nul terminator, and
+  the terminator was being dropped in that case, so the host read past the
+  payload.
+
+- `base64.b16decode` now raises on invalid input instead of silently producing
+  corrupt output.
 
 - [#6784](https://github.com/modular/modular/issues/6784),
   [#6434](https://github.com/modular/modular/issues/6434) - `math.sqrt` on
@@ -1154,3 +1287,14 @@ This version is still a work in progress.
   struct Two(Movable where False):
       var y: One
   ```
+
+- `CPython.PyCapsule_New` now takes its `name` argument as a `StaticString`
+  instead of an owned `String`. CPython stores the `name` pointer directly in
+  the capsule rather than copying it, so an owned `String` argument left the
+  capsule holding a dangling pointer once the temporary was destroyed.
+
+- A failed import no longer poisons its name for the rest of the compilation.
+  Previously, after something like `import pkg.util` failed to resolve, a
+  later `import util` would silently bind the cached failure even when a real
+  `util.mojo` exists on the search path, making the module unimportable with
+  no diagnostic.

@@ -590,6 +590,17 @@ class Eagle3MHADraft(Module):
                 ops.rebind(fused_hs[i], [common_dim, config.hidden_size])
                 for i in range(num_devices)
             ]
+            # Pure TP (EP): every rank holds the same replicated sequence, so
+            # the per-device row offsets (distinct symbolic names from the
+            # caller's per-device broadcast/range) are runtime-identical. Bind
+            # them to one shared dim so the last-token gather yields a matching
+            # row count on every rank; otherwise the vocab-parallel lm_head
+            # allgather rejects the mismatched per-device symbols.
+            common_offsets_dim = f"{split_prefix}_offsets_len"
+            input_row_offsets_ = [
+                ops.rebind(input_row_offsets_[i], [common_offsets_dim])
+                for i in range(num_devices)
+            ]
 
         norm_embed = forward_sharded_layers(
             self.input_layernorm_shards, h_embed

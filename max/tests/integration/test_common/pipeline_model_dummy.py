@@ -463,7 +463,6 @@ DUMMY_GEMMA_ARCH = SupportedArchitecture(
     tokenizer=DummyTextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    rope_type="normal",
     multi_gpu_supported=False,
     config=DummyLlamaArchConfig,
 )

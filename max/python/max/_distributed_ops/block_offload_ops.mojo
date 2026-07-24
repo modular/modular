@@ -31,7 +31,7 @@ is then released for the entire GPU-work region.
 from std.collections import InlineArray
 from std.memory import OpaquePointer, UnsafePointer
 from std.os import abort
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextList
+from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from std.python import Python, PythonObject
 from std.python._cpython import GILReleased
 from std.python.bindings import PythonModuleBuilder
@@ -245,7 +245,7 @@ def _do_broadcast_units[
     """Broadcast block ``dst`` from root to all peers for each replicated unit.
 
     Called with the GIL already released.  All inputs are native Mojo ints.
-    The ``DeviceContextList`` is built once and shallow-copied for each unit's
+    The ``DeviceContextArray`` is built once and shallow-copied for each unit's
     ``_launch_device_collective`` call.
     """
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
@@ -256,7 +256,7 @@ def _do_broadcast_units[
             unsafe_from_address=sig_arr[i]
         )
 
-    # Build the DeviceContextList once; copy it for each unit's launch.
+    # Build the DeviceContextArray once; copy it for each unit's launch.
     var ctx_array = InlineArray[DeviceContext, ngpus](uninitialized=True)
     for i in range(ngpus):
         (ctx_array.unsafe_ptr() + i).unsafe_write(
@@ -266,7 +266,7 @@ def _do_broadcast_units[
                 )
             )
         )
-    var dev_ctxs = DeviceContextList[ngpus](ctx_array^)
+    var dev_ctxs = DeviceContextArray[ngpus](ctx_array^)
 
     for u in range(num_units):
         var stride = out_stride_arr[u]
@@ -295,7 +295,7 @@ def _do_broadcast_units[
             )
 
         _launch_device_collective[ngpus](
-            launch_broadcast, DeviceContextList[ngpus](copy=dev_ctxs)
+            launch_broadcast, DeviceContextArray[ngpus](copy=dev_ctxs)
         )
 
 

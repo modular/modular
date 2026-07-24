@@ -41,6 +41,7 @@ from layout import (
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.kv_cache import (
     copy_kv_pages_d2h,
+    fused_dual_qk_rms_norm_rope_ragged_paged,
     fused_qk_rms_norm_ragged_paged,
     fused_qk_rms_norm_rope_ragged_paged,
     generic_get_paged_cache,
@@ -491,6 +492,123 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
             layer_idx,
             input_row_offsets.to_tile_tensor[DType.int64](),
             q_output.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@extensibility.register("mo.fused_qk_rms_norm_rope.ragged.paged.dual")
+struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
+    """Registers `mo.fused_qk_rms_norm_rope.ragged.paged.dual` with the graph compiler.
+
+    Fuses the two back-to-back `mo.fused_qk_rms_norm_rope.ragged.paged` launches
+    that a MiniMax-M3 sparse layer fires (main GQA attention + lightning
+    indexer) into one kernel. Both bands read (disjoint) slices of the same
+    combined QKV+IndexQ matmul output via their own `FusedInputTensor` Q read
+    lambda; each band writes its Q to a separate DPS output and its K back into
+    its own paged cache.
+
+    Parameters:
+        interleaved: When true, RoPE rotates adjacent element pairs; when
+            false, rotates pairs separated by half the head dimension. Shared by
+            both bands (they use the same rope table).
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        multiply_before_cast: Bool,
+        main_cache_dtype: DType,
+        index_cache_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        q_main_output: OutputTensor[dtype=dtype, rank=3, ...],
+        q_index_output: OutputTensor[dtype=dtype, rank=3, ...],
+        q_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        q_index_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        main_kv_blocks: MutableInputTensor[dtype=main_cache_dtype, rank=6, ...],
+        main_cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        main_kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        main_max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        main_max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        index_kv_blocks: MutableInputTensor[
+            dtype=index_cache_dtype, rank=6, ...
+        ],
+        index_cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        index_kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        index_max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        index_max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        q_main_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        k_main_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        q_index_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        k_index_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        main_epsilon: Float32,
+        index_epsilon: Float32,
+        layer_idx: UInt32,
+        weight_offset: Scalar[dtype=dtype],
+        context: DeviceContext,
+    ) raises:
+        # `q_main_proj` / `q_index_proj` are `FusedInputTensor`s, so the
+        # slice+reshape that carves each band's Q out of the combined
+        # `[Q | IndexQ]` matmul output folds into that band's read lambda.
+        var main_kv_collection = generic_get_paged_cache(
+            main_kv_blocks,
+            main_cache_lengths,
+            main_kv_lookup_table,
+            main_max_prompt_length,
+            main_max_cache_length,
+        )
+        var index_kv_collection = generic_get_paged_cache(
+            index_kv_blocks,
+            index_cache_lengths,
+            index_kv_lookup_table,
+            index_max_prompt_length,
+            index_max_cache_length,
+        )
+
+        @always_inline
+        @parameter
+        def main_q_input_fn[
+            width: Int, alignment: Int
+        ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+            return q_main_proj._fused_load[
+                width=width, element_alignment=alignment
+            ](IndexList[3](token, head, col))
+
+        @always_inline
+        @parameter
+        def index_q_input_fn[
+            width: Int, alignment: Int
+        ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+            return q_index_proj._fused_load[
+                width=width, element_alignment=alignment
+            ](IndexList[3](token, head, col))
+
+        fused_dual_qk_rms_norm_rope_ragged_paged[
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+            interleaved=Self.interleaved,
+            main_q_input_fn=main_q_input_fn,
+            index_q_input_fn=index_q_input_fn,
+        ](
+            main_kv_collection,
+            index_kv_collection,
+            q_main_gamma.to_tile_tensor[DType.int64](),
+            k_main_gamma.to_tile_tensor[DType.int64](),
+            q_index_gamma.to_tile_tensor[DType.int64](),
+            k_index_gamma.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            main_epsilon,
+            index_epsilon,
+            weight_offset,
+            layer_idx,
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            q_main_output.to_tile_tensor[DType.int64](),
+            q_index_output.to_tile_tensor[DType.int64](),
             context,
         )
 

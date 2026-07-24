@@ -461,53 +461,6 @@ class CastToBuiltinAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
-class ClosureAttr(max._core.Attribute):
-    """
-    The `#kgen.closure` attribute represents an uncomputed
-        parametric closure. A parametric closure is a set of parametric
-        values that are captured from the enclosing function. This abstraction
-        is useful in the case where transformations are applied between the
-        the closure definition site and the closure lowering pass that may alter
-        the set of parameters captured.
-
-        Example:
-
-        In the following example we define a closure that captures the parameter
-        value `C`. We want to bind this closure to the "x" parameter of the
-        function `consume`. We must also pass the parameters that the closure
-        depends on, which in this case is just `C` but could include `D` if we
-        apply a transformation between now and when we lift the closure. To
-        postpone the calculation of the captures, we bind an abstract value
-        to the capture struct parameter of `consume` called
-        `#kgen.closure<@foo "fn">`. This placeholder is of type ClosureAttr and
-        represents the parameter captures of the "fn" closure.
-
-        ```mlir
-
-        kgen.generator @foo<C,D>() {
-         %0 = kgen.closure.init()() -> index {
-                     %1 = kgen.param.constant = <mul(C, C)>
-                     kgen.return %1 : index
-          } : (), !kgen.pointer<!kgen.closure<@foo, "fn" registerpassable>>
-          %2 = kgen.call @consume<:type #type_value,
-           :!kgen.param<!kgen.param_closure<@foo "fn">> #kgen.closure<@foo "fn">
-           >(%3) : (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index
-          kgen.return
-        }
-
-        kgen.generator @consume<
-          x: type,
-          CAPTURE_INST: !kgen.param<get_witness(x, "closure_trait", "CAPTURE_TYPE")>
-        >(%arg0: !kgen.param<x>) -> index {
-            // BODY OMITTED FOR BREVITY
-        }
-        ```
-    """
-
-    def __init__(self, type: ParamClosureType) -> None: ...
-    @property
-    def type(self) -> ParamClosureType: ...
-
 class ClosureMethodAttr(max._core.Attribute):
     """
     The `#kgen.closure_method` attribute represents the symbol of a closure method.
@@ -1340,38 +1293,6 @@ class MLIROpAttr(max._core.Attribute):
     def attrs(self) -> max._core.dialects.builtin.DictionaryAttr: ...
     @property
     def type(self) -> FuncTypeGeneratorType: ...
-
-class MemSymbolTripleAttr(max._core.Attribute):
-    """
-    The `#kgen.mem_symbol_triple` attribute holds the symbols of a memory value.
-    The symbols it holds are copy, move, and del. The copy symbol is optional.
-    This attribute is useful in the context of abstracted operations whose
-    lowering depends on these core symbols.
-
-    Example:
-
-    ```mlir
-      #kgen.mem_symbol_triple<@bar_move<:type index, :type index>>,
-                              @bar_del<:type index, :type index>>
-                               : !kgen.pointer<struct<(index, index)>>
-    ```
-    """
-
-    def __init__(
-        self,
-        copy: max._core.dialects.builtin.TypedAttr,
-        move: max._core.dialects.builtin.TypedAttr,
-        del_: max._core.dialects.builtin.TypedAttr,
-        is_move: max._core.dialects.builtin.UnitAttr,
-    ) -> None: ...
-    @property
-    def copy(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def move(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def del_(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def is_move(self) -> max._core.dialects.builtin.UnitAttr: ...
 
 class ParamDeclArrayAttr(max._core.Attribute):
     @overload
@@ -2644,135 +2565,6 @@ class CallParamOp(max._core.Operation):
     def tail_kind(self) -> TailKind: ...
     @tail_kind.setter
     def tail_kind(self, arg: TailKindAttr, /) -> None: ...
-
-class ClosureInitOp(max._core.Operation):
-    """
-    The `kgen.closure.init` operation represents the instantiation of a closure
-    struct. The closure struct holds the captured values. It maps the nested
-    function to the capture struct.
-
-    The closure init op contains a list of captured values. For each value,
-    there is an optional symbol list. The first symbol is the copy or move
-    symbol used to copy or move the captured value into the closure.
-
-    The second and third symbols are the move and the del methods for that
-    capture. If the first symbol is the move symbol then the second symbol
-    is the del method. The assumption is that copyable values are movable.
-    Movable values may be copyable but since closures are not copyable we
-    do not need the copy symbol if the captured value is not captured by
-    copy.
-
-    Example:
-    ```mlir
-    kgen.generator @closure_types(%arg0 : index,
-       %foo: !kgen.pointer<struct<(index,index)>>) {
-      %3 = kgen.closure.init(%foo[@copy, @move, @del])(%arg1: index) -> index {
-      %0 = kgen.struct.gep %foo[0] : !kgen.pointer<struct<(index,index)>>
-      %1 = pop.load %0 : !kgen.pointer<index>
-      kgen.return %1 : index
-      } : (!kgen.pointer<struct<(index,index)>>),
-          <!kgen.closure<@closure_types, "name" escaping>>
-
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: max._core.Type,
-        func_type_generator: max._core.dialects.builtin.TypeAttr,
-        captures: Sequence[max._core.Value[max._core.Type]],
-        move_or_copy_capture_symbols: max._core.dialects.builtin.ArrayAttr,
-        input_params: ParamDeclArrayAttr,
-        capture_types: max._core.dialects.builtin.ArrayAttr,
-        capture_names: max._core.dialects.builtin.ArrayAttr,
-        type_value: max._core.dialects.builtin.TypedAttr,
-        nested_fn_scope: max._core.Attribute,
-        _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
-        _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
-        hoisted_captures: ParamDeclArrayAttr,
-        linkage_name: LinkageNameAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: max._core.Type,
-        func_type_generator: FuncTypeGeneratorType,
-        captures: Sequence[max._core.Value[max._core.Type]],
-        move_or_copy_capture_symbols: max._core.dialects.builtin.ArrayAttr,
-        input_params: Sequence[ParamDeclAttr],
-        capture_types: max._core.dialects.builtin.ArrayAttr,
-        capture_names: max._core.dialects.builtin.ArrayAttr,
-        type_value: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def func_type_generator(self) -> FuncTypeGeneratorType: ...
-    @func_type_generator.setter
-    def func_type_generator(
-        self, arg: max._core.dialects.builtin.TypeAttr, /
-    ) -> None: ...
-    @property
-    def captures(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-    @property
-    def move_or_copy_capture_symbols(
-        self,
-    ) -> max._core.dialects.builtin.ArrayAttr: ...
-    @move_or_copy_capture_symbols.setter
-    def move_or_copy_capture_symbols(
-        self, arg: max._core.dialects.builtin.ArrayAttr, /
-    ) -> None: ...
-    @property
-    def input_params(self) -> Sequence[ParamDeclAttr]: ...
-    @input_params.setter
-    def input_params(self, arg: ParamDeclArrayAttr, /) -> None: ...
-    @property
-    def capture_types(self) -> max._core.dialects.builtin.ArrayAttr: ...
-    @capture_types.setter
-    def capture_types(
-        self, arg: max._core.dialects.builtin.ArrayAttr, /
-    ) -> None: ...
-    @property
-    def capture_names(self) -> max._core.dialects.builtin.ArrayAttr: ...
-    @capture_names.setter
-    def capture_names(
-        self, arg: max._core.dialects.builtin.ArrayAttr, /
-    ) -> None: ...
-    @property
-    def type_value(self) -> max._core.dialects.builtin.TypedAttr | None: ...
-    @type_value.setter
-    def type_value(
-        self, arg: max._core.dialects.builtin.TypedAttr, /
-    ) -> None: ...
-    @property
-    def nested_fn_scope(self) -> max._core.Attribute | None: ...
-    @nested_fn_scope.setter
-    def nested_fn_scope(self, arg: max._core.Attribute, /) -> None: ...
-    @property
-    def _llvm_metadata_array(self) -> max._core.dialects.builtin.ArrayAttr: ...
-    @_llvm_metadata_array.setter
-    def _llvm_metadata_array(
-        self, arg: max._core.dialects.builtin.ArrayAttr, /
-    ) -> None: ...
-    @property
-    def _llvm_arg_metadata_array(
-        self,
-    ) -> max._core.dialects.builtin.ArrayAttr: ...
-    @_llvm_arg_metadata_array.setter
-    def _llvm_arg_metadata_array(
-        self, arg: max._core.dialects.builtin.ArrayAttr, /
-    ) -> None: ...
-    @property
-    def hoisted_captures(self) -> Sequence[ParamDeclAttr] | None: ...
-    @hoisted_captures.setter
-    def hoisted_captures(self, arg: ParamDeclArrayAttr, /) -> None: ...
-    @property
-    def linkage_name(self) -> LinkageNameAttr | None: ...
-    @linkage_name.setter
-    def linkage_name(self, arg: LinkageNameAttr, /) -> None: ...
 
 class CodegenReachableOp(max._core.Operation):
     """
@@ -4677,36 +4469,6 @@ class BuildInfoType(max._core.Type):
 
     def __init__(self) -> None: ...
 
-class ClosureType(max._core.Type):
-    """
-    A `!kgen.closure` type represents a struct of captures.
-    Example:
-    ```mlir
-    kgen.generator @parent(%x: index) {
-       %0 = kgen.closure.init(%x)(){
-          kgen.call @foo(%x)
-       } : (index), !kgen.closure<@parent, "closure", escaping>
-       %1 = kgen.closure.init(%x)(){
-          kgen.call @foo(%x)
-       } : (index), !kgen.closure<@parent, "closure", nonescaping>
-       %2 = kgen.closure.init(%x)(){
-          kgen.call @foo(%x)
-       } : (index), !kgen.closure<@parent, "closure", registerpassable>
-    }
-    }
-    ```
-    """
-
-    def __init__(
-        self,
-        closure_attr: max._core.dialects.builtin.TypedAttr,
-        closure_memory_kind: ClosureMemoryKind,
-    ) -> None: ...
-    @property
-    def closure_attr(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def closure_memory_kind(self) -> ClosureMemoryKind: ...
-
 class DTypeType(max._core.Type):
     """
     This type corresponds to the DType runtime class, representing an
@@ -4881,60 +4643,6 @@ class NoneType(max._core.Type):
     """
 
     def __init__(self) -> None: ...
-
-class ParamClosureType(max._core.Type):
-    """
-    A `!kgen.param_closure` type represents a struct of  parameter
-    captures. It is used as a placeholder before the captured parameters
-    are calculated. Once calculated, the capture type is replaced with
-    a !kgen.struct type with the capture types as the struct field types.
-
-    Example:
-    ```mlir
-        #type_value = #kgen.type<!kgen.closure<@foo, "fn" registerpassable>,
-                {"__call__" :
-                   <!kgen.param_closure<@foo “fn”>>
-             (!kgen.closure<@foo, "fn" registerpassable>) -> index =
-             @foo_fn<:!kgen.param<!kgen.param_closure<@foo “fn”>> ?>
-           }> : !kgen.type
-
-       kgen.generator @foo<C>(%arg0 : index) {
-         %1 = kgen.closure.init()(%arg1: index) -> index {
-         %0 = kgen.param.constant = <add(C, C)>
-         kgen.return %0 : index
-         } : (), !kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>
-         %2 = kgen.call @consume<
-           :type #type_value,
-           :type !kgen.param_closure<@foo “fn”>,
-           :!kgen.param<!kgen.param_closure<@foo “fn”>> #kgen.capture<@foo, “fn”>>
-           (%3) :
-           (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index
-         kgen.return
-       }
-
-       kgen.generator @consume<x: type,
-                       CAPTURE_TYPE: type,
-                       CAPTURE_INST: !kgen.param<CAPTURE_TYPE>
-                       >(%arg0: !kgen.param<x>) -> index {
-         %0 = kgen.call_param[(!kgen.param<x>) -> index:
-                      bind_params(:<!kgen.param<CAPTURE_TYPE>>
-                        (!kgen.none, index) -> index
-                        get_witness(x, "closure_trait", "__call__"),
-                      CAPTURE_INST)](%arg0, %arg1)
-         kgen.return %0 : index
-       }
-    ```
-    """
-
-    def __init__(
-        self,
-        parent_symbol: max._core.dialects.builtin.SymbolRefAttr,
-        name: max._core.dialects.builtin.StringAttr,
-    ) -> None: ...
-    @property
-    def parent_symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
-    @property
-    def name(self) -> max._core.dialects.builtin.StringAttr: ...
 
 class ParamListType(max._core.Type):
     """

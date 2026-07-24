@@ -1170,6 +1170,8 @@ def execute_cont_batch_fused_qkv_matmul[
 def execute_fused_matmul_suite[
     dtype: DType, rtol: Float64
 ](ctx: DeviceContext) raises:
+    comptime test_kernel = get_defined_string["test_kernel", "all"]()
+
     for bs in [1, 16]:
         ce_cache_sizes = List[Int]()
         ce_seq_lens = List[Int]()
@@ -1183,46 +1185,54 @@ def execute_fused_matmul_suite[
             ce_cache_sizes.append(0)
 
         # llama3 context encoding
-        execute_cont_batch_fused_qkv_matmul[
-            llama_num_q_heads, dtype, kv_params_llama3, rtol
-        ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
-        execute_paged_fused_qkv_matmul[
-            llama_num_q_heads, dtype, kv_params_llama3, rtol
-        ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
-        execute_matmul_kv_cache_ragged[
-            llama_num_q_heads, dtype, kv_params_llama3, rtol
-        ](
-            ce_seq_lens,
-            max_seq_length_cache=1024,
-            cache_sizes=ce_cache_sizes,
-            num_layers=4,
-            layer_idx=1,
-            ctx=ctx,
-        )
-        execute_matmul_k_cache_ragged[
-            llama_num_q_heads, dtype, kv_params_llama3, rtol
-        ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
+        comptime if test_kernel == "all" or test_kernel == "fused_cont":
+            execute_cont_batch_fused_qkv_matmul[
+                llama_num_q_heads, dtype, kv_params_llama3, rtol
+            ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
+        comptime if test_kernel == "all" or test_kernel == "fused_paged":
+            execute_paged_fused_qkv_matmul[
+                llama_num_q_heads, dtype, kv_params_llama3, rtol
+            ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
+        comptime if test_kernel == "all" or test_kernel == "kv_cont":
+            execute_matmul_kv_cache_ragged[
+                llama_num_q_heads, dtype, kv_params_llama3, rtol
+            ](
+                ce_seq_lens,
+                max_seq_length_cache=1024,
+                cache_sizes=ce_cache_sizes,
+                num_layers=4,
+                layer_idx=1,
+                ctx=ctx,
+            )
+        comptime if test_kernel == "all" or test_kernel == "k_paged":
+            execute_matmul_k_cache_ragged[
+                llama_num_q_heads, dtype, kv_params_llama3, rtol
+            ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
 
         # llama3 token gen
-        execute_cont_batch_fused_qkv_matmul[
-            llama_num_q_heads, dtype, kv_params_llama3, rtol
-        ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
-        execute_paged_fused_qkv_matmul[
-            llama_num_q_heads, dtype, kv_params_llama3, rtol
-        ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
-        execute_matmul_kv_cache_ragged[
-            llama_num_q_heads, dtype, kv_params_llama3, rtol
-        ](
-            tg_seq_lens,
-            max_seq_length_cache=1024,
-            cache_sizes=tg_cache_sizes,
-            num_layers=4,
-            layer_idx=3,
-            ctx=ctx,
-        )
-        execute_matmul_k_cache_ragged[
-            llama_num_q_heads, dtype, kv_params_llama3, rtol
-        ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
+        comptime if test_kernel == "all" or test_kernel == "fused_cont":
+            execute_cont_batch_fused_qkv_matmul[
+                llama_num_q_heads, dtype, kv_params_llama3, rtol
+            ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
+        comptime if test_kernel == "all" or test_kernel == "fused_paged":
+            execute_paged_fused_qkv_matmul[
+                llama_num_q_heads, dtype, kv_params_llama3, rtol
+            ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
+        comptime if test_kernel == "all" or test_kernel == "kv_cont":
+            execute_matmul_kv_cache_ragged[
+                llama_num_q_heads, dtype, kv_params_llama3, rtol
+            ](
+                tg_seq_lens,
+                max_seq_length_cache=1024,
+                cache_sizes=tg_cache_sizes,
+                num_layers=4,
+                layer_idx=3,
+                ctx=ctx,
+            )
+        comptime if test_kernel == "all" or test_kernel == "k_paged":
+            execute_matmul_k_cache_ragged[
+                llama_num_q_heads, dtype, kv_params_llama3, rtol
+            ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
 
 
 def main() raises:
@@ -1234,6 +1244,18 @@ def main() raises:
         or test_dtype == "bfloat16"
         or test_dtype == "float32"
     ), "test_dtype must be one of: all, bfloat16, float32"
+
+    comptime test_kernel = get_defined_string["test_kernel", "all"]()
+    comptime assert (
+        test_kernel == "all"
+        or test_kernel == "fused_cont"
+        or test_kernel == "fused_paged"
+        or test_kernel == "kv_cont"
+        or test_kernel == "k_paged"
+    ), (
+        "test_kernel must be one of: all, fused_cont, fused_paged, kv_cont,"
+        " k_paged"
+    )
 
     with DeviceContext() as ctx:
         comptime if test_dtype == "all" or test_dtype == "float32":

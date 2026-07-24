@@ -100,11 +100,10 @@ def test_range_writes_indices(ctx: DeviceContext) raises:
     for i in range(count):
         ptr[i] = -1
 
-    @parameter
-    def write_index(i: Int) -> None:
+    def write_index(i: Int) {mut} -> None:
         ptr[i] = i
 
-    ctx.enqueue_cpu_range[write_index](count=count)
+    ctx.enqueue_cpu_range(write_index, count=count)
     ctx.synchronize()
     for i in range(count):
         assert_equal(ptr[i], i)
@@ -117,11 +116,10 @@ def test_range_large(ctx: DeviceContext) raises:
     for i in range(count):
         ptr[i] = 0
 
-    @parameter
-    def write_squared(i: Int) -> None:
+    def write_squared(i: Int) {mut} -> None:
         ptr[i] = i * i
 
-    ctx.enqueue_cpu_range[write_squared](count=count)
+    ctx.enqueue_cpu_range(write_squared, count=count)
     ctx.synchronize()
     for i in range(count):
         assert_equal(ptr[i], i * i)
@@ -139,13 +137,12 @@ def test_func_then_range(ctx: DeviceContext) raises:
         for j in range(count):
             ptr[j] = 1
 
-    @parameter
-    def add_index(i: Int) -> None:
+    def add_index(i: Int) {mut} -> None:
         ptr[i] += i
 
     # First fill with 1s, then add the index.
     ctx.enqueue_cpu_function[set_all_to_one]()
-    ctx.enqueue_cpu_range[add_index](count=count)
+    ctx.enqueue_cpu_range(add_index, count=count)
     ctx.synchronize()
     for i in range(count):
         assert_equal(ptr[i], 1 + i)
@@ -158,16 +155,14 @@ def test_two_ranges_sequential(ctx: DeviceContext) raises:
     for i in range(count):
         ptr[i] = 0
 
-    @parameter
-    def write_index(i: Int) -> None:
+    def write_index(i: Int) {mut} -> None:
         ptr[i] = i
 
-    @parameter
-    def double_value(i: Int) -> None:
+    def double_value(i: Int) {mut} -> None:
         ptr[i] *= 2
 
-    ctx.enqueue_cpu_range[write_index](count=count)
-    ctx.enqueue_cpu_range[double_value](count=count)
+    ctx.enqueue_cpu_range(write_index, count=count)
+    ctx.enqueue_cpu_range(double_value, count=count)
     ctx.synchronize()
     for i in range(count):
         assert_equal(ptr[i], i * 2)

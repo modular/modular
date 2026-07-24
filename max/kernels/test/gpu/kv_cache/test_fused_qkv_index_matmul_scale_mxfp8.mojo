@@ -35,7 +35,7 @@ from std.math import ceildiv
 from std.random import random_ui64, seed
 
 from std.gpu.host import DeviceContext
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from std.testing import assert_equal
 
 from kv_cache.types import (
@@ -222,11 +222,11 @@ def execute_dual_cache_fused[
     # spurious sub-bf16-resolution diffs. Writing the host buffer here, then
     # syncing via `device_tensor()` below, guarantees unwritten slots match.
     var main_n0 = main_blocks.tensor[update=False]().runtime_layout.size()
-    memset_zero(main_blocks.tensor[update=False]().ptr, main_n0)
-    memset_zero(main_blocks_ref.tensor[update=False]().ptr, main_n0)
+    unsafe_memset_zero(main_blocks.tensor[update=False]().ptr, main_n0)
+    unsafe_memset_zero(main_blocks_ref.tensor[update=False]().ptr, main_n0)
     var index_n0 = index_blocks.tensor[update=False]().runtime_layout.size()
-    memset_zero(index_blocks.tensor[update=False]().ptr, index_n0)
-    memset_zero(index_blocks_ref.tensor[update=False]().ptr, index_n0)
+    unsafe_memset_zero(index_blocks.tensor[update=False]().ptr, index_n0)
+    unsafe_memset_zero(index_blocks_ref.tensor[update=False]().ptr, index_n0)
 
     var main_lut = PagedLookupTable[page_size].build(
         prompt_lens, cache_sizes, max_ctx, num_paged_blocks, ctx

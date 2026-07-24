@@ -133,7 +133,7 @@ def run_one_case(
     @always_inline
     @parameter
     def output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[ln_type, width]):
         var idx = data_buf.layout(coords)
         data_buf.raw_store[width=width, alignment=alignment](

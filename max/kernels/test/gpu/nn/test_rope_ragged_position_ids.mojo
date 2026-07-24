@@ -92,7 +92,7 @@ def test_rope_ragged_position_ids[
     # `output_fn`.
     @always_inline
     def output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](idx: IndexList[3], val: SIMD[dtype, width]) {var out_t} -> None:
         out_t.store[width=width](Coord(idx), val)
 

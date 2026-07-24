@@ -176,7 +176,7 @@ def _mojo_block_hasher_sha256(
     for block_idx in range(num_blocks):
         # Local hash = SHA-256( token_bytes_for_this_block )
         var token_span = Span[Byte, _](
-            ptr=token_bytes_base + block_idx * token_bytes_per_block,
+            unsafe_ptr=token_bytes_base + block_idx * token_bytes_per_block,
             length=token_bytes_per_block,
         )
         var local_hash = sha256(token_span)
@@ -185,7 +185,7 @@ def _mojo_block_hasher_sha256(
         unsafe_memcpy(
             dest=pair.unsafe_ptr(), src=local_hash.unsafe_ptr(), count=32
         )
-        var pair_span = Span[Byte, _](ptr=pair.unsafe_ptr(), length=64)
+        var pair_span = Span[Byte, _](unsafe_ptr=pair.unsafe_ptr(), length=64)
         var seq_hash = sha256(pair_span)
 
         # Write to out[block_idx, :] and shift seq into pair[32:64] for newx iter
@@ -204,7 +204,7 @@ def _mojo_sha256_oneshot(
 ):
     """One-shot SHA-256 of a uint8 array; writes 32-byte digest to ``out``."""
     var n = data_ptr[].num_elts()
-    var data_span = Span[Byte, _](ptr=data_ptr[].data, length=n)
+    var data_span = Span[Byte, _](unsafe_ptr=data_ptr[].data, length=n)
     var digest = sha256(data_span)
     var out_bytes = out_ptr[].data
     unsafe_memcpy(dest=out_bytes, src=digest.unsafe_ptr(), count=32)

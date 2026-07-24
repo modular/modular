@@ -764,7 +764,7 @@ struct AMD4WaveMatmul[
             " 64 KB"
         )
 
-    @__llvm_metadata(`rocdl.waves_per_eu`=SIMDSize(1))
+    @__llvm_metadata(`rocdl.waves_per_eu`=SIMDLength(1))
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.config.num_threads())
@@ -1219,7 +1219,7 @@ struct AMD4WaveMatmul[
                         )
                         c_writer.store(v, m=m_dram, n=n_global)
 
-    @__llvm_metadata(`rocdl.waves_per_eu`=SIMDSize(1))
+    @__llvm_metadata(`rocdl.waves_per_eu`=SIMDLength(1))
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.config.num_threads())

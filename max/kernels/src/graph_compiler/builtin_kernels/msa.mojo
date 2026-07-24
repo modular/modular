@@ -40,9 +40,10 @@ rather than separate prefill/decode entry points.)
 
 The indexer op emits top-k *block* ids per (index head, token); the attention
 op consumes those block ids (`d_indices`) to gather a sparse band of KV blocks
-from the main paged cache.  Both K caches (index-K and main-KV) are BF16 with no
-scales, so they build with `generic_get_paged_cache` (NOT the `_with_scales`
-variant the MLA FP8 indexer uses).
+from the main paged cache.  The index-K cache is always BF16; the main-KV cache
+is BF16 or native FP8 e4m3 (the attention op infers its `kv_type` from the
+operands).  Neither carries scales, so both build with `generic_get_paged_cache`.
+FP8 here is scale-free and the `msa_sm100_*` kernels accumulate in FP32.
 
 Modeled on the MLA FP8 indexer registration in `attention.mojo`
 (`mo.mla.indexer.ragged.float8.paged`) for the comptime cache-param extraction
@@ -302,16 +303,17 @@ struct Struct_msa_attention_ragged_paged:
     @always_inline
     @staticmethod
     def execute[
-        *,
+        kv_type: DType,
+        //,
         group: Int,
         topk: Int,
     ](
         output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
-        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=kv_type, rank=3, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         cache_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         total_context_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=DType.bfloat16, rank=6, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
@@ -322,7 +324,12 @@ struct Struct_msa_attention_ragged_paged:
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
-        """Block-sparse MHA for SM100 (BF16, head_dim 128).
+        """Block-sparse MHA for SM100 (BF16 or FP8 e4m3, head_dim 128).
+
+        The KV cache dtype (`kv_type`, inferred from `q` / `kv_blocks`) selects
+        BF16 or native FP8 e4m3; `q` and `kv_blocks` must share it and the
+        kernel accumulates in FP32. FP8 is scale-free (no per-block dequant
+        scales), matching the `msa_sm100_*` FP8 path. The output is always BF16.
 
         Gathers `topk` KV blocks per (kv head, query token) using the block ids
         in `d_indices`.  Dispatches to the decode kernel when
@@ -357,14 +364,15 @@ struct Struct_msa_attention_ragged_paged:
 
         Args:
             output: Output `[num_rows, n_heads, head_dim]` BF16.
-            q: Query `[num_rows, n_heads, head_dim]` BF16 (`num_rows` == total_q
-                on prefill, batch on decode).
+            q: Query `[num_rows, n_heads, head_dim]`, dtype `kv_type` (BF16 or
+                FP8 e4m3; `num_rows` == total_q on prefill, batch on decode).
             input_row_offsets: Ragged query offsets `[batch + 1]` uint32 (1
                 token/seq on decode).
             cache_row_offsets: Ragged valid cache offsets `[batch + 1]` uint32.
             total_context_length: Total context length of the current batch.
             kv_blocks: Main-KV paged blocks `[num_blocks, 2, num_layers,
-                page_size, n_kv_heads, head_dim]` BF16.
+                page_size, n_kv_heads, head_dim]`, dtype `kv_type` (BF16 or
+                FP8 e4m3, scale-free).
             cache_lengths: Main-KV cache lengths `[batch]` uint32.
             kv_lookup_table: Main-KV page table `[batch, max_pages]` uint32.
             max_prompt_length: Main-KV max prompt (query) length `[1]` uint32.
@@ -393,7 +401,7 @@ struct Struct_msa_attention_ragged_paged:
         comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
         comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
         comptime num_heads = group * k_num_heads
-        comptime config = MHAConfig[DType.bfloat16](num_heads, head_dim)
+        comptime config = MHAConfig[kv_type](num_heads, head_dim)
 
         # `num_rows` == total query tokens (== batch on decode, 1 token/seq).
         var num_rows = Int(q.dim_size[0]())
@@ -404,7 +412,7 @@ struct Struct_msa_attention_ragged_paged:
         var output_buf = DeviceBuffer[DType.bfloat16](
             ctx, out_lt.ptr, num_rows * num_heads * head_dim, owning=False
         )
-        var q_buf = DeviceBuffer[DType.bfloat16](
+        var q_buf = DeviceBuffer[kv_type](
             ctx, q_lt.ptr, num_rows * num_heads * head_dim, owning=False
         )
 

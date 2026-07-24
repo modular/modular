@@ -123,6 +123,30 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added opt-in token-balanced CE scheduling across data-parallel replicas.
+  With `--dp-ce-balance-timeout-ms` >= 0 (default -1 = off), new context
+  encoding requests wait in an unbound pool and are placed by a per-step
+  planner that prices them at their post-prefix-cache length (a read-only
+  probe of each replica's device cache and the shared host/disk tiers) and
+  binds them to the least-loaded replica when first scheduled. Unbalanced CE
+  work may be deferred up to the timeout while its replica runs decode
+  instead, until per-step occupancy reaches `--dp-ce-balance-threshold`
+  (default 0.8). A below-threshold step with CE work on two or more replicas
+  still runs immediately with each replica's chunk size reduced to the
+  balance level, so only the excess defers
+  (`--dp-ce-balance-enable-dynamic-chunk-size`, default on; skipped when the
+  balance level is under half the CE chunk target, where the extra chunks
+  would cost more than the imbalance).
+- Added `--chunked-prefill-min-chunk-size` (config key
+  `runtime.chunked_prefill_min_chunk_size`, default 0 = off) to set a floor,
+  in tokens, on any chunk created by chunked prefill. When splitting a
+  request against the CE token budget, the cut is moved earlier so that
+  neither the chunk nor its remainder is smaller than the floor; if no legal
+  cut point exists within the remaining budget, the request is left unsplit
+  for a later step. This avoids degenerate slivers (for example an 8-token
+  tail chunk after an 8192-token budget cut) that pay a full step's overhead
+  and re-read the request's entire context in attention for almost no
+  progress.
 - Fixed non-streaming chat completions leaking a literal structural tool-call
   marker (for example `<tool_call>`) into `message.content` when a
   `max_tokens` truncation landed mid tool-call block. The response now
@@ -267,6 +291,9 @@ This version is still a work in progress.
   rather than a default.
 - Added a `max-benchmark` conda package for parity with the `max[benchmark]`
   wheel extra.
+- Added a `max-serve` conda package for parity with the `max[serve]` wheel
+  extra.
+- Added a `max[all]` extra to the wheel, and `max-all` package for Conda.
 
 ### Inference server
 
@@ -287,14 +314,6 @@ This version is still a work in progress.
   `reasoning_content` instead of `reasoning` (the two are never emitted
   together). This restores the `reasoning_content` field for clients that
   require it; it remains off by default, so responses emit `reasoning` only.
-- Requests whose text contains an unpaired UTF-16 surrogate (valid JSON but not
-  valid UTF-8, for example an emoji split by client-side truncation) are now
-  handled gracefully. By default the surrogate is normalized to the Unicode
-  replacement character (U+FFFD) and the request proceeds, instead of failing
-  with a 500 or a misleading "Invalid JSON." 400. A new opt-in
-  `MAX_SERVE_REJECT_INVALID_UTF8` server config instead rejects such requests
-  with an accurate 400 that names the offending position, identically across the
-  streaming and non-streaming chat paths and `/v1/completions`.
 - Improved time-to-first-token for multimodal requests by making the image and
   video preprocessor reject and decode media more efficiently. Oversized media
   is now rejected before its bytes are fully materialized: an `http(s)` download
@@ -422,6 +441,14 @@ This version is still a work in progress.
   but the code within it is not.
 
 ### Python API
+
+- Added `max.graph.ops.reduce_scatter_rms_norm`, a distributed op that
+  reduce-scatters a bfloat16 tensor across devices and RMSNorm-normalizes each
+  device's row shard in a single collective launch, keeping the reduced sum in
+  float32 registers so there is no global-memory round-trip between the
+  reduce-scatter and the norm. It returns both the normed shard and the
+  reduce-scatter sum (residual) shard, and is numerically identical to a
+  standalone reduce-scatter followed by `rms_norm`.
 
 - Added an optional `init_value` argument to `max.graph.ops.buffer_create`.
   When set, the buffer becomes persistent state: it is allocated and filled
@@ -654,6 +681,7 @@ This version is still a work in progress.
   negative-zero sentinel, so its communication region is now initialized when
   pipeline signal buffers are allocated; without that the region read as
   already-written and produced non-deterministic results.
+- The `layout` package is now bundled with MAX instead of Mojo.
 
 ## Breaking changes
 
@@ -693,6 +721,22 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed MAX Serve container pods ignoring `SIGTERM` during the model
+  cold-start window. The serving image ran Python directly as PID 1, and the
+  Linux kernel silently discards a default-disposition signal sent to a
+  namespaced PID 1 — so a `SIGTERM` arriving before the server installed its
+  handler (for example, during the long graph compile) was dropped, leaving
+  pods stuck `Terminating` until the termination grace period elapsed (holding
+  GPUs during rollouts). The container now runs under `dumb-init` as PID 1,
+  which handles `SIGTERM` (a signal the kernel otherwise drops when sent to
+  PID 1) and reaps the process tree, so the pod shuts down promptly and
+  releases its GPU.
+- Fixed a graph-compilation failure on B200 (`constraint failed: split-K (M2)
+  supports only check_mask==False masks`) for models whose attention uses a
+  materialized attention mask, such as the padded text encoders in diffusion
+  pipelines (for example FLUX.2's Qwen3 text encoder). The SM100 FA4 dispatch
+  no longer instantiates its split-K kernels for such masks and routes them to
+  the single-partition path instead.
 - Fixed Nemotron-3-Nano (`NemotronHForCausalLM`) leaking chain-of-thought and
   a raw `</think>` delimiter into `message.content` (with the reasoning field
   left empty), and `tool_choice="required"` emitting zero tool calls. The
@@ -801,6 +845,15 @@ This version is still a work in progress.
   matcher across certain tool-call structural tags (e.g.
   `<|tool_call_begin|>`). The walk now runs on a deep copy of the matcher,
   leaving the real matcher untouched.
+
+- Fixed speculative decoding (Eagle) requests that reached the per-request
+  `max_tokens` cap stopping up to `num_speculative_tokens` tokens short of it,
+  returning `finish_reason="length"` with fewer completion tokens than
+  requested. The response builder reserved a full worst-case speculative
+  chunk of slack against the per-request cap instead of only against the
+  hard model/KV limit, ending the request before its final (and possibly
+  partial) chunk could run. That chunk now runs, and the per-token accept
+  loop truncates it to land exactly on the cap.
 
 - Fixed slicing and `view()` on a `max.driver.DevicePinnedBuffer` silently
   returning a plain `Buffer`. The decayed type lost the pinned buffer's

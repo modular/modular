@@ -48,10 +48,10 @@ archive_override(
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-PvMqbvlCakQ3JczLgemNYHlPzV0ZdIW3WXBNQAQ50Mg=",
-    strip_prefix = "rules_mojo-9a6a240114bd8ce0e0d3fea0dbef1d70744f7c6f",
+    integrity = "sha256-iYH7inOkUT80gV8O1W48V57rqOzoHg/8eS+4O7H0wBk=",
+    strip_prefix = "rules_mojo-ef3cecd075982a6ece98bbb84ae71e1b7754be0a",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/9a6a240114bd8ce0e0d3fea0dbef1d70744f7c6f.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/ef3cecd075982a6ece98bbb84ae71e1b7754be0a.tar.gz",
     ],
 )
 
@@ -903,11 +903,6 @@ LOGIT_VERIFICATION_GOLDENS = [
         "name": "torch_idefics3_8b_llama3_golden.tar.gz",
         "sha256": "996834f83014e543593c5a9ae283b16e33e05575720cce9ec4e175c0ad3a5283",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_idefics3_8b_llama3_golden/3/996834f83014e543593c5a9ae283b16e33e05575720cce9ec4e175c0ad3a5283/torch_idefics3_8b_llama3_golden.tar.gz",
-    },
-    {
-        "name": "torch_exaone_3_5_2_4b_instruct_float32_golden.tar.gz",
-        "sha256": "ae16f10ebd7514f5d60f25755babbcff9636a4fa1c68d1470f614474fa907427",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_exaone_3_5_2_4b_instruct_float32_golden/1/ae16f10ebd7514f5d60f25755babbcff9636a4fa1c68d1470f614474fa907427/torch_exaone_3_5_2_4b_instruct_float32_golden.tar.gz",
     },
     {
         "name": "torch_phi_3_5_mini_instruct_bfloat16_golden.tar.gz",

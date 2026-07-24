@@ -25,7 +25,7 @@ from std.testing import assert_equal, TestSuite
 
 
 def _idx[target: __mlir_type.`!kgen.target`]() -> Int:
-    return Int(SIMDSize(mlir_value=get_plugin_index[target]()))
+    return Int(SIMDLength(mlir_value=get_plugin_index[target]()))
 
 
 def test_nvidia_targets_select_cuda_plugin() raises:

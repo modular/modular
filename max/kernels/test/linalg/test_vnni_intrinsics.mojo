@@ -159,8 +159,8 @@ def test_i8_to_i32() raises:
 
 def test_i16_to_i32() raises:
     def test_simd_width[width: Int]() raises:
-        var a = SIMD[DType.int16, SIMDSize(width) * 2]()
-        var b = SIMD[DType.int16, SIMDSize(width) * 2]()
+        var a = SIMD[DType.int16, SIMDLength(width) * 2]()
+        var b = SIMD[DType.int16, SIMDLength(width) * 2]()
         var c_start = SIMD[DType.int32, width]()
         var c_golden = SIMD[DType.int32, width]()
 

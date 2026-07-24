@@ -377,6 +377,7 @@ class SpecDecodeState:
         model: PipelineModelWithKVCache[Any],
         pipeline_config: PipelineConfig,
         max_batch_size: int,
+        available_cache_memory: int | None = None,
         vocab_size: int | None = None,
     ) -> SpecDecodeState:
         """Load the spec decode state.
@@ -400,9 +401,7 @@ class SpecDecodeState:
             max_batch_size=max_batch_size,
             max_seq_len=model.max_seq_len,
             session=session,
-            available_cache_memory=(
-                pipeline_config.model.kv_cache._available_cache_memory
-            ),
+            available_cache_memory=available_cache_memory,
         )
 
         num_speculative_tokens = (
@@ -1641,7 +1640,7 @@ class OverlapTextGenerationPipeline(
             max_batch_size=max_batch_size,
         )
 
-        available_cache_memory = model_config.kv_cache._available_cache_memory
+        available_cache_memory = memory_plan.available_cache_memory
         kv_params = self._pipeline_model.kv_params
 
         # Load the KVCache manager.  For models with multiple KV caches
@@ -1667,6 +1666,7 @@ class OverlapTextGenerationPipeline(
                 model=self._pipeline_model,
                 pipeline_config=self._pipeline_config,
                 max_batch_size=max_batch_size,
+                available_cache_memory=available_cache_memory,
                 vocab_size=(
                     self.vocab_size
                     if pipeline_config.needs_bitmask_constraints

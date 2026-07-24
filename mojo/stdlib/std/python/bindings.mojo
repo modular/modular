@@ -192,7 +192,7 @@ def _tp_dealloc_wrapper[T: ImplicitlyDeletable](py_self: PyObjectPtr) abi("C"):
     #   Is this always safe? Wrap in GIL, because this could
     #   evaluate arbitrary code?
     if self.is_initialized:
-        UnsafePointer(to=self.mojo_value).unsafe_deinit_pointee()
+        Pointer(to=self.mojo_value).unsafe_deinit_pointee()
 
     cpython.PyObject_Free(py_self.bitcast[NoneType]())
 
@@ -674,7 +674,7 @@ struct PythonTypeBuilder(Copyable):
 
         # Construct a Python 'type' object from our type spec.
         var type_obj_ptr = cpython.PyType_FromSpec(
-            UnsafePointer(to=type_spec).as_unsafe_any_origin()
+            Pointer(to=type_spec).as_unsafe_any_origin()
         )
 
         if not type_obj_ptr:
@@ -1378,7 +1378,7 @@ def _py_function_fastcall_wrapper[
     @always_inline
     def fastcall(
         py_self_ptr: PyObjectPtr,
-        args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
+        args: Pointer[PyObjectPtr, MutUntrackedOrigin],
         nargs: Py_ssize_t,
     ) abi("C") -> PyObjectPtr:
         var py_self = PythonObject(from_borrowed=py_self_ptr)
@@ -1387,7 +1387,7 @@ def _py_function_fastcall_wrapper[
         # non-null for every METH_FASTCALL invocation, including the
         # `nargs == 0` case (CPython hands the callee a pointer into a
         # cached empty tuple). `_dispatch_fast` therefore accepts a plain
-        # `UnsafePointer` rather than `OptionalUnsafePointer`.
+        # `Pointer` rather than `OptionalPointer`.
         try:
             return FuncT._dispatch_fast[is_method](
                 func._func, py_self, args, Int(nargs)
@@ -1544,9 +1544,9 @@ def check_arguments_arity(
 
 def check_and_get_arg[
     T: ImplicitlyDeletable
-](
-    func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[T, MutAnyOrigin]:
+](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
+    T, MutAnyOrigin
+]:
     """Get the argument at the given index and downcast it to a given Mojo type.
 
     Parameters:
@@ -1621,9 +1621,9 @@ def _try_convert_arg[
 @always_inline
 def check_and_get_or_convert_arg[
     T: ConvertibleFromPython
-](
-    func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[T, MutAnyOrigin]:
+](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
+    T, MutAnyOrigin
+]:
     """Get the argument at the given index and convert it to a given Mojo type.
 
     If the argument cannot be directly downcast to the given type, it will be
@@ -1666,9 +1666,9 @@ def check_and_get_or_convert_arg[
 @always_inline
 def check_and_get_or_convert_arg[
     T: type_of(Int)
-](
-    func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[Int, MutAnyOrigin]:
+](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
+    Int, MutAnyOrigin
+]:
     """Get the argument at the given index and convert it to a given Mojo type.
 
     If the argument cannot be directly downcast to the given type, it will be

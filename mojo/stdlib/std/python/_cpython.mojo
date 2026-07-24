@@ -87,12 +87,12 @@ comptime PyCFunctionWithKeywords = def(
 # C array of borrowed `PyObject*` plus `nargs`, skipping the tuple-packing
 # step that `METH_VARARGS` requires. The args pointer is `PyObject *const *`
 # in CPython and is guaranteed non-null by the vectorcall protocol (PEP
-# 590); we therefore model it as a plain `UnsafePointer` rather than an
-# `OptionalUnsafePointer`. The pointer is owned by CPython, so the origin
+# 590); we therefore model it as a plain `Pointer` rather than an
+# `OptionalPointer`. The pointer is owned by CPython, so the origin
 # is `MutUntrackedOrigin`.
 # ref: https://docs.python.org/3/c-api/structures.html#c.PyCFunctionFast
 comptime PyCFunctionFast = def(
-    PyObjectPtr, UnsafePointer[PyObjectPtr, MutUntrackedOrigin], Py_ssize_t
+    PyObjectPtr, Pointer[PyObjectPtr, MutUntrackedOrigin], Py_ssize_t
 ) thin abi("C") -> PyObjectPtr
 
 # Flag passed to newmethodobject
@@ -1519,7 +1519,7 @@ struct CPython(Defaultable, Movable):
             unsafe_from_utf8=CStringSlice(
                 unsafe_from_ptr=external_call[
                     "KGEN_CompilerRT_Python_SetPythonPath",
-                    UnsafePointer[c_char, ImmStaticOrigin],
+                    Pointer[c_char, ImmStaticOrigin],
                 ]()
             )
         )
@@ -2048,11 +2048,9 @@ struct CPython(Defaultable, Movable):
         var traceback = PyObjectPtr()
 
         self._PyErr_Fetch(
-            UnsafePointer(to=type).unsafe_origin_cast[MutUntrackedOrigin](),
-            UnsafePointer(to=value).unsafe_origin_cast[MutUntrackedOrigin](),
-            UnsafePointer(to=traceback).unsafe_origin_cast[
-                MutUntrackedOrigin
-            ](),
+            Pointer(to=type).unsafe_origin_cast[MutUntrackedOrigin](),
+            Pointer(to=value).unsafe_origin_cast[MutUntrackedOrigin](),
+            Pointer(to=traceback).unsafe_origin_cast[MutUntrackedOrigin](),
         )
 
         return value
@@ -2076,11 +2074,9 @@ struct CPython(Defaultable, Movable):
         var traceback = PyObjectPtr()
 
         self._PyErr_Fetch(
-            UnsafePointer(to=type).unsafe_origin_cast[MutUntrackedOrigin](),
-            UnsafePointer(to=value).unsafe_origin_cast[MutUntrackedOrigin](),
-            UnsafePointer(to=traceback).unsafe_origin_cast[
-                MutUntrackedOrigin
-            ](),
+            Pointer(to=type).unsafe_origin_cast[MutUntrackedOrigin](),
+            Pointer(to=value).unsafe_origin_cast[MutUntrackedOrigin](),
+            Pointer(to=traceback).unsafe_origin_cast[MutUntrackedOrigin](),
         )
 
         return (type, value, traceback)
@@ -2744,13 +2740,13 @@ struct CPython(Defaultable, Movable):
         var length = Py_ssize_t(0)
         var ptr = self._PyUnicode_AsUTF8AndSize(
             obj,
-            UnsafePointer(to=length).unsafe_origin_cast[MutUntrackedOrigin](),
+            Pointer(to=length).unsafe_origin_cast[MutUntrackedOrigin](),
         )
         if length == Py_ssize_t(-1):
             return None
         return StringSlice[ImmutAnyOrigin](
             unsafe_from_utf8=Span(
-                ptr=ptr.value().bitcast[Byte](), length=Int(length)
+                unsafe_ptr=ptr.value().bitcast[Byte](), length=Int(length)
             )
         )
 
@@ -3032,13 +3028,23 @@ struct CPython(Defaultable, Movable):
     def PyCapsule_New(
         self,
         pointer: OpaquePointer[MutUntrackedOrigin],
-        var name: String,
+        name: StaticString,
         destructor: PyCapsule_Destructor,
     ) -> PyObjectPtr:
         """Create a `PyCapsule` encapsulating the pointer. The pointer argument
         may not be `NULL`.
 
         Return value: New reference.
+
+        Note:
+            `PyCapsule_New` stores the `name` pointer directly in the capsule
+            rather than copying it, so the string must outlive the capsule.
+            `name` is therefore a `StaticString` (a nul-terminated string
+            literal has a `'static` lifetime); passing a temporary `String`
+            would leave the capsule holding a dangling pointer. This is
+            intentionally conservative: the C API only requires `name` to
+            outlive the capsule, but `StaticString` is the simplest lifetime
+            that satisfies that for the string-literal names used in practice.
 
         References:
         - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_New

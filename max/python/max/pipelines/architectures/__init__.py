@@ -112,12 +112,6 @@ def register_all_models() -> None:
             "LlamaForCausalLMEagle3", ".eagle_llama3", "eagle3_llama_arch"
         ),
         _LazyArch("LlamaForCausalLMEagle", ".eagle_llama3", "eagle_llama_arch"),
-        _LazyArch("ExaoneForCausalLM", ".exaone", "exaone_arch"),
-        _LazyArch(
-            "ExaoneForCausalLM_ModuleV3",
-            ".exaone_modulev3",
-            "exaone_modulev3_arch",
-        ),
         _LazyArch("Flux2Pipeline", ".flux2", "flux2_arch"),
         _LazyArch("Flux2KleinPipeline", ".flux2", "flux2_klein_arch"),
         _LazyArch(

@@ -20,7 +20,7 @@ from std.memory import bitcast
 """
 
 from std.sys import bit_width_of, is_amd_gpu, is_nvidia_gpu
-from std.builtin.simd_size import SIMDSize
+from std.builtin.simd_length import SIMDLength
 from std.builtin.dtype import _uint_type_of_width
 
 
@@ -32,10 +32,10 @@ from std.builtin.dtype import _uint_type_of_width
 @always_inline("nodebug")
 def bitcast[
     src_dtype: DType,
-    src_width: SIMDSize,
+    src_width: SIMDLength,
     //,
     dtype: DType,
-    width: SIMDSize = src_width,
+    width: SIMDLength = src_width,
 ](val: SIMD[src_dtype, src_width]) -> SIMD[dtype, width]:
     """Bitcasts a SIMD value to another SIMD value.
 
@@ -132,10 +132,10 @@ def _llvm_bitwidth(dtype: DType) -> Int:
 
 @always_inline("nodebug")
 def pack_bits[
-    src_width: SIMDSize,
+    src_width: SIMDLength,
     //,
     dtype: DType = _uint_type_of_width[src_width](),
-    width: SIMDSize = 1,
+    width: SIMDLength = 1,
 ](val: SIMD[DType.bool, src_width]) -> SIMD[dtype, width]:
     """Packs a SIMD vector of `bool` values into an integer.
 

@@ -39,13 +39,13 @@ comptime TMP_MAX = 10_000
 
 
 def _get_random_name(size: Int = 8) -> String:
-    comptime characters = "abcdefghijklmnopqrstuvwxyz0123456789_"
+    comptime characters = StaticString("abcdefghijklmnopqrstuvwxyz0123456789_")
     var name = String(capacity=size)
     for _ in range(size):
         var rand_index = Int(
             random_ui64(0, UInt64(characters.byte_length() - 1))
         )
-        name += characters[rand_index]
+        name += characters[byte=rand_index]
     return name^
 
 

@@ -22,103 +22,6 @@ import jinja2
 from mojodoc_api_href import resolve_api_href
 
 
-def format_signature(sig: str, threshold: int = 100) -> str:
-    """Jinja2 filter that pretty-prints long Mojo signatures.
-
-    If ``len(sig) <= threshold`` the signature is returned unchanged.
-    Otherwise the contents of each top-level bracket group — the compile-time
-    ``[...]`` parameters, the runtime ``(...)`` arguments, and any bracketed
-    return type — are placed one per line, indented by four spaces. Each
-    opening bracket stays attached to the name (or boundary) that precedes it
-    and each closing bracket sits on its own line, so no section runs off
-    screen.
-
-    A trailing ``where`` clause stays on the closing line unless it is
-    parenthesized, in which case it wraps like any other bracket group.
-
-    Commas inside string-literal defaults are not treated as separators. No
-    characters are reordered or dropped — only newlines and leading spaces are
-    inserted (the single space after a top-level comma becomes the newline +
-    indent).
-
-    Args:
-        sig: The raw signature string from the Mojo doc JSON.
-        threshold: Maximum length below which the signature is left as-is.
-
-    Returns:
-        The original string when short; a multi-line reformatted string
-        otherwise.
-    """
-    if len(sig) <= threshold:
-        return sig
-
-    openers = "([{"
-    closers = ")]}"
-    indent = "    "
-
-    out: list[str] = []  # finished lines
-    cur: list[str] = []  # chars of the line currently being built
-    depth = 0
-    in_str = ""  # the open quote char while inside a string literal, else ""
-
-    i = 0
-    while i < len(sig):
-        ch = sig[i]
-
-        # Inside a string literal: copy verbatim and never split, until the
-        # matching unescaped quote closes it (e.g. commas in `= "a, b"`).
-        if in_str:
-            cur.append(ch)
-            if ch == in_str and sig[i - 1] != "\\":
-                in_str = ""
-            i += 1
-            continue
-
-        if ch in ('"', "'"):
-            in_str = ch
-            cur.append(ch)
-        elif ch in openers:
-            cur.append(ch)
-            if depth == 0:
-                out.append("".join(cur))
-                cur = [indent]
-            depth += 1
-        elif ch in closers:
-            if depth == 1:
-                # Close the top-level group: finish the last item (no trailing
-                # comma), then put the closing bracket at column 0 so it can
-                # collect any trailing syntax.
-                line = "".join(cur)
-                if line.strip():
-                    out.append(line)
-                cur = [ch]
-                depth -= 1
-            else:
-                cur.append(ch)
-                depth -= 1
-        elif ch == "," and depth == 1:
-            # Top-level separator: end this item's line (drop the trailing
-            # space, which the newline + indent replaces).
-            cur.append(ch)
-            out.append("".join(cur))
-            cur = [indent]
-            if i + 1 < len(sig) and sig[i + 1] == " ":
-                i += 1
-        else:
-            cur.append(ch)
-
-        i += 1
-
-    if "".join(cur).strip():
-        out.append("".join(cur))
-
-    result = "\n".join(out)
-    if "\n" not in result:
-        # No top-level bracket group to wrap; leave the signature untouched.
-        return sig
-    return result
-
-
 def _configure_jinja_env(
     environment: jinja2.Environment,
     hosted_on_mojolang: bool,
@@ -126,7 +29,6 @@ def _configure_jinja_env(
     """Attach filters and ``api_href`` used by mojodoc templates."""
 
     environment.filters["pad_backticks"] = pad_backticks
-    environment.filters["format_signature"] = format_signature
 
     def api_href(path: str | None) -> str:
         return resolve_api_href(path, hosted_on_mojolang=hosted_on_mojolang)
@@ -249,99 +151,44 @@ def removeSelfArgumentFromStructMethods(mojo_json) -> None:  # noqa: ANN001
                     function["args"].pop(0)
 
 
-# Well-known std types the compiler sometimes fails to resolve to a decl
-# path (so their args/parameters render unlinked). Filled in as a fallback.
-_STD_TYPE_PATH_FALLBACKS = {
-    "StringSlice": "/std/collections/string/string_slice/StringSlice",
-    "String": "/std/collections/string/string/String",
-}
-
-
-def fillMissingStdTypePaths(mojo_json) -> None:  # noqa: ANN001
-    """Fill in decl paths for well-known std types when the compiler did not
-    resolve one, so the rendered argument/parameter types are hyperlinked."""
-
-    def process_typed(items) -> None:  # noqa: ANN001
-        for item in items:
-            if item.get("path") or not item.get("type"):
-                continue
-            base = str(item["type"]).split("[")[0]
-            if base in _STD_TYPE_PATH_FALLBACKS:
-                item["path"] = _STD_TYPE_PATH_FALLBACKS[base]
+def removeArgumentsWithoutDocumentation(mojo_json) -> None:  # noqa: ANN001
+    """We've been omitting function arguments without documentation from docstring, so we remove them
+    from top-level functions and struct methods."""
 
     def process_decl_with_functions(decl) -> None:  # noqa: ANN001
-        for overload_set in decl["functions"]:
-            for function in overload_set["overloads"]:
-                process_typed(function.get("args", []))
-                process_typed(function.get("parameters", []))
-
-    for struct in mojo_json["structs"] + mojo_json["traits"]:
-        process_decl_with_functions(struct)
-        process_typed(struct.get("fields", []))
-        process_typed(struct.get("parameters", []))
-    process_decl_with_functions(mojo_json)
-
-
-def warnOnUndocumentedArgs(mojo_json) -> None:  # noqa: ANN001
-    """Keep all function arguments in the rendered list; emit a stderr warning
-    for any lacking descriptions so the build log surfaces the documentation
-    debt.  Arguments without descriptions are kept with an empty description
-    string so the templates render name + type without a trailing colon."""
-    module_name = mojo_json.get("name", "<unknown>")
-    undocumented: int = 0
-
-    def process_decl_with_functions(decl) -> None:  # noqa: ANN001
-        nonlocal undocumented
         for overloadSet in decl["functions"]:
             for function in overloadSet["overloads"]:
-                for arg in function["args"]:
-                    if not arg["description"]:
-                        undocumented += 1
+                function["args"] = [
+                    arg for arg in function["args"] if arg["description"]
+                ]
 
     for struct in mojo_json["structs"] + mojo_json["traits"]:
         process_decl_with_functions(struct)
     process_decl_with_functions(mojo_json)
 
-    if undocumented:
-        print(
-            f"WARNING: {undocumented} undocumented arg(s) in module {module_name!r}",
-            file=sys.stderr,
-        )
 
+def removeParametersWithoutDocumentation(mojo_json) -> None:  # noqa: ANN001
+    """We've been omitting parameters without documentation from docstring, so we remove them
+    from top-level functions, struct methods and structs"""
 
-def warnOnUndocumentedParameters(mojo_json) -> None:  # noqa: ANN001
-    """Keep all parameters in the rendered list; emit a stderr warning for any
-    lacking descriptions so the build log surfaces the documentation debt.
-    Parameters without descriptions are kept with an empty description string
-    so the templates render name + type without a trailing colon."""
-    module_name = mojo_json.get("name", "<unknown>")
-    undocumented: int = 0
-
-    def _count_undocumented_params(decl) -> None:  # noqa: ANN001
-        nonlocal undocumented
-        for param in decl["parameters"]:
-            if not param["description"]:
-                undocumented += 1
+    def process_decl_with_parameters(decl) -> None:  # noqa: ANN001
+        decl["parameters"] = [
+            param for param in decl["parameters"] if param["description"]
+        ]
 
     def process_decl_with_functions(decl) -> None:  # noqa: ANN001
         for overloadSet in decl["functions"]:
             for function in overloadSet["overloads"]:
-                _count_undocumented_params(function)
+                process_decl_with_parameters(function)
 
     for struct in mojo_json["structs"]:
         process_decl_with_functions(struct)
-        _count_undocumented_params(struct)
+        process_decl_with_parameters(struct)
 
     for trait in mojo_json["traits"]:
         process_decl_with_functions(trait)
 
     process_decl_with_functions(mojo_json)
-
-    if undocumented:
-        print(
-            f"WARNING: {undocumented} undocumented parameter(s) in module {module_name!r}",
-            file=sys.stderr,
-        )
 
 
 def removeStaticFromInitializers(mojo_json) -> None:  # noqa: ANN001
@@ -464,9 +311,8 @@ def generateMarkdown(
             addImplicitConversionDecorator,
             copyFieldTypesToValue,
             processTraitMethods,
-            warnOnUndocumentedParameters,
-            warnOnUndocumentedArgs,
-            fillMissingStdTypePaths,
+            removeParametersWithoutDocumentation,
+            removeArgumentsWithoutDocumentation,
             removeSelfArgumentFromStructMethods,
             removeStaticFromInitializers,
         ]:
@@ -656,60 +502,5 @@ def main() -> None:
         # os.remove(args.filename)
 
 
-def _test_format_signature() -> None:
-    """Self-tests for format_signature. Run with: python3 mojodoc_json_to_markdown.py --test"""
-    indent = "    "
-
-    def collapse(result: str) -> str:
-        # Invert the reflow to prove no characters were lost or reordered:
-        # the only insertions are newlines, four-space indents, and the single
-        # space dropped after each top-level comma.
-        r = result.replace(f",\n{indent}", ", ")  # split-after-comma
-        r = r.replace(f"\n{indent}", "")  # opener + newline+indent -> opener
-        r = r.replace("\n", "")  # newline before a closing bracket -> nothing
-        return r
-
-    # 1. Short signatures are returned unchanged.
-    short = "fn foo(x: Int) -> Int"
-    assert format_signature(short) == short, format_signature(short)
-
-    # 2. Long signatures reflow AND round-trip exactly (no lost/reordered chars).
-    cases = [
-        "def f[T: DType, w: Int = g(a, b)](x: Tensor[T, w], y: Optional[fn(Int, Int) -> None] = None) -> Tensor[T, w]",
-        "fn matmul[dtype: DType, M: Int, N: Int, K: Int](a: NDBuffer[dtype, 2], b: NDBuffer[dtype, 2], c: NDBuffer[dtype, 2]) -> None",
-        "def slice[origin: Origin, //, dtype: DType, layout: Layout, masked: Bool](self, indices: VariadicListMem[Slice]) -> TileTensor[dtype, layout, origin, masked, address_space, alignment]",
-        "fn g[T: Copyable, U: Movable](a: T, b: U) -> Tuple[T, U] where T: Stringable",
-    ]
-    for sig in cases:
-        r = format_signature(sig, threshold=60)
-        assert "\n" in r, f"expected multi-line: {sig!r}"
-        assert collapse(r) == sig, (
-            f"round-trip failed:\n  got:  {collapse(r)!r}\n  want: {sig!r}"
-        )
-
-    # 3. The opening bracket stays attached to the name; '](' is its own line.
-    r = format_signature(cases[0], threshold=60)
-    assert r.split("\n")[0] == "def f[", r.split("\n")[0]
-    assert "](" in r.split("\n"), f"'](' should be its own line:\n{r}"
-
-    # 4. A long bracketed return type is itself wrapped, not left to overflow.
-    r = format_signature(cases[2], threshold=60)
-    assert "\n) -> TileTensor[" in r, f"return type not wrapped:\n{r}"
-
-    # 5. Commas inside a string-literal default are not treated as separators.
-    str_sig = (
-        'fn foo[msg: StaticString = "a, b, c, d, e"](x: Int, y: Int) -> Int'
-    )
-    r = format_signature(str_sig, threshold=20)
-    assert '"a, b, c, d, e"' in r, f"string literal was split:\n{r}"
-
-    print("All format_signature tests passed.")
-
-
 if __name__ == "__main__":
-    import sys as _sys
-
-    if len(_sys.argv) > 1 and _sys.argv[1] == "--test":
-        _test_format_signature()
-    else:
-        main()
+    main()

@@ -31,6 +31,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
     build_single_replica_ragged_token_arrays,
     modulev3_ragged_kv_symbolic_inputs,
 )
+from max.pipelines.lib.utils import compute_data_parallel_splits
 
 from ..deepseekV2_modulev3.batch_processor import (
     DeepseekV2ModuleV3BatchProcessor,
@@ -48,7 +49,11 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
     ) -> None:
         super().__init__(config, runtime)
         self._ep_comm_initializer: EPCommInitializer | None = None
-        self._batch_context_length = Buffer.zeros(shape=[1], dtype=DType.int32)
+        dp_degree = runtime.pipeline_config.model.data_parallel_degree
+        self._batch_context_lengths = [
+            Buffer.zeros(shape=[1], dtype=DType.int32)
+            for _ in range(max(1, dp_degree))
+        ]
         self._kv_cache_page_size = (
             runtime.pipeline_config.model.kv_cache.kv_cache_page_size
         )
@@ -64,23 +69,25 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
             return ()
         return tuple(self._ep_comm_initializer.model_inputs())
 
-    def _update_batch_context_length(
-        self, context_batch: Sequence[TextContext]
-    ) -> Buffer:
-        """Writes the page-aligned total KV context length into the CPU buffer.
+    @property
+    def _dp_degree(self) -> int:
+        return self.runtime.pipeline_config.model.data_parallel_degree
 
-        Mirrors what the MLA prefill planner computes for ``buffer_lengths``.
-        """
+    def _update_batch_context_lengths(
+        self, replica_batches: Sequence[Sequence[TextContext]]
+    ) -> list[Buffer]:
+        """Writes each DP replica's page-aligned KV context length in place."""
         page_size = self._kv_cache_page_size
 
         def align_length(length: int) -> int:
             return (length + page_size - 1) // page_size * page_size
 
-        total = sum(
-            align_length(ctx.tokens.current_position) for ctx in context_batch
-        )
-        self._batch_context_length[0] = total
-        return self._batch_context_length
+        for i, batch in enumerate(replica_batches):
+            self._batch_context_lengths[i].to_numpy()[0] = sum(
+                align_length(ctx.tokens.current_position) for ctx in batch
+            )
+
+        return self._batch_context_lengths
 
     def get_symbolic_inputs(
         self,
@@ -96,14 +103,40 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
                 device_refs=device_refs,
             )
         )
-        # Host batch context length, inserted right after input_row_offsets to
-        # match DeepseekV3.forward's positional signature (and DeepseekV3Inputs
-        # .buffers). Stays on CPU so the MLA plan's buffer_length copy is a
-        # host-to-host no-op and the graph remains capturable.
-        inputs.insert(
-            3,
-            TensorType(DType.int32, shape=[1], device=DeviceRef.CPU()),
-        )
+
+        # Host batch context lengths, inserted right after input_row_offsets to
+        # match DeepseekV3.forward's positional signature
+        # Each data parallel replica should get a different context length
+        # buffer.
+        dp_degree = self._dp_degree
+        assert dp_degree > 0
+        for i in range(dp_degree):
+            inputs.insert(
+                3 + i,
+                TensorType(DType.int32, shape=[1], device=DeviceRef.CPU()),
+            )
+
+        # Under data parallelism the CPU split boundaries and int64 row offsets
+        # follow the per-replica context lengths, matching the order
+        # DeepseekV3.forward peels them off its variadic args.
+        if dp_degree > 1:
+            inputs.insert(
+                3 + dp_degree,
+                TensorType(
+                    DType.int64,
+                    shape=[dp_degree + 1],
+                    device=DeviceRef.CPU(),
+                ),
+            )
+            inputs.insert(
+                4 + dp_degree,
+                TensorType(
+                    DType.int64,
+                    shape=["input_row_offsets_len"],
+                    device=DeviceRef.CPU(),
+                ),
+            )
+        inputs.extend(extra_input_types)
         return inputs
 
     def _make_inputs(
@@ -121,7 +154,7 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
             input_row_offsets=input_row_offsets,
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
-            batch_context_length=self._batch_context_length,
+            batch_context_lengths=self._batch_context_lengths,
             ep_inputs=self._ep_inputs(),
         )
 
@@ -131,11 +164,24 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
         kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV3Inputs:
-        """Packs the ragged batch."""
+        """Packs the ragged batch.
+
+        Under data parallelism all replicas' requests are concatenated into one
+        device-0 batch plus the CPU ``data_parallel_splits`` boundaries the
+        forward splits it by.
+        """
         from .model import DeepseekV3Inputs
 
         assert kv_cache_inputs is not None
         device0 = self.runtime.devices[0]
+        dp_degree = self._dp_degree
+        if dp_degree > 1 and len(replica_batches) != dp_degree:
+            raise ValueError(
+                f"data parallelism expects {dp_degree} replica batches, "
+                f"got {len(replica_batches)}."
+            )
+        # An empty replica contributes a zero-width boundary; the in-graph
+        # split still hands it a 0-token shard.
         context_batch = [ctx for batch in replica_batches for ctx in batch]
         if context_batch:
             tokens_np, offsets_np = build_single_replica_ragged_token_arrays(
@@ -144,6 +190,17 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
         else:
             tokens_np = np.empty(0, dtype=np.int64)
             offsets_np = np.zeros(1, dtype=np.uint32)
+
+        data_parallel_splits = None
+        input_row_offsets_i64 = None
+        if dp_degree > 1:
+            data_parallel_splits = Buffer.from_numpy(
+                compute_data_parallel_splits(replica_batches)
+            )
+            input_row_offsets_i64 = Buffer.from_numpy(
+                offsets_np.astype(np.int64)
+            )
+
         return DeepseekV3Inputs(
             tokens=Buffer.from_numpy(tokens_np.astype(np.int64)).to(device0),
             input_row_offsets=Buffer.from_numpy(
@@ -153,8 +210,10 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
             return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
-            batch_context_length=self._update_batch_context_length(
-                context_batch
+            batch_context_lengths=self._update_batch_context_lengths(
+                replica_batches
             ),
+            data_parallel_splits=data_parallel_splits,
+            input_row_offsets_i64=input_row_offsets_i64,
             ep_inputs=self._ep_inputs(),
         )
