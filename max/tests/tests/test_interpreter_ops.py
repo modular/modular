@@ -6151,22 +6151,26 @@ class TestConv2dOp:
             np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
         )
 
-    def test_dilation(self) -> None:
-        """Dilation != 1 is not supported after the GC migration (MXF-529):
-        the GC-compiled conv kernel raises rather than silently
-        computing a wrong result."""
-        x_np = np.arange(1 * 7 * 7 * 1, dtype=np.float32).reshape(1, 7, 7, 1)
+    @pytest.mark.parametrize("dilation", [(2, 2), (2, 3), (1, 2)])
+    def test_dilation(self, dilation: tuple[int, int]) -> None:
+        """Non-unit dilation produces correct output (MXF-529 / KERN-3238)."""
+        x_np = np.arange(1 * 9 * 9 * 1, dtype=np.float32).reshape(1, 9, 9, 1)
         f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
 
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
-        with pytest.raises(NotImplementedError, match="dilation"):
-            with (
-                rc.EagerRealizationContext() as ctx,
-                realization_context(ctx),
-            ):
-                y = F.conv2d(x, f, dilation=(2, 2))
-                assert y is not None
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f, dilation=dilation)
+
+        expected = self._conv2d_ref(
+            x_np, f_np, (1, 1), dilation, (0, 0, 0, 0), 1
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
 
     def test_groups(self) -> None:
         """Grouped conv (groups > 1) is not supported after the GC migration
