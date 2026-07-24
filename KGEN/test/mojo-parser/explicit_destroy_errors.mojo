@@ -276,3 +276,24 @@ struct WhereFalseCustom(ImplicitlyDeletable where False, Movable where False):
 def testWhereFalseCustomMessage():
     # expected-error @below {{abandoned without being explicitly destroyed: use consume()}}
     _ = WhereFalseCustom()
+
+
+# ===----------------------------------------------------------------------=== #
+# Indirect mutable assignment of a linear type
+# ===----------------------------------------------------------------------=== #
+
+
+# An indirect mutable assignment `ptr[] = linear^` overwrites the value at
+# the reference target, which must first be implicitly destroyed. When the
+# target's type is linear the reference has no user-visible name, so the
+# diagnostic describes the abandoned value generically and relies on the
+# source location to point at the offending expression.
+@explicit_destroy("use consume()")
+struct IndirectAssignLinear(Movable, ImplicitlyDeletable where False):
+    def __init__(out self):
+        pass
+
+
+def testIndirectAssignLinear(p: UnsafePointer[IndirectAssignLinear, MutAnyOrigin]):
+    # expected-error @+1 {{value abandoned without being explicitly destroyed: use consume()}}
+    p[] = IndirectAssignLinear()^

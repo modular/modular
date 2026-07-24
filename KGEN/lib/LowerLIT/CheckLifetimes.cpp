@@ -3442,16 +3442,22 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
   // linear type.  If linear, emit the error message.
   if (dtorInfo.isUnavailable()) {
     ValueInfo &valueInfo = valueSet.getValueInfo(valueRef.valueId);
-    auto diagOr = valueInfo.emitErrorIfNotDiagnosed(builder.getLoc(), "'");
+    auto diagOr = valueInfo.emitErrorIfNotDiagnosed(builder.getLoc());
     if (!diagOr)
       return;
     auto &diag = *diagOr;
 
-    // FIXME(MOCO-3017): Provide a better name for the LHS in indirect
-    //   mutable assignments like `ptr[] = linear^`.
-    auto name = valueRef.valueId ? valueInfo.getName().str() : "<unknown>";
+    // If we have a tracked value with a name, quote it.  Otherwise, for
+    // indirect mutable assignments like `ptr[] = linear^` the LHS isn't a
+    // simple identifier and has no user-visible name -- describe the
+    // abandoned target generically and let the source location point at the
+    // offending expression.
+    if (valueRef.valueId)
+      diag << "'" << valueInfo.getName().str() << "'";
+    else
+      diag << "value";
 
-    diag << name << "' abandoned without being explicitly destroyed: "
+    diag << " abandoned without being explicitly destroyed: "
          << dtorInfo.getMessageIfUnavailable().strref();
 
     // If the insertion point is on a mark_consumed op inserted as part of an
