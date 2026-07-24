@@ -70,6 +70,16 @@
     "status": 301
   },
   {
+    "source": "/max/changelog",
+    "dest": "/releases/",
+    "status": 301
+  },
+  {
+    "source": "/max/changelog/",
+    "dest": "/releases/",
+    "status": 301
+  },
+  {
     "source": "/mojo/changelog/",
     "dest": "https://mojolang.org/releases/",
     "status": 301

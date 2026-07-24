@@ -1,5 +1,5 @@
 ---
-title: Nightly (v26.5)
+title: MAX nightly
 ---
 
 This version is still a work in progress.
