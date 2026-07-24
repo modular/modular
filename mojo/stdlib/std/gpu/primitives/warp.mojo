@@ -550,7 +550,7 @@ def shuffle_idx[
             from std.gpu.primitives.warp import shuffle_idx
 
             # Only broadcast to first 16 lanes
-            var mask = 0xFFFF  # 16 ones
+            var mask: UInt = 0xFFFF  # 16 ones
             var val = SIMD[DType.float32, 32](1.0)
             var result = shuffle_idx(mask, val, 5)
         ```
@@ -847,9 +847,9 @@ def shuffle_xor[
             from std.gpu.primitives.warp import shuffle_xor
 
             # Exchange values between even-numbered threads 4 lanes apart
-            mask = 0xAAAAAAAA  # Even threads only
+            var mask: UInt = 0xAAAAAAAA  # Even threads only
             var val = SIMD[DType.float32, 16](42.0)  # Example value
-            result = shuffle_xor(mask, val, 4.0)
+            var result = shuffle_xor(mask, val, 4)
         ```
     """
 
@@ -1463,6 +1463,7 @@ def match_any[
 
         # If lanes 0, 3, 7 hold the same value, each of them gets a mask with
         # bits 0, 3, and 7 set; the remaining lanes get their own groups.
+        var my_key = Int32(42)
         var group = match_any(my_key)
         ```
 
@@ -1580,6 +1581,7 @@ def match_all[
 
         # `agreed` is non-zero (the active-lane mask) iff every lane passed the
         # same `key`.
+        var key = Int32(42)
         var agreed = match_all(key)
         ```
 
