@@ -1285,14 +1285,53 @@ ASTDecl *SharedState::tryImportSubModule(ASTDecl &parent, StringRef name,
 }
 
 SharedState::ModuleState *
-SharedState::lookupModuleCache(StringRef name, ModuleState *parentState,
-                               llvm::SMLoc loc) {
+SharedState::lookupModuleCache(StringRef name, ASTDecl *parentDecl,
+                               ModuleState *parentState, llvm::SMLoc loc,
+                               llvm::SMLoc identifierLoc, bool emitErrors) {
   auto declNameAttr = StringAttr::get(getContext(), name);
   auto it = parentState->nestedModules.find(declNameAttr);
   if (it == parentState->nestedModules.end())
     return nullptr;
 
   ModuleState *state = it->second;
+
+  // A standalone module importing its own bare name can only ever cache-hit
+  // itself: the module is registered under its name at creation, so nothing
+  // else can be found. Reject it conservatively so the choice of meaning stays
+  // open.
+  // A self-import inside a package names the enclosing package (a PackageOp)
+  // and is unaffected, as are package-qualified imports of the module through
+  // its own package.
+  auto isSelfImport = [&](ModuleState *state) {
+    if (parentDecl != impl->topLevelDecl)
+      return false;
+    if (!isa_and_nonnull<FileModuleOp>(state->decl->getIfOperation()))
+      return false;
+    unsigned importerBufferId = getSourceMgr().FindBufferContainingLoc(loc);
+    if (!importerBufferId)
+      return false;
+    // The importer's module is necessarily materialized, so a deferred target
+    // (invalid decl loc) cannot be the importer itself.
+    unsigned targetBufferId =
+        getSourceMgr().FindBufferContainingLoc(state->decl->getLoc());
+    if (targetBufferId && importerBufferId == targetBufferId)
+      return true;
+    // Imports written in a REPL/LSP docstring wrapper buffer are still
+    // self-imports of the module they wrap.
+    StringRef importerName =
+        getSourceMgr().getMemoryBuffer(importerBufferId)->getBufferIdentifier();
+    return state->sourcePath && isReplOrLspBuffer(importerName) &&
+           importerName.starts_with(*state->sourcePath);
+  };
+
+  // Reject self-imports with an unregistered erroneous state.
+  if (isSelfImport(state)) {
+    if (!emitErrors)
+      return state;
+    return &createErrorModuleState(
+        identifierLoc, declNameAttr, *parentState->decl,
+        "module '" + name + "' cannot import itself");
+  }
 
   // Memoize the "imported from" location; the first resolution wins.
   if (!state->importLoc.isValid() && !state->isImplicitImport)
@@ -1309,9 +1348,16 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
   assert(parentState && "parent decl must have a module state");
   auto declNameAttr = StringAttr::get(getContext(), name);
 
+  // Don't cascade diagnostics through an already-erroneous parent; propagate
+  // its state silently.
+  if (parentState->decl && parentState->decl->isErroneous())
+    return parentState;
+
   // Check to see if we've already imported this module.
-  if (ModuleState *state = lookupModuleCache(name, parentState, loc))
+  if (ModuleState *state = lookupModuleCache(name, parentDecl, parentState, loc,
+                                             identifierLoc, emitErrors)) {
     return state;
+  }
 
   // On a genuine "no such submodule": null when probing (emitErrors=false), or
   // an error module state with the given message when importing (true).
@@ -1329,8 +1375,10 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
     return notFound("failed to resolve parent package body");
 
   // Check the cache again after body resolution
-  if (ModuleState *state = lookupModuleCache(name, parentState, loc))
+  if (ModuleState *state = lookupModuleCache(name, parentDecl, parentState, loc,
+                                             identifierLoc, emitErrors)) {
     return state;
+  }
 
   // Resolve the path for this module.
   std::optional<ModuleSpec> modulePath;
