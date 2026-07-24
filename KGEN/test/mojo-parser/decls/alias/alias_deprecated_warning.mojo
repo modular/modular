@@ -12,7 +12,7 @@
 alias MY_CONSTANT = 42
 
 
-struct MyStruct:
+struct MyStruct(Movable where False):
     # CHECK: warning: 'alias' is deprecated; use 'comptime'
     alias SIZE = Int
 

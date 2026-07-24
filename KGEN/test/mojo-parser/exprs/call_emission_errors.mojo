@@ -206,7 +206,7 @@ def variadic_addr_space(
     pack_func(regptr[])
 
 
-struct ParametricMutability:
+struct ParametricMutability(Movable where False):
     def take_inout(mut self):  # expected-note {{function declared here}}
         # This is ok
         self.take_parametric()
@@ -233,7 +233,7 @@ def call_test_ref(mut s: String):
 
 
 @fieldwise_init
-struct MyMutSpan[origin: Origin[mut=True]]:
+struct MyMutSpan[origin: Origin[mut=True]](Movable where False):
     pass
 
 
@@ -452,7 +452,7 @@ def bad_interior_origin_example_exclusivity():
     # expected-note @below {{introduce a temporary to avoid mutating the call result while accessing it through an argument}}
     b = Buf(b.view())   # copy from own interior view, then reassign
 
-struct Buf:
+struct Buf(Movable where False):
     var data: List[Int]
 
     def view(self) -> ref[self.data[0]] Int:
@@ -492,12 +492,12 @@ trait MyTrait4499:
         ...
 
 
-struct MyStruct4499(MyTrait4499):
+struct MyStruct4499(MyTrait4499, Movable where False):
     def method(ref self):
         pass
 
 
-struct Owner4499[T: MyTrait4499]:
+struct Owner4499[T: MyTrait4499](Movable where False):
     def __init__(out self):
         pass
 
@@ -525,7 +525,7 @@ def generic_example[T: AnyType, //](a: T):
 
 
 @fieldwise_init
-struct StructWithFlexParam[T: AnyType, //, x: T]:
+struct StructWithFlexParam[T: AnyType, //, x: T](Movable where False):
     pass
 
 
@@ -549,7 +549,7 @@ def test_print_apply_expressions():
     takeWith4(StructWithFlexParam[vararg_example(other=5)]())
 
 
-struct DifferExample[shape: Int, addr: Int]:
+struct DifferExample[shape: Int, addr: Int](Movable where False):
     pass
 
 

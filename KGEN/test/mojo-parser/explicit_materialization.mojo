@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
 
-struct NonEM:
+struct NonEM(Movable where False):
     def __init__(out self):
         pass
 
@@ -15,7 +15,7 @@ struct NonEM:
         pass
 
 
-struct Foo[v: NonEM]:
+struct Foo[v: NonEM](Movable where False):
     def __init__(out self):
         pass
 

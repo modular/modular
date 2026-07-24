@@ -45,7 +45,7 @@ struct PositiveOnly[N: Int] where N > 0:
     pass
 
 
-struct OnlyIntable[T: AnyType] where conforms_to(T, Intable):
+struct OnlyIntable[T: AnyType] (Movable where False) where conforms_to(T, Intable):
     pass
 
 
@@ -91,7 +91,7 @@ struct DischargedStruct[K: Int, X: PositiveOnly[K]] where K > 0:
 
 
 struct DischargedStructTrait[T: AnyType, X: OnlyIntable[T]]
-    where conforms_to(T, Intable):
+    (Movable where False) where conforms_to(T, Intable):
     pass
 
 
@@ -199,7 +199,7 @@ struct PosForStruct[N: Int]
 # expected-note @below {{add a trailing 'where' clause that requires '(K > Int(0))'}}
 struct UndischargedStruct[K: Int,
                           # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
-                          X: PosForStruct[K]]:
+                          X: PosForStruct[K]](Movable where False):
     pass
 
 
@@ -232,7 +232,7 @@ def partial_discharge[A: Int, B: Int, X: PosForPartial[A],
 
 struct IntableForParam[T: AnyType]
     # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, Intable)'}}
-    where conforms_to(T, Intable):
+    (Movable where False) where conforms_to(T, Intable):
     pass
 
 
@@ -250,7 +250,7 @@ def undischarged_trait_param[T: AnyType,
 
 struct IntableForArg[T: AnyType]
     # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, Intable)'}}
-    where conforms_to(T, Intable):
+    (Movable where False) where conforms_to(T, Intable):
     pass
 
 
@@ -314,7 +314,7 @@ def mc_target[K: Int](dummy: Int) -> Int
     return dummy
 
 
-struct MCReceiver[i: Int]:
+struct MCReceiver[i: Int](Movable where False):
     pass
 
 
@@ -338,7 +338,7 @@ def multi_cand_deferral_rejected[K: Int](
 # diagnostics.
 
 
-struct NeedsCopyable[T: Copyable]:
+struct NeedsCopyable[T: Copyable](Movable where False):
     pass
 
 
@@ -367,14 +367,14 @@ def slot_discharged_throws[T: Movable]() raises NeedsCopyable[T]
 
 
 # Method form (the MOCO-4190 reproducer): `Self.T` from the parent struct.
-struct SlotContainer[T: Movable]:
+struct SlotContainer[T: Movable](Movable where False):
     def get(self) -> NeedsCopyable[Self.T] where conforms_to(Self.T, Copyable):
         pass
 
 
 # Struct parameter declaration position.
 struct SlotDischargedStruct[T: Movable, X: NeedsCopyable[T]]
-    where conforms_to(T, Copyable):
+    (Movable where False) where conforms_to(T, Copyable):
     pass
 
 
@@ -406,7 +406,7 @@ struct MoveOnly(Movable):
 
 
 # expected-note @below {{'NeedsCopyableConcrete' declared here}}
-struct NeedsCopyableConcrete[T: Copyable]:
+struct NeedsCopyableConcrete[T: Copyable](Movable where False):
     pass
 
 

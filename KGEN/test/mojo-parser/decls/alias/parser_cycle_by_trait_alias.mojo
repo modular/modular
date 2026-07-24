@@ -14,20 +14,20 @@ trait BarAble:
 
 
 # CHECK-LABEL: lit.struct.decl @BarViaTrait
-struct BarViaTrait(BarAble):
+struct BarViaTrait(BarAble, Movable where False):
     def __init__(out self):
         pass
 
     comptime bar: Foo = 10
 
 
-struct Bar:
+struct Bar(Movable where False):
     @implicit
     def __init__[B: BarAble](out self, b: B):
         pass
 
 
-struct Foo:
+struct Foo(Movable where False):
     @implicit
     def __init__(out self, value: Int):
         pass

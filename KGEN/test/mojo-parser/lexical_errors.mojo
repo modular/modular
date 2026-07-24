@@ -11,7 +11,7 @@
 ##===----------------------------------------------------------------------===##
 
 # https://github.com/modularml/modular/issues/4181
-struct Issue4181IndentWeirdness[dt: DType]:
+struct Issue4181IndentWeirdness[dt: DType](Movable where False):
   var b : Int
     # expected-error @+1 {{definition isn't on its own line at the correct indentation}}
     def f() raises:

@@ -21,7 +21,7 @@ def infer_ref_argument():
 
 
 @fieldwise_init
-struct TwoIntParamStruct[a: Int, b: Int]:
+struct TwoIntParamStruct[a: Int, b: Int](Movable where False):
     pass
 
 

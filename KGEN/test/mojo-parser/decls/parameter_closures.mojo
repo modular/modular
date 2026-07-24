@@ -18,7 +18,7 @@ struct BoxedInt(Copyable, RegisterPassable):
         return self.value + rhs
 
 
-struct Param[T: TrivialRegisterPassable]:
+struct Param[T: TrivialRegisterPassable](Movable where False):
     pass
 
 
@@ -29,7 +29,7 @@ def capturing_in_struct[x: Param[def() capturing -> Int]]():
 
 
 # CHECK-LABEL: lit.struct.decl @CapturingMember
-struct CapturingMember[f: def() capturing -> None]:
+struct CapturingMember[f: def() capturing -> None](Movable where False):
     # CHECK-LABEL: lit.fn @"member
     # CHECK-SAME: capturing -> !kgen.none attributes
     def member(self):

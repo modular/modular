@@ -17,7 +17,7 @@ def test_never_declared_fn():
 def implicit_var_decl(a: Int):
     c = a  # implicit declaration of c
 
-struct BadMethod:
+struct BadMethod(Movable where False):
     # expected-error @+1 {{'__add__' requires 2 operands}}
     def __add__(self):
         pass
@@ -110,7 +110,7 @@ def invalid_inferred_argument(x: Int, //):
     pass
 
 
-struct NonCopyable:
+struct NonCopyable(Movable where False):
     def __init__(out self):
        pass
 
@@ -190,7 +190,7 @@ def valid_sbvalue_borrow(value: SBValue):
 def bad_ref_as[a: AddressSpace](ref [a, a] x: Int):
     pass
 
-struct HasOwnedOverloadedMethod:
+struct HasOwnedOverloadedMethod(Movable where False):
     def method(var self) -> Int: pass
     def method(self) -> String: pass
 

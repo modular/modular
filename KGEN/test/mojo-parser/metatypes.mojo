@@ -79,7 +79,7 @@ def metatypes():
 
 # Stef's crazy metatype stress test.
 @fieldwise_init
-struct StefStressTest[x: Int]:
+struct StefStressTest[x: Int](Movable where False):
     @staticmethod
     def increment() -> type_of(StefStressTest[Self.x + 1]):
         while True:

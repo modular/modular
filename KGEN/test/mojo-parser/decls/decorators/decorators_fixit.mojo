@@ -14,7 +14,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct DeprecatedImplicit:
+struct DeprecatedImplicit(Movable where False):
     @implicit(deprecated=True)
     def __init__(out self, value: Int):
         pass

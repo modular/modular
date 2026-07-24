@@ -20,7 +20,7 @@ from test_std_mock import *
 
 # To trigger the trait error, we need to implement the unstable trait.
 # This forces resolution of the trait's method signatures.
-struct ImplementsUnstableTrait(UnstableTraitWithStableMember):
+struct ImplementsUnstableTrait(UnstableTraitWithStableMember, Movable where False):
     def __init__(out self):
         pass
 

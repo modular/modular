@@ -47,7 +47,7 @@ def unavailable_func_use():
 # ===----------------------------------------------------------------------=== #
 
 
-struct MethodUnavailableTest:
+struct MethodUnavailableTest(Movable where False):
     def replacement_method(self):
         pass
 
@@ -58,7 +58,7 @@ struct MethodUnavailableTest:
         ...
 
 
-struct StaticMethodUnavailableTest:
+struct StaticMethodUnavailableTest(Movable where False):
     @staticmethod
     def replacement_static():
         pass
@@ -76,7 +76,7 @@ struct StaticMethodUnavailableTest:
 # ===----------------------------------------------------------------------=== #
 
 
-struct StringLike:
+struct StringLike(Movable where False):
     # CHECK-LABEL: lit.fn @"__len__
     # CHECK-SAME: unavailableInfo = #lit.unavailable<"no length for 'StringLike'; use byte_length() or codepoint_length() instead">
     @unavailable("no length for 'StringLike'; use byte_length() or codepoint_length() instead")

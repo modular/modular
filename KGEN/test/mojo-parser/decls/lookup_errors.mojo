@@ -11,7 +11,7 @@ trait SomeTrait:
     pass
 
 
-struct StructWithField:
+struct StructWithField(Movable where False):
     var field: __mlir_type.index
 
 
@@ -30,7 +30,7 @@ def unqualified_name_lookup(a: StructWithField):
     StructWithField.field
 
 
-struct DirectInstanceReference:
+struct DirectInstanceReference(Movable where False):
     comptime my_alias: Int = 8
     var value: Int
 
@@ -76,7 +76,7 @@ trait DirectTraitMemberReference:
         stat()
 
 
-struct StructWithParam[a: Int]:
+struct StructWithParam[a: Int](Movable where False):
     pass
 
 
@@ -85,7 +85,7 @@ struct UnqualifiedStructParameterAccess[
     my_param: Int,  # expected-note {{parameter 'my_param' declared here}}
     other_param: Int,
     struct_param: StructWithParam[my_param],  # this should be okay
-]:
+](Movable where False):
     # expected-error @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
     comptime my_alias = my_param
 

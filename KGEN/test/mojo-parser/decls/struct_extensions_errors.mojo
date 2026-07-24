@@ -66,7 +66,7 @@ def foo(ship: Spaceship) -> Int:  # shouldn't crash here
 # // -----
 
 
-struct ExtensionWhereTarget:
+struct ExtensionWhereTarget(Movable where False):
     pass
 
 
@@ -82,7 +82,7 @@ __extension ExtensionWhereTarget(AnyType where True):
 
 
 # CHECK-LABEL: lit.struct.decl @PlainStruct
-struct PlainStruct:
+struct PlainStruct(Movable where False):
     pass
 
 

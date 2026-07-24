@@ -12,7 +12,7 @@ struct InlineArr[length: Int](Movable):
         pass
 
 
-struct ListOf[length: Int]:
+struct ListOf[length: Int](Movable where False):
     var storage: InlineArr[Self.length]
 
     # CHECK-LABEL: lit.fn @"__init__[KGENParamList[::AnyType & ::Copyable

@@ -17,7 +17,7 @@ trait WithA:
 
 
 @fieldwise_init
-struct Concat[a: WithA, b: WithA] where a.A == b.A:
+struct Concat[a: WithA, b: WithA] (Movable where False) where a.A == b.A:
     pass
 
 

@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-struct PCall:
+struct PCall(Movable where False):
     def __init__(out self):
         pass
 

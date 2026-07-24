@@ -8,7 +8,7 @@
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 
-struct Foo:
+struct Foo(Movable where False):
     pass
 
 

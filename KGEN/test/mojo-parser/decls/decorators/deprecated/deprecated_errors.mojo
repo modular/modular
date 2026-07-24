@@ -16,7 +16,7 @@
 
 @deprecated("deprecated struct")
 # expected-note @below {{'DeprecatedStruct' declared here}}
-struct DeprecatedStruct:
+struct DeprecatedStruct(Movable where False):
     pass
 
 
@@ -50,7 +50,7 @@ comptime deprecated_alias = 42
 comptime normal_alias = 42
 
 
-struct StructWithDeprecatedMembers:
+struct StructWithDeprecatedMembers(Movable where False):
     # Note: @deprecated on fields is not supported - decorators cannot be applied
     # to `var` statements. This is a parser-level limitation.
 
@@ -115,11 +115,11 @@ def test_deprecated_function_reference():
 
 
 # expected-warning @below {{deprecated trait}}
-struct StructConformingToDeprecatedTrait(DeprecatedTrait):
+struct StructConformingToDeprecatedTrait(DeprecatedTrait, Movable where False):
     pass
 
 
-struct StructConformingToNormalTrait(NormalTrait):
+struct StructConformingToNormalTrait(NormalTrait, Movable where False):
     # No warning expected.
     pass
 
@@ -252,7 +252,7 @@ def some_top_level_func():
     pass
 
 
-struct InstanceMethodRefTopLevel:
+struct InstanceMethodRefTopLevel(Movable where False):
     # Instance methods cannot reference top-level functions as replacements.
     # expected-error @below {{cannot reference unknown value 'some_top_level_func'}}
     @deprecated(use=some_top_level_func)

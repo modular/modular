@@ -13,7 +13,7 @@
 # This file intentionally has no module-level doc string.
 
 
-struct ArgStruct:
+struct ArgStruct(Movable where False):
     """A stub type for arguments."""
 
     pass

@@ -21,12 +21,12 @@ def call_nested_function():
 
 
 @fieldwise_init
-struct SomeType:
+struct SomeType(Movable where False):
     var value: Int
 
 
 @fieldwise_init
-struct `weird()struct[]`:
+struct `weird()struct[]`(Movable where False):
     pass
 
 
@@ -40,7 +40,7 @@ struct ParameterizedType[value: Int](ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct Wrapper:
+struct Wrapper(Movable where False):
     var data: Int
 
     comptime MyType = ParameterizedType[42]

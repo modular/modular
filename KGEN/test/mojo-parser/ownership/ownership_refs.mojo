@@ -259,17 +259,17 @@ def returnTwoArgLifetimes(a: MemExample, b: MemExample)
   -> TwoLifetimes[origin_of(a), origin_of(b)]:
   return TwoLifetimes[origin_of(a), origin_of(b)]()
 
-struct OneLifetime[a_origin: ImmOrigin]:
+struct OneLifetime[a_origin: ImmOrigin](Movable where False):
   def __init__(out self): pass
 
 struct TwoLifetimes[a_origin: ImmOrigin,
-                    b_origin: ImmOrigin]:
+                    b_origin: ImmOrigin](Movable where False):
   def __init__(out self): pass
 
 # Test that we can infer the type of 'T' in the func param invocation.
 # CHECK-LABEL: CutDownVariadicPack
 struct CutDownVariadicPack[element_trait: type_of(AnyType), //,
-                           *element_types: element_trait]:
+                           *element_types: element_trait](Movable where False):
 
     # CHECK: lit.fn @"each_hack
     def each_hack[i: Int, func: def[T: Self.element_trait] (T) thin -> None](self):
@@ -318,7 +318,7 @@ def ref_copyability[*element_types: ImplicitlyCopyable & ImplicitlyDeletable](*a
 #    thing_taking_immutable_ref(Pointer(to=i))
 
 # Verify that we can propagate parametric mutability through field accesses.
-struct ThingWithFields:
+struct ThingWithFields(Movable where False):
   var field: Int
 
 # CHECK-LABEL: lit.fn @"parametric_mut_mbvalue
@@ -327,7 +327,7 @@ def parametric_mut_mbvalue[origin: Origin](a: Pointer[ThingWithFields, origin]) 
   return Pointer(to=a[].field)
 
 # Pointer directly with inferred params.
-struct SomeStructWithReferenceSelfArgument:
+struct SomeStructWithReferenceSelfArgument(Movable where False):
     def __init__(out self): pass
     def hello(ref self):
         pass
@@ -397,7 +397,7 @@ def test_pvalue_ref_formation[a: SelfRefTest]():
   # CHECK-NEXT: lit.call {{.*}}SelfRefTest::@"__del__{{.*}}([[ANONTMP]])
 
 # MOCO-1025 - Need hierarchical origins
-struct FieldRefPropagation:
+struct FieldRefPropagation(Movable where False):
   var field1 : Optional[Int]
   var field2 : Int
 
@@ -415,10 +415,10 @@ struct FieldRefPropagation:
 struct HasRaisingInit(Copyable):
   def __init__(out self) raises: pass
 
-struct ImmovableRaisingInit:
+struct ImmovableRaisingInit(Movable where False):
   def __init__(out self) raises: pass
 
-struct RaisingInitWrapper:
+struct RaisingInitWrapper(Movable where False):
     var field: HasRaisingInit
     var immfield: ImmovableRaisingInit
 
@@ -484,14 +484,14 @@ def another_min[mut: Bool, //, ao: Origin[mut=mut], bo: Origin[mut=mut]](ref [ao
     else: # This failed due to union canonicalization problems.
         return b
 
-struct RefResultStruct:
+struct RefResultStruct(Movable where False):
   var x: Int
   def __init__(out self):  self.x = 1
   def method(self) -> ref [self.x] Int: return self.x
 
 # https://github.com/modular/mojo/issues/3960
 # CHECK-LABEL: lit.struct.decl @FieldSensitiveUse
-struct FieldSensitiveUse:
+struct FieldSensitiveUse(Movable where False):
     var x: RefResultStruct
     var y: String
 
@@ -522,7 +522,7 @@ def check_mutability[
     pass
 
 
-struct TestDict[K: AnyType, V: ImplicitlyDeletable]:
+struct TestDict[K: AnyType, V: ImplicitlyDeletable](Movable where False):
     def __getitem__(ref self) -> ref [self] Self.V:
         while True: pass
 
@@ -533,7 +533,7 @@ struct TestDict[K: AnyType, V: ImplicitlyDeletable]:
 # Interior origins
 # ===----------------------------------------------------------------------=== #
 
-struct MyListInterior[T: Movable]:
+struct MyListInterior[T: Movable](Movable where False):
     var data: UnsafePointer[Self.T, UntrackedOrigin[mut=True]]
 
     def __init__(out self):

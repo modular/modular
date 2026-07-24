@@ -7,23 +7,23 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-struct Parametric[a: Int]:
+struct Parametric[a: Int](Movable where False):
     pass
 
 
-struct StructWithDefault[a: Int, b: Int, c: Int = 1, d: Int = 2]:
+struct StructWithDefault[a: Int, b: Int, c: Int = 1, d: Int = 2](Movable where False):
     pass
 
 
-struct StructWithDefaultKwOnly[a: Int, b: Int, c: Int = 1, *, d: Int = 2]:
+struct StructWithDefaultKwOnly[a: Int, b: Int, c: Int = 1, *, d: Int = 2](Movable where False):
     pass
 
 
-struct StructWithVariadic[a: Int = 1, *b: Int]:
+struct StructWithVariadic[a: Int = 1, *b: Int](Movable where False):
     pass
 
 
-struct DefaultPosOnly[a: Int = 1, /, b: Int = 2, *, c: Int = 3]:
+struct DefaultPosOnly[a: Int = 1, /, b: Int = 2, *, c: Int = 3](Movable where False):
     pass
 
 

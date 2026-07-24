@@ -114,7 +114,7 @@ trait s3_MyInterface(Movable):
         ...
 
 
-struct Foo[T: Movable, b: T]:
+struct Foo[T: Movable, b: T](Movable where False):
     pass
 
 

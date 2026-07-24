@@ -12,14 +12,14 @@
 # CHECK-LABEL: lit.struct.decl @AlignedStruct
 # CHECK-SAME: minAlignment = 64 : index
 @align(64)
-struct AlignedStruct:
+struct AlignedStruct(Movable where False):
     var x: Int
 
 
 # CHECK-LABEL: lit.struct.decl @CacheLineAligned
 # CHECK-SAME: minAlignment = 128 : index
 @align(128)
-struct CacheLineAligned:
+struct CacheLineAligned(Movable where False):
     var data: Int
 
 
@@ -36,28 +36,28 @@ struct AlignedRegisterPassable(TrivialRegisterPassable):
 # CHECK-LABEL: lit.struct.decl @MinAlign
 # CHECK-SAME: minAlignment = 1 : index
 @align(1)
-struct MinAlign:
+struct MinAlign(Movable where False):
     var x: Int
 
 
 # CHECK-LABEL: lit.struct.decl @Align2
 # CHECK-SAME: minAlignment = 2 : index
 @align(2)
-struct Align2:
+struct Align2(Movable where False):
     var x: Int
 
 
 # CHECK-LABEL: lit.struct.decl @Align4
 # CHECK-SAME: minAlignment = 4 : index
 @align(4)
-struct Align4:
+struct Align4(Movable where False):
     var x: Int
 
 
 # CHECK-LABEL: lit.struct.decl @LargeAlign
 # CHECK-SAME: minAlignment = 4096 : index
 @align(4096)
-struct LargeAlign:
+struct LargeAlign(Movable where False):
     var x: Int
 
 
@@ -65,7 +65,7 @@ struct LargeAlign:
 # CHECK-LABEL: lit.struct.decl @AlignedEmpty
 # CHECK-SAME: minAlignment = 64 : index
 @align(64)
-struct AlignedEmpty:
+struct AlignedEmpty(Movable where False):
     pass
 
 
@@ -73,7 +73,7 @@ struct AlignedEmpty:
 # CHECK-LABEL: lit.struct.decl @HexAligned
 # CHECK-SAME: minAlignment = 64 : index
 @align(0x40)
-struct HexAligned:
+struct HexAligned(Movable where False):
     var x: Int
 
 

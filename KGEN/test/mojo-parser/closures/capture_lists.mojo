@@ -271,7 +271,7 @@ def toyImm(A: String, B: String):
 
 comptime MyKey = Movable
 
-struct Inner[T: MyKey]:
+struct Inner[T: MyKey](Movable where False):
     var _x: Int
 
     def __init__(out self):
@@ -283,7 +283,7 @@ struct Inner[T: MyKey]:
         pass
 
 
-struct Outer[T: MyKey]:
+struct Outer[T: MyKey](Movable where False):
     var _inner: Inner[Self.T]
 
     def __init__(out self):

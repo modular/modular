@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-struct Foo:
+struct Foo(Movable where False):
     def __init__(out self):
         pass
 

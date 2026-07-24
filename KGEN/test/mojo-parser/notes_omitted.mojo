@@ -7,17 +7,17 @@
 # RUN: not %parse-mojo-isolated --max-notes-per-diagnostic=2 --use-mlir-diagnostics=false %s 2>&1 | FileCheck %s
 
 # fmt: off
-struct s1: pass
-struct s2: pass
-struct s3: pass
-struct s4: pass
-struct s5: pass
-struct s6: pass
-struct s7: pass
-struct s8: pass
-struct s9: pass
-struct s10: pass
-struct s11: pass
+struct s1(Movable where False): pass
+struct s2(Movable where False): pass
+struct s3(Movable where False): pass
+struct s4(Movable where False): pass
+struct s5(Movable where False): pass
+struct s6(Movable where False): pass
+struct s7(Movable where False): pass
+struct s8(Movable where False): pass
+struct s9(Movable where False): pass
+struct s10(Movable where False): pass
+struct s11(Movable where False): pass
 
 def go10(x: s1): pass
 def go10(x: s2): pass

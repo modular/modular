@@ -39,7 +39,7 @@ def fn_bare_stable():
 # CHECK-SAME: hasStableDecorator
 # CHECK-SAME: stableSinceVersion = "1.0"
 @stable(since="1.0")
-struct StableStruct:
+struct StableStruct(Movable where False):
     # CHECK: lit.fn @"method{{.*}}StableStruct)"
     # CHECK-SAME: hasStableDecorator
     # CHECK-SAME: stableSinceVersion = "1.1"

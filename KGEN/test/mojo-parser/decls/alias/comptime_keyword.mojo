@@ -19,7 +19,7 @@ comptime Add[a: Int, b: Int] = a + b
 
 
 # In struct
-struct MyStruct:
+struct MyStruct(Movable where False):
     comptime SIZE = 100
     comptime Type = Int
 

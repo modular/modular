@@ -11,7 +11,7 @@ from std.builtin.coroutine import Coroutine, RaisingCoroutine, AnyCoroutine
 
 
 @explicit_destroy("Must use consume!")
-struct EmptyExplicit(ImplicitlyDeletable where False):
+struct EmptyExplicit(ImplicitlyDeletable where False, Movable where False):
     def __init__(out self):
         pass
 
@@ -26,7 +26,7 @@ def errorExample():
 
 @explicit_destroy("Must use consume!")
 struct ImplicitlyDeletableContainerOfExplicitWithAutoDel(
-    ImplicitlyDeletable where False
+    ImplicitlyDeletable where False, Movable where False
 ):
     var m: EmptyExplicit
 
@@ -39,7 +39,7 @@ def testImplicitlyDeletableContainerOfExplicitWithAutoDel():
     _ = ImplicitlyDeletableContainerOfExplicitWithAutoDel()
 
 
-struct ImplicitlyDeletableContainerOfExplicitWithIncompleteDel:
+struct ImplicitlyDeletableContainerOfExplicitWithIncompleteDel(Movable where False):
     var m: EmptyExplicit
 
     def __init__(out self):
@@ -99,7 +99,7 @@ async def testAsyncVoid():
 
 # MOCO-2787 - Linear types do not error if they contain an explicit del
 @explicit_destroy("must use __del__() explicitly")
-struct ExplicitWithDel(ImplicitlyDeletable where False):
+struct ExplicitWithDel(ImplicitlyDeletable where False, Movable where False):
     def __init__(out self):
         pass
 
@@ -234,7 +234,7 @@ def take_linear_empty_message[T: LinearWithEmptyMessage](var value: T):
 # given instantiation the type is linear, and the compiler emits a synthesized
 # default linear-type error message.
 struct CondImplicitlyDeletableDefault[cond: Bool](
-    ImplicitlyDeletable where cond
+    ImplicitlyDeletable where cond, Movable where False
 ):
     def __init__(out self):
         pass
@@ -256,7 +256,7 @@ def testConditionalImplicitlyDeletableDefaultMessage():
 # An unsatisfiable where-clause opts the struct out of implicit deletability
 # entirely. A default linear-type error message is used when no custom one is
 # provided by `@explicit_destroy`.
-struct WhereFalseLinear(ImplicitlyDeletable where False):
+struct WhereFalseLinear(ImplicitlyDeletable where False, Movable where False):
     def __init__(out self):
         pass
 
@@ -268,7 +268,7 @@ def testWhereFalseLinear():
 
 # A custom message via @explicit_destroy is used in preference to the default.
 @explicit_destroy("use consume()")
-struct WhereFalseCustom(ImplicitlyDeletable where False):
+struct WhereFalseCustom(ImplicitlyDeletable where False, Movable where False):
     def __init__(out self):
         pass
 

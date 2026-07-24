@@ -25,7 +25,7 @@ struct IterRange(ImplicitlyCopyable, Iterator):
         return self.value
 
 
-struct MyType:
+struct MyType(Movable where False):
     pass
 
 

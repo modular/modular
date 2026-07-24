@@ -95,7 +95,7 @@ def test_explicit_conformance_end_to_end():
 # COM: declaration is rejected — implicit conformance is not allowed.
 
 @fieldwise_init
-struct NoExplicitConformance:
+struct NoExplicitConformance(Movable where False):
     var value: Int
 
     def __call__(self, arg: Int):

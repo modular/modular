@@ -6,5 +6,5 @@
 
 
 # @expected-note @below {{'Foo' declared here}}
-struct Foo:
+struct Foo(Movable where False):
     pass

@@ -18,7 +18,7 @@
 # CHECK-LABEL: lit.struct.decl @DeprecatedStruct
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"struct">
 @deprecated("struct")
-struct DeprecatedStruct:
+struct DeprecatedStruct(Movable where False):
     pass
 
 
@@ -47,14 +47,14 @@ comptime deprecated_alias = 1
 # ===----------------------------------------------------------------------=== #
 
 
-struct DeprecatedStructTarget:
+struct DeprecatedStructTarget(Movable where False):
     pass
 
 
 # CHECK-LABEL: lit.struct.decl @DeprecatedStructUse
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"'DeprecatedStructUse' is deprecated, use 'DeprecatedStructTarget' instead", "DeprecatedStructTarget">
 @deprecated(use=DeprecatedStructTarget)
-struct DeprecatedStructUse:
+struct DeprecatedStructUse(Movable where False):
     pass
 
 
@@ -94,7 +94,7 @@ comptime deprecated_alias_use = 1
 # ===----------------------------------------------------------------------=== #
 
 
-struct MethodDeprecationTest:
+struct MethodDeprecationTest(Movable where False):
     def replacement_method(self):
         pass
 
@@ -105,7 +105,7 @@ struct MethodDeprecationTest:
         pass
 
 
-struct StaticMethodDeprecationTest:
+struct StaticMethodDeprecationTest(Movable where False):
     @staticmethod
     def replacement_static():
         pass

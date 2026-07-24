@@ -13,11 +13,11 @@ trait Trait:
     pass
 
 
-struct FuncRef[def_type: __mlir_type.`!kgen.non_struct_type`, f: def_type]:
+struct FuncRef[def_type: __mlir_type.`!kgen.non_struct_type`, f: def_type](Movable where False):
     pass
 
 
-struct FuncRefField:
+struct FuncRefField(Movable where False):
     var func_ref: FuncRef[def() thin -> None, FuncRefField.foo]
 
     @staticmethod

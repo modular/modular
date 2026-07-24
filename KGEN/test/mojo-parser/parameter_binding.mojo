@@ -8,11 +8,11 @@
 
 
 @fieldwise_init
-struct ParamType[a: Int]:
+struct ParamType[a: Int](Movable where False):
     pass
 
 
-struct SomeStruct[a: Int, b: Int, c: Int = 2]:
+struct SomeStruct[a: Int, b: Int, c: Int = 2](Movable where False):
     @staticmethod
     def foo(arg: ParamType[Self.b]) -> Int:
         return Self.b
@@ -77,7 +77,7 @@ struct MySpan[
 comptime KE = Movable & ImplicitlyDeletable
 
 
-struct Entry[K: KE]:
+struct Entry[K: KE](Movable where False):
     var key: Self.K
 
     def __init__(out self, var key: Self.K):

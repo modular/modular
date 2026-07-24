@@ -60,13 +60,13 @@ trait NonStringArgExplicitDestroyTrait:
 # expected-error @+2 {{@explicit_destroy requires an argument: `@explicit_destroy("...")`}}
 # expected-note @+2 {{Use `ImplicitlyDeletable where False` conformance to opt out of implicit deletion. `@explicit_destroy` is no longer required.}}
 @explicit_destroy
-struct UnconditionalDefault:
+struct UnconditionalDefault(Movable where False):
     pass
 
 
 # expected-error @below {{expected exactly one argument: `@explicit_destroy("...")`}}
 @explicit_destroy()
-struct UnconditionalDefaultEmptyArgs:
+struct UnconditionalDefaultEmptyArgs(Movable where False):
     pass
 
 
@@ -79,14 +79,14 @@ struct NonStringArgExplicitDestroy:
 # expected-error @+2 {{@explicit_destroy requires an argument: `@explicit_destroy("...")`}}
 # expected-note @+2 {{Use `ImplicitlyDeletable where False` conformance to opt out of implicit deletion. `@explicit_destroy` is no longer required.}}
 @explicit_destroy
-struct ConditionalDefault[cond: Bool](ImplicitlyDeletable where cond):
+struct ConditionalDefault[cond: Bool](ImplicitlyDeletable where cond, Movable where False):
     pass
 
 
 # expected-error @+2 {{@explicit_destroy is not valid on `struct` with unconditional conformance to `ImplicitlyDeletable`}}
 # expected-note @+2 {{Add `ImplicitlyDeletable where False` conformance or remove `@explicit_destroy`}}
 @explicit_destroy("some error")
-struct UnconditionalCustom:
+struct UnconditionalCustom(Movable where False):
     pass
 
 
@@ -96,10 +96,10 @@ struct UnconditionalCustom:
 
 
 @fieldwise_init
-struct Linear(ImplicitlyDeletable where False):
+struct Linear(ImplicitlyDeletable where False, Movable where False):
     pass
 
 
-struct CantSynthDtor:
+struct CantSynthDtor(Movable where False):
     # expected-error @+1 {{field 'foo' has non-implicitly deletable type 'Linear'}}
     var foo: Linear

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct PlainStruct:
+struct PlainStruct(Movable where False):
     var location: Int
 
     def __init__(out self):

@@ -17,7 +17,7 @@ from debuginfo_module import imported_fn
 # CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = {{.*}}, sourceName = #test_name, linkageName = "test({{.*}}::CalledStruct[{{.*}}])"
 
 
-struct CalledStruct[param: __mlir_type.index]:
+struct CalledStruct[param: __mlir_type.index](Movable where False):
     def test(self):
         imported_fn()
 

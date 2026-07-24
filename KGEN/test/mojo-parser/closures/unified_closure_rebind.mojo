@@ -60,7 +60,7 @@ trait DoIt:
         ...
 
 
-struct House[T: DoIt]:
+struct House[T: DoIt](Movable where False):
     def aMethod[C: def(x: Self.T)](self, impl: C):
         pass
 
@@ -92,25 +92,25 @@ def addTrivialRegisterPassable(x: Int):
 
 
 @fieldwise_init
-struct s4_ToyBool:
+struct s4_ToyBool(Movable where False):
     var value: Int
 
 
 @fieldwise_init
-struct s4_ToyMask[dtype_tag: Int, w: Int]:
+struct s4_ToyMask[dtype_tag: Int, w: Int](Movable where False):
     var value: Int
 
 
-struct s4_ToySIMD[dtype_tag: Int, w: Int]:
+struct s4_ToySIMD[dtype_tag: Int, w: Int](Movable where False):
     pass
 
 
-struct s4_ToyScalar[dtype_tag: Int]:
+struct s4_ToyScalar[dtype_tag: Int](Movable where False):
     pass
 
 
 @fieldwise_init
-struct s4_MiniSpan[dtype_tag: Int]:
+struct s4_MiniSpan[dtype_tag: Int](Movable where False):
     var value: Int
 
     def count[
@@ -142,25 +142,25 @@ def repro_top_level():
 
 
 @fieldwise_init
-struct s5_ToyBool:
+struct s5_ToyBool(Movable where False):
     var value: Int
 
 
 @fieldwise_init
-struct s5_ToyMask[dtype_tag: Int, u: Int]:
+struct s5_ToyMask[dtype_tag: Int, u: Int](Movable where False):
     var value: Int
 
 
-struct s5_ToySIMD[dtype_tag: Int, u: Int]:
+struct s5_ToySIMD[dtype_tag: Int, u: Int](Movable where False):
     pass
 
 
-struct s5_ToyScalar[dtype_tag: Int]:
+struct s5_ToyScalar[dtype_tag: Int](Movable where False):
     pass
 
 
 @fieldwise_init
-struct s5_MiniSpan[dtype_tag: Int]:
+struct s5_MiniSpan[dtype_tag: Int](Movable where False):
     var value: Int
 
     def count[
@@ -197,17 +197,17 @@ trait ElemLike:
     pass
 
 
-struct ConcreteElem(ElemLike):
+struct ConcreteElem(ElemLike, Movable where False):
     pass
 
 
 @fieldwise_init
-struct Box[E: ElemLike, n: Int]:
+struct Box[E: ElemLike, n: Int](Movable where False):
     var value: Int
 
 
 @fieldwise_init
-struct Store[E: ElemLike]:
+struct Store[E: ElemLike](Movable where False):
     var value: Int
 
     def apply[

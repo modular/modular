@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
 
 
-struct MemExample:
+struct MemExample(Movable where False):
     pass
 
 

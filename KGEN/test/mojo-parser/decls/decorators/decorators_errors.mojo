@@ -91,7 +91,7 @@ def bad_always_inline_3():
 @staticmethod  # expected-error {{only methods on structs may be declared static}}
 def not_a_struct_method(): pass
 
-struct HasBadStaticMethod:
+struct HasBadStaticMethod(Movable where False):
     @staticmethod()  # expected-error {{'@staticmethod' cannot have arguments}}
     def bad_static_method_1(): pass
 
@@ -116,7 +116,7 @@ def bad_no_inline_2():
 # @implicit
 # ===----------------------------------------------------------------------=== #
 
-struct CheckImplicit:
+struct CheckImplicit(Movable where False):
     # expected-error @+1 {{'@implicit' may only be applied to '__init__' methods}}
     @implicit
     def foo(mut self): pass
@@ -153,7 +153,7 @@ struct CheckImplicit:
     @implicit(foo=True)
     def __init__(out self, c: Bool): pass
 
-struct DeprecatedImplicitConversion:
+struct DeprecatedImplicitConversion(Movable where False):
     # expected-note @+2 {{implicit constructor for 'DeprecatedImplicitConversion' declared here}}
     @implicit(deprecated=True)
     def __init__(out self, value: Int):
@@ -193,7 +193,7 @@ def bad_extern_4(): ...
 def my_extern_add_one(x: Int) abi("Mojo") -> Int:
     return x + 1
 
-struct HasExtern:
+struct HasExtern(Movable where False):
   # expected-error @+1 {{'@extern' cannot be applied to a method}}
   @extern("add_one_struct")
   def my_extern_struct_add_one(self, x: Int) -> Int:
@@ -268,16 +268,16 @@ def outer_function():
 # ===----------------------------------------------------------------------=== #
 
 @invalid_dec  # expected-error {{use of unknown declaration 'invalid_dec'}}
-struct BadStructDecorator: pass
+struct BadStructDecorator(Movable where False): pass
 
 
-struct DecoratorSameLine:
+struct DecoratorSameLine(Movable where False):
   # expected-error @+1 {{decorators must be on their own line; add a newline after the decorator}}
   @staticmethod def same_line_decorator(): pass
 
 
 @fieldwise_init # expected-error {{'FieldwiseInitExample' has an explicitly declared fieldwise initializer}}
-struct FieldwiseInitExample[T: Movable & ImplicitlyDeletable]:
+struct FieldwiseInitExample[T: Movable & ImplicitlyDeletable](Movable where False):
   var x: Int
   var y: Self.T
 

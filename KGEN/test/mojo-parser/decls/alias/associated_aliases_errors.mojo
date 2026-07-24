@@ -16,36 +16,36 @@ trait MyTrait:  # expected-note {{trait 'MyTrait' declared here}}
 
 
 # expected-error @below {{'StructConformingExplicitlyWithNoMatchingAlias' does not implement all requirements for 'MyTrait'}}
-struct StructConformingExplicitlyWithNoMatchingAlias(MyTrait):
+struct StructConformingExplicitlyWithNoMatchingAlias(MyTrait, Movable where False):
     pass
 
 
 # expected-error @below {{'StructConformingExplicitlyWithMismatchedAlias' does not implement all requirements for 'MyTrait'}}
-struct StructConformingExplicitlyWithMismatchedAlias(MyTrait):
+struct StructConformingExplicitlyWithMismatchedAlias(MyTrait, Movable where False):
     comptime N: Bool = Bool()
 
 
 # expected-error @below {{'StructConformingExplicitlyWithMemberSameName' does not implement all requirements for 'MyTrait'}}
-struct StructConformingExplicitlyWithMemberSameName(MyTrait):
+struct StructConformingExplicitlyWithMemberSameName(MyTrait, Movable where False):
     var N: Int
 
 
 @fieldwise_init
-struct StructWithNoMatchingAlias:
+struct StructWithNoMatchingAlias(Movable where False):
     pass
 
 
 @fieldwise_init
-struct StructWithMismatchedAlias:
+struct StructWithMismatchedAlias(Movable where False):
     comptime N: Bool = Bool()
 
 
-struct StructWithUninitializedAlias:
+struct StructWithUninitializedAlias(Movable where False):
     # expected-error @below {{only traits may contain a comptime member without an initializer}}
     comptime N: Bool
 
 
-struct StructWithTypelessUninitializedAlias:
+struct StructWithTypelessUninitializedAlias(Movable where False):
     # This makes sure we print out this error, rather than the also-relevant "alias without initial value must have a type" error
     # expected-error @below {{expected '=' after comptime declaration}}
     comptime N
@@ -72,7 +72,7 @@ def testError2():
 # // -----
 
 
-struct TensorIndex[rank: Int]:
+struct TensorIndex[rank: Int](Movable where False):
     pass
 
 
@@ -117,7 +117,7 @@ struct ZBool:
     pass
 
 
-struct ZFloat:
+struct ZFloat(Movable where False):
     pass
 
 

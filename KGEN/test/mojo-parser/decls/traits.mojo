@@ -88,7 +88,7 @@ trait Trait2:
 
 
 # CHECK-LABEL: lit.struct.decl @StructWithTraits({{.*}}Trait1_Trait2)
-struct StructWithTraits(Trait1, Trait2):
+struct StructWithTraits(Trait1, Trait2, Movable where False):
     # CHECK: lit.fn @"f{{.*}}(%self: !lit.ref<!StructWithTraits, imm {{.*}}> read_mem, ?, %{{.*}}: !lit.ref<!StructWithTraits, mut {{.*}}> byref_result) -> !kgen.none
     def f(self) -> Self:
         ...
@@ -107,7 +107,7 @@ trait CFMTrait:
 
 
 # CHECK-LABEL: lit.struct.decl @CFMStruct({{.*}}CFMTrait)
-struct CFMStruct(CFMTrait):
+struct CFMStruct(CFMTrait, Movable where False):
     # CHECK: lit.fn @"f1({{.*}})"[{{.*}}](%self: !lit.ref<!CFMStruct, imm {{.*}}> read_mem) -> !kgen.none
     def f1(self):
         pass
@@ -128,7 +128,7 @@ trait CFMTraitParams:
 
 # CHECK-LABEL: lit.struct.decl @CFMStructParams
 struct CFMStructParams[t1: TrivialRegisterPassable, t2: TrivialRegisterPassable](
-    CFMTraitParams
+    CFMTraitParams, Movable where False
 ):
     # CHECK: lit.fn @"f1{{.*}}"<x: !AnyType_CFMTraitParams>[{{.*}}](%self: !lit.ref<!lit.struct<#CFMStructParams <:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable t1, :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable t2>>{{.*}}> read_mem)
     def f1[x: CFMTraitParams](self):
@@ -470,7 +470,7 @@ trait RequiredType:
         ...
 
 
-struct RegPassableRequiredType(RequiredType):
+struct RegPassableRequiredType(RequiredType, Movable where False):
     comptime T = Int
 
     @staticmethod
@@ -610,7 +610,7 @@ trait UnevenDiamond(GreatGrandFather, Father):
 
 # CHECK-LABEL: lit.struct.decl @TraitInheritance
 # CHECK-SAME: Father_GrandFather_GreatGrandFather)
-struct TraitInheritance(Father):
+struct TraitInheritance(Father, Movable where False):
     def foo(self):
         pass
 
@@ -676,7 +676,7 @@ trait InCollection(Movable):
     pass
 
 
-struct Collection[T: InCollection]:
+struct Collection[T: InCollection](Movable where False):
     var x: MovableType[Self.T]
 
 
@@ -699,7 +699,7 @@ def converted_metatype_struct_element(x: Collection[Item]):
 
 
 # CHECK-LABEL: lit.struct.decl @TraitMember
-struct TraitMember[T: Movable & ImplicitlyDeletable]:
+struct TraitMember[T: Movable & ImplicitlyDeletable](Movable where False):
     # CHECK: lit.fn @"__del__
     var value: Self.T
 
@@ -720,7 +720,7 @@ struct MyPointer[T: AnyType](ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.struct.decl @HasMyPointerSelf
-struct HasMyPointerSelf(AnyType):
+struct HasMyPointerSelf(AnyType, Movable where False):
     # CHECK: lit.struct.field x : !lit.struct<#MyPointer <:!AnyType
     var x: MyPointer[Self]
     # CHECK: lit.fn @"__del__
@@ -751,7 +751,7 @@ trait SomeTrait:
     pass
 
 
-struct ABC(SomeTrait):
+struct ABC(SomeTrait, Movable where False):
     def __init__(out self):
         pass
 
@@ -761,7 +761,7 @@ struct ABCOptionalParamInt[dim_parametric: ABCDim](TrivialRegisterPassable):
         pass
 
 
-struct ABCDim:
+struct ABCDim(Movable where False):
     def __init__[type: SomeTrait](out self, value: type):
         pass
 
@@ -771,7 +771,7 @@ trait TraitParameterized:
         ...
 
 
-struct ConcreteType(TraitParameterized):
+struct ConcreteType(TraitParameterized, Movable where False):
     def foo[T: SomeTrait](self):
         pass
 
@@ -781,7 +781,7 @@ trait KeysBuilder:
         ...
 
 
-struct KeysContainer[end: Int](KeysBuilder):
+struct KeysContainer[end: Int](KeysBuilder, Movable where False):
     def add[x: Int](mut self):
         pass
 
@@ -823,11 +823,11 @@ trait OtherEmptyTrait(EmptyTrait):
     pass
 
 
-struct Bar[T: EmptyTrait]:
+struct Bar[T: EmptyTrait](Movable where False):
     pass
 
 
-struct Foo[T: EmptyTrait]:
+struct Foo[T: EmptyTrait](Movable where False):
     def infer_sub_trait[OT: OtherEmptyTrait](mut self, existing: Bar[OT]):
         pass
 
@@ -886,7 +886,7 @@ def call_many_things_of_specified_trait(a: TraitStruct):
 comptime _AnyTypeMetaType = type_of(AnyType)
 
 # CHECK-LABEL: lit.struct.decl @TestAnyTrait
-struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
+struct TestAnyTrait[element_trait: _AnyTypeMetaType](Movable where False):
     # CHECK: lit.fn @"take_any_type
     # CHECK-SAME: <b_type: !AnyType>[{{.*}}](%self:
     # CHECK-SAME: %b_value: !lit.ref<:!AnyType b_type, imm {{.*}} read_mem)
@@ -950,7 +950,7 @@ comptime _CollectionElementMetaType = type_of(ImplicitlyCopyable)
 
 struct FormVariadicPackWithCastedElementVariadic[
     element_trait: _CollectionElementMetaType, //,
-    *element_types: element_trait]:
+    *element_types: element_trait](Movable where False):
 
     def __init__(out self, var *args: *Self.element_types):
         # This should work.
@@ -984,7 +984,7 @@ trait TBar:
 trait TraitWithVariadicPackDefault:
     def foo[*Ts: Movable](self, *args: *Ts):
         pass
-struct StructInheritingVariadicPackDefault(TraitWithVariadicPackDefault):
+struct StructInheritingVariadicPackDefault(TraitWithVariadicPackDefault, Movable where False):
     pass
 
 
@@ -1006,7 +1006,7 @@ trait TraitWDefault:
     def test[linear_idx_type: Int = 0](self) -> Int:
         ...
 
-struct TestTraitWDefault(TraitWDefault):
+struct TestTraitWDefault(TraitWDefault, Movable where False):
     def test[linear_idx_type: Int = 0](self) -> Int:
         pass
 
@@ -1019,7 +1019,7 @@ trait HasBarKw:
     def __init__(out self, *, bar: Self):
         ...
 
-struct TestKWArgs(HasFooKw, HasBarKw):
+struct TestKWArgs(HasFooKw, HasBarKw, Movable where False):
     def __init__(out self, *, foo: Self):
         pass
 
@@ -1039,7 +1039,7 @@ trait Greeter:
     def greet(self, name: String) -> String:
         return "Hello, " + name
 
-struct FriendlyGreeter(Greeter where False):
+struct FriendlyGreeter(Greeter where False, Movable where False):
     var x: Int
 
     def __init__(out self, x: Int):

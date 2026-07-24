@@ -22,7 +22,7 @@
 comptime SIMDSize = Int
 
 
-struct IndexList[r: Int]:
+struct IndexList[r: Int](Movable where False):
     pass
 
 
@@ -228,18 +228,18 @@ def thing():
 
 
 
-struct MyInt:
+struct MyInt(Movable where False):
     @implicit
     def __init__(out self, value: Int):
         pass
 
 
-struct MySIMD[width: MyInt]:
+struct MySIMD[width: MyInt](Movable where False):
     def __add__(self, other: MySIMD[Self.width]) -> MySIMD[Self.width]:
         pass
 
 
-struct Foo[width: Int]:
+struct Foo[width: Int](Movable where False):
     @staticmethod
     def helper(
         func: Some[

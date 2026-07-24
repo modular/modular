@@ -81,7 +81,7 @@ trait TraitExpectingValueReturn:
 
 
 struct StructProvidingRefReturn[T: Copyable & ImplicitlyDeletable](
-    TraitExpectingValueReturn
+    TraitExpectingValueReturn, Movable where False
 ):
     comptime Element = Self.T
 
@@ -89,14 +89,14 @@ struct StructProvidingRefReturn[T: Copyable & ImplicitlyDeletable](
         pass
 
 
-struct FromType:
+struct FromType(Movable where False):
     var n: Int
 
     def __init__(out self, n: Int):
         self.n = n
 
 
-struct ToTypeImm:
+struct ToTypeImm(Movable where False):
     var n: Int
 
     @implicit
@@ -104,7 +104,7 @@ struct ToTypeImm:
         self.n = f.n
 
 
-struct ToTypeMut:
+struct ToTypeMut(Movable where False):
     var n: Int
 
     @implicit

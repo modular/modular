@@ -34,7 +34,7 @@ def test_member_access_suppressed():
     _ = UnstableStruct.UNSTABLE_CONST
 
 
-struct LocalImpl(UnstableTraitWithMembers):
+struct LocalImpl(UnstableTraitWithMembers, Movable):
     # Using an unstable trait as a parent in the current file should not warn.
     def __init__(out self):
         pass

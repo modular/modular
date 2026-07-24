@@ -23,7 +23,7 @@ def immByMut(byRefMut: String):
         pass
 
 
-struct DoNotMoveMe:
+struct DoNotMoveMe(Movable where False):
     pass
 
 def notMovable(var byMove: DoNotMoveMe):
@@ -31,7 +31,7 @@ def notMovable(var byMove: DoNotMoveMe):
     def myclosure() {var byMove^}:
         pass
 
-struct MoveMe:
+struct MoveMe(Movable where False):
     pass
 
 def immByMov(var byMove: MoveMe):

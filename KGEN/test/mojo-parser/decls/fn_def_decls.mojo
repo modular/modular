@@ -130,12 +130,12 @@ struct NonTrivialReg(ImplicitlyCopyable, RegisterPassable):
     pass
 
 
-struct TypeWithParametricSelf:
+struct TypeWithParametricSelf(Movable where False):
     def method(ref self):
         pass
 
 
-struct ValueWithTypeWithParametricSelf:
+struct ValueWithTypeWithParametricSelf(Movable where False):
     var member: TypeWithParametricSelf
 
 
@@ -289,7 +289,7 @@ trait FooTrait:
 
 
 @fieldwise_init
-struct Foo[x: Int, y: Int](FooTrait):
+struct Foo[x: Int, y: Int](FooTrait, Movable where False):
     # CHECK: kgen.witness "foo[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]]($0)"
     def foo[q: Int, z: Int](self) -> Int:
         return Self.x + Self.y
@@ -312,7 +312,7 @@ trait PluginHooks:
 # INLINE-SAME: "[[OORIGIN]]": origin<
 # INLINE: kgen.conformance @"{{.*}}PluginHooks"
 # INLINE: kgen.witness "print_emit_fn"
-struct DefaultPlugin(PluginHooks):
+struct DefaultPlugin(PluginHooks, Movable where False):
     comptime print_emit_fn: Optional[def[O: Origin](str: StringSlice[O]) thin] = (
         None
     )

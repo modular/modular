@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 
-struct PCall:
+struct PCall(Movable where False):
     def __init__(out self):
         pass
 
@@ -15,7 +15,7 @@ struct PCall:
         return x + y
 
 
-struct PCallWithGetItem:
+struct PCallWithGetItem(Movable where False):
     def __init__(out self):
         pass
 
@@ -31,7 +31,7 @@ struct PCallWithGetItem:
     def __getitem__(ref self, y: StringLiteral) -> Int:
         return 2
 
-struct PCallWithGetAttr:
+struct PCallWithGetAttr(Movable where False):
     def __init__(out self):
         pass
 
@@ -45,7 +45,7 @@ struct PCallWithGetAttr:
 
 
 # Note: Test heuristic fix for MOCO-2833
-struct PCallWithGetItemAndInferredParameters:
+struct PCallWithGetItemAndInferredParameters(Movable where False):
     def __init__(out self):
         pass
 

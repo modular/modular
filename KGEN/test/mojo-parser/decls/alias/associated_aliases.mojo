@@ -30,7 +30,7 @@ struct StructWithMatchingAlias(TraitWithAlias):
         pass
 
 
-struct S[n: Int]:
+struct S[n: Int](Movable where False):
     def __init__(out self):
         pass
 
@@ -44,16 +44,16 @@ trait TraitWithDependentAlias:
 
 
 # CHECK-LABEL: lit.struct.decl @StructWithMatchingDependentAlias1
-struct StructWithMatchingDependentAlias1(TraitWithDependentAlias):
-    # CHECK-NEXT: lit.alias.decl *"N`": !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
+struct StructWithMatchingDependentAlias1(TraitWithDependentAlias, Movable where False):
+    # CHECK: lit.alias.decl *"N`": !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
     comptime N: Int = 1
     # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": {{.*}}#S <:!Int {:scalar<index> 1}>> =
     comptime depend_on_N = S[1]()
 
 
 # CHECK-LABEL: lit.struct.decl @StructWithMatchingDependentAlias2
-struct StructWithMatchingDependentAlias2(TraitWithDependentAlias):
-    # CHECK-NEXT: lit.alias.decl *"N`": !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
+struct StructWithMatchingDependentAlias2(TraitWithDependentAlias, Movable where False):
+    # CHECK: lit.alias.decl *"N`": !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
     comptime N: Int = 1
     # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": {{.*}}#S <:!Int {:scalar<index> 1}>> =
     comptime depend_on_N = S[Self.N]()
@@ -1038,7 +1038,7 @@ trait MyTrait2:
 
 
 @fieldwise_init
-struct MyStruct(MyTrait, MyTrait2):
+struct MyStruct(MyTrait, MyTrait2, Movable where False):
     comptime BIT_WIDTH = ZInt()
 
 

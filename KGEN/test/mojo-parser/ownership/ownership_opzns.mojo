@@ -201,7 +201,7 @@ def passFieldToOwnedInt(var a: MemExample):
 
 
 # Generic type: Issue #14018
-struct MyGenericType[Type: TrivialRegisterPassable]:
+struct MyGenericType[Type: TrivialRegisterPassable](Movable where False):
     var value: Self.Type
 
     @implicit

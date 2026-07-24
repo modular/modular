@@ -14,7 +14,7 @@
 # try in struct body
 ##===----------------------------------------------------------------------===##
 
-struct StructWithTry:
+struct StructWithTry(Movable where False):
     var x: Int
     # expected-error @below {{'try' must be contained in a function}}
     try:
@@ -39,7 +39,7 @@ trait TraitWithTry:
 # try in extension body
 ##===----------------------------------------------------------------------===##
 
-struct ExtendedStructWithTry:
+struct ExtendedStructWithTry(Movable where False):
     var x: Int
 
 __extension ExtendedStructWithTry:

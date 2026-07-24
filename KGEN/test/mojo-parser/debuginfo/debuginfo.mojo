@@ -14,7 +14,7 @@
 
 
 @fieldwise_init
-struct MemPair:
+struct MemPair(Movable where False):
     var x: Int
     var y: Int
 

@@ -205,7 +205,7 @@ def s7_trigger[rank: Int, dtype: DType]():
 
 
 
-struct MyList[T: AnyType]:
+struct MyList[T: AnyType](Movable where False):
     pass
 
 

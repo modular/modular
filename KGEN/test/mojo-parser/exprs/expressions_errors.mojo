@@ -8,7 +8,7 @@
 
 struct SomeNonTrivRegPassable(RegisterPassable): pass
 
-struct MemType:
+struct MemType(Movable where False):
   def __init__(out self):
     pass
 
@@ -54,7 +54,7 @@ def invalid_with():
         foo.something()
 
 
-struct SomeType:
+struct SomeType(Movable where False):
     pass
 
 
@@ -105,7 +105,7 @@ def test_takes_mem_type():
     takes_type(SomeType)
 
 # MOCO-56: Mojo produces weird error when mut function is used in non mutating function
-struct SomethingWithInferredParam[T: ImplicitlyCopyable]:
+struct SomethingWithInferredParam[T: ImplicitlyCopyable](Movable where False):
   pass
 # expected-note @+1 {{function declared here}}
 def SomethingWithInferredParamCallee(mut v: SomethingWithInferredParam):
@@ -150,7 +150,7 @@ def invalid_conversion(a: Int) raises:
   # expected-error @+1 {{cannot construct type 'Never'}}
   _ = Never()
 
-struct NotBoolConvertible:
+struct NotBoolConvertible(Movable where False):
   pass
 
 # Issue #6600
@@ -259,7 +259,7 @@ def mutArg(a: Int):
 def assignRValue():
   42 = 17 # expected-error {{expression must be mutable in assignment}}
 
-struct LValuesRvalues:
+struct LValuesRvalues(Movable where False):
   def __init__(out self): pass
   def __init__(out self, *, copy: Self): pass
 
@@ -278,7 +278,7 @@ struct MemoryOnlyPair(Copyable):
     self.x = 0
     self.y = 0
 
-struct NonCopyable:
+struct NonCopyable(Movable where False):
   def __init__(out self): pass
 
 def generic_on_type_ok[T: TrivialRegisterPassable](): pass
@@ -326,7 +326,7 @@ def badRef(mut val: Int):
   # expected-error @+1 {{invalid call to 'badRef': l-value of type 'FloatDyn' cannot be converted to reference of type 'Int'}}
   badRef(x)
 
-struct PythonObject: pass
+struct PythonObject(Movable where False): pass
 def getPythonObject() -> PythonObject: pass
 
 def unused_values():
@@ -391,7 +391,7 @@ def dynamic_used_as_param() -> Int:
   return func_with_static_param[x]()
 
 @fieldwise_init
-struct StructWithField:
+struct StructWithField(Movable where False):
   var x : Int
 
 def dynamic_used_as_param_2() -> Int:
@@ -453,10 +453,10 @@ def badSelf(a: Self):
   var x: Self.field
 
 # Structs convertible to each other.
-struct Conv1:
+struct Conv1(Movable where False):
   @implicit
   def __init__(out self, value: Conv2): pass
-struct Conv2:
+struct Conv2(Movable where False):
   @implicit
   def __init__(out self, value: Conv1): pass
 
@@ -464,7 +464,7 @@ struct MyIntPair(RegisterPassable):
   var a: Int
   var b: Int
 
-struct TwoAndThreeList:
+struct TwoAndThreeList(Movable where False):
 
    # expected-note @below {{candidate not viable: unexpected argument}}
    # expected-note @below {{candidate not viable: missing required argument: 'a'}}
@@ -579,12 +579,12 @@ def doIsNot(a: Int, b: Int) raises:
 # Computed Properties and Subscripts
 ##===----------------------------------------------------------------------===##
 
-struct ConvertFromInt:
+struct ConvertFromInt(Movable where False):
     def __init__(out self): pass
     @implicit
     def __init__(out self, value: Int): pass
 
-struct IncompatElementTypes:
+struct IncompatElementTypes(Movable where False):
   def __getitem__(self, x: Int) -> Int: pass
   def __setitem__(self, x: Int, y: ConvertFromInt): pass
 
@@ -594,7 +594,7 @@ def test_subscript_implicit_conversion(c: IncompatElementTypes):
   c[1] = ConvertFromInt()  # FIXME: This should work
   c[1] = tmp
 
-struct GetAttrNotString:
+struct GetAttrNotString(Movable where False):
     # expected-note @below {{function declared here}}
     def __init__(out self):
         pass
@@ -609,11 +609,11 @@ def invalid_getattr():
     obj.attr
 
 
-struct GetSettable:
+struct GetSettable(Movable where False):
   def __getitem__(self, x: Int) -> Int: pass
   def __setitem__(self, x: Int, y: Int): pass
 
-struct NoSelfCtor:
+struct NoSelfCtor(Movable where False):
   var x: Int
   def __init__(out self, x: Int):
     self.x = x
@@ -713,7 +713,7 @@ def transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNon
 # Issue #1708: https://github.com/modular/mojo/issues/1708
 # Issue #1699: https://github.com/modular/mojo/issues/1699
 # Issue #30790: https://github.com/modularml/modular/issues/30790
-struct SomeThing:
+struct SomeThing(Movable where False):
     def overloaded[a: Int](self, b: Int) -> Int: pass
 def testSomeThing(a: SomeThing):
   # expected-error @below {{member method closures are not supported; add '()' to call 'overloaded'}}
@@ -758,7 +758,7 @@ def test_subscript_conflict(a: Int):
   _ = a[idx=4, idx=7]
 
 
-struct Addable:
+struct Addable(Movable where False):
     def __add__(self, other: Self): pass # expected-note {{function declared here}}
 def test(a: Pointer[Addable, _], b: Addable):
     # expected-error @+1 {{invalid call to '__add__': value passed to 'other' cannot be converted from 'Pointer[Addable, origin]' to 'Addable'}}
@@ -766,7 +766,7 @@ def test(a: Pointer[Addable, _], b: Addable):
 
 
 # Verify that we can propagate parametric mutability through field accesses.
-struct ThingWithFields:
+struct ThingWithFields(Movable where False):
   var field: Int
 
 def field_sensitive_origins(a: ThingWithFields)
@@ -808,14 +808,14 @@ def unbound_function_type():
 
 # Various type printing cases.
 #
-struct HasKWOnlyParam[*, kwplz: Int]: pass
+struct HasKWOnlyParam[*, kwplz: Int](Movable where False): pass
 
 # expected-note @+1 {{function declared here}}
 def test_kw_only[a: Int](arg: HasKWOnlyParam[kwplz=a]):
   # expected-error @+1 {{invalid call to 'test_kw_only': value passed to 'arg' cannot be converted from 'HasKWOnlyParam[kwplz=a]' to 'HasKWOnlyParam[kwplz=Int(42)]'}}
   test_kw_only[42](arg)
 
-struct HasMultipleOnlyParam[x: Int = 1, y: Int = 4]: pass
+struct HasMultipleOnlyParam[x: Int = 1, y: Int = 4](Movable where False): pass
 
 # expected-note @+1 {{function declared here}}
 def test_mixedkw_only[a: Int](arg: HasMultipleOnlyParam[1, a]):
@@ -823,7 +823,7 @@ def test_mixedkw_only[a: Int](arg: HasMultipleOnlyParam[1, a]):
   test_mixedkw_only[42](arg)
 
 def int_fn(arg: Int) -> Int: return arg+1
-struct HasDependent[x: Int, y: Int = int_fn(x)]: pass
+struct HasDependent[x: Int, y: Int = int_fn(x)](Movable where False): pass
 
 # expected-note @+1 {{function declared here}}
 def test_dependent[a: Int](arg: HasDependent[a], arg2: HasDependent[a, 4]):
@@ -892,7 +892,7 @@ def test3830_2[o: ImmOrigin](f: def(ref[o] x: Int) thin -> None, x: Int):
     # expected-note @below {{operand origin 'origin_of(anonymous*)' doesn't match expected origin 'origin_of(o)'}}
     f(x)
 
-struct Struct3855:
+struct Struct3855(Movable where False):
     var l: Int
     def do(self, ref[self.l] e: Int): pass # expected-note {{function declared here}}
 
@@ -937,17 +937,17 @@ def test_implicit_copy_errors():
 # MergeWith
 ##===----------------------------------------------------------------------===##
 
-struct TypeA:
+struct TypeA(Movable where False):
     def __merge_with__[other_type: type_of(TypeB)](self) -> TypeB:
         pass
     def __merge_with__[other_type: type_of(TypeC)](self) -> Int:
         pass
 
-struct TypeB:
+struct TypeB(Movable where False):
     def __merge_with__[other_type: type_of(TypeA)](self) -> Int:
         pass
 
-struct TypeC:
+struct TypeC(Movable where False):
     pass
 
 
@@ -994,7 +994,7 @@ def test_comptime_materialize():
   # expected-note @below {{the type contains an origin referring to a compile-time value}}
   var use_bad = bad
 
-struct BoolParam[value: Bool]:
+struct BoolParam[value: Bool](Movable where False):
   pass
 
 def elide_implicit_conversion_in_struct_params[value: __mlir_type.i1](a: BoolParam[value]):
@@ -1003,7 +1003,7 @@ def elide_implicit_conversion_in_struct_params[value: __mlir_type.i1](a: BoolPar
 
 
 # MOCO-2332 / https://github.com/modular/modular/issues/5139
-struct a_struct:
+struct a_struct(Movable where False):
   comptime an_alias = 1
 
 def a_fn() -> Dict[String, Int]:
@@ -1098,7 +1098,7 @@ struct MemberAliasSugarCrash(TrivialRegisterPassable):
 # comptime expression
 ##===----------------------------------------------------------------------===##
 
-struct NotRuntimeMaterializable:
+struct NotRuntimeMaterializable(Movable where False):
     def method(self) -> Int: pass
 
 def test_comptime_expression[nrm: NotRuntimeMaterializable]():
@@ -1121,7 +1121,7 @@ def test_comptime_expression[nrm: NotRuntimeMaterializable]():
 
 
 
-struct TwoParamsType[a: Int, b: Int]:
+struct TwoParamsType[a: Int, b: Int](Movable where False):
     pass
 comptime TwoParamsTypeAlias[B: Int] = TwoParamsType[B, ...]
 # expected-note @+1 {{function declared here}}

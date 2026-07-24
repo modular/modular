@@ -92,7 +92,7 @@ __extension Spaceship:
 
 
 # CHECK-LABEL: lit.struct.decl @PlainStruct
-struct PlainStruct:
+struct PlainStruct(Movable where False):
     pass
 
 
@@ -115,7 +115,7 @@ def zork():
 # Test we can overload between struct and extension..
 
 
-struct BaseStruct:
+struct BaseStruct(Movable where False):
     def same_name(self):
         pass
 
@@ -201,7 +201,7 @@ def launch_ship(mut ship: Spaceship):
 comptime capturing_lambda_type = def(Int) capturing -> Int
 
 
-struct StructWithCapturingLambda[T: Int, my_lambda: capturing_lambda_type]:
+struct StructWithCapturingLambda[T: Int, my_lambda: capturing_lambda_type](Movable where False):
     var value: Int
 
     # This part of the test is here to establish the fact that struct
@@ -261,7 +261,7 @@ __extension Spaceship(Flying):
 # // -----
 
 
-struct ZDType:
+struct ZDType(Movable where False):
     def __init__(out self):
         pass
 
@@ -269,7 +269,7 @@ struct ZDType:
 comptime ZScalar = ZSIMD[ZDType(), size=1]
 
 
-struct ZSIMD[dtype: ZDType, size: Int]:
+struct ZSIMD[dtype: ZDType, size: Int](Movable where False):
     pass
 
 
@@ -289,11 +289,11 @@ __extension ZSIMD(ZConvertibleToPython):
 # TODO(MOCO-522): Arcana docs here!
 
 
-struct Int:
+struct Int(Movable where False):
     pass
 
 
-struct MyContainer[d: Int]:
+struct MyContainer[d: Int](Movable where False):
     pass
 
 
@@ -322,7 +322,7 @@ __extension MyThing:
 
 
 @fieldwise_init
-struct MyThing[N: Int]:
+struct MyThing[N: Int](Movable where False):
     pass
 
 

@@ -179,7 +179,7 @@ struct Struct12(Traits12):
 
 # conditional method
 @fieldwise_init
-struct Wrapper[T: AnyType]:
+struct Wrapper[T: AnyType](Movable where False):
     def cond1[Trait: Trait1](self: Wrapper[Trait], other: Wrapper[Trait]):
         pass
 
@@ -248,7 +248,7 @@ trait Defaultable:
         ...
 
 
-struct YourStruct:
+struct YourStruct(Movable where False):
     var x: Int
 
     def __init__(out self):

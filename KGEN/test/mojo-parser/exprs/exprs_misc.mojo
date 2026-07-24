@@ -10,7 +10,7 @@ def marker():
 
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
-struct Unmovable:
+struct Unmovable(Movable where False):
     def __init__(out self):
         pass
 
@@ -36,7 +36,7 @@ struct ListInitializable[T: AnyType](ImplicitlyCopyable):
         pass
 
 
-struct RHSInferenceStruct:
+struct RHSInferenceStruct(Movable where False):
     var field: ListInitializable[Int]
 
     def __getitem__(self) -> ListInitializable[Int]:
@@ -500,7 +500,7 @@ def chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
 
 # MOCO-3608: chained comparison with `in` should not require the RHS to be
 # ImplicitlyCopyable.
-struct NonCopyableContainer:
+struct NonCopyableContainer(Movable where False):
     def __contains__(self, x: Int) -> Bool:
         return False
 
@@ -554,7 +554,7 @@ def test_rp_and_or():
 ##===----------------------------------------------------------------------===##
 
 
-struct MatchExample:
+struct MatchExample(Movable where False):
     def match(self):
         pass
 
@@ -597,7 +597,7 @@ def test_contextual_if[cond: Bool]():
 ##===----------------------------------------------------------------------===##
 
 
-struct NotRuntimeMaterializable:
+struct NotRuntimeMaterializable(Movable where False):
     def method(self) -> Int:
         pass
 

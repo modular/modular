@@ -40,7 +40,7 @@ struct DtorExample2(AnyType, RegisterPassable):
 # CHECK-LABEL: lit.struct.decl @DtorExample3
 # Trivial destructor RPT is obviously trivial
 # CHECK: kgen.witness "__del__is_trivial" : !Bool = {:scalar<bool> true}
-struct DtorExample3[T: RPTTrait]:
+struct DtorExample3[T: RPTTrait](Movable where False):
     var thing: Self.T
 
 
@@ -49,7 +49,7 @@ struct DtorExample3[T: RPTTrait]:
 # CHECK: lit.alias.decl __del__is_trivial:
 # CHECK-SAME: <#kgen.get_witness<:!AnyType_ImplicitlyDeletable T, {{.*}}"__del__is_trivial">>
 # expected-warning @below {{redundant trait composition: 'ImplicitlyDeletable' already implies 'AnyType}}
-struct DtorExample4[T: AnyType & ImplicitlyDeletable]:
+struct DtorExample4[T: AnyType & ImplicitlyDeletable](Movable where False):
     var thing: Self.T
 
 
@@ -132,13 +132,13 @@ def testCopyMoveSynthNonTrivial(var a: IntPairNT, var b: IntPairWrapperNT):
 
 
 @fieldwise_init
-struct FieldwiseInitExample1[T: Movable & ImplicitlyDeletable]:
+struct FieldwiseInitExample1[T: Movable & ImplicitlyDeletable](Movable where False):
     var x: Int
     var y: Self.T
 
 
 # CHECK-LABEL: lit.struct.decl @FieldwiseInitExample1
-# CHECK: lit.fn @"__init__
+# CHECK: lit.fn @"__init__(::SIMD
 # CHECK-SAME: (%x: !alias_Int1, %y: !lit.ref<:!AnyType_ImplicitlyDeletable_Movable T, mut *"y`"> owned_in_mem,
 # CHECK-SAME: %self: !lit.ref<{{.*}}> byref_result)
 # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[x]
@@ -150,7 +150,7 @@ struct FieldwiseInitExample1[T: Movable & ImplicitlyDeletable]:
 
 # CHECK-LABEL: lit.struct.decl @FieldwiseInitExample2
 @fieldwise_init("implicit")
-struct FieldwiseInitExample2:
+struct FieldwiseInitExample2(Movable where False):
     var x: Int
 
 
@@ -172,7 +172,7 @@ struct FieldwiseInitExample3(RegisterPassable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct MyParam[p: Int]:
+struct MyParam[p: Int](Movable where False):
     pass
 
 
@@ -183,14 +183,14 @@ trait TraitWithPAlias:
 # CHECK-LABEL: lit.struct.decl @MyStruct
 # CHECK-SAME: <[{{.*}}]*"[[P1:.*]]": !Int, [{{.*}}]*"[[P2:.*]]": !Int, +, p: !Int,
 # CHECK-SAME: m1: !lit.struct<#MyParam <:!Int *"[[P1]]">>, m2: !lit.struct<#MyParam <:!Int *"[[P2]]">>
-struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]]:
+struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]](Movable where False):
     # CHECK: lit.fn @"__init__()"[
     def __init__(out self):
         pass
 
 
 # CHECK-LABEL: lit.struct.decl @MyStructWithPVar
-struct MyStructWithPVar[m1: MyParam[_]]:
+struct MyStructWithPVar[m1: MyParam[_]](Movable where False):
     def __init__(out self):
         pass
 
@@ -199,7 +199,7 @@ struct MyStructWithPVar[m1: MyParam[_]]:
 
 
 # CHECK-LABEL: lit.struct.decl @MyStructWithPAlias
-struct MyStructWithPAlias[m1: MyParam[_]]:
+struct MyStructWithPAlias[m1: MyParam[_]](Movable where False):
     def __init__(out self):
         pass
 
@@ -208,14 +208,14 @@ struct MyStructWithPAlias[m1: MyParam[_]]:
 
 
 # CHECK-LABEL: lit.struct.decl @MyStructWithTraitWithPAlias
-struct MyStructWithTraitWithPAlias[m1: MyParam[_]](TraitWithPAlias):
+struct MyStructWithTraitWithPAlias[m1: MyParam[_]](TraitWithPAlias, Movable where False):
     # COM: Ensure there's no conflict with the inherited alias.
     def __init__(out self):
         pass
 
 
 # CHECK-LABEL: lit.struct.decl @MyStructWithPFunc
-struct MyStructWithPFunc[m1: MyParam[_]]:
+struct MyStructWithPFunc[m1: MyParam[_]](Movable where False):
     def __init__(out self):
         pass
 
@@ -225,7 +225,7 @@ struct MyStructWithPFunc[m1: MyParam[_]]:
 
 
 # CHECK-LABEL: lit.struct.decl @MyStructWith2PFuncs
-struct MyStructWith2PFuncs[m1: MyParam[_]]:
+struct MyStructWith2PFuncs[m1: MyParam[_]](Movable where False):
     def __init__(out self):
         pass
 

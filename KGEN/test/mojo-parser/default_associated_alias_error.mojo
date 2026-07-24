@@ -21,5 +21,5 @@ trait A:
 
 
 # expected-error@below{{trait member 'a' has conflicting default implementations in B and A; you must implement it manually}}
-struct Foo(A, B):
+struct Foo(A, B, Movable where False):
     pass

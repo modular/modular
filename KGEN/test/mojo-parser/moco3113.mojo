@@ -8,7 +8,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-struct SomeStruct[x: Int, y: Int]:
+struct SomeStruct[x: Int, y: Int](Movable where False):
     @implicit
     def __init__(out self: SomeStruct[3, 4], other: SomeStruct[1, 1]):
         pass

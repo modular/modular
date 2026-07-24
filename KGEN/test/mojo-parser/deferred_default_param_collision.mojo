@@ -17,7 +17,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int]():
         pass
 
 
-struct SomeThing[rank: Int]:
+struct SomeThing[rank: Int](Movable where False):
     def __init__(out self):
         pass
 

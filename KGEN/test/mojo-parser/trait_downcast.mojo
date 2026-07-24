@@ -44,11 +44,11 @@ def trait_downcast_anytype[T: AnyType](x: T):
     y.test()
 
 
-struct ListIterator[T: Copyable & ImplicitlyDeletable]:
+struct ListIterator[T: Copyable & ImplicitlyDeletable](Movable where False):
     var t: Self.T
 
 
-struct List[T: Movable & ImplicitlyDeletable]:
+struct List[T: Movable & ImplicitlyDeletable](Movable where False):
     var t: Self.T
 
     # CHECK: lit.alias.decl *"Iterator`": meta<!lit.struct<#ListIterator <:{{.*}} downcast(:!AnyType_ImplicitlyDeletable_Movable T)>>>

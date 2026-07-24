@@ -81,7 +81,7 @@ def test_kw_param_passing_indirect[x: Int, y: Int, z: Int,
 
 
 @fieldwise_init
-struct MyCallable:
+struct MyCallable(Movable where False):
     def __call__(self, m: Int, n: Int = 2):
         pass
 
@@ -259,7 +259,7 @@ def initialize_in_addrspace(
     ptr[] = ExampleRegPassable()
 
 
-struct SomeRefItemStruct:
+struct SomeRefItemStruct(Movable where False):
     def __getitem__(self) -> ref [self] Int:
         pass
 
@@ -302,7 +302,7 @@ struct ExampleRegPassable(TrivialRegisterPassable):
 ## Partial Binding of Function Symbols With Implicit Parameters
 
 
-struct Matrix[rows: Int, cols: Int]:
+struct Matrix[rows: Int, cols: Int](Movable where False):
     pass
 
 
@@ -342,7 +342,7 @@ def test_implicit_conversion_bvalue():
     take_struct2(foo^)
 
 
-struct Struct1:
+struct Struct1(Movable where False):
     def __init__(out self):
         pass
 
@@ -350,7 +350,7 @@ struct Struct1:
         pass
 
 
-struct Struct2:
+struct Struct2(Movable where False):
     @implicit
     def __init__(out self, var foo: Struct1):
         pass
@@ -437,7 +437,7 @@ def complex_ref_box_emission[p: Int](a: Int):
     # _ = test_int_ref(a+a)
 
 # MOCO-1440 - Weird conditional conformance mismatch
-struct ThingWithParam[X: Int]:
+struct ThingWithParam[X: Int](Movable where False):
   @implicit
   def __init__(out self: ThingWithParam[42], other: Bool): pass
 
@@ -453,7 +453,7 @@ struct Heavy(ImplicitlyCopyable):
   pass
 
 # This is intended to be a lightweight view of Heavy.
-struct ViewOfHeavy:
+struct ViewOfHeavy(Movable where False):
   @implicit
   def __init__(out self, h: Heavy): pass
 
@@ -469,10 +469,10 @@ def testUnneededCopy(heavy: Heavy):
 
 
 # Check that field sensitivity is properly field sensitive.
-struct NonCopyable: pass
+struct NonCopyable(Movable where False): pass
 def take_and_return(a: NonCopyable) -> NonCopyable: pass
 # CHECK-LABEL: lit.struct.decl @TestFieldSensitiveResultSlot
-struct TestFieldSensitiveResultSlot:
+struct TestFieldSensitiveResultSlot(Movable where False):
     var a: NonCopyable
     var b: NonCopyable
 
@@ -487,7 +487,7 @@ struct TestFieldSensitiveResultSlot:
 
 # Check that imm origin binding works with partially applied functions (which
 # get bound to a function pointer then called indirectly.
-struct SomeStructWithRefMethod:
+struct SomeStructWithRefMethod(Movable where False):
     def take_ref(ref self) -> SomeStructWithRefMethod: pass
 
 # CHECK-LABEL: lit.fn @"testSomeStructWithRefMethod
@@ -535,7 +535,7 @@ def entry(mut value: MyDict[String, Value], name: String) raises:
 
 
 # getitem on mutable list returns a mutable ref.
-struct MyMutGetItemCollection[T: AnyType]:
+struct MyMutGetItemCollection[T: AnyType](Movable where False):
     var state: Value
     def clear(mut self): pass
     def __init__(out self): pass
@@ -572,7 +572,7 @@ def subscript_assignment_inplace(mut list: MyMutGetItemCollection[MyMutGetItemCo
     list[0].state = Value(1)
 
 # getitem on mutable list returns a immutable ref so setitem is needed.
-struct MyImmutGetItemCollection[T: AnyType]:
+struct MyImmutGetItemCollection[T: AnyType](Movable where False):
     def __getitem__(self, idx: Int) -> ref [self] Self.T: pass
     def __setitem__(mut self, idx: Int, var value: Self.T): pass
 

@@ -28,7 +28,7 @@ def elif_parse_error(a: Bool) raises:
  else:
     pass
 
-struct NotBoolConvertible:
+struct NotBoolConvertible(Movable where False):
   def __init__(out self, *, copy: Self):
     pass
 
@@ -71,20 +71,20 @@ def test_comptime_elif_not_allowed(a: Bool):
 # For
 ##===----------------------------------------------------------------------===##
 
-struct my_iter_no_next:
+struct my_iter_no_next(Movable where False):
     def __init__(out self): pass
 
 
-struct MyList_range_no_next:
+struct MyList_range_no_next(Movable where False):
     def __init__(out self): pass
     def __iter__(self) -> my_iter_no_next: return my_iter_no_next()
 
 
-struct MyList_no_iter:
+struct MyList_no_iter(Movable where False):
     def __init__(out self): pass
 
 @fieldwise_init
-struct MyFloat:
+struct MyFloat(Movable where False):
     pass
 
 def test():
@@ -116,12 +116,12 @@ def spurious_for_loop_variable_unknown_decl():
     _ = i
 
 
-struct ListValueInt:
+struct ListValueInt(Movable where False):
     def __init__(out self): pass
     def __iter__(self) -> ListValueInt: return ListValueInt()
     def __next__(mut self) raises StopIteration -> Int: return 0
 
-struct ListValueStringRef:
+struct ListValueStringRef(Movable where False):
     def __init__(out self): pass
     def __iter__(self) -> ListValueStringRef: return ListValueStringRef()
     def __next__(mut self) raises StopIteration -> ref [self] String: pass
@@ -175,7 +175,7 @@ def withNoRaise(var mgr: ExampleCM):
 
 # Poor error when with context managers that take ownership in enter
 # https://github.com/modularml/modular/issues/23100
-struct BadCM: # expected-note {{'BadCM' declared here}}
+struct BadCM(Movable where False): # expected-note {{'BadCM' declared here}}
   def __init__(out self): pass
 
   def __enter__(var self) -> Int:

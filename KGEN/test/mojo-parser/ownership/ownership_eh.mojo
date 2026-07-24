@@ -118,7 +118,7 @@ def thing_that_raises(c: __mlir_type.`!kgen.scalar<bool>`) raises -> MemExample:
     raise Error("TypeError: cannot invert values of this type")
 
 
-struct RaisingInit:
+struct RaisingInit(Movable where False):
     var stream: Int
 
     def __init__(out self, flags: Int = 0) raises:
@@ -161,7 +161,7 @@ def finally_may_raise() raises:
 
 
 @fieldwise_init
-struct ThrowingExit:
+struct ThrowingExit(Movable where False):
     def __enter__(self):
         pass
 
@@ -297,7 +297,7 @@ struct Field(ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.struct.decl @DestructSome
-struct DestructSome:
+struct DestructSome(Movable where False):
     var a: Field
     var b: Field
 
@@ -382,7 +382,7 @@ def raising_use(var value: MemExample):
 
 
 # CHECK-LABEL: lit.struct.decl @ThrowingSelfInit
-struct ThrowingSelfInit:
+struct ThrowingSelfInit(Movable where False):
     var x: Int
 
     def __del__(deinit self):
@@ -416,7 +416,7 @@ struct ThrowingSelfInit:
         self = ThrowingSelfInit()
 
 
-struct InitFieldsDestroyedInThrowingConstructor:
+struct InitFieldsDestroyedInThrowingConstructor(Movable where False):
     var x: MemExample
 
     def __init__(out self):

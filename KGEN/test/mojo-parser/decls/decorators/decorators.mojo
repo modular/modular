@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct NoDebugInlineTest:
+struct NoDebugInlineTest(Movable where False):
     # Two decorators stacked up
     @always_inline("nodebug")
     @staticmethod
@@ -39,7 +39,7 @@ def decorated_fn():
 # CHECK-LABEL: lit.struct.decl @DecoratedStruct
 # CHECK: decorators <:none apply({{.*}}register{{.*}}<:string "hello">
 @register("hello")
-struct DecoratedStruct:
+struct DecoratedStruct(Movable where False):
     pass
 
 
@@ -82,7 +82,7 @@ def use_math(a: __mlir_type.index) -> __mlir_type.index:
 
 
 # https://github.com/modularml/modular/issues/8500
-struct AlwaysInlineByRef:
+struct AlwaysInlineByRef(Movable where False):
     @always_inline("nodebug")
     def do_by_ref(mut self):
         pass
@@ -115,7 +115,7 @@ def test_ai_builtin_pair():
 # ===----------------------------------------------------------------------=== #
 
 
-struct StaticMethodTest:
+struct StaticMethodTest(Movable where False):
     # CHECK-LABEL: lit.fn @"some_static_method()"()
     # CHECK-SAME: isStatic
     @staticmethod
@@ -140,13 +140,13 @@ def test_no_inline():
 # ===----------------------------------------------------------------------=== #
 
 
-struct DeprecatedImplicitConversion:
+struct DeprecatedImplicitConversion(Movable where False):
     @implicit(deprecated=True)
     def __init__(out self, value: Int):
         pass
 
 
-struct NotDeprecatedImplicitConversion:
+struct NotDeprecatedImplicitConversion(Movable where False):
     @implicit(deprecated=False)
     def __init__(out self, value: Int):
         pass
@@ -414,7 +414,7 @@ struct VarArgInit(TrivialRegisterPassable):
 
 # COM: Body resolution of `Node` will recurse on itself. Make sure that the
 # COM: trait requirements for ImplicitlyCopyable and Movable are generated early.
-struct BoxCopyable[T: ImplicitlyCopyable]:
+struct BoxCopyable[T: ImplicitlyCopyable](Movable where False):
     pass
 
 
@@ -424,7 +424,7 @@ struct Node(ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.struct.decl @RecursiveCopyable
-struct RecursiveCopyable:
+struct RecursiveCopyable(Movable where False):
     comptime ID = Int
     # CHECK: lit.struct.field recurse
     # CHECK-SAME: <:!AnyType_Copyable_ImplicitlyCopyable_Movable !Node>
@@ -443,7 +443,7 @@ struct RaisingFieldwiseInit(ImplicitlyCopyable):
 # defines_interior_origins (from explicit return type)
 # ===----------------------------------------------------------------------=== #
 
-struct InteriorOriginReturnTest:
+struct InteriorOriginReturnTest(Movable where False):
     var data: UnsafePointer[Int, UntrackedOrigin[mut=True]]
 
     def __init__(out self):

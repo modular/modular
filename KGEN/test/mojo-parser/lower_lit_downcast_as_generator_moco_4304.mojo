@@ -19,7 +19,7 @@ from std.reflection import reflect
 
 # CHECK: #[[FIELDS:[a-zA-Z0-9_]+]] = #kgen.type<typevalue<#kgen.genref<@"{{.*}}::Tuple"<:param_list<type> #kgen.param_list.tabulate<#kgen.param_list.size<:param_list<type> #kgen.struct_field_types<T>> : index, #kgen.gen<#kgen.param_list.get<:param_list<type> #kgen.struct_field_types<T>, *(0,0)>> : !kgen.generator<<index>type>>
 # CHECK: kgen.struct.generator @"{{.*}}::MetaBuilder"<T: type> = struct_inst<"{{.*}}::MetaBuilder"[T]<:type T>(fields: #[[FIELDS]]) memoryOnly>
-struct MetaBuilder[T: AnyType]:
+struct MetaBuilder[T: AnyType](Movable where False):
     var fields: Tuple[
         *reflect[Self.T].field_types().map[downcast[_, Movable]]()
     ]

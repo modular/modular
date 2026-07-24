@@ -9,7 +9,7 @@
 
 
 @fieldwise_init
-struct SomeNonCopyable:
+struct SomeNonCopyable(Movable where False):
     pass
 
 
@@ -19,7 +19,7 @@ struct SomeCopyable(Copyable):
 
 
 @fieldwise_init
-struct SomeVA[*elt_types: AnyType]:
+struct SomeVA[*elt_types: AnyType](Movable where False):
     pass
 
 
@@ -46,7 +46,7 @@ def foo():
 struct ParamSubst[
     T: TrivialRegisterPassable,
     shape: __mlir_type[`!kgen.param_list<`, T, `>`],
-]:
+](Movable where False):
     pass
 
 

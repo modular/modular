@@ -30,7 +30,7 @@ trait WhereClauseInTraitConformanceList(FooTrait where True):
     pass
 
 
-struct ParamType[x: Int](FooTrait):
+struct ParamType[x: Int](FooTrait, Movable where False):
     def foo(self):
         pass
 
@@ -69,12 +69,12 @@ def test_many_things_of_specified_trait[
 
 
 # expected-error @below {{'DoesNotConform' does not implement all requirements for 'SimpleTrait'}}
-struct DoesNotConform(SimpleTrait):
+struct DoesNotConform(SimpleTrait, Movable where False):
     pass
 
 
 # expected-error @below {{'ParamDoesNotConform[x]' does not implement all requirements for 'SimpleTrait'}}
-struct ParamDoesNotConform[x: Int](SimpleTrait):
+struct ParamDoesNotConform[x: Int](SimpleTrait, Movable where False):
     # expected-note @below {{candidate declared here with type 'def(self: ParamDoesNotConform[x], y: Int) thin -> None' (specialized from 'def[x: Int, //](self: ParamDoesNotConform[x], y: Int) thin -> None')}}
     def some_method(self, y: Int):
         pass
@@ -134,7 +134,7 @@ trait NotImplicitlyDeletable:
 
 
 @fieldwise_init
-struct Bar[T: NotImplicitlyDeletable]:  # expected-note {{'Bar' declared here}}
+struct Bar[T: NotImplicitlyDeletable](Movable where False):  # expected-note {{'Bar' declared here}}
     pass
 
 
@@ -153,7 +153,7 @@ trait SomeTrait:
 
 
 @fieldwise_init
-struct TakeInt[A: Int]:
+struct TakeInt[A: Int](Movable where False):
     pass
 
 
@@ -184,7 +184,7 @@ trait TBarSub(TBar):
 
 
 # expected-error @+1 {{trait method requirement 'bar' has conflicting default implementations in 'TBar' and 'TBarSub'; you must implement it manually}}
-struct TBarActual(TBarSub):
+struct TBarActual(TBarSub, Movable where False):
     pass
 
 
@@ -201,7 +201,7 @@ trait ConflictTraitName:
 
 
 # expected-error @+1 {{name conflict between parameter 'a' in the default trait method and a parameter in the struct}}
-struct ConflictStruct[a: Int](ConflictTraitName):
+struct ConflictStruct[a: Int](ConflictTraitName, Movable where False):
     pass
 
 
@@ -212,29 +212,29 @@ struct ConflictStruct[a: Int](ConflictTraitName):
 
 # MOCO-4252
 struct CondDeletableField1[T: AnyType](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable), Movable where False,
 ):
     var value: Self.T  # Ok
 
 
 struct CondDeletableField2[T: AnyType, X: Int](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable) and X > 10,
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable) and X > 10, Movable where False,
 ):
     var value: Self.T  # Ok
 
 
 struct CondDeletableField3[T: AnyType, X: Int](
-    ImplicitlyDeletable where X > 10,
+    ImplicitlyDeletable where X > 10, Movable where False,
 ):
     var value: Self.T  # expected-error {{field 'value' has non-implicitly deletable type 'T'}}
 
 
 # MOCO-4262
-struct NeverDeletableInner(ImplicitlyDeletable where False):
+struct NeverDeletableInner(ImplicitlyDeletable where False, Movable where False):
     pass
 
 
-struct NeverDeletableOuter(ImplicitlyDeletable where False):
+struct NeverDeletableOuter(ImplicitlyDeletable where False, Movable where False):
     var m: NeverDeletableInner
 
 
@@ -321,7 +321,7 @@ trait Greeter:
         return "Hello, " + name
 
 
-struct SilentGreeter(Greeter where False):
+struct SilentGreeter(Greeter where False, Movable where False):
     var x: Int
 
     def __init__(out self, x: Int):

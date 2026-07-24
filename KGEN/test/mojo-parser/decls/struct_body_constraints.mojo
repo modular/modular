@@ -128,7 +128,7 @@ def call_bad_signature_use():
 
 
 struct OrderedPair[A: Int, B: Int]
-    where A < B:
+    (Movable where False) where A < B:
     pass
 
 
@@ -139,7 +139,7 @@ def use_ordered_pair_satisfied():
 # expected-note @below {{'ViolatedOrderedPair' declared here}}
 struct ViolatedOrderedPair[A: Int, B: Int]
     # expected-note @below {{constraint declared here evaluated to False}}
-    where A < B:
+    (Movable where False) where A < B:
     pass
 
 
@@ -158,11 +158,11 @@ def use_ordered_pair_violated():
 
 
 struct OnlyIntableSatisfied[T: AnyType]
-    where conforms_to(T, Intable):
+    (Movable where False) where conforms_to(T, Intable):
     pass
 
 
-struct ConcreteIntable(Intable):
+struct ConcreteIntable(Intable, Movable where False):
     def __int__(self) -> Int:
         return 0
 
@@ -174,11 +174,11 @@ def use_intable_satisfied():
 # expected-note @below {{'OnlyIntableViolated' declared here}}
 struct OnlyIntableViolated[T: AnyType]
     # expected-note @below {{constraint declared here evaluated to False}}
-    where conforms_to(T, Intable):
+    (Movable where False) where conforms_to(T, Intable):
     pass
 
 
-struct NotIntable:
+struct NotIntable(Movable where False):
     pass
 
 
@@ -190,7 +190,7 @@ def use_intable_violated():
 # expected-note @below {{cannot prove constraint}}
 struct OnlyIntableUnprovable[T: AnyType]
     # expected-note @below {{constraint declared here needs evidence for}}
-    where conforms_to(T, Intable):
+    (Movable where False) where conforms_to(T, Intable):
     pass
 
 

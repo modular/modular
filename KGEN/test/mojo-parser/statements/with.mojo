@@ -41,7 +41,7 @@ struct ExampleCM(ImplicitlyCopyable):
 
 # Cannot use mutating __enter__
 # https://github.com/modularml/modular/issues/27371
-struct MutatingCM:
+struct MutatingCM(Movable where False):
     def __init__(out self):
         pass
 
@@ -53,13 +53,13 @@ struct MutatingCM:
 
 
 @fieldwise_init
-struct NoExitCMReg:
+struct NoExitCMReg(Movable where False):
     def __enter__(mut self) -> Int:
         pass
 
 
 @fieldwise_init
-struct NoExitCMMem:
+struct NoExitCMMem(Movable where False):
     def __enter__(mut self) -> Self:
         pass
 
@@ -373,7 +373,7 @@ def testCMWithoutExitEarlyReturn():
 
 
 @fieldwise_init
-struct CMUnconditionalExit:
+struct CMUnconditionalExit(Movable where False):
     def __enter__(self):
         pass
 
@@ -430,7 +430,7 @@ def testExampleCMTuple(cm: ExampleCMTuple):
 
 
 # A context manager that has a generic __exit__ method.
-struct GenericExitCtxtMgr:
+struct GenericExitCtxtMgr(Movable where False):
     var handle: Bool
 
     @implicit
@@ -463,7 +463,7 @@ def with_infer_int() raises Int:
 
 
 # A context manager that has a Float __exit__ method.
-struct FloatErrorExitCtxtMgr:
+struct FloatErrorExitCtxtMgr(Movable where False):
     var handle: Bool
 
     @implicit

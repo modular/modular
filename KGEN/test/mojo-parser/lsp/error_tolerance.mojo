@@ -16,7 +16,7 @@
 # RUN: %parse-mojo-isolated -lsp %s 2>&1 | FileCheck %s
 # RUN: not %parse-mojo-isolated %s 2>&1 | FileCheck %s --check-prefix=NOLSP
 
-struct Good:
+struct Good(Movable where False):
     var value: Int
 
 

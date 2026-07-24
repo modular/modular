@@ -161,7 +161,7 @@ def test_inout():
     takeInoutSomeTraitPack(value3)
 
 
-struct not_nested_struct[*Ts: AnyType]:
+struct not_nested_struct[*Ts: AnyType](Movable where False):
     @implicit
     def __init__(out self, mut *args: *Self.Ts):
         pass
@@ -181,7 +181,7 @@ def test_empty_pack():
 
 # CHECK-LABEL: lit.struct.decl @MyTuple
 # CHECK-SAME: Ts: !lit.struct<#TypeList <:meta<!AnyType> !AnyType{{.*}}> pos_vararg>
-struct MyTuple[*Ts: AnyType]:
+struct MyTuple[*Ts: AnyType](Movable where False):
     @implicit
     def __init__(out self, *args: *Self.Ts):
         pass
