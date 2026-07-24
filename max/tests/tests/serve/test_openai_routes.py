@@ -2336,6 +2336,7 @@ def test_create_response_format_json_schema() -> None:
     assert result is not None
     assert result.type == "json_schema"
     # Schema should contain the provided JSON schema
+    assert result.json_schema is not None
     assert "properties" in result.json_schema
     assert "name" in result.json_schema["properties"]
     assert "age" in result.json_schema["properties"]
@@ -2349,6 +2350,36 @@ def test_create_response_format_boolean_schema_true() -> None:
     )
     assert result is not None
     assert result.json_schema == {}
+
+
+def test_create_response_format_empty_schema_is_enforced() -> None:
+    """An explicit empty schema (``{}`` / boolean ``true``) is "any valid JSON
+    value" and is ENFORCED, not treated as "no schema". The empty schema flows
+    through unchanged (it compiles to the backend's any-value grammar), and both
+    enforcement flags are set so generation is constrained to exactly one
+    well-formed JSON value (no trailing prose)."""
+    schema: dict[str, Any] | bool
+    for schema in ({}, True):
+        result = _create_response_format(
+            {
+                "type": "json_schema",
+                "json_schema": {"name": "any", "schema": schema},
+            },
+            enable_response_format_schema=True,
+        )
+        assert result is not None, schema
+        assert result.json_schema == {}, schema
+        assert result.grammar_enforced is True, schema
+        assert result.has_json_schema is True, schema
+        assert result.requires_structured_output_flag is True, schema
+
+
+def test_create_response_format_absent_is_unconstrained() -> None:
+    """No ``response_format`` means no schema is provided: return ``None`` so the
+    request is unconstrained (distinct from an explicit empty any-value schema)."""
+    assert _create_response_format(
+        None, enable_response_format_schema=True
+    ) is (None)
 
 
 def test_create_response_format_boolean_schema_false() -> None:

@@ -598,7 +598,7 @@ class StructuredOutputHelper:
 
         # Fall back to json_schema if no grammar
         # json_schema requires enable_response_format_schema (--enable-structured-output flag)
-        elif context.json_schema and context.matcher is None:
+        elif context.json_schema is not None and context.matcher is None:
             if not self.enable_response_format_schema:
                 raise InputError(
                     "json_schema provided but structured output is not enabled. "
@@ -1105,7 +1105,7 @@ class StructuredOutputHelper:
             # Initialize matchers for contexts with json_schema or grammar
             for ctx in context_batch:
                 needs_matcher = ctx.matcher is None and (
-                    ctx.json_schema or ctx.grammar is not None
+                    ctx.json_schema is not None or ctx.grammar is not None
                 )
                 if needs_matcher:
                     self.update_context(

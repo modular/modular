@@ -204,6 +204,22 @@ def test_annotation_only_without_type_compiles() -> None:
     assert isinstance(compiled, xgr.CompiledGrammar)
 
 
+def test_empty_schema_enforces_single_json_value() -> None:
+    # An explicit empty schema ("{}", the any-value AnySpec) is ENFORCED, not
+    # unconstrained: it accepts exactly one well-formed JSON value and REJECTS
+    # trailing prose after that value. A boolean "true" schema compiles to
+    # the same any-value grammar.
+    for schema in ("{}", "true"):
+        compiled = _compiler().compile_json_schema(schema)
+        assert isinstance(compiled, xgr.CompiledGrammar)
+        assert _accepts(compiled, "1")
+        assert _accepts(compiled, "true")
+        assert _accepts(compiled, "{}")
+        # A lone value followed by prose is not a single JSON value: rejected.
+        assert not _accepts(compiled, "1 ab")
+        assert not _accepts(compiled, "{} a")
+
+
 def test_multiple_of_rejected() -> None:
     # multipleOf has no faithful CFG encoding; reject rather than emit an
     # unconstrained number.

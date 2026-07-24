@@ -501,7 +501,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         )
         json_schema = (
             json.dumps(response_format_schema)
-            if response_format_schema
+            if response_format_schema is not None
             else None
         )
 
