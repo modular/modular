@@ -1419,7 +1419,7 @@ struct UnsafePointer[
             _type=Self._OriginCastType[target_origin]._mlir_type,
         ](self._mlir_value)
 
-    def as_immutable(
+    def as_imm(
         self,
     ) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[False]()]:
         return self.unsafe_mut_cast[False]()

@@ -170,7 +170,7 @@ def must_be_read_only[
 def s5_demo[
     o: Origin[mut=True]
 ](ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC,],):
-    var immut_ptr = ptr.as_immutable()
+    var immut_ptr = ptr.as_imm()
 
 
     def read() {read immut_ptr}:
