@@ -1252,6 +1252,11 @@ This version is still a work in progress.
 
 ## Removed
 
+- Removed the deprecated `DeviceContext.compile_function_experimental()` and
+  `DeviceContext.enqueue_function_experimental()` methods, along with overloads
+  that passed the kernel twice. Use `DeviceContext.compile_function[func]()`
+  and `DeviceContext.enqueue_function[func]()` instead.
+
 - Removed the `UInt`-returning GPU indexing accessors (`thread_idx_uint`,
   `block_idx_uint`, `block_dim_uint`, `grid_dim_uint`, `global_idx_uint`,
   `lane_id_uint`, `warp_id_uint`). Use the `Int`-returning `thread_idx`,
