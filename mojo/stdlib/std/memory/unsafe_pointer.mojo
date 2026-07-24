@@ -875,6 +875,50 @@ struct Pointer[
         """
         self = self - offset
 
+    @doc_hidden
+    @__unsafe_nested_origins_read_only
+    @always_inline
+    def __sub__(
+        self,
+        rhs: Pointer[Self.T, _, address_space=Self.address_space, _safe=_],
+    ) -> Int:
+        """Returns the signed distance from `rhs` to `self` in elements of
+        `T` (not bytes), such that `rhs.unsafe_offset(result)` produces a
+        pointer equal to `self`.
+
+        This is the operator form of `offset_from()`. Its documentation is
+        duplicated here because LSP hover shows this operator's own
+        docstring rather than the method's; keep the two in sync.
+
+        Constraints:
+            The pointee type `T` must not be zero-sized.
+
+        Args:
+            rhs: The pointer to measure the distance from.
+
+        Returns:
+            The signed element distance from `rhs` to `self`.
+
+        Safety:
+
+        - Both pointers should point into the same allocation (or one past
+          its end); the distance between pointers into unrelated
+          allocations is not meaningful.
+        - The byte distance between the two pointers must be an exact
+          multiple of `size_of[T]()`.
+
+        Examples:
+
+        ```mojo
+        var ptr = alloc[Int32](4)
+        var end = ptr + 3
+        print(end - ptr)  # => 3
+        print(ptr - end)  # => -3
+        ptr.free()
+        ```
+        """
+        return self.offset_from(rhs)
+
     @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __eq__(
@@ -1215,6 +1259,58 @@ struct Pointer[
                 self._mlir_value, index(offset).__mlir_index__()
             )
         }
+
+    # NOTE: `__sub__` duplicates this docstring so LSP hover on the `-`
+    # operator shows the same documentation. Sync any docstring change here
+    # over to `__sub__`.
+    @__unsafe_nested_origins_read_only
+    @always_inline
+    def offset_from(
+        self,
+        other: Pointer[Self.T, _, address_space=Self.address_space, _safe=_],
+    ) -> Int:
+        """Returns the signed distance from `other` to `self` in elements of
+        `T` (not bytes), such that `other.unsafe_offset(result)` produces a
+        pointer equal to `self`.
+
+        Constraints:
+            The pointee type `T` must not be zero-sized.
+
+        Args:
+            other: The pointer to measure the distance from.
+
+        Returns:
+            The signed element distance from `other` to `self`.
+
+        Safety:
+
+        - Both pointers should point into the same allocation (or one past
+          its end); the distance between pointers into unrelated
+          allocations is not meaningful.
+        - The byte distance between the two pointers must be an exact
+          multiple of `size_of[T]()`.
+
+        Examples:
+
+        ```mojo
+        var ptr = alloc[Int32](4)
+        var end = ptr + 3
+        print(end.offset_from(ptr))  # => 3
+        print(ptr - end)  # => -3
+        ptr.free()
+        ```
+        """
+        comptime assert (
+            size_of[Self.T]() > 0
+        ), "offset_from() requires a non-zero-sized pointee type"
+        var byte_diff = Int(self) - Int(other)
+        debug_assert(
+            byte_diff % size_of[Self.T]() == 0,
+            "pointer difference is not a multiple of the element size",
+        )
+        # TODO(MSTDL-2917): use an exact-division intrinsic here for better
+        # codegen, since this divide is always exact.
+        return byte_diff // size_of[Self.T]()
 
     @always_inline
     @staticmethod
