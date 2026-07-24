@@ -568,7 +568,7 @@ struct String(ImplicitlyCopyable, KeyElement):
     def __init__(out self, *, copy: Self):
         pass
 
-    def __init__(out self, *, deinit take: String):
+    def __init__(out self, *, deinit move: String):
         pass
 
     def __del__(deinit self):
