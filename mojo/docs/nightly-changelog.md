@@ -173,6 +173,12 @@ This version is still a work in progress.
   the declaration instead of silently producing a function that could never be
   called.
 
+- A standalone module can no longer import its own name (e.g. `import util`
+  inside `util.mojo`). Such an import could only ever resolve to the module
+  itself, silently shadowing any same-named package on the search path, so it
+  is now an error. Modules inside packages are unaffected: importing the
+  enclosing package's name still resolves to the package.
+
 - User-written structs must now explicitly declare closure-trait conformance
   in their inheritance list to satisfy a `def(...) -> ...` closure trait.
   Previously a struct with a compatible `__call__` was accepted implicitly
