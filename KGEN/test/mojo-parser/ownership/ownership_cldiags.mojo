@@ -6,6 +6,8 @@
 
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics
 
+def use(x: Some[AnyType]):
+    pass
 
 struct Empty(ImplicitlyCopyable):
     def __init__(out self):
@@ -34,14 +36,6 @@ struct MemExample(ImplicitlyCopyable):
 
     def __del__(deinit self):
         pass
-
-
-def use(x: MemExample):
-    pass
-
-
-def use_inout(mut x: MemExample):
-    pass
 
 
 struct RegExample(ImplicitlyCopyable, RegisterPassable):
@@ -154,7 +148,7 @@ def use_of_uninit_if(cond: Bool):
     var c: MemExample
     if True:
         c = MemExample()
-    use(c)  # Ok.
+    use(c)  # Ok due to the "if True:".
 
 
 def use_of_uninit_while(cond: Bool):
@@ -705,3 +699,74 @@ def test_trait_bound_field():
     var r = Pair[List[Int]](List[Int](), List[Int]()).first^
     # To prevent optimization/warning on unused object
     sink(r)
+
+
+# ===----------------------------------------------------------------------=== #
+# Origin subtree views (sketch — not expected to pass yet)
+# ===----------------------------------------------------------------------=== #
+#
+# Subtree origins (~x) abstract over "some reference rooted within this owner"
+# without pinning the exact interior path.
+
+struct ListPair:
+    var left: List[Int]
+    var right: List[Int]
+
+    def __init__(out self):
+        self.left = List[Int]()
+        self.right = List[Int]()
+
+    # Returning a ref with a subtree origin should be allowed when the returned
+    # reference is rooted somewhere under the owner.
+    def get_left_erased(ref self) -> ref[origin_of(self).subtree] List[Int]:
+        return self.left
+
+
+# This function coerces a ref to a subtree based on the specified base.
+@__unsafe_nested_origins_read_only
+def get_subtree_ref[T: AnyType, //, subtree_root: Origin](ref [subtree_root.subtree] x: T)
+  -> ref[subtree_root.subtree] T:
+    return x
+
+def test_subtree_return_borrow():
+    var pair = ListPair()
+    ref r = pair.get_left_erased()
+    use(get_subtree_ref[origin_of(pair)](r))
+
+    # A precise interior ref should coerce to a wider subtree view of the same
+    # owner (list["element"] <: ~list).
+    var list = List[Int]()
+    ref elt = list[0]
+    use(get_subtree_ref[origin_of(list)](elt))
+
+
+# Mutating the owner should invalidate live refs passed through subtree views.
+def test_subtree_invalidation_on_mutation():
+    var list = List[Int]()
+    ref elt = list[0]
+    ref elt_erased = get_subtree_ref[origin_of(list)](elt)
+    use(elt_erased)
+    list.append(42)  # FIXME: xpected-note {{origin was invalidated here}}
+    # FIXME: xpected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    use(elt_erased)
+
+
+# Read-only use of the owner should not invalidate interior refs.
+def test_subtree_survives_readonly_access():
+    var list = List[Int]()
+    ref erased_elt = get_subtree_ref[origin_of(list)](list[0])
+    _ = list.__len__()
+    use(erased_elt)
+
+
+# Field-sensitive: mutating one field should not invalidate refs rooted under
+# a sibling field, even when passed to a ~pair.left API.
+def test_subtree_field_scoped_invalidation():
+    var pair = ListPair()
+    ref left_elt = get_subtree_ref[origin_of(pair.left)](pair.left[0])
+    ref right_elt = get_subtree_ref[origin_of(pair.right)](pair.right[0])
+    pair.left.append(1)  # FIXME: xpected-note {{origin was invalidated here}}
+    # FIXME: xpected-error @+1 {{use of invalidated interior reference 'pair.left["element"]'}}
+    use(left_elt)
+    # This is ok.
+    use(right_elt)
