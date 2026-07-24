@@ -108,20 +108,6 @@ public:
   /// Check if the plugin was successfully loaded.
   bool isLoaded() const;
 
-  /// Plugin API for creating a shared object file.
-  REGISTER_GET_KGEN_PLUGIN_FN(CreateSharedObject, createSharedObject,
-                              M::ErrorOr<M::BufferRef>, M::BufferRef,
-                              CompilationOptions, llvm::StringRef,
-                              const std::string &)
-
-  /// Plugin API for the custom bitcode-library linking policy: returns true if
-  /// only the symbols referenced by unresolved extern functions should be
-  /// linked (the default), false if the full library must be linked. Plugins
-  /// that don't provide the symbol fall back to the default.
-  REGISTER_GET_KGEN_PLUGIN_FN(OnlyLinkExternFunctionsInBitcodeLibs,
-                              onlyLinkExternFunctionsInBitcodeLibs,
-                              M::ErrorOr<bool>, CompilationOptions)
-
   const std::string &getSoPath() const { return soPath; }
 
 private:
@@ -157,12 +143,6 @@ public:
   /// concurrency since the same pass can be run in parallel for multiple
   /// functions.
   void selectPluginForTarget(StringRef targetTriple);
-
-  /// Plugin API for creating a shared object file.
-  REGISTER_CALL_KGEN_PLUGIN_FN(CreateSharedObject, createSharedObject,
-                               M::ErrorOr<M::BufferRef>, M::BufferRef,
-                               CompilationOptions, llvm::StringRef,
-                               const std::string &)
 
 private:
   std::vector<std::unique_ptr<Plugin>> plugins;
