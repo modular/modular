@@ -1927,6 +1927,36 @@ class MultiKVCacheParams(KVCacheParamInterface):
         )
 
 
+def spec_decode_cache_slack(params: KVCacheParamInterface) -> int:
+    """Computes the extra KV positions a request may occupy past ``max_seq_len``.
+
+    A speculative-decode step can over-speculate past the per-request
+    ``max_seq_len`` cap into this slack (the KV pool reserves it beyond
+    ``max_seq_len``), so any per-request sizing derived from ``max_seq_len``
+    -- the pool's page budget, the sparse-indexer score scratch, etc. -- must
+    add it. Centralized here so ``_compute_seq_len``, pool sizing, and
+    ``OverlapTextGenerationPipeline._effective_max_cache_length`` stay in sync.
+
+    Args:
+        params: The KV cache parameters. The speculative-decoding fields
+            (``num_draft_tokens`` and ``num_draft_tokens_per_step``) determine
+            the slack.
+
+    Returns:
+        The number of extra KV positions to reserve past ``max_seq_len``, or
+        ``0`` when speculative decoding is off.
+    """
+    if params.num_draft_tokens <= 0:
+        return 0
+    # Worst case matching ``_compute_seq_len``: drafts verified and written next
+    # batch (2x), the prior overlap batch's drafts assumed accepted (1x), the
+    # DFlash block-draft slot, and the FUTURE_TOKEN placeholder.
+    block_draft_extra = (
+        1 if params.num_draft_tokens_per_step == params.num_draft_tokens else 0
+    )
+    return 3 * params.num_draft_tokens + block_draft_extra + 1
+
+
 def compute_num_device_blocks(
     params: KVCacheParamInterface,
     available_cache_memory: int,
@@ -1951,11 +1981,17 @@ def compute_num_device_blocks(
     Returns:
         The number of blocks that can be allocated for a single replica.
     """
-    # Compute upper bound of total number of pages required.
+    # Compute upper bound of total number of pages required. A speculative
+    # step can grow a request past max_seq_len into the pool's draft-token
+    # slack, so budget the per-request pages on that same bound; otherwise the
+    # pool caps short of what the scheduler is allowed to reserve.
     max_blocks_per_req: int | None = None
     max_total_blocks: int | None = None
     if max_seq_len is not None and max_batch_size is not None:
-        max_blocks_per_req = math.ceil(max_seq_len / params.page_size)
+        max_seq_len_with_slack = max_seq_len + spec_decode_cache_slack(params)
+        max_blocks_per_req = math.ceil(
+            max_seq_len_with_slack / params.page_size
+        )
         max_total_blocks = max_blocks_per_req * max_batch_size
 
     # Compute total number of blocks allocatable based on available memory.
@@ -2009,10 +2045,16 @@ def compute_num_device_blocks(
         memory_needed_str = to_human_readable_bytes(
             max_blocks_per_req * params.bytes_per_block
         )
+        slack = spec_decode_cache_slack(params)
+        slack_str = (
+            f" (plus {slack} speculative-decode slack tokens)"
+            if slack > 0
+            else ""
+        )
         msg = (
             "Insufficient cache memory to support a batch containing one"
-            f" request at the max sequence length of {max_seq_len} tokens. Need"
-            f" to allocate at least {max_blocks_per_req} pages"
+            f" request at the max sequence length of {max_seq_len} tokens"
+            f"{slack_str}. Need to allocate at least {max_blocks_per_req} pages"
             f" ({memory_needed_str}), but only have enough memory for"
             f" {num_allocable_blocks} pages"
             f" ({cache_memory_str}{across_x_devices_str})."
@@ -2080,7 +2122,16 @@ def compute_max_seq_len_fitting_in_cache(
         # Do not limit the sequence length.
         max_seq_len=None,
     )
-    return num_blocks * params.page_size
+    # Reserve the speculative-decode slack a request may occupy past its
+    # advertised max_seq_len (see spec_decode_cache_slack). Without this the
+    # auto-derived cap would equal the whole pool, so _effective_max_cache_length
+    # (min(max_seq_len + slack, pool)) collapses back to max_seq_len and
+    # over-speculation is silently disabled near the top of context. No-op when
+    # speculative decoding is off (slack == 0).
+    max_seq_len = num_blocks * params.page_size - spec_decode_cache_slack(
+        params
+    )
+    return max(1, max_seq_len)
 
 
 def compute_num_host_blocks(params: KVCacheParamInterface) -> int:

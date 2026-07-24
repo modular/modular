@@ -111,6 +111,7 @@ from max.nn.kv_cache import (
     KVCacheInputsInterface,
     KVCacheInputsPerDevice,
     MultiKVCacheInputs,
+    spec_decode_cache_slack,
 )
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import (
@@ -1877,20 +1878,8 @@ class OverlapTextGenerationPipeline(
         headroom, so capture never reserves more pages than were allocated.
         """
         params = self._kv_manager.params
-        spec_slack = 0
-        if params.num_draft_tokens > 0:
-            # Worst-case slack, matching `_compute_seq_len`: drafts verified
-            # and written next batch (2x), the prior overlap batch's drafts
-            # assumed accepted (1x), the DFlash block-draft slot, and the
-            # FUTURE_TOKEN placeholder.
-            block_draft_extra = (
-                1
-                if params.num_draft_tokens_per_step == params.num_draft_tokens
-                else 0
-            )
-            spec_slack = 3 * params.num_draft_tokens + block_draft_extra + 1
         return min(
-            self._pipeline_model.max_seq_len + spec_slack,
+            self._pipeline_model.max_seq_len + spec_decode_cache_slack(params),
             self._kv_manager._total_num_pages * params.page_size,
         )
 
