@@ -166,6 +166,37 @@ def test_tile_based_fusion_matmul_add() -> None:
     np.testing.assert_allclose(out, a @ b + bias_np, rtol=1e-5, atol=1e-5)
 
 
+def test_tile_based_fusion_matmul_residual_add() -> None:
+    """A fused ``mo.matmul`` + full-tensor residual ``mo.add`` (no broadcast).
+
+    Unlike ``test_tile_based_fusion_matmul_add`` (broadcast ``[1, N]`` bias),
+    the residual is a full ``[M, N]`` runtime tensor, so the ``ComputeTile``
+    fusion captures a full-rank aux input as a ``TileTensor``.
+    """
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    session = InferenceSession(devices=[Accelerator()])
+    gpu = DeviceRef.GPU(0)
+    with Graph(
+        "tile_based_fusion_matmul_residual_add",
+        input_types=[
+            TensorType(DType.float32, _SHAPE, device=gpu),
+            TensorType(DType.float32, _SHAPE, device=gpu),
+            TensorType(DType.float32, _SHAPE, device=gpu),
+        ],
+    ) as graph:
+        lhs, rhs, residual = (v.tensor for v in graph.inputs)
+        graph.output(ops.add(ops.matmul(lhs, rhs), residual))
+
+    a = np.random.randn(*_SHAPE).astype(np.float32)
+    b = np.random.randn(*_SHAPE).astype(np.float32)
+    residual_np = np.random.randn(*_SHAPE).astype(np.float32)
+    out = _run_tile_based_fusion(session, graph, a, b, residual_np)
+
+    np.testing.assert_allclose(out, a @ b + residual_np, rtol=1e-5, atol=1e-5)
+
+
 def _rms_norm_ref(
     x: np.ndarray, gamma: np.ndarray, eps: float = 1e-6
 ) -> np.ndarray:
@@ -232,6 +263,39 @@ def test_tile_based_fusion_rms_norm_mul() -> None:
 
     np.testing.assert_allclose(
         out, _rms_norm_ref(a, g) * scale_np, rtol=1e-3, atol=1e-3
+    )
+
+
+def test_tile_based_fusion_rms_norm_residual_add() -> None:
+    """A fused ``mo.reduce.rms_norm`` + full-tensor residual ``mo.add`` store epilogue.
+
+    Exercises the STORE variant (``OutputFusionTile``) capturing a full ``[M, N]``
+    residual as a ``TileTensor`` aux input (vs the broadcast ``[1, N]`` scale in
+    ``test_tile_based_fusion_rms_norm_mul``); the fusion owns the store.
+    """
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    session = InferenceSession(devices=[Accelerator()])
+    gpu = DeviceRef.GPU(0)
+    with Graph(
+        "tile_based_fusion_rms_norm_residual_add",
+        input_types=[
+            TensorType(DType.float32, _SHAPE, device=gpu),
+            TensorType(DType.float32, [_SHAPE[1]], device=gpu),
+            TensorType(DType.float32, _SHAPE, device=gpu),
+        ],
+    ) as graph:
+        x, gamma, residual = (v.tensor for v in graph.inputs)
+        graph.output(ops.add(ops.rms_norm(x, gamma, epsilon=1e-6), residual))
+
+    a = np.random.randn(*_SHAPE).astype(np.float32)
+    g = np.random.randn(_SHAPE[1]).astype(np.float32)
+    residual_np = np.random.randn(*_SHAPE).astype(np.float32)
+    out = _run_tile_based_fusion(session, graph, a, g, residual_np)
+
+    np.testing.assert_allclose(
+        out, _rms_norm_ref(a, g) + residual_np, rtol=1e-3, atol=1e-3
     )
 
 
