@@ -917,6 +917,7 @@ struct TileTensor[
             width=width, alignment=alignment, invariant=invariant
         ](self._linear_offset(idx))
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def store_linear[
         width: SIMDLength = Self.element_size,
@@ -1146,6 +1147,7 @@ struct TileTensor[
             (other._storage, other.layout),
         )
 
+    @__allow_legacy_custom_self_type
     def _distance(
         self: Self.Immut,
         other: TileTensor[

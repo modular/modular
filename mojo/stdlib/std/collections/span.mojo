@@ -422,6 +422,7 @@ struct Span[
         """
         return self._len
 
+    @__allow_legacy_custom_self_type
     @stable(since="1.0")
     def __contains__[
         dtype: DType, //
@@ -784,6 +785,7 @@ struct Span[
             length = self._len,
         }
 
+    @__allow_legacy_custom_self_type
     def reverse[dtype: DType, //](self: Span[mut=True, Scalar[dtype], _]):
         """Reverse the elements of the `Span` inplace.
 
@@ -820,6 +822,7 @@ struct Span[
             ptr.unsafe_offset(middle + 1).unsafe_write_move_from(middle_prev)
             middle_prev.unsafe_write(value)
 
+    @__allow_legacy_custom_self_type
     def apply[
         dtype: DType,
         //,
@@ -851,6 +854,7 @@ struct Span[
                 func(ptr[unsafe_offset=processed + i])
             )
 
+    @__allow_legacy_custom_self_type
     def apply[
         dtype: DType,
         //,
@@ -889,6 +893,7 @@ struct Span[
             if cond(vec):
                 ptr.unsafe_offset(processed + i).unsafe_write(func(vec))
 
+    @__allow_legacy_custom_self_type
     def count[
         dtype: DType,
         //,
@@ -942,6 +947,7 @@ struct Span[
         assert 0 <= offset + length <= len(self), "subspan out of bounds."
         return Self(unsafe_ptr=self._data.unsafe_offset(offset), length=length)
 
+    @__allow_legacy_custom_self_type
     def _binary_search_index[
         dtype: DType,
         //,

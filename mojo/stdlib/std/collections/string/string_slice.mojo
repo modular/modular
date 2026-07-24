@@ -1119,6 +1119,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # Methods
     # ===------------------------------------------------------------------===#
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def as_c_string_slice(
         self: StaticString,
