@@ -132,22 +132,25 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
       return CValue::getMValueForRef(bbArg);
     }();
 
-    if (pog.getPassingKind() == PassingKind::KwOnly)
+    // Check the variadic kinds before the passing kind: a `**kwargs` argument
+    // is keyword-only AND keyword-variadic, and must forward as a `**` splat.
+    if (pog.isKwVarArg())
+      callOperands.add({argValue, &syntheticExpr}, ArgUnpackStyle::kStarStar);
+    else if (pog.isPosVarArg() || pog.isPack())
+      callOperands.add({argValue, &syntheticExpr}, ArgUnpackStyle::kStar);
+    else if (pog.getPassingKind() == PassingKind::KwOnly)
       callOperands.add(pog.getName(), {argValue, &syntheticExpr},
                        ArgUnpackStyle::kKeyword);
-    else {
-      ArgUnpackStyle unpackStyle = ArgUnpackStyle::kPositional;
-      if (pog.isPosVarArg() || pog.isPack())
-        unpackStyle = ArgUnpackStyle::kStar;
-      else if (pog.isKwVarArg())
-        unpackStyle = ArgUnpackStyle::kStarStar;
-      callOperands.add({argValue, &syntheticExpr}, unpackStyle);
-    }
+    else
+      callOperands.add({argValue, &syntheticExpr}, ArgUnpackStyle::kPositional);
   }
 
   CValue callResult =
       emitter.emitCallUnchecked(callee, std::move(callOperands));
-  assert(callResult && "call should have succeeded");
+  // Forwarding reuses the normal call machinery; an unhandleable signature
+  // surfaces as a failed call with the matcher's diagnostic -- propagate.
+  if (!callResult)
+    return failure();
   if (!calleeSig.isAsync()) {
     auto regRet = callResult.getIfSRValue();
     if (regRet && resultType != regRet.getType())
@@ -1025,6 +1028,8 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   for (ClosureParent &closureParent : closureParents) {
     if (!closureParent.isEmpty()) {
       FnOp impl = populateTraitFn(closureParent);
+      if (!impl)
+        return nullptr;
       if (closureParent.getClosureMethod() == ClosureMethod::CALL)
         impl.setInlineLevel(InlineLevel::Always);
       switch (closureParent.getClosureMethod()) {
@@ -1140,10 +1145,9 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   llvm::SmallDenseSet<StringRef> explicitParameters;
   getUnwrappedOperands(b, initFnOp, refSelfType.getElementType(), wrappedField,
                        explicitParameters, operands);
-  LogicalResult result =
-      emitForwardingCall(b, structDecl, moveSymbol, moveSignature,
-                         moveSignature.getResultType(), operands);
-  assert(succeeded(result) && "move call should have succeeded");
+  if (failed(emitForwardingCall(b, structDecl, moveSymbol, moveSignature,
+                                moveSignature.getResultType(), operands)))
+    return nullptr;
   declOp.setCanonicalTrait(traitType);
 
   if (typeConvention == TypeConvention::RegisterPassableTrivial)
@@ -1414,6 +1418,8 @@ Type ClosureEmitter::getConcreteClosureWrapperTypeForFnSymbol(
   auto rvClosureTrait = shared.getOrCreateClosureTrait(loc, moduleDecl, fnSig);
   ASTDecl *wrapper =
       createFnStructWrapper(moduleDecl, *rvClosureTrait, fnSig, loc);
+  if (!wrapper)
+    return {};
   auto structDeclOp = cast<StructDeclOp>(wrapper->getIfOperation());
 
   auto [fnVal, captureBindings] = selfContainedSymbolAndCaptures(
@@ -2823,6 +2829,8 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   ASTDecl *closureWrapperDecl = shared.getOrCreateClosureWrapper(
       nestedFnDecl.getLoc(), wrapperSig, &moduleDecl, isCopyable,
       highestCaptureConvention, captures.empty());
+  if (!closureWrapperDecl)
+    return {};
   StructDeclOp wrapper =
       cast<StructDeclOp>(closureWrapperDecl->getIfOperation());
 
