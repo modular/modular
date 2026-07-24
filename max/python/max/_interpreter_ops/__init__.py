@@ -46,7 +46,7 @@ from . import (  # type: ignore[attr-defined]
     resize_gc,
     rms_norm_ops,
     roi_align_ops,
-    select_ops,
+    select_gc,
     shape_rearrange_gc,
     topk_gc,
     unary_elementwise_gc,

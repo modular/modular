@@ -175,6 +175,7 @@ _WARM_FAMILIES = [
     "pooling",
     "conv",
     "topk",
+    "select",
 ]
 
 # CPU fragment per family: no --target -> lane-independent (cfg=exec), shared.
