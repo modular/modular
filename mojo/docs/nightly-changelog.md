@@ -1077,6 +1077,22 @@ This version is still a work in progress.
   pointer type, so callers no longer need to wrap safe pointers in
   `MutUnsafePointer` to move a value between them.
 
+- `Pointer` now supports subtracting two pointers to compute the signed
+  distance between them in elements of the pointee type, via the new
+  `offset_from()` method (analogous to Rust's `offset_from`). The `-`
+  operator does the same. Unlike the other pointer-arithmetic operators,
+  which produce a new pointer and stay gated behind an unsafe pointer type,
+  subtracting two pointers returns an `Int` distance and is available on
+  safe pointers too:
+
+  ```mojo
+  var ptr = alloc[Int32](4)
+  var end = ptr + 3
+  print(end - ptr)  # => 3
+  print(ptr.offset_from(end))  # => -3
+  ptr.free()
+  ```
+
 - `OwnedDLHandle.get_function` now returns a callable that keeps the owning
   handle alive while it runs, fixing a crash where the library could be
   `dlclose`d between symbol lookup and the call. Its parameter is now the

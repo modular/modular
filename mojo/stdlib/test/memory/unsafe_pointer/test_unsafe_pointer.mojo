@@ -387,6 +387,37 @@ def test_offset() raises:
     ptr2.free()
 
 
+def test_offset_from() raises:
+    var ptr = alloc[Int32](8)
+    var end = ptr + 8
+
+    assert_equal(end.offset_from(ptr), 8)
+    assert_equal(ptr.offset_from(end), -8)
+    assert_equal(ptr.offset_from(ptr), 0)
+    assert_equal((ptr + 3).offset_from(ptr + 1), 2)
+
+    assert_equal(end - ptr, 8)
+    assert_equal(ptr - end, -8)
+
+    ptr.free()
+
+    var wide = alloc[SIMD[DType.int64, 4]](3)
+    assert_equal((wide + 2) - wide, 2)
+    assert_equal(wide - (wide + 2), -2)
+    wide.free()
+
+    # offset_from() and the `-` operator work on safe pointers too, and the
+    # operands may mix pointer safety.
+    var data = List[Int32](length=4, fill=0)
+    var first: Pointer[Int32, origin_of(data)] = data.unsafe_ptr()
+    var last = first.unsafe_offset(3)
+    assert_equal(last.offset_from(first), 3)
+    assert_equal(first.offset_from(last), -3)
+    assert_equal(last - first, 3)
+    assert_equal(first - last, -3)
+    assert_equal(data.unsafe_ptr() - first, 0)
+
+
 def test_load_and_store_simd() raises:
     var ptr = alloc[Int8](16)
     for i in range(16):
