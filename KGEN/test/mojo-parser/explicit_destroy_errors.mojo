@@ -136,8 +136,9 @@ trait PlainTrait:
         ...
 
 
-@explicit_destroy
-trait ExplicitDestroyNoMessage:
+# A plain trait (no @explicit_destroy, no ImplicitlyDeletable) is linear and
+# uses the synthesized default message.
+trait LinearNoMessage:
     def destroy_no_msg(deinit self):
         ...
 
@@ -155,10 +156,10 @@ def take_plain_trait[T: PlainTrait](var value: T):
     pass
 
 
-# Test: Trait with @explicit_destroy but no custom message
-# expected-error @below {{Unhandled explicit_destroy type ExplicitDestroyNoMessage}}
+# Test: Plain linear trait with no custom message uses the default message
+# expected-error @below {{unhandled explicitly destroyed type 'LinearNoMessage'}}
 # expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
-def take_generic_linear_no_message[T: ExplicitDestroyNoMessage](var value: T):
+def take_generic_linear_no_message[T: LinearNoMessage](var value: T):
     pass
 
 
@@ -195,11 +196,12 @@ def take_foo_and_bar[T: LinearFoo & LinearBar](var value: T):
     pass
 
 
-# Test: First trait has no custom message - uses generic "Unhandled" message
-# (Documents current behavior where iteration order matters)
-# expected-error @below {{Unhandled explicit_destroy type ExplicitDestroyNoMessage}}
+# Test: Composing a default-message linear trait with a custom-message one -
+# the trait carrying an explicit @explicit_destroy message provides the
+# diagnostic.
+# expected-error @below {{Use custom_bar_destroy().}}
 # expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
-def take_no_msg_first[T: ExplicitDestroyNoMessage & LinearBar](var value: T):
+def take_no_msg_first[T: LinearNoMessage & LinearBar](var value: T):
     pass
 
 

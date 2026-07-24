@@ -128,7 +128,6 @@ struct StructViolation3(MemTraitViolation):
         pass
 
 
-@explicit_destroy
 trait NotImplicitlyDeletable:
     def foo(self):
         ...
