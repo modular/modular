@@ -1240,8 +1240,14 @@ ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
             << "previous unpacked positional argument specified here";
         return std::move(diag);
       }
+      if (hasUnpackedKw) {
+        return emitError(loc,
+                         "positional unpack must not follow keyword unpacking; "
+                         "move it before the '**' unpack");
+      }
       unpackedPosOperand = &operand;
-    } else if (isArgument && unpackedPosOperand && !operand.isKeyword()) {
+    } else if (isArgument && unpackedPosOperand && !operand.isKeyword() &&
+               operand.unpackStyle != ArgUnpackStyle::kStarStar) {
       auto diag =
           emitError(loc, "positional argument must not follow an unpack; move "
                          "it before or convert to a keyword argument");

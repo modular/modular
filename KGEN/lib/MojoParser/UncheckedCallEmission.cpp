@@ -359,7 +359,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
   if (remainingOperands.front().unpackStyle == ArgUnpackStyle::kStar) {
     assert(remainingOperands.size() == 1 &&
-           "parser should reject additional positional operands after *list");
+           "a positional operand after a '*' unpack should have been rejected "
+           "before emission");
     auto &operand = remainingOperands.front();
 
     // Splatting a variadic list is straight-forward, just pass the splat
@@ -515,6 +516,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   SmallPtrSet<StringAttr, 4> passedByKw;
   // We also remember if we had a **kwargs.
   MRValue kwargsDict;
+  // Index of the sole '**' splat, set once the scan passes it (if any).
+  std::optional<size_t> starStarIdx;
 
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   llvm::BitVector isDefaultMask(calleeSig.getNumArguments(), false);
@@ -537,8 +540,14 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     }
 
     // See what the next positional argument is, skipping over any keywords.
-    while (posOperandIdx < operands.size() && operands[posOperandIdx].keyword)
+    // A '**' unpack carries no keyword name but is not positional either.
+    while (posOperandIdx < operands.size() &&
+           (operands[posOperandIdx].keyword ||
+            operands[posOperandIdx].unpackStyle == ArgUnpackStyle::kStarStar)) {
+      if (operands[posOperandIdx].unpackStyle == ArgUnpackStyle::kStarStar)
+        starStarIdx = posOperandIdx;
       ++posOperandIdx;
+    }
 
     // Process positional arguments.
     if (posOperandIdx < operands.size()) {
@@ -559,7 +568,9 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       SmallVector<OperandValue> remainingOperands;
       do {
         auto &operand = operands[posOperandIdx];
-        if (!operand.keyword)
+        if (operand.unpackStyle == ArgUnpackStyle::kStarStar)
+          starStarIdx = posOperandIdx;
+        else if (!operand.keyword)
           remainingOperands.push_back(operand);
         ++posOperandIdx;
       } while (posOperandIdx < operands.size());
@@ -613,7 +624,19 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
     if (calleeSig.isKwVarArg(argIdx)) {
       assert(!kwargsDict && "multiple **kwargs not supported yet");
-      // If this is a variadic keyword argument, we initialize a dictionary.
+      // The '**' splat is the dict's sole source (ParamInf rejects mixing); the
+      // scan above passes every operand, so it is recorded by now.
+      if (starStarIdx) {
+        auto &splat = operands[*starStarIdx];
+        AnyValue argVal =
+            emitOneArgVal(splat, argIdx, convention, expectedType);
+        if (!argVal)
+          return failure();
+        argumentValues.push_back({argVal, splat.expr});
+        continue;
+      }
+      // Otherwise, initialize a dictionary; unbound keyword operands are
+      // inserted into it below.
       auto dict = emitter.emitConstructorCall(
           sugarCast<RefType>(expectedType).getElementType(),
           CallOperands(CallSyntax::kTypeCall, callExpr, EC_KWArgsArgument));
@@ -655,7 +678,12 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     if (!operand.keyword || passedByKw.contains(operand.keyword))
       continue;
 
-    assert(kwargsDict && "typechecking confirmed we have no **kwargs");
+    // No dict here means a '**' unpack was forwarded whole. ParamInf-checked
+    // calls can't reach this (it rejects the mixed shape); only an unchecked
+    // synthetic call could.
+    assert(kwargsDict &&
+           "a '**' unpack with other keyword arguments for '**kwargs' should "
+           "have been rejected before emission");
 
     SMLoc loc = operand.expr->getLoc();
 
