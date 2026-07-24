@@ -987,9 +987,10 @@ def test_combined_grammar_accepts_conforming_json_response(
 ) -> None:
     """The response_format branch accepts a schema-conforming JSON response.
 
-    ``json.dumps`` default spacing is accepted under both xgrammar whitespace
-    modes (permissive, or the space-mandating strict mode) and by llguidance,
-    so the same payload validates on either backend.
+    The grammar pins JSON to a compact form (no inter-token whitespace,
+    separators ``","`` / ``":"``), so the payload is emitted with matching
+    ``separators``. xgrammar enforces the compact form; llguidance accepts
+    it too, so the same payload validates on either backend.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
         tools=_tools("get_weather"),
@@ -1001,7 +1002,9 @@ def test_combined_grammar_accepts_conforming_json_response(
         backend, grammar, ll_tokenizer, minimal_tokenizer
     )
 
-    tokens = minimal_tokenizer(json.dumps({"answer": "sunny"}))
+    tokens = minimal_tokenizer(
+        json.dumps({"answer": "sunny"}, separators=(",", ":"))
+    )
     consumed = matcher.try_consume_tokens(tokens)
     assert consumed == len(tokens), (
         f"[{backend}] rejected a conforming JSON response at offset "
@@ -1132,7 +1135,9 @@ def test_combined_grammar_xgrammar_accepts_reasoned_json_response(
         "xgrammar", grammar, ll_tokenizer, minimal_tokenizer
     )
 
-    tokens = minimal_tokenizer(THINK_END + json.dumps({"answer": "sunny"}))
+    tokens = minimal_tokenizer(
+        THINK_END + json.dumps({"answer": "sunny"}, separators=(",", ":"))
+    )
     consumed = matcher.try_consume_tokens(tokens)
     assert consumed == len(tokens), (
         f"reasoned JSON response rejected at offset {consumed} of "
