@@ -170,7 +170,7 @@ def _is_valid_utf8_runtime(span: Span[mut=False, Byte, _]) -> Bool:
     var previous = SIMD[DType.uint8, simd_size]()
 
     while i + simd_size <= length:
-        var current_bytes = (ptr + i).load[width=simd_size]()
+        var current_bytes = ptr.unsafe_offset(i).unsafe_load[width=simd_size]()
         var has_error = validate_chunk(current_bytes, previous)
         previous = current_bytes
         if any(has_error.ne(0)):
@@ -182,7 +182,7 @@ def _is_valid_utf8_runtime(span: Span[mut=False, Byte, _]) -> Bool:
     if i != length:
         var buffer = SIMD[DType.uint8, simd_size](0)
         for j in range(i, length):
-            buffer[j - i] = (ptr + j)[]
+            buffer[j - i] = ptr.unsafe_offset(j)[]
         has_error = validate_chunk(buffer, previous)
     else:
         # Add a chunk of 0s to the end to validate continuations bytes
@@ -197,7 +197,7 @@ def _is_valid_utf8_comptime(span: Span[mut=False, Byte, _]) -> Bool:
     var offset = 0
 
     while offset < length:
-        var b0 = ptr[offset]
+        var b0 = ptr[unsafe_offset=offset]
         if b0 > BIGGEST_UTF8_FIRST_BYTE:
             return False
         var byte_type = _utf8_byte_type(b0)
@@ -209,11 +209,13 @@ def _is_valid_utf8_comptime(span: Span[mut=False, Byte, _]) -> Bool:
 
         for i in range(1, Int(byte_type)):
             var idx = offset + i
-            if idx >= length or not _is_utf8_continuation_byte(ptr[idx]):
+            if idx >= length or not _is_utf8_continuation_byte(
+                ptr[unsafe_offset=idx]
+            ):
                 return False
 
         # special unicode ranges
-        var b1 = ptr[offset + 1]
+        var b1 = ptr[unsafe_offset=offset + 1]
         if byte_type == 2 and b0 < 0b1100_0010:
             return False
         elif b0 == 0xE0 and b1 < 0xA0:

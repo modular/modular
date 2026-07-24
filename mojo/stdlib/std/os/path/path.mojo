@@ -306,7 +306,7 @@ def realpath[
     var fspath = path.__fspath__()
     var returned_path_ptr = libc_realpath(
         fspath.as_c_string_slice().unsafe_ptr(),
-        string.unsafe_ptr_mut().bitcast[c_char](),
+        string.unsafe_ptr_mut().unsafe_bitcast[c_char](),
     )
     if not returned_path_ptr:
         raise Error("realpath failed to resolve: ", get_errno())

@@ -1365,7 +1365,7 @@ def iota(span: Span[mut=True, Int, _], offset: Int = 0):
         span: The Span to fill with numbers.
         offset: The starting value to fill at index 0.
     """
-    var buff = span.unsafe_ptr().bitcast[Scalar[DType.int]]()
+    var buff = span.unsafe_ptr().unsafe_bitcast[Scalar[DType.int]]()
     iota(buff, len(span), offset=offset)
 
 

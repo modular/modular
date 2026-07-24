@@ -33,7 +33,7 @@ def test_tanh_tfvals_fp32() raises:
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
     var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
     var x = Span(x_stack)
-    x.unsafe_ptr().store[width=4](
+    x.unsafe_ptr().unsafe_store[width=4](
         0,
         SIMD[dtype, 4](
             -1.2583316564559937,
@@ -53,7 +53,7 @@ def test_tanh_tfvals_fp32() raises:
     # use `tf.print(tf.math.tanh(numpy.float32(x)))`
     var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
     var tfvals_fp32 = Span(tfvals_stack)
-    tfvals_fp32.unsafe_ptr().store[width=4](
+    tfvals_fp32.unsafe_ptr().unsafe_store[width=4](
         0, SIMD[dtype, 4](-0.850603521, -1, -1, -0.612388909)
     )
 
@@ -80,7 +80,7 @@ def test_tanh_tfvals_fp64() raises:
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
     var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
     var x = Span(x_stack)
-    x.unsafe_ptr().store[width=4](
+    x.unsafe_ptr().unsafe_store[width=4](
         0,
         SIMD[dtype, 4](
             -1.2583316564559937,
@@ -100,7 +100,7 @@ def test_tanh_tfvals_fp64() raises:
     # use `tf.print(tf.math.tanh(numpy.float64(x)))`
     var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
     var tfvals_fp64 = Span(tfvals_stack)
-    tfvals_fp64.unsafe_ptr().store[width=4](
+    tfvals_fp64.unsafe_ptr().unsafe_store[width=4](
         0,
         SIMD[dtype, 4](
             -0.85060351067231821,

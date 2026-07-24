@@ -351,7 +351,7 @@ struct _FormatUtils:
             if skip_next:
                 skip_next = False
                 continue
-            if fmt_ptr[i] == `{`:
+            if fmt_ptr[unsafe_offset=i] == `{`:
                 if not start:
                     start = i
                     continue
@@ -361,10 +361,12 @@ struct _FormatUtils:
                 entries.append(EntryType(start.value(), i, field=False))
                 start = None
                 continue
-            elif fmt_ptr[i] == `}`:
+            elif fmt_ptr[unsafe_offset=i] == `}`:
                 if not start:
                     # python escapes double curlies
-                    if (i + 1) < fmt_len and fmt_ptr[i + 1] == `}`:
+                    if (i + 1) < fmt_len and fmt_ptr[
+                        unsafe_offset=i + 1
+                    ] == `}`:
                         entries.append(EntryType(i, i + 1, field=True))
                         total_estimated_entry_byte_width += 2
                         skip_next = True
@@ -525,10 +527,12 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
     ) raises -> Bool:
         @always_inline("nodebug")
         def _build_slice(
-            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
+            p: Pointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(
-                unsafe_from_utf8=Span(unsafe_ptr=p + start, length=end - start)
+                unsafe_from_utf8=Span[UInt8, p.origin](
+                    unsafe_ptr=p.unsafe_offset(start), length=end - start
+                )
             )
 
         var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
@@ -537,7 +541,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
         var exclamation_index = -1
         var idx = 0
         while idx < field_len:
-            if field_ptr[idx] == UInt8(ord("!")):
+            if field_ptr[unsafe_offset=idx] == UInt8(ord("!")):
                 exclamation_index = idx
                 break
             idx += 1
@@ -545,7 +549,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
         if exclamation_index != -1:
             if new_idx == field_len:
                 raise Error("Empty conversion flag.")
-            var conversion_flag = field_ptr[new_idx]
+            var conversion_flag = field_ptr[unsafe_offset=new_idx]
             if field_len - new_idx > 1 or (
                 conversion_flag not in Self.supported_conversion_flags
             ):

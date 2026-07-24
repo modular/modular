@@ -79,7 +79,9 @@ def test_fused_reductions_inner() raises:
     def input_fn[
         dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[dtype, width]:
-        var loaded_val = vector.unsafe_ptr().load[width=width](indices[0])
+        var loaded_val = vector.unsafe_ptr().unsafe_load[width=width](
+            indices[0]
+        )
         return loaded_val._refine[dtype]()
 
     var out = StaticTuple[Scalar[test_type], num_reductions]()
@@ -161,7 +163,7 @@ def test_fused_reductions_outer() raises:
     def input_fn[
         dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[dtype, width]:
-        var loaded_val = vector.unsafe_ptr().load[width=width](
+        var loaded_val = vector.unsafe_ptr().unsafe_load[width=width](
             indices[0] * 2 + indices[1]
         )
         return loaded_val._refine[dtype]()

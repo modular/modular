@@ -36,9 +36,12 @@ def test_elementwise_1d() raises:
     @__copy_capture(vector)
     @parameter
     def func[simd_width: Int, alignment: Int = 1](idx: Coord):
-        var elem = vector.unsafe_ptr().load[width=simd_width](idx[0].value())
+        var vector_ptr: UnsafePointer[
+            vector.T, vector.origin
+        ] = vector.unsafe_ptr()
+        var elem = vector_ptr.load[width=simd_width](idx[0].value())
         var val = exp(erf(tanh(elem + 1)))
-        vector.unsafe_ptr().store[width=simd_width](idx[0].value(), val)
+        vector_ptr.store[width=simd_width](idx[0].value(), val)
 
     elementwise[func, simd_width_of[DType.float32]()](Coord(num_elements), ctx)
 

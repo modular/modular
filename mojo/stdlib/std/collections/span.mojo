@@ -256,6 +256,9 @@ struct Span[
         """
         self = rebind[type_of(self)](other)
 
+    # TODO(MOCO-4334): `unsafe_ptr` should be a safe `Pointer`, but flipping it
+    # collapses the inferred origin when a caller builds a `Span` from a safe
+    # pointer. Flip once MOCO-4334 is fixed; cleanup tracked in MSTDL-2941.
     @always_inline("builtin")
     def __init__(
         out self,
@@ -581,7 +584,7 @@ struct Span[
     @always_inline("builtin")
     def unsafe_ptr(
         self,
-    ) -> UnsafePointer[Self.T, Self.origin]:
+    ) -> Pointer[Self.T, Self.origin]:
         """Retrieves a pointer to the underlying memory, or a dangling
         pointer if the span doesn't point to anything.
 

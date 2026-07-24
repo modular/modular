@@ -43,8 +43,9 @@ def _linear_index[
 def fill_span[
     dtype: DType, origin: MutOrigin
 ](buf: Span[Scalar[dtype], origin], size: Int):
+    var buf_ptr: UnsafePointer[buf.T, buf.origin] = buf.unsafe_ptr()
     for j in range(size):
-        buf.unsafe_ptr()[j] = Scalar[dtype](j) + 1
+        buf_ptr[j] = Scalar[dtype](j) + 1
 
 
 # TODO: Refactor tests
@@ -81,10 +82,11 @@ def test_stencil_avg_pool() raises:
     ](uninitialized=True)
     var output = Span(output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
+    var output_ptr: UnsafePointer[output.T, output.origin] = output.unsafe_ptr()
 
     fill_span(input, Int(input_shape_dims.flattened_length()))
     for i in range(Int(output_shape_dims.flattened_length())):
-        output.unsafe_ptr()[i] = 0
+        output_ptr[i] = 0
 
     def map_fn(
         point: IndexList[stencil_rank, ...],
@@ -140,7 +142,10 @@ def test_stencil_avg_pool() raises:
     }:
         var res = val / (pool_window_h * pool_window_w)
         var linear_idx = _linear_index(point, output_shape)
-        output.unsafe_ptr().store(linear_idx, res)
+        var output_ptr: UnsafePointer[
+            output.T, output.origin
+        ] = output.unsafe_ptr()
+        output_ptr.store(linear_idx, res)
 
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil[
@@ -166,7 +171,7 @@ def test_stencil_avg_pool() raises:
     for i in range(0, output_height):
         for j in range(0, output_width):
             var idx = _linear_index(IndexList[rank](0, i, j, 0), output_shape)
-            print(output.unsafe_ptr()[idx], "\t", end="")
+            print(output_ptr[idx], "\t", end="")
         print("")
 
 
@@ -205,10 +210,11 @@ def test_stencil_avg_pool_padded() raises:
     ](uninitialized=True)
     var output = Span(output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
+    var output_ptr: UnsafePointer[output.T, output.origin] = output.unsafe_ptr()
 
     fill_span(input, input_shape_dims.flattened_length())
     for i in range(output_shape_dims.flattened_length()):
-        output.unsafe_ptr()[i] = 0
+        output_ptr[i] = 0
 
     def map_fn(
         point: IndexList[stencil_rank, ...],
@@ -259,7 +265,10 @@ def test_stencil_avg_pool_padded() raises:
     }:
         var res = val / (pool_window_h * pool_window_w)
         var linear_idx = _linear_index(point, output_shape)
-        output.unsafe_ptr().store(linear_idx, res)
+        var output_ptr: UnsafePointer[
+            output.T, output.origin
+        ] = output.unsafe_ptr()
+        output_ptr.store(linear_idx, res)
 
     def dilation_fn(dim: Int) -> Int:
         return 1
@@ -290,7 +299,7 @@ def test_stencil_avg_pool_padded() raises:
     for i in range(0, output_height):
         for j in range(0, output_width):
             var idx = _linear_index(IndexList[rank](0, i, j, 0), output_shape)
-            print(output.unsafe_ptr()[idx], "\t", end="")
+            print(output_ptr[idx], "\t", end="")
         print("")
 
 
@@ -327,10 +336,11 @@ def test_stencil_avg_pool_stride_2() raises:
     ](uninitialized=True)
     var output = Span(output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
+    var output_ptr: UnsafePointer[output.T, output.origin] = output.unsafe_ptr()
 
     fill_span(input, Int(input_shape_dims.flattened_length()))
     for i in range(Int(output_shape_dims.flattened_length())):
-        output.unsafe_ptr()[i] = 0
+        output_ptr[i] = 0
 
     def map_fn(
         point: IndexList[stencil_rank, ...],
@@ -382,7 +392,10 @@ def test_stencil_avg_pool_stride_2() raises:
     }:
         var res = val / (pool_window_h * pool_window_w)
         var linear_idx = _linear_index(point, output_shape)
-        output.unsafe_ptr().store(linear_idx, res)
+        var output_ptr: UnsafePointer[
+            output.T, output.origin
+        ] = output.unsafe_ptr()
+        output_ptr.store(linear_idx, res)
 
     def dilation_fn(dim: Int) -> Int:
         return 1
@@ -411,7 +424,7 @@ def test_stencil_avg_pool_stride_2() raises:
     for i in range(0, output_height):
         for j in range(0, output_width):
             var idx = _linear_index(IndexList[rank](0, i, j, 0), output_shape)
-            print(output.unsafe_ptr()[idx], "\t", end="")
+            print(output_ptr[idx], "\t", end="")
         print("")
 
 
@@ -452,10 +465,11 @@ def test_stencil_max_pool_dilation_2() raises:
     ](uninitialized=True)
     var output = Span(output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
+    var output_ptr: UnsafePointer[output.T, output.origin] = output.unsafe_ptr()
 
     fill_span(input, Int(input_shape_dims.flattened_length()))
     for i in range(Int(output_shape_dims.flattened_length())):
-        output.unsafe_ptr()[i] = 0
+        output_ptr[i] = 0
 
     def map_fn(
         point: IndexList[stencil_rank, ...],
@@ -506,7 +520,10 @@ def test_stencil_max_pool_dilation_2() raises:
         var output_shape,
     }:
         var linear_idx = _linear_index(point, output_shape)
-        output.unsafe_ptr().store(linear_idx, val)
+        var output_ptr: UnsafePointer[
+            output.T, output.origin
+        ] = output.unsafe_ptr()
+        output_ptr.store(linear_idx, val)
 
     @always_inline
     def dilation_fn(dim: Int) -> Int:
@@ -536,7 +553,7 @@ def test_stencil_max_pool_dilation_2() raises:
     for i in range(0, output_height):
         for j in range(0, output_width):
             var idx = _linear_index(IndexList[rank](0, i, j, 0), output_shape)
-            print(output.unsafe_ptr()[idx], "\t", end="")
+            print(output_ptr[idx], "\t", end="")
         print("")
 
 

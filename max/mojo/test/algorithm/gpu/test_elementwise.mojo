@@ -81,9 +81,10 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
-        out_buffer.unsafe_ptr().store[width=simd_width](
+        out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             linear_idx,
-            in_buffer.unsafe_ptr().load[width=simd_width](linear_idx) + 42,
+            in_buffer.unsafe_ptr().unsafe_load[width=simd_width](linear_idx)
+            + 42,
         )
 
     elementwise[func, pack_size, target="gpu"](
@@ -157,9 +158,10 @@ def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
-        out_buffer.unsafe_ptr().store[width=simd_width](
+        out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             linear_idx,
-            in_buffer.unsafe_ptr().load[width=simd_width](linear_idx) + 42,
+            in_buffer.unsafe_ptr().unsafe_load[width=simd_width](linear_idx)
+            + 42,
         )
 
     elementwise[func, pack_size, target="gpu"](
@@ -214,7 +216,7 @@ def run_elementwise_exact_boundary_uses_simd[
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
-        out_buffer.unsafe_ptr().store[width=simd_width](
+        out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             linear_idx, SIMD[dtype, simd_width](simd_width)
         )
 
@@ -275,9 +277,11 @@ def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
         # being used for in_buffer.
         var in_idx = _strided_index(idx, in_strides)
         var out_idx = _linear_index(idx, out_shape)
-        out_buffer.unsafe_ptr().store[width=simd_width](
+        out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             out_idx,
-            in_buffer.unsafe_ptr().load[width=simd_width, alignment=1](in_idx),
+            in_buffer.unsafe_ptr().unsafe_load[width=simd_width, alignment=1](
+                in_idx
+            ),
         )
 
     elementwise[func, 1, target="gpu"](Coord(out_shape), ctx)
@@ -361,9 +365,9 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = rebind[IndexList[3]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
-        output_buffer.unsafe_ptr().store[width=simd_width](
+        output_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             linear_idx,
-            input_buffer.unsafe_ptr().load[width=simd_width](linear_idx),
+            input_buffer.unsafe_ptr().unsafe_load[width=simd_width](linear_idx),
         )
 
     elementwise[func, pack_size, target="gpu"](

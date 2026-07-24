@@ -532,6 +532,14 @@ This version is still a work in progress.
   example `arr.unsafe_ptr() + i` becomes `arr.unsafe_ptr().unsafe_offset(i)`
   and `arr.unsafe_ptr()[i]` becomes `arr.unsafe_ptr()[unsafe_offset=i]`.
 
+- The `unsafe_ptr()` accessors of `Span`, `StringSlice`, and `String` (and
+  `String.unsafe_ptr_mut()`) now return a safe `Pointer` instead of an
+  `UnsafePointer`. They share the same layout and convert implicitly, so most
+  code is unaffected. Code that called an unsafe-only pointer operation directly
+  on the result should switch to the ungated `unsafe_*` spelling, for example
+  `ptr + i` becomes `ptr.unsafe_offset(i)` and `ptr[i]` becomes
+  `ptr[unsafe_offset=i]`.
+
 - When an unhandled error propagates out of `main` and no stack trace was
   collected, Mojo now prints a hint to set
   `MODULAR_DEBUG=stack-trace-on-error` to enable stack trace collection,

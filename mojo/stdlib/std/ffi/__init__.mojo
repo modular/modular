@@ -725,7 +725,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         # Force unique the func_name so we know that it is nul-terminated.
         comptime func_name_literal = get_static_string[func_name]()
         return self._get_function[result_type](
-            cstr_name=func_name_literal.unsafe_ptr().bitcast[c_char](),
+            cstr_name=func_name_literal.unsafe_ptr().unsafe_bitcast[c_char](),
         )
 
     @always_inline
