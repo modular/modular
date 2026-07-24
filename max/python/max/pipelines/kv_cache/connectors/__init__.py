@@ -128,13 +128,14 @@ def create_connector(
                 "kv_connector_config must include 'disk_offload_dir' "
                 "when kv_connector is 'rust_tiered'"
             )
-        # The Rust connector drives CUDA copy engines directly (cudarc); it has
-        # no HIP/Metal backend, so it is CUDA-only.
+        # The Rust connector drives the GPU copy engines directly via its own
+        # dlopen'd driver shim, supporting NVIDIA (CUDA) and AMD (HIP) but not
+        # Metal/CPU.
         api = accelerator_api()
-        if api != "cuda":
+        if api not in ("cuda", "hip"):
             raise ValueError(
-                f"kv_connector 'rust_tiered' requires a CUDA device, but the "
-                f"accelerator API is '{api}'. Use 'tiered' instead."
+                f"kv_connector 'rust_tiered' requires a CUDA or HIP GPU, found "
+                f"incompatible accelerator API: '{api}'."
             )
         from .rust_tier_connector import RustTierConnector
 
