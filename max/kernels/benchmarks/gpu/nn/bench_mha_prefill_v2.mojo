@@ -147,19 +147,19 @@ def run_mha_prefill_v2[
                 var q_ptr = (
                     cb_q.offset_ptr(iteration)
                     .bitcast[Scalar[DType.bfloat16]]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin()
                 )
                 var k_ptr = (
                     cb_k.offset_ptr(iteration)
                     .bitcast[Scalar[DType.bfloat16]]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin()
                 )
                 var v_ptr = (
                     cb_v.offset_ptr(iteration)
                     .bitcast[Scalar[DType.bfloat16]]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin()
                 )
                 var q_tt = TileTensor(
@@ -221,7 +221,7 @@ def run_mha_prefill_v2[
                         sw_buf.unsafe_ptr()
                         .bitcast[Scalar[DType.bfloat16]]()
                         .as_unsafe_any_origin()
-                        .as_immutable()
+                        .as_imm()
                     )
                     mha_prefill_v2[
                         _config,

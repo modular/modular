@@ -98,9 +98,7 @@ def bench_string_split[
     filename: StaticString = "UN_charter_EN",
     sequence: Optional[StaticString] = None,
 ](mut b: Bencher) raises:
-    var items = StringSlice(
-        make_string[length](filename + ".txt")
-    ).get_immutable()
+    var items = StringSlice(make_string[length](filename + ".txt")).as_imm()
 
     @always_inline
     def call_fn() {imm}:

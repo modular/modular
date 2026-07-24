@@ -130,7 +130,7 @@ def run_rms_norm_fused_residual_cpu[
     # that trips the exclusivity checker, so erase the provenance with
     # `as_unsafe_any_origin()` (an immutable view alone keeps it).
     var residual_output_immut = (
-        residual_output_tensor.get_immutable().as_unsafe_any_origin()
+        residual_output_tensor.as_imm().as_unsafe_any_origin()
     )
 
     @always_inline

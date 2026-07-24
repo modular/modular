@@ -458,7 +458,7 @@ def _reducescatter_p2p[
     )
     comptime for i in range(num_buffers):
         kernel_in_bufs[i] = KernelInputType(
-            list_of_in_bufs[i].ptr.as_immutable().as_unsafe_any_origin(),
+            list_of_in_bufs[i].ptr.as_imm().as_unsafe_any_origin(),
             list_of_in_bufs[i].layout,
         )
 

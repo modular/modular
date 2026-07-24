@@ -2232,7 +2232,7 @@ struct Pointer[
             original pointer, but with the newly specified mutability.
 
         If you are unconditionally casting the mutability to `False`, use
-        `as_immutable` instead.
+        `as_imm` instead.
         If you are casting to mutable or a parameterized mutability, prefer
         using the safe `mut_cast` method instead.
 
@@ -2280,7 +2280,7 @@ struct Pointer[
         }
 
     @always_inline("builtin")
-    def as_immutable(
+    def as_imm(
         self,
     ) -> Self._OriginCastType[ImmOrigin(Self.origin)]:
         """Changes the mutability of a pointer to immutable.
@@ -2293,12 +2293,21 @@ struct Pointer[
         """
         return self.unsafe_mut_cast[False]()
 
+    @doc_hidden
+    @always_inline("builtin")
+    @deprecated(use=as_imm)
+    def as_immutable(
+        self,
+    ) -> Self._OriginCastType[ImmOrigin(Self.origin)]:
+        return self.as_imm()
+
     # TODO(MSTDL-2846): Remove once `Imm` is consolidated with and
     # once we have a single pointer type.
     @doc_hidden
     @always_inline
-    def get_immutable(self) -> type_of(self.as_immutable()):
-        return self.as_immutable()
+    @deprecated(use=as_imm)
+    def get_immutable(self) -> type_of(self.as_imm()):
+        return self.as_imm()
 
     @always_inline("builtin")
     def as_unsafe_any_origin(

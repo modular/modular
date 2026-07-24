@@ -57,7 +57,7 @@ def _get_python_interface() raises -> Pointer[CPython, ImmStaticOrigin]:
     var python = _PYTHON_GLOBAL.get_or_create_indexed_ptr(_Global._python_idx)
     var cpython_instance = (
         Pointer(to=python[].cpython)
-        .as_immutable()
+        .as_imm()
         .unsafe_origin_cast[ImmStaticOrigin]()
     )
     return cpython_instance

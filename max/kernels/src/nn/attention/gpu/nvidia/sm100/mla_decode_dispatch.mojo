@@ -1113,7 +1113,7 @@ def _mla_decode_sm100_dispatch_impl[
         var lse_accum_split_ptr: SplitAccumType = {
             lse_accum_split.to_device_buffer(ctx)
             .unsafe_ptr()
-            .as_immutable()
+            .as_imm()
             .as_unsafe_any_origin()
         }
 
@@ -1618,7 +1618,7 @@ def mla_decode_sm100_sink_split_k[
                     if ragged:
                         comptime ValidLengthType = NonNullPointer[DType.uint32]
                         var valid_len: ValidLengthType = {
-                            valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                            valid_length.ptr.as_imm().as_unsafe_any_origin()
                         }
                         launch_mla_sm100_decode_sparse_kv_bf16[
                             q_type=q_type,
@@ -1743,7 +1743,7 @@ def mla_decode_sm100_sink_split_k[
                 if ragged:
                     comptime ValidLengthType = NonNullPointer[DType.uint32]
                     var valid_len: ValidLengthType = {
-                        valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                        valid_length.ptr.as_imm().as_unsafe_any_origin()
                     }
                     launch_mla_sm100_decode_sparse_kv_fp8[
                         q_type=q_type,
@@ -1925,7 +1925,7 @@ def mla_decode_sm100_sink_split_k[
             if ragged:
                 comptime ValidLengthType = NonNullPointer[DType.uint32]
                 var valid_len: ValidLengthType = {
-                    valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                    valid_length.ptr.as_imm().as_unsafe_any_origin()
                 }
                 launch_mla_sm100_decode_sparse[
                     q_type=q_type,
@@ -2090,7 +2090,7 @@ def mla_decode_sm100_sink_split_k[
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
             var valid_len: ValidLengthType = {
-                valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                valid_length.ptr.as_imm().as_unsafe_any_origin()
             }
             launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
                 q_type=q_type,
@@ -2206,7 +2206,7 @@ def mla_decode_sm100_sink_split_k[
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
             var valid_len: ValidLengthType = {
-                valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                valid_length.ptr.as_imm().as_unsafe_any_origin()
             }
 
             @parameter
@@ -2416,7 +2416,7 @@ def mla_decode_sm100_sink_split_k[
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
             var valid_len: ValidLengthType = {
-                valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                valid_length.ptr.as_imm().as_unsafe_any_origin()
             }
             launch_mla_sm100_decode_enqueue_kernel[
                 q_type=q_type,
