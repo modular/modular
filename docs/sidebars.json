@@ -1,7 +1,6 @@
 {
   "maxConceptsSidebar": [
     "max/intro",
-    "max/changelog/index",
     "max/faq",
     {
       "label": "Get started",
