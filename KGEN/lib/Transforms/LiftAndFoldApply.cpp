@@ -22,6 +22,7 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/Threading.h"
@@ -65,27 +66,30 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     return std::make_pair(scopeAttr, WalkResult::skip());
   });
 
-  replacer.addReplacement(
-      [&](BindParamsAttr attr) -> std::pair<TypedAttr, WalkResult> {
-        // Lifting may change the type of a parameter value, creating temporary
-        // illegal IR. Rebind it back to the original, correct type if this
-        // happened so that BindParamsAttr can still infer the result type
-        // correctly.
-        TypedAttr generator =
-            cast<TypedAttr>(replacer.replace(attr.getGenerator()));
+  replacer.addReplacement([&](BindParamsAttr attr)
+                              -> std::pair<TypedAttr, WalkResult> {
+    TypedAttr generator =
+        cast<TypedAttr>(replacer.replace(attr.getGenerator()));
 
-        SmallVector<TypedAttr> paramValues;
-        for (TypedAttr paramValue : attr.getParamValues()) {
-          TypedAttr value = cast<TypedAttr>(replacer.replace(paramValue));
-          if (value.getType() != paramValue.getType())
-            value = ParamOperatorAttr::getRebind(value, paramValue.getType());
-          paramValues.push_back(value);
-        }
+    ParameterEvaluator evaluator;
+    for (auto [idx, paramValue] : llvm::enumerate(attr.getParamValues())) {
+      TypedAttr value = cast<TypedAttr>(replacer.replace(paramValue));
+      Type targetType = evaluator.replace(
+          cast<GeneratorType>(generator.getType()).getInputParamTypes()[idx]);
+      // Lifting may change the type of a parameter value, creating temporary
+      // illegal IR. Rebind it back to the original, correct type if this
+      // happened so that BindParamsAttr can still infer the result type
+      // correctly.
+      if (value.getType() != targetType)
+        value = ParamOperatorAttr::getRebind(value, targetType);
+      evaluator.appendIndexBinding(value);
+    }
 
-        return {BindParamsAttr::get(generator.getContext(), generator,
-                                    paramValues, attr.getDischarged()),
-                WalkResult::skip()};
-      });
+    return {BindParamsAttr::get(generator.getContext(), generator,
+                                evaluator.getIndexBindings(),
+                                attr.getDischarged()),
+            WalkResult::skip()};
+  });
 
   replacer.addReplacement([&](ParamOperatorAttr op)
                               -> std::pair<Attribute, WalkResult> {
