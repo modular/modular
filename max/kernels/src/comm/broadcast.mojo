@@ -102,8 +102,12 @@ def broadcast_multimem_kernel[
             comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
             # Get multicast output pointer and input pointer
-            var out_ptr = output.ptr.address_space_cast[AddressSpace.GLOBAL]()
-            var in_ptr = input.ptr.address_space_cast[_target_address_space]()
+            var out_ptr = output._storage.address_space_cast[
+                AddressSpace.GLOBAL
+            ]()
+            var in_ptr = input._storage.address_space_cast[
+                _target_address_space
+            ]()
 
             # Grid-strided loop to cover all elements (vectorized)
             for idx in range(global_tid, num_simd_vectors, stride):
@@ -209,8 +213,10 @@ def broadcast_pull_1stage_kernel[
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
         comptime alignment = align_of[SIMD[dtype, simd_width]]()
-        var in_ptr = input.ptr.address_space_cast[_target_address_space]()
-        var out_ptr = output.ptr.address_space_cast[_target_address_space]()
+        var in_ptr = input._storage.address_space_cast[_target_address_space]()
+        var out_ptr = output._storage.address_space_cast[
+            _target_address_space
+        ]()
 
         var num_elements = input.num_elements()
         var num_simd_vectors = num_elements // simd_width
@@ -309,7 +315,9 @@ def broadcast_pull_2stage_kernel[
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
         var is_root = my_rank == root
-        var result_ptr = result.ptr.address_space_cast[_target_address_space]()
+        var result_ptr = result._storage.address_space_cast[
+            _target_address_space
+        ]()
 
         # Each GPU reads its chunk from root's input and writes to payload
         var my_chunk_start = my_rank * part_size
@@ -653,7 +661,7 @@ def broadcast_2stage[
 
     ctx.enqueue_function[kernel](
         output_tensor,
-        input_tensor.as_immut().ptr,
+        input_tensor.as_immut()._storage,
         rank_sigs,
         num_elements,
         my_rank,

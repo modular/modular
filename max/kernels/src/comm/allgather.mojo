@@ -138,7 +138,7 @@ def _allgather_naive[
             DeviceBuffer(
                 rctx,
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                    input_buffers[i].ptr
+                    input_buffers[i]._storage
                 ),
                 input_buffers[i].num_elements(),
                 owning=False,
@@ -149,7 +149,7 @@ def _allgather_naive[
         var output_device_buffer = DeviceBuffer(
             ctx,
             rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                output_buffers[input_idx].ptr
+                output_buffers[input_idx]._storage
             ),
             output_buffers[input_idx].num_elements(),
             owning=False,
@@ -460,7 +460,7 @@ def _allgather_p2p[
     comptime for i in range(ngpus):
         list_of_in_ptrs[i] = rebind[
             UnsafePointer[Scalar[dtype], ImmutAnyOrigin]
-        ](input_buffers[i].ptr)
+        ](input_buffers[i]._storage)
         lengths[i] = input_buffers[i].num_elements()
 
     # Prepare output pointers.
@@ -471,7 +471,7 @@ def _allgather_p2p[
     comptime for src_idx in range(ngpus):
         output_ptrs[src_idx] = rebind[
             UnsafePointer[Scalar[dtype], MutAnyOrigin]
-        ](output_buffers[src_idx].ptr)
+        ](output_buffers[src_idx]._storage)
 
     # TMA path: NVIDIA sm100+ with 16-byte-aligned (possibly zero) inputs.
     # Uses cp.async.bulk DMA for both NVLink reads and local HBM writes.

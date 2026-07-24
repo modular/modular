@@ -336,7 +336,7 @@ def reducescatter_rmsnorm[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ](uninitialized=True)
     comptime for i in range(ngpus):
-        src_ptrs[i] = input_buffers[i].ptr.as_imm().as_unsafe_any_origin()
+        src_ptrs[i] = input_buffers[i]._storage.as_imm().as_unsafe_any_origin()
 
     # Each thread owns `simd_width` cols; H=6144 fits the base width
     # (64*8*16=8192) on all targets (no AR two-width dispatch). Assert fit +

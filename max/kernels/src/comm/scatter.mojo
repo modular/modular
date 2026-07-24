@@ -166,7 +166,7 @@ def scatter[
     var chunk_num_elems = InlineArray[Int, dp_size](fill=0)
     for i in range(dp_size):
         input_ptrs[i] = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-            input_buffers[i].ptr
+            input_buffers[i]._storage
         )
         chunk_num_elems[i] = input_buffers[i].num_elements()
 
@@ -189,7 +189,9 @@ def scatter[
     ]
 
     ctx.enqueue_function[kernel](
-        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
+        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+            output_buffer._storage
+        ),
         input_ptrs,
         chunk_num_elems,
         rank_sigs,

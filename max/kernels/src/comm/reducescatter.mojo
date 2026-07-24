@@ -327,7 +327,7 @@ def _reducescatter_kernel[
 
             comptime for i in range(num_buffers):
                 flat_tiles[i] = FlatTile(
-                    reordered[i].ptr + elem_start,
+                    reordered[i]._storage + elem_start,
                     row_major(n_elements),
                 )
 
@@ -360,7 +360,7 @@ def _reducescatter_kernel[
                         (0, dim_1),
                     )
                     sliced_tiles[i] = SlicedRevTile(
-                        sliced.ptr, sliced.layout.reverse()
+                        sliced._storage, sliced.layout.reverse()
                     )
             else:
                 # axis == 1: scatter along columns.
@@ -373,7 +373,7 @@ def _reducescatter_kernel[
                         (col_start, col_end),
                     )
                     sliced_tiles[i] = SlicedRevTile(
-                        sliced.ptr, sliced.layout.reverse()
+                        sliced._storage, sliced.layout.reverse()
                     )
 
             _reduce_scatter_impl[
@@ -458,7 +458,7 @@ def _reducescatter_p2p[
     )
     comptime for i in range(num_buffers):
         kernel_in_bufs[i] = KernelInputType(
-            list_of_in_bufs[i].ptr.as_imm().as_unsafe_any_origin(),
+            list_of_in_bufs[i]._storage.as_imm().as_unsafe_any_origin(),
             list_of_in_bufs[i].layout,
         )
 
