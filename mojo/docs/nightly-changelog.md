@@ -395,6 +395,9 @@ This version is still a work in progress.
   from a import * # <- decls here shadow those from b and from std.prelude
   ```
 
+- Error diagnostics on failed imports are now emitted per import site, as
+  opposed to once per module.
+
 ## Library stabilizations
 <!-- rumdl-disable MD013 -->
 
@@ -1076,6 +1079,8 @@ This version is still a work in progress.
   The same `contract=fast|off` item is also accepted in the `emission_option`
   of a `kgen.compile_offload` operation, to control contraction of an
   individual offload kernel.
+
+- Failed imports are no longer cached and may be retried, e.g., in the REPL.
 
 ## GPU programming
 
