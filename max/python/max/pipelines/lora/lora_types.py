@@ -42,9 +42,6 @@ class LoRAType(Enum):
     B = "lora_B"
     """Represents the LoRA B matrix. (low rank tensor to high rank tensor)"""
 
-    B_KV = "lora_B_kv"
-    """Represents the combined K and V LoRA B matrices for QKV fusion."""
-
     BIAS = "lora.bias"
     """Represents the LoRA bias matrix. (added to matrix B)"""
 

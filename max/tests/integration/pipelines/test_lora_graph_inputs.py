@@ -106,8 +106,6 @@ def test_single_lora_request() -> None:
         num_active_loras,
         lora_end_idx,
         batch_seq_len,
-        lora_ids_kv,
-        lora_grouped_offsets_kv,
     ) = result
 
     assert list(lora_ids.to_numpy()) == [0]
@@ -119,17 +117,6 @@ def test_single_lora_request() -> None:
     assert num_active_loras.to_numpy()[0] == 1
     assert lora_end_idx.to_numpy()[0] == 10
     assert batch_seq_len.to_numpy()[0] == 10
-
-    ids_kv = list(lora_ids_kv.to_numpy())
-    offsets_kv = list(lora_grouped_offsets_kv.to_numpy())
-
-    # Layout is [K_ids..., V_ids...] where V_ids = K_ids + max_num_loras (4).
-    # So for lora_id=0: K uses id 0, V uses id 4.
-    assert ids_kv == [0, 4]
-    # Layout is [K_offsets..., V_offsets...] where V offsets continue from
-    # where K ends. For 10 tokens: K spans [0,10], V spans [10,20].
-    # The combined offsets become [0, 10, 20].
-    assert offsets_kv == [0, 10, 20]
 
 
 def test_multiple_different_loras() -> None:
@@ -156,8 +143,6 @@ def test_multiple_different_loras() -> None:
         num_active_loras,
         lora_end_idx,
         batch_seq_len,
-        lora_ids_kv,
-        lora_grouped_offsets_kv,
     ) = result
 
     assert list(lora_ids.to_numpy()) == [0, 1]
@@ -169,15 +154,6 @@ def test_multiple_different_loras() -> None:
     assert num_active_loras.to_numpy()[0] == 2
     assert lora_end_idx.to_numpy()[0] == 15
     assert batch_seq_len.to_numpy()[0] == 15
-
-    ids_kv = list(lora_ids_kv.to_numpy())
-    offsets_kv = list(lora_grouped_offsets_kv.to_numpy())
-
-    # K projection uses ids [0, 1], V projection uses ids [4, 5].
-    assert ids_kv == [0, 1, 4, 5]
-    # K portion: [0, 5, 15], V portion continues: [15+5=20, 15+15=30].
-    # Combined: [0, 5, 15, 20, 30].
-    assert offsets_kv == [0, 5, 15, 20, 30]
 
 
 def test_grouped_same_lora() -> None:
@@ -203,8 +179,6 @@ def test_grouped_same_lora() -> None:
         lora_ranks,
         lora_grouped_offsets,
         num_active_loras,
-        _,
-        _,
         _,
         _,
     ) = result
@@ -242,8 +216,6 @@ def test_base_model_only() -> None:
         num_active_loras,
         lora_end_idx,
         batch_seq_len,
-        _,
-        _,
     ) = result
 
     # No LoRAs so no graph-inputs
@@ -280,8 +252,6 @@ def test_lora_then_base() -> None:
         num_active_loras,
         lora_end_idx,
         batch_seq_len,
-        lora_ids_kv,
-        lora_grouped_offsets_kv,
     ) = result
 
     assert list(lora_ids.to_numpy()) == [0]
@@ -293,15 +263,6 @@ def test_lora_then_base() -> None:
     assert num_active_loras.to_numpy()[0] == 1
     assert lora_end_idx.to_numpy()[0] == 10
     assert batch_seq_len.to_numpy()[0] == 25
-
-    ids_kv = list(lora_ids_kv.to_numpy())
-    offsets_kv = list(lora_grouped_offsets_kv.to_numpy())
-
-    # K projection uses ids [0], V projection uses ids [4].
-    assert ids_kv == [0, 4]
-    # K portion: [0, 10], V portion continues: [10+10=20].
-    # Combined: [0, 10, 20].
-    assert offsets_kv == [0, 10, 20]
 
 
 def test_lora_end_and_batch_seq_len_tensors() -> None:
@@ -331,33 +292,8 @@ def test_lora_end_and_batch_seq_len_tensors() -> None:
     assert batch_seq_len.to_numpy()[0] == 40
 
 
-def test_kv_offsets_structure() -> None:
-    """Test that KV offsets correctly duplicate for K and V portions."""
-    manager = create_test_lora_manager(
-        max_num_loras=4, lora_configs={"lora_a": 8}
-    )
-
-    context_batch: Any = [MockTextContext(model_name="lora_a")]
-    input_row_offsets = np.array([0, 100], dtype=np.uint32)
-    device = CPU()
-
-    result = manager.get_lora_graph_inputs(
-        context_batch, input_row_offsets, device
-    )
-    lora_ids_kv = result[6]
-    lora_grouped_offsets_kv = result[7]
-
-    # K projection uses ids [0], V projection uses ids [4].
-    ids_kv = list(lora_ids_kv.to_numpy())
-    offsets_kv = list(lora_grouped_offsets_kv.to_numpy())
-    # K portion: [0, 100], V portion continues: [100+100=200].
-    # Combined: [0, 100, 200].
-    assert ids_kv == [0, 4]
-    assert offsets_kv == [0, 100, 200]
-
-
-def test_mixed_lora_and_base_kv_offsets() -> None:
-    """Test KV offsets when mixing LoRA and base model sequences."""
+def test_mixed_lora_and_base_grouping() -> None:
+    """Test grouped offsets when mixing LoRA and base model sequences."""
     manager = create_test_lora_manager(
         max_num_loras=4, lora_configs={"lora_a": 8, "lora_b": 4}
     )
@@ -381,23 +317,14 @@ def test_mixed_lora_and_base_kv_offsets() -> None:
         num_active_loras,
         lora_end_idx,
         batch_seq_len,
-        lora_ids_kv,
-        lora_grouped_offsets_kv,
     ) = result
 
     assert list(lora_ids.to_numpy()) == [0, 1]
     assert list(lora_ranks.to_numpy()) == [8, 4]
+    # Base-model sequence is excluded from the LoRA groups: offsets are
+    # [0, 10, 25] (the 45-token total is dropped at the base boundary).
     assert list(lora_grouped_offsets.to_numpy()) == [0, 10, 25]
 
     assert num_active_loras.to_numpy()[0] == 2
     assert lora_end_idx.to_numpy()[0] == 25
     assert batch_seq_len.to_numpy()[0] == 45
-
-    ids_kv = list(lora_ids_kv.to_numpy())
-    offsets_kv = list(lora_grouped_offsets_kv.to_numpy())
-
-    # K projection uses ids [0, 1], V projection uses ids [4, 5].
-    assert ids_kv == [0, 1, 4, 5]
-    # K portion: [0, 10, 25], V portion continues: [25 + 10, 35 + 15].
-    # Combined: [0, 10, 20].
-    assert offsets_kv == [0, 10, 25, 35, 50]

@@ -28,6 +28,4 @@ class SupportsLoRA(Protocol):
         num_active_loras: TensorValue,
         lora_end_idx: TensorValue,
         batch_seq_len: TensorValue,
-        lora_ids_kv: TensorValue,
-        lora_grouped_offsets_kv: TensorValue,
     ) -> None: ...
