@@ -31,12 +31,18 @@ def main():
     for i in range(8):
         rhs_data[_OFFSET + i] = Float32(10 * (i + 1))
 
+    var dst_ptr: UnsafePointer[
+        Float32, origin_of(dst_data)
+    ] = dst_data.unsafe_ptr()
+    var rhs_ptr: UnsafePointer[
+        Float32, origin_of(rhs_data)
+    ] = rhs_data.unsafe_ptr()
     PointerStorage[element_width=1].add[
         dtype=DType.float32,
         OtherStorage=StaticOffsetStorage[static_offset=_OFFSET],
     ](
-        (dst_data.unsafe_ptr(), row_major[2, 4]()),
-        (rhs_data.unsafe_ptr(), row_major[2, 4]()),
+        (dst_ptr, row_major[2, 4]()),
+        (rhs_ptr, row_major[2, 4]()),
     )
     # CHECK{LITERAL}: [[10.0, 21.0, 32.0, 43.0], [54.0, 65.0, 76.0, 87.0]]
     print(dst)
@@ -47,12 +53,15 @@ def main():
     bias_data[_OFFSET] = 100.0
     bias_data[_OFFSET + 1] = 200.0
 
+    var bias_ptr: UnsafePointer[
+        Float32, origin_of(bias_data)
+    ] = bias_data.unsafe_ptr()
     PointerStorage[element_width=1].add[
         dtype=DType.float32,
         OtherStorage=StaticOffsetStorage[static_offset=_OFFSET],
     ](
-        (dst_data.unsafe_ptr(), row_major[2, 4]()),
-        (bias_data.unsafe_ptr(), row_major[2]()),
+        (dst_ptr, row_major[2, 4]()),
+        (bias_ptr, row_major[2]()),
     )
     # CHECK{LITERAL}: [[110.0, 121.0, 132.0, 143.0], [254.0, 265.0, 276.0, 287.0]]
     print(dst)

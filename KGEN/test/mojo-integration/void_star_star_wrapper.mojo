@@ -74,7 +74,7 @@ def wrapped_entry_point[
         comptime ArgType = kernel.declared_arg_types[i]
         comptime if looks_like_pointer[ArgType]():
             ptr_tuple[i] = rebind[type_of(ptr_tuple[i])](
-                pa[].pointers.unsafe_ptr() + i
+                pa[].pointers.unsafe_ptr().unsafe_offset(i)
             )
         else:
             ptr_tuple[i] = rebind[type_of(ptr_tuple[i])](pa[].pointers[i])
