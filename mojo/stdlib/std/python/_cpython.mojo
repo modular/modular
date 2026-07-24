@@ -1637,9 +1637,9 @@ struct CPython(Defaultable, Movable):
             ](0)
         else:
             # PyObject *Py_None
-            self._Py_None = PyObjectPtr(
-                upcast_from=self.lib.get_symbol[PyObject]("_Py_NoneStruct")
-            )
+            # TODO(MOCO-4435): remove this temporary variable.
+            var none_ptr = self.lib.get_symbol[PyObject]("_Py_NoneStruct")
+            self._Py_None = PyObjectPtr(upcast_from=none_ptr)
         # Integer Objects
         # PyTypeObject PyLong_Type
         self._PyLong_Type = self.lib.get_symbol[PyTypeObject](
