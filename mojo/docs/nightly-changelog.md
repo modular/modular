@@ -1275,6 +1275,14 @@ This version is still a work in progress.
 - `base64.b16decode` now raises on invalid input instead of silently producing
   corrupt output.
 
+- A call may now combine a `*` unpack, literal keyword arguments, and a `**`
+  splat, as in Python: `f(*args, **kwargs^)` forwards both packed variadics
+  directly to a callee taking `*args` and `**kwargs`, and
+  `f(1, named=2, **kwargs^)` binds the literal keyword to its own named
+  parameter alongside the splat. The reverse splat order
+  (`f(**kwargs, *args)`) is rejected, matching Python, as is combining a `**`
+  splat with other keyword arguments bound for the same `**kwargs`.
+
 - [#6784](https://github.com/modular/modular/issues/6784),
   [#6434](https://github.com/modular/modular/issues/6434) - `math.sqrt` on
   `Float64` now works on NVIDIA GPU. It lowers to the IEEE correctly-rounded
