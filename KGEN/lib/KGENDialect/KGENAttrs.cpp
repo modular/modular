@@ -4475,7 +4475,8 @@ Type ToStringDeferredAttr::getType() const {
 
 LogicalResult
 ConstraintAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                       TypedAttr proposition, LocationAttr loc) {
+                       TypedAttr proposition, LocationAttr loc,
+                       StringAttr message) {
   // Verify that the proposition has i1 type
   if (auto t = dyn_cast<SIMDType>(proposition.getType());
       !t || !t.getResolvedDType() || !t.getResolvedDType()->isBool()) {
@@ -4488,14 +4489,16 @@ ConstraintAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 ConstraintAttr
 ConstraintAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                           TypedAttr proposition, LocationAttr loc) {
-  if (failed(verify(emitError, proposition, loc)))
+                           TypedAttr proposition, LocationAttr loc,
+                           StringAttr message) {
+  if (failed(verify(emitError, proposition, loc, message)))
     return {};
-  return get(proposition, loc);
+  return get(proposition, loc, message);
 }
 
-ConstraintAttr ConstraintAttr::get(TypedAttr proposition, LocationAttr loc) {
-  return get(proposition.getContext(), proposition, loc);
+ConstraintAttr ConstraintAttr::get(TypedAttr proposition, LocationAttr loc,
+                                   StringAttr message) {
+  return get(proposition.getContext(), proposition, loc, message);
 }
 
 //===----------------------------------------------------------------------===//

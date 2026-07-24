@@ -1538,7 +1538,8 @@ registerClosureParamCaptures(ArrayRef<ParamDeclAttr> params, ASTDecl &decl,
     // Create eq constraint: eq(C.T, RHS).
     TypedAttr eqConstraint = ParamOperatorAttr::get(POC::EQ, witnessAttr, rhs);
     Location loc = shared.diags.translateLocation(decl.getLoc());
-    constraints.push_back(ConstraintAttr::get(eqConstraint, loc));
+    constraints.push_back(
+        ConstraintAttr::get(eqConstraint, loc, /*message=*/StringAttr()));
   }
   return constraints;
 }
@@ -2650,9 +2651,7 @@ static LogicalResult verifyDerivedAncestorImplication(
 ///
 /// Returns failure if any diamond errors were found.
 static LogicalResult resolvePropagatedConstraints(
-    const DenseMap<SymbolRefAttr,
-                   SmallVector<std::pair<TypedAttr, LocationAttr>, 2>>
-        &propagated,
+    const DenseMap<SymbolRefAttr, SmallVector<ConstraintAttr, 2>> &propagated,
     DenseMap<SymbolRefAttr, ConstraintAttr> &traitConstraints,
     SharedState &shared) {
   ConstraintAttr unconditional =
@@ -2663,8 +2662,8 @@ static LogicalResult resolvePropagatedConstraints(
     assert(!paths.empty() && "propagated constraint entry cannot be empty");
 
     // Any unconditional path makes the ancestor unconditional.
-    bool hasUnconditionalPath = llvm::any_of(paths, [](const auto &pair) {
-      return isTriviallyTrueProposition(pair.first);
+    bool hasUnconditionalPath = llvm::any_of(paths, [](ConstraintAttr c) {
+      return isTriviallyTrueProposition(c.getProposition());
     });
     if (hasUnconditionalPath) {
       traitConstraints[symbol] = unconditional;
@@ -2674,19 +2673,29 @@ static LogicalResult resolvePropagatedConstraints(
     // Single path or all paths carry the same constraint: auto-propagate.
     // Canonicalization already normalizes operand order for commutative ops
     // like AND/OR, so structural equality suffices here.
-    TypedAttr firstProp = getCanonicalAttr(paths.front().first);
-    bool allSame = llvm::all_of(paths, [&](const auto &pair) {
-      return getCanonicalAttr(pair.first) == firstProp;
+    TypedAttr firstProp = getCanonicalAttr(paths.front().getProposition());
+    bool allSame = llvm::all_of(paths, [&](ConstraintAttr c) {
+      return getCanonicalAttr(c.getProposition()) == firstProp;
     });
 
     if (allSame) {
+      // Carry the derived clause's message down to the propagated ancestor
+      // constraint, so requiring the bare ancestor still surfaces it. The note
+      // points at the originating `where` clause, so naming the derived trait
+      // on an ancestor failure still gives the user the full picture. If paths
+      // agree on the proposition but carry different messages, none is correct
+      // for the merged result, so drop it.
+      StringAttr message = paths.front().getMessage();
+      bool allSameMessage = llvm::all_of(
+          paths, [&](ConstraintAttr c) { return c.getMessage() == message; });
       traitConstraints[symbol] =
-          ConstraintAttr::get(firstProp, paths.front().second);
+          ConstraintAttr::get(firstProp, paths.front().getLoc(),
+                              allSameMessage ? message : StringAttr());
       continue;
     }
 
     // Diamond: multiple paths disagree -- require explicit listing.
-    shared.emitError(paths.front().second)
+    shared.emitError(paths.front().getLoc())
         << "ancestor trait " << symbol.getLeafReference()
         << " is reached via multiple inheritance paths with different "
            "constraints; it must be explicitly listed in the conformance "
@@ -2735,8 +2744,7 @@ static LogicalResult buildTraitConstraintsMap(
   ConstraintAttr unconditional =
       getUnconditionalConstraint(shared.getContext());
   DenseMap<SymbolRefAttr, ConstraintAttr> explicitConstraints;
-  DenseMap<SymbolRefAttr, SmallVector<std::pair<TypedAttr, LocationAttr>, 2>>
-      propagated;
+  DenseMap<SymbolRefAttr, SmallVector<ConstraintAttr, 2>> propagated;
   bool hasErrors = false;
 
   // Partition parsed constraints into explicit and propagated.
@@ -2744,7 +2752,8 @@ static LogicalResult buildTraitConstraintsMap(
     TypedAttr prop = pc.constraint.getProposition();
 
     if (pc.isExplicit) {
-      auto newConstraint = ConstraintAttr::get(prop, pc.constraint.getLoc());
+      auto newConstraint = ConstraintAttr::get(prop, pc.constraint.getLoc(),
+                                               pc.constraint.getMessage());
       auto [it, inserted] =
           explicitConstraints.try_emplace(pc.traitSymbol, newConstraint);
       // Catches cases where a trait is listed twice with different constraints.
@@ -2772,7 +2781,9 @@ static LogicalResult buildTraitConstraintsMap(
       continue;
     }
 
-    propagated[pc.traitSymbol].push_back({prop, pc.constraint.getLoc()});
+    // Store the whole constraint (proposition, location, and message) so the
+    // derived clause's message can be carried down to the propagated ancestor.
+    propagated[pc.traitSymbol].push_back(pc.constraint);
   }
 
   // Verify derived->ancestor implication for explicitly listed traits.
@@ -2834,7 +2845,14 @@ static ParseResult parseOptionalConformanceListSyntax(
       }
       ParsedConstraint constraint;
       constraint.loc = whereLoc;
-      if (p.parseExpression(constraint.propExpr, stmtIndent))
+      ExprNode *parsed;
+      if (p.parseExpression(parsed, stmtIndent))
+        return failure();
+      // A message is written `where (condition, "message")`. Because the
+      // message lives inside the parentheses, the trailing comma that
+      // separates the next conformance entry is unambiguous -- no lookahead
+      // is needed here.
+      if (constraint.extractParenthesizedMessage(p, parsed))
         return failure();
       conformance.constraint = constraint;
     }
@@ -2923,7 +2941,8 @@ static ParseResult resolveConformanceList(
         traitConstraints
             ? ConstraintAttr::get(
                   SIMDAttr::getScalarBool(shared.getContext(), true),
-                  shared.diags.translateLocation(conformance.loc))
+                  shared.diags.translateLocation(conformance.loc),
+                  /*message=*/StringAttr())
             : ConstraintAttr();
     if (traitConstraints && conformance.constraint) {
       IREmitter constraintEmitter(declScope, EC_Requires);
@@ -2941,7 +2960,8 @@ static ParseResult resolveConformanceList(
       }
       TypedAttr simplifiedProp = LIT::deShortCircuitCond(propVal);
       constraint = ConstraintAttr::get(
-          simplifiedProp, shared.diags.translateLocation(conformance.loc));
+          simplifiedProp, shared.diags.translateLocation(conformance.loc),
+          conformance.constraint->message);
     }
 
     // If we want to extra information to detect conflict conditional

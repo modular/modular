@@ -10,6 +10,7 @@
 #include "MojoUtils.h"
 #include "OverloadSet.h"
 #include "ParamBindings.h"
+#include "Traits.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/Constraints.h"
@@ -40,7 +41,8 @@ extern bool checkConventionsConvertible(ArgConvention expectedConv,
 // InferenceFailure
 //===----------------------------------------------------------------------===//
 
-void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
+void MatchFailure::addExplanation(MojoInflightDiag &diag,
+                                  const ASTDecl *scope) const {
   SharedState *shared = diag.getSharedIfActive();
   if (!shared)
     return;
@@ -85,8 +87,13 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
 
   if (sugarIsa<TraitType>(failure.paramType)) {
     if (auto anyStruct = sugarDynCast<StructMetaType>(failure.argParamType)) {
-      diag << ", argument type " << ASTType(anyStruct.getType())
-           << " does not conform to trait " << failure.paramType;
+      ASTType argType(anyStruct.getType());
+      diag << ", argument type " << argType << " does not conform to trait "
+           << failure.paramType;
+      // Surface any user message from a conditional-conformance `where` clause
+      // that was not satisfied for this type.
+      LIT::attachFailedConformanceNotes(diag, argType, failure.paramType,
+                                        *shared, scope);
       return;
     }
     if (sugarIsa<TraitType>(failure.argParamType)) {

@@ -372,7 +372,8 @@ def ClosureMethodAttr : DialectAttribute<(attr
 
 def ConstraintAttr : DialectAttribute<(attr
   TypedAttr:$proposition,
-  ConcreteAttribute<"LocationAttr">:$loc
+  ConcreteAttribute<"LocationAttr">:$loc,
+  ConcreteOptionalAttribute<"StringAttr">:$message
 )> {
   let cBuilder = "get<$_resultType>(context, $_args)";
 }

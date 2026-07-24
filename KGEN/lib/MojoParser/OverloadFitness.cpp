@@ -15,6 +15,7 @@
 #include "MojoUtils.h"
 #include "OverloadSet.h"
 #include "ParamInf.h"
+#include "Traits.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
@@ -42,13 +43,18 @@ using namespace LIT;
 /// reporting an error passing `operand` to an argument of type `argType`.
 static void addTypeConversionDetail(MojoInflightDiag &diag,
                                     ASTExprAnd<AnyValue> operand,
-                                    ASTType argType, SharedState &shared) {
+                                    ASTType argType, SharedState &shared,
+                                    const ASTDecl *scope) {
   auto loc = operand.expr->getLoc();
   ASTType operandType = operand.ir.getRValueTypeIfResolvable();
   if (!operandType) {
     diag.attachNote(loc) << "try resolving the overloaded function first";
     return;
   }
+  // If the target is a trait and the source is a struct that fails a
+  // conditional conformance carrying a user message, surface it.
+  attachFailedConformanceNotes(diag, operandType, argType.mlirType, shared,
+                               scope);
   // Try to detect mismatched memory result type.
   auto lhsSig = sugarDynCast<FnTypeGeneratorType>(operandType);
   auto rhsSig = sugarDynCast<FnTypeGeneratorType>(argType);
@@ -148,7 +154,7 @@ void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag) {
 void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
                        ASTType expectedType, size_t argIdx,
                        PogListAttr argListAttr, CallSyntax syntax,
-                       SharedState &shared) {
+                       SharedState &shared, const ASTDecl *scope) {
   // Special case implicit conversions with a custom message.
   if (syntax == CallSyntax::kImplicitConvert) {
     if (ASTType type = operand.ir.getRValueTypeIfResolvable())
@@ -188,7 +194,7 @@ void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
   diag << (isConvertingTypeValue ? "an instance of " : "") << expectedType;
   if (isConvertingTypeValue)
     diag << "; did you mean to instantiate " << expectedType << "?";
-  addTypeConversionDetail(diag, operand, expectedType, shared);
+  addTypeConversionDetail(diag, operand, expectedType, shared, scope);
 }
 } // namespace M::KGEN::LIT
 

@@ -60,8 +60,11 @@ struct MatchFailure {
   template <typename Failure>
   MatchFailure(Failure info) : info(info) {}
 
-  // Describe what went wrong.
-  void addExplanation(MojoInflightDiag &diag) const;
+  // Describe what went wrong. `scope`, if non-null, supplies the caller
+  // assumptions used to explain an unsatisfied conditional conformance.
+  // Required (not defaulted) so every call site consciously supplies its
+  // scope; pass nullptr only when no scope is available.
+  void addExplanation(MojoInflightDiag &diag, const ASTDecl *scope) const;
 
   /// If this failure is due to an unresolved parameter, return the index of the
   /// parameter.

@@ -12,6 +12,7 @@
 #include "OverloadSet.h"
 #include "ParamBindings.h"
 #include "ParamMatcher.h"
+#include "Traits.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
@@ -98,7 +99,7 @@ void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag);
 void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
                        ASTType expectedType, size_t argIdx,
                        PogListAttr argListAttr, CallSyntax syntax,
-                       SharedState &shared);
+                       SharedState &shared, const ASTDecl *scope);
 } // namespace M::KGEN::LIT
 
 /// Attempt to resolve the specified operand to a CValue using the provided
@@ -119,7 +120,7 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
     auto &diag = getMojoDiag(operand.expr->getLoc());
     ::emitWrongTypeDiag(diag, operand, evaluator.getReboundType(expectedType),
-                        argIdx, argPogs, syntax, getShared());
+                        argIdx, argPogs, syntax, getShared(), &getDeclScope());
     return diag;
   };
 
@@ -163,7 +164,7 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
 
     // TODO: Could improve this to talk about initializers.
     auto &diag = emitWrongTypeDiag(expectedType);
-    matcher.failureReason->addExplanation(diag);
+    matcher.failureReason->addExplanation(diag, &getDeclScope());
     return failure();
   }
 
@@ -225,7 +226,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
     auto &diag = getMojoDiag(operand.expr->getLoc());
     ::emitWrongTypeDiag(diag, operand, evaluator.getReboundType(expectedType),
-                        argIdx, argPogs, syntax, getShared());
+                        argIdx, argPogs, syntax, getShared(), &getDeclScope());
     return diag;
   };
 
@@ -299,7 +300,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // diagnostic.
     ParamMatcher::FailableScope::restore(savedFailureInfo, matcher);
     auto &diag = emitWrongTypeDiag(expectedType);
-    matcher.failureReason->addExplanation(diag);
+    matcher.failureReason->addExplanation(diag, &getDeclScope());
     return failure();
   }
 
@@ -319,7 +320,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // diagnostic.
     ParamMatcher::FailableScope::restore(savedFailureInfo, matcher);
     auto &diag = emitWrongTypeDiag(expectedType);
-    matcher.failureReason->addExplanation(diag);
+    matcher.failureReason->addExplanation(diag, &getDeclScope());
     return failure();
   }
 
@@ -437,12 +438,12 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // Be more specific about this case.
     auto &diag = getMojoDiag(operand.expr->getLoc());
     diag << "failed to infer from type " << argType;
-    matcher.failureReason->addExplanation(diag);
+    matcher.failureReason->addExplanation(diag, &getDeclScope());
     return failure();
   }
 
   auto &diag = emitWrongTypeDiag(expectedType);
-  matcher.failureReason->addExplanation(diag);
+  matcher.failureReason->addExplanation(diag, &getDeclScope());
   return failure();
 }
 
@@ -1306,7 +1307,7 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
     auto &diag = getMojoDiag(operand.expr->getLoc());
     ::emitWrongTypeDiag(diag, operand, expectedType, argIdx, argPogs,
-                        callOperands.syntax, getShared());
+                        callOperands.syntax, getShared(), &getDeclScope());
     return diag;
   };
 
@@ -1358,7 +1359,7 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
       diag << "l-value of type " << operand.ir.getIfLValue().getRValueType()
            << " cannot be converted to reference of type " << expectedRVType
            << operand.expr->getRange();
-      matcher.failureReason->addExplanation(diag);
+      matcher.failureReason->addExplanation(diag, &getDeclScope());
       return failure();
     }
     break;
@@ -2052,7 +2053,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
           failed(matcher.matchParams(actualRefPackType.getOrigin(),
                                      expectedRefPackType.getOrigin()))) {
         auto &diag = emitPackMismatchDiag();
-        matcher.failureReason->addExplanation(diag);
+        matcher.failureReason->addExplanation(diag, &getDeclScope());
         return {};
       }
 
@@ -2158,12 +2159,15 @@ VerifiedParamBindings CallParamInf::inferForCall() {
           // mismatch is safe. This path is only reachable for packs (isPack
           // is asserted above), and ParamMatcher relies on the same invariant
           // via an unconditional cast<TraitType>.
-          getMojoDiag(operand.expr->getLoc())
-              << "an element of " << argPogs.getName(expectedArgIdx)
-              << " with type " << toPush << " does not conform to trait "
-              << elementType
-              << "; either prove the conformance with 'conforms_to'"
-                 ", or add conformance";
+          auto &diag = getMojoDiag(operand.expr->getLoc());
+          diag << "an element of " << argPogs.getName(expectedArgIdx)
+               << " with type " << toPush << " does not conform to trait "
+               << elementType
+               << "; either prove the conformance with 'conforms_to'"
+                  ", or add conformance";
+          // Surface any conditional-conformance `where` message that failed.
+          attachFailedConformanceNotes(diag, toPush, elementType, getShared(),
+                                       &emitter.getDeclScope());
           return {};
         }
 

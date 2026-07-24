@@ -70,11 +70,24 @@ enum class CaptureConvention : uint8_t {
   kConventionUnspecified = 6
 };
 
+/// Note that this type may be stored in bump pointer allocated state, so it
+/// cannot have a destructor!
 struct ParsedConstraint {
   SMLoc loc;
   ExprNode *propExpr;
+  /// Optional user-provided failure message from `where (condition,
+  /// "message")` syntax. Null if no message was written.
+  StringAttr message;
 
   ParseResult parse(ParserBase &p);
+
+  /// Split the parsed `where` expression into `propExpr` (the condition) and
+  /// `message`. If `parsed` has the shape `(condition, "message")` -- a
+  /// parenthesized two-element tuple whose second element is a string literal
+  /// -- both fields are set; a tuple whose second element is not a string
+  /// literal is a targeted error (only string-literal messages are supported).
+  /// Any other expression becomes `propExpr` as the bare condition.
+  ParseResult extractParenthesizedMessage(ParserBase &p, ExprNode *parsed);
 
   /// Print the constraint for debugging.
   void print(mlir::raw_indented_ostream &os) const;
@@ -162,7 +175,9 @@ public:
 
   /// Parse trailing constraints if present.
   ///
-  /// constraint_clauses ::= ("where" expression string_literal?)*
+  /// constraint_clauses ::= ("where" expression)*
+  /// A message is carried inside the expression as a parenthesized pair:
+  /// `where ( condition , string_literal )`.
   ParseResult parseTrailingConstraintsIfPresent(ParserBase &p);
 };
 

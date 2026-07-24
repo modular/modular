@@ -35,6 +35,8 @@ void LIT::emitConstraintInconclusive(DeclResolver &resolver,
   // First point to the constraint declaration and explain what it folded into.
   diag.attachNote(constraint.getLoc())
       << "constraint declared here needs evidence for " << prop;
+  if (StringAttr message = constraint.getMessage())
+    diag << ": " << message.getValue();
 
   // Walk the proposition to look for signs of inconclusiveness.
   TypedAttr canonProp = getCanonicalAttr(prop);
@@ -122,8 +124,8 @@ TriState LIT::canDischargeConstraints(
     }
 
     // Unprovable constraint.
-    localUnprovableConstraints.push_back(
-        ConstraintAttr::get(origProp, constraint.getLoc()));
+    localUnprovableConstraints.push_back(ConstraintAttr::get(
+        origProp, constraint.getLoc(), constraint.getMessage()));
   }
 
   if (!failedConstraints.empty()) {
@@ -134,14 +136,18 @@ TriState LIT::canDischargeConstraints(
     // will have already been folded into `False`.
     IndexToDeclRefRemapper remapper(paramListAttr);
     for (auto [idx, constraint] : failedConstraints) {
-      TypedAttr prop;
-      if (!origConstraints.empty())
-        prop = origConstraints[idx].getProposition();
-      else
-        prop = constraint.getProposition();
+      // Read the proposition and the user message from the same constraint:
+      // prefer the original signature's constraint (the substituted one has
+      // already been folded into `False`), falling back to `constraint` when
+      // no originals were provided.
+      ConstraintAttr src =
+          !origConstraints.empty() ? origConstraints[idx] : constraint;
+      TypedAttr prop = src.getProposition();
       diag.attachNote(constraint.getLoc(), prop)
           << "constraint declared here evaluated to False, expected "
           << remapper.replace(prop);
+      if (StringAttr message = src.getMessage())
+        diag << ": " << message.getValue();
     }
 
     return TriState::no();
@@ -226,7 +232,7 @@ ConstraintAttr LIT::buildBranchAssumption(TypedAttr cond, bool invertCondition,
   TypedAttr branchCondition = deShortCircuitCond(cond);
   if (invertCondition)
     branchCondition = ParamOperatorAttr::getNot(branchCondition);
-  return ConstraintAttr::get(branchCondition, loc);
+  return ConstraintAttr::get(branchCondition, loc, /*message=*/StringAttr());
 }
 
 bool LIT::attrConformsToTraitUnderAssumptions(

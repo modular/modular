@@ -188,7 +188,12 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
   // CHECK-SAME: constraint2 = #kgen.constraint<ge(:scalar<index> a, 4), #[[LOC_C2]]>
   constraint2 = #kgen.constraint<ge(:scalar<index> a, 4), loc("test.mojo":15:10)>,
   // CHECK-SAME: #kgen.constraint<conforms_to(:type array<1, i1>, :type [typevalue<#kgen.trait_ref<@trait_1, @trait_2>>, type]), #[[LOC_C3]]>
-  constraint3 = #kgen.constraint<conforms_to(:type array<1, i1>, :type #kgen.type<typevalue<#kgen.trait_ref<@trait_1, @trait_2>>, type> : !kgen.type), loc("test.mojo":20:15)>
+  constraint3 = #kgen.constraint<conforms_to(:type array<1, i1>, :type #kgen.type<typevalue<#kgen.trait_ref<@trait_1, @trait_2>>, type> : !kgen.type), loc("test.mojo":20:15)>,
+  // The optional user message round-trips (both textual and bytecode).
+  // CHECK-SAME: constraint4 = #kgen.constraint<true, #[[LOC_C1]], "N must be positive">
+  constraint4 = #kgen.constraint<true, loc("test.mojo":10:5), "N must be positive">,
+  // CHECK-SAME: constraint5 = #kgen.constraint<ge(:scalar<index> a, 4), #[[LOC_C2]], "must be at least 4">
+  constraint5 = #kgen.constraint<ge(:scalar<index> a, 4), loc("test.mojo":15:10), "must be at least 4">
 } : () -> ()
 
 // CHECK: llvm_bitcode_lib_unused = #kgen.llvm.bitcode.lib<used = false, library = "/path/to/lib.bc">
