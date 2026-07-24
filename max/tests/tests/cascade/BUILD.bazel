@@ -7,6 +7,20 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "test_native_backends",
+    size = "small",
+    srcs = ["test_native_backends.py"],
+    # aiohttp transitively provides multidict + frozenlist, which the test
+    # probes by name; it does not import aiohttp itself, hence ignore_extra_deps.
+    ignore_extra_deps = [
+        requirement("aiohttp"),
+    ],
+    deps = [
+        requirement("aiohttp"),
+    ],
+)
+
+modular_py_test(
     name = "test_local_runtime",
     size = "small",
     srcs = ["test_local_runtime.py"],
