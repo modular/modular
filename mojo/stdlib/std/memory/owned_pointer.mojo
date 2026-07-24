@@ -201,7 +201,7 @@ struct OwnedPointer[T: AnyType](
         mut: Bool,
         origin: Origin[mut=mut],
         //,
-    ](ref[origin] self) -> UnsafePointer[Self.T, origin]:
+    ](ref[origin] self) -> Pointer[Self.T, origin]:
         """Returns the backing pointer for this `OwnedPointer`.
 
         Parameters:
@@ -209,7 +209,7 @@ struct OwnedPointer[T: AnyType](
             origin: The origin of the pointer.
 
         Returns:
-            An UnsafePointer to the backing allocation for this `OwnedPointer`.
+            A pointer to the backing allocation for this `OwnedPointer`.
         """
         return (
             self._inner.unsafe_ptr()

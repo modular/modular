@@ -448,8 +448,11 @@ def _matmul_common[
         var c_alloc = alloc(
             AllocLayout[Scalar[dtype]](count=BS * SEQ_LEN * N)
         ).into_deletable()
+        var c_ptr: UnsafePointer[
+            Scalar[dtype], origin_of(c_alloc)
+        ] = c_alloc.unsafe_ptr()
         var c_nd = LayoutTensor[dtype, c_layout](
-            c_alloc.unsafe_ptr(),
+            c_ptr,
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
 
@@ -2655,11 +2658,12 @@ def print_kv_cache_cont_batch_generic_gpu[
     var blocks_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=n_blocks)
     ).into_deletable()
-    dev_ctx.enqueue_copy(
-        blocks_alloc.unsafe_ptr(), kv_collection.blocks.ptr, n_blocks
-    )
+    var blocks_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(blocks_alloc)
+    ] = blocks_alloc.unsafe_ptr()
+    dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
     var blocks_host = type_of(kv_collection.blocks).OriginCastType[_](
-        ptr=blocks_alloc.unsafe_ptr(),
+        ptr=blocks_ptr,
         layout=kv_collection.blocks.layout,
     )
 
@@ -2667,15 +2671,18 @@ def print_kv_cache_cont_batch_generic_gpu[
     var cache_lengths_alloc = alloc(
         AllocLayout[UInt32](count=n_cache_lengths)
     ).into_deletable()
+    var cache_lengths_ptr: UnsafePointer[
+        UInt32, origin_of(cache_lengths_alloc)
+    ] = cache_lengths_alloc.unsafe_ptr()
     dev_ctx.enqueue_copy(
-        cache_lengths_alloc.unsafe_ptr(),
+        cache_lengths_ptr,
         kv_collection.cache_lengths.ptr,
         n_cache_lengths,
     )
     var cache_lengths_host = type_of(
         kv_collection.cache_lengths
     ).OriginCastType[mut=False, _](
-        ptr=cache_lengths_alloc.unsafe_ptr(),
+        ptr=cache_lengths_ptr,
         layout=kv_collection.cache_lengths.layout,
     )
 
@@ -2683,15 +2690,18 @@ def print_kv_cache_cont_batch_generic_gpu[
     var lookup_table_alloc = alloc(
         AllocLayout[UInt32](count=n_lookup_table)
     ).into_deletable()
+    var lookup_table_ptr: UnsafePointer[
+        UInt32, origin_of(lookup_table_alloc)
+    ] = lookup_table_alloc.unsafe_ptr()
     dev_ctx.enqueue_copy(
-        lookup_table_alloc.unsafe_ptr(),
+        lookup_table_ptr,
         kv_collection.lookup_table.ptr,
         n_lookup_table,
     )
     var lookup_table_host = type_of(kv_collection.lookup_table).OriginCastType[
         mut=False, _
     ](
-        ptr=lookup_table_alloc.unsafe_ptr(),
+        ptr=lookup_table_ptr,
         layout=kv_collection.lookup_table.layout,
     )
 
@@ -2708,10 +2718,13 @@ def print_kv_cache_cont_batch_generic_gpu[
     var valid_lengths_host_alloc = alloc(
         AllocLayout[UInt32](count=valid_lengths.size())
     ).into_deletable()
+    var valid_lengths_host_ptr: UnsafePointer[
+        UInt32, origin_of(valid_lengths_host_alloc)
+    ] = valid_lengths_host_alloc.unsafe_ptr()
     var valid_lengths_host_nd = LayoutTensor[
         valid_lengths.dtype, valid_lengths.layout
     ](
-        valid_lengths_host_alloc.unsafe_ptr(),
+        valid_lengths_host_ptr,
         RuntimeLayout[valid_lengths.layout].row_major(
             valid_lengths.runtime_layout.shape.value.canonicalize()
         ),
@@ -2775,11 +2788,12 @@ def print_kv_cache_paged_generic_gpu[
     var blocks_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=n_blocks)
     ).into_deletable()
-    dev_ctx.enqueue_copy(
-        blocks_alloc.unsafe_ptr(), kv_collection.blocks.ptr, n_blocks
-    )
+    var blocks_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(blocks_alloc)
+    ] = blocks_alloc.unsafe_ptr()
+    dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
     var blocks_host = type_of(kv_collection.blocks).OriginCastType[_](
-        ptr=blocks_alloc.unsafe_ptr(),
+        ptr=blocks_ptr,
         layout=kv_collection.blocks.layout,
     )
 
@@ -2787,15 +2801,18 @@ def print_kv_cache_paged_generic_gpu[
     var cache_lengths_alloc = alloc(
         AllocLayout[UInt32](count=n_cache_lengths)
     ).into_deletable()
+    var cache_lengths_ptr: UnsafePointer[
+        UInt32, origin_of(cache_lengths_alloc)
+    ] = cache_lengths_alloc.unsafe_ptr()
     dev_ctx.enqueue_copy(
-        cache_lengths_alloc.unsafe_ptr(),
+        cache_lengths_ptr,
         kv_collection.cache_lengths.ptr,
         n_cache_lengths,
     )
     var cache_lengths_host = type_of(
         kv_collection.cache_lengths
     ).OriginCastType[mut=False, _](
-        ptr=cache_lengths_alloc.unsafe_ptr(),
+        ptr=cache_lengths_ptr,
         layout=kv_collection.cache_lengths.layout,
     )
 
@@ -2803,15 +2820,18 @@ def print_kv_cache_paged_generic_gpu[
     var lookup_table_alloc = alloc(
         AllocLayout[UInt32](count=n_lookup_table)
     ).into_deletable()
+    var lookup_table_ptr: UnsafePointer[
+        UInt32, origin_of(lookup_table_alloc)
+    ] = lookup_table_alloc.unsafe_ptr()
     dev_ctx.enqueue_copy(
-        lookup_table_alloc.unsafe_ptr(),
+        lookup_table_ptr,
         kv_collection.lookup_table.ptr,
         n_lookup_table,
     )
     var lookup_table_host = type_of(kv_collection.lookup_table).OriginCastType[
         mut=False, _
     ](
-        ptr=lookup_table_alloc.unsafe_ptr(),
+        ptr=lookup_table_ptr,
         layout=kv_collection.lookup_table.layout,
     )
 
@@ -2838,10 +2858,13 @@ def print_kv_cache_paged_generic_gpu[
     var valid_lengths_host_alloc = alloc(
         AllocLayout[UInt32](count=valid_lengths.size())
     ).into_deletable()
+    var valid_lengths_host_ptr: UnsafePointer[
+        UInt32, origin_of(valid_lengths_host_alloc)
+    ] = valid_lengths_host_alloc.unsafe_ptr()
     var valid_lengths_host_nd = LayoutTensor[
         valid_lengths.dtype, valid_lengths.layout
     ](
-        valid_lengths_host_alloc.unsafe_ptr(),
+        valid_lengths_host_ptr,
         RuntimeLayout[valid_lengths.layout].row_major(
             valid_lengths.runtime_layout.shape.value.canonicalize()
         ),

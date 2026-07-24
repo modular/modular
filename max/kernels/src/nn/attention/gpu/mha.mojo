@@ -6762,44 +6762,57 @@ def _naive_attention_with_transpose[
         AllocLayout[Scalar[dtype]](count=output.size())
     ).into_deletable()
 
+    var qt_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(qt_alloc)
+    ] = qt_alloc.unsafe_ptr()
+    var kt_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(kt_alloc)
+    ] = kt_alloc.unsafe_ptr()
+    var vt_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(vt_alloc)
+    ] = vt_alloc.unsafe_ptr()
+    var ot_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(ot_alloc)
+    ] = ot_alloc.unsafe_ptr()
+
     var qt = TileTensor(
-        qt_alloc.unsafe_ptr(),
+        qt_ptr,
         row_major(batch_size, num_heads, seq_len, depth),
     )
     var kt = TileTensor(
-        kt_alloc.unsafe_ptr(),
+        kt_ptr,
         row_major(batch_size, num_heads, depth, num_keys),
     )
     var vt = TileTensor(
-        vt_alloc.unsafe_ptr(),
+        vt_ptr,
         row_major(batch_size, num_heads, num_keys, depth),
     )
     var ot = TileTensor(
-        ot_alloc.unsafe_ptr(),
+        ot_ptr,
         row_major(batch_size, num_heads, seq_len, depth),
     )
 
     comptime layout_4d = Layout.row_major[4]()
     var qt_lt = LayoutTensor[dtype, layout_4d](
-        qt_alloc.unsafe_ptr(),
+        qt_ptr,
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_heads, seq_len, depth)
         ),
     )
     var kt_lt = LayoutTensor[dtype, layout_4d](
-        kt_alloc.unsafe_ptr(),
+        kt_ptr,
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_heads, depth, num_keys)
         ),
     )
     var vt_lt = LayoutTensor[dtype, layout_4d](
-        vt_alloc.unsafe_ptr(),
+        vt_ptr,
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_heads, num_keys, depth)
         ),
     )
     var ot_lt = LayoutTensor[dtype, layout_4d](
-        ot_alloc.unsafe_ptr(),
+        ot_ptr,
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_heads, seq_len, depth)
         ),
@@ -6922,8 +6935,11 @@ def _naive_attention[
     var score_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=score_size)
     ).into_deletable()
+    var score_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(score_alloc)
+    ] = score_alloc.unsafe_ptr()
     var score = TileTensor(
-        score_alloc.unsafe_ptr(),
+        score_ptr,
         row_major((batch_size, num_heads, seq_len, num_keys)),
     )
 

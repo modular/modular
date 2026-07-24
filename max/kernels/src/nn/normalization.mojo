@@ -2774,8 +2774,11 @@ def rms_norm_fused_residual_add_cpu[
     var intermediate_buffer_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=shape.flattened_length())
     )
+    var intermediate_buffer_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(intermediate_buffer_alloc._alloc)
+    ] = intermediate_buffer_alloc.unsafe_ptr()
     var intermediate_buffer = TileTensor(
-        intermediate_buffer_alloc.unsafe_ptr(),
+        intermediate_buffer_ptr,
         row_major(Coord(shape)),
     )
 

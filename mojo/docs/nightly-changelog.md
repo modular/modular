@@ -450,6 +450,12 @@ This version is still a work in progress.
   code is unaffected. Code that called an unsafe-only pointer operation directly
   on the result should switch to the ungated `unsafe_*` spelling, for example
   `ptr + i` becomes `ptr.unsafe_offset(i)`.
+- `Allocation.unsafe_ptr()` and `OwnedPointer.unsafe_ptr()` now return a safe
+  `Pointer` instead of an `UnsafePointer`. The two share the same layout and
+  convert implicitly, so most code is unaffected. Code that called an
+  unsafe-only pointer operation directly on the result should switch to the
+  ungated `unsafe_*` spelling, for example `ptr + i` becomes
+  `ptr.unsafe_offset(i)`.
 - `PythonObject.unsafe_get_as_pointer()`, `PythonObject.downcast_value_ptr()`,
   and `PythonObject.unchecked_downcast_value_ptr()` now return a safe `Pointer`
   instead of an `UnsafePointer`. The two share the same layout and convert

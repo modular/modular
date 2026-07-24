@@ -1293,12 +1293,18 @@ def _matmul_qint4[
     )
     var a_scale_base = alloc(AllocLayout[Float32](count=M * k_groups))
 
+    var a_quant_ptr: UnsafePointer[
+        Scalar[aq_type], origin_of(a_quant_base._alloc)
+    ] = a_quant_base.unsafe_ptr()
     var a_quant = LayoutTensor[aq_type, Layout.row_major[2]()](
-        a_quant_base.unsafe_ptr(),
+        a_quant_ptr,
         RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, K)),
     )
+    var a_scale_ptr: UnsafePointer[
+        Float32, origin_of(a_scale_base._alloc)
+    ] = a_scale_base.unsafe_ptr()
     var a_scale = LayoutTensor[DType.float32, Layout.row_major[2]()](
-        a_scale_base.unsafe_ptr(),
+        a_scale_ptr,
         RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, k_groups)),
     )
 
