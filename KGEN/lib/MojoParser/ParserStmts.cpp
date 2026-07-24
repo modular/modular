@@ -1146,8 +1146,12 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
   // Inject this assumption into the newly created context.
   // Convert `x and y` to `x & y` so we get better canonicalization.
   TypedAttr deShortCircuitCond = LIT::deShortCircuitCond(propVal.get());
+  // This constraint is an assumption (a premise the scope now knows to hold),
+  // not a checked constraint, so it carries no failure message: an assumption
+  // is never the subject of a violation diagnostic. The assert's own message
+  // lives on the `ParamAssertOp` above and surfaces if the assert fails.
   curDeclScope->insertKnownAssumptions(
-      {ConstraintAttr::get(deShortCircuitCond, loc)});
+      {ConstraintAttr::get(deShortCircuitCond, loc, /*message=*/StringAttr())});
   return success();
 }
 

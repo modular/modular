@@ -55,11 +55,42 @@ reduceTraitCompositionSymbols(SharedState &shared,
 TraitType getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
                                        ArrayRef<ConstraintAttr> assumptions);
 
+/// Fuse one or more constraints on the same symbol into a single constraint. A
+/// single constraint is returned unchanged; multiple constraints are conjoined
+/// -- their propositions are combined with `and` and their locations are fused
+/// into a `FusedLoc`. The user message is dropped when fusing more than one,
+/// since no single message describes a conjunction (see the definition for why
+/// that drop is unobservable today).
+ConstraintAttr fuseConstraints(SharedState &shared,
+                               ArrayRef<ConstraintAttr> constraints);
+
 /// Merge two meta-type values `typeA` and `typeB` into a single meta-type whose
 /// trait bound is the common (intersection) bound of the two inputs.
 /// Assumption: TypeA and TypeB must be the first level meta type, i.e., either
 /// a trait type or a struct meta type.
 Type mergeTwoMetaTypeBounds(SharedState &shared, ASTType typeA, ASTType typeB);
+
+/// If `concreteType` fails to conform to `trait` because of one or more
+/// conditional-conformance `where (cond, "message")` clauses, return the
+/// failing constraints that carry a user message (so the caller can surface
+/// the message). `callerAssumptions` are the enclosing scope's known
+/// assumptions, so that a conformance the caller proved via its own `where`
+/// clause is not reported as failing. Cold path: intended only to enrich the
+/// "does not conform to trait" diagnostic, never for conformance decisions.
+SmallVector<ConstraintAttr>
+getFailedConformanceMessages(ASTType concreteType, TraitType trait,
+                             SharedState &shared,
+                             ArrayRef<ConstraintAttr> callerAssumptions);
+
+/// Attach a note to `diag` for each conditional-conformance `where` message on
+/// `srcType`'s struct that was not satisfied when converting to trait-typed
+/// `targetType`. No-op if `targetType` is not a trait or `srcType` is null.
+/// `scope` supplies the caller assumptions used to evaluate the constraints
+/// (null means no assumptions). Centralizes the "unsatisfied conditional
+/// conformance" note used at the value-conversion diagnostic sites.
+void attachFailedConformanceNotes(MojoInflightDiag &diag, ASTType srcType,
+                                  Type targetType, SharedState &shared,
+                                  const ASTDecl *scope);
 
 FnTypeGeneratorType specializeSignature(FnOp traitFn, ASTType newSelfType,
                                         DeclResolver &declResolver);

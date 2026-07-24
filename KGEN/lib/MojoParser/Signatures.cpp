@@ -402,9 +402,10 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     }
     // Parse the constraint for error recovery, then discard it: we already
     // diagnosed it above, and parameter-list `where` clauses are no longer
-    // representable.
-    ParsedConstraint constraint;
-    if (constraint.parse(p))
+    // representable. A `where (cond, "msg")` message parses as a single
+    // parenthesized expression, so no message handling is needed here.
+    ExprNode *discardedProp = nullptr;
+    if (p.parseExpression(discardedProp))
       return failure();
   }
 
@@ -859,8 +860,8 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     for (ConstraintAttr bodyConstraint : srcParamList.getBodyConstraints()) {
       TypedAttr remappedProp =
           evaluator.getReboundAttribute(bodyConstraint.getProposition());
-      paramList.emittedBodyConstraints.push_back(
-          ConstraintAttr::get(remappedProp, bodyConstraint.getLoc()));
+      paramList.emittedBodyConstraints.push_back(ConstraintAttr::get(
+          remappedProp, bodyConstraint.getLoc(), bodyConstraint.getMessage()));
     }
   };
 
@@ -1212,7 +1213,8 @@ void TypeCheckedParamList::emitBodyConstraints() {
     // Translate location without any DebugInfo scope since this metadata is
     // purely frontend use and never ends up in DWARF.
     auto bodyConstraint = ConstraintAttr::get(
-        propVal, shared.diags.translateLocation(constraint.loc));
+        propVal, shared.diags.translateLocation(constraint.loc),
+        constraint.message);
     emittedBodyConstraints.push_back(bodyConstraint);
 
     // Insert the constraint into the param-list's declScope immediately
@@ -1281,10 +1283,57 @@ PogListAttr TypeCheckedParamList::getParamListAttr() const {
 ParseResult ParsedConstraint::parse(ParserBase &p) {
   loc = p.getToken().getLoc();
 
-  // Parse the constraint expression
-  if (p.parseExpression(propExpr))
+  // Parse the constraint expression into a local; `extractParenthesizedMessage`
+  // splits it into the final `propExpr` (the condition) and `message`.
+  ExprNode *parsed;
+  if (p.parseExpression(parsed))
     return failure();
 
+  // A message is written `where (condition, "message")`, which the expression
+  // parser produces as a parenthesized two-element tuple; split it if present.
+  return extractParenthesizedMessage(p, parsed);
+}
+
+ParseResult ParsedConstraint::extractParenthesizedMessage(ParserBase &p,
+                                                          ExprNode *parsed) {
+  // A message clause has the shape `where (condition, "message")`. The
+  // expression parser produces a ParenNode wrapping a two-element TupleNode
+  // for this. Anything else (a bare condition, or a parenthesized condition
+  // like `where (a and b)`) is the condition itself.
+  auto *paren = dyn_cast<ParenNode>(parsed);
+  if (!paren) {
+    propExpr = parsed;
+    return success();
+  }
+  auto *tuple = dyn_cast<TupleNode>(paren->subExpr);
+  if (!tuple) {
+    propExpr = parsed;
+    return success();
+  }
+
+  // A tuple with the wrong arity can only be a mistyped message clause: a
+  // condition is a scalar bool, never a tuple, so `where (a, b, c)` is not a
+  // valid condition either. Give a targeted diagnostic instead of letting it
+  // fall through to a generic "not scalar<bool>" error.
+  if (tuple->exprs.size() != 2)
+    return p.emitError(tuple->getLoc(),
+                       "a 'where' clause takes a condition and an optional "
+                       "message: 'where (condition, \"message\")'");
+
+  // The second element is the message. For now only string literals are
+  // supported: a `where` message must be available in the parser, but a
+  // non-literal expression would need comptime evaluation that the parser
+  // cannot perform. Reject non-literal messages with a targeted diagnostic.
+  ExprNode *msgExpr = tuple->exprs[1];
+  auto *strLit = dyn_cast<StringLiteralNode>(msgExpr);
+  if (!strLit)
+    return p.emitError(msgExpr->getLoc(),
+                       "the message in a 'where' clause must be a string "
+                       "literal");
+
+  // `getValue()` already handles adjacent string-literal concatenation.
+  message = StringAttr::get(p.getContext(), strLit->getValue());
+  propExpr = tuple->exprs[0];
   return success();
 }
 

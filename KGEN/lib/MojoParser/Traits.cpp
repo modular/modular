@@ -1191,6 +1191,84 @@ static TriState doesNominalTypeConformToUncached(
   return TriState::yes();
 }
 
+SmallVector<ConstraintAttr>
+LIT::getFailedConformanceMessages(ASTType concreteType, TraitType trait,
+                                  SharedState &shared,
+                                  ArrayRef<ConstraintAttr> callerAssumptions) {
+  SmallVector<ConstraintAttr> result;
+  ASTDecl *self = concreteType.getDecl(shared);
+  if (!self)
+    return result;
+  auto structOp = dyn_cast_or_null<StructDeclOp>(self->getIfOperation());
+  if (!structOp)
+    return result;
+
+  TraitType providedCanonTrait = getDeclProvidedTrait(self);
+  ArrayRef<SymbolRefAttr> providedSymbols = providedCanonTrait.getSymbols();
+  ArrayRef<ConstraintAttr> constraints = providedCanonTrait.getConstraints();
+  // An empty constraints array means every conformance is unconditional, so
+  // there is no user message to surface.
+  if (constraints.empty())
+    return result;
+  // A non-empty constraints array is parallel to the symbols (one constraint
+  // per symbol); the indexed access below relies on this, matching the
+  // invariant used in `doesNominalTypeConformToUncached`.
+  assert(constraints.size() == providedSymbols.size() &&
+         "trait constraints must be parallel to symbols");
+
+  // Fold the conditional-conformance constraints under the concrete type's
+  // parameter bindings, mirroring `doesNominalTypeConformToUncached`.
+  ParameterEvaluator evaluator;
+  ArrayRef<TypedAttr> paramBindings = concreteType.getParamBindings();
+  if (!paramBindings.empty())
+    evaluator =
+        shared.getParameterEvaluator(structOp.getInputParams(), paramBindings);
+
+  // Collect the message of every trait REQUIRED by `trait` whose conditional
+  // conformance does not hold. A derived trait and its propagated ancestors
+  // carry the same message at the same `where`-clause location, so a single
+  // requirement can match several of them; dedupe on (location, message) so
+  // the note is shown once.
+  DenseSet<SymbolRefAttr> requiredSet(trait.getSymbols().begin(),
+                                      trait.getSymbols().end());
+  DenseSet<std::pair<LocationAttr, StringAttr>> seen;
+  for (auto [i, symbol] : llvm::enumerate(providedSymbols)) {
+    if (!requiredSet.contains(symbol))
+      continue;
+    ConstraintAttr constraint = constraints[i];
+    if (isTriviallyTrueConstraint(constraint) || !constraint.getMessage())
+      continue;
+    if (!seen.insert({constraint.getLoc(), constraint.getMessage()}).second)
+      continue;
+    if (!canDischargeConstraint(evaluator, constraint, callerAssumptions)
+             .isTrue())
+      result.push_back(constraint);
+  }
+  return result;
+}
+
+// FIXME(MOCO-4423): this re-derives which conditional conformance failed
+// because the conversion check (`canImplicitlyConvertToType`) reports only that
+// the conversion failed, not why. Re-deriving is brittle -- it can diverge from
+// the reason the conversion actually rejected. This should be rewritten so that
+// the conversion returns a failure reason, and code here consumes that reason
+// directly instead of recomputing the failing constraints.
+void LIT::attachFailedConformanceNotes(MojoInflightDiag &diag, ASTType srcType,
+                                       Type targetType, SharedState &shared,
+                                       const ASTDecl *scope) {
+  auto trait = sugarDynCast<TraitType>(targetType);
+  if (!trait || !srcType)
+    return;
+  // Evaluate the conditional conformances under the caller's assumptions, so a
+  // conformance the caller proved via its own `where` clause is not reported.
+  SmallVector<ConstraintAttr> assumptions =
+      ASTDecl::getAssumptionsFromScope(scope);
+  for (ConstraintAttr failed :
+       getFailedConformanceMessages(srcType, trait, shared, assumptions))
+    diag.attachNote(failed.getLoc()) << "unsatisfied conditional conformance: "
+                                     << failed.getMessage().getValue();
+}
+
 void LIT::canonicalizeTraitCompositionSymbols(
     SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols) {
   canonicalizeTraitCompositionSymbols(
@@ -1235,6 +1313,32 @@ static std::pair<TraitType, StructDeclOp> extractTraitBound(SharedState &shared,
   ASTDecl *decl = type.getDecl(shared);
   auto structDecl = cast<StructDeclOp>(decl->getIfOperation());
   return {structDecl.getCanonicalTrait(), structDecl};
+}
+
+ConstraintAttr LIT::fuseConstraints(SharedState &shared,
+                                    ArrayRef<ConstraintAttr> constraints) {
+  assert(!constraints.empty() && "cannot fuse zero constraints");
+  // A single constraint keeps its proposition, location, and user message.
+  if (constraints.size() == 1)
+    return constraints.front();
+
+  // Conjoining constraints has no single correct `where` message, so the
+  // message is dropped. Unobservable today: authored messages only live on
+  // struct conformance lists, and conformance diagnostics read them off the
+  // source struct (`getFailedConformanceMessages`), never a fused meta-type
+  // bound. Revisit if traits ever gain messaged `where` clauses (see the
+  // "Failure messages" section of oss/modular/mojo/proposals/where_clauses.md).
+  SmallVector<TypedAttr> props;
+  SmallVector<Location> locs;
+  props.reserve(constraints.size());
+  locs.reserve(constraints.size());
+  for (ConstraintAttr c : constraints) {
+    props.push_back(c.getProposition());
+    locs.push_back(c.getLoc());
+  }
+  return ConstraintAttr::get(ParamOperatorAttr::get(POC::And, props),
+                             FusedLoc::get(shared.getContext(), locs),
+                             /*message=*/StringAttr());
 }
 
 Type LIT::mergeTwoMetaTypeBounds(SharedState &shared, ASTType typeA,
@@ -1297,15 +1401,7 @@ Type LIT::mergeTwoMetaTypeBounds(SharedState &shared, ASTType typeA,
       }
 
       assert(!origCons.empty());
-      TypedAttr prop = origCons.front().getProposition();
-      Location loc = origCons.front().getLoc();
-      if (origCons.size() == 2) {
-        // Two constraints, conjunct them.
-        ConstraintAttr consB = origCons.back();
-        prop = ParamOperatorAttr::get(POC::And, prop, consB.getProposition());
-        loc = FusedLoc::get(shared.getContext(), {loc, consB.getLoc()});
-      }
-      constraints[commonTrait] = ConstraintAttr::get(prop, loc);
+      constraints[commonTrait] = fuseConstraints(shared, origCons);
     }
   }
 
@@ -1619,7 +1715,8 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
         TypeConformsToTraitAttr::get(typePValue, trait.getPValue());
     deferredTypingContext->deferredConstraints.push_back(
         {ConstraintAttr::get(
-             conformsTo, shared.diags.translateLocation(value.expr->getLoc())),
+             conformsTo, shared.diags.translateLocation(value.expr->getLoc()),
+             /*message=*/StringAttr()),
          value.expr->getLoc()});
     return DowncastAttr::get(trait, typePValue);
   }

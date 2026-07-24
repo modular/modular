@@ -2496,7 +2496,7 @@ def KGEN_ToStringDeferredAttr : KGENAttr<"ToStringDeferred",
 //===----------------------------------------------------------------------===//
 
 def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint"> {
-  let summary = "A constraint with proposition and location";
+  let summary = "A constraint with proposition, location and optional message";
   let description = [{
     The `#kgen.constraint` attribute represents a proposition that should hold
     and a location for where this constraint was declared, which is useful for
@@ -2504,26 +2504,43 @@ def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint"> {
 
     The proposition is an i1-typed parameter expression.
 
+    The optional message is a user-provided string (from
+    `where (cond, "message")` syntax) that is surfaced in the diagnostic when
+    the constraint fails. It is null for constraints without a user message
+    (including all compiler-synthesized constraints).
+
     Example:
 
     ```mlir
     #kgen.constraint<1, loc("file.mojo":10:5)>
+    #kgen.constraint<1, loc("file.mojo":10:5), "must be positive">
     ```
   }];
 
   let parameters = (ins
     "TypedAttr":$proposition,
-    "LocationAttr":$loc
+    // FIXME(MOCO-4416): `loc` and `message` should be excluded from the
+    // canonical form used for type equality, so two otherwise-equal constraints
+    // that differ only in conformance location or message are not distinct types.
+    "LocationAttr":$loc,
+    OptionalParameter<"StringAttr">:$message
   );
 
   let assemblyFormat = [{
-    `<` custom<ScalarBoolParamValue>($proposition) `,` $loc `>`
+    `<` custom<ScalarBoolParamValue>($proposition) `,` $loc
+    (`,` $message^)? `>`
   }];
 
+  // Note: `message` is deliberately a required builder argument (no default).
+  // ConstraintAttr is reconstructed at several places in the frontend; a
+  // defaulted argument would let a reconstruction site silently drop the
+  // user's message. Sites without a user message pass an explicit
+  // `StringAttr{}`.
   let builders = [
     AttrBuilderWithInferredContext<(ins
         "TypedAttr":$proposition,
-        "LocationAttr":$loc)>
+        "LocationAttr":$loc,
+        "StringAttr":$message)>
   ];
 
   let genVerifyDecl = 1;

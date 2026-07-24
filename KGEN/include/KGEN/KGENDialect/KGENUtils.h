@@ -594,7 +594,7 @@ inline bool isTriviallyFalseConstraint(ConstraintAttr constraint) {
 /// Create a placeholder constraint for unconditional trait conformance.
 inline ConstraintAttr getUnconditionalConstraint(MLIRContext *ctx) {
   return ConstraintAttr::get(SIMDAttr::getScalarBool(ctx, true),
-                             UnknownLoc::get(ctx));
+                             UnknownLoc::get(ctx), /*message=*/StringAttr());
 }
 
 } // namespace M::KGEN
