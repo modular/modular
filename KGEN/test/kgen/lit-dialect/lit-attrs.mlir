@@ -176,6 +176,11 @@ kgen.generator @lifetime_union<x: !lit.origin<false>, y: !lit.origin<false>>() {
   // CHECK-NEXT: kgen.param.declare xyz_ref: origin<false> = <{x, y, (mutcast mut z)}>
   kgen.param.declare xyz_ref: !lit.origin<false> = <{{x, y}, {(mutcast mut z), y}}>
 
+  // CHECK-NEXT: kgen.param.declare subtree_collapsed: origin<false> = <#lit.origin.subtree<#kgen.param.decl.ref<"x"> : !lit.origin<false>>>
+  kgen.param.declare subtree_collapsed: !lit.origin<false> = <
+    {#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "field0"> : !lit.origin<false>,
+      #lit.origin.subtree<#kgen.param.decl.ref<"x"> : !lit.origin<false>> : !lit.origin<false>}>
+
   kgen.return
 }
 
