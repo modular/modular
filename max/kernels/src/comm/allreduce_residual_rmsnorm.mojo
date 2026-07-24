@@ -961,23 +961,21 @@ def _launch_split_allreduce_rmsnorm_fp8[
     comptime for i in range(1, ngpus):
         input_buffers[i] = TileTensor(src_ptrs[i], row_major(Coord(rows, cols)))
 
-    var res_ptr = residual.ptr
-    var res_out_ptr = residual_output.ptr
     var _cols = cols
 
     # Define input_fn for RMSNorm (reads from residual_output after allreduce).
-    @__copy_capture(res_out_ptr, _cols)
+    @__copy_capture(residual_output, _cols)
     @always_inline
     @parameter
     def input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
         var li = idx[0] * _cols + idx[1]
-        return res_out_ptr.load[width=width, alignment=width](li)
+        return residual_output.raw_load[width=width, alignment=width](li)
 
     var shape = IndexList[2](rows, cols)
     var scale_output_2d = TileTensor(
-        scale_output_1d.ptr, row_major(Coord(rows, Idx[1]))
+        scale_output_1d._storage, row_major(Coord(rows, Idx[1]))
     )
 
     # Pre-compile the RMSNorm+FP8 kernel before launching allreduce.
@@ -998,7 +996,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
     )
 
     # Step 1: Allreduce with add epilogue → residual_output.
-    @__copy_capture(res_ptr, res_out_ptr, _cols)
+    @__copy_capture(residual, residual_output, _cols)
     @always_inline
     @parameter
     def add_epilogue[
@@ -1009,14 +1007,16 @@ def _launch_split_allreduce_rmsnorm_fp8[
     ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:
         var il = coord_to_index_list(coords)
         var flat_idx = il[0] * _cols + il[1]
-        var res = res_ptr.load[width=_width, alignment=_alignment](flat_idx)
+        var res = residual.raw_load[width=_width, alignment=_alignment](
+            flat_idx
+        )
         # Add in f32 for precision parity with the fused kernel,
         # which accumulates allreduce + residual in f32 before casting.
         var sum_f32 = (
             val.cast[DType.float32]()
             + rebind[SIMD[_dtype, _width]](res).cast[DType.float32]()
         )
-        res_out_ptr.store[width=_width, alignment=_alignment](
+        residual_output.raw_store[width=_width, alignment=_alignment](
             flat_idx,
             rebind[SIMD[in_dtype, _width]](sum_f32.cast[_dtype]()),
         )
@@ -1431,17 +1431,17 @@ def allreduce_rmsnorm[
     ](uninitialized=True)
     comptime for i in range(ngpus):
         src_ptrs[i] = rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
-            input_buffers[i].ptr
+            input_buffers[i]._storage
         )
 
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
     var output_2d = TileTensor(
-        rebind[UnsafePointer[Scalar[out_dtype], MutAnyOrigin]](output.ptr),
+        rebind[UnsafePointer[Scalar[out_dtype], MutAnyOrigin]](output._storage),
         row_major(Coord(rows, cols)),
     )
     var scale_output_1d = TileTensor(
         rebind[UnsafePointer[Scalar[scales_dtype], MutAnyOrigin]](
-            scale_output.ptr
+            scale_output._storage
         ),
         row_major(
             Coord(
@@ -1548,27 +1548,29 @@ def allreduce_residual_rmsnorm[
     ](uninitialized=True)
     comptime for i in range(ngpus):
         src_ptrs[i] = rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
-            input_buffers[i].ptr
+            input_buffers[i]._storage
         )
 
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
     var output_2d = TileTensor(
-        rebind[UnsafePointer[Scalar[out_dtype], MutAnyOrigin]](output.ptr),
+        rebind[UnsafePointer[Scalar[out_dtype], MutAnyOrigin]](output._storage),
         row_major(Coord(rows, cols)),
     )
     var residual_2d = TileTensor(
-        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](residual.ptr),
+        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            residual._storage
+        ),
         row_major(Coord(rows, cols)),
     )
     var residual_output_2d = TileTensor(
         rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](
-            residual_output.ptr
+            residual_output._storage
         ),
         row_major(Coord(rows, cols)),
     )
     var scale_output_1d = TileTensor(
         rebind[UnsafePointer[Scalar[scales_dtype], MutAnyOrigin]](
-            scale_output.ptr
+            scale_output._storage
         ),
         row_major(
             Coord(

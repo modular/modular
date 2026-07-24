@@ -620,7 +620,7 @@ def _allreduce_naive_single[
             DeviceBuffer[dtype](
                 rctx,
                 rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                    list_of_in_tensors[i].ptr
+                    list_of_in_tensors[i]._storage
                 ),
                 num_elements,
                 owning=False,
@@ -803,7 +803,8 @@ def _allreduce_2stage_kernel[
                 my_rank, i
             )
             sliced_tiles[i] = SlicedTile(
-                src_tensors[target].ptr + elem_start, row_major(n_elements)
+                src_tensors[target]._storage + elem_start,
+                row_major(n_elements),
             )
 
         _reduce_scatter_impl[
@@ -1327,7 +1328,7 @@ def _allreduce_lamport_p2p[
     comptime for i in range(ngpus):
         flat_inputs[i] = FlatIn(
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                list_of_in_tensors[i].ptr
+                list_of_in_tensors[i]._storage
             ),
             row_major(num_elements),
         )
@@ -1423,7 +1424,7 @@ def _allreduce_p2p[
     comptime for i in range(num_tensors):
         flat_inputs[i] = FlatIn(
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                list_of_in_tensors[i].ptr
+                list_of_in_tensors[i]._storage
             ),
             row_major(num_elements),
         )
