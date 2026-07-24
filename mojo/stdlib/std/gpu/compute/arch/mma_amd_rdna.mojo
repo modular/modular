@@ -326,18 +326,25 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         This means the SIMD sizes passed to mma() for wave32 must be:
             - a.size = 16, b.size = 16, c.size = 8, d.size = 8
 
-        LLVM Intrinsic Signatures:
+        LLVM Intrinsic Signatures (RDNA3/gfx11):
             - FP16: llvm.amdgcn.wmma.f32.16x16x16.f16(<16 x half>, <16 x half>, <8 x float>)
             - BF16: llvm.amdgcn.wmma.f32.16x16x16.bf16(<16 x i16>, <16 x i16>, <8 x float>)
 
             Note: BF16 fragments must be bitcast to <16 x i16> (packed BF16 as int16)
             before calling the intrinsic, not passed as <16 x bfloat>.
 
+            RDNA4/gfx12 dropped the half-wave replication, so every A/B
+            fragment is half as wide as on gfx11 (f16 <8 x half>, bf16
+            <8 x i16>, iu8 <2 x i32>, iu4 i32, fp8 <2 x i32>): the K dimension
+            is split across the wave (lanes 0-15 hold the low half, lanes 16-31
+            the high half) instead of every lane holding the full row.
+
         Wave-Cooperative Distribution:
             - All 32 lanes in wave32 participate in the computation
-            - A/B fragments: Each lane holds its portion (16 elements)
+            - A/B fragments: gfx11 lane holds the full row (16 elements) and
+              lanes 16-31 mirror lanes 0-15; gfx12 lane holds half the row
+              (8 elements) with no replication
             - C/D fragments: Output distributed across all lanes (8 elements each)
-            - Wave32 requires half-wave replication (lanes 16-31 mirror lanes 0-15)
 
         Hardware Register Usage:
             - A/B: 8 VGPRs per lane (2 fp16/bf16 packed per 32-bit VGPR)
@@ -437,7 +444,9 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             and d.dtype == DType.int32
         ):
             comptime if _is_amd_rdna3() or _is_amd_rdna4():
-                comptime if _has_shape[4](a.size, b.size, c.size, d.size):
+                comptime if _has_shape[(16, 16, 8, 8)](
+                    a.size, b.size, c.size, d.size
+                ):
                     return "llvm.amdgcn.wmma.i32.16x16x16.iu8"
                 else:
                     _unsupported_mma_op(d, a, b, c)
@@ -452,7 +461,9 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             and d.dtype == DType.int32
         ):
             comptime if _is_amd_rdna3() or _is_amd_rdna4():
-                comptime if _has_shape[4](a.size, b.size, c.size, d.size):
+                comptime if _has_shape[(16, 16, 8, 8)](
+                    a.size, b.size, c.size, d.size
+                ):
                     return "llvm.amdgcn.wmma.i32.16x16x16.iu4"
                 else:
                     _unsupported_mma_op(d, a, b, c)
@@ -504,25 +515,117 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime if a.size == 16 and b.size == 16 and c.size == 8 and d.size == 8:
         comptime intrinsic_name = get_intrinsic_name()
 
-        comptime if a.dtype == DType.bfloat16:
+        # gfx12 halves the A/B width vs gfx11 (see the struct docstring), so on
+        # gfx12 pick this lane's 8-wide half of the replicated 16-wide fragment.
+        var second_half = _is_amd_rdna4() and (lane_id() & 16) != 0
+
+        comptime if a.dtype == DType.float16:
+            comptime if _is_amd_rdna4():
+                var a8 = a.slice[8, offset=8]() if second_half else a.slice[
+                    8, offset=0
+                ]()
+                var b8 = b.slice[8, offset=8]() if second_half else b.slice[
+                    8, offset=0
+                ]()
+                var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
+                    a8, b8, c
+                )
+                d = rebind[type_of(d)](r)
+            else:
+                var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
+                    a, b, c
+                )
+                d = rebind[type_of(d)](r)
+        elif a.dtype == DType.bfloat16:
+            # BF16 fragments are passed to the intrinsic as packed int16.
+            comptime if _is_amd_rdna4():
+                var ai = bitcast[DType.int16, 16](a)
+                var bi = bitcast[DType.int16, 16](b)
+                var a8 = ai.slice[8, offset=8]() if second_half else ai.slice[
+                    8, offset=0
+                ]()
+                var b8 = bi.slice[8, offset=8]() if second_half else bi.slice[
+                    8, offset=0
+                ]()
+                var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
+                    a8, b8, c
+                )
+                d = rebind[type_of(d)](r)
+            else:
+                var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
+                    bitcast[DType.int16, 16](a), bitcast[DType.int16, 16](b), c
+                )
+                d = rebind[type_of(d)](r)
+        elif a.dtype.is_float8():
+            # RDNA4-only native fp8/bf8: 8 fp8 per lane packed as `<2 x i32>`.
+            var a8 = a.slice[8, offset=8]() if second_half else a.slice[
+                8, offset=0
+            ]()
+            var b8 = b.slice[8, offset=8]() if second_half else b.slice[
+                8, offset=0
+            ]()
             var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
-                bitcast[DType.int16, 16](a), bitcast[DType.int16, 16](b), c
+                bitcast[DType.int32, 2](a8), bitcast[DType.int32, 2](b8), c
             )
             d = rebind[type_of(d)](r)
+        elif a.dtype == DType.int8 or a.dtype == DType.uint8:
+            # iu8: the interleaved `i1` signedness and trailing `i1` clamp are
+            # immediates; A/B pack to `<4 x i32>` (gfx11) or `<2 x i32>` (gfx12).
+            comptime a_signed = a.dtype == DType.int8
+            comptime b_signed = b.dtype == DType.int8
+            comptime if _is_amd_rdna4():
+                var a8 = a.slice[8, offset=8]() if second_half else a.slice[
+                    8, offset=0
+                ]()
+                var b8 = b.slice[8, offset=8]() if second_half else b.slice[
+                    8, offset=0
+                ]()
+                var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
+                    a_signed,
+                    bitcast[DType.int32, 2](a8),
+                    b_signed,
+                    bitcast[DType.int32, 2](b8),
+                    c,
+                    False,
+                )
+                d = rebind[type_of(d)](r)
+            else:
+                var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
+                    a_signed,
+                    bitcast[DType.int32, 4](a),
+                    b_signed,
+                    bitcast[DType.int32, 4](b),
+                    c,
+                    False,
+                )
+                d = rebind[type_of(d)](r)
         else:
-            var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](a, b, c)
-            d = rebind[type_of(d)](r)
+            # iu4 (uint4): unsigned; A/B pack to `<2 x i32>` (gfx11) or `i32`.
+            comptime if _is_amd_rdna4():
+                var a8 = a.slice[8, offset=8]() if second_half else a.slice[
+                    8, offset=0
+                ]()
+                var b8 = b.slice[8, offset=8]() if second_half else b.slice[
+                    8, offset=0
+                ]()
+                var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
+                    False,
+                    bitcast[DType.int32, 1](a8),
+                    False,
+                    bitcast[DType.int32, 1](b8),
+                    c,
+                    False,
+                )
+                d = rebind[type_of(d)](r)
+            else:
+                var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
+                    False,
+                    bitcast[DType.int32, 2](a),
+                    False,
+                    bitcast[DType.int32, 2](b),
+                    c,
+                    False,
+                )
+                d = rebind[type_of(d)](r)
     else:
-        comptime if (
-            a.dtype == DType.int8 or a.dtype == DType.uint8
-        ) and c.dtype == DType.int32:
-            # Cast inputs to int32 for WMMA intrinsic
-            var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](
-                bitcast[DType.int32, 1](a), bitcast[DType.int32, 1](b), c
-            )
-            d = rebind[type_of(d)](r)
-        else:
-            var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](
-                a, b, c
-            )
-            d = rebind[type_of(d)](r)
+        _unsupported_mma_op(d, a, b, c)
