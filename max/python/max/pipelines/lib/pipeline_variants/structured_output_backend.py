@@ -245,7 +245,7 @@ class GrammarBackend(GrammarValidator, Protocol[GrammarT]):
         except Exception as e:
             raise InputError(
                 f"Tool-call grammar cannot be compiled by the "
-                f"{self.name} backend: {e}"
+                f"{self.name} backend: {str(e).strip()}"
             ) from e
 
     def check_json_schema(self, json_schema: str) -> None:
@@ -262,7 +262,7 @@ class GrammarBackend(GrammarValidator, Protocol[GrammarT]):
         except Exception as e:
             raise InputError(
                 f"response_format json_schema cannot be compiled by the "
-                f"{self.name} backend: {e}"
+                f"{self.name} backend: {str(e).strip()}"
             ) from e
 
 
