@@ -3240,8 +3240,19 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
-      parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList) ||
-      parseOptionalConformanceListSyntax(
+      parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList))
+    return failure();
+  // Captured before conformance-list parsing so a missing-conformance fix-it
+  // (see the `Movable` check below) has an insertion point even when the
+  // struct has no conformance list at all.
+  SMLoc conformanceListLoc = p.getToken().getLoc();
+  bool hasConformanceParens = p.getToken().is(Token::l_paren);
+  // A trailing `where` clause (after the param list, no conformance parens)
+  // sits immediately at conformanceListLoc, so a synthesized conformance list
+  // inserted there needs a trailing space to avoid gluing onto `where`.
+  bool conformanceListLocIsBeforeWhereClause =
+      p.getToken().isIdentifier() && p.getToken().getSpelling() == "where";
+  if (parseOptionalConformanceListSyntax(
           p, parsedConformances, sigDecl.getIndentation(),
           /*allowConformanceConstraints=*/true) ||
       parsedParams.parseTrailingConstraintsIfPresent(p) ||
@@ -3318,6 +3329,51 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // May be overridden / narrowed by explicit conditional `where` conformance.
   if (implicitDelDecl)
     parentTraits.push_back(implicitDelDecl->getSymbolRef());
+
+  // Temporary opt-in migration aid:  Warn on structs that don't explicitly
+  // mention `Movable`, with a fix-it that makes it explicit via `Movable where
+  // False`. Only fires for structs in the main file. Also requires builtins to
+  // be in scope (matching how the AnyType/ImplicitlyDeletable injection above
+  // guards on `anyTypeDecl`/`implicitDelDecl`): with builtins disabled there
+  // is no `Movable` to conform to or opt out of, and inserting a reference to
+  // it would just produce an unresolvable identifier.
+  if (shared.shouldDiagnoseMissingMovableConformance() &&
+      shared.hasBuiltinModule() &&
+      shared.diags.sourceMgr.FindBufferContainingLoc(identifierLoc) ==
+          shared.diags.sourceMgr.getMainFileID()) {
+    if (ASTDecl *movableDecl =
+            shared.lookupBuiltinTrait("Movable", decl.getLoc())) {
+      if (!llvm::is_contained(parentTraits, movableDecl->getSymbolRef())) {
+        MojoInflightDiag diag =
+            shared.emitWarning(identifierLoc)
+            << "struct does not explicitly conform to 'Movable'";
+        if (!parsedConformances.empty()) {
+          const ParsedConformanceEntry &lastConformance =
+              parsedConformances.back();
+          SMLoc insertLoc =
+              lastConformance.constraint
+                  ? lastConformance.constraint->propExpr->getRange().getEnd()
+                  : lastConformance.typeExpr->getRange().getEnd();
+          diag << FixIt::insertAfterToken(insertLoc, ", Movable where False",
+                                          shared.diags);
+        } else if (hasConformanceParens) {
+          // struct S(): an explicit but empty conformance list -- insert
+          // inside the existing parens rather than creating a new list.
+          diag << FixIt::insertAfterToken(conformanceListLoc,
+                                          "Movable where False", shared.diags);
+        } else {
+          // No existing conformance list: synthesize one. If a trailing
+          // `where` clause follows immediately (no parens precede it), keep a
+          // space before it -- otherwise the insertion glues onto `where`
+          // with no separator (e.g. `(Movable where False)where value >= 0`).
+          diag << FixIt::insertBeforeToken(conformanceListLoc,
+                                           conformanceListLocIsBeforeWhereClause
+                                               ? "(Movable where False) "
+                                               : "(Movable where False)");
+        }
+      }
+    }
+  }
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
