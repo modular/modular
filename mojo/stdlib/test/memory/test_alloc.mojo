@@ -114,7 +114,7 @@ def test_allocation_unsafe_span_covers_layout_count() raises:
     var a = alloc(Layout[Int](count=3))
     var ptr = a.unsafe_ptr()
     for i in range(3):
-        (ptr + i).unsafe_write(i * 10)
+        ptr.unsafe_offset(i).unsafe_write(i * 10)
     var span = a.unsafe_span()
     var span_len = len(span)
     var first = span[0]

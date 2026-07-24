@@ -51,7 +51,7 @@ var ptr = allocation.unsafe_ptr()
 
 # initialize the memory
 for i in range(allocation.layout().count()):
-    (ptr + i).unsafe_write("🔥")
+    ptr.unsafe_offset(i).unsafe_write("🔥")
 
 # print the values
 for string in allocation.unsafe_span():
@@ -207,7 +207,7 @@ struct Allocation[T: AnyType](
         """
         return self._alloc^.unsafe_leak()
 
-    def unsafe_ptr(ref self) -> UnsafePointer[Self.T, origin_of(self._alloc)]:
+    def unsafe_ptr(ref self) -> Pointer[Self.T, origin_of(self._alloc)]:
         """Returns a pointer to the allocated storage without consuming `self`.
 
         The returned pointer borrows from `self`, so the `Allocation` retains
@@ -355,7 +355,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
     var deletable = alloc(Layout[Int32](count=4)).into_deletable()
     var ptr = deletable.unsafe_ptr()
     for i in range(4):
-        (ptr + i).unsafe_write(i)
+        ptr.unsafe_offset(i).unsafe_write(i)
     # `deletable` frees its storage when it is destroyed (after its last use).
     ```
     """
@@ -403,7 +403,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
 
     def unsafe_ptr(
         ref self,
-    ) -> UnsafePointer[Self.T, origin_of(self)]:
+    ) -> Pointer[Self.T, origin_of(self)]:
         """Returns a pointer to the allocated storage without consuming `self`.
 
         The returned pointer borrows from `self`, so the `DeletableAllocation`
@@ -688,7 +688,7 @@ def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
     var allocation = alloc(Layout[Int32](count=4))
     var ptr = allocation.unsafe_ptr()
     for i in range(4):
-        (ptr + i).unsafe_write(i)
+        ptr.unsafe_offset(i).unsafe_write(i)
     dealloc(allocation^)
     ```
     """

@@ -125,7 +125,9 @@ def test_matmul_sm90[
     var c_host_ref_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
     ).into_deletable()
-    var c_host_ref = c_host_ref_alloc.unsafe_ptr()
+    var c_host_ref: UnsafePointer[
+        Scalar[c_type], origin_of(c_host_ref_alloc)
+    ] = c_host_ref_alloc.unsafe_ptr()
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)

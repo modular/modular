@@ -454,8 +454,11 @@ def fused_token_sampling_cpu[
         var out_vals_alloc = alloc(
             AllocLayout[Scalar[dtype]](count=out_vals_shape.flattened_length())
         ).into_deletable()
+        var out_vals_ptr: UnsafePointer[
+            Scalar[dtype], origin_of(out_vals_alloc)
+        ] = out_vals_alloc.unsafe_ptr()
         var out_vals = TileTensor(
-            out_vals_alloc.unsafe_ptr(),
+            out_vals_ptr,
             row_major(Coord(out_vals_shape)),
         )
 
@@ -562,8 +565,11 @@ def _top_k_sampling[
     var out_idxs_tmp_alloc = alloc(
         AllocLayout[Int64](count=out_vals.num_elements())
     )
+    var out_idxs_tmp_ptr: UnsafePointer[
+        Int64, origin_of(out_idxs_tmp_alloc._alloc)
+    ] = out_idxs_tmp_alloc.unsafe_ptr()
     var out_idxs_tmp = TileTensor(
-        out_idxs_tmp_alloc.unsafe_ptr(),
+        out_idxs_tmp_ptr,
         row_major(Coord(internal_out_shape)),  # topk returns K as last dim
     )
     var reshaped_input = reshape(input, internal_in_shape)
@@ -598,11 +604,14 @@ def _top_k_sampling[
         var max_val = reshaped_out_vals[batch, 0][0]
         var sum_exp = Scalar[dtype](0)
         var exp_vals = alloc(AllocLayout[Scalar[dtype]](count=k_val))
+        var exp_vals_ptr: UnsafePointer[
+            Scalar[dtype], origin_of(exp_vals._alloc)
+        ] = exp_vals.unsafe_ptr()
         var temp_val = temperature_val.cast[dtype]()
         for i in range(k_val):
             var val = reshaped_out_vals[batch, i][0]
             var exp_val = exp((val - max_val) / max(temp_val, 1e-6))
-            exp_vals.unsafe_ptr()[i] = exp_val
+            exp_vals_ptr[i] = exp_val
             sum_exp += exp_val
 
         # Handle top_p parameter - extract scalar value from buffer
@@ -610,7 +619,7 @@ def _top_k_sampling[
         if top_p:
             top_p_val = top_p.value()[batch][0].cast[dtype]()
         var _top_p = _adjust_top_p[dtype](
-            top_p_val, exp_vals.unsafe_ptr(), k_val, sum_exp
+            top_p_val, exp_vals_ptr, k_val, sum_exp
         )
 
         # Handle seed parameter - extract scalar value from buffer
@@ -625,7 +634,7 @@ def _top_k_sampling[
         # Sample using the normalized probabilities
         var r = sum_exp * _top_p * rng[0].cast[dtype]()
         for i in range(k_val):
-            r -= exp_vals.unsafe_ptr()[i]
+            r -= exp_vals_ptr[i]
             if r <= 0 or i == k_val - 1:
                 # Store the sampled index and value
                 reshaped_out_idxs[batch, 0] = out_idxs_tmp[batch, i]

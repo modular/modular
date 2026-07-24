@@ -289,7 +289,9 @@ def _quantize_a_Q8_K[
             count=M * (K // quantized_k)
         )
     )
-    var packed_ptr = packed_base_alloc.unsafe_ptr()
+    var packed_ptr: UnsafePointer[
+        _block_Q8_K_packed[group_size], origin_of(packed_base_alloc._alloc)
+    ] = packed_base_alloc.unsafe_ptr()
 
     for ko in range(0, K, quantized_k):
         var am_ptr = a.ptr + ko
@@ -1505,7 +1507,9 @@ def _matmul_Qb_K[
     var a_packed_base_alloc = _quantize_a_Q8_K[
         group_size, interleave_group_sums=interleave_group_sums
     ](a)
-    a_packed_base_ptr = a_packed_base_alloc.unsafe_ptr()
+    var a_packed_base_ptr: UnsafePointer[
+        _block_Q8_K_packed[group_size], origin_of(a_packed_base_alloc._alloc)
+    ] = a_packed_base_alloc.unsafe_ptr()
 
     comptime grain_size = simd_width * 2
 

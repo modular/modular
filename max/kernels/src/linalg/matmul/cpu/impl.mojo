@@ -713,8 +713,11 @@ def matmul[
                 count=scratch_m * scratch_n, alignment=scratch_align
             )
         ).into_deletable()
+        var scratch_ptr: UnsafePointer[
+            Scalar[scratch_type], origin_of(scratch_alloc)
+        ] = scratch_alloc.unsafe_ptr()
         var scratch = TileTensor(
-            scratch_alloc.unsafe_ptr(), row_major(Coord(scratch_m, scratch_n))
+            scratch_ptr, row_major(Coord(scratch_m, scratch_n))
         )
 
         @parameter
