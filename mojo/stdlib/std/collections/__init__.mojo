@@ -36,3 +36,4 @@ from .optional import Optional, OptionalReg
 from .set import Set
 from .span import ImmutSpan, ImmSpan, MutSpan, Span
 from .check_bounds import check_bounds
+from .type_dict import TypeDict
