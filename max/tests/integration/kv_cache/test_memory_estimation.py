@@ -163,6 +163,48 @@ def test_limited_mem() -> None:
         )
 
 
+def test_max_seq_len_exceeds_capacity() -> None:
+    params = create_params()
+    # 1 GiB fits 1024 pages of 128 tokens each; one extra token needs a 1025th.
+    oversized_seq_len = 1024 * 128 + 1
+
+    # By default the oversized config only warns (memory estimation probes
+    # such configs during binary search).
+    assert (
+        compute_num_device_blocks(
+            params=params,
+            available_cache_memory=GIB,
+            max_batch_size=1,
+            max_seq_len=oversized_seq_len,
+        )
+        == 1024
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="one request at the max sequence length",
+    ):
+        compute_num_device_blocks(
+            params=params,
+            available_cache_memory=GIB,
+            max_batch_size=1,
+            max_seq_len=oversized_seq_len,
+            require_max_seq_len_fits=True,
+        )
+
+    # A config that exactly fits does not raise.
+    assert (
+        compute_num_device_blocks(
+            params=params,
+            available_cache_memory=GIB,
+            max_batch_size=1,
+            max_seq_len=1024 * 128,
+            require_max_seq_len_fits=True,
+        )
+        == 1024
+    )
+
+
 def test_dp2() -> None:
     params = create_params(dp=2)
     assert (

@@ -90,11 +90,16 @@ def load_kv_manager(
     if max_batch_size <= 0:
         raise ValueError("max_batch_size must be greater than 0")
 
+    # A single request at max_seq_len must fit in the device block pool:
+    # otherwise it cannot be preempted (there is nothing else to evict) and
+    # overflows the pool at runtime, crashing the model worker with
+    # InsufficientBlocksError. Fail startup instead.
     total_num_pages = compute_num_device_blocks(
         params=params,
         available_cache_memory=available_cache_memory,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
+        require_max_seq_len_fits=True,
     )
 
     total_num_host_pages = compute_num_host_blocks(params)

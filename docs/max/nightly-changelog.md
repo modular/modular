@@ -692,6 +692,12 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- MAX Serve now fails at startup when the device KV cache cannot hold a
+  single request at the configured max sequence length. Previously this
+  condition only logged a warning, and a request approaching the max
+  sequence length would exhaust the KV cache pool at runtime and crash the
+  model worker with `InsufficientBlocksError`. The startup error reports the
+  largest `--max-length` that fits in the allocated KV cache pool.
 - `max.nn.Module.build_subgraph()` now takes representative input *values*
   (`inputs=`) instead of input *types* (`input_types=`). Each argument may be a
   single `Value`, a nested list/tuple of values, or a structured
