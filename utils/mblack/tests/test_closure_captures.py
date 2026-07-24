@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Tests for closure capture lists (`{ captures }`) on `def`.
+# Tests for closure capture lists (`{ captures }`) on `def`. Move-capture (`^`)
+# transfers ownership, so those samples capture a movable `String`.
 
 import pytest
 from tests.util import assert_mojo_format
@@ -64,7 +65,7 @@ def test_var_move_named_capture():
     """Preserves ``var^ name`` (move marker on a named capture) tight."""
     source = (
         "def main() raises:\n"
-        "    var a: Int = 0\n"
+        '    var a = String("x")\n'
         "\n"
         "    @always_inline\n"
         "    def cb[]() raises {var^ a}:\n"
@@ -77,7 +78,7 @@ def test_var_move_named_capture_trailing_caret():
     """Preserves ``var name^`` (legacy move-marker position) tight."""
     source = (
         "def main() raises:\n"
-        "    var a: Int = 0\n"
+        '    var a = String("x")\n'
         "\n"
         "    @always_inline\n"
         "    def cb[]() raises {var a^}:\n"
@@ -92,7 +93,7 @@ def test_bare_move_capture(raises, space):
     """Formats a bare move capture ``{a^}`` tight, dropping any space before ``^``."""
     source = (
         "def main() raises:\n"
-        "    var a: Int = 0\n"
+        '    var a = String("x")\n'
         "\n"
         "    @always_inline\n"
         f"    def cb[](){raises} {{a{space}^}}:\n"
@@ -100,7 +101,7 @@ def test_bare_move_capture(raises, space):
     )
     expected = (
         "def main() raises:\n"
-        "    var a: Int = 0\n"
+        '    var a = String("x")\n'
         "\n"
         "    @always_inline\n"
         f"    def cb[](){raises} {{a^}}:\n"
@@ -127,9 +128,9 @@ def test_bare_move_in_mixed_capture_list():
     """Formats a bare move ``b^`` alongside explicit-convention captures."""
     source = (
         "def main() raises:\n"
-        "    var a: Int = 0\n"
-        "    var b: Int = 0\n"
-        "    var c: Int = 0\n"
+        '    var a = String("x")\n'
+        '    var b = String("y")\n'
+        '    var c = String("z")\n'
         "\n"
         "    @always_inline\n"
         "    def cb[]() raises {var a^, b^, read c}:\n"
