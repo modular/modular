@@ -602,12 +602,16 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
 
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
-  // Each backend owns how its TargetMachine is built.
   ErrorOr<const TargetBackend *> backendOr =
       TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
   if (backendOr.isError())
     return Error(backendOr.getError());
-  return (*backendOr)->createTargetMachine(options, isJIT);
+  // TargetMachine creation runs in the host's LLVM instance (it uses the target
+  // registry); the backend only adjusts the options.
+  return defaultCreateTargetMachine(
+      (*backendOr)
+          ->adjustOptionsForTargetMachine(options, options.targetTriple),
+      isJIT);
 }
 
 //===----------------------------------------------------------------------===//

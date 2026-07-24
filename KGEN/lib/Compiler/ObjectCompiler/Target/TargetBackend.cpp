@@ -76,13 +76,6 @@ defaultCreateTargetMachine(const CompilationOptions &options, bool isJIT) {
   return machine;
 }
 
-ErrorOr<std::unique_ptr<llvm::TargetMachine>>
-TargetBackend::createTargetMachine(const CompilationOptions &options,
-                                   bool isJIT) const {
-  return defaultCreateTargetMachine(
-      adjustOptionsForTargetMachine(options, options.targetTriple), isJIT);
-}
-
 bool TargetBackend::isSharedMemoryGlobal(
     const llvm::GlobalVariable &global) const {
   std::optional<unsigned> addressSpace = sharedMemoryAddressSpace();
