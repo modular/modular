@@ -150,3 +150,16 @@ def stripping_raises():
     # expected-error @+2 {{cannot implicitly convert 'def fn_raises() raises thin -> None' value to 'def() raises Int thin -> None'}}
     # expected-note @+1 {{error type of the first type is 'Error' but the second type is 'Int'}}
     var fp2: def() thin raises Int = fn_raises
+
+struct SimplePair:
+    var left: Int
+    var right: Int
+
+def test_field_erase(ref p: SimplePair, cond: Bool) -> ref[origin_of(p).subtree] Int:
+    if cond:
+        # This is ok. The origin union for left/right type erase.
+        return p.left if cond else p.right
+
+    var x: Int
+    # expected-error @+1 {{cannot return reference with incompatible origin: 'origin_of(x)' vs 'origin_of(origin_of(p).subtree)'}}
+    return x

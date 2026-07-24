@@ -106,6 +106,15 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
         ]
     ]()
 
+    comptime subtree = Origin[
+        _mlir_origin=__mlir_attr[
+            `#lit.origin.subtree<`,
+            Self._mlir_origin,
+            `> : `,
+            type_of(Self._mlir_origin),
+        ]
+    ]()
+
 
 trait Iterable:
     comptime IteratorType[

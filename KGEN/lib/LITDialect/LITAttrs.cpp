@@ -17,7 +17,6 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -257,12 +256,16 @@ static void removeDuplicates(SmallVectorImpl<TypedAttr> &operands) {
   }
 }
 
+// Canonicalize the operands, sorting by name/index and eliminating the union
+// entirely if possible.
 TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
                                OriginType type) {
+  // If obviously a single element, just return it.
+  if (operandsIn.size() == 1)
+    return operandsIn[0];
 
-  // Canonicalize the operands, sorting by name/index and eliminating raw
-  // #lit.any.origin members.
   llvm::SetVector<TypedAttr> operandSet;
+  llvm::SmallPtrSet<Attribute, 2> subtreeOrigins;
 
   // Preprocess operands.
   for (TypedAttr operand : operandsIn) {
@@ -280,6 +283,32 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
                         subexpr.getOperands().end());
     } else {
       operandSet.insert(operand);
+    }
+
+    if (auto subtree = sugarDynCast<OriginSubtreeAttr>(operand))
+      subtreeOrigins.insert(subtree.getOrigin());
+  }
+
+  // If we have subtree origins, absorb operands that are already covered by a
+  // wider subtree view and re-canonicalize.
+  if (!subtreeOrigins.empty()) {
+    for (TypedAttr operand : operandSet) {
+      // Ignore the subtree origin itself.
+      if (auto subtree = sugarDynCast<OriginSubtreeAttr>(operand))
+        continue;
+
+      bool isAbsorbed = false;
+      operand.walk([&](TypedAttr subOperand) {
+        if (subtreeOrigins.contains(subOperand)) {
+          isAbsorbed = true;
+          return WalkResult::interrupt();
+        }
+        return WalkResult::advance();
+      });
+      if (isAbsorbed) {
+        operandSet.remove(operand);
+        return OriginUnionAttr::get(operandSet.takeVector(), type);
+      }
     }
   }
 

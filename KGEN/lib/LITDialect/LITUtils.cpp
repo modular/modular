@@ -277,6 +277,12 @@ void OriginPrinter::print(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  if (auto subtree = dyn_cast<OriginSubtreeAttr>(param)) {
+    print(os, subtree.getOrigin(), /*elideOriginOf=*/false);
+    os << ".subtree";
+    return;
+  }
+
   param.dump();
   llvm_unreachable("unknown origin parameter");
 }
