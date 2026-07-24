@@ -600,6 +600,11 @@ This version is still a work in progress.
   narrows integers to 32/64-bit (the same shuffle-kernel limitation as the
   reduce migration).
 
+- The eager interpreter's `Select`/`where` op now runs through a pre-compiled
+  graph-compiler model instead of a hand-written Mojo binding. Dtype coverage
+  is unchanged: it still runs the full float, signed-int, unsigned-int, and
+  bool value set on both CPU and accelerators.
+
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
   machine's devices and drops a stamp. A later lazy eager process on the same

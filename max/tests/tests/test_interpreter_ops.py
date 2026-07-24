@@ -28,6 +28,7 @@ from max._interpreter_ops import (
     elementwise_binary_gc,
     gc_compile,
     matmul_gc,
+    select_gc,
     shape_rearrange_gc,
     unary_elementwise_gc,
 )
@@ -3206,6 +3207,44 @@ class TestSelectOp:
         cond_np = np.array([True, False, True, False], dtype=np.bool_)
         x_np = np.array([1, 2, 3, 4], dtype=np_dtype)
         y_np = np.array([10, 20, 30, 40], dtype=np_dtype)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = np.where(cond_np, x_np, y_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("dtype", UINT_DTYPES)
+    def test_select_uint(self, dtype: DType) -> None:
+        """Test select op with unsigned integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        cond_np = np.array([True, False, True, False], dtype=np.bool_)
+        x_np = np.array([1, 2, 3, 4], dtype=np_dtype)
+        y_np = np.array([10, 20, 30, 40], dtype=np_dtype)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = np.where(cond_np, x_np, y_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_select_bool_values(self) -> None:
+        """Test select op where x/y (not just cond) are bool tensors."""
+        cond_np = np.array([True, False, True, False], dtype=np.bool_)
+        x_np = np.array([True, True, False, False], dtype=np.bool_)
+        y_np = np.array([False, False, True, True], dtype=np.bool_)
 
         cond = Tensor.from_dlpack(cond_np)
         x = Tensor.from_dlpack(x_np)
@@ -8803,6 +8842,33 @@ class TestLazyGCModelCompilation:
         )
         monkeypatch.setattr(matmul_gc._FAMILY, "cache", {})
         model = matmul_gc.matmul_model(CPU(), DType.float32)
+        assert model is not None
+
+    def test_select_model_compiles_once_and_reuses(self) -> None:
+        """A second call for the same (device, dtype) returns the cached model."""
+        cpu = CPU()
+        first = select_gc.select_model(cpu, DType.float32)
+        second = select_gc.select_model(cpu, DType.float32)
+        assert first is second
+
+    def test_select_model_precompile_raises_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With MAX_EAGER_OP_PRECOMPILE=1, a cache miss is a hard error."""
+        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
+        monkeypatch.setattr(select_gc._FAMILY, "cache", {})
+        with pytest.raises(KeyError, match="No pre-compiled select model"):
+            select_gc.select_model(CPU(), DType.float32)
+
+    def test_select_model_lazy_default_compiles_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """By default (env var unset) a miss compiles the target lazily."""
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(select_gc._FAMILY, "cache", {})
+        model = select_gc.select_model(CPU(), DType.float32)
         assert model is not None
 
     def test_unary_model_precompile_raises_on_miss(

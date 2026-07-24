@@ -41,9 +41,6 @@ EXTRA_DEPS = {
         "//max:nn",
         "//max:extensibility",
     ],
-    "select_ops": [
-        "//max:builtin_kernels",
-    ],
 }
 
 [
