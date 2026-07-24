@@ -725,6 +725,15 @@ This version is still a work in progress.
   example `Tensor[IOSpec.Input, spec]`.
 - The `compiler` Mojo package has been removed. It only re-exported 4 symbols
   from `extensibility`, please use that directly instead.
+- Renamed the MAX Serve metric `maxserve_cache_hit_rate_percent_utilization`
+  (OTEL name `maxserve.cache.hit_rate`) to
+  `maxserve_cache_request_prefix_coverage_percent` (OTEL name
+  `maxserve.cache.request_prefix_coverage`). The old name was misread as a
+  token-weighted cache hit rate; it's actually an unweighted average of each
+  admitted request's `cached_prefix_length / prompt_length`, so it can read
+  much lower than the true hit rate on workloads with many short, low-overlap
+  requests. Derive the token-weighted cache hit rate from
+  `maxserve_cache_hits_tokens` and `maxserve_cache_misses_tokens` instead.
 
 ## Fixes
 

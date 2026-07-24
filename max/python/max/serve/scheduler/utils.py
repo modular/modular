@@ -140,11 +140,11 @@ class BatchMetrics:
     dp_active_tokens: int = 0
     dp_step_capacity_tokens: int = 0
 
-    # Per-request KV cache hit rates for requests admitted in this batch
+    # Per-request prefix cache coverage for requests admitted in this batch
     # (cached_prefix_length / prompt_length). Empty for non-CE batches and
     # for CE batches that admit no new requests (e.g. follow-up prefill
     # chunks of an already-admitted long prefill).
-    per_request_hit_rates: list[float] = field(default_factory=list)
+    per_request_prefix_coverage: list[float] = field(default_factory=list)
 
     # Number of requests newly admitted in this batch. Zero for TG batches
     # and for CE batches that contain only chunked-prefill continuations of
@@ -292,7 +292,7 @@ class BatchMetrics:
         # The same admission data feeds the batch-level cache hit/miss
         # numbers, so a continuation-only CE batch contributes nothing to
         # them and the log line drops the cache-hit clause entirely.
-        per_request_hit_rates: list[float] = []
+        per_request_prefix_coverage: list[float] = []
         admission_hit_tokens = 0
         admission_prompt_tokens = 0
         if inputs.batch_type == BatchType.CE:
@@ -306,7 +306,7 @@ class BatchMetrics:
                 cached = ctx.cached_prefix_length
                 prompt_length = ctx.tokens.prompt_length
                 if prompt_length > 0:
-                    per_request_hit_rates.append(cached / prompt_length)
+                    per_request_prefix_coverage.append(cached / prompt_length)
                     admission_hit_tokens += cached
                     admission_prompt_tokens += prompt_length
 
@@ -391,8 +391,8 @@ class BatchMetrics:
             dp_context_token_occupancy_pct=dp_context_token_occupancy_pct,
             dp_active_tokens=dp_active_tokens,
             dp_step_capacity_tokens=dp_step_capacity_tokens,
-            per_request_hit_rates=per_request_hit_rates,
-            num_new_admissions=len(per_request_hit_rates),
+            per_request_prefix_coverage=per_request_prefix_coverage,
+            num_new_admissions=len(per_request_prefix_coverage),
             vision_metrics=batch_vision_metrics,
         )
 
@@ -681,8 +681,8 @@ class BatchMetrics:
         if self.batch_type == BatchType.CE and self.num_new_admissions > 0:
             METRICS.cache_hits(self.cache_hit_tokens)
             METRICS.cache_misses(self.cache_miss_tokens)
-            for hit_rate in self.per_request_hit_rates:
-                METRICS.cache_hit_rate(hit_rate)
+            for coverage in self.per_request_prefix_coverage:
+                METRICS.cache_request_prefix_coverage(coverage * 100)
 
         if self.total_host_kv_blocks != 0:
             METRICS.cache_used_host_kv_pct(self.used_host_kv_pct * 100)

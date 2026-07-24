@@ -108,7 +108,9 @@ class HistogramMetric(str, Enum):
         "maxserve_batch_prompt_throughput_tokens_per_second"
     )
     BATCH_SIZE = "maxserve_batch_size"
-    CACHE_HIT_RATE_PCT = "maxserve_cache_hit_rate_percent_utilization"
+    CACHE_REQUEST_PREFIX_COVERAGE_PCT = (
+        "maxserve_cache_request_prefix_coverage_percent"
+    )
     CACHE_USED_KV_PCT = "maxserve_cache_used_kv_pct_percent"
     INPUT_PROCESSING_TIME_MS = "maxserve_input_processing_time_milliseconds"
     INPUT_TOKENS_PER_REQUEST = "maxserve_input_tokens_per_request_tokens"
