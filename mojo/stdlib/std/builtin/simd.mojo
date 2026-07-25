@@ -41,7 +41,7 @@ domain-specific libraries for machine learning and scientific computing.
 """
 
 import std.math
-from std.collections import InlineArray
+from std.collections import Array
 from std.collections.interval import IntervalElement
 from std.collections.string.string import (
     _calc_initial_buffer_size_int32,
@@ -2391,7 +2391,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
     def from_bytes[
         *,
         big_endian: Bool = is_big_endian(),
-    ](bytes: InlineArray[Byte, _]) -> SIMD[Self.dtype, Self.size]:
+    ](bytes: Array[Byte, _]) -> SIMD[Self.dtype, Self.size]:
         """Converts a byte array to a vector.
 
         Args:
@@ -2415,7 +2415,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
     def as_bytes[
         *,
         big_endian: Bool = is_big_endian(),
-    ](self) -> InlineArray[Byte, size_of[Self]()]:
+    ](self) -> Array[Byte, size_of[Self]()]:
         """Convert the vector to a byte array.
 
         Parameters:
@@ -2430,7 +2430,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
             value = byte_swap(value)
 
         var ptr = Pointer(to=value)
-        var array = InlineArray[Byte, size_of[Self]()](uninitialized=True)
+        var array = Array[Byte, size_of[Self]()](uninitialized=True)
         unsafe_memcpy(
             dest=array.unsafe_ptr(),
             src=ptr.unsafe_bitcast[Byte](),

@@ -103,9 +103,7 @@ def reversed[T: Copyable](ref value: List[T]) -> type_of(value.__reversed__()):
 
 def reversed[
     T: Copyable, size: Int
-](ref value: InlineArray[T, size]) -> _ArrayIter[
-    T, size, origin_of(value), False
-]:
+](ref value: Array[T, size]) -> _ArrayIter[T, size, origin_of(value), False]:
     """Get a reversed iterator of the input array.
 
     **Note**: iterators are currently non-raising.

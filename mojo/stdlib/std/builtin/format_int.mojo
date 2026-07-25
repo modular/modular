@@ -270,7 +270,7 @@ def _write_int[
         var zero_char = digit_chars_array.unsafe_ptr()[]
 
         # Construct a null-terminated buffer of single-byte char.
-        var zero_buf: InlineArray[UInt8, 2] = [zero_char, 0]
+        var zero_buf: Array[UInt8, 2] = [zero_char, 0]
 
         # TODO(MSTDL-720):
         #   Support printing non-null-terminated strings on GPU and switch
@@ -293,7 +293,7 @@ def _write_int[
     # +1 for storing NUL terminator.
     comptime CAPACITY: Int = max(64, bit_width_of[dtype]()) + 1
 
-    var buf = InlineArray[UInt8, CAPACITY](uninitialized=True)
+    var buf = Array[UInt8, CAPACITY](uninitialized=True)
 
     # Start the buf pointer at the end. We will write the least-significant
     # digits later in the buffer, and then decrement the pointer to move
