@@ -1572,7 +1572,6 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
       stars = "*";
     } else if (fnType.isKwVarArg(idx)) {
       type = ASTType(type).getKwargsDictRefValueType();
-      convention = ArgConvention::ReadReg;
       stars = "**";
     } else {
       if (curPassingKind == PassingKind::KwOnly &&
@@ -1602,7 +1601,9 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
                                .typeListStruct;
       ASTType::printParam(os, variadic, ctx);
     } else {
-      type = RefType::stripRefConvention(type, convention);
+      // For kwargs, already unwrapped `type` to the value type above.
+      if (!fnType.isKwVarArg(idx))
+        type = RefType::stripRefConvention(type, convention);
       type.print(os, ctx);
     }
 

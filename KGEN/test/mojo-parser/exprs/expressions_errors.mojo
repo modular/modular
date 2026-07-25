@@ -196,8 +196,8 @@ def test_func_type():
     comptime float6a: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
     # expected-error @below {{'def[T: TrivialRegisterPassable](mut *T) capturing thin -> None'}}
     comptime float7: def[T: TrivialRegisterPassable](mut *T) capturing -> None = test_func_type
-    # expected-error @below {{'def(**args: Int) -> None'}}
-    comptime float8: def(**args: Int) = test_func_type
+    # expected-error @below {{'def(var **args: Int) -> None'}}
+    comptime float8: def(var **args: Int) = test_func_type
 
     # expected-error @below {{'def(a1: Int, /, *, a2: Int) -> None'}}
     comptime float9: def(a1: Int, /, *, a2: Int) = test_func_type

@@ -505,7 +505,7 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 # COM: wrapper is synthesized when the closure's signature is resolved.
 
 # The wrapper's __call__ takes the dict `kw_vararg`...
-# KWARGS: lit.fn @"__call__({{.*}}def(**kwargs: Int) -> Int{{.*}},kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
+# KWARGS: lit.fn @"__call__({{.*}}def(var **kwargs: Int) -> Int{{.*}},kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
 # ...and forwards it to the impl as a single `**` dict operand.
 # KWARGS: lit.call{{.*}}(%{{.*}}, %kwargs)
 # KWARGS: lit.fn @"kwargs_throughWrapper()"
@@ -514,7 +514,7 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 def kwargs_throughWrapper() -> Int:
     var z = 1
 
-    def g(**kwargs: Int) {imm z} -> Int:
+    def g(var **kwargs: Int) {imm z} -> Int:
         return z
 
     return g(a=1, b=2)
@@ -546,11 +546,11 @@ def star_args_throughWrapper() -> Int:
 # KWARGS_FN_PTR: lit.fn @"kwargs_fn_ptr_useFnWrapper()"
 
 
-def kwargs_fn_ptr_top(**kwargs: Int) -> Int:
+def kwargs_fn_ptr_top(var **kwargs: Int) -> Int:
     return 1
 
 
-def kwargs_fn_ptr_takeClosure(f: Some[def(**kwargs: Int) -> Int]) -> Int:
+def kwargs_fn_ptr_takeClosure(f: Some[def(var **kwargs: Int) -> Int]) -> Int:
     return f(a=1)
 
 
@@ -565,7 +565,7 @@ def kwargs_fn_ptr_useFnWrapper() -> Int:
 
 # The wrapper's __call__ takes both the list `pos_vararg` and the dict
 # `kw_vararg`...
-# STAR_ARGS_KWARGS: lit.fn @"__call__{{.*}}def(*args: Int, **kwargs: Int) -> Int{{.*}}*,kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
+# STAR_ARGS_KWARGS: lit.fn @"__call__{{.*}}def(*args: Int, var **kwargs: Int) -> Int{{.*}}*,kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
 # ...and forwards both packed values in one call.
 # STAR_ARGS_KWARGS: lit.call{{.*}}(%{{.*}}, %args, %kwargs)
 # STAR_ARGS_KWARGS: lit.fn @"star_args_kwargs_throughWrapper()"
@@ -574,7 +574,7 @@ def kwargs_fn_ptr_useFnWrapper() -> Int:
 def star_args_kwargs_throughWrapper() -> Int:
     var z = 1
 
-    def b(*args: Int, **kwargs: Int) {imm z} -> Int:
+    def b(*args: Int, var **kwargs: Int) {imm z} -> Int:
         return z
 
     return b(1, 2, a=3)
@@ -584,7 +584,7 @@ def star_args_kwargs_throughWrapper() -> Int:
 # COM: `**kwargs` splat through the wrapper -- the literal keyword operand
 # COM: binds its own parameter, the dict its `**kwargs`, in one call.
 
-# MIXED_KWARGS: lit.fn @"__call__{{.*}}def(x: Int, *, named: Int, **kwargs: Int) -> Int{{.*}},named:::SIMD[::DType(int), ::SIMDLength(1)],kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
+# MIXED_KWARGS: lit.fn @"__call__{{.*}}def(x: Int, *, named: Int, var **kwargs: Int) -> Int{{.*}},named:::SIMD[::DType(int), ::SIMDLength(1)],kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
 # MIXED_KWARGS: lit.call{{.*}}(%{{.*}}, %x, %named, %kwargs)
 # MIXED_KWARGS: lit.fn @"mixed_kwargs_throughWrapper()"
 
@@ -592,7 +592,7 @@ def star_args_kwargs_throughWrapper() -> Int:
 def mixed_kwargs_throughWrapper() -> Int:
     var z = 1
 
-    def m(x: Int, *, named: Int, **kwargs: Int) {imm z} -> Int:
+    def m(x: Int, *, named: Int, var **kwargs: Int) {imm z} -> Int:
         return z + x + named
 
     return m(1, named=2, a=3, b=4)
@@ -605,7 +605,7 @@ def mixed_kwargs_throughWrapper() -> Int:
 def mixed_kwargs_defaultedThroughWrapper() -> Int:
     var z = 1
 
-    def m(x: Int, y: Int, *, named: Int = 7, **kwargs: Int) {imm z} -> Int:
+    def m(x: Int, y: Int, *, named: Int = 7, var **kwargs: Int) {imm z} -> Int:
         return z + named
 
     return m(1, 2, a=3)
@@ -615,7 +615,7 @@ def mixed_kwargs_defaultedThroughWrapper() -> Int:
 def mixed_kwargs_duplicateSignature() -> Int:
     var z = 2
 
-    def m(x: Int, *, named: Int, **kwargs: Int) {imm z} -> Int:
+    def m(x: Int, *, named: Int, var **kwargs: Int) {imm z} -> Int:
         return z
 
     return m(1, named=2, a=3)
@@ -630,12 +630,12 @@ def mixed_kwargs_duplicateSignature() -> Int:
 # MIXED_KWARGS_FN_PTR: lit.fn @"mixed_kwargs_fn_ptr_useFnBinding()"
 
 
-def mixed_kwargs_fn_ptr_top(x: Int, *, named: Int, **kwargs: Int) -> Int:
+def mixed_kwargs_fn_ptr_top(x: Int, *, named: Int, var **kwargs: Int) -> Int:
     return x + named
 
 
 def mixed_kwargs_fn_ptr_takeClosure(
-    f: Some[def(x: Int, *, named: Int, **kwargs: Int) -> Int]
+    f: Some[def(x: Int, *, named: Int, var **kwargs: Int) -> Int]
 ) -> Int:
     return f(1, named=2, a=3)
 
@@ -647,16 +647,16 @@ def mixed_kwargs_fn_ptr_useFnBinding() -> Int:
 # COM: STAR_ARGS_KWARGS_FN_PTR: the both-variadics signature forwards through
 # COM: the fn-pointer wrapper as well.
 
-# STAR_ARGS_KWARGS_FN_PTR: lit.fn @"__call__{{.*}}def(*args: Int, **kwargs: Int) thin -> Int_PtrWrapper[$0],::SIMD[::DType(int), ::SIMDLength(1)]*,kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
+# STAR_ARGS_KWARGS_FN_PTR: lit.fn @"__call__{{.*}}def(*args: Int, var **kwargs: Int) thin -> Int_PtrWrapper[$0],::SIMD[::DType(int), ::SIMDLength(1)]*,kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
 # STAR_ARGS_KWARGS_FN_PTR: lit.call{{.*}}(%args, %kwargs)
 # STAR_ARGS_KWARGS_FN_PTR: lit.fn @"star_args_kwargs_fn_ptr_useFnWrapper()"
 
 
-def star_args_kwargs_fn_ptr_top(*args: Int, **kwargs: Int) -> Int:
+def star_args_kwargs_fn_ptr_top(*args: Int, var **kwargs: Int) -> Int:
     return 1
 
 
-def star_args_kwargs_fn_ptr_takeClosure(f: Some[def(*args: Int, **kwargs: Int) -> Int]) -> Int:
+def star_args_kwargs_fn_ptr_takeClosure(f: Some[def(*args: Int, var **kwargs: Int) -> Int]) -> Int:
     return f(1, 2, a=3)
 
 

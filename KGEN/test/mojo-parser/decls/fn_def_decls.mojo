@@ -74,7 +74,7 @@ def variadic_arg_after_default(
     *args: Int,
     c: Int,
     d: Int = 1,
-    **kwargs: Int,
+    var **kwargs: Int,
 ):
     pass
 

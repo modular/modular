@@ -594,7 +594,7 @@ def test_comptime_variadics():
     # CHECK-NEXT: baz
 
 
-def print_kwargs(**kwargs: Int):
+def print_kwargs(var **kwargs: Int):
     for item in kwargs.items():
         print(item.key, item.value)
 
@@ -608,7 +608,7 @@ def test_kwargs():
     # CHECK-NEXT: y 2
     # CHECK-NEXT: z 3
 
-    def forward_kwargs(**kwargs: Int):
+    def forward_kwargs(var **kwargs: Int):
         print_kwargs(**kwargs^)
 
     forward_kwargs(aa=4, y=5, z=6)

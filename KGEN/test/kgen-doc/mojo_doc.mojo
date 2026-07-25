@@ -587,7 +587,7 @@ def variadic_pack[*Ts: AnyType](*vals: *Ts):
 # CHECK:     "signature": "def variadic_params_args[*nums: Int](*vals: Int, *, var **kwargs: String)",
 
 
-def variadic_params_args[*nums: Int](*vals: Int, **kwargs: String):
+def variadic_params_args[*nums: Int](*vals: Int, var **kwargs: String):
     """Test variadic argument/parameter type printing.
 
     Parameters:

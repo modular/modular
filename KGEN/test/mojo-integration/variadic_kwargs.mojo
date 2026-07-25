@@ -7,7 +7,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-def takes_int_variadic_kwargs(**kwargs: Int) raises:
+def takes_int_variadic_kwargs(var **kwargs: Int) raises:
     var key = "stuff"
     # CHECK: stuff 8
     print(key, kwargs[key])
@@ -74,7 +74,7 @@ def main() raises:
     forwards_to_kitchen_sink(40, 50, k=70, z=80)
 
 
-def takes_both_variadics(*args: Int, **kwargs: Int) raises:
+def takes_both_variadics(*args: Int, var **kwargs: Int) raises:
     # Two subscripts of one dict in a single call trip interior-origin
     # exclusivity checking, so hoist them.
     var x = kwargs["x"]
@@ -83,14 +83,14 @@ def takes_both_variadics(*args: Int, **kwargs: Int) raises:
     print("forwarded", args[0], args[1], x, y)
 
 
-def forwards_both_variadics(*args: Int, **kwargs: Int) raises:
+def forwards_both_variadics(*args: Int, var **kwargs: Int) raises:
     takes_both_variadics(*args, **kwargs^)
 
 
 def closure_forwards_both_variadics() raises:
     var z = 100
 
-    def c(*args: Int, **kwargs: Int) raises {imm z} -> Int:
+    def c(*args: Int, var **kwargs: Int) raises {imm z} -> Int:
         return z + args[0] + kwargs["a"]
 
     # CHECK: closure 108
@@ -100,7 +100,9 @@ def closure_forwards_both_variadics() raises:
 def closure_forwards_mixed() raises:
     var z = 1000
 
-    def m(x: Int, *args: Int, named: Int, **kwargs: Int) raises {imm z} -> Int:
+    def m(
+        x: Int, *args: Int, named: Int, var **kwargs: Int
+    ) raises {imm z} -> Int:
         return z + x + args[0] + named + kwargs["a"]
 
     # CHECK: mixed 1032
@@ -117,7 +119,7 @@ def kitchen_sink(
     *args: Int,
     named: Int,
     opt: Int = 9,
-    **kwargs: Int,
+    var **kwargs: Int,
 ) raises:
     var k = kwargs["k"]
     var z = kwargs["z"]
@@ -126,5 +128,5 @@ def kitchen_sink(
     print("sink", a, b, c, args[0], args[1], named, opt, k, z)
 
 
-def forwards_to_kitchen_sink(*args: Int, **kwargs: Int) raises:
+def forwards_to_kitchen_sink(*args: Int, var **kwargs: Int) raises:
     kitchen_sink(1, 2, 3, *args, named=6, **kwargs^)
