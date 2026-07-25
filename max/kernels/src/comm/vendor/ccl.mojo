@@ -295,7 +295,7 @@ struct Communicators(ImplicitlyCopyable):
     var ngpus: Int
     """The number of GPUs participating in the communicator group."""
 
-    var comms: InlineArray[ncclComm_t, MAX_GPUS]
+    var comms: Array[ncclComm_t, MAX_GPUS]
     """Per-GPU communicator handles, valid for indices `0..ngpus-1`."""
 
     def __init__(out self, *, copy: Self):
@@ -328,8 +328,8 @@ def _get_global_comms(ngpus: Int) raises -> Communicators:
     if ngpus > MAX_GPUS:
         raise Error("too many GPUs for CCL")
 
-    var comms = InlineArray[ncclComm_t, MAX_GPUS](fill={})
-    var devlist = InlineArray[Int32, MAX_GPUS](fill={})
+    var comms = Array[ncclComm_t, MAX_GPUS](fill={})
+    var devlist = Array[Int32, MAX_GPUS](fill={})
     for i in range(ngpus):
         devlist[i] = Int32(i)
 
@@ -386,11 +386,11 @@ def allreduce[
     *,
     use_multimem: Bool = False,
 ](
-    input_tensors: InlineArray[
+    input_tensors: Array[
         TileTensor[dtype, in_layout, in_origin], 1 if use_multimem else ngpus
     ],
     output_tensor: TileTensor[mut=True, dtype, out_layout, out_origin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, rank_sigs_origin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, rank_sigs_origin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
@@ -509,8 +509,8 @@ def allgather[
     //,
     ngpus: Int,
 ](
-    inputs: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
-    outputs: InlineArray[
+    inputs: Array[TileTensor[dtype, in_layout, in_origin], ngpus],
+    outputs: Array[
         TileTensor[mut=True, dtype, out_layout, out_origin], ngpus * ngpus
     ],
     list_of_ctx: List[DeviceContext],
@@ -608,7 +608,7 @@ def broadcast[
 ](
     input_tensor: TileTensor[dtype, in_layout, in_origin],
     output_tensor: TileTensor[mut=True, dtype, out_layout, out_origin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,

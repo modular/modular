@@ -101,7 +101,7 @@ For the naive allreduce (no P2P) per-device flow and staging details, see the
 """
 
 from std.atomic import Atomic, Ordering, fence
-from std.collections import InlineArray
+from std.collections import Array
 from std.math import ceildiv, clamp
 from std.sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of, size_of
 
@@ -550,7 +550,7 @@ def _allreduce_naive_single[
     output_lambda: elementwise_epilogue_type,
     num_tensors: Int = ngpus,
 ](
-    list_of_in_tensors: InlineArray[
+    list_of_in_tensors: Array[
         TileTensor[dtype, in_layout, in_origin], num_tensors
     ],
     out_tensor: TileTensor[mut=True, dtype, out_layout, ...],
@@ -700,11 +700,11 @@ def _allreduce_2stage_kernel[
     use_multimem: Bool = False,
 ](
     result: TileTensor[dtype, out_layout, MutAnyOrigin],
-    src_tensors: InlineArray[
+    src_tensors: Array[
         TileTensor[dtype, in_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
 ):
@@ -745,9 +745,9 @@ def _allreduce_2stage_kernel[
 
     with PDL():
         # --- Define tmp buffers by offsetting for Signal struct ---
-        var tmps = InlineArray[
-            UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
-        ](uninitialized=True)
+        var tmps = Array[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
+            uninitialized=True
+        )
 
         comptime for i in range(ngpus):
             # Round-robin access pattern to balance NVLink traffic across GPUs.
@@ -793,9 +793,7 @@ def _allreduce_2stage_kernel[
         var n_elements = rs_config.rank_num_elements(my_rank)
         comptime SlicedTile = TileTensor[dtype, SlicedLayout, ImmutAnyOrigin]
         comptime SlicedLayout = type_of(row_major(n_elements))
-        var sliced_tiles = InlineArray[SlicedTile, num_tensors](
-            uninitialized=True
-        )
+        var sliced_tiles = Array[SlicedTile, num_tensors](uninitialized=True)
 
         comptime for i in range(num_tensors):
             # Round-robin access pattern to balance NVLink traffic across GPUs.
@@ -872,9 +870,7 @@ def _allreduce_1stage_reduce_store_one[
     output_lambda: elementwise_epilogue_type,
 ](
     elem_idx: Int,
-    ptrs: InlineArray[
-        TileTensor[dtype, in_layout, ImmutAnyOrigin], num_tensors
-    ],
+    ptrs: Array[TileTensor[dtype, in_layout, ImmutAnyOrigin], num_tensors],
     result: TileTensor[dtype, out_layout, MutAnyOrigin],
 ) -> None:
     """Load one element from every peer, reduce in ``accum_type``, epilogue store.
@@ -917,11 +913,11 @@ def _allreduce_1stage_kernel[
     use_multimem: Bool = False,
 ](
     result: TileTensor[dtype, out_layout, MutAnyOrigin],
-    src_tensors: InlineArray[
+    src_tensors: Array[
         TileTensor[dtype, in_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
 ):
@@ -967,9 +963,9 @@ def _allreduce_1stage_kernel[
     # Route input pointers according to round-robin pattern.
     # For 8 GPUs: Rank 0 accesses 0→1→2→...→7, Rank 1 accesses 1→2→...→7→0, etc.
     comptime num_tensors = 1 if use_multimem else ngpus
-    var ptrs = InlineArray[
-        TileTensor[dtype, in_layout, ImmutAnyOrigin], num_tensors
-    ](uninitialized=True)
+    var ptrs = Array[TileTensor[dtype, in_layout, ImmutAnyOrigin], num_tensors](
+        uninitialized=True
+    )
 
     # It's safe to prefetch the input pointers
     comptime for i in range(num_tensors):
@@ -997,7 +993,7 @@ def _allreduce_1stage_kernel[
                 )
         else:
             var ptrs_ngpus = rebind[
-                InlineArray[TileTensor[dtype, in_layout, ImmutAnyOrigin], ngpus]
+                Array[TileTensor[dtype, in_layout, ImmutAnyOrigin], ngpus]
             ](ptrs)
             var num_simd_vectors = num_elements // simd_width
             var simd_prefix_elems = num_simd_vectors * simd_width
@@ -1057,10 +1053,8 @@ def _allreduce_lamport_kernel[
     use_fence: Bool = False,
 ](
     result: TileTensor[dtype, out_layout, MutAnyOrigin],
-    src_tensors: InlineArray[
-        TileTensor[dtype, in_layout, ImmutAnyOrigin], ngpus
-    ],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    src_tensors: Array[TileTensor[dtype, in_layout, ImmutAnyOrigin], ngpus],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
 ):
@@ -1140,9 +1134,9 @@ def _allreduce_lamport_kernel[
 
     # Peer comm-region bases in round-robin order (balances NVLink/XGMI traffic
     # the same way the existing kernels do).
-    var peer_regions = InlineArray[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
+    var peer_regions = Array[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
     comptime for i in range(ngpus):
         var target = circular_add[ngpus](my_rank, i)
         peer_regions[i] = rank_sigs[target][].lamport_region_ptr[dtype]()
@@ -1200,7 +1194,7 @@ def _allreduce_lamport_kernel[
             # re-reading every slot until none still hold the sentinel. This
             # observes parallel arrival, unlike spinning on one peer at a time
             # (which serializes the wait behind the slowest-ordered peer).
-            var peer_packs = InlineArray[SIMD[dtype, atomic_width], ngpus](
+            var peer_packs = Array[SIMD[dtype, atomic_width], ngpus](
                 uninitialized=True
             )
             var done = False
@@ -1282,11 +1276,9 @@ def _allreduce_lamport_p2p[
     pdl_level: PDLLevel,
     use_fence: Bool = False,
 ](
-    list_of_in_tensors: InlineArray[
-        TileTensor[dtype, in_layout, in_origin], ngpus
-    ],
+    list_of_in_tensors: Array[TileTensor[dtype, in_layout, in_origin], ngpus],
     out_tensor: TileTensor[mut=True, dtype, out_layout, ...],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     dispatch_config: AllReduceTuningConfig,
     ctx: DeviceContext,
 ) raises:
@@ -1324,7 +1316,7 @@ def _allreduce_lamport_p2p[
 
     comptime FlatLayout = type_of(row_major(num_elements))
     comptime FlatIn = TileTensor[dtype, FlatLayout, ImmutAnyOrigin]
-    var flat_inputs = InlineArray[FlatIn, ngpus](uninitialized=True)
+    var flat_inputs = Array[FlatIn, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         flat_inputs[i] = FlatIn(
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -1372,12 +1364,12 @@ def _allreduce_p2p[
     pdl_level: PDLLevel,
     use_multimem: Bool = False,
 ](
-    list_of_in_tensors: InlineArray[
+    list_of_in_tensors: Array[
         TileTensor[dtype, in_layout, in_origin],
         1 if use_multimem else ngpus,
     ],
     out_tensor: TileTensor[mut=True, dtype, out_layout, ...],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     dispatch_config: AllReduceTuningConfig,
     ctx: DeviceContext,
 ) raises:
@@ -1420,7 +1412,7 @@ def _allreduce_p2p[
     # Flatten inputs to 1D - allreduce does not need dimension info
     comptime FlatLayout = type_of(row_major(num_elements))
     comptime FlatIn = TileTensor[dtype, FlatLayout, ImmutAnyOrigin]
-    var flat_inputs = InlineArray[FlatIn, num_tensors](uninitialized=True)
+    var flat_inputs = Array[FlatIn, num_tensors](uninitialized=True)
     comptime for i in range(num_tensors):
         flat_inputs[i] = FlatIn(
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -1452,9 +1444,9 @@ def _allreduce_p2p[
                 output_lambda=output_lambda,
                 pdl_level=pdl_level,
             ](
-                rebind[
-                    InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus]
-                ](list_of_in_tensors),
+                rebind[Array[TileTensor[dtype, in_layout, in_origin], ngpus]](
+                    list_of_in_tensors
+                ),
                 out_tensor,
                 rank_sigs,
                 dispatch_config,
@@ -1553,12 +1545,12 @@ def allreduce[
     *,
     use_multimem: Bool = False,
 ](
-    input_tensors: InlineArray[
+    input_tensors: Array[
         TileTensor[dtype, in_layout, in_origin],
         1 if use_multimem else ngpus,
     ],
     output_tensor: TileTensor[mut=True, dtype, out_layout, ...],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
 ) raises:

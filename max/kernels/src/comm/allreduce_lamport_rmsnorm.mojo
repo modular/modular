@@ -34,7 +34,7 @@ from std.math import rsqrt
 from std.sys import align_of, size_of
 
 from std.atomic import Atomic
-from std.collections import InlineArray
+from std.collections import Array
 
 from std.gpu import WARP_SIZE, barrier, block_idx, grid_dim, thread_idx
 from std.gpu.host import DeviceContext, get_gpu_target
@@ -69,7 +69,7 @@ def _allreduce_lamport_rmsnorm_kernel[
     result: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     gamma: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     rows: Int,
     cols: Int,
     epsilon: Scalar[dtype],
@@ -103,9 +103,9 @@ def _allreduce_lamport_rmsnorm_kernel[
 
     # This rank's own region (polled) + peer regions in round-robin order.
     var my_region = rank_sigs[my_rank][].lamport_region_ptr[dtype]()
-    var peer_regions = InlineArray[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
+    var peer_regions = Array[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
     comptime for i in range(ngpus):
         var target = circular_add[ngpus](my_rank, i)
         peer_regions[i] = rank_sigs[target][].lamport_region_ptr[dtype]()
@@ -152,7 +152,7 @@ def _allreduce_lamport_rmsnorm_kernel[
 
             # (d) Poll all ngpus-1 remote slots until none hold the sentinel
             # (observes parallel arrival rather than per-peer spinning).
-            var peer_packs = InlineArray[SIMD[dtype, atomic_width], ngpus](
+            var peer_packs = Array[SIMD[dtype, atomic_width], ngpus](
                 uninitialized=True
             )
             var done = False
@@ -249,7 +249,7 @@ def lamport_allreduce_rmsnorm[
     src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     gamma: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     rows: Int,
     cols: Int,
     epsilon: Scalar[dtype],
