@@ -232,9 +232,9 @@ class DummyTextTokenizer(TextTokenizer):
         self._delegate = DummyTextTokenizer.Delegate(max_length=self.max_length)
 
     @property
-    def eos(self) -> int:
-        """The end of sequence token for this tokenizer."""
-        return -1
+    def eos_token_ids(self) -> set[int]:
+        """Dummy tokenizer has no EOS tokens."""
+        return set()
 
     @property
     def expects_content_wrapping(self) -> bool:
@@ -321,8 +321,8 @@ class DummyPixelTokenizer(
         type(self).init_kwargs = kwargs
 
     @property
-    def eos(self) -> int:
-        return 0
+    def eos_token_ids(self) -> set[int]:
+        return set()
 
     @property
     def expects_content_wrapping(self) -> bool:
