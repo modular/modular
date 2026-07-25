@@ -737,7 +737,7 @@ trait TensorOps(TensorStorage):
     """
 
     @staticmethod
-    def add[
+    def iadd[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -782,7 +782,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def mul[
+    def imul[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -827,7 +827,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def sub[
+    def isub[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -872,7 +872,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def floordiv[
+    def ifloordiv[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -917,7 +917,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def truediv[
+    def itruediv[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -962,7 +962,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def min[
+    def imin[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1007,7 +1007,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def max[
+    def imax[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1052,7 +1052,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def abs[
+    def iabs[
         dtype: DType, //
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
@@ -1072,7 +1072,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def recip[
+    def irecip[
         dtype: DType, //
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
@@ -1094,8 +1094,11 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def exp[
-        dtype: DType, //, scale: Scalar[dtype]
+    def iexp[
+        dtype: DType,
+        scale_dtype: DType = dtype,
+        //,
+        scale: Scalar[scale_dtype],
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
         layout: Some[TensorLayout],
@@ -1110,6 +1113,9 @@ trait TensorOps(TensorStorage):
         Parameters:
             dtype: The element data type of the storage. Must be a
                 floating-point type.
+            scale_dtype: The data type of the scale factor. Defaults to
+                `dtype`; the scale is cast to `dtype` before the
+                multiplication.
             scale: The compile-time factor each element is multiplied by
                 before exponentiation.
 
@@ -1515,7 +1521,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other)
 
     @staticmethod
-    def add[
+    def iadd[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1572,7 +1578,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, add)
 
     @staticmethod
-    def mul[
+    def imul[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1629,7 +1635,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, mul)
 
     @staticmethod
-    def sub[
+    def isub[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1686,7 +1692,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, sub)
 
     @staticmethod
-    def floordiv[
+    def ifloordiv[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1743,7 +1749,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, floordiv)
 
     @staticmethod
-    def truediv[
+    def itruediv[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1800,7 +1806,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, truediv)
 
     @staticmethod
-    def min[
+    def imin[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1857,7 +1863,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, min_fn)
 
     @staticmethod
-    def max[
+    def imax[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1957,7 +1963,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             )
 
     @staticmethod
-    def abs[
+    def iabs[
         dtype: DType, //
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
@@ -1982,7 +1988,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         Self._elementwise_unary(storage, layout, abs_fn)
 
     @staticmethod
-    def recip[
+    def irecip[
         dtype: DType, //
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
@@ -2012,8 +2018,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         Self._elementwise_unary(storage, layout, recip_fn)
 
     @staticmethod
-    def exp[
-        dtype: DType, //, scale: Scalar[dtype]
+    def iexp[
+        dtype: DType,
+        scale_dtype: DType = dtype,
+        //,
+        scale: Scalar[scale_dtype],
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
         layout: Some[TensorLayout],
@@ -2028,6 +2037,9 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         Parameters:
             dtype: The element data type of the storage. Must be a
                 floating-point type.
+            scale_dtype: The data type of the scale factor. Defaults to
+                `dtype`; the scale is cast to `dtype` before the
+                multiplication.
             scale: The compile-time factor each element is multiplied by
                 before exponentiation.
 
@@ -2047,8 +2059,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
 
         # The loop is inlined rather than routed through `_elementwise_unary`:
         # a closure defined in a function with a dependent-typed value
-        # parameter (`scale: Scalar[dtype]`) fails parameter resolution during
-        # elaboration when passed as a function value.
+        # parameter (`scale: Scalar[scale_dtype]`) fails parameter resolution
+        # during elaboration when passed as a function value.
         comptime for i in range(type_of(layout).static_product):
             var idx = layout(Idx[i])
             storage.bitcast[Scalar[dtype]]().store(
@@ -2057,7 +2069,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
                     storage.bitcast[Scalar[dtype]]().load[
                         width=Self.element_width
                     ](idx)
-                    * scale
+                    * scale.cast[dtype]()
                 ),
             )
 
@@ -2570,7 +2582,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other)
 
     @staticmethod
-    def add[
+    def iadd[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -2627,7 +2639,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, add)
 
     @staticmethod
-    def mul[
+    def imul[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -2684,7 +2696,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, mul)
 
     @staticmethod
-    def sub[
+    def isub[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -2741,7 +2753,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, sub)
 
     @staticmethod
-    def floordiv[
+    def ifloordiv[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -2798,7 +2810,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, floordiv)
 
     @staticmethod
-    def truediv[
+    def itruediv[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -2855,7 +2867,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, truediv)
 
     @staticmethod
-    def min[
+    def imin[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -2912,7 +2924,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, min_fn)
 
     @staticmethod
-    def max[
+    def imax[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -3018,7 +3030,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             )
 
     @staticmethod
-    def abs[
+    def iabs[
         dtype: DType, //
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
@@ -3045,7 +3057,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         Self._elementwise_unary(storage, layout, abs_fn)
 
     @staticmethod
-    def recip[
+    def irecip[
         dtype: DType, //
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
@@ -3076,8 +3088,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         Self._elementwise_unary(storage, layout, recip_fn)
 
     @staticmethod
-    def exp[
-        dtype: DType, //, scale: Scalar[dtype]
+    def iexp[
+        dtype: DType,
+        scale_dtype: DType = dtype,
+        //,
+        scale: Scalar[scale_dtype],
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
         layout: Some[TensorLayout],
@@ -3094,6 +3109,9 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         Parameters:
             dtype: The element data type of the storage. Must be a
                 floating-point type.
+            scale_dtype: The data type of the scale factor. Defaults to
+                `dtype`; the scale is cast to `dtype` before the
+                multiplication.
             scale: The compile-time factor each element is multiplied by
                 before exponentiation.
 
@@ -3113,8 +3131,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
 
         # The loop is inlined rather than routed through `_elementwise_unary`:
         # a closure defined in a function with a dependent-typed value
-        # parameter (`scale: Scalar[dtype]`) fails parameter resolution during
-        # elaboration when passed as a function value.
+        # parameter (`scale: Scalar[scale_dtype]`) fails parameter resolution
+        # during elaboration when passed as a function value.
         comptime for i in range(type_of(layout).static_product):
             var idx = layout(Idx[i])
             _device_leaf_ptr(storage).store(
@@ -3123,7 +3141,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
                     _device_leaf_ptr(storage).load[width=Self.element_width](
                         idx
                     )
-                    * scale
+                    * scale.cast[dtype]()
                 ),
             )
 
