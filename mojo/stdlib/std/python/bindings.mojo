@@ -459,7 +459,7 @@ struct PythonModuleBuilder:
 
         Accepts functions with PythonObject arguments (up to 8), can optionally
         return a PythonObject, and can raise. Functions can also accept keyword
-        arguments via `**kwargs: PythonObject`.
+        arguments via `var **kwargs: PythonObject`.
 
         Non-kwargs callables register through CPython's `METH_FASTCALL`
         calling convention; kwargs-accepting callables use
@@ -471,8 +471,8 @@ struct PythonModuleBuilder:
 
         def func(arg1: PythonObject) -> PythonObject: ...
         def func(arg1: PythonObject, arg2: PythonObject) raises: ...
-        def func(**kwargs: PythonObject) -> PythonObject: ...
-        def func(arg1: PythonObject, **kwargs: PythonObject) raises: ...
+        def func(var **kwargs: PythonObject) -> PythonObject: ...
+        def func(arg1: PythonObject, var **kwargs: PythonObject) raises: ...
         ```
 
         Parameters:
