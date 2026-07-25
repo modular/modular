@@ -198,8 +198,8 @@ def b16encode(str: StringSlice[mut=False, _]) -> String:
         var str_byte = data[i]
         var hi = str_byte >> 4
         var lo = str_byte & 0b1111
-        result._unsafe_append_byte(b16chars[hi])
-        result._unsafe_append_byte(b16chars[lo])
+        result._unsafe_append_byte(b16chars[unsafe_offset=hi])
+        result._unsafe_append_byte(b16chars[unsafe_offset=lo])
 
     return result^
 

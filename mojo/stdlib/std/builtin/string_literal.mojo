@@ -314,11 +314,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     @always_inline("nodebug")
     def unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, ImmStaticOrigin]:
-        """Get raw pointer to the underlying data.
+    ) -> Pointer[Byte, ImmStaticOrigin]:
+        """Get a pointer to the underlying data.
 
         Returns:
-            The raw pointer to the data.
+            The pointer to the data.
         """
         var ptr = Pointer[_, ImmStaticOrigin](
             _mlir_value=__mlir_op.`pop.string.address`(self.value)
