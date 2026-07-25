@@ -19,7 +19,7 @@ Each group (DP replica) gets a different chunk, and all devices within a group
 Focus is on small sizes typical of row_offsets distribution.
 """
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.math import ceildiv
 from std.sys import size_of, simd_width_of
 from std.sys.defines import get_defined_bool, get_defined_dtype, get_defined_int
@@ -134,7 +134,7 @@ def bench_scatter[
 
     # Create signal buffers for synchronization.
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -158,7 +158,7 @@ def bench_scatter[
     comptime InputTileType = TileTensor[
         dtype, type_of(row_major(num_elems)), ImmutAnyOrigin
     ]
-    var tt_in_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
+    var tt_in_bufs = Array[InputTileType, dp_size](uninitialized=True)
     for dp_idx in range(dp_size):
         tt_in_bufs[dp_idx] = TileTensor(
             cb_inputs[dp_idx].device_buffer(), row_major(num_elems)
@@ -167,7 +167,7 @@ def bench_scatter[
     comptime OutputTileType = TileTensor[
         dtype, type_of(row_major(num_elems)), MutAnyOrigin
     ]
-    var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
+    var out_tiles = Array[OutputTileType, ngpus](uninitialized=True)
     for gpu_idx in range(ngpus):
         out_tiles[gpu_idx] = OutputTileType(
             out_bufs_list[gpu_idx], row_major(num_elems)
