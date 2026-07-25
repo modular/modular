@@ -1058,32 +1058,22 @@ setEmissionOptions(llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &options,
     return Error("emission option must be of the form `option=value`");
   }
 
-  static llvm::SmallSet<StringRef, 1> intKeys = {"denormal-fp-math-f32"};
-
   auto [key, value] = emissionOpt.split("=");
-  if (value.equals_insensitive("true") || value.equals_insensitive("false")) {
-    auto *boolVal = static_cast<llvm::cl::opt<bool> *>(options[key]);
-    if (!boolVal)
-      return Error("emission option \"" + Twine(key) + "\" is not found");
-    if (reset) {
-      boolVal->reset();
-    } else {
-      boolVal->addOccurrence(0, key, value.lower());
-    }
-  } else if (llvm::all_of(value, llvm::isDigit) || intKeys.contains(key)) {
-    auto *intVal = static_cast<llvm::cl::opt<int> *>(options[key]);
-    if (!intVal)
-      return Error("emission option \"" + Twine(key) + "\" is not found");
-    if (reset)
-      intVal->reset();
-    else {
-      intVal->addOccurrence(0, key, value);
-    }
-  } else {
-    return Error("invalid emission option \"" + emissionOpt +
-                 "\" (only boolean and integer values "
-                 "are currently supported)");
+  llvm::cl::Option *opt = options.lookup(key);
+  if (!opt)
+    return Error("emission option \"" + Twine(key) + "\" is not found");
+  if (reset) {
+    opt->reset();
+    return success();
   }
+  // `addOccurrence` dispatches to the option's own value parser, so any
+  // registered option type (bool, int, enum, string) is supported. Bool
+  // spellings are lowercased since the bool parser only accepts lowercase.
+  bool isBoolSpelling =
+      value.equals_insensitive("true") || value.equals_insensitive("false");
+  if (opt->addOccurrence(0, key, isBoolSpelling ? value.lower() : value.str()))
+    return Error("invalid value \"" + Twine(value) +
+                 "\" for emission option \"" + key + "\"");
   return success();
 }
 
