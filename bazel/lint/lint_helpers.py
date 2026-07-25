@@ -67,8 +67,13 @@ def _prefixed(prefix: str, files: set[str]) -> set[str]:
 
 
 def _git_all_files(cwd: str = ".") -> set[str]:
-    tracked = subprocess.check_output(["git", "ls-files"], cwd=cwd)
-    deleted = subprocess.check_output(["git", "ls-files", "--deleted"], cwd=cwd)
+    # `core.quotepath=off` keeps non-ASCII paths raw (see `_git_changed_files`).
+    tracked = subprocess.check_output(
+        ["git", "-c", "core.quotepath=off", "ls-files"], cwd=cwd
+    )
+    deleted = subprocess.check_output(
+        ["git", "-c", "core.quotepath=off", "ls-files", "--deleted"], cwd=cwd
+    )
     return _get_files(tracked) - _get_files(deleted)
 
 
@@ -77,8 +82,20 @@ def _jj_all_files(cwd: str = ".") -> set[str]:
 
 
 def _git_changed_files(diff_target: str, cwd: str = ".") -> set[str]:
+    # `core.quotepath=off` keeps non-ASCII paths (e.g. an em-dash in a
+    # filename) as raw UTF-8 instead of C-quoting them into `"...\342\200\224..."`,
+    # so a linter given this list finds the file instead of erroring on a
+    # quoted path that doesn't exist. Mirrors `lint_file_paths.py`.
     result = subprocess.check_output(
-        ["git", "diff", "--diff-filter=d", "--name-only", diff_target],
+        [
+            "git",
+            "-c",
+            "core.quotepath=off",
+            "diff",
+            "--diff-filter=d",
+            "--name-only",
+            diff_target,
+        ],
         cwd=cwd,
     )
     return _get_files(result)
