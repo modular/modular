@@ -40,7 +40,7 @@ from quantization.qmatmul_k import (
 from std.utils.index import Index
 
 
-def fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype], ...]):
+def fill_random[dtype: DType](mut array: Array[Scalar[dtype], ...]):
     rand(array.unsafe_ptr(), len(array))
 
 
@@ -130,7 +130,7 @@ struct _block_Q4_0:
     comptime group_size = 32
 
     var base_scale: Float16
-    var q_bits: InlineArray[UInt8, Self.group_size // 2]
+    var q_bits: Array[UInt8, Self.group_size // 2]
 
 
 struct qgemm_Q4_0(QuantizedGemm):
@@ -190,7 +190,7 @@ struct qgemm_Q4_0(QuantizedGemm):
             _block_Q4_0
         ]() + (k // Self.k_group_size())
 
-        var a_quant_data = InlineArray[Int8, _block_Q4_0.group_size](
+        var a_quant_data = Array[Int8, _block_Q4_0.group_size](
             uninitialized=True
         )
 
@@ -198,7 +198,7 @@ struct qgemm_Q4_0(QuantizedGemm):
             a.ptr + a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
         )
 
-        var b_quant_data = InlineArray[UInt8, _block_Q4_0.group_size](
+        var b_quant_data = Array[UInt8, _block_Q4_0.group_size](
             uninitialized=True
         )
 
@@ -288,7 +288,7 @@ struct qgemm_Q4_K(QuantizedGemm):
             _block_Q4_K
         ]() + (k // Self.k_group_size())
 
-        var a_quant_data = InlineArray[Int8, _block_QK_K.quantized_k](
+        var a_quant_data = Array[Int8, _block_QK_K.quantized_k](
             uninitialized=True
         )
 
@@ -296,7 +296,7 @@ struct qgemm_Q4_K(QuantizedGemm):
             a.ptr + a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
         )
 
-        var a_block_sums = InlineArray[Int32, _block_Q4_K.group_count](
+        var a_block_sums = Array[Int32, _block_Q4_K.group_count](
             uninitialized=True
         )
         var a_quant_data_ptr: UnsafePointer[
@@ -311,12 +311,8 @@ struct qgemm_Q4_K(QuantizedGemm):
                 .reduce_add()
             )
 
-        var b_scales = InlineArray[UInt8, _block_Q4_K.group_count](
-            uninitialized=True
-        )
-        var b_mins = InlineArray[UInt8, _block_Q4_K.group_count](
-            uninitialized=True
-        )
+        var b_scales = Array[UInt8, _block_Q4_K.group_count](uninitialized=True)
+        var b_mins = Array[UInt8, _block_Q4_K.group_count](uninitialized=True)
 
         for i in range(_block_Q4_K.group_count):
             if i < 4:
@@ -330,7 +326,7 @@ struct qgemm_Q4_K(QuantizedGemm):
                     (block_ptr[].q_scales_and_mins[i - 0] >> 6) << 4
                 )
 
-        var b_quant_data = InlineArray[UInt8, _block_QK_K.quantized_k](
+        var b_quant_data = Array[UInt8, _block_QK_K.quantized_k](
             uninitialized=True
         )
         var b_quant_data_ptr: UnsafePointer[
@@ -428,7 +424,7 @@ struct qgemm_Q6_K(QuantizedGemm):
             _block_Q6_K
         ]() + (k // Self.k_group_size())
 
-        var a_quant_data = InlineArray[Int8, _block_QK_K.quantized_k](
+        var a_quant_data = Array[Int8, _block_QK_K.quantized_k](
             uninitialized=True
         )
 
@@ -436,7 +432,7 @@ struct qgemm_Q6_K(QuantizedGemm):
             a.ptr + a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
         )
 
-        var b_quant_data = InlineArray[UInt8, _block_QK_K.quantized_k](
+        var b_quant_data = Array[UInt8, _block_QK_K.quantized_k](
             uninitialized=True
         )
         var b_quant_data_ptr: UnsafePointer[
