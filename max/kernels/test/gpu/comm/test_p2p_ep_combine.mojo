@@ -117,8 +117,8 @@ def test_combine[
     # Shared atomic counter buffer for dispatch and combine
     var atomic_counters_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
 
-    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutAnyOrigin], n_ranks](uninitialized=True)
-    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutAnyOrigin], n_ranks](uninitialized=True)
+    var host_topk_ids_list = Array[UnsafePointer[Int32, MutAnyOrigin], n_ranks](uninitialized=True)
+    var host_input_tokens_list = Array[UnsafePointer[Scalar[input_type], MutAnyOrigin], n_ranks](uninitialized=True)
 
     var device_topk_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
     var device_input_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)
@@ -209,12 +209,12 @@ def test_combine[
 
     # fmt: off
     # Dispatch buffers
-    var dispatch_recv_bufs_inputs = InlineArray[InlineArray[UnsafePointer[UInt8, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
-    var dispatch_recv_count_bufs_inputs = InlineArray[InlineArray[UnsafePointer[UInt64, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
+    var dispatch_recv_bufs_inputs = Array[Array[UnsafePointer[UInt8, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
+    var dispatch_recv_count_bufs_inputs = Array[Array[UnsafePointer[UInt64, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
 
     # Combine buffers
-    var combine_recv_bufs_inputs = InlineArray[InlineArray[UnsafePointer[UInt8, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
-    var combine_recv_count_bufs_inputs = InlineArray[InlineArray[UnsafePointer[UInt64, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
+    var combine_recv_bufs_inputs = Array[Array[UnsafePointer[UInt8, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
+    var combine_recv_count_bufs_inputs = Array[Array[UnsafePointer[UInt64, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
 
     for slot_idx in range(n_slots):
         for dev_idx in range(n_ranks):
@@ -468,7 +468,7 @@ def test_combine[
         clean_up(dev_i)
         list_of_ctx[dev_i].synchronize()
 
-    # Necessary to fill this InlineArray w/ default BenchmarkInfo
+    # Necessary to fill this Array w/ default BenchmarkInfo
     # otherwise each thread attempts to free uninitialized BenchmarkInfo
     # when copying below
     var default_info = BenchmarkInfo(
@@ -476,7 +476,7 @@ def test_combine[
         result=Report(),
         measures=List[ThroughputMeasure](),
     )
-    var results_b = InlineArray[BenchmarkInfo, n_ranks](fill=default_info)
+    var results_b = Array[BenchmarkInfo, n_ranks](fill=default_info)
 
     # First, prepare the data for the combine kernel
     for dev_i in range(n_ranks):

@@ -160,12 +160,12 @@ def rmsnorm_test[
     # lamport_state) but each rotates its own generation flag independently.
     var sigs_ar_devbufs = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var sigs_fused_devbufs = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs_ar = InlineArray[
-        UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-    ](uninitialized=True)
-    var rank_sigs_fused = InlineArray[
-        UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-    ](uninitialized=True)
+    var rank_sigs_ar = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        uninitialized=True
+    )
+    var rank_sigs_fused = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        uninitialized=True
+    )
 
     var gamma_host = alloc[Scalar[dtype]](K)
     for i in range(K):
@@ -226,7 +226,7 @@ def rmsnorm_test[
     comptime InTensorType = TileTensor[
         dtype, type_of(row_major(0)), ImmutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
+    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
     for g in range(ngpus):
         in_tensors[g] = InTensorType(
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -237,7 +237,7 @@ def rmsnorm_test[
     comptime OutTensorType = TileTensor[
         dtype, type_of(row_major(0)), MutAnyOrigin
     ]
-    var ar_out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var ar_out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for g in range(ngpus):
         ar_out_tensors[g] = OutTensorType(
             rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
@@ -377,12 +377,12 @@ def unsynced_skew_test[
     # Separate signal buffers per kernel path -- as in `rmsnorm_test`.
     var sigs_ar_devbufs = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var sigs_fused_devbufs = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs_ar = InlineArray[
-        UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-    ](uninitialized=True)
-    var rank_sigs_fused = InlineArray[
-        UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-    ](uninitialized=True)
+    var rank_sigs_ar = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        uninitialized=True
+    )
+    var rank_sigs_fused = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        uninitialized=True
+    )
 
     var gamma_host = alloc[Scalar[dtype]](K)
     for i in range(K):
@@ -441,8 +441,8 @@ def unsynced_skew_test[
 
     for it in range(NUM_UNSYNCED_ITERS):
         var base = it * slice_size
-        var in_tensors = InlineArray[InType, ngpus](uninitialized=True)
-        var ar_out_tensors = InlineArray[OutType, ngpus](uninitialized=True)
+        var in_tensors = Array[InType, ngpus](uninitialized=True)
+        var ar_out_tensors = Array[OutType, ngpus](uninitialized=True)
         for g in range(ngpus):
             in_tensors[g] = InType(
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
