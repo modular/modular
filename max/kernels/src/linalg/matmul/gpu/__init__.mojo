@@ -434,7 +434,7 @@ def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
     comptime len_block_sizes = len(block_sizes_alias)
 
     var block_sizes = materialize[block_sizes_alias]()
-    var emit_block_shape = InlineArray[Bool, len_block_sizes * len_block_sizes](
+    var emit_block_shape = Array[Bool, len_block_sizes * len_block_sizes](
         fill=False
     )
 

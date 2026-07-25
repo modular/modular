@@ -99,14 +99,14 @@ def tma_wait_pipelined[
 struct AccumTile[dtype: DType, size: Int](Copyable, Movable):
     """Upper + lower TMEM fragments (16 rows each) for SM100 output."""
 
-    var upper: InlineArray[Scalar[Self.dtype], Self.size]
-    var lower: InlineArray[Scalar[Self.dtype], Self.size]
+    var upper: Array[Scalar[Self.dtype], Self.size]
+    var lower: Array[Scalar[Self.dtype], Self.size]
 
     @always_inline
     def __init__(
         out self,
-        upper: InlineArray[Scalar[Self.dtype], Self.size],
-        lower: InlineArray[Scalar[Self.dtype], Self.size],
+        upper: Array[Scalar[Self.dtype], Self.size],
+        lower: Array[Scalar[Self.dtype], Self.size],
     ):
         self.upper = upper.copy()
         self.lower = lower.copy()
@@ -155,7 +155,7 @@ def st_shared_frag_to_smem[
     vec_dtype: DType,
     vec_size: Int,
 ](
-    vec: InlineArray[Scalar[vec_dtype], vec_size],
+    vec: Array[Scalar[vec_dtype], vec_size],
     dst: TileTensor[
         address_space=AddressSpace.SHARED,
         Storage=PointerStorage[element_width=1],
@@ -274,7 +274,7 @@ def store_fragment_to_smem[
     transpose_c: Bool = False,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    vec: InlineArray[Scalar[vec_dtype], vec_size],
+    vec: Array[Scalar[vec_dtype], vec_size],
     dst: TileTensor[
         address_space=AddressSpace.SHARED,
         Storage=PointerStorage[element_width=1],
@@ -335,7 +335,7 @@ def store_fragment_to_smem[
         else:
             offset = swizzle(stsm_lane_offset + UInt32(n_offset))
 
-        # Build a small hardware-sized SIMD from InlineArray elements
+        # Build a small hardware-sized SIMD from Array elements
         comptime cast_width = 4 // size_of[Scalar[c_type]]()
         var v = SIMD[c_type, stmtx_simd_width * cast_width]()
         comptime for k in range(stmtx_simd_width):
@@ -880,7 +880,7 @@ struct EpilogueApplier[
         is_in_bounds: Bool = False,
     ](
         self,
-        mut frag: InlineArray[Scalar[epilogue_dtype], frag_size],
+        mut frag: Array[Scalar[epilogue_dtype], frag_size],
         staged_row: UInt32,
         staged_col: UInt32,
         is_upper: Bool,
@@ -1013,14 +1013,14 @@ struct EpilogueApplier[
         is_in_bounds: Bool = False,
     ](
         self,
-        mut upper_frag: InlineArray[Scalar[epilogue_dtype], frag_size],
-        mut lower_frag: InlineArray[Scalar[epilogue_dtype], frag_size],
+        mut upper_frag: Array[Scalar[epilogue_dtype], frag_size],
+        mut lower_frag: Array[Scalar[epilogue_dtype], frag_size],
         stage: UInt32,
         c_row: UInt32,
         c_col: UInt32,
     ) -> Tuple[
-        InlineArray[Scalar[epilogue_dtype], frag_size],
-        InlineArray[Scalar[epilogue_dtype], frag_size],
+        Array[Scalar[epilogue_dtype], frag_size],
+        Array[Scalar[epilogue_dtype], frag_size],
     ]:
         """Apply epilogue to both fragments (main entry point)."""
         var staged_row, staged_col = self.compute_staged_coords(
@@ -1226,7 +1226,7 @@ struct EpilogueApplier[
         swizzle: Swizzle,
     ](
         self,
-        mut frag: InlineArray[Scalar[epilogue_dtype], frag_size],
+        mut frag: Array[Scalar[epilogue_dtype], frag_size],
         local_row: UInt32,
         local_col: UInt32,
         is_upper: Bool,
@@ -1296,16 +1296,16 @@ struct EpilogueApplier[
         swizzle: Swizzle,
     ](
         self,
-        mut upper_frag: InlineArray[Scalar[epilogue_dtype], frag_size],
-        mut lower_frag: InlineArray[Scalar[epilogue_dtype], frag_size],
+        mut upper_frag: Array[Scalar[epilogue_dtype], frag_size],
+        mut lower_frag: Array[Scalar[epilogue_dtype], frag_size],
         stage: UInt32,
         src_ptr: UnsafePointer[
             Scalar[c_type], _, address_space=AddressSpace.SHARED
         ],
         beta: Scalar[epilogue_dtype],
     ) -> Tuple[
-        InlineArray[Scalar[epilogue_dtype], frag_size],
-        InlineArray[Scalar[epilogue_dtype], frag_size],
+        Array[Scalar[epilogue_dtype], frag_size],
+        Array[Scalar[epilogue_dtype], frag_size],
     ]:
         """Add beta * C to both fragment halves from swizzled SMEM.
 
@@ -1386,10 +1386,10 @@ struct TMEMToSMemWriter[
         repeat: Int
     ](
         self,
-        upper_frag: InlineArray[
+        upper_frag: Array[
             Scalar[Self.c_type], Self.Config.fragment_size * repeat
         ],
-        lower_frag: InlineArray[
+        lower_frag: Array[
             Scalar[Self.c_type], Self.Config.fragment_size * repeat
         ],
         c_smem_tile: TileTensor[
@@ -1415,10 +1415,10 @@ struct TMEMToSMemWriter[
         repeat: Int, is_lower_required: Bool
     ](
         self,
-        upper_casted: InlineArray[
+        upper_casted: Array[
             Scalar[Self.c_type], Self.Config.fragment_size * repeat
         ],
-        lower_casted: InlineArray[
+        lower_casted: Array[
             Scalar[Self.c_type], Self.Config.fragment_size * repeat
         ],
         c_smem_tile: TileTensor[
@@ -1580,10 +1580,10 @@ struct TMEMToSMemWriter[
         repeat: Int, is_lower_required: Bool
     ](
         self,
-        upper_casted: InlineArray[
+        upper_casted: Array[
             Scalar[Self.c_type], Self.Config.fragment_size * repeat
         ],
-        lower_casted: InlineArray[
+        lower_casted: Array[
             Scalar[Self.c_type], Self.Config.fragment_size * repeat
         ],
         c_smem_tile: TileTensor[
@@ -1727,12 +1727,8 @@ struct SMemEpilogueWriter[
     @always_inline
     def _write_transpose(
         self,
-        upper_frag: InlineArray[
-            Scalar[Self.epilogue_dtype], Self.rep_frag_size
-        ],
-        lower_frag: InlineArray[
-            Scalar[Self.epilogue_dtype], Self.rep_frag_size
-        ],
+        upper_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
+        lower_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         c_smem_tile: TileTensor[
             dtype=Self.c_type,
             address_space=AddressSpace.SHARED,
@@ -1884,12 +1880,8 @@ struct SMemEpilogueWriter[
     @always_inline
     def _write_non_transpose(
         self,
-        upper_frag: InlineArray[
-            Scalar[Self.epilogue_dtype], Self.rep_frag_size
-        ],
-        lower_frag: InlineArray[
-            Scalar[Self.epilogue_dtype], Self.rep_frag_size
-        ],
+        upper_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
+        lower_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         c_smem_tile: TileTensor[
             dtype=Self.c_type,
             address_space=AddressSpace.SHARED,

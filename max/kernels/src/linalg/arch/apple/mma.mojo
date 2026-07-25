@@ -130,7 +130,7 @@ struct MmaOpApple[
     comptime MMA_K = 16
     comptime FRAG_SIZE = 8
     comptime num_accum = Self.num_m_mmas * Self.num_n_mmas
-    comptime AccumType = InlineArray[
+    comptime AccumType = Array[
         SIMD[Self.out_type, Self.FRAG_SIZE], Self.num_accum
     ]
 
@@ -358,7 +358,7 @@ struct MmaOpApple[
                 instead of reading them (defaults to False).
 
         Args:
-            accum: Caller-owned InlineArray of SIMD[out_type, 8]
+            accum: Caller-owned Array of SIMD[out_type, 8]
                 accumulators, one per (num_m_mmas * num_n_mmas) tile.
             a_tile: A operand, shape (num_m_mmas * 16, K).
             b_tile: B operand, shape (K, num_n_mmas * 16) or
@@ -422,7 +422,7 @@ struct MmaOpApple[
 
         comptime for ki in range(num_k_steps):
             # Pre-load B fragments for this K-step.
-            var b_frags = InlineArray[
+            var b_frags = Array[
                 SIMD[Self.b_type, Self.FRAG_SIZE], Self.num_n_mmas
             ](uninitialized=True)
             comptime for ni in range(Self.num_n_mmas):
@@ -571,10 +571,10 @@ struct MmaOpApple[
         var two_cb = 2 * self.cb
 
         # Preload both strips' B fragments per N sub-tile (as in `mma`).
-        var b_frags0 = InlineArray[
+        var b_frags0 = Array[
             SIMD[Self.b_type, Self.FRAG_SIZE], Self.num_n_mmas
         ](uninitialized=True)
-        var b_frags1 = InlineArray[
+        var b_frags1 = Array[
             SIMD[Self.b_type, Self.FRAG_SIZE], Self.num_n_mmas
         ](uninitialized=True)
         comptime for ni in range(Self.num_n_mmas):
@@ -619,9 +619,9 @@ struct MmaOpApple[
         self,
         input_ptr: UnsafePointer[Scalar[Self.in_type], input_origin],
         conv: ConvIm2colParams,
-        h_base: InlineArray[Int32, Self.num_m_mmas * 2],
-        w_base: InlineArray[Int32, Self.num_m_mmas * 2],
-        batch_base: InlineArray[Int32, Self.num_m_mmas * 2],
+        h_base: Array[Int32, Self.num_m_mmas * 2],
+        w_base: Array[Int32, Self.num_m_mmas * 2],
+        batch_base: Array[Int32, Self.num_m_mmas * 2],
         c0: Int32,
         r: Int32,
         s: Int32,
@@ -779,9 +779,9 @@ struct MmaOpApple[
         input_ptr: UnsafePointer[Scalar[Self.in_type], input_origin],
         conv: ConvIm2colParams,
         b_tile: TileTensor[Self.b_type, ...],
-        h_base: InlineArray[Int32, Self.num_m_mmas * 2],
-        w_base: InlineArray[Int32, Self.num_m_mmas * 2],
-        batch_base: InlineArray[Int32, Self.num_m_mmas * 2],
+        h_base: Array[Int32, Self.num_m_mmas * 2],
+        w_base: Array[Int32, Self.num_m_mmas * 2],
+        batch_base: Array[Int32, Self.num_m_mmas * 2],
         c0: Int32,
         r: Int32,
         s: Int32,
@@ -852,10 +852,10 @@ struct MmaOpApple[
         comptime num_k_steps = b_k // Self.MMA_K
 
         comptime if num_k_steps == 2:
-            var b_frags0 = InlineArray[
+            var b_frags0 = Array[
                 SIMD[Self.b_type, Self.FRAG_SIZE], Self.num_n_mmas
             ](uninitialized=True)
-            var b_frags1 = InlineArray[
+            var b_frags1 = Array[
                 SIMD[Self.b_type, Self.FRAG_SIZE], Self.num_n_mmas
             ](uninitialized=True)
             comptime for ni in range(Self.num_n_mmas):

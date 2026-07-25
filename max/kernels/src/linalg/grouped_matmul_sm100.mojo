@@ -669,7 +669,7 @@ def stsm_helper[
     vec_size: Int,
     transpose_c: Bool = False,
 ](
-    vec: InlineArray[Scalar[vec_dtype], vec_size],
+    vec: Array[Scalar[vec_dtype], vec_size],
     dst: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...],
 ):
     """Stores a register fragment to shared memory using the stmatrix instruction.

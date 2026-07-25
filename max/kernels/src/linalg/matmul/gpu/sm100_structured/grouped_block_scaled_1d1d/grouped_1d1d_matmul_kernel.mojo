@@ -2572,8 +2572,8 @@ struct Grouped1D1DMatmulKernel[
             # the register while the store is still in flight. Same
             # batched-stores-then-one-wait shape as
             # TmemFragments.store() + wait_store().
-            var _sfb_st_vals = InlineArray[
-                InlineArray[Scalar[DType.uint32], 1],
+            var _sfb_st_vals = Array[
+                Array[Scalar[DType.uint32], 1],
                 Self.config.num_sf_k_tiles,
             ](uninitialized=True)
 
@@ -3237,9 +3237,7 @@ struct Grouped1D1DMatmulKernel[
             # path (no bf16 scatter).
             var amax_smem = c_tiles[0]._storage.bitcast[Float32]()
 
-            comptime PartialType = InlineArray[
-                Scalar[Self.accum_type], rep_frag_size
-            ]
+            comptime PartialType = Array[Scalar[Self.accum_type], rep_frag_size]
             var lane_row_is_even = (lane_row & UInt32(1)) == UInt32(0)
 
             comptime for loop_stage in range(num_stages):
@@ -3252,9 +3250,9 @@ struct Grouped1D1DMatmulKernel[
                     )
 
                 var upper_ip = rebind[PartialType](frags_ip.upper).copy()
-                var lower_ip = InlineArray[
-                    Scalar[Self.accum_type], rep_frag_size
-                ](uninitialized=True)
+                var lower_ip = Array[Scalar[Self.accum_type], rep_frag_size](
+                    uninitialized=True
+                )
                 comptime if is_lower_frag_required:
                     lower_ip = rebind[PartialType](frags_ip.lower).copy()
 
@@ -3298,7 +3296,7 @@ struct Grouped1D1DMatmulKernel[
                 # writer downstream.
                 # Storage: per repeat, 8 SwiGLU values per thread.
                 comptime n_swiglu_per_repeat = 8 if is_lower_frag_required else 4
-                var sw_ip = InlineArray[
+                var sw_ip = Array[
                     Scalar[Self.accum_type],
                     n_swiglu_per_repeat * repeats,
                 ](uninitialized=True)
@@ -3581,9 +3579,7 @@ struct Grouped1D1DMatmulKernel[
         # exactly, so swiglu_match_bf16 precision is automatic.
         var smem_bf16_ptr = c_tiles[0]._storage.bitcast[BFloat16]()
 
-        comptime PartialType = InlineArray[
-            Scalar[Self.accum_type], rep_frag_size
-        ]
+        comptime PartialType = Array[Scalar[Self.accum_type], rep_frag_size]
 
         var tid_within_epi = UInt32(warp_id_v) * UInt32(WARP_SIZE) + UInt32(
             lane_v
@@ -3644,9 +3640,9 @@ struct Grouped1D1DMatmulKernel[
                 )
 
             var upper_partial = rebind[PartialType](frags.upper).copy()
-            var lower_partial = InlineArray[
-                Scalar[Self.accum_type], rep_frag_size
-            ](uninitialized=True)
+            var lower_partial = Array[Scalar[Self.accum_type], rep_frag_size](
+                uninitialized=True
+            )
             comptime if is_lower_frag_required:
                 lower_partial = rebind[PartialType](frags.lower).copy()
 

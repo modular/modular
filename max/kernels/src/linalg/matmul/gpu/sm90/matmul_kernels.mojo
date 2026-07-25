@@ -172,7 +172,7 @@ struct HopperMatmulSM90Kernel_SMem[
     # Number of pipeline stages for barriers (adjusted for k_group_size)
     comptime _num_barrier_stages = Self.num_pipeline_stages // Self.k_group_size
 
-    # InlineArray storage fields (like SM100 pattern)
+    # Array storage fields (like SM100 pattern)
     var a_tiles_storage: Self.ATileArray.Storage
     var b_tiles_storage: Self.BTileArray.Storage
     var c_tile_storage: Self.CTileArray.Storage

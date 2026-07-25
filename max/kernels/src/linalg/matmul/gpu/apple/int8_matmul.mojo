@@ -303,7 +303,7 @@ struct AppleM5Int8MatMul[
         base_row: Int32,
         rb: Int32,
         four_cb: Int32,
-    ) -> InlineArray[SIMD[DType.int8, 8], 4]:
+    ) -> Array[SIMD[DType.int8, 8], 4]:
         """Width-16 load of one 16-block's four K-block fragments from a 64-wide
         K strip. `row_stride`/`four_cb` (= `4*cb`) are hoisted by the caller so
         the per-block offset is one mul-add; the offset math is Int32 (offset from
@@ -318,7 +318,7 @@ struct AppleM5Int8MatMul[
         comptime align = 16
         var lo16 = (strip.ptr + Int(lo_off)).load[width=16, alignment=align]()
         var hi16 = (strip.ptr + Int(hi_off)).load[width=16, alignment=align]()
-        var out = InlineArray[SIMD[DType.int8, 8], 4](uninitialized=True)
+        var out = Array[SIMD[DType.int8, 8], 4](uninitialized=True)
         comptime for j in range(4):
             out[j] = lo16.slice[4, offset=4 * j]().join(
                 hi16.slice[4, offset=4 * j]()
@@ -346,10 +346,10 @@ struct AppleM5Int8MatMul[
         var rb32 = Int32(rb)
         var four_cb = Int32(4 * cb)
 
-        var a_all = InlineArray[SIMD[DType.int8, 8], Self.NUM_MMA_M * 4](
+        var a_all = Array[SIMD[DType.int8, 8], Self.NUM_MMA_M * 4](
             uninitialized=True
         )
-        var b_all = InlineArray[SIMD[DType.int8, 8], Self.NUM_MMA_N * 4](
+        var b_all = Array[SIMD[DType.int8, 8], Self.NUM_MMA_N * 4](
             uninitialized=True
         )
         comptime for mi in range(Self.NUM_MMA_M):
@@ -386,7 +386,7 @@ struct AppleM5Int8MatMul[
         t32: TileTensor[DType.int8, ...],
         abs_row: Int,
         abs_k: Int,
-    ) -> InlineArray[SIMD[DType.int8, 8], 4]:
+    ) -> Array[SIMD[DType.int8, 8], 4]:
         """Int32-indexed `_load_frag_x4_int8`: `<16 x i8>` load via absolute
         `load_linear`. `align=16` keeps the vector load (needs `abs_k % 16 == 0`).
         """
@@ -397,7 +397,7 @@ struct AppleM5Int8MatMul[
         var hi16 = t32.load_linear[width=16, alignment=align](
             IndexList[2](abs_row + 8, abs_k)
         )
-        var out = InlineArray[SIMD[DType.int8, 8], 4](uninitialized=True)
+        var out = Array[SIMD[DType.int8, 8], 4](uninitialized=True)
         comptime for j in range(4):
             out[j] = lo16.slice[4, offset=4 * j]().join(
                 hi16.slice[4, offset=4 * j]()
@@ -421,10 +421,10 @@ struct AppleM5Int8MatMul[
         var abs_k = ks * Self.BK + 4 * cb
         var a_base = sg_row * Self.SG_M + rb
         var b_base = sg_col * Self.SG_N + rb
-        var a_all = InlineArray[SIMD[DType.int8, 8], Self.NUM_MMA_M * 4](
+        var a_all = Array[SIMD[DType.int8, 8], Self.NUM_MMA_M * 4](
             uninitialized=True
         )
-        var b_all = InlineArray[SIMD[DType.int8, 8], Self.NUM_MMA_N * 4](
+        var b_all = Array[SIMD[DType.int8, 8], Self.NUM_MMA_N * 4](
             uninitialized=True
         )
         comptime for mi in range(Self.NUM_MMA_M):
@@ -508,7 +508,7 @@ struct AppleM5Int8MatMul[
             var kb_valid = max(
                 0, min(Int(Self.MMA_K), k_valid - ki * Self.MMA_K)
             )
-            var b_frags = InlineArray[SIMD[DType.int8, 8], Self.NUM_MMA_N](
+            var b_frags = Array[SIMD[DType.int8, 8], Self.NUM_MMA_N](
                 uninitialized=True
             )
             comptime for ni in range(Self.NUM_MMA_N):
