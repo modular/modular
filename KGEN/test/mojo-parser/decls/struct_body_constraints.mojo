@@ -24,7 +24,7 @@
 
 
 struct SatisfiedStruct[N: Int]
-    where N > 0:
+    (Movable where False) where N > 0:
     pass
 
 
@@ -42,7 +42,7 @@ def use_satisfied_struct():
 # expected-note @below {{'ViolatedStruct' declared here}}
 struct ViolatedStruct[N: Int]
     # expected-note @below {{constraint declared here evaluated to False}}
-    where N > 0:
+    (Movable where False) where N > 0:
     pass
 
 
@@ -64,7 +64,7 @@ def use_violated_struct():
 # expected-note @below {{cannot prove constraint}}
 struct UnprovableStruct[N: Int]
     # expected-note @below {{constraint declared here needs evidence for}}
-    where N > 0:
+    (Movable where False) where N > 0:
     pass
 
 
@@ -81,7 +81,7 @@ def use_unprovable_struct[K: Int]():
 
 
 struct DischargeableStruct[N: Int]
-    where N > 0:
+    (Movable where False) where N > 0:
     pass
 
 
@@ -106,7 +106,7 @@ def use_dischargeable_struct[K: Int]() where K > 0:
 
 struct PositiveOnly[N: Int]
     # expected-note @below {{constraint declared here needs evidence for}}
-    where N > 0:
+    (Movable where False) where N > 0:
     pass
 
 

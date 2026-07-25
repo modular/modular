@@ -11,14 +11,14 @@ trait RequiresIntAlias:
     comptime Value: Int
 
 
-struct ConditionallyConforms[value: Int](RequiresIntAlias) where value > 0:
+struct ConditionallyConforms[value: Int](RequiresIntAlias, Movable where False) where value > 0:
     # Ensure the generator constraint has been discharged in the witness.
     comptime Value: Int where Self.value > 0 = Self.value
     # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"
     # CHECK-NEXT: kgen.witness "Value" : !alias_Int1 = rebind(:!Int value)
 
 
-struct ConditionallyConformsInferred[value: Int](RequiresIntAlias) where (
+struct ConditionallyConformsInferred[value: Int](RequiresIntAlias, Movable where False) where (
     value > 0
 ):
     # A 'where' clause must also work when the alias type is inferred from the
@@ -33,7 +33,7 @@ trait RequiresParametricIntAlias:
 
 
 struct ConditionallyConformsParametric[value: Int](
-    RequiresParametricIntAlias
+    RequiresParametricIntAlias, Movable where False
 ) where (value > 0):
     # Ensure the generator constraint has been discharged in the witness.
     comptime Value[offset: Int]: Int where Self.value > 0 = (

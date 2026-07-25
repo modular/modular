@@ -55,7 +55,7 @@ struct MultipleTrailingWhereClauses[T: Base] (Movable where False) where conform
 
 
 struct ConditionallyDeletableWrapper[T: AnyType](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable), Movable where False,
 ):
     var value: Self.T
 
@@ -65,7 +65,7 @@ struct ConditionallyDeletableWrapper[T: AnyType](
 # CHECK-SAME: conforms_to(:!AnyType T,
 # CHECK: lit.struct.field value : !lit.struct<#ConditionallyDeletableWrapper
 # CHECK-SAME: <:!AnyType T>>
-struct TrailingWhereDeletableField[T: AnyType]
+struct TrailingWhereDeletableField[T: AnyType](Movable where False)
     where conforms_to(T, ImplicitlyDeletable):
     var value: ConditionallyDeletableWrapper[Self.T]
 

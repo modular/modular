@@ -946,6 +946,10 @@ ConstraintRelation LIT::inferConstraintRelation(TypedAttr propA,
   if (propA == propB)
     return CR::Implies;
 
+  // A trivially false assumption implies anything.
+  if (isTriviallyFalseProposition(propA))
+    return CR::Implies;
+
   // Trivially true is implied by anything.
   if (isTriviallyTrueProposition(propB))
     return CR::Implies;
@@ -1043,12 +1047,14 @@ LIT::canDischargeConstraint(ParameterEvaluator &evaluator,
     return TriState::yes();
 
   bool anyImplies = false;
+  bool anyContradicts = false;
   for (ConstraintAttr assumption : callerAssumptions) {
     TypedAttr assumptionRebound = getCanonicalAttr(
         evaluator.getReboundAttribute(assumption.getProposition()));
     switch (inferConstraintRelation(assumptionRebound, rebound)) {
     case ConstraintRelation::Contradicts:
-      return TriState::no();
+      anyContradicts = true;
+      break;
     case ConstraintRelation::Implies:
       anyImplies = true;
       break;
@@ -1056,8 +1062,13 @@ LIT::canDischargeConstraint(ParameterEvaluator &evaluator,
       break;
     }
   }
+  // An implication is stronger than a contradiction: if both occur, the
+  // assumption set is itself contradictory, so the goal is vacuously implied
+  // either way.
   if (anyImplies)
     return TriState::yes();
+  if (anyContradicts)
+    return TriState::no();
 
   return TriState::unknown();
 }

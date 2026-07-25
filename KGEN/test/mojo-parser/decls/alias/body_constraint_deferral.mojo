@@ -17,7 +17,7 @@
 
 
 @fieldwise_init
-struct PositiveOnly[N: Int] where N > 0:
+struct PositiveOnly[N: Int](Movable where False) where N > 0:
     pass
 
 

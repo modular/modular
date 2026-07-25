@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
 
-struct MyAffine:
+struct MyAffine(Movable where False):
     def __init__(out self):
         pass
 
@@ -23,7 +23,7 @@ def testAffineThing():
 
 
 # CHECK-LABEL: lit.struct.decl @EmptyExplicit
-struct EmptyExplicit(ImplicitlyDeletable where False):
+struct EmptyExplicit(ImplicitlyDeletable where False, Movable where False):
     def __init__(out self):
         pass
 
@@ -46,7 +46,7 @@ def correctUseExample():
 
 # CHECK-LABEL: lit.struct.decl @ExplicitDestroyThrowing
 @explicit_destroy("end lifetime with foo()")
-struct ExplicitDestroyThrowing(ImplicitlyDeletable where False):
+struct ExplicitDestroyThrowing(ImplicitlyDeletable where False, Movable where False):
     var field: MyAffine
 
     # CHECK-LABEL: lit.fn @"foo
@@ -73,7 +73,7 @@ struct ExplicitDestroyThrowing(ImplicitlyDeletable where False):
         self.method_that_raises()
 
 
-struct ImplicitlyDeletableContainerOfExplicit:
+struct ImplicitlyDeletableContainerOfExplicit(Movable where False):
     var m: EmptyExplicit
 
     def __init__(out self):
@@ -102,7 +102,7 @@ trait Iterator(ImplicitlyDeletable):
     comptime Element: AnyType
 
 
-struct I(Iterator):
+struct I(Iterator, Movable where False):
     comptime Element = Int
 
 
@@ -110,7 +110,7 @@ struct _MapIterator[
     InnerIteratorType: Iterator,
     //,
     Function: def(InnerIteratorType.Element) thin -> Int,
-]():
+](Movable where False):
     var _inner: Self.InnerIteratorType
 
     def __init__(out self):
@@ -140,10 +140,10 @@ def moco2373(l: I):
 
 
 # MOCO-4254
-struct PredicateOnStructOuter[value: Int] where value >= 0:
+struct PredicateOnStructOuter[value: Int](Movable where False) where value >= 0:
     var field: PredicateOnStructInner[Self.value]
 
 struct PredicateOnStructInner[value: Int](
-    ImplicitlyDeletable where value >= 0,
+    ImplicitlyDeletable where value >= 0, Movable where False,
 ):
     pass

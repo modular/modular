@@ -41,7 +41,7 @@
 # cases below should type-check without diagnostics.
 
 
-struct PositiveOnly[N: Int] where N > 0:
+struct PositiveOnly[N: Int] (Movable where False) where N > 0:
     pass
 
 
@@ -86,7 +86,7 @@ def discharged_from_throws[K: Int]() raises PositiveOnly[K] where K > 0:
 # identically to struct parameter declaration positions.
 
 
-struct DischargedStruct[K: Int, X: PositiveOnly[K]] where K > 0:
+struct DischargedStruct[K: Int, X: PositiveOnly[K]] (Movable where False) where K > 0:
     pass
 
 
@@ -111,7 +111,7 @@ def all_discharged[A: Int, B: Int,
 
 struct AllDischargedStruct[A: Int, B: Int,
                             X: PositiveOnly[A], Y: PositiveOnly[B]]
-    where A > 0 where B > 0:
+    (Movable where False) where A > 0 where B > 0:
     pass
 
 
@@ -122,7 +122,7 @@ struct AllDischargedStruct[A: Int, B: Int,
 
 struct PosForParam[N: Int]
     # expected-note @below {{constraint declared here needs evidence for '(K > Int(0))'}}
-    where N > 0:
+    (Movable where False) where N > 0:
     pass
 
 
@@ -140,7 +140,7 @@ def undischarged_param[K: Int,
 
 struct PosForArg[N: Int]
     # expected-note @below {{constraint declared here needs evidence for '(K > Int(0))'}}
-    where N > 0:
+    (Movable where False) where N > 0:
     pass
 
 
@@ -158,7 +158,7 @@ def undischarged_arg[K: Int](
 
 struct PosForRet[N: Int]
     # expected-note @below {{constraint declared here needs evidence for '(K > Int(0))'}}
-    where N > 0:
+    (Movable where False) where N > 0:
     pass
 
 
@@ -175,7 +175,7 @@ def undischarged_ret[K: Int]() -> PosForRet[K]:
 
 struct PosForThrows[N: Int]
     # expected-note @below {{constraint declared here needs evidence for '(K > Int(0))'}}
-    where N > 0:
+    (Movable where False) where N > 0:
     pass
 
 
@@ -192,7 +192,7 @@ def undischarged_throws[K: Int]() raises PosForThrows[K]:
 
 struct PosForStruct[N: Int]
     # expected-note @below {{constraint declared here needs evidence for '(K > Int(0))'}}
-    where N > 0:
+    (Movable where False) where N > 0:
     pass
 
 
@@ -214,7 +214,7 @@ struct UndischargedStruct[K: Int,
 
 struct PosForPartial[N: Int]
     # expected-note @below {{constraint declared here needs evidence for '(B > Int(0))'}}
-    where N > 0:
+    (Movable where False) where N > 0:
     pass
 
 
@@ -270,13 +270,13 @@ def undischarged_trait_arg[T: AnyType](
 
 struct PosForNoneA[N: Int]
     # expected-note @below {{constraint declared here needs evidence for '(A > Int(0))'}}
-    where N > 0:
+    (Movable where False) where N > 0:
     pass
 
 
 struct PosForNoneB[N: Int]
     # expected-note @below {{constraint declared here needs evidence for '(B > Int(0))'}}
-    where N > 0:
+    (Movable where False) where N > 0:
     pass
 
 
