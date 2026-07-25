@@ -47,9 +47,9 @@ struct Config(ConfigTrait):
 struct Attention[config_t: ConfigTrait](Writable):
     # Fields of dependent type, whose type can only be determined by
     # a indirect static call to a trait method.
-    var dep_val_0: InlineArray[Int, Self.config_t.trait_method_0()]
-    var dep_val_1: InlineArray[Int, Self.config_t.trait_method_1(2)]
-    var dep_val_2: InlineArray[Int, Self.config_t.trait_method_2[Int](3)]
+    var dep_val_0: Array[Int, Self.config_t.trait_method_0()]
+    var dep_val_1: Array[Int, Self.config_t.trait_method_1(2)]
+    var dep_val_2: Array[Int, Self.config_t.trait_method_2[Int](3)]
 
     def __init__(out self):
         self.dep_val_0 = type_of(self.dep_val_0)(uninitialized=True)

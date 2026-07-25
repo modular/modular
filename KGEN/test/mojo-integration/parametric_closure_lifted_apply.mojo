@@ -21,15 +21,15 @@ struct MyCipher[KeySize: Int](Cipher, Copyable, Movable):
     comptime BLOCK_SIZE: Int = 16
     comptime NK: Int = Self.KeySize // 4
     comptime WORDS_SIZE: Int = 4 * (Self.NK + 7)
-    var w: InlineArray[UInt32, Self.WORDS_SIZE]
+    var w: Array[UInt32, Self.WORDS_SIZE]
 
 
 def check[
     C: Cipher & Copyable & ImplicitlyDeletable,
     KeySize: Int,
-    cipher_init: def(InlineArray[UInt8, KeySize]) raises capturing[_] -> C,
+    cipher_init: def(Array[UInt8, KeySize]) raises capturing[_] -> C,
 ](n: Int) raises:
-    var k = InlineArray[UInt8, KeySize](fill=0)
+    var k = Array[UInt8, KeySize](fill=0)
     var c = cipher_init(k)
     print("checked KeySize =", KeySize, "n =", n)
 
@@ -38,15 +38,15 @@ def run[
     check: def[
         C: Cipher & Copyable & ImplicitlyDeletable,
         KeySize: Int,
-        cipher_init: def(InlineArray[UInt8, KeySize]) raises capturing[_] -> C,
+        cipher_init: def(Array[UInt8, KeySize]) raises capturing[_] -> C,
     ](Int) raises capturing[_],
 ](n: Int) raises:
     @parameter
     def make[
         KeySize: Int
-    ](key: InlineArray[UInt8, KeySize]) raises -> MyCipher[KeySize]:
+    ](key: Array[UInt8, KeySize]) raises -> MyCipher[KeySize]:
         return MyCipher[KeySize](
-            InlineArray[UInt32, MyCipher[KeySize].WORDS_SIZE](fill=0)
+            Array[UInt32, MyCipher[KeySize].WORDS_SIZE](fill=0)
         )
 
     check[MyCipher[16], 16, make[16]](n)

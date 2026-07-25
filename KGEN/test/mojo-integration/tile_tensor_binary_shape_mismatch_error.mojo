@@ -13,8 +13,8 @@ from layout import TileTensor, row_major
 
 
 def main():
-    var a_data = InlineArray[Float32, 4](fill=0)
-    var b_data = InlineArray[Float32, 6](fill=0)
+    var a_data = Array[Float32, 4](fill=0)
+    var b_data = Array[Float32, 6](fill=0)
     var a = TileTensor(a_data, row_major[2, 2]())
     var b = TileTensor(b_data, row_major[2, 3]())
 

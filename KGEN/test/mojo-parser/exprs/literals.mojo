@@ -458,11 +458,11 @@ def test_moco_3801_pack_of_literals():
 # ===----------------------------------------------------------------------=== #
 
 
-struct InlineArray[n: Int, T: AnyType]:
+struct Array[n: Int, T: AnyType]:
     def __init__[
         __literal_size__: Int
     ](
-        out self: InlineArray[__literal_size__, Self.T],
+        out self: Array[__literal_size__, Self.T],
         *x: Self.T,
         __list_literal__: NoneType,
     ):
@@ -471,5 +471,5 @@ struct InlineArray[n: Int, T: AnyType]:
 
 # CHECK-LABEL: lit.fn @"foo()"
 def foo():
-    # CHECK: lit.var.decl "v" var : !lit.ref<!lit.struct<#InlineArray <:!Int {:scalar<index> 3}, :!AnyType !Int>>
-    var v: InlineArray[_, _] = [1, 2, 3]
+    # CHECK: lit.var.decl "v" var : !lit.ref<!lit.struct<#Array <:!Int {:scalar<index> 3}, :!AnyType !Int>>
+    var v: Array[_, _] = [1, 2, 3]
