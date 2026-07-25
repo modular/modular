@@ -436,7 +436,7 @@ def fn_type_inline_where[
 # expected-note @below {{'ConstraintStruct' declared here}}
 # expected-note @below {{constraint declared here needs evidence for '(x > Int(0))'}}
 # expected-note @below {{constraint declared here evaluated to False, expected '(a > Int(0))'}}
-struct ConstraintStruct[a: Int] where a > 0:
+struct ConstraintStruct[a: Int] (Movable where False) where a > 0:
     pass
 
 # expected-note @below {{add a trailing 'where' clause that requires '(x > Int(0))'}}

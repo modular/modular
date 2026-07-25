@@ -166,7 +166,7 @@ def useParameterizedField[x: Pair[DType.float32]]():
 
 # CHECK-LABEL: lit.struct.decl @TypeParameter
 # CHECK-SAME: <[[TYPE:.*]]: non_struct_type>
-struct TypeParameter[T: __mlir_type.`!kgen.non_struct_type`]:
+struct TypeParameter[T: __mlir_type.`!kgen.non_struct_type`](Movable where False):
   # CHECK: @"bar(parameters::TypeParameter{{.*}}(%self: {{.*}} read_mem, %val: !kgen.param<:non_struct_type [[TYPE]]>)
   def bar(self, val: Self.T):
     pass
@@ -177,7 +177,7 @@ struct TypeParameter[T: __mlir_type.`!kgen.non_struct_type`]:
 struct ParamSubst[
     T: TrivialRegisterPassable,
     shape: __mlir_type[`!kgen.param_list<`, T,`>`],
-  ]: pass
+  ](Movable where False): pass
 
 # CHECK-LABEL: lit.fn @"testParamSubst
 def testParamSubst():
@@ -360,7 +360,7 @@ def default_with_parametric_value[i: Int](a: StructWithIntParam[i], b: StructWit
 def test_default_with_parametric_value(zzz: StructWithIntParam[1]):
     default_with_parametric_value(zzz)
 
-struct HasInferredParamWithAutoParam[value: StructWithIntParam, //]:
+struct HasInferredParamWithAutoParam[value: StructWithIntParam, //](Movable where False):
     pass
 def test_autoparam_inferred[x: StructWithIntParam]():
     var arg: HasInferredParamWithAutoParam[value=x]
@@ -374,7 +374,7 @@ trait ASubTrait(ASuperTrait):
     pass
 
 
-struct StructWithTraitParam[T: ASuperTrait]():
+struct StructWithTraitParam[T: ASuperTrait](Movable where False):
     pass
 
     def __init__(out self: StructWithTraitParam[Self.T]):
@@ -385,10 +385,10 @@ struct StructWithTraitParam[T: ASuperTrait]():
 def test_upcast_trait[T: ASubTrait](tuples: StructWithTraitParam[T]):
     pass
 
-struct TakeSWIP[XYZ: StructWithIntParam = StructWithIntParam[1]()]:
+struct TakeSWIP[XYZ: StructWithIntParam = StructWithIntParam[1]()](Movable where False):
     pass
 
-struct TestTakeSWIP[CO: StructWithIntParam]:
+struct TestTakeSWIP[CO: StructWithIntParam](Movable where False):
     var c: TakeSWIP[Self.CO]
 
 ##===----------------------------------------------------------------------===##
@@ -473,7 +473,7 @@ struct InitSelfParam[x: InitSelfCtor](TrivialRegisterPassable):
 
 
 @fieldwise_init("implicit")
-struct IntBox:
+struct IntBox(Movable where False):
     var x: Int
 
 
@@ -502,7 +502,7 @@ def refine_memory_only_results[a: InitSelfCtor, b: InitSelfCtor]() -> InitSelfPa
     pass
 
 
-struct ConvertFromIntLiteral:
+struct ConvertFromIntLiteral(Movable where False):
     @implicit
     def __init__(out self, x: IntLiteral):
         pass
@@ -524,7 +524,7 @@ def parameter_memoryonly_call():
     var y = nonmaterializable_arg(4)
 
 
-struct IntBoxParam[b: IntBox]: pass
+struct IntBoxParam[b: IntBox](Movable where False): pass
 def takeIntBoxParam[size: IntBox](a: IntBoxParam[size]): pass
 def selectIntBoxFromVariadic(*values: IntBox) -> IntBox: pass
 
@@ -607,7 +607,7 @@ def overloaded_function():
 def overloaded_function(a: Int):
     pass
 
-struct ParamFuncType[f: def() thin -> None]:
+struct ParamFuncType[f: def() thin -> None](Movable where False):
     pass
 
 def bind_twice[f: def() thin -> None, g: def(Int) thin -> None]():
@@ -652,7 +652,7 @@ comptime FORTY_TWO = 42
 
 # CHECK-LABEL: lit.struct.decl @A
 # CHECK-SAME: <v: !Int>
-struct A[v: Int]:
+struct A[v: Int](Movable where False):
   # CHECK: lit.alias.decl *"member{{.*}}": !Int = <sugar_builtin(apply({{.*}}{_mlir_value: scalar<index> = add(#lit.struct.extract<:!Int v, "_mlir_value">, 42)}{{.*}})>
   comptime member = Self.v + FORTY_TWO
 
@@ -680,7 +680,7 @@ struct MyDType(RegisterPassable):
   comptime float32 = MyDType(Int(2))
   comptime float64 = MyDType(Int(3))
 
-struct MyVector[size: Int, dtype: MyDType]:
+struct MyVector[size: Int, dtype: MyDType](Movable where False):
     pass
 
 def testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
@@ -689,7 +689,7 @@ def testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
 
 # Issue #6828: Unqualified name lookup into structs doesn't work
 # CHECK-LABEL: lit.struct.decl @UnqualAliasLookup<param: !Int>
-struct UnqualAliasLookup[param: Int]:
+struct UnqualAliasLookup[param: Int](Movable where False):
   # CHECK: lit.alias.decl *"member{{.*}}": !Int = <sugar_builtin(apply({{.*}}{_mlir_value: scalar<index> = add(#lit.struct.extract<:!Int param, "_mlir_value">, 1)}{{.*}})>
   comptime member = Self.param + 1
   def get(self) -> Int:
@@ -709,7 +709,7 @@ def fnWithVariadics[*b: Int]():
 # CHECK-LABEL: lit.struct.decl @StructWithVariadics
 # CHECK-SAME: <["b.values`"]*"b.values`": param_list<!Int>, +,
 # CHECK-SAME: b: !lit.struct<#ParameterList <:!AnyType !Int, :param_list<!Int> *"b.values`">> pos_vararg>
-struct StructWithVariadics[*b: Int]:
+struct StructWithVariadics[*b: Int](Movable where False):
     @implicit
     def __init__(out self, i: Int):
         pass
@@ -783,13 +783,13 @@ def init_self_memory_variadics():
     # CHECK-SAME:  [store_to_mem({:scalar<index> 1}), store_to_mem({:scalar<index> 2})]
     comptime x = MyList[Int](1, 2)
 
-struct MyList[T: ImplicitlyCopyable]:
+struct MyList[T: ImplicitlyCopyable](Movable where False):
     @implicit
     def __init__(out self, *values: Self.T): pass
 
 # Infer-only parameters should be bindable with keywords
 comptime ImmMyStringSlice = MyStringSlice[mut=False, ...]
-struct MyStringSlice[mut: Bool, //, origin: Origin[mut=mut]]:  pass
+struct MyStringSlice[mut: Bool, //, origin: Origin[mut=mut]](Movable where False):  pass
 
 # This only binds to immutable things.
 # CHECK-LABEL: lit.fn @"test_imm_string_slice
@@ -928,7 +928,7 @@ def testDependentField():
     # CHECK: [[VALUE_PTR:%.*]] = lit.ref.struct.ger %lvalue[value] {{.*}}AnotherAbstraction <:!Int {:scalar<index> 1}>>,{{.*}}Abstraction <:!Int {:scalar<index> 2}>>
     takeAbstraction2(lvalue.value)
 
-struct LeafToRootEval[a: Int, b: Int]:
+struct LeafToRootEval[a: Int, b: Int](Movable where False):
     var value: Abstraction[Self.a + Self.b + Self.a]
 
 # CHECK-LABEL: lit.fn @"refine_type_leaf_to_root
@@ -959,7 +959,7 @@ def test_infer_with_default_arg():
     infer_with_default_arg(128)
 
 
-struct InferredDefaultType[dtype: DType = DType.uint32]:
+struct InferredDefaultType[dtype: DType = DType.uint32](Movable where False):
     var value: SIMD[Self.dtype, 1]
 
     # This default depends on a previous default (on the struct).
@@ -1016,7 +1016,7 @@ def test_deduce_kw_only(a: Abstraction[3]):
 def test_infer_add(a: SIMD[DType.float32, 4], b: SIMD[DType.int32, 5]):
    _ = take_two(a, b)
 
-struct CallableArg[ArgT: TrivialRegisterPassable]:
+struct CallableArg[ArgT: TrivialRegisterPassable](Movable where False):
     def __call__(self, arg: Self.ArgT):
         pass
 
@@ -1109,13 +1109,13 @@ def infer_box_type[T: AnyType, //, box: Box[T]]():
     infer_box_type[Int()]()
 
 # MOCO-1457: Support struct param inference for origins
-struct OriginStructInferenceImm[origin: ImmOrigin]:
+struct OriginStructInferenceImm[origin: ImmOrigin](Movable where False):
     def __init__(out self, ref [Self.origin._mlir_origin]data: Int):  pass
-struct OriginStructInferencePar[mut: Bool, //, origin: Origin[mut=mut]]:
+struct OriginStructInferencePar[mut: Bool, //, origin: Origin[mut=mut]](Movable where False):
     def __init__(out self, ref [Self.origin._mlir_origin]data: Int):  pass
-struct OriginStructInferenceParWrapped[mut: Bool, //, origin: Origin[mut=mut]]:
+struct OriginStructInferenceParWrapped[mut: Bool, //, origin: Origin[mut=mut]](Movable where False):
     def __init__(out self, ref [Self.origin]data: Int):  pass
-struct OriginStructInferenceParSpecialized[mut: Bool, //, origin: Origin[mut=mut]]:
+struct OriginStructInferenceParSpecialized[mut: Bool, //, origin: Origin[mut=mut]](Movable where False):
     def __init__[O: ImmOrigin](out self: OriginStructInferenceParSpecialized[O], ref [O]data: Int):  pass
 
 # CHECK-LABEL: lit.fn @"test_origin_struct_inf
@@ -1146,12 +1146,12 @@ trait WithAnAlias:
     comptime A: AnyType
 
 # Struct that conforms to `WithAnAlias`
-struct SomeStruct(WithAnAlias):
+struct SomeStruct(WithAnAlias, Movable where False):
     comptime A = Int
 
 # Needs a struct that conforms to `WithAnAlias`
 # Will infer `a` and `b` automatically from `__init__`.
-struct SomeWrapper[t: WithAnAlias, a: AnyType, b: AnyType]:
+struct SomeWrapper[t: WithAnAlias, a: AnyType, b: AnyType](Movable where False):
     @staticmethod
     def __init__(out self: SomeWrapper[Self.t, Self.t.A, Self.t.A]):
         pass
@@ -1168,7 +1168,7 @@ def test_param_inference_contextual_fold():
 # Access parameter through structure
 ##===----------------------------------------------------------------------===##
 
-struct MultiStruct[p1: Int, p2: Int, p3: Int]:
+struct MultiStruct[p1: Int, p2: Int, p3: Int](Movable where False):
     def __init__(out self): pass
 
 def foo[x: Int]():
@@ -1259,7 +1259,7 @@ def test_indirect_default_params[
 struct ContextDefault[
     a: Int = 7,
     b: Int = a,
-] where a > 0 where b >= a:
+](Movable where False) where a > 0 where b >= a:
     @staticmethod
     def inner[c: Int = Self.b, d: Int = c]()
         where Self.b > 0
@@ -1301,7 +1301,7 @@ def test_inferred_default_param[
 
 # COM: basic check for memory-only default parameters
 @fieldwise_init
-struct MemoryOnlyType:
+struct MemoryOnlyType(Movable where False):
     pass
 
 
@@ -1328,7 +1328,7 @@ def test_param_default():
     # CHECK-NEXT: call {{.*}}param_default{{.*}}<:!Int {:scalar<index> 1}>([[C]]
     param_default()
 
-struct Optional[T: AnyType]:
+struct Optional[T: AnyType](Movable where False):
     @implicit
     def __init__(out self, none: __mlir_type.`!kgen.none`):
         pass
@@ -1378,7 +1378,7 @@ def test_default_inferring_param(b: String):
 
 # CHECK: lit.struct.decl @DefaultParams<{{.*}}: !Int, {{.*}}: !Int = {:scalar<index> 7}, {{.*}}: {{.*}}#StringLiteral <:string "woof">
 @fieldwise_init
-struct DefaultParams[a: Int, b: Int = 7, msg: String = "woof"]: pass
+struct DefaultParams[a: Int, b: Int = 7, msg: String = "woof"](Movable where False): pass
 
 # CHECK-LABEL: lit.fn @"test_default_param_struct()"
 def test_default_param_struct():
@@ -1409,7 +1409,7 @@ def test_default_param_struct():
 
 # CHECK: lit.struct.decl @AllDefaultParams<{{.*}}: !Int = {:scalar<index> 0}, {{.*}}MemoryOnlyType::@"__init__()
 @fieldwise_init
-struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
+struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()](Movable where False): pass
 
 # CHECK-LABEL: lit.fn @"test_default_param_struct_all_default()"
 def test_default_param_struct_all_default():
@@ -1428,7 +1428,7 @@ def test_default_param_struct_all_default():
 def IntForType[T: TrivialRegisterPassable]() -> Int:
     return 1
 
-struct StructWithParametricDefaultValue[T: TrivialRegisterPassable, N: Int = IntForType[T]()]:
+struct StructWithParametricDefaultValue[T: TrivialRegisterPassable, N: Int = IntForType[T]()](Movable where False):
     pass
 
 # CHECK-LABEL: lit.fn @"test_struct_with_parametric_default_value()"
@@ -1443,7 +1443,7 @@ def test_struct_with_parametric_default_value():
 ##===----------------------------------------------------------------------===##
 
 @fieldwise_init
-struct KwParamStruct[a: Int, b: Int = 2, c: Int = 3]: pass
+struct KwParamStruct[a: Int, b: Int = 2, c: Int = 3](Movable where False): pass
 
 # CHECK-LABEL: lit.fn @"test_struct_kw_params()"
 def test_struct_kw_params():
@@ -1465,9 +1465,9 @@ def test_struct_kw_params():
 ##===----------------------------------------------------------------------===##
 
 @fieldwise_init
-struct Thing[v: Int]: pass
+struct Thing[v: Int](Movable where False): pass
 
-struct CtadStruct[a: Int, b: Int]:
+struct CtadStruct[a: Int, b: Int](Movable where False):
     @implicit
     def __init__(out self, x: Thing[Self.a]): pass
 
@@ -1479,7 +1479,7 @@ struct CtadStruct[a: Int, b: Int]:
     @staticmethod
     def foo(x: Thing[Self.a], y: Thing[Self.b]): pass
 
-struct CtadStructWithDefault[a: Int, b: Int, c: Int = 8]:
+struct CtadStructWithDefault[a: Int, b: Int, c: Int = 8](Movable where False):
     @implicit
     def __init__(out self, x: Thing[Self.a]): pass
 
@@ -1492,7 +1492,7 @@ struct CtadStructWithDefault[a: Int, b: Int, c: Int = 8]:
     def foo(x: Thing[Self.a], y: Thing[Self.b]): pass
 
 
-struct CtadStructWithMultiDefault[a: Int, b: Int = 6, c: Int = 8, d: Int = 10]:
+struct CtadStructWithMultiDefault[a: Int, b: Int = 6, c: Int = 8, d: Int = 10](Movable where False):
     @implicit
     def __init__(out self, x: CtadStructWithMultiDefault[Self.a]): pass
 
@@ -1571,13 +1571,13 @@ def funct_partial_binding[x: Empty, F: def[t: Empty, s: Empty] () thin -> None](
     # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, :!Empty x, ?))>
     comptime H: def[u: Empty] () thin -> None = F[x, _]
 
-struct StructWithSpecificSelfInitTypes[size: Int]:
+struct StructWithSpecificSelfInitTypes[size: Int](Movable where False):
     def __init__(out self: StructWithSpecificSelfInitTypes[0]): pass
     @implicit
     def __init__(out self: StructWithSpecificSelfInitTypes[1], a: Int): pass
     def __init__(out self: StructWithSpecificSelfInitTypes[2], a: Int, b: Int): pass
 
-struct DependentSpecificInitSelf[T: AnyType]:
+struct DependentSpecificInitSelf[T: AnyType](Movable where False):
     @implicit
     def __init__[U: Movable](out self: DependentSpecificInitSelf[U], var value: U):
         pass
@@ -1610,7 +1610,7 @@ def test_inference_from_Self_type(x: Int):
   # CHECK: lit.call {{.*}}__init__{{.*}}<:!AnyType !Int, :!AnyType_Movable !Int>{{.*}}({{.*}}, [[TMP]])
   _ = DependentSpecificInitSelf(x)
 
-struct AutoParamDefault[value: Int, param: Int, default: Int = param]:
+struct AutoParamDefault[value: Int, param: Int, default: Int = param](Movable where False):
     @implicit
     def __init__(out self, ptr: ParamType[Self.value]): pass
     def __init__(out self, *, other: Self): pass
@@ -1629,7 +1629,7 @@ struct MOCO1144[
     mut: Bool,
     type: AnyType,
     alignment: Int = takeAnyTypeReturnInt[type]()
-]: pass
+](Movable where False): pass
 comptime MOCO1144Bound = MOCO1144[True, _, _]
 
 def getMOCO1144Bound() -> MOCO1144Bound[Int]: pass
@@ -1639,11 +1639,11 @@ def tryCallingAThingReturningMOCO1144Bound():
     # CHECK-NEXT:  lit.var.decl "x" {{.*}}#MOCO1144 <:!Bool {:scalar<bool> true}, :!AnyType !Int{{.*}}takeAnyTypeReturnInt[::AnyType]()"<:!AnyType !Int
     var x = getMOCO1144Bound()
 
-struct HasAutoParam[arg: StructWithIntParam]:
+struct HasAutoParam[arg: StructWithIntParam](Movable where False):
     pass
 # Solving this requires understanding that self_a = shadow_a and
 # self_param = shadow_param, even though they're resolved out of order.
-struct Ex1[self_a: Int, //, self_param: StructWithIntParam[self_a]]:
+struct Ex1[self_a: Int, //, self_param: StructWithIntParam[self_a]](Movable where False):
     def __init__[
         shadow_a: Int, //, shadow_param: StructWithIntParam[shadow_a]
     ](out self: Ex1[shadow_param], data: HasAutoParam[shadow_param]):
@@ -1656,7 +1656,7 @@ def testEx1(imm_data: HasAutoParam[StructWithIntParam[1]()]):
 struct MyTypeWithOrigin[
     elt_is_mutable: Bool,
     origin: Origin[mut=elt_is_mutable], //
-]: pass
+](Movable where False): pass
 def testMOCO1826[o: ImmOrigin](a: MyTypeWithOrigin[origin=o]): pass
 
 # Test variadic param inference.
@@ -1697,7 +1697,7 @@ struct MOCO1065[
     mut: Bool, //,
     T: ImplicitlyCopyable,
     o: Origin[mut=mut],
-]:
+](Movable where False):
     def __init__(out self: MOCO1065[UInt8, Self.o], ref [Self.o] string: Empty):
         pass
 
@@ -1708,8 +1708,8 @@ def test_MOCO1065[p: Empty](t: Empty):
 
 ### Complex dependent type inference problem.
 @fieldwise_init
-struct DepValue[a: Int]: pass
-struct DepUser[b: Int]:
+struct DepValue[a: Int](Movable where False): pass
+struct DepUser[b: Int](Movable where False):
     def foo(self):
         # This should infer
         var x : DepUser[2] = self.xyz(DepValue[1]())
@@ -1745,7 +1745,7 @@ def test_sugar_rebind[N: Int](a: SIMD[DType.int32, 2 * N]):
     var x: SIMD[DType.int32, N * 2] = a
 
 @fieldwise_init
-struct CanonicalTypesInDel[input_rank: Int, conv_attr: StructWithIntParam[input_rank - 2]]:
+struct CanonicalTypesInDel[input_rank: Int, conv_attr: StructWithIntParam[input_rank - 2]](Movable where False):
     pass
 
 # Test remapping of parameter decls in the face of sugar.
@@ -1793,17 +1793,17 @@ def myDriver():
 
 # This should not crash, even though TakesXOrigin has an inferred parameter
 # that depends on MUT.
-struct TakesBool[B: Bool]:
+struct TakesBool[B: Bool](Movable where False):
     pass
-struct XOrigin[mut: Bool, *, value: TakesBool[mut]]:
+struct XOrigin[mut: Bool, *, value: TakesBool[mut]](Movable where False):
     pass
-struct TakesXOrigin[MUT: Bool, //, O: XOrigin[MUT, ...]]:
+struct TakesXOrigin[MUT: Bool, //, O: XOrigin[MUT, ...]](Movable where False):
 
     # This should be fine, even though MUT is from the struct.
     def foo[P: XOrigin[Self.MUT, ...]](self):
         pass
 
-struct HasInferred[a: XOrigin]:
+struct HasInferred[a: XOrigin](Movable where False):
     def also_has_inferred[b: XOrigin](self):
         pass
 def test_inferred_mixing[b: XOrigin](a: HasInferred):
@@ -1811,7 +1811,7 @@ def test_inferred_mixing[b: XOrigin](a: HasInferred):
 
 # This makes sure we can associate 'origin' back to the inferred result type of
 # the Pointer construction.
-struct FindOriginFromKGENOrigin[X: AnyType, origin: ImmOrigin]:
+struct FindOriginFromKGENOrigin[X: AnyType, origin: ImmOrigin](Movable where False):
     var writable: Pointer[Self.X, Self.origin]
     def __init__(out self, ref [Self.origin]w: Self.X):
         self.writable = Pointer(to=w)
@@ -1831,12 +1831,12 @@ def test_non_materializable_target_of_meta_type():
     infer_non_materializable_target_of_meta_type[type_of(0)]()
 
 
-struct HasParamList[*values: Int]:
+struct HasParamList[*values: Int](Movable where False):
     def __init__(out self):
         pass
 
 
-struct HasDefaultParam[strides: HasParamList[...] = HasParamList[4]()]:
+struct HasDefaultParam[strides: HasParamList[...] = HasParamList[4]()](Movable where False):
     pass
 
 
@@ -1845,11 +1845,11 @@ struct HasDefaultParam[strides: HasParamList[...] = HasParamList[4]()]:
 comptime WithDefaultParam = HasDefaultParam[]
 
 
-struct DimList[*values: Int]:
+struct DimList[*values: Int](Movable where False):
     pass
 
 
-struct NDBuffer[shape: DimList]:
+struct NDBuffer[shape: DimList](Movable where False):
     pass
 
 

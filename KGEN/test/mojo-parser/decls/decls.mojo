@@ -1523,7 +1523,7 @@ def need_positive_int[x: Int]() where x > 0:
 
 # CHECK-LABEL: lit.struct.decl @ConstraintStruct
 # CHECK-SAME: <a: !Int,{{.*}}<sugar_preserved({{.*}}ge(:scalar<index> #lit.struct.extract<:!Int a, "_mlir_value">, 1)), #loc{{.*}}>
-struct ConstraintStruct[a: Int] where a > 0:
+struct ConstraintStruct[a: Int] (Movable where False) where a > 0:
     comptime b = Self.a + 1
 
     def use_known_assumption(self):
