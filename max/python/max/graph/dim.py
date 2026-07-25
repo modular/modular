@@ -126,32 +126,48 @@ class Dim:
         return not self == other
 
     def __add__(self, rhs: DimLike) -> Dim:
+        if not isinstance(rhs, DimLike):
+            return NotImplemented
         return AlgebraicDim.apply(kgen.POC.add, self, rhs)
 
     def __radd__(self, lhs: DimLike) -> Dim:
+        if not isinstance(lhs, DimLike):
+            return NotImplemented
         return Dim(lhs) + self
 
     def __mul__(self, rhs: DimLike) -> Dim:
+        if not isinstance(rhs, DimLike):
+            return NotImplemented
         return AlgebraicDim.apply(kgen.POC.mul_no_wrap, self, rhs)
 
     def __rmul__(self, lhs: DimLike) -> Dim:
+        if not isinstance(lhs, DimLike):
+            return NotImplemented
         return Dim(lhs) * self
 
     def __neg__(self) -> Dim:
         return -1 * self
 
     def __sub__(self, rhs: DimLike) -> Dim:
+        if not isinstance(rhs, DimLike):
+            return NotImplemented
         return self + -Dim(rhs)
 
     def __rsub__(self, lhs: DimLike) -> Dim:
+        if not isinstance(lhs, DimLike):
+            return NotImplemented
         return lhs + -self
 
     def __floordiv__(self, rhs: DimLike) -> Dim:
+        if not isinstance(rhs, DimLike):
+            return NotImplemented
         if isinstance(rhs, int | StaticDim) and int(rhs) == 0:
             raise ZeroDivisionError
         return AlgebraicDim.apply(kgen.POC.div, self, rhs)
 
     def __rfloordiv__(self, lhs: DimLike) -> Dim:
+        if not isinstance(lhs, DimLike):
+            return NotImplemented
         return lhs // self
 
     def to_mlir(self) -> builtin.TypedAttr:
@@ -499,4 +515,4 @@ class StaticDim(Dim):
         return ()
 
 
-DimLike = int | str | Dim | np.integer[Any] | builtin.TypedAttr
+DimLike = int | str | Dim | np.integer | builtin.TypedAttr

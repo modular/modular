@@ -30,7 +30,7 @@ and V_hi are in separate slots (4 total V slots per iteration); otherwise
 only 2 V slots per iteration.
 
 CTA role split (cta_group=2):
-    Leader CTA (even rank): Owns all pipeline interactions — waits on KV
+    Leader CTA (even rank): Owns all pipeline interactions: waits on KV
         producer barriers, issues MMA, releases KV consumer barriers with
         cta_group=2 commit (fences MMA read of both CTAs' SMEM, then
         signals both CTAs' consumer barriers), and commits S/O barriers.
@@ -39,11 +39,14 @@ CTA role split (cta_group=2):
 
 from std.sys import size_of
 from std.gpu.primitives.cluster import block_rank_in_cluster
-from std.gpu.compute.arch.mma_nvidia_sm100 import mma_arrive_multicast
+from std.gpu.compute.arch.mma_nvidia_sm100 import (
+    UMMAKind,
+    mma_arrive_multicast,
+)
 from linalg.arch.sm100.mma import smem_descriptor
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    SM100TensorAccumulatorSS,
+    SM100TensorAccumulator,
     StagedPipeline,
     elect,
 )
@@ -61,10 +64,34 @@ def depth512_mma[
     page_size: Int,
 ](
     smem: Depth512AttentionSMem[config=config],
+    tmem_addr: UInt32,
+    seq_id: UInt32,
     score_row: UInt32,
     num_keys: UInt32,
     mask: MaskType,
 ):
+    """Runs the pair-CTA Q@K' and P@V MMAs for depth=256/512 SM100 attention.
+
+    Drives the leader CTA of a cta_group=2 pair through the full attention
+    iteration loop: a peeled first iteration seeds S_even and O, then the main
+    loop alternates S_even/S_odd while accumulating into O (or O_lo/O_hi when
+    split_o). Peer CTAs return immediately.
+
+    Parameters:
+        MaskType: The MHAMask specialization governing tile masking behavior.
+        qkv_dtype: Element dtype of the Q, K, V operands.
+        config: Depth-256/512 SM100 attention configuration (tile sizes,
+            pipeline depths, split_o strategy).
+        page_size: Paged KV cache page size in keys.
+
+    Args:
+        smem: Shared-memory allocator holding Q, K, V, P buffers and mbarriers.
+        tmem_addr: Base TMEM address for this CTA pair's S/O accumulators.
+        seq_id: Sequence index used by the mask.
+        score_row: Starting query row index for this CTA pair.
+        num_keys: Number of valid keys in the KV cache for this sequence.
+        mask: Mask instance used to skip fully-masked tiles.
+    """
     comptime accum_type = DType.float32
     comptime BM = config.BM
     comptime BN = config.BN
@@ -87,25 +114,31 @@ def depth512_mma[
     comptime assert BK1 % config.MMA_K == 0, "BK1 must be a multiple of MMA_K"
 
     # ---- MMA types -----------------------------------------------------------
+    comptime mma_kind = (
+        UMMAKind.KIND_F8F6F4 if qkv_dtype.is_float8() else UMMAKind.KIND_F16
+    )
 
     # Q@K' → S: SS MMA, cta_group=2
-    comptime UMMA_QK = SM100TensorAccumulatorSS[
+    comptime UMMA_QK = SM100TensorAccumulator[
         qkv_dtype,
         accum_type,
         MMA_M=MMA_M,
         MMA_N=BN,
         BK=BK0,
+        a_tmem=False,
         swizzle_a=config.swizzle_mode,
         swizzle_b=config.swizzle_mode,
         transpose_b=True,
         cta_group=cta_group,
+        mma_kind=mma_kind,
     ]
 
     # P@V MMA types are defined inside pv_mma (depth-dependent).
 
     # ---- TMEM addresses ------------------------------------------------------
-
-    var tmem_addr = smem.tmem_addr_ptr()[]
+    # `tmem_addr` is read ONCE in the kernel prologue (post-`cluster_sync`) and
+    # passed in by register; do NOT re-read `smem.tmem_addr_ptr()` here (see the
+    # publish-handshake note in `kernel.mojo`).
     o_tmem = tmem_addr + UInt32(config.TMEM_O)
     o_hi_tmem = tmem_addr + UInt32(config.TMEM_O_hi)
     s_even_tmem = tmem_addr + UInt32(config.TMEM_S_even)
@@ -181,11 +214,11 @@ def depth512_mma[
     # ---- Iteration bounds (must match load_warp exactly) ---------------------
 
     var kv_row: UInt32 = mask.start_column[PairBM_mask, BN, page_size](
-        score_row
+        seq_id, score_row
     )
     var iter_count: UInt32 = (
         mask.last_masked_set_end[PairBM_mask, BN, page_size](
-            score_row, num_keys
+            seq_id, score_row, num_keys
         )
         - 1
     )
@@ -221,27 +254,31 @@ def depth512_mma[
         """
         comptime if config.split_o:
             # P@V_lo/hi MMA types: MMA_N=ov_depth/2
-            comptime UMMA_PV_lo = SM100TensorAccumulatorSS[
+            comptime UMMA_PV_lo = SM100TensorAccumulator[
                 qkv_dtype,
                 accum_type,
                 MMA_M=MMA_M,
                 MMA_N=ov_half,
                 BK=BK1,
+                a_tmem=False,
                 swizzle_a=config.swizzle_mode,
                 swizzle_b=config.swizzle_mode,
                 transpose_b=False,
                 cta_group=cta_group,
+                mma_kind=mma_kind,
             ]
-            comptime UMMA_PV_hi = SM100TensorAccumulatorSS[
+            comptime UMMA_PV_hi = SM100TensorAccumulator[
                 qkv_dtype,
                 accum_type,
                 MMA_M=MMA_M,
                 MMA_N=ov_half,
                 BK=BK1,
+                a_tmem=False,
                 swizzle_a=config.swizzle_mode,
                 swizzle_b=config.swizzle_mode,
                 transpose_b=False,
                 cta_group=cta_group,
+                mma_kind=mma_kind,
             ]
 
             # -- P@V_lo → O_lo (own pipeline slots) --
@@ -293,16 +330,18 @@ def depth512_mma[
             pipeline_o_hi.step()
         else:
             # Single P@V MMA type: MMA_N=ov_depth
-            comptime UMMA_PV = SM100TensorAccumulatorSS[
+            comptime UMMA_PV = SM100TensorAccumulator[
                 qkv_dtype,
                 accum_type,
                 MMA_M=MMA_M,
                 MMA_N=ov_depth,
                 BK=BK1,
+                a_tmem=False,
                 swizzle_a=config.swizzle_mode,
                 swizzle_b=config.swizzle_mode,
                 transpose_b=False,
                 cta_group=cta_group,
+                mma_kind=mma_kind,
             ]
 
             # Single P@V → O (no split)
@@ -370,6 +409,7 @@ def depth512_mma[
         comptime if check_mask:
             if (
                 mask.status(
+                    seq_id,
                     Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
                     Index[dtype=DType.int32](PairBM_mask, BN),
                 )

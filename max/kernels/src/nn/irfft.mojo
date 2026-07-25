@@ -36,6 +36,12 @@ from layout import TileTensor, coord_to_index_list
 
 @always_inline
 def global_cache_insert(key: String, value: OpaquePointer):
+    """Inserts a key-value pair into the global compiler runtime cache.
+
+    Args:
+        key: Cache key string.
+        value: Opaque pointer value to store under the key.
+    """
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(key),
         value,
@@ -44,7 +50,7 @@ def global_cache_insert(key: String, value: OpaquePointer):
 
 def _get_fft_workarea(
     buffer_size: Int, ctx: DeviceContext
-) raises -> OpaquePointer[MutExternalOrigin]:
+) raises -> OpaquePointer[MutUntrackedOrigin]:
     # Include device ID in cache key to ensure per-device workspace buffers.
     var fft_buffer_key = String(
         "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.id()
@@ -65,7 +71,7 @@ def _get_fft_workarea(
     )
 
     return device_ptr.bitcast[NoneType]().unsafe_origin_cast[
-        MutExternalOrigin
+        MutUntrackedOrigin
     ]()
 
 
@@ -123,7 +129,7 @@ def _get_fft_plan[
         cached_plan_key,
         # we are bitcasting the integer plan to a void * to cache it,
         # because that's what KGEN_CompilerRT_InsertGlobal expects.
-        UnsafePointer[NoneType, MutExternalOrigin](
+        UnsafePointer[NoneType, MutUntrackedOrigin](
             unsafe_from_address=Int(plan)
         ),
     )
@@ -321,6 +327,12 @@ def irfft[
     """Compute the inverse real FFT of the input tensor.
 
     Currently, only applies it to the last dimension.
+
+    Parameters:
+        input_type: Element `DType` of the input tensor; must be
+            `float32`.
+        output_type: Element `DType` of the output tensor; must be
+            `float32`.
 
     Args:
         input: Complex input tensor (TileTensor).

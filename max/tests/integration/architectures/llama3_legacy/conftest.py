@@ -24,7 +24,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs, MHAKVCacheParams
 from max.pipelines.architectures.llama3.model import Llama3Inputs
 from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManager
 from max.pipelines.lib import ModelOutputs
@@ -85,8 +85,6 @@ def make_pipeline_config(
             quantization_encoding="bfloat16",
             device_specs=device_specs,
         )
-        pipeline_config.model.kv_cache._available_cache_memory = 1024**4  # 1TB
-        pipeline_config.model.kv_cache._cache_dtype = DType.bfloat16
         pipeline_config.model._huggingface_config = hf_config
         pipeline_config.model.weight_path = [Path("fake.safetensors")]
         return pipeline_config
@@ -111,7 +109,7 @@ def make_kv_inputs(
         input_seq_len: int = 3,
     ) -> KVCacheInputs[Buffer, Buffer]:
         kv_params_kwargs = dict(
-            dtype=pipeline_config.model.kv_cache._cache_dtype,
+            dtype=DType.bfloat16,
             num_layers=hf_config.num_hidden_layers,
             n_kv_heads=hf_config.num_key_value_heads,
             head_dim=hf_config.head_dim,
@@ -120,7 +118,7 @@ def make_kv_inputs(
         if data_parallel_degree is not None:
             kv_params_kwargs["data_parallel_degree"] = data_parallel_degree
 
-        kv_params = KVCacheParams(**kv_params_kwargs)
+        kv_params = MHAKVCacheParams(**kv_params_kwargs)
         kv_manager = PagedKVCacheManager(
             params=kv_params,
             total_num_pages=total_num_pages,
@@ -133,14 +131,11 @@ def make_kv_inputs(
         for i in range(num_replicas):
             ctx = create_text_context(np.empty(input_seq_len, dtype=np.int64))
             kv_manager.claim(ctx.request_id, replica_idx=i)
-            kv_manager.alloc(ctx, replica_idx=i, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=i)
             contexts.append(ctx)
             batches.append([ctx])
 
-        runtime_inputs = kv_manager.runtime_inputs(batches)
-        kv_inputs: KVCacheInputs[Buffer, Buffer] = runtime_inputs
-
-        return kv_inputs
+        return kv_manager.runtime_inputs_for_leaf(batches)
 
     return _make
 

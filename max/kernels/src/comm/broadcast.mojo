@@ -68,6 +68,21 @@ def broadcast_multimem_kernel[
 
     Root GPU writes to multicast address, data appears on all GPUs.
     Only root performs the stores; other GPUs just participate in barriers.
+
+    Parameters:
+        dtype: Element data type of the input and output tensors.
+        Layout: `TensorLayout` shared by both tensors.
+        BLOCK_SIZE: Number of threads per thread block.
+        ngpus: Number of GPUs participating in the broadcast.
+        simd_width: Vector width used for memory access (defaults to the
+            device-native SIMD width for `dtype`).
+
+    Args:
+        output: Output `TileTensor` for this GPU.
+        input: Input `TileTensor` (root's data, readable via P2P).
+        rank_sigs: Per-GPU `Signal` pointers for barrier synchronization.
+        my_rank: Rank of this GPU in the communicator.
+        root: Rank of the source GPU whose data is broadcast to all GPUs.
     """
     var my_sig = rank_sigs[my_rank]
 
@@ -87,8 +102,12 @@ def broadcast_multimem_kernel[
             comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
             # Get multicast output pointer and input pointer
-            var out_ptr = output.ptr.address_space_cast[AddressSpace.GLOBAL]()
-            var in_ptr = input.ptr.address_space_cast[_target_address_space]()
+            var out_ptr = output._storage.address_space_cast[
+                AddressSpace.GLOBAL
+            ]()
+            var in_ptr = input._storage.address_space_cast[
+                _target_address_space
+            ]()
 
             # Grid-strided loop to cover all elements (vectorized)
             for idx in range(global_tid, num_simd_vectors, stride):
@@ -126,7 +145,7 @@ def broadcast_multimem_kernel[
 
             # Handle any remaining sub-chunk elements with an overlapping
             # write that re-stores the last min_mm_width elements of the
-            # buffer.  The overlap is harmless because the data is identical.
+            # buffer. The overlap is harmless because the data is identical.
             comptime if min_mm_width > 1:
                 if (
                     tail_count % min_mm_width != 0
@@ -161,6 +180,28 @@ def broadcast_pull_1stage_kernel[
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
 ):
+    """Single-stage pull broadcast kernel: each GPU reads root's input directly.
+
+    All GPUs participate in the start and end barriers; after the start barrier
+    every GPU copies the root's input buffer to its own output buffer using a
+    grid-strided vectorized load/store loop. This one-stage path is preferred
+    for small messages (up to a few MiB) and for 2-GPU configurations where
+    the 2-stage scatter/gather overhead is not justified.
+
+    Parameters:
+        dtype: Element data type of the input and output tensors.
+        layout: `TensorLayout` shared by both tensors.
+        BLOCK_SIZE: Number of threads per thread block.
+        ngpus: Number of GPUs participating in the broadcast.
+        simd_width: Vector width used for memory access (defaults to the
+            device-native SIMD width for `dtype`).
+
+    Args:
+        output: Output `TileTensor` for this GPU.
+        input: Input `TileTensor` (root's data, readable via P2P).
+        rank_sigs: Per-GPU `Signal` pointers for barrier synchronization.
+        my_rank: Rank of this GPU in the communicator.
+    """
     var my_sig = rank_sigs[my_rank]
 
     # --- Thread Indexing ---
@@ -172,8 +213,10 @@ def broadcast_pull_1stage_kernel[
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
         comptime alignment = align_of[SIMD[dtype, simd_width]]()
-        var in_ptr = input.ptr.address_space_cast[_target_address_space]()
-        var out_ptr = output.ptr.address_space_cast[_target_address_space]()
+        var in_ptr = input._storage.address_space_cast[_target_address_space]()
+        var out_ptr = output._storage.address_space_cast[
+            _target_address_space
+        ]()
 
         var num_elements = input.num_elements()
         var num_simd_vectors = num_elements // simd_width
@@ -272,7 +315,9 @@ def broadcast_pull_2stage_kernel[
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
         var is_root = my_rank == root
-        var result_ptr = result.ptr.address_space_cast[_target_address_space]()
+        var result_ptr = result._storage.address_space_cast[
+            _target_address_space
+        ]()
 
         # Each GPU reads its chunk from root's input and writes to payload
         var my_chunk_start = my_rank * part_size
@@ -616,7 +661,7 @@ def broadcast_2stage[
 
     ctx.enqueue_function[kernel](
         output_tensor,
-        input_tensor.as_immut().ptr,
+        input_tensor.as_immut()._storage,
         rank_sigs,
         num_elements,
         my_rank,

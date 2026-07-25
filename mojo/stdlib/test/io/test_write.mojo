@@ -13,8 +13,8 @@
 
 from std.format import Writable, Writer
 from std.format._utils import _hex_digits_to_hex_chars, _write_hex
-from std.memory import Span
-from std.memory.memory import memset_zero
+from std.collections import Span
+from std.memory.memory import unsafe_memset_zero
 from std.testing import assert_equal, TestSuite
 
 
@@ -162,27 +162,29 @@ def test_write_simd_padded() raises:
 def test_hex_digits_to_hex_chars() raises:
     items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     comptime S = StringSlice[origin_of(items)]
-    ptr = items.unsafe_ptr()
+    # `Span(ptr=...)` and the gated `.store` below both require an `UnsafePointer`;
+    # pin with an explicit origin so mutability is preserved (see MSTDL-2879/2880).
+    ptr: UnsafePointer[Byte, origin_of(items)] = items.unsafe_ptr()
     ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
-    assert_equal("0001f525", S(unsafe_from_utf8=Span(ptr=ptr, length=8)))
-    memset_zero(ptr, len(items))
+    assert_equal("0001f525", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=8)))
+    unsafe_memset_zero(ptr, len(items))
     ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
-    assert_equal("4f60", S(unsafe_from_utf8=Span(ptr=ptr, length=4)))
-    memset_zero(ptr, len(items))
+    assert_equal("4f60", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=4)))
+    unsafe_memset_zero(ptr, len(items))
     ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
-    assert_equal("d6", S(unsafe_from_utf8=Span(ptr=ptr, length=2)))
+    assert_equal("d6", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=2)))
     ptr.store(_hex_digits_to_hex_chars(UInt8(0)))
-    assert_equal("00", S(unsafe_from_utf8=Span(ptr=ptr, length=2)))
+    assert_equal("00", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=2)))
     ptr.store(_hex_digits_to_hex_chars(UInt16(0)))
-    assert_equal("0000", S(unsafe_from_utf8=Span(ptr=ptr, length=4)))
+    assert_equal("0000", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=4)))
     ptr.store(_hex_digits_to_hex_chars(UInt32(0)))
-    assert_equal("00000000", S(unsafe_from_utf8=Span(ptr=ptr, length=8)))
+    assert_equal("00000000", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=8)))
     ptr.store(_hex_digits_to_hex_chars(~UInt8(0)))
-    assert_equal("ff", S(unsafe_from_utf8=Span(ptr=ptr, length=2)))
+    assert_equal("ff", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=2)))
     ptr.store(_hex_digits_to_hex_chars(~UInt16(0)))
-    assert_equal("ffff", S(unsafe_from_utf8=Span(ptr=ptr, length=4)))
+    assert_equal("ffff", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=4)))
     ptr.store(_hex_digits_to_hex_chars(~UInt32(0)))
-    assert_equal("ffffffff", S(unsafe_from_utf8=Span(ptr=ptr, length=8)))
+    assert_equal("ffffffff", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=8)))
 
 
 def test_write_hex() raises:

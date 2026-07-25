@@ -12,11 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import Llama3ModuleV3BatchProcessor
 from .model import Llama3Model
 from .model_config import Llama3Config
 
@@ -39,7 +41,6 @@ llama_modulev3_arch = SupportedArchitecture(
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     weight_adapters={
@@ -48,4 +49,8 @@ llama_modulev3_arch = SupportedArchitecture(
     },
     task=PipelineTask.TEXT_GENERATION,
     config=Llama3Config,
+    batching=Llama3ModuleV3BatchProcessor,
+    memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

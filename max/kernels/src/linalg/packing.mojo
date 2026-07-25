@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Provides matrix packing routines that reorder B tiles into cache-friendly layouts for matmul."""
+
 from std.math import align_down, align_up
 from std.sys import align_of, simd_width_of
 from std.sys.info import CompilationTarget
@@ -23,8 +26,8 @@ from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.sys import prefetch
 from layout.tile_layout import TensorLayout, row_major
 from std.memory import (
-    memcpy,
-    memset_zero,
+    unsafe_memcpy,
+    unsafe_memset_zero,
     stack_allocation,
 )
 
@@ -61,6 +64,17 @@ struct PackMatrixRows[
     """Pack rows from a matrix into the mlas packed layout and
     extract inner vectors of rows into the packed inner dimension,
     e.g. extract tile [X, Y] and pack into [Xo][Y][Xi].
+
+    Parameters:
+        original_mut: True if the original matrix buffer is mutable (inferred).
+        dtype: Element type of the matrix being packed.
+        simd_size: SIMD vector width for `dtype`.
+        row_inner_size: Size of the inner dimension along rows in the
+            packed layout; must be a multiple of `simd_size`.
+        packed_origin: Origin of the packed output `TileTensor`.
+        original_origin: Origin of the original input `TileTensor`.
+        packed_layout: Layout of the packed output `TileTensor`.
+        original_layout: Layout of the original input `TileTensor`.
     """
 
     # packed matrix (rank 3)
@@ -310,6 +324,19 @@ struct PackMatrixCols[
     """Pack columns from a matrix into the mlas packed layout and
     extract inner vectors of columns into the packed inner dimension,
     e.g. extracts [X, Y] and packs as [Yo][X][Yi].
+
+    Parameters:
+        original_mut: True if the original matrix buffer is mutable (inferred).
+        dtype: Element type of the matrix being packed.
+        simd_size: SIMD vector width for `dtype`.
+        column_inner_size: Size of the inner dimension along columns in the
+            packed layout; must be a multiple of `simd_size`.
+        use_vnni: True to pack for the VNNI instruction layout.
+        use_i8mm: True to pack for the i8mm instruction layout.
+        packed_origin: Origin of the packed output `TileTensor`.
+        original_origin: Origin of the original input `TileTensor`.
+        packed_layout: Layout of the packed output `TileTensor`.
+        original_layout: Layout of the original input `TileTensor`.
     """
 
     # packed matrix (rank 3)
@@ -560,7 +587,7 @@ def _pack_matmul_b_shape_func_impl[
     c_type: DType,
     transpose_in_0: Bool,
 ](
-    b_input: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    b_input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     kernel_type_m: Int = 0,
 ) -> IndexList[2]:
     """Computes the padded shape required by `pack_b` directly from TileTensor
@@ -579,9 +606,8 @@ def _pack_matmul_b_shape_func_impl[
     var k = dim1 if transpose_in_0 else dim0
     var tile_n_k = IndexList[2]()
 
-    @parameter
     @always_inline
-    def dispatch_on_kernel_type[kernel_type: Bool]():
+    def dispatch_on_kernel_type[kernel_type: Bool]() {mut tile_n_k, b_input}:
         comptime config = get_kernel_config[
             a_type,
             b_input.dtype,
@@ -592,7 +618,7 @@ def _pack_matmul_b_shape_func_impl[
             a_type, b_input.dtype, c_type, config.kernel_cols, transpose_in_0
         ](b_input)
 
-    dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
+    dispatch_get_kernel_type(dispatch_on_kernel_type, kernel_type_m, n, k)
 
     comptime if transpose_in_0:
         output[0] = dim1
@@ -624,20 +650,37 @@ def pack_b[
     c_type: DType,
 ](
     dst: TileTensor[mut=True, b_type, address_space=AddressSpace.GENERIC, ...],
-    src: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     tile_n: Int,
     tile_k: Int,
 ):
     """Utility function to pack the entire B matrix, such that each
     [tile_n // inner_size, tile_k, inner_size] tile of src is contiguous in dst.
 
-    Tiles (not tile contents) are stored in row major order, so tile[i, j] is
+    Tiles (not tile contents) are stored in rowmajor order, so tile[i, j] is
     tile_n * tile_k bytes away from tile[i, j+1].
+
+    Parameters:
+        transpose_b: True if the B operand is transposed, stored as
+            `[N, K]` instead of `[K, N]`.
+        simd_size: SIMD vector width for `b_type`.
+        inner_size: Size of the inner dimension along N in the packed
+            tile; must be a multiple of `simd_size`.
+        a_type: Element type of the A operand of the matmul.
+        b_type: Element type of the B operand being packed.
+        c_type: Element type of the C output of the matmul.
+
+    Args:
+        dst: Pre-allocated mutable buffer that receives the packed B
+            matrix.
+        src: Read-only buffer containing the original B matrix to pack.
+        tile_n: Tile size along the N dimension of the matmul.
+        tile_k: Tile size along the K dimension of the matmul.
     """
     # Strip extra type params from existential `...` pattern.
     var src_tt = TileTensor(src.ptr, src.layout)
     var dst_tt = TileTensor(dst.ptr, dst.layout)
-    memset_zero(
+    unsafe_memset_zero(
         dst_tt.ptr, dst_tt.num_elements()
     )  # zero the padding to be safe
     var dst_flat_ptr = dst_tt.ptr
@@ -772,7 +815,7 @@ def _pack_b_ndbuffer_impl[
     # Matrix by vector pattern -> use gemv
     if dim1 == 1:
         # For gemv no packing is necessary
-        memcpy(dest=output_buffer.ptr, src=b_input.ptr, count=dim0)
+        unsafe_memcpy(dest=output_buffer.ptr, src=b_input.ptr, count=dim0)
 
     else:
         var n = dim0 if transposed else dim1
@@ -787,12 +830,15 @@ def _pack_b_ndbuffer_impl[
                 transpose(output_buffer, b_input, perm_ptr)
 
             else:
-                memcpy(dest=output_buffer.ptr, src=b_input.ptr, count=n * k)
+                unsafe_memcpy(
+                    dest=output_buffer.ptr, src=b_input.ptr, count=n * k
+                )
             return
 
-        @parameter
         @always_inline
-        def dispatch_on_kernel_type[kernel_type: Bool]():
+        def dispatch_on_kernel_type[
+            kernel_type: Bool
+        ]() {output_buffer, b_input}:
             comptime config = get_kernel_config[
                 a_type,
                 b_type,
@@ -811,7 +857,7 @@ def _pack_b_ndbuffer_impl[
                 c_type,
             ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
 
-        dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
+        dispatch_get_kernel_type(dispatch_on_kernel_type, kernel_type_m, n, k)
 
 
 @always_inline
@@ -820,13 +866,25 @@ def pack_matmul_b_shape_func[
     c_type: DType,
     transpose_in_0: Bool,
 ](
-    b_input: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    b_input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     kernel_type_m: Int = 0,
 ) -> IndexList[2]:
     """TileTensor primary implementation of `pack_matmul_b_shape_func`.
 
     Takes `kernel_type_m` directly instead of extracting it from `a_shape`
     static shape params (0 = dynamic M).
+
+    Parameters:
+        a_type: Element type of the A operand of the matmul.
+        c_type: Element type of the C output of the matmul.
+        transpose_in_0: True if the B operand is transposed, stored as
+            `[N, K]` instead of `[K, N]`.
+
+    Args:
+        b_input: Read-only rank-2 `TileTensor` containing the B matrix
+            whose padded shape is computed.
+        kernel_type_m: M dimension used to select the matmul kernel variant
+            (defaults to 0, meaning dynamic M).
     """
     return _pack_matmul_b_shape_func_impl[a_type, c_type, transpose_in_0](
         b_input, kernel_type_m
@@ -852,6 +910,19 @@ def pack_b_ndbuffer[
 
     Takes `kernel_type_m` directly instead of extracting it from `a_shape`
     static shape params (0 = dynamic M).
+
+    Parameters:
+        b_type: Element type of the B operand being packed (inferred).
+        a_type: Element type of the A operand of the matmul.
+        c_type: Element type of the C output of the matmul.
+
+    Args:
+        b_input: Read-only rank-2 `TileTensor` containing the original B
+            matrix to pack.
+        output_buffer: Pre-allocated mutable rank-2 `TileTensor` that
+            receives the packed B matrix.
+        kernel_type_m: M dimension used to select the matmul kernel variant
+            (defaults to 0, meaning dynamic M).
     """
     _pack_b_ndbuffer_impl[a_type, c_type, transposed=False](
         b_input, output_buffer, kernel_type_m
@@ -877,6 +948,19 @@ def pack_transposed_b_ndbuffer[
 
     Takes `kernel_type_m` directly instead of extracting it from `a_shape`
     static shape params (0 = dynamic M).
+
+    Parameters:
+        b_type: Element type of the B operand being packed (inferred).
+        a_type: Element type of the A operand of the matmul.
+        c_type: Element type of the C output of the matmul.
+
+    Args:
+        b_input: Read-only rank-2 `TileTensor` containing the original B
+            matrix to pack, stored as `[N, K]`.
+        output_buffer: Pre-allocated mutable rank-2 `TileTensor` that
+            receives the packed B matrix.
+        kernel_type_m: M dimension used to select the matmul kernel variant
+            (defaults to 0, meaning dynamic M).
     """
     _pack_b_ndbuffer_impl[a_type, c_type, transposed=True](
         b_input, output_buffer, kernel_type_m
@@ -892,18 +976,30 @@ struct BTileGenerator[
     b_layout: TensorLayout,
     transpose_b: Bool,
     b_packed: Bool,
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
 ](ImplicitlyCopyable):
     """Struct to encapsulate a tile of B that supports prepacking.
 
     If b_packed is true, calls to get_tile will return a buffer view from B.
     Otherwise, calls to get_tile will copy a tile from B into a stack allocated
-    scratch buffer and return a view of that."""
+    scratch buffer and return a view of that.
+
+    Parameters:
+        config: Kernel configuration supplying `simd_size` and `kernel_cols`
+            used by the packing routines.
+        a_type: Element type of the A operand of the matmul.
+        b_type: Element type of the B operand being packed.
+        c_type: Element type of the C output of the matmul.
+        b_layout: Layout of the B `TileTensor`.
+        transpose_b: True if the B operand is transposed, stored as [N, K].
+        b_packed: True if B is already pre-packed into the mlas layout.
+        origin: Origin of the B `TileTensor`.
+    """
 
     var b: TileTensor[
         Self.b_type, Self.b_layout, Self.origin
     ]  # packed layout if b_packed is True
-    var b_tile_stack_ptr: UnsafePointer[Scalar[Self.b_type], MutAnyOrigin]
+    var b_tile_stack_ptr: UnsafePointer[Scalar[Self.b_type], MutUntrackedOrigin]
     var tile_n_k: IndexList[2]
 
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
@@ -923,7 +1019,7 @@ struct BTileGenerator[
         Self.origin,
     ]:
         var b_tile_stack_ptr = UnsafePointer[
-            Scalar[Self.b_type], MutAnyOrigin
+            Scalar[Self.b_type], MutUntrackedOrigin
         ].unsafe_dangling()
 
         assert not (
@@ -962,6 +1058,10 @@ struct BTileGenerator[
         ImmutAnyOrigin,
     ]:
         """Get a packed matrix (B) tile.
+
+        Parameters:
+            inner_size: Size of the inner dimension along N in the packed
+                tile; must be a multiple of `simd_size`.
 
         Args:
             global_offset: Offset in the global M, N, K dimensions.
@@ -1014,7 +1114,7 @@ struct BTileGenerator[
                 # Valid amount of input from the starting offset.
                 Index(valid_data_dim_nk[0], valid_data_dim_nk[1]),
             )
-            return packed_b.as_immut().as_any_origin()
+            return packed_b.as_immut().as_unsafe_any_origin()
         elif (not Self.transpose_b) and (not Self.b_packed):
             PackMatrixCols[
                 Self.b_type,
@@ -1073,9 +1173,9 @@ struct BTileGenerator[
                     )
                 ),
             )
-            return b_tile_view.as_any_origin()
+            return b_tile_view.as_unsafe_any_origin()
 
         else:
             assert False, "unreachable, b_packed not supported with transpose_b"
 
-        return packed_b.as_immut().as_any_origin()
+        return packed_b.as_immut().as_unsafe_any_origin()

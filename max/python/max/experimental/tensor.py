@@ -73,9 +73,10 @@ with randomly initialized weights before loading weights
 
 .. code-block:: python
 
-    from max.experimental.nn import Linear
     from max.driver import CPU
     from max.dtype import DType
+    from max.experimental import functional as F
+    from max.experimental.nn import Linear
     from max.graph import TensorType
 
     with F.lazy():
@@ -116,13 +117,20 @@ from max.experimental.sharding import (
     Placement,
     PlacementMapping,
     Replicated,
-    global_shape_from_local,
-    shard_shape,
+    Sharded,
+)
+from max.experimental.sharding.mappings import is_fully_replicated
+from max.experimental.sharding.per_shard_dim import (
+    is_per_shard_dim,
+    local_shape_at,
+    make_per_shard_dim,
 )
 from max.experimental.support import contextvar_context, driver_tensor_type
 from max.graph import (
+    Dim,
     DimLike,
     ShapeLike,
+    StaticDim,
     TensorType,
     TensorValueLike,
     ops,
@@ -132,6 +140,61 @@ from max.graph.value import HasTensorValue
 from rich.pretty import pretty_repr
 
 GraphValue: TypeAlias = graph.BufferValue | graph.TensorValue
+
+
+def _fold_sharded_shape(
+    shape: graph.Shape, mapping: DeviceMapping
+) -> graph.Shape:
+    """Folds per-rank wrappers on ``shape`` into the global shape per mapping."""
+    mesh = mapping.mesh
+    placements = mapping.to_placements()
+    mesh_shape = mesh.mesh_shape
+    n_devices = mesh.num_devices
+    folded: list[graph.Dim] = []
+    for ti, d in enumerate(shape):
+        if not is_per_shard_dim(d):
+            g = graph.Dim(d)
+            for mesh_axis, p in enumerate(placements):
+                if p.localized_axis() == ti and isinstance(p, Sharded):
+                    g = g * mesh_shape[mesh_axis]
+            folded.append(g)
+            continue
+        cells = list(d.per_shard)
+        if len(cells) != n_devices:
+            raise ValueError(
+                f"sharded dim {d!r} has {len(cells)} entries, expected "
+                f"{n_devices} for mesh {mesh!r}."
+            )
+        for mesh_axis in range(mesh.ndim - 1, -1, -1):
+            n = mesh_shape[mesh_axis]
+            p = placements[mesh_axis]
+            localizes_ti = p.localized_axis() == ti
+            new_cells: list[graph.Dim] = []
+            for start in range(0, len(cells), n):
+                block = cells[start : start + n]
+                if localizes_ti:
+                    new_cells.append(
+                        p.global_dim(
+                            make_per_shard_dim(tuple(block), force_wrap=True)
+                        )
+                    )
+                else:
+                    first = block[0]
+                    for x in block[1:]:
+                        if x != first:
+                            raise ValueError(
+                                f"global_shape: tensor axis {ti} has "
+                                f"per-rank cells {block!r} that disagree "
+                                f"along mesh axis {mesh_axis} (placement "
+                                f"{p!r}); non-localizing mesh axes must "
+                                "hold shape-identical shards."
+                            )
+                    new_cells.append(first)
+            cells = new_cells
+        assert len(cells) == 1
+        folded.append(cells[0])
+    return graph.Shape(folded)
+
 
 _CONTEXT: ContextVar[RealizationContext] = ContextVar("_CONTEXT")
 _DEFAULT_DEVICE: ContextVar[Device] = ContextVar("_DEFAULT_DEVICE")
@@ -306,14 +369,12 @@ class RealizationContext(
         values: tuple[GraphValue, ...],
         *,
         mapping: DeviceMapping | None = None,
-        global_shape: Any = None,
     ) -> Tensor:
         """Registers unrealized graph value(s) with the realization context.
 
         Args:
             values: Per-shard graph values (length-1 for unsharded).
             mapping: Device mapping for distributed tensors.
-            global_shape: The global tensor shape for distributed tensors.
 
         Returns:
             A new tensor associated with the unrealized value(s).
@@ -470,7 +531,7 @@ class Tensor(DLPackArray, HasTensorValue):
         z = Tensor(np.array([1, 2, 3], dtype=np.int16))
 
         # Use factory methods like ones, zeros, arange
-        zeros = Tensor.zeros((2, 3))
+        zeros = Tensor.zeros((2, 2))
 
         # Compute with Python operators or the functional API
         result = y + zeros
@@ -513,7 +574,6 @@ class Tensor(DLPackArray, HasTensorValue):
 
     # ─── Device mapping (always set) ────────────────────────────────────
     _mapping: DeviceMapping
-    _global_shape: graph.Shape | None  # always set for distributed tensors
 
     # ─── Placement helpers ────────────────────────────────────────────────
 
@@ -700,7 +760,6 @@ class Tensor(DLPackArray, HasTensorValue):
         self._mapping = PlacementMapping(
             DeviceMesh.single(device), (Replicated(),)
         )
-        self._global_shape = None
 
     @classmethod
     def from_graph_value(cls, value: graph.Value[Any]) -> Tensor:
@@ -724,11 +783,83 @@ class Tensor(DLPackArray, HasTensorValue):
         return current_realization_context().create_unrealized((value,))
 
     @classmethod
+    def from_dim(cls, dim: DimLike) -> Tensor:
+        """Materializes a dimension as a rank-0 (scalar) tensor on CPU.
+
+        Converts a shape dimension — static, symbolic, or an algebraic
+        expression such as ``batch * seq`` — into a scalar tensor holding its
+        runtime value. This is the supported way to predicate runtime control
+        flow on a symbolic dimension: a symbolic :obj:`~max.graph.Dim` cannot be
+        compared to a Python ``int`` at trace time (``int(dim)`` and
+        ``dim <= 2`` both fail for dynamic dims), but the materialized tensor
+        can, and the comparison's result is exactly the scalar boolean predicate
+        that :func:`~max.experimental.functional.cond` expects.
+
+        .. code-block:: python
+
+            from max.driver import CPU
+            from max.dtype import DType
+            from max.experimental import functional as F
+            from max.experimental.nn import Module
+            from max.experimental.tensor import Tensor
+            from max.graph import DeviceRef, TensorType
+
+            class ScaleByBatch(Module):
+                def forward(self, x: Tensor) -> Tensor:
+                    out_type = TensorType(x.dtype, x.shape, device=x.device)
+                    pred = Tensor.from_dim(x.shape[0]) <= 2  # scalar bool tensor on CPU
+                    then_fn, else_fn = lambda: x * 2.0, lambda: x * 4.0
+                    (out,) = F.cond(pred, [out_type], then_fn, else_fn)
+                    return out
+
+            model = ScaleByBatch().compile(
+                TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
+            )
+            result = model(Tensor.ones([1, 4], dtype=DType.float32, device=CPU()))
+
+        .. invisible-code-block: python
+
+            import numpy as np
+
+            assert np.allclose(result.to_numpy(), 2.0)  # batch 1 (<= 2) -> x * 2
+
+        Args:
+            dim: The dimension to materialize. Accepts anything
+                :obj:`~max.graph.DimLike` (an ``int``, a dim name, a
+                :obj:`~max.graph.Dim`, or an algebraic dim expression).
+
+        Returns:
+            Tensor: A rank-0 ``int64`` tensor on CPU holding the dimension's
+            runtime value.
+
+        Raises:
+            ValueError: In eager mode (no active graph) for a symbolic or
+                algebraic dimension, which has no value outside a graph.
+        """
+        d = Dim(dim)
+        if isinstance(d, StaticDim):
+            # The value is known now, so emit a scalar constant. This needs no
+            # active graph, so it works in eager mode as well as while building
+            # a graph.
+            return F.constant(int(d), DType.int64, CPU())
+        # A symbolic/algebraic dim has no value until runtime, which requires a
+        # graph to defer to. In eager mode there is none, so fail with a clear
+        # message rather than the downstream "No graph found" lookup error.
+        try:
+            _ = graph.Graph.current
+        except LookupError:
+            raise ValueError(
+                f"Tensor.from_dim({d}): a symbolic dimension has no value in "
+                "eager mode. Use a static dimension, or call this while "
+                "building a graph (e.g. inside Module.compile or F.functional)."
+            ) from None
+        return cls.from_graph_value(ops.shape_to_tensor([d])).reshape([])
+
+    @classmethod
     def from_shard_values(
         cls,
         shard_values: Sequence[GraphValue],
         mapping: DeviceMapping | None = None,
-        global_shape: ShapeLike | None = None,
     ) -> Tensor:
         """Creates a tensor from one or more per-shard graph values.
 
@@ -743,9 +874,6 @@ class Tensor(DLPackArray, HasTensorValue):
             mapping: Device mapping describing how shards map to mesh
                 devices and their placements. Required when
                 ``len(shard_values) > 1``.
-            global_shape: Optional explicit global shape. Pass this when
-                the caller already knows the logical (un-sharded) shape
-                so :attr:`Tensor.shape` does not have to reconstruct it.
 
         Returns:
             A tensor backed by the provided shard values.
@@ -768,7 +896,7 @@ class Tensor(DLPackArray, HasTensorValue):
                 (shard_values[0],)
             )
         return current_realization_context().create_unrealized(
-            tuple(shard_values), mapping=mapping, global_shape=global_shape
+            tuple(shard_values), mapping=mapping
         )
 
     @classmethod
@@ -807,14 +935,14 @@ class Tensor(DLPackArray, HasTensorValue):
         storages: tuple[driver.Buffer, ...],
         mesh: DeviceMesh,
         placements: tuple[Placement, ...],
-        global_shape: graph.ShapeLike,
+        global_shape: graph.ShapeLike | None = None,
     ) -> Tensor:
         """Creates a realized sharded tensor from per-device buffers.
 
-        This is an internal constructor. ``storages`` must have one entry per
-        device in the mesh, in row-major order.  All shards are realized
-        (concrete storage, no pending graph values).
+        ``global_shape`` is accepted for call-site back-compat; the global
+        shape is recovered from per-rank shards at access time.
         """
+        del global_shape
         if len(storages) != mesh.num_devices:
             raise ValueError(
                 f"Expected {mesh.num_devices} storages for mesh {mesh}, "
@@ -829,7 +957,6 @@ class Tensor(DLPackArray, HasTensorValue):
         instance._storages = storages
         instance._state = None
         instance._mapping = PlacementMapping(mesh, placements)
-        instance._global_shape = graph.Shape(global_shape)
         return instance
 
     @classmethod
@@ -838,14 +965,12 @@ class Tensor(DLPackArray, HasTensorValue):
         state: RealizationState,
         mesh: DeviceMesh,
         placements: tuple[Placement, ...],
-        global_shape: graph.ShapeLike | None = None,
     ) -> Tensor:
         """Creates an unrealized sharded tensor from a single state.
 
         ``state.values`` must have one entry per shard — all in the same
         graph.  Realization is atomic: all shards compile and execute
-        together.  If ``global_shape`` is omitted, it is derived from the
-        first shard's shape, placements, and mesh.
+        together.
         """
         if len(state.values) != mesh.num_devices:
             raise ValueError(
@@ -861,12 +986,11 @@ class Tensor(DLPackArray, HasTensorValue):
         instance._storages = None
         instance._state = state
         instance._mapping = PlacementMapping(mesh, placements)
-        instance._global_shape = (
-            graph.Shape(global_shape) if global_shape is not None else None
-        )
         return instance
 
-    def _as_constant_external(self, name: str) -> Tensor:
+    def _as_constant_external(
+        self, name: str, align: int | None = None
+    ) -> Tensor:
         """Creates graph external constant(s) matching ``self``'s layout.
 
         For unsharded tensors, creates a single ``constant_external`` and
@@ -875,24 +999,32 @@ class Tensor(DLPackArray, HasTensorValue):
         Tensor preserving ``self``'s mesh, placements, and global shape.
 
         Shard constants are named ``name._shard.0``, ``name._shard.1``, etc.
+
+        Args:
+            name: The name of the constant.
+            align: The alignment of the constant. If not provided,
+                the default alignment for the tensor's dtype will be used.
+
+        Returns:
+            A tensor on the requested placement initialized from the
+            external data.
         """
         if not self.is_distributed:
             stype = TensorType(self.dtype, self.shape, CPU())
-            return F.constant_external(name, stype).to(self.device)
+            return F.constant_external(name, stype, align=align).to(self.device)
         assert self._mapping is not None
         _mesh = self._mapping.mesh
-        _placements = self._mapping.to_placements()
-        local = shard_shape(self.shape, _placements, _mesh.mesh_shape)
         values = []
+        shape = self.shape
         for i in range(_mesh.num_devices):
+            local = local_shape_at(shape, i)
             stype = TensorType(self.dtype, local, CPU())
-            t = F.constant_external(f"{name}._shard.{i}", stype)
+            t = F.constant_external(f"{name}._shard.{i}", stype, align=align)
             t = t.to(_mesh.devices[i])
             values.append(t._graph_value)
         return current_realization_context().create_unrealized(
             tuple(values),
             mapping=self._mapping,
-            global_shape=self.shape,
         )
 
     def _from_buffers_like(self, buffers: Sequence[driver.Buffer]) -> Tensor:
@@ -910,7 +1042,6 @@ class Tensor(DLPackArray, HasTensorValue):
             tuple(buffers),
             self._mapping.mesh,
             self._mapping.to_placements(),
-            self.shape,
         )
 
     @classmethod
@@ -923,7 +1054,7 @@ class Tensor(DLPackArray, HasTensorValue):
     ) -> Tensor:
         """Creates a tensor from a scalar, array, or nested list.
 
-        .. deprecated::
+        .. deprecated:: 26.2
             Use ``Tensor(value, dtype=dtype, device=device)`` instead.
             ``Tensor.constant`` will be removed in a future release.
 
@@ -1255,11 +1386,11 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.graph import TensorType
+            from max.graph import DeviceRef, TensorType
             from max.dtype import DType
 
             # Create a reference tensor type with shape (2, 4)
-            ref_type = TensorType(DType.int32, (2, 4))
+            ref_type = TensorType(DType.int32, (2, 4), device=DeviceRef.CPU())
 
             # Create range tensor matching the reference type
             x = tensor.Tensor.range_like(ref_type)
@@ -1346,6 +1477,7 @@ class Tensor(DLPackArray, HasTensorValue):
             TypeError: If the tensor is distributed.
         """
         if self.is_distributed:
+            # self.shape already reports the global, so no fold is needed.
             dist_type = DistributedTensorType(
                 self.dtype, self.shape, self.mesh, self.placements
             )
@@ -1376,32 +1508,50 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @property
     def shape(self) -> graph.Shape:
-        """Gets the global shape of the tensor.
-
-        For sharded tensors this returns the logical global shape (not the
-        per-shard shape).  If no explicit global shape was set, it is
-        derived from the first shard's shape, placements, and mesh.
+        """Gets the global (logical) shape of the tensor.
 
         Returns:
-            Shape: The shape of the tensor.
+            The global shape of the tensor.
         """
-        if self._global_shape is not None:
-            return self._global_shape
-        if self.is_distributed:
-            # Reconstruct the global shape from local shard shapes.
-            if self._storages is not None:
-                shard_shapes = [list(s.shape) for s in self._storages]
-            else:
-                assert self._state is not None
-                shard_shapes = [list(v.shape) for v in self._state.values]
-            assert self._mapping is not None
-            return global_shape_from_local(
-                shard_shapes,
-                self._mapping.mesh,
-                self._mapping.to_placements(),
+        if not self.is_distributed:
+            backing = self._backing_value.shape
+            return (
+                backing
+                if isinstance(backing, graph.Shape)
+                else graph.Shape(backing)
             )
-        shape = self._backing_value.shape
-        return shape if isinstance(shape, graph.Shape) else graph.Shape(shape)
+        per_rank_shapes = self._per_rank_shapes()
+        ndim = len(per_rank_shapes[0])
+        sharded_axes = {
+            ax
+            for p in self._mapping.to_placements()
+            if (ax := p.localized_axis()) is not None
+        }
+        cells = [
+            tuple(graph.Dim(s[i]) for s in per_rank_shapes) for i in range(ndim)
+        ]
+        wrapped = graph.Shape(
+            [
+                make_per_shard_dim(cells[i], force_wrap=i in sharded_axes)
+                for i in range(ndim)
+            ]
+        )
+        globals_ = _fold_sharded_shape(wrapped, self._mapping)
+        return graph.Shape(
+            [
+                make_per_shard_dim(cells[i], global_dim=globals_[i])
+                if i in sharded_axes
+                else globals_[i]
+                for i in range(ndim)
+            ]
+        )
+
+    def _per_rank_shapes(self) -> list[list[graph.Dim]]:
+        """Returns one per-rank shape list per shard, in mesh order."""
+        if self._storages is not None:
+            return [list(s.shape) for s in self._storages]
+        assert self._state is not None
+        return [list(v.shape) for v in self._state.values]
 
     @property
     def dtype(self) -> DType:
@@ -1592,7 +1742,7 @@ class Tensor(DLPackArray, HasTensorValue):
             ValueError: If the tensor is distributed and not fully replicated.
         """
         if self.is_distributed:
-            if not self._mapping.is_fully_replicated:
+            if not is_fully_replicated(self._mapping):
                 # Reuse the standard error for non-replicated distributed
                 # tensors (Sharded, Partial, etc.).
                 self._check_not_distributed("item")
@@ -1677,7 +1827,7 @@ class Tensor(DLPackArray, HasTensorValue):
             )
         elif isinstance(target, DeviceMesh):
             if isinstance(self._mapping, NamedMapping):
-                mapping = NamedMapping(target, self._mapping.original_spec)
+                mapping = self._mapping._resolve(target)
             else:
                 mapping = PlacementMapping(target, self.placements)
         elif isinstance(target, DeviceMapping):
@@ -1712,36 +1862,39 @@ class Tensor(DLPackArray, HasTensorValue):
         return np.from_dlpack(t)
 
     def argmax(self, axis: int | None = -1) -> Tensor:
-        """Finds the indices of the maximum values along an axis.
+        """Returns the indices of the maximum values along an axis.
 
-        Returns a tensor containing the indices of the maximum values along
-        the specified axis. This is useful for finding the position of the
-        largest element, such as determining predicted classes in classification.
+        It's useful for finding the position of the largest element
+        along a given dimension, such as determining predicted classes
+        in classification.
+
+        When the input contains ties (identical maximum values), behavior
+        depends on the device: CPU returns the first matching index, while
+        GPU may return any of them.
 
         .. code-block:: python
 
-            from max.experimental import tensor
+            from max.experimental import Tensor
 
-            # Create a 2x4 tensor
-            x = tensor.Tensor(
-                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
-            )
-
-            # Find argmax along last axis (within each row)
+            x = Tensor([[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]])
             indices = x.argmax(axis=-1)
-            # Result: [1, 2] (index 1 in first row, index 2 in second row)
+            # indices has shape (2, 1): [[1], [2]]
 
-            # Find argmax over all elements
-            index = x.argmax(axis=None)
-            # Result: 6 (flattened index of maximum value 4.2)
+            # Or flatten before reducing:
+            flat_index = x.argmax(axis=None)
+            # flat_index has shape (1,): [6] (flattened index of max value 4.2)
 
         Args:
-            axis: The axis along which to find the maximum indices. Defaults
-                to -1 (the last axis). If None, finds the index of the maximum
-                value across all elements.
+            axis: The axis along which to compute the argmax. Negative
+                values index from the last dimension. When ``None``, the
+                tensor is flattened to 1-D first. Defaults to ``-1``.
 
         Returns:
-            Tensor: A tensor containing the indices of the maximum values.
+            An integer tensor of indices marking the positions of the
+            maximum values along ``axis``. For integer ``axis``, the
+            result has the same rank as the input with the ``axis``
+            dimension reduced to size ``1``. When ``axis`` is ``None``,
+            the result has shape ``(1,)``.
         """
         return F.argmax(self, axis=axis)
 
@@ -2080,36 +2233,33 @@ class Tensor(DLPackArray, HasTensorValue):
         return F.reshape(self, shape)
 
     def broadcast_to(self, shape: ShapeLike) -> Tensor:
-        """Broadcasts the tensor to the specified shape.
+        """Broadcasts the tensor to a target shape.
 
-        Returns a tensor broadcast to the target shape, following NumPy
-        broadcasting semantics. Dimensions of size 1 in the input can be
-        expanded to match larger dimensions in the target shape.
-
-        This is equivalent to PyTorch's :func:`torch.broadcast_to` and
+        Each input dimension must either equal the corresponding target
+        dimension or be ``1`` (which is then stretched to match). This
+        follows NumPy broadcasting semantics and is equivalent to
+        PyTorch's :func:`torch.broadcast_to` and
         :meth:`torch.Tensor.expand`.
 
         .. code-block:: python
 
-            from max.experimental import tensor
+            from max.experimental import Tensor
 
-            # Create a tensor with shape (3, 1)
-            x = tensor.Tensor.ones([3, 1])
-
-            # Broadcast to (3, 4) - expands the second dimension
-            y = x.broadcast_to([3, 4])
-            print(y.shape)  # (3, 4)
+            x = Tensor.ones([3, 1])
+            result = x.broadcast_to([3, 4])
+            # result has shape (3, 4)
 
             # Add a new leading dimension
-            w = x.broadcast_to([2, 3, 1])
-            print(w.shape)  # (2, 3, 1)
+            result = x.broadcast_to([2, 3, 4])
+            # result has shape (2, 3, 4)
 
         Args:
-            shape: The target shape. Each dimension must either match the input
-                dimension or be broadcastable from size 1.
+            shape: The target shape. A static shape (no dynamic
+                dimensions).
 
         Returns:
-            Tensor: A tensor broadcast to the specified shape.
+            A tensor with the same elements as ``self`` but with the
+            target shape.
         """
         return F.broadcast_to(self, shape)
 

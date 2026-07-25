@@ -14,7 +14,7 @@
 # values, including NaN/Inf bit patterns, near-poison integers, and masked-off
 # lanes.
 
-from std.memory import UnsafePointer, alloc
+from std.memory import Pointer, alloc
 from std.sys.intrinsics import masked_load
 from std.testing import assert_true
 
@@ -22,7 +22,7 @@ from std.testing import assert_true
 def test_normal_float32() raises:
     """Loading a properly initialized Float32 should not trigger abort."""
     var value = Float32(42.0)
-    var val = UnsafePointer(to=value).load()
+    var val = Pointer(to=value).unsafe_load()
     assert_true(val == 42.0)
 
 
@@ -31,28 +31,28 @@ def test_qnan_not_flagged():
     not trigger abort. The poison pattern is intentionally non-NaN so the
     uninit-read check coexists with the nan-check pass."""
     var value = UInt32(0x7FC00000)
-    var ptr = UnsafePointer(to=value).bitcast[Float32]()
-    _ = ptr.load()
+    var ptr = Pointer(to=value).unsafe_bitcast[Float32]()
+    _ = ptr.unsafe_load()
 
 
 def test_snan_not_flagged():
     """A signaling NaN (0x7F800001) is not the poison pattern."""
     var value = UInt32(0x7F800001)
-    var ptr = UnsafePointer(to=value).bitcast[Float32]()
-    _ = ptr.load()
+    var ptr = Pointer(to=value).unsafe_bitcast[Float32]()
+    _ = ptr.unsafe_load()
 
 
 def test_inf_not_flagged():
     """Positive infinity (0x7F800000) is not the poison pattern."""
     var value = UInt32(0x7F800000)
-    var ptr = UnsafePointer(to=value).bitcast[Float32]()
-    _ = ptr.load()
+    var ptr = Pointer(to=value).unsafe_bitcast[Float32]()
+    _ = ptr.unsafe_load()
 
 
 def test_integer_not_checked() raises:
     """Integer types should not be checked for poison patterns."""
     var value = UInt32(0xFFFFFFFF)
-    var val = UnsafePointer(to=value).load()
+    var val = Pointer(to=value).unsafe_load()
     assert_true(val == 0xFFFFFFFF)
 
 
@@ -60,8 +60,8 @@ def test_near_poison_float():
     """A float value close to but not equal to poison (FLT_MAX - 1 ulp =
     0x7F7FFFFE) should not trigger abort."""
     var value = UInt32(0x7F7FFFFE)
-    var ptr = UnsafePointer(to=value).bitcast[Float32]()
-    _ = ptr.load()
+    var ptr = Pointer(to=value).unsafe_bitcast[Float32]()
+    _ = ptr.unsafe_load()
 
 
 def test_masked_load_poison_in_masked_off_lane() raises:
@@ -93,20 +93,35 @@ def test_masked_load_poison_in_masked_off_lane() raises:
 def test_normal_float64() raises:
     """Loading a properly initialized Float64 should not trigger abort."""
     var value = Float64(3.14159)
-    var val = UnsafePointer(to=value).load()
+    var val = Pointer(to=value).unsafe_load()
     assert_true(val == 3.14159)
 
 
 def test_normal_float16():
     """Loading a properly initialized Float16 should not trigger abort."""
     var value = Float16(1.5)
-    _ = UnsafePointer(to=value).load()
+    _ = Pointer(to=value).unsafe_load()
 
 
 def test_normal_bfloat16():
     """Loading a properly initialized BFloat16 should not trigger abort."""
     var value = BFloat16(1.5)
-    _ = UnsafePointer(to=value).load()
+    _ = Pointer(to=value).unsafe_load()
+
+
+def test_fp8_e4m3fn_poison_pattern_not_flagged():
+    """The poison check excludes `float8_e4m3fn` because its `max_finite`
+    sentinel (0x7E = 448.0) collides with legitimate saturate-to-max values
+    in narrow-fp8 quantization. Constructing a value with the would-be-
+    poison bit pattern must not abort."""
+    _ = Scalar[DType.float8_e4m3fn](from_bits=UInt8(0x7E))
+
+
+def test_fp8_e5m2_poison_pattern_not_flagged():
+    """The poison check excludes `float8_e5m2` for the same reason as
+    `float8_e4m3fn`. Constructing a value with the would-be-poison bit
+    pattern (0x7B = 57344.0) must not abort."""
+    _ = Scalar[DType.float8_e5m2](from_bits=UInt8(0x7B))
 
 
 def main() raises:
@@ -120,3 +135,5 @@ def main() raises:
     test_normal_float64()
     test_normal_float16()
     test_normal_bfloat16()
+    test_fp8_e4m3fn_poison_pattern_not_flagged()
+    test_fp8_e5m2_poison_pattern_not_flagged()

@@ -25,6 +25,9 @@ from . import (
     dialects as dialects,
 )
 from . import (
+    dlpack as dlpack,
+)
+from . import (
     driver as driver,
 )
 from . import (
@@ -37,6 +40,9 @@ from . import (
     graph as graph,
 )
 from . import (
+    metrics as metrics,
+)
+from . import (
     mlrt as mlrt,
 )
 from . import (
@@ -47,6 +53,9 @@ from . import (
 )
 from . import (
     safetensors as safetensors,
+)
+from . import (
+    xgrammar as xgrammar,
 )
 from . import (
     xxhash as xxhash,
@@ -66,7 +75,7 @@ class Attribute:
 class NamedAttribute(tuple[str, Attribute]):
     def __init__(self, arg0: str, arg1: Attribute, /) -> None: ...
     @property
-    def name(self): ...
+    def name(self) -> str: ...
     @property
     def value(self) -> Attribute: ...
     def __eq__(self, arg: object, /) -> bool: ...
@@ -109,7 +118,7 @@ class OpOperand:
     @property
     def value(self) -> Value[Type]: ...
     @value.setter
-    def value(self, value: Value[Type], /): ...
+    def value(self, value: Value[Type], /) -> None: ...
 
 class InsertPoint:
     pass
@@ -163,6 +172,7 @@ class Operation:
     def parent_op(self) -> Operation: ...
     def verify(self, verify_recursively: bool = True) -> None: ...
     def move_after(self, arg: Operation, /) -> None: ...
+    def clone(self) -> Operation: ...
     @property
     def discardable_attributes(self) -> DiscardableAttributes: ...
     def asm(
@@ -175,6 +185,12 @@ class Operation:
         assume_verified: bool = False,
         skip_regions: bool = False,
     ) -> str: ...
+    @property
+    def bytecode(self) -> bytes: ...
+    @staticmethod
+    def from_bytecode(
+        data: bytes, context: Context
+    ) -> dialects.builtin.ModuleOp: ...
     def __repr__(self) -> str: ...
     @property
     def _CAPIPtr(self) -> object: ...

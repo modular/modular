@@ -15,7 +15,7 @@
 Host launcher: `amd_4wave_conv()`
 
 The kernel body lives on `AMD4WaveMatmul.run_conv2d` (in
-`linalg.matmul.gpu.amd.amd_4wave_matmul`) — the conv2d and matmul
+`linalg.matmul.gpu.amd.amd_4wave_matmul`); the conv2d and matmul
 share the same struct, the same 4-warp 2x2 quadrant layout, the same
 MFMA shapes, and the same software-pipeline schedule. They differ
 only in the A-operand loader: matmul uses `TileLoaderLDS` (linear
@@ -52,7 +52,7 @@ The conv launcher takes the 4D NHWC input directly. The filter is a
 2D `[Cout, K_padded]` tile-tensor in FRSC order (filter row `f`
 column `k = r*S*C_in + s*C_in + c` is `weight[f, r, s, c]`). The
 output is a 2D `[N*H_out*W_out, Cout]` view of the NHWC output
-buffer — for packed NHWC layouts the 2D view aliases the same bytes
+buffer: for packed NHWC layouts the 2D view aliases the same bytes
 exactly. See `max/kernels/test/gpu/nn/test_amd_4wave_conv*.mojo` for
 end-to-end correctness coverage.
 """
@@ -98,7 +98,7 @@ def _xcd_wgm_swizzle(
     Mirrors `4_wave.cu` lines 117-136 / 353-372 in HipKittens.
 
     The swizzle's L2 reuse only pays off when the WG count is large
-    enough that each CU runs multiple WGs in one kernel launch — i.e.
+    enough that each CU runs multiple WGs in one kernel launch, i.e.
     `num_wgs > num_CUs`. For our decode/prefill shapes (typically
     32-1024 WGs vs 304 CUs), the swizzle math would just add overhead
     without any L2 benefit. We gate on `num_wgs > 4 * num_CUs` to
@@ -205,13 +205,13 @@ def amd_4wave_conv[
     c: TileTensor[mut=True, c_type, ...],
     ctx: DeviceContext,
     # Residual args. Only used when `has_residual=True`. The defaults
-    # (null pointer, 0 stride, 0.0 beta) are picked up by the kernel
-    # only when has_residual=False — the args are then dead-code-
-    # eliminated by the compiler (still in the launch packet, 16 bytes
-    # overhead per launch).
+    # (dangling placeholder pointer, 0 stride, 0.0 beta) are picked up
+    # by the kernel only when has_residual=False — the args are then
+    # dead-code-eliminated by the compiler (still in the launch packet,
+    # 16 bytes overhead per launch).
     source_ptr: UnsafePointer[Scalar[c_type], ImmutAnyOrigin] = UnsafePointer[
         Scalar[c_type], ImmutAnyOrigin
-    ](unsafe_from_address=0),
+    ].unsafe_dangling(),
     source_row_stride: Int = 0,
     beta: Float32 = 0.0,
 ) raises:
@@ -219,7 +219,7 @@ def amd_4wave_conv[
 
     The caller passes the 4D NHWC input directly; the output is a 2D
     `[N*H_out*W_out, Cout]` view of the NHWC output buffer (caller does
-    the reshape — for packed NHWC, the 2D view aliases the same memory
+    the reshape: for packed NHWC, the 2D view aliases the same memory
     exactly). Defaults reproduce the 1×1 pointwise case where the address
     math collapses to `m*C + k`.
 
@@ -293,7 +293,7 @@ def amd_4wave_conv[
         a: 4D NHWC input tile-tensor of shape `(N, H, W, C)`.
         b: 2D filter tile-tensor of shape `(Cout, K)` where K = R*S*C_in
             (possibly K-padded to a multiple of 256).
-        c: 2D output tile-tensor of shape `(N*H_out*W_out, Cout)` —
+        c: 2D output tile-tensor of shape `(N*H_out*W_out, Cout)`:
             a view of the NHWC output buffer.
         ctx: Device context used to enqueue the kernel.
         source_ptr: Pointer to the residual buffer (NHWC-contiguous,

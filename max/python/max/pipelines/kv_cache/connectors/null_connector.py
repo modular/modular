@@ -19,7 +19,15 @@ All operations are no-ops that return immediately.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 
 
 class NullConnector:
@@ -32,18 +40,36 @@ class NullConnector:
     def load(
         self,
         device_block_ids: list[int],
-        block_hashes: list[int],
-    ) -> int:
-        return 0
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> KVConnectorTransfer:
+        return CompletedTransfer(TransferDirection.LOAD)
 
     def offload(
         self,
         block_ids: list[int],
-        block_hashes: list[int],
+        block_hashes: Sequence[bytes],
+        parent_seq_hash: bytes | None = None,
+        replica_idx: int = 0,
+    ) -> KVConnectorTransfer:
+        return CompletedTransfer(TransferDirection.OFFLOAD)
+
+    def touch(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
     ) -> None:
         pass
 
-    def sync(self) -> None:
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        return (0, 0)
+
+    def wait_for_loads(self) -> None:
+        pass
+
+    def wait_for_offloads(self) -> None:
         pass
 
     def shutdown(self) -> None:
@@ -71,3 +97,10 @@ class NullConnector:
     @property
     def metrics(self) -> KVCacheMetrics:
         return KVCacheMetrics()
+
+    def reset_metrics(self) -> None:
+        pass
+
+    @property
+    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
+        return frozenset({"ahash64", "sha256", "sha256_64"})

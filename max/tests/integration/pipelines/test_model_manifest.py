@@ -15,11 +15,14 @@
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
+from max.graph.weights import WeightData
 from max.pipelines.lib.config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.weight_loader import WeightLoader, dict_loader
 
 # All unit tests patch _load_model_index and validate_hf_repo_access to
 # avoid network calls.  We also force HF_HUB_OFFLINE=False so that
@@ -33,9 +36,10 @@ VALIDATE_HF_ACCESS_TARGET = (
     "max.pipelines.lib.config.model_config.validate_hf_repo_access"
 )
 VALIDATE_HF_ACCESS_HFUTILS_TARGET = (
-    "max.pipelines.modeling.weights.hf_utils.validate_hf_repo_access"
+    "max.pipelines.weights.hf_utils.validate_hf_repo_access"
 )
 HF_OFFLINE_TARGET = "huggingface_hub.constants.HF_HUB_OFFLINE"
+FILE_EXISTS_TARGET = "huggingface_hub.file_exists"
 
 
 def _make_config(
@@ -307,6 +311,18 @@ class TestRevisionPropagation:
 class TestWithOverride:
     """Tests for with_override."""
 
+    @pytest.fixture(autouse=True)
+    def _offline_hf_probe(self) -> Any:
+        """Keep with_override's weight-path identity re-resolution offline.
+
+        Overriding ``weight_path`` re-runs the identity parse, which probes
+        HF for ``org/repo/file`` paths. Default the probe to False so paths
+        pass through unchanged; tests that exercise external-repo extraction
+        re-patch it to True.
+        """
+        with patch(FILE_EXISTS_TARGET, return_value=False):
+            yield
+
     @staticmethod
     def _flux2_manifest() -> ModelManifest:
         base = "black-forest-labs/FLUX.2-dev"
@@ -453,8 +469,60 @@ class TestWithOverride:
         assert updated["draft"].quantization_encoding == "q4_0"
         assert updated["main"] is main_model  # main unchanged
 
+    def test_weight_path_override_extracts_external_weights_repo(self) -> None:
+        """An ``org/repo/file`` weight_path override resolves to that repo.
 
-DEVICES_EXIST_TARGET = "max.pipelines.lib.config.model_config.devices_exist"
+        Regression test for the FLUX.2/Wan quantized serving configs:
+        ``--model-override transformer.weight_path=["org/quant-repo/f.st"]``
+        must split the external repo id off the path (as construction-time
+        parsing does) instead of treating the whole string as a file inside
+        the base repo, which 404s at weight download.
+        """
+        manifest = self._flux2_manifest()
+        with patch(FILE_EXISTS_TARGET, return_value=True):
+            updated = manifest.with_override(
+                "transformer",
+                weight_path=[
+                    Path(
+                        "black-forest-labs/FLUX.2-dev-NVFP4/flux2-dev-nvfp4.safetensors"
+                    )
+                ],
+                quantization_encoding="float4_e2m1fnx2",
+            )
+        cfg = updated["transformer"]
+        assert cfg.weight_path == [Path("flux2-dev-nvfp4.safetensors")]
+        assert (
+            cfg.huggingface_weight_repo_id
+            == "black-forest-labs/FLUX.2-dev-NVFP4"
+        )
+        # The original manifest's component is untouched.
+        assert (
+            manifest["transformer"].huggingface_weight_repo_id
+            == "black-forest-labs/FLUX.2-dev"
+        )
+
+    def test_weight_path_override_resets_stale_weights_repo(self) -> None:
+        """Re-overriding weight_path drops a previously extracted repo id."""
+        manifest = self._flux2_manifest()
+        with patch(FILE_EXISTS_TARGET, return_value=True):
+            updated = manifest.with_override(
+                "transformer",
+                weight_path=[Path("org/quant-repo/weights.safetensors")],
+            )
+        assert (
+            updated["transformer"].huggingface_weight_repo_id
+            == "org/quant-repo"
+        )
+
+        reverted = updated.with_override(
+            "transformer", weight_path=[Path("weights.safetensors")]
+        )
+        assert (
+            reverted["transformer"].huggingface_weight_repo_id
+            == "black-forest-labs/FLUX.2-dev"
+        )
+
+
 WEIGHT_PARSE_TARGET = (
     "max.pipelines.lib.config.model_config.WeightPathParser.parse"
 )
@@ -463,16 +531,24 @@ WEIGHT_PARSE_TARGET = (
 class TestResolve:
     """Tests for ModelManifest.resolve()."""
 
-    def test_resolve_calls_each_config(self) -> None:
-        """resolve() delegates to MAXModelConfig.resolve() for every component."""
-        vae = _make_config("vae-model")
-        unet = _make_config("unet-model")
-        manifest = ModelManifest({"vae": vae, "unet": unet})
+    def test_resolve_does_not_validate_repo_access(self) -> None:
+        """resolve() freezes the manifest without validating repo access.
 
-        with patch.object(MAXModelConfig, "resolve") as mock_resolve:
+        Repo-access validation happens at ``PipelineConfig`` construction.
+        """
+        manifest = ModelManifest(
+            {
+                "vae": _make_config("vae-model"),
+                "unet": _make_config("unet-model"),
+            }
+        )
+
+        with patch.object(
+            MAXModelConfig, "validate_repo_access"
+        ) as mock_validate:
             manifest.resolve()
 
-        assert mock_resolve.call_count == 2
+        mock_validate.assert_not_called()
 
     def test_resolve_empty_manifest(self) -> None:
         """resolve() on an empty manifest is a no-op."""
@@ -480,20 +556,17 @@ class TestResolve:
         manifest.resolve()  # should not raise
 
     def test_resolve_single_main(self) -> None:
-        """resolve() works for a single-model manifest."""
-        cfg = _make_config("org/llm-model")
-        manifest = ModelManifest({"main": cfg})
+        """resolve() freezes a single-model manifest."""
+        manifest = ModelManifest({"main": _make_config("org/llm-model")})
+        manifest.resolve()
 
-        with patch.object(MAXModelConfig, "resolve") as mock_resolve:
-            manifest.resolve()
-
-        mock_resolve.assert_called_once()
+        with pytest.raises(TypeError, match="frozen after resolve"):
+            manifest["draft"] = _make_config("org/draft")
 
     @patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
-    @patch(DEVICES_EXIST_TARGET, return_value=True)
     @patch("max.pipelines.lib.config.model_config.validate_hf_repo_access")
     def test_resolve_flux2_with_overrides(
-        self, _mock_validate: Any, _mock_devices: Any, _mock_validate_hf: Any
+        self, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         """Resolve a FLUX.2-dev manifest with transformer and VAE overrides.
 
@@ -523,20 +596,26 @@ class TestResolve:
             }
         )
 
-        # Apply overrides: NVFP4 transformer weights + tiny VAE.
-        manifest = manifest.with_override(
-            "transformer",
-            weight_path=[
-                Path("black-forest-labs/FLUX.2-dev-NVFP4/weights.safetensors")
-            ],
-            quantization_encoding="float4_e2m1fnx2",
-        ).with_override(
-            "vae",
-            config=_make_config(
-                "fal/FLUX.2-Tiny-AutoEncoder",
-                quantization_encoding="bfloat16",
-            ),
-        )
+        # Apply overrides: NVFP4 transformer weights + tiny VAE. The
+        # weight_path override re-resolves identity, which probes HF for
+        # ``org/repo/file`` paths — force the probe offline so the path
+        # passes through unchanged.
+        with patch(FILE_EXISTS_TARGET, return_value=False):
+            manifest = manifest.with_override(
+                "transformer",
+                weight_path=[
+                    Path(
+                        "black-forest-labs/FLUX.2-dev-NVFP4/weights.safetensors"
+                    )
+                ],
+                quantization_encoding="float4_e2m1fnx2",
+            ).with_override(
+                "vae",
+                config=_make_config(
+                    "fal/FLUX.2-Tiny-AutoEncoder",
+                    quantization_encoding="bfloat16",
+                ),
+            )
 
         # Verify pre-resolve state.
         assert (
@@ -583,7 +662,7 @@ class TestFrozenAfterResolve:
     @staticmethod
     def _resolved_manifest() -> ModelManifest:
         manifest = ModelManifest({"main": _make_config("org/model")})
-        with patch.object(MAXModelConfig, "resolve"):
+        with patch.object(MAXModelConfig, "validate_repo_access"):
             manifest.resolve()
         return manifest
 
@@ -637,7 +716,7 @@ class TestTotalWeightsSize:
             }
         )
         with (
-            patch.object(MAXModelConfig, "resolve"),
+            patch.object(MAXModelConfig, "validate_repo_access"),
             patch.object(
                 MAXModelConfig,
                 "weights_size",
@@ -655,7 +734,7 @@ class TestTotalWeightsSize:
             {"scheduler": scheduler, "transformer": transformer}
         )
         with (
-            patch.object(MAXModelConfig, "resolve"),
+            patch.object(MAXModelConfig, "validate_repo_access"),
             patch.object(
                 MAXModelConfig,
                 "weights_size",
@@ -1035,12 +1114,10 @@ class TestCrossRepoSubfolder:
         repo = cfg.huggingface_weight_repo
         assert repo.subfolder == "transformer"
 
-    @patch(DEVICES_EXIST_TARGET, return_value=True)
     @patch("max.pipelines.lib.config.model_config.validate_hf_repo_access")
     def test_resolve_skips_subfolder_prepend_for_cross_repo_weights(
         self,
         _mock_cfg_validate: Any,
-        _mock_devices: Any,
         _mock_validate: Any,
         _mock_validate_hf: Any,
     ) -> None:
@@ -1066,3 +1143,157 @@ class TestCrossRepoSubfolder:
         assert manifest["transformer"].weight_path == [
             Path("weights.safetensors")
         ]
+
+
+# ---------------------------------------------------------------------------
+# loader() helpers
+# ---------------------------------------------------------------------------
+
+LOAD_WEIGHTS_TARGET = "max.pipelines.lib.config.model_config.load_weights"
+
+
+def _wd(name: str, value: float = 0.0) -> WeightData:
+    """Build a tiny ``WeightData`` carrying a single-element float32 array."""
+    return WeightData.from_numpy(np.array([value], dtype=np.float32), name)
+
+
+def _fake_weights(items: dict[str, WeightData]) -> MagicMock:
+    """Mock the ``Weights`` protocol enough for ``_loader_over_weights``.
+
+    Supports both access paths the loader uses:
+    - ``w.items()`` -> ``(name, accessor)`` pairs (for ``keys()`` iteration).
+    - ``w[name]`` -> accessor (for query resolution).
+
+    Each accessor's ``.data()`` returns the corresponding ``WeightData``.
+    """
+    accessors = {
+        name: MagicMock(data=MagicMock(return_value=wd))
+        for name, wd in items.items()
+    }
+    weights = MagicMock()
+    weights.items.return_value = list(accessors.items())
+    weights.__getitem__.side_effect = lambda name: accessors[name]
+    return weights
+
+
+def _per_role_loader_patch(
+    manifest: ModelManifest, per_role: dict[str, dict[str, WeightData]]
+) -> Any:
+    """Patches ``MAXModelConfig.loader`` to route by-role into ``dict_loader``."""
+
+    def fake_loader(self: MAXModelConfig) -> WeightLoader:
+        for role, cfg in manifest.items():
+            if cfg is self:
+                return dict_loader(per_role[role])
+        raise AssertionError("unknown config")
+
+    return patch.object(MAXModelConfig, "loader", fake_loader)
+
+
+class TestMAXModelConfigLoader:
+    def test_loader_resolves_and_enumerates(self) -> None:
+        cfg = _make_config("test/model")
+        wd_a = _wd("a")
+        wd_b = _wd("b")
+        fake = _fake_weights({"layer.0.weight": wd_a, "layer.1.bias": wd_b})
+        with (
+            patch.object(
+                MAXModelConfig,
+                "resolved_weight_paths",
+                return_value=[Path("/tmp/w.safetensors")],
+            ),
+            patch(LOAD_WEIGHTS_TARGET, return_value=fake) as load_mock,
+        ):
+            loader = cfg.loader()
+            assert loader("layer.0.weight") is wd_a
+            assert loader("layer.1.bias") is wd_b
+            assert set(loader.keys()) == {"layer.0.weight", "layer.1.bias"}
+
+        load_mock.assert_called_once_with([Path("/tmp/w.safetensors")])
+
+    def test_loader_keys_filter_by_prefix(self) -> None:
+        cfg = _make_config("test/model")
+        fake = _fake_weights(
+            {"layers.0.weight": _wd("a"), "embed.weight": _wd("b")}
+        )
+        with (
+            patch.object(
+                MAXModelConfig,
+                "resolved_weight_paths",
+                return_value=[Path("/tmp/w.safetensors")],
+            ),
+            patch(LOAD_WEIGHTS_TARGET, return_value=fake),
+        ):
+            loader = cfg.loader()
+            assert set(loader.keys("layers.")) == {"layers.0.weight"}
+
+    def test_empty_when_no_weights(self) -> None:
+        cfg = _make_config("test/model")
+        with patch.object(
+            MAXModelConfig, "resolved_weight_paths", return_value=[]
+        ):
+            loader = cfg.loader()
+
+        assert list(loader.keys()) == []
+        with pytest.raises(KeyError):
+            loader("any.name")
+
+
+class TestModelManifestLoader:
+    def test_loader_resolves_role_prefixed_keys(self) -> None:
+        manifest = ModelManifest({"text_encoder": _make_config("te")})
+        wd = _wd("v")
+        per_role = {"text_encoder": {"layers.0.weight": wd}}
+
+        with _per_role_loader_patch(manifest, per_role):
+            loader = manifest.loader()
+
+        assert loader("text_encoder.layers.0.weight") is wd
+        assert set(loader.keys()) == {"text_encoder.layers.0.weight"}
+
+    def test_loader_unions_multiple_roles(self) -> None:
+        manifest = ModelManifest(
+            {
+                "text_encoder": _make_config("te"),
+                "vae": _make_config("vae"),
+            }
+        )
+        per_role = {
+            "text_encoder": {"encoder.weight": _wd("te.w")},
+            "vae": {
+                "decoder.weight": _wd("vae.w"),
+                "decoder.bias": _wd("vae.b"),
+            },
+        }
+
+        with _per_role_loader_patch(manifest, per_role):
+            loader = manifest.loader()
+
+        assert set(loader.keys()) == {
+            "text_encoder.encoder.weight",
+            "vae.decoder.weight",
+            "vae.decoder.bias",
+        }
+
+    def test_loader_keys_filter_by_role_prefix(self) -> None:
+        manifest = ModelManifest(
+            {
+                "text_encoder": _make_config("te"),
+                "vae": _make_config("vae"),
+            }
+        )
+        per_role = {
+            "text_encoder": {"a": _wd("a")},
+            "vae": {"b": _wd("b")},
+        }
+
+        with _per_role_loader_patch(manifest, per_role):
+            loader = manifest.loader()
+
+        assert set(loader.keys("vae.")) == {"vae.b"}
+
+    def test_empty_manifest_returns_loader_with_no_keys(self) -> None:
+        loader = ModelManifest({}).loader()
+        assert list(loader.keys()) == []
+        with pytest.raises(KeyError):
+            loader("anything")

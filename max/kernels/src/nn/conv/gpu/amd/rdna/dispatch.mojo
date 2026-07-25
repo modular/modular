@@ -150,6 +150,7 @@ def dispatch_rdna_conv2d[
     output_type: DType,
     filter_is_fcrs: Bool,
     maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
+    has_residual: Bool = False,
 ](
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
@@ -159,6 +160,10 @@ def dispatch_rdna_conv2d[
     symmetric_padding: IndexList[2],
     num_groups: Int,
     ctx: DeviceContext,
+    source_ptr: UnsafePointer[
+        Scalar[output_type], MutAnyOrigin
+    ] = UnsafePointer[Scalar[output_type], MutAnyOrigin].unsafe_dangling(),
+    beta: Float32 = 0.0,
 ) raises -> Bool:
     """Try to dispatch Conv2D on RDNA via implicit GEMM (im2col fused into WMMA).
 
@@ -167,6 +172,40 @@ def dispatch_rdna_conv2d[
 
     Uses the implicit GEMM kernel when C_in is aligned to BLOCK_K (covers all
     FLUX VAE shapes), falling back to explicit im2col + matmul otherwise.
+
+    When `has_residual=True`, folds `output = conv + beta * source` into the
+    conv epilogue (the RDNA implicit-GEMM/im2col kernels have no native
+    residual path). `source_ptr` is NHWC-contiguous, same shape as output:
+    e.g. ResNet skip connections that the graph compiler fuses into the conv.
+
+    Parameters:
+        input_type: `DType` of the input tensor elements.
+        filter_type: `DType` of the filter tensor elements.
+        output_type: `DType` of the output tensor elements.
+        filter_is_fcrs: True if `filter` is laid out as FCRS, False for RSCF.
+        maybe_epilogue_func: Optional elementwise epilogue applied to each
+            output element (defaults to `None`).
+        has_residual: True to fold a scaled residual `beta * source_ptr` into
+            the conv epilogue (defaults to `False`).
+
+    Args:
+        input: Rank-4 NHWC input tensor.
+        filter: Rank-4 filter tensor in FCRS or RSCF layout per
+            `filter_is_fcrs`.
+        output: Rank-4 NHWC output tensor written by the convolution.
+        stride: Spatial stride `[stride_h, stride_w]`; only `[1, 1]` is
+            supported.
+        dilation: Spatial dilation `[dilation_h, dilation_w]`; only
+            `[1, 1]` is supported.
+        symmetric_padding: Symmetric spatial padding `[pad_h, pad_w]`
+            applied to the input.
+        num_groups: Number of convolution groups; only `1` is supported.
+        ctx: `DeviceContext` used to enqueue kernels and synchronize.
+        source_ptr: NHWC-contiguous residual source with the same shape as
+            `output`; read only when `has_residual=True` (defaults to a
+            dangling pointer).
+        beta: Scale factor applied to the residual source when
+            `has_residual=True` (defaults to `0.0`).
     """
 
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
@@ -332,31 +371,54 @@ def dispatch_rdna_conv2d[
             _ = im2col_buf^
 
         # --- Select implicit vs explicit im2col ---
-        comptime if maybe_epilogue_func:
-            comptime epilogue_4d = maybe_epilogue_func.value()
+        # The GEMM output `C[m, n]` is the NHWC tensor `[batch, out_h, out_w,
+        # N]` flattened to `[M, N]`, so `m` already encodes `(batch, h, w)` and
+        # the contiguous output (and same-shape `source`) index is `m*N + n`.
+        comptime if maybe_epilogue_func or has_residual:
             var hw = out_h * out_w
+            var resid_src = source_ptr
+            var resid_beta = beta
+            var out_ptr = output.ptr
 
             @parameter
             @always_inline
-            @__copy_capture(hw, out_w)
+            @__copy_capture(hw, out_w, N, resid_src, resid_beta, out_ptr)
             def _gemm_epilogue[
                 _dtype: DType,
-                _width: SIMDSize,
+                _width: SIMDLength,
                 *,
                 alignment: Int = 1,
             ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
                 var m_idx = coords_2d[0]
                 var n_idx = coords_2d[1]
-                var batch_idx: Int
-                var rem_idx: Int
-                var h_idx: Int
-                var w_idx: Int
-                batch_idx, rem_idx = divmod(m_idx, hw)
-                h_idx, w_idx = divmod(rem_idx, out_w)
-                epilogue_4d(
-                    IndexList[4](batch_idx, h_idx, w_idx, n_idx),
-                    rebind[SIMD[output_type, _width]](val),
-                )
+                var out_val = val
+
+                # Fold the fused skip connection: out = conv + beta*source.
+                comptime if has_residual:
+                    var s = (
+                        (resid_src + (m_idx * N + n_idx))
+                        .load[width=_width]()
+                        .cast[_dtype]()
+                    )
+                    out_val = out_val + s * resid_beta.cast[_dtype]()
+
+                comptime if maybe_epilogue_func:
+                    comptime epilogue_4d = maybe_epilogue_func.value()
+                    var batch_idx: Int
+                    var rem_idx: Int
+                    var h_idx: Int
+                    var w_idx: Int
+                    batch_idx, rem_idx = divmod(m_idx, hw)
+                    h_idx, w_idx = divmod(rem_idx, out_w)
+                    epilogue_4d(
+                        IndexList[4](batch_idx, h_idx, w_idx, n_idx),
+                        rebind[SIMD[output_type, _width]](out_val),
+                    )
+                else:
+                    # has_residual with no user epilogue: store directly.
+                    (out_ptr + (m_idx * N + n_idx)).store(
+                        rebind[SIMD[output_type, _width]](out_val)
+                    )
 
             if K % BLOCK_K == 0 and in_c % BLOCK_K == 0:
                 _launch_implicit_gemm[

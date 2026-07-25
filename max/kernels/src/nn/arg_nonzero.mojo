@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements `arg_nonzero`, which returns the indices of all nonzero elements in a tensor."""
 
 
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume

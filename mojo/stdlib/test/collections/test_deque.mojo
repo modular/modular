@@ -13,7 +13,7 @@
 
 from std.collections import Deque
 
-from test_utils import Observable, check_write_to
+from test_utils import ExplicitDestroy, MoveOnly, Observable, check_write_to
 from std.testing import assert_equal, assert_false, assert_raises, assert_true
 from std.testing import TestSuite
 
@@ -133,9 +133,9 @@ def test_impl_init_list() raises:
     assert_equal(q._head, 0)
     assert_equal(q._tail, 3)
     assert_equal(q._capacity, q.default_capacity)
-    assert_equal((q._data + 0)[], 0)
-    assert_equal((q._data + 1)[], 1)
-    assert_equal((q._data + 2)[], 2)
+    assert_equal(q._data[unsafe_offset=0], 0)
+    assert_equal(q._data[unsafe_offset=1], 1)
+    assert_equal(q._data[unsafe_offset=2], 2)
 
     _ = q^
 
@@ -145,8 +145,8 @@ def test_impl_init_list_args() raises:
     assert_equal(q._head, 0)
     assert_equal(q._tail, 2)
     assert_equal(q._capacity, 4)
-    assert_equal((q._data + 0)[], 1)
-    assert_equal((q._data + 1)[], 2)
+    assert_equal(q._data[unsafe_offset=0], 1)
+    assert_equal(q._data[unsafe_offset=1], 2)
 
     _ = q^
 
@@ -157,9 +157,9 @@ def test_impl_init_variadic() raises:
     assert_equal(q._head, 0)
     assert_equal(q._tail, 3)
     assert_equal(q._capacity, q.default_capacity)
-    assert_equal((q._data + 0)[], 0)
-    assert_equal((q._data + 1)[], 1)
-    assert_equal((q._data + 2)[], 2)
+    assert_equal(q._data[unsafe_offset=0], 0)
+    assert_equal(q._data[unsafe_offset=1], 1)
+    assert_equal(q._data[unsafe_offset=2], 2)
 
     _ = q^
 
@@ -191,22 +191,22 @@ def test_impl_append() raises:
     assert_equal(q._head, 0)
     assert_equal(q._tail, 1)
     assert_equal(q._capacity, 2)
-    assert_equal((q._data + 0)[], 0)
+    assert_equal(q._data[unsafe_offset=0], 0)
 
     q.append(1)
     assert_equal(q._head, 0)
     assert_equal(q._tail, 2)
     assert_equal(q._capacity, 4)
-    assert_equal((q._data + 0)[], 0)
-    assert_equal((q._data + 1)[], 1)
+    assert_equal(q._data[unsafe_offset=0], 0)
+    assert_equal(q._data[unsafe_offset=1], 1)
 
     q.append(2)
     assert_equal(q._head, 0)
     assert_equal(q._tail, 3)
     assert_equal(q._capacity, 4)
-    assert_equal((q._data + 0)[], 0)
-    assert_equal((q._data + 1)[], 1)
-    assert_equal((q._data + 2)[], 2)
+    assert_equal(q._data[unsafe_offset=0], 0)
+    assert_equal(q._data[unsafe_offset=1], 1)
+    assert_equal(q._data[unsafe_offset=2], 2)
 
     # simulate popleft()
     q._head += 1
@@ -215,19 +215,19 @@ def test_impl_append() raises:
     # tail wrapped to the front
     assert_equal(q._tail, 0)
     assert_equal(q._capacity, 4)
-    assert_equal((q._data + 1)[], 1)
-    assert_equal((q._data + 2)[], 2)
-    assert_equal((q._data + 3)[], 3)
+    assert_equal(q._data[unsafe_offset=1], 1)
+    assert_equal(q._data[unsafe_offset=2], 2)
+    assert_equal(q._data[unsafe_offset=3], 3)
 
     q.append(4)
     # re-allocated buffer and moved all elements
     assert_equal(q._head, 0)
     assert_equal(q._tail, 4)
     assert_equal(q._capacity, 8)
-    assert_equal((q._data + 0)[], 1)
-    assert_equal((q._data + 1)[], 2)
-    assert_equal((q._data + 2)[], 3)
-    assert_equal((q._data + 3)[], 4)
+    assert_equal(q._data[unsafe_offset=0], 1)
+    assert_equal(q._data[unsafe_offset=1], 2)
+    assert_equal(q._data[unsafe_offset=2], 3)
+    assert_equal(q._data[unsafe_offset=3], 4)
 
     _ = q^
 
@@ -250,9 +250,9 @@ def test_impl_append_with_maxlen() raises:
     assert_equal(q._head, 1)
     assert_equal(q._tail, 0)
     assert_equal(q._capacity, 4)
-    assert_equal((q._data + 1)[], 1)
-    assert_equal((q._data + 2)[], 2)
-    assert_equal((q._data + 3)[], 3)
+    assert_equal(q._data[unsafe_offset=1], 1)
+    assert_equal(q._data[unsafe_offset=2], 2)
+    assert_equal(q._data[unsafe_offset=3], 3)
 
     _ = q^
 
@@ -265,24 +265,24 @@ def test_impl_appendleft() raises:
     assert_equal(q._head, 1)
     assert_equal(q._tail, 0)
     assert_equal(q._capacity, 2)
-    assert_equal((q._data + 1)[], 0)
+    assert_equal(q._data[unsafe_offset=1], 0)
 
     q.appendleft(1)
     # re-allocated buffer and moved all elements
     assert_equal(q._head, 0)
     assert_equal(q._tail, 2)
     assert_equal(q._capacity, 4)
-    assert_equal((q._data + 0)[], 1)
-    assert_equal((q._data + 1)[], 0)
+    assert_equal(q._data[unsafe_offset=0], 1)
+    assert_equal(q._data[unsafe_offset=1], 0)
 
     q.appendleft(2)
     # head wrapped to the end of the buffer
     assert_equal(q._head, 3)
     assert_equal(q._tail, 2)
     assert_equal(q._capacity, 4)
-    assert_equal((q._data + 3)[], 2)
-    assert_equal((q._data + 0)[], 1)
-    assert_equal((q._data + 1)[], 0)
+    assert_equal(q._data[unsafe_offset=3], 2)
+    assert_equal(q._data[unsafe_offset=0], 1)
+    assert_equal(q._data[unsafe_offset=1], 0)
 
     # simulate pop()
     q._tail -= 1
@@ -290,19 +290,19 @@ def test_impl_appendleft() raises:
     assert_equal(q._head, 2)
     assert_equal(q._tail, 1)
     assert_equal(q._capacity, 4)
-    assert_equal((q._data + 2)[], 3)
-    assert_equal((q._data + 3)[], 2)
-    assert_equal((q._data + 0)[], 1)
+    assert_equal(q._data[unsafe_offset=2], 3)
+    assert_equal(q._data[unsafe_offset=3], 2)
+    assert_equal(q._data[unsafe_offset=0], 1)
 
     q.appendleft(4)
     # re-allocated buffer and moved all elements
     assert_equal(q._head, 0)
     assert_equal(q._tail, 4)
     assert_equal(q._capacity, 8)
-    assert_equal((q._data + 0)[], 4)
-    assert_equal((q._data + 1)[], 3)
-    assert_equal((q._data + 2)[], 2)
-    assert_equal((q._data + 3)[], 1)
+    assert_equal(q._data[unsafe_offset=0], 4)
+    assert_equal(q._data[unsafe_offset=1], 3)
+    assert_equal(q._data[unsafe_offset=2], 2)
+    assert_equal(q._data[unsafe_offset=3], 1)
 
     _ = q^
 
@@ -325,9 +325,9 @@ def test_impl_appendleft_with_maxlen() raises:
     assert_equal(q._head, 0)
     assert_equal(q._tail, 3)
     assert_equal(q._capacity, 4)
-    assert_equal((q._data + 0)[], 3)
-    assert_equal((q._data + 1)[], 2)
-    assert_equal((q._data + 2)[], 1)
+    assert_equal(q._data[unsafe_offset=0], 3)
+    assert_equal(q._data[unsafe_offset=1], 2)
+    assert_equal(q._data[unsafe_offset=2], 1)
 
     _ = q^
 
@@ -340,19 +340,19 @@ def test_impl_extend() raises:
     assert_equal(q._head, 0)
     assert_equal(q._tail, 3)
     assert_equal(q._capacity, 8)
-    assert_equal((q._data + 0)[], 0)
-    assert_equal((q._data + 1)[], 1)
-    assert_equal((q._data + 2)[], 2)
+    assert_equal(q._data[unsafe_offset=0], 0)
+    assert_equal(q._data[unsafe_offset=1], 1)
+    assert_equal(q._data[unsafe_offset=2], 2)
 
     q.extend(lst.copy())
     # has to popleft the first 2 elements
     assert_equal(q._capacity, 8)
     assert_equal(q._head, 2)
     assert_equal(q._tail, 6)
-    assert_equal((q._data + 2)[], 2)
-    assert_equal((q._data + 3)[], 0)
-    assert_equal((q._data + 4)[], 1)
-    assert_equal((q._data + 5)[], 2)
+    assert_equal(q._data[unsafe_offset=2], 2)
+    assert_equal(q._data[unsafe_offset=3], 0)
+    assert_equal(q._data[unsafe_offset=4], 1)
+    assert_equal(q._data[unsafe_offset=5], 2)
 
     # turn off `maxlen` restriction
     q._maxlen = -1
@@ -360,13 +360,13 @@ def test_impl_extend() raises:
     assert_equal(q._capacity, 8)
     assert_equal(q._head, 2)
     assert_equal(q._tail, 1)
-    assert_equal((q._data + 2)[], 2)
-    assert_equal((q._data + 3)[], 0)
-    assert_equal((q._data + 4)[], 1)
-    assert_equal((q._data + 5)[], 2)
-    assert_equal((q._data + 6)[], 0)
-    assert_equal((q._data + 7)[], 1)
-    assert_equal((q._data + 0)[], 2)
+    assert_equal(q._data[unsafe_offset=2], 2)
+    assert_equal(q._data[unsafe_offset=3], 0)
+    assert_equal(q._data[unsafe_offset=4], 1)
+    assert_equal(q._data[unsafe_offset=5], 2)
+    assert_equal(q._data[unsafe_offset=6], 0)
+    assert_equal(q._data[unsafe_offset=7], 1)
+    assert_equal(q._data[unsafe_offset=0], 2)
 
     # turn on `maxlen` and force to re-allocate
     q._maxlen = 8
@@ -375,10 +375,10 @@ def test_impl_extend() raises:
     assert_equal(q._head, 0)
     assert_equal(q._tail, 8)
     # has to popleft the first 2 elements
-    assert_equal((q._data + 0)[], 1)
-    assert_equal((q._data + 1)[], 2)
-    assert_equal((q._data + 6)[], 1)
-    assert_equal((q._data + 7)[], 2)
+    assert_equal(q._data[unsafe_offset=0], 1)
+    assert_equal(q._data[unsafe_offset=1], 2)
+    assert_equal(q._data[unsafe_offset=6], 1)
+    assert_equal(q._data[unsafe_offset=7], 2)
 
     # extend with the list that is longer than `maxlen`
     # has to pop all deque elements and some initial
@@ -388,10 +388,10 @@ def test_impl_extend() raises:
     assert_equal(q._capacity, 16)
     assert_equal(q._head, 8)
     assert_equal(q._tail, 0)
-    assert_equal((q._data + 8)[], 2)
-    assert_equal((q._data + 9)[], 3)
-    assert_equal((q._data + 14)[], 8)
-    assert_equal((q._data + 15)[], 9)
+    assert_equal(q._data[unsafe_offset=8], 2)
+    assert_equal(q._data[unsafe_offset=9], 3)
+    assert_equal(q._data[unsafe_offset=14], 8)
+    assert_equal(q._data[unsafe_offset=15], 9)
 
     _ = q^
 
@@ -405,19 +405,19 @@ def test_impl_extendleft() raises:
     assert_equal(q._capacity, 8)
     assert_equal(q._head, 5)
     assert_equal(q._tail, 0)
-    assert_equal((q._data + 5)[], 2)
-    assert_equal((q._data + 6)[], 1)
-    assert_equal((q._data + 7)[], 0)
+    assert_equal(q._data[unsafe_offset=5], 2)
+    assert_equal(q._data[unsafe_offset=6], 1)
+    assert_equal(q._data[unsafe_offset=7], 0)
 
     q.extendleft(lst.copy())
     # popped the last 2 elements
     assert_equal(q._capacity, 8)
     assert_equal(q._head, 2)
     assert_equal(q._tail, 6)
-    assert_equal((q._data + 2)[], 2)
-    assert_equal((q._data + 3)[], 1)
-    assert_equal((q._data + 4)[], 0)
-    assert_equal((q._data + 5)[], 2)
+    assert_equal(q._data[unsafe_offset=2], 2)
+    assert_equal(q._data[unsafe_offset=3], 1)
+    assert_equal(q._data[unsafe_offset=4], 0)
+    assert_equal(q._data[unsafe_offset=5], 2)
 
     # turn off `maxlen` restriction
     q._maxlen = -1
@@ -425,13 +425,13 @@ def test_impl_extendleft() raises:
     assert_equal(q._capacity, 8)
     assert_equal(q._head, 7)
     assert_equal(q._tail, 6)
-    assert_equal((q._data + 7)[], 2)
-    assert_equal((q._data + 0)[], 1)
-    assert_equal((q._data + 1)[], 0)
-    assert_equal((q._data + 2)[], 2)
-    assert_equal((q._data + 3)[], 1)
-    assert_equal((q._data + 4)[], 0)
-    assert_equal((q._data + 5)[], 2)
+    assert_equal(q._data[unsafe_offset=7], 2)
+    assert_equal(q._data[unsafe_offset=0], 1)
+    assert_equal(q._data[unsafe_offset=1], 0)
+    assert_equal(q._data[unsafe_offset=2], 2)
+    assert_equal(q._data[unsafe_offset=3], 1)
+    assert_equal(q._data[unsafe_offset=4], 0)
+    assert_equal(q._data[unsafe_offset=5], 2)
 
     # turn on `maxlen` and force to re-allocate
     q._maxlen = 8
@@ -440,10 +440,10 @@ def test_impl_extendleft() raises:
     assert_equal(q._head, 13)
     assert_equal(q._tail, 5)
     # has to popleft the last 2 elements
-    assert_equal((q._data + 13)[], 2)
-    assert_equal((q._data + 14)[], 1)
-    assert_equal((q._data + 3)[], 2)
-    assert_equal((q._data + 4)[], 1)
+    assert_equal(q._data[unsafe_offset=13], 2)
+    assert_equal(q._data[unsafe_offset=14], 1)
+    assert_equal(q._data[unsafe_offset=3], 2)
+    assert_equal(q._data[unsafe_offset=4], 1)
 
     # extend with the list that is longer than `maxlen`
     # has to pop all deque elements and some initial
@@ -453,10 +453,10 @@ def test_impl_extendleft() raises:
     assert_equal(q._capacity, 16)
     assert_equal(q._head, 5)
     assert_equal(q._tail, 13)
-    assert_equal((q._data + 5)[], 9)
-    assert_equal((q._data + 6)[], 8)
-    assert_equal((q._data + 11)[], 3)
-    assert_equal((q._data + 12)[], 2)
+    assert_equal(q._data[unsafe_offset=5], 9)
+    assert_equal(q._data[unsafe_offset=6], 8)
+    assert_equal(q._data[unsafe_offset=11], 3)
+    assert_equal(q._data[unsafe_offset=12], 2)
 
     _ = q^
 
@@ -466,23 +466,23 @@ def test_impl_insert() raises:
 
     q.insert(0, 6)
     assert_equal(q._head, q.default_capacity - 1)
-    assert_equal((q._data + q._head)[], 6)
-    assert_equal((q._data + 0)[], 0)
+    assert_equal(q._data[unsafe_offset=q._head], 6)
+    assert_equal(q._data[unsafe_offset=0], 0)
 
     q.insert(1, 7)
     assert_equal(q._head, q.default_capacity - 2)
-    assert_equal((q._data + q._head + 0)[], 6)
-    assert_equal((q._data + q._head + 1)[], 7)
+    assert_equal(q._data[unsafe_offset=q._head + 0], 6)
+    assert_equal(q._data[unsafe_offset=q._head + 1], 7)
 
     q.insert(8, 8)
     assert_equal(q._tail, 7)
-    assert_equal((q._data + q._tail - 1)[], 8)
-    assert_equal((q._data + q._tail - 2)[], 5)
+    assert_equal(q._data[unsafe_offset=q._tail - 1], 8)
+    assert_equal(q._data[unsafe_offset=q._tail - 2], 5)
 
     q.insert(8, 9)
     assert_equal(q._tail, 8)
-    assert_equal((q._data + q._tail - 1)[], 8)
-    assert_equal((q._data + q._tail - 2)[], 9)
+    assert_equal(q._data[unsafe_offset=q._tail - 1], 8)
+    assert_equal(q._data[unsafe_offset=q._tail - 2], 9)
 
     _ = q^
 
@@ -559,9 +559,9 @@ def test_impl_add() raises:
     assert_equal(q4._tail, 16)
     mid_len = len(q4) // 2
     for i in range(mid_len):
-        assert_equal((q4._data + i)[], 9 + i)
+        assert_equal(q4._data[unsafe_offset=i], 9 + i)
     for i in range(mid_len, len(q4)):
-        assert_equal((q4._data + i)[], i - 7)
+        assert_equal(q4._data[unsafe_offset=i], i - 7)
 
     q5 = q3 + q4
     # has to inherit q3 properties
@@ -573,8 +573,8 @@ def test_impl_add() raises:
     assert_equal(len(q5), 30)
     assert_equal(q5._head, 2)
     assert_equal(q5._tail, 0)
-    assert_equal((q5._data + 2)[], 3)
-    assert_equal((q5._data + 31)[], 8)
+    assert_equal(q5._data[unsafe_offset=2], 3)
+    assert_equal(q5._data[unsafe_offset=31], 8)
     _ = q5^
 
     q6 = q4 + q3
@@ -587,8 +587,8 @@ def test_impl_add() raises:
     assert_equal(len(q6), 32)
     assert_equal(q6._head, 0)
     assert_equal(q6._tail, 32)
-    assert_equal((q6._data + 0)[], 9)
-    assert_equal((q6._data + 31)[], 16)
+    assert_equal(q6._data[unsafe_offset=0], 9)
+    assert_equal(q6._data[unsafe_offset=31], 16)
 
     _ = q6^
 
@@ -621,8 +621,8 @@ def test_impl_iadd() raises:
     assert_equal(len(q2), 18)
     assert_equal(q2._head, 0)
     assert_equal(q2._tail, 18)
-    assert_equal((q2._data + 0)[], 9)
-    assert_equal((q2._data + 17)[], 16)
+    assert_equal(q2._data[unsafe_offset=0], 9)
+    assert_equal(q2._data[unsafe_offset=17], 16)
 
     _ = q2^
 
@@ -646,9 +646,9 @@ def test_impl_mul() raises:
     assert_equal(q2._min_capacity, q._min_capacity)
     assert_equal(q2._maxlen, q._maxlen)
     assert_equal(q2._shrink, q._shrink)
-    assert_equal((q2._data + 0)[], (q._data + 0)[])
-    assert_equal((q2._data + 1)[], (q._data + 1)[])
-    assert_equal((q2._data + 2)[], (q._data + 2)[])
+    assert_equal(q2._data[unsafe_offset=0], q._data[unsafe_offset=0])
+    assert_equal(q2._data[unsafe_offset=1], q._data[unsafe_offset=1])
+    assert_equal(q2._data[unsafe_offset=2], q._data[unsafe_offset=2])
     _ = q2^
 
     q3 = q * 2
@@ -657,8 +657,8 @@ def test_impl_mul() raises:
     assert_equal(q3._min_capacity, q._min_capacity)
     assert_equal(q3._maxlen, q._maxlen)
     assert_equal(q3._shrink, q._shrink)
-    assert_equal((q3._data + 0)[], (q._data + 0)[])
-    assert_equal((q3._data + 5)[], (q._data + 2)[])
+    assert_equal(q3._data[unsafe_offset=0], q._data[unsafe_offset=0])
+    assert_equal(q3._data[unsafe_offset=5], q._data[unsafe_offset=2])
     _ = q3^
 
     q4 = q * 3
@@ -669,8 +669,8 @@ def test_impl_mul() raises:
     assert_equal(q4._min_capacity, q._min_capacity)
     assert_equal(q4._maxlen, q._maxlen)
     assert_equal(q4._shrink, q._shrink)
-    assert_equal((q4._data + 2)[], 3)
-    assert_equal((q4._data + 0)[], 3)
+    assert_equal(q4._data[unsafe_offset=2], 3)
+    assert_equal(q4._data[unsafe_offset=0], 3)
     _ = q4^
 
 
@@ -700,9 +700,9 @@ def test_impl_imul() raises:
     assert_equal(q._min_capacity, 2)
     assert_equal(q._maxlen, 7)
     assert_equal(q._shrink, False)
-    assert_equal((q._data + 0)[], 1)
-    assert_equal((q._data + 1)[], 2)
-    assert_equal((q._data + 2)[], 3)
+    assert_equal(q._data[unsafe_offset=0], 1)
+    assert_equal(q._data[unsafe_offset=1], 2)
+    assert_equal(q._data[unsafe_offset=2], 3)
     _ = q^
 
     q = Deque(
@@ -715,8 +715,8 @@ def test_impl_imul() raises:
     assert_equal(q._min_capacity, 2)
     assert_equal(q._maxlen, 7)
     assert_equal(q._shrink, False)
-    assert_equal((q._data + 0)[], 1)
-    assert_equal((q._data + 5)[], 3)
+    assert_equal(q._data[unsafe_offset=0], 1)
+    assert_equal(q._data[unsafe_offset=5], 3)
     _ = q^
 
     q = Deque(
@@ -730,8 +730,8 @@ def test_impl_imul() raises:
     assert_equal(q._min_capacity, 2)
     assert_equal(q._maxlen, 7)
     assert_equal(q._shrink, False)
-    assert_equal((q._data + 2)[], 3)
-    assert_equal((q._data + 0)[], 3)
+    assert_equal(q._data[unsafe_offset=2], 3)
+    assert_equal(q._data[unsafe_offset=0], 3)
     _ = q^
 
 
@@ -1092,16 +1092,16 @@ def test_reversed_iter() raises:
 
 def _test_deque_iter_bounds[
     I: Iterator
-](var deque_iter: I, deque_len: Int) raises:
+](var deque_iter: I, deque_len: Int) raises where conforms_to(
+    I.Element, ImplicitlyDeletable
+):
     var iter = deque_iter^
 
     for i in range(deque_len):
         var lower, upper = iter.bounds()
         assert_equal(deque_len - i, lower)
         assert_equal(deque_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()
-        )
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -1154,15 +1154,49 @@ def test_write_repr_to() raises:
     """Test write_repr_to implementation."""
     check_write_to(
         Deque[Int](1, 2, 3),
-        expected="Deque[Int]([Int(1), Int(2), Int(3)])",
+        expected="Deque[SIMD[DType.int, 1]]([Int(1), Int(2), Int(3)])",
         is_repr=True,
     )
-    check_write_to(Deque[Int](1), expected="Deque[Int]([Int(1)])", is_repr=True)
-    check_write_to(Deque[Int](), expected="Deque[Int]([])", is_repr=True)
+    check_write_to(
+        Deque[Int](1),
+        expected="Deque[SIMD[DType.int, 1]]([Int(1)])",
+        is_repr=True,
+    )
+    check_write_to(
+        Deque[Int](), expected="Deque[SIMD[DType.int, 1]]([])", is_repr=True
+    )
 
 
 struct NonEquatable(Copyable):
     pass
+
+
+struct CopyableExplicitDestroy(Copyable, ImplicitlyDeletable where False):
+    """Test type that is `Copyable` but must be explicitly destroyed."""
+
+    var value: Int
+    """Int data."""
+
+    @implicit
+    def __init__(out self, value: Int):
+        """Constructs a new instance.
+
+        Args:
+            value: The integer value to store.
+        """
+        self.value = value
+
+    def __init__(out self, *, copy: Self):
+        """Copies from another instance.
+
+        Args:
+            copy: The instance being copied from.
+        """
+        self.value = copy.value
+
+    def destroy(deinit self):
+        """Destroys self."""
+        pass
 
 
 def test_deque_conditional_conformances() raises:
@@ -1179,6 +1213,76 @@ def test_deque_conditional_conformances() raises:
 
     assert_true(conforms_to(Deque[Int], Writable))
     assert_false(conforms_to(Deque[NonEquatable], Writable))
+
+    # `ImplicitlyDeletable` is conditional on the element type.
+    assert_true(conforms_to(Deque[Int], ImplicitlyDeletable))
+    assert_false(conforms_to(Deque[ExplicitDestroy], ImplicitlyDeletable))
+
+    # Owned iteration requires `ImplicitlyDeletable` elements; consuming
+    # iteration moves elements out, so it no longer requires `Copyable`.
+    assert_true(conforms_to(Deque[Int], IterableOwned))
+    assert_false(conforms_to(Deque[ExplicitDestroy], IterableOwned))
+    assert_true(conforms_to(Deque[MoveOnly[Int]], IterableOwned))
+
+    # A `Copyable` but non-`ImplicitlyDeletable` element type makes the deque
+    # `Copyable` (copying never destroys an element) yet still linear.
+    assert_true(conforms_to(Deque[CopyableExplicitDestroy], Copyable))
+    assert_false(
+        conforms_to(Deque[CopyableExplicitDestroy], ImplicitlyDeletable)
+    )
+
+
+def test_deque_with_explicit_destroy_type() raises:
+    var deque = Deque[ExplicitDestroy](
+        ExplicitDestroy(0), ExplicitDestroy(1), ExplicitDestroy(2)
+    )
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    deque^.deinit_with(destroy_closure)
+
+    assert_equal(destroyed, [0, 1, 2])
+
+
+def test_deque_copy_copyable_explicit_destroy_type() raises:
+    # Copying requires only `Copyable`, not `ImplicitlyDeletable`: a deque of a
+    # `Copyable` but linear element type can be copied, and both the original
+    # and the copy must then be drained explicitly.
+    var deque = Deque[CopyableExplicitDestroy](
+        CopyableExplicitDestroy(0),
+        CopyableExplicitDestroy(1),
+        CopyableExplicitDestroy(2),
+    )
+    var deque_copy = deque.copy()
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: CopyableExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    deque^.deinit_with(destroy_closure)
+    deque_copy^.deinit_with(destroy_closure)
+
+    assert_equal(destroyed, [0, 1, 2, 0, 1, 2])
+
+
+def test_deque_empty_deinit_with() raises:
+    var deque = Deque[ExplicitDestroy]()
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    deque^.deinit_with(destroy_closure)
+
+    assert_equal(len(destroyed), 0)
 
 
 # ===-------------------------------------------------------------------===#
@@ -1257,6 +1361,20 @@ def test_deque_iter_owned_destroys_elements_if_partially_consumed() raises:
     assert_equal(dels, 2)
 
 
+def test_deque_iter_owned_move_only() raises:
+    # Owned iteration moves elements out, so it works for move-only
+    # (non-`Copyable`) element types.
+    var d = Deque[MoveOnly[Int]]()
+    d.append(MoveOnly[Int](1))
+    d.append(MoveOnly[Int](2))
+    d.append(MoveOnly[Int](3))
+
+    var result = List[Int]()
+    for elem in d^:
+        result.append(elem.data)
+    assert_equal(result, [1, 2, 3])
+
+
 def test_deque_iter_owned_bounds() raises:
     var deque = Deque[Int](1, 2, 3)
     var iter = deque^.__iter__()
@@ -1269,6 +1387,35 @@ def test_deque_iter_owned_bounds() raises:
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
     assert_equal(0, upper.value())
+
+
+def test_deque_move_only() raises:
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `Deque[T: Movable & ImplicitlyDeletable]`.
+    assert_false(conforms_to(Deque[MoveOnly[Int]], Copyable))
+
+    var d = Deque[MoveOnly[Int]]()
+    d.append(MoveOnly[Int](0))
+    d.append(MoveOnly[Int](1))
+    d.appendleft(MoveOnly[Int](-1))
+    assert_equal(len(d), 3)
+    assert_equal(d[0], MoveOnly[Int](-1))
+    assert_equal(d[1], MoveOnly[Int](0))
+    assert_equal(d[2], MoveOnly[Int](1))
+
+    # Methods that take/move don't require `Copyable`.
+    var right = d.pop()
+    assert_equal(right, MoveOnly[Int](1))
+    var left = d.popleft()
+    assert_equal(left, MoveOnly[Int](-1))
+    assert_equal(len(d), 1)
+
+    d.insert(0, MoveOnly[Int](42))
+    assert_equal(d[0], MoveOnly[Int](42))
+    assert_equal(d[1], MoveOnly[Int](0))
+
+    d.clear()
+    assert_equal(len(d), 0)
 
 
 # ===-------------------------------------------------------------------===#

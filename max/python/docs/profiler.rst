@@ -11,6 +11,15 @@ max.profiler
 
 .. currentmodule:: max.profiler
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   profiler.cpu
+   profiler.gpu
+
 Tracing
 -------
 
@@ -38,12 +47,3 @@ Configuration
 
    is_profiling_enabled
    set_gpu_profiling_state
-
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   profiler.cpu
-   profiler.gpu

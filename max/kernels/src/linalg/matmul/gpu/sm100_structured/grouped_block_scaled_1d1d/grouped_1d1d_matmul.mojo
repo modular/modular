@@ -36,11 +36,11 @@ from std.sys import size_of
 
 from std.gpu.host import DeviceContext, Dim, FuncAttribute
 from std.gpu.host.info import B200
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from layout import Coord, Idx, TileTensor, row_major
 from layout.tma_async import create_tensor_tile
-from structured_kernels.tile_types import create_tma_tile
+from structured_kernels.tile_types import create_tma_tile, TmaOpType
 from structured_kernels.kernel_common import WarpRole1D1D
 
 from std.utils.index import Index
@@ -83,8 +83,8 @@ def grouped_matmul_block_scaled[
     #   2) pass a `RealSwiGLUOutput[...]` instance via `swiglu_out`.
     # When False, swiglu_out=NullSwiGLUOutput() is used and the kernel
     # is bit-identical to the original BF16-output path.
-    fuse_swiglu_nvfp4: Bool = False,
-    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput,
+    fuse_swiglu: Bool = False,
+    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput[],
     swiglu_match_bf16: Bool = True,
     swiglu_disable_compute: Bool = False,
     swiglu_enable_trace: Bool = False,
@@ -102,13 +102,47 @@ def grouped_matmul_block_scaled[
     expert_scales: TileTensor,
     num_active_experts: Int,
     ctx: DeviceContext,
-    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput(),
+    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput[](),
     trace_buf: TraceBufT = NullTrace(),
 ) raises:
     """Launch grouped 1D-1D block-scaled matmul kernel.
 
     This function sets up TMA descriptors and launches the kernel with the
     proper configuration for 1D-1D tensor layout.
+
+    Parameters:
+        a_type: Element dtype of the A (activations) operand.
+        b_type: Element dtype of the B (weights) operand.
+        c_type: Element dtype of the C (output) operand.
+        sfa_dtype: Scale-factor dtype for A. Must equal `sfb_dtype`
+            and be one of `NVFP4_SF_DTYPE`, `MXFP4_SF_DTYPE`, or
+            `MXFP8_SF_DTYPE`.
+        sfb_dtype: Scale-factor dtype for B. Must equal `sfa_dtype`.
+        transpose_b: Whether B is stored transposed. Must be `True`
+            (the only supported layout).
+        config: Compile-time tiling, swizzle, and pipeline config for
+            the matmul kernel.
+        pdl_level: Programmatic dependent launch level passed to the
+            kernel launch (defaults to `PDLLevel.ON`).
+        fuse_swiglu: When `True`, fuses SwiGLU plus per-block NVFP4
+            quantization into the matmul epilogue in place of the
+            BF16 GMEM store (defaults to `False`).
+        SwiGLUOutputT: Carrier type for the fused SwiGLU output.
+            Defaults to `NullSwiGLUOutput[]` for the non-fused path.
+        swiglu_match_bf16: When `True`, the fused epilogue mirrors the
+            BF16 SMEM round trip of the unfused path so precision
+            matches bit-for-bit (defaults to `True`).
+        swiglu_disable_compute: When `True`, zeroes the SwiGLU
+            cooperative compute iterations for structural-epilogue
+            cost isolation; output is invalid (defaults to `False`).
+        swiglu_enable_trace: When `True`, records per-CTA timing
+            events into `trace_buf` for the SwiGLU path (defaults to
+            `False`).
+        TraceBufT: Trace buffer type used when
+            `swiglu_enable_trace=True`. Defaults to `NullTrace`.
+        swiglu_use_inplace: When `True`, the SwiGLU epilogue writes
+            packed output in place via `store_packed_word` instead of
+            a separate store path (defaults to `False`).
 
     Args:
         c_device: Output tensor (total_tokens, N).
@@ -122,7 +156,7 @@ def grouped_matmul_block_scaled[
         expert_scales: Per-expert output scaling (num_experts).
         num_active_experts: Number of active experts.
         ctx: Device context.
-        swiglu_out: Sink carrier when `fuse_swiglu_nvfp4=True` (packed
+        swiglu_out: Sink carrier when `fuse_swiglu=True` (packed
             NVFP4 + E4M3 SF tile). `NullSwiGLUOutput()` otherwise.
         trace_buf: Per-CTA timestamp buffer when `swiglu_enable_trace=True`.
             `NullTrace()` otherwise.
@@ -226,7 +260,7 @@ def grouped_matmul_block_scaled[
             Int32(config.cluster_shape[2]),
         ),
         pdl_level=pdl_level,
-        fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+        fuse_swiglu=fuse_swiglu,
         SwiGLUOutputT=SwiGLUOutputT,
         swiglu_match_bf16=swiglu_match_bf16,
         swiglu_disable_compute=swiglu_disable_compute,
@@ -342,7 +376,6 @@ def grouped_matmul_block_scaled[
     # Re-wrap 1D TileTensors with GMEMLayout1D to match the kernel's
     # expected types. The caller's TileTensors may have a different symbolic
     # LayoutType (from _IntTupleToCoordLike) than the kernel's GMEMLayout1D.
-    from std.memory import UnsafePointer as Ptr
     from structured_kernels.tile_types import GMEMLayout1D
 
     def _to_1d[
@@ -376,12 +409,21 @@ def grouped_matmul_block_scaled[
             ),
             swizzle_mode=config.b_swizzle,
         ](ctx, a_device)
-        var c_tma_op = create_tma_tile[
-            KernelType.CTileLayout,
-            KernelType.CDescLayout,
-            Index(c_tma_tile_shape[0], c_tma_tile_shape_1),
-            swizzle_mode=config.c_swizzle,
-        ](ctx, c_device)
+        # C TMA descriptor is only consumed on the non-fused (BF16 store)
+        # path. When `fuse_swiglu`, the epilogue writes through `swiglu_out`
+        # and the kernel gates out the C prefetch + store, so the C TMA op is
+        # unused. Skip the encode (the caller's C tensor is a null-backed
+        # placeholder) and pass an empty descriptor.
+        var c_tma_op = TmaOpType[
+            c_device.dtype, KernelType.CTileLayout, KernelType.CDescLayout
+        ](TMADescriptor())
+        comptime if not fuse_swiglu:
+            c_tma_op = create_tma_tile[
+                KernelType.CTileLayout,
+                KernelType.CDescLayout,
+                Index(c_tma_tile_shape[0], c_tma_tile_shape_1),
+                swizzle_mode=config.c_swizzle,
+            ](ctx, c_device)
         # SF TMA: use create_tensor_tile directly with uint16 views.
         var sfa_tma_op = create_tensor_tile[
             sfa_tma_tile_shape,
@@ -448,12 +490,17 @@ def grouped_matmul_block_scaled[
             ),
             swizzle_mode=config.b_swizzle,
         ](ctx, b_device)
-        var c_tma_op = create_tma_tile[
-            KernelType.CTileLayout,
-            KernelType.CDescLayout,
-            c_tma_tile_shape,
-            swizzle_mode=config.c_swizzle,
-        ](ctx, c_device)
+        # See the AB_swapped branch: the C TMA op is unused on the fused path.
+        var c_tma_op = TmaOpType[
+            c_device.dtype, KernelType.CTileLayout, KernelType.CDescLayout
+        ](TMADescriptor())
+        comptime if not fuse_swiglu:
+            c_tma_op = create_tma_tile[
+                KernelType.CTileLayout,
+                KernelType.CDescLayout,
+                c_tma_tile_shape,
+                swizzle_mode=config.c_swizzle,
+            ](ctx, c_device)
         # SF TMA: use create_tensor_tile directly with uint16 views.
         var sfa_tma_op = create_tensor_tile[
             sfa_tma_tile_shape,

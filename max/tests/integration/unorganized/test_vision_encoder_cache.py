@@ -15,27 +15,34 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.driver import Buffer
-from max.pipelines.core.context import TokenBuffer
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
-from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
-from max.pipelines.modeling.types.context import (
+from max.driver import Buffer, Device
+from max.pipelines.context import (
     GenerationStatus,
-    SamplingParams,
-)
-from max.pipelines.modeling.types.eos_tracking import EOSTracker
-from max.pipelines.modeling.types.pipeline_variants.text_generation import (
     GrammarEnforcementSnapshot,
+    GrammarMatcher,
     ImageMetadata,
     LogProbabilities,
+    SamplingParams,
     SpecDecodingState,
+    TextAndVisionContext,
     TextGenerationOutput,
 )
+from max.pipelines.context.context import TokenBuffer
+from max.pipelines.context.eos_tracking import EOSTracker
+from max.pipelines.lib.vision_encoder_cache import (
+    SupportsVisionEncoding,
+    VisionEncoderCache,
+    VisionEncodeResult,
+    derive_counts_from_spans,
+    validate_vision_encode_counts,
+)
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.pipelines.request import RequestID
 
 
@@ -72,7 +79,7 @@ def _make_token_buffer(
 
 
 class FakeContext:
-    """Test context implementing VLMTextGenerationContext protocol."""
+    """Test context implementing TextAndVisionContext."""
 
     def __init__(
         self,
@@ -82,10 +89,12 @@ class FakeContext:
         image_token_indices: npt.NDArray[np.int32] | None = None,
         processed_length: int = 0,
         active_length: int = 0,
+        next_images: list[ImageMetadata] | None = None,
     ) -> None:
         self._eos_tracker = EOSTracker()
         self._request_id = request_id
         self.images: list[ImageMetadata] = images or []
+        self._next_images_override = next_images
         self._needs_vision = needs_vision
         self.status = GenerationStatus.ACTIVE
         self.image_token_indices: npt.NDArray[np.int32] = (
@@ -117,7 +126,11 @@ class FakeContext:
 
     @property
     def next_images(self) -> list[ImageMetadata]:
-        return self.images if self._needs_vision else []
+        if not self._needs_vision:
+            return []
+        if self._next_images_override is not None:
+            return self._next_images_override
+        return self.images
 
     def compute_image_aligned_idx(self, idx: int) -> int:
         return idx
@@ -179,7 +192,7 @@ class FakeContext:
         pass
 
     @property
-    def matcher(self) -> Any | None:
+    def matcher(self) -> GrammarMatcher | None:
         return None
 
     @property
@@ -190,7 +203,7 @@ class FakeContext:
     def grammar(self) -> str | None:
         return None
 
-    def set_matcher(self, matcher: Any) -> None:
+    def set_matcher(self, matcher: GrammarMatcher) -> None:
         pass
 
     def set_tool_region(
@@ -243,19 +256,61 @@ class FakeContext:
         return self.status.is_done
 
 
-def _ref_count(cache: VisionEncoderCache[FakeContext], image_hash: int) -> int:
+def _as_vlm_batch(
+    contexts: list[FakeContext],
+) -> list[TextAndVisionContext]:
+    """Cast FakeContext test doubles for VLM cache APIs."""
+    return cast(list[TextAndVisionContext], contexts)
+
+
+def _as_selection(
+    selection: list[tuple[FakeContext, list[ImageMetadata]]],
+) -> list[tuple[TextAndVisionContext, list[ImageMetadata]]]:
+    """Cast (FakeContext, miss-images) pairs for VLM cache APIs."""
+    return cast(
+        list[tuple[TextAndVisionContext, list[ImageMetadata]]], selection
+    )
+
+
+def _compute_merge_indices(
+    contexts: list[FakeContext],
+) -> npt.NDArray[np.int32]:
+    """Call merge-index helper with FakeContext test doubles."""
+    return compute_multimodal_merge_indices(_as_vlm_batch(contexts))
+
+
+def _ref_count(
+    cache: VisionEncoderCache[TextAndVisionContext], image_hash: int
+) -> int:
     """Helper to get ref_count, asserting entry exists."""
     entry = cache.lookup(image_hash)
     assert entry is not None, f"Expected cache entry for {image_hash:#x}"
     return entry.ref_count
 
 
-def _make_cache() -> VisionEncoderCache[FakeContext]:
+def _make_cache() -> VisionEncoderCache[TextAndVisionContext]:
     """Create a cache for testing."""
     return VisionEncoderCache()
 
 
-def _make_cache_sized(max_entries: int) -> VisionEncoderCache[FakeContext]:
+def _miss_images(
+    cache: VisionEncoderCache[TextAndVisionContext],
+    uncached_contexts: list[TextAndVisionContext],
+) -> list[list[ImageMetadata]]:
+    """Cache-miss images per context — the selection prepare_vision_outputs needs."""
+    return [
+        [
+            img
+            for img in ctx.images
+            if img.image_hash is None or cache.lookup(img.image_hash) is None
+        ]
+        for ctx in uncached_contexts
+    ]
+
+
+def _make_cache_sized(
+    max_entries: int,
+) -> VisionEncoderCache[TextAndVisionContext]:
     """Create a size-bounded cache for testing."""
     return VisionEncoderCache(max_entries=max_entries)
 
@@ -387,7 +442,7 @@ def test_get_uncached_all_cached() -> None:
         request_id=RequestID("r1"),
         images=[_make_image_meta(0, 5, image_hash=0xA)],
     )
-    misses = cache.get_uncached_contexts([ctx])
+    misses = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(misses) == 0
     assert _ref_count(cache, 0xA) == 1
 
@@ -398,7 +453,7 @@ def test_get_uncached_returns_miss() -> None:
         request_id=RequestID("r1"),
         images=[_make_image_meta(0, 5, image_hash=0xB)],
     )
-    misses = cache.get_uncached_contexts([ctx])
+    misses = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(misses) == 1
     assert misses[0] is ctx
 
@@ -418,7 +473,7 @@ def test_get_uncached_partial_miss() -> None:
             _make_image_meta(5, 10, image_hash=0xB),
         ],
     )
-    misses = cache.get_uncached_contexts([ctx])
+    misses = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(misses) == 1
     # The cached image should already have its ref acquired.
     assert _ref_count(cache, 0xA) == 1
@@ -444,7 +499,7 @@ def test_prepare_partial_hit_only_encodes_uncached() -> None:
         processed_length=0,
         active_length=8,
     )
-    uncached = cache.get_uncached_contexts([ctx])
+    uncached = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(uncached) == 1
 
     # Simulate encoding ONLY image B (3 tokens).
@@ -452,8 +507,9 @@ def test_prepare_partial_hit_only_encodes_uncached() -> None:
         Buffer.from_numpy(np.ones((3, hidden), dtype=np.float32) * 2.0)
     ]
     result, _indices = cache.prepare_vision_outputs(
-        context_batch=[ctx],
+        context_batch=_as_vlm_batch([ctx]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[3],
         n_devices=1,
@@ -498,7 +554,7 @@ def test_prepare_partial_hit_multi_context() -> None:
         processed_length=0,
         active_length=5,
     )
-    uncached = cache.get_uncached_contexts([ctx1, ctx2])
+    uncached = cache.get_uncached_contexts(_as_vlm_batch([ctx1, ctx2]))
     assert len(uncached) == 2
     # Image A in ctx1 should already have its ref.
     assert _ref_count(cache, 0xA) == 1
@@ -508,8 +564,9 @@ def test_prepare_partial_hit_multi_context() -> None:
         Buffer.from_numpy(np.ones((7, hidden), dtype=np.float32) * 2.0)
     ]
     result, _indices = cache.prepare_vision_outputs(
-        context_batch=[ctx1, ctx2],
+        context_batch=_as_vlm_batch([ctx1, ctx2]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[3, 4],
         n_devices=1,
@@ -529,7 +586,7 @@ def test_get_uncached_skips_non_vision() -> None:
         images=[],
         needs_vision=False,
     )
-    misses = cache.get_uncached_contexts([ctx])
+    misses = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(misses) == 0
 
 
@@ -541,7 +598,7 @@ def test_none_hash_raises() -> None:
         images=[_make_image_meta(0, 5, image_hash=None)],
     )
     with pytest.raises(ValueError):
-        cache.get_uncached_contexts([ctx])
+        cache.get_uncached_contexts(_as_vlm_batch([ctx]))
 
 
 def test_none_hash_allowed_when_disabled() -> None:
@@ -551,7 +608,7 @@ def test_none_hash_allowed_when_disabled() -> None:
         request_id=RequestID("r1"),
         images=[_make_image_meta(0, 5, image_hash=None)],
     )
-    misses = cache.get_uncached_contexts([ctx])
+    misses = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(misses) == 1
 
 
@@ -603,6 +660,50 @@ def test__cache_and_split_none_hash_not_cached() -> None:
     assert len(cache._cache) == 0
 
 
+def test__cache_and_split_zero_hash_not_cached() -> None:
+    """0 is the no-content-hash sentinel; lookup() treats it as a miss, so a
+    0-hash entry is never retrievable and must not be cached."""
+    cache = _make_cache()
+    total = _make_buffer(5, 4)
+    cache._cache_and_split(
+        vision_outputs=[total],
+        per_image_token_counts=[5],
+        image_hashes=[0],
+        request_ids=[RequestID("r1")],
+    )
+    assert len(cache._cache) == 0
+    assert cache.lookup(0) is None
+
+
+def test__cache_and_split_skips_zero_hash_keeps_offset() -> None:
+    """A 0 (no-content) hash is skipped, but its tokens still advance the split
+    offset so later real images get the correct slice."""
+    cache = _make_cache()
+    hidden = 4
+    total = _make_buffer(9, hidden)  # 2 (A) + 3 (zero) + 4 (B)
+    cache._cache_and_split(
+        vision_outputs=[total],
+        per_image_token_counts=[2, 3, 4],
+        image_hashes=[0xA, 0, 0xB],
+        request_ids=[RequestID("r1"), RequestID("r1"), RequestID("r1")],
+    )
+    # Only the two real hashes are cached; the 0-hash range is skipped.
+    assert cache.lookup(0) is None
+    assert len(cache._cache) == 2
+    entry_a = cache.lookup(0xA)
+    entry_b = cache.lookup(0xB)
+    assert entry_a is not None and entry_a.num_tokens == 2
+    assert entry_b is not None and entry_b.num_tokens == 4
+    # A takes rows [0:2]; B takes rows [5:9] -- the offset advanced past the
+    # 3 skipped zero-hash rows, so B is NOT [2:6].
+    np.testing.assert_array_equal(
+        entry_a.embeddings[0].to_numpy(), total.to_numpy()[0:2]
+    )
+    np.testing.assert_array_equal(
+        entry_b.embeddings[0].to_numpy(), total.to_numpy()[5:9]
+    )
+
+
 def test_assemble_concatenates_in_order() -> None:
     cache = _make_cache()
     hidden = 4
@@ -620,7 +721,7 @@ def test_assemble_concatenates_in_order() -> None:
     )
     empty = [_make_buffer(0, hidden)]
     result = cache._assemble_embeddings(
-        [ctx], n_devices=1, empty_embeddings=empty
+        _as_vlm_batch([ctx]), n_devices=1, empty_embeddings=empty
     )
     arr = result[0].to_numpy()
     assert arr.shape == (8, hidden)
@@ -633,7 +734,7 @@ def test_assemble_returns_empty_when_no_vision() -> None:
     ctx = FakeContext(request_id=RequestID("r1"), images=[], needs_vision=False)
     empty = [_make_buffer(0, 4)]
     result = cache._assemble_embeddings(
-        [ctx], n_devices=1, empty_embeddings=empty
+        _as_vlm_batch([ctx]), n_devices=1, empty_embeddings=empty
     )
     assert result is empty
 
@@ -657,7 +758,7 @@ def test_assemble_multi_context_ordering() -> None:
     )
     empty = [_make_buffer(0, hidden)]
     result = cache._assemble_embeddings(
-        [ctx1, ctx2], n_devices=1, empty_embeddings=empty
+        _as_vlm_batch([ctx1, ctx2]), n_devices=1, empty_embeddings=empty
     )
     arr = result[0].to_numpy()
     assert arr.shape == (5, hidden)
@@ -678,7 +779,7 @@ def test_cross_request_dedup() -> None:
         request_id=r2,
         images=[_make_image_meta(0, 5, image_hash=0xABC)],
     )
-    misses = cache.get_uncached_contexts([ctx1, ctx2])
+    misses = cache.get_uncached_contexts(_as_vlm_batch([ctx1, ctx2]))
     assert len(misses) == 0
     assert _ref_count(cache, 0xABC) == 2
 
@@ -699,7 +800,7 @@ def test_end_to_end_chunked_prefill() -> None:
         request_id=req,
         images=[_make_image_meta(100, 400, image_hash=0xABC)],
     )
-    misses = cache.get_uncached_contexts([ctx])
+    misses = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(misses) == 1
 
     vision_output = _make_buffer(300, hidden)
@@ -712,16 +813,16 @@ def test_end_to_end_chunked_prefill() -> None:
 
     empty = [_make_buffer(0, hidden)]
     embeds1 = cache._assemble_embeddings(
-        [ctx], n_devices=1, empty_embeddings=empty
+        _as_vlm_batch([ctx]), n_devices=1, empty_embeddings=empty
     )
     assert embeds1[0].to_numpy().shape == (300, hidden)
 
     # Chunk 2: cache hit → no encoding
-    misses = cache.get_uncached_contexts([ctx])
+    misses = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(misses) == 0
 
     embeds2 = cache._assemble_embeddings(
-        [ctx], n_devices=1, empty_embeddings=empty
+        _as_vlm_batch([ctx]), n_devices=1, empty_embeddings=empty
     )
     np.testing.assert_array_equal(embeds2[0].to_numpy(), embeds1[0].to_numpy())
 
@@ -742,13 +843,14 @@ def test_prepare_all_uncached_fast_path() -> None:
         processed_length=0,
         active_length=5,
     )
-    uncached = cache.get_uncached_contexts([ctx])
+    uncached = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(uncached) == 1
 
     vision_embeds = [_make_buffer(3, hidden)]
     result, indices = cache.prepare_vision_outputs(
-        context_batch=[ctx],
+        context_batch=_as_vlm_batch([ctx]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[3],
         n_devices=1,
@@ -781,7 +883,7 @@ def test_prepare_mixed_hits() -> None:
         processed_length=0,
         active_length=5,
     )
-    uncached = cache.get_uncached_contexts([ctx1, ctx2])
+    uncached = cache.get_uncached_contexts(_as_vlm_batch([ctx1, ctx2]))
     # ctx1 is a hit (all images cached), ctx2 is a miss.
     assert len(uncached) == 1
     assert uncached[0].request_id == RequestID("r2")
@@ -790,8 +892,9 @@ def test_prepare_mixed_hits() -> None:
         Buffer.from_numpy(np.ones((3, hidden), dtype=np.float32) * 2.0)
     ]
     result, _indices = cache.prepare_vision_outputs(
-        context_batch=[ctx1, ctx2],
+        context_batch=_as_vlm_batch([ctx1, ctx2]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[3],
         n_devices=1,
@@ -818,13 +921,14 @@ def test_prepare_all_cached() -> None:
         processed_length=0,
         active_length=5,
     )
-    uncached = cache.get_uncached_contexts([ctx])
+    uncached = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(uncached) == 0
 
     empty = [_make_buffer(0, hidden)]
     result, _indices = cache.prepare_vision_outputs(
-        context_batch=[ctx],
+        context_batch=_as_vlm_batch([ctx]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=empty,
         per_image_token_counts=[],
         n_devices=1,
@@ -850,14 +954,15 @@ def test_disabled_cache_never_hits() -> None:
     )
 
     # First call: miss as expected.
-    uncached = cache.get_uncached_contexts([ctx])
+    uncached = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(uncached) == 1
 
     # Simulate encoding and caching.
     vision_embeds = [_make_buffer(3, hidden)]
     cache.prepare_vision_outputs(
-        context_batch=[ctx],
+        context_batch=_as_vlm_batch([ctx]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[3],
         n_devices=1,
@@ -865,7 +970,7 @@ def test_disabled_cache_never_hits() -> None:
     )
 
     # Second call with same image: still a miss — nothing was stored.
-    uncached2 = cache.get_uncached_contexts([ctx])
+    uncached2 = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(uncached2) == 1
     assert cache.lookup(0xA) is None
 
@@ -890,7 +995,7 @@ def test_merge_indices_single_context_no_offset() -> None:
         processed_length=0,
         active_length=10,
     )
-    indices = compute_multimodal_merge_indices([ctx])
+    indices = _compute_merge_indices([ctx])
     np.testing.assert_array_equal(indices, [2, 3, 4])
 
 
@@ -909,7 +1014,7 @@ def test_merge_indices_accounts_for_processed_length() -> None:
         processed_length=12,
         active_length=8,
     )
-    indices = compute_multimodal_merge_indices([ctx])
+    indices = _compute_merge_indices([ctx])
     np.testing.assert_array_equal(indices, [oob, oob, 0, 1])
 
 
@@ -929,7 +1034,7 @@ def test_merge_indices_batch_offsets() -> None:
         processed_length=0,
         active_length=7,
     )
-    indices = compute_multimodal_merge_indices([ctx1, ctx2])
+    indices = _compute_merge_indices([ctx1, ctx2])
     # ctx1 indices: [0, 1]  (offset 0)
     # ctx2 indices: [0, 1, 2] + 5 (ctx1.active_length) = [5, 6, 7]
     np.testing.assert_array_equal(indices, [0, 1, 5, 6, 7])
@@ -949,7 +1054,7 @@ def test_merge_indices_skips_non_vision_contexts() -> None:
         processed_length=0,
         active_length=5,
     )
-    indices = compute_multimodal_merge_indices([ctx_text, ctx_vision])
+    indices = _compute_merge_indices([ctx_text, ctx_vision])
     # text context contributes 10 tokens of offset.
     np.testing.assert_array_equal(indices, [10, 11])
 
@@ -973,7 +1078,7 @@ def test_merge_indices_beyond_active_are_oob() -> None:
         processed_length=0,
         active_length=5,
     )
-    indices = compute_multimodal_merge_indices([ctx])
+    indices = _compute_merge_indices([ctx])
     np.testing.assert_array_equal(indices, [2, 3, 4, oob, oob, oob])
 
 
@@ -994,7 +1099,7 @@ def test_merge_indices_beyond_active_no_cross_contamination() -> None:
         needs_vision=False,
         active_length=3,
     )
-    indices = compute_multimodal_merge_indices([ctx1, ctx2])
+    indices = _compute_merge_indices([ctx1, ctx2])
     # Only indices 2,3,4 are valid. 5,6,7 must be OOB — NOT 5+0=5, 6+0=6, 7+0=7
     # which would land in ctx2's token range [5, 8).
     np.testing.assert_array_equal(indices, [2, 3, 4, oob, oob, oob])
@@ -1014,13 +1119,14 @@ def test_prepare_vision_outputs_returns_embeddings_and_indices() -> None:
         processed_length=0,
         active_length=10,
     )
-    uncached = cache.get_uncached_contexts([ctx])
+    uncached = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(uncached) == 1
 
     vision_embeds = [_make_buffer(3, hidden)]
     embeddings, indices = cache.prepare_vision_outputs(
-        context_batch=[ctx],
+        context_batch=_as_vlm_batch([ctx]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[3],
         n_devices=1,
@@ -1045,11 +1151,12 @@ def test_prepare_vision_outputs_chunked_prefill() -> None:
         processed_length=6,
         active_length=10,
     )
-    uncached = cache.get_uncached_contexts([ctx])
+    uncached = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     vision_embeds = [_make_buffer(6, hidden)]
     _embeddings, indices = cache.prepare_vision_outputs(
-        context_batch=[ctx],
+        context_batch=_as_vlm_batch([ctx]),
         uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
         vision_embeds=vision_embeds,
         per_image_token_counts=[6],
         n_devices=1,
@@ -1058,3 +1165,549 @@ def test_prepare_vision_outputs_chunked_prefill() -> None:
     # positions 4,5 < processed_length=6 → OOB
     # positions 6,7,8,9 → offsets 0,1,2,3
     np.testing.assert_array_equal(indices, [oob, oob, 0, 1, 2, 3])
+
+
+# ---------------------------------------------------------------------------
+# Per-iteration metrics (pop_metrics) tests
+# ---------------------------------------------------------------------------
+
+
+def test_pop_metrics_none_for_text_only() -> None:
+    cache = _make_cache()
+    ctx = FakeContext(request_id=RequestID("r1"), images=[])
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    assert cache.pop_metrics() is None
+
+
+def test_pop_metrics_counts_hits_and_misses() -> None:
+    cache = _make_cache()
+    cache.insert(0xA, [_make_buffer(5)], 5)  # pre-cache image A -> hit
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 5, image_hash=0xA),  # cached hit, 5 tokens
+            _make_image_meta(5, 12, image_hash=0xB),  # miss, 7 tokens, 1 patch
+        ],
+    )
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    m = cache.pop_metrics()
+    assert m is not None
+    assert m.num_images_total == 2
+    assert m.num_images_cached == 1
+    assert m.num_images_encoded == 1
+    assert m.num_patches_encoded == 1  # only the miss is encoded
+    assert m.num_tokens_encoded == 7  # 12 - 5
+    assert m.cache_hit_rate == 0.5
+    # pop resets the accumulator.
+    assert cache.pop_metrics() is None
+
+
+def test_pop_metrics_disabled_cache_counts_all_as_encoded() -> None:
+    cache = _make_cache_sized(0)  # caching disabled
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 5, image_hash=0xA)],
+    )
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    m = cache.pop_metrics()
+    assert m is not None
+    assert m.num_images_total == 1
+    assert m.num_images_encoded == 1
+    assert m.num_images_cached == 0
+    assert m.num_patches_encoded == 1
+    assert m.num_tokens_encoded == 5
+
+
+def test_derive_counts_from_spans_single_context() -> None:
+    """Per-image count is the placeholder span of the selected images."""
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 3, image_hash=0xA),
+            _make_image_meta(3, 8, image_hash=0xB),
+        ],
+    )
+    counts = derive_counts_from_spans(
+        _as_selection([(ctx, list(ctx.images))])  # both selected to encode
+    )
+    assert counts == [3, 5]
+
+
+def test_derive_counts_from_spans_context_major_image_minor() -> None:
+    """Counts follow context-major, image-minor order (the embeddings order)."""
+    ctx1 = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 2, image_hash=0xA)],
+    )
+    ctx2 = FakeContext(
+        request_id=RequestID("r2"),
+        images=[
+            _make_image_meta(0, 4, image_hash=0xB),
+            _make_image_meta(4, 7, image_hash=0xC),
+        ],
+    )
+    counts = derive_counts_from_spans(
+        _as_selection([(ctx1, list(ctx1.images)), (ctx2, list(ctx2.images))])
+    )
+    assert counts == [2, 4, 3]
+
+
+def test_derive_counts_from_spans_uses_selection_not_all_images() -> None:
+    """Counts follow the manager's selection, not every image in the context."""
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 2, image_hash=0xA),  # not selected
+            _make_image_meta(2, 7, image_hash=0xB),  # selected -> counted
+        ],
+    )
+    counts = derive_counts_from_spans(
+        _as_selection([(ctx, [ctx.images[1]])])  # only B selected to encode
+    )
+    assert counts == [5]
+
+
+def test_derive_counts_from_spans_empty_batch() -> None:
+    assert derive_counts_from_spans([]) == []
+
+
+def test_validate_counts_matches_rows() -> None:
+    """No raise when the summed counts equal the encoder row count."""
+    embeds = [_make_buffer(8, 4)]  # 8 rows
+    validate_vision_encode_counts([3, 5], embeds)
+
+
+def test_validate_counts_mismatch_raises() -> None:
+    """A row/count mismatch is a hard error, not a silent reshape."""
+    embeds = [_make_buffer(8, 4)]  # 8 rows
+    with pytest.raises(ValueError):
+        validate_vision_encode_counts([3, 4], embeds)  # sums to 7 != 8
+
+
+def test_validate_counts_empty_embeddings_is_noop() -> None:
+    """An empty (no-encode) batch validates trivially."""
+    validate_vision_encode_counts([], [])
+
+
+def test_derive_then_validate_roundtrip() -> None:
+    """Counts derived from the selection validate against the encoder output."""
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 3, image_hash=0xA),
+            _make_image_meta(3, 8, image_hash=0xB),
+        ],
+    )
+    counts = derive_counts_from_spans(_as_selection([(ctx, list(ctx.images))]))
+    embeds = [_make_buffer(sum(counts), 4)]  # 8 rows
+    validate_vision_encode_counts(counts, embeds)
+
+
+def test_supports_vision_encoding_runtime_checkable() -> None:
+    """``SupportsVisionEncoding`` matches the two-step pack/execute contract."""
+
+    class _Encoder:
+        def pack_vision_inputs(
+            self, uncached: object, devices: object
+        ) -> object:
+            return None
+
+        def vision_execute(
+            self, uncached: object, devices: object, packed: object
+        ) -> VisionEncodeResult:
+            return VisionEncodeResult(embeddings=[])
+
+        def empty_vision_embeddings(self, devices: object) -> list[Buffer]:
+            return []
+
+    class _OnlyPacks:
+        def pack_vision_inputs(
+            self, uncached: object, devices: object
+        ) -> object:
+            return None
+
+    class _NotAnEncoder:
+        pass
+
+    assert isinstance(_Encoder(), SupportsVisionEncoding)
+    assert not isinstance(_OnlyPacks(), SupportsVisionEncoding)
+    assert not isinstance(_NotAnEncoder(), SupportsVisionEncoding)
+
+
+def test_vision_encode_result_defaults() -> None:
+    """``per_image_token_counts`` defaults to ``None`` (driver derives)."""
+    result = VisionEncodeResult(embeddings=[_make_buffer(3, 4)])
+    assert result.per_image_token_counts is None
+    assert len(result.embeddings) == 1
+
+
+def _make_layer_buffer(rows: int, cols: int, base: int) -> Buffer:
+    """A [rows, cols] host Buffer whose values start at *base* (distinct layers)."""
+    arr = (base + np.arange(rows * cols, dtype=np.float32)).reshape(rows, cols)
+    return Buffer.from_numpy(arr)
+
+
+def _make_manager(
+    max_entries: int = 256, n_devices: int = 1
+) -> VisionEncoderCache[TextAndVisionContext]:
+    """Create a manager for GPU-free testing (host buffers, one device)."""
+    return VisionEncoderCache(max_entries=max_entries, n_devices=n_devices)
+
+
+def test_manager_select_returns_miss_images_and_acquires_hits() -> None:
+    """``select`` returns (miss context, miss images) pairs and acquires hits."""
+    manager = _make_manager()
+    manager.insert(0xA, [_make_buffer(2)], num_tokens=2)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 2, image_hash=0xA),  # hit
+            _make_image_meta(2, 5, image_hash=0xB),  # miss
+        ],
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    assert [c for c, _ in selection] == [ctx]  # has a miss -> selected
+    assert [img.image_hash for _, miss in selection for img in miss] == [0xB]
+    assert _ref_count(manager, 0xA) == 1
+
+
+def test_manager_select_skips_fully_cached_context() -> None:
+    """A context whose every image is cached is not returned, but refs held."""
+    manager = _make_manager()
+    manager.insert(0xA, [_make_buffer(2)], num_tokens=2)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 2, image_hash=0xA)],
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    assert selection == []
+    assert _ref_count(manager, 0xA) == 1
+
+
+def test_manager_cache_vision_embeddings_stores_and_assembles() -> None:
+    """``cache_vision_embeddings`` derives counts, stores, and assembles."""
+    manager = _make_manager()
+    hidden = 4
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 3, image_hash=0xA)],
+        image_token_indices=np.array([0, 1, 2], dtype=np.int32),
+        processed_length=0,
+        active_length=5,
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    result = VisionEncodeResult(embeddings=[_make_buffer(3, hidden)])
+    _embeddings, indices = manager.cache_vision_embeddings(
+        context_batch=_as_vlm_batch([ctx]),
+        selection=selection,
+        encode_result=result,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    np.testing.assert_array_equal(indices, [0, 1, 2])
+    entry = manager.lookup(0xA)
+    assert entry is not None and entry.num_tokens == 3
+
+
+def test_manager_cache_vision_embeddings_validates_before_caching() -> None:
+    """A row/count mismatch raises before the cache is written."""
+    manager = _make_manager()
+    hidden = 4
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 3, image_hash=0xA)],
+        image_token_indices=np.array([0, 1, 2], dtype=np.int32),
+        processed_length=0,
+        active_length=5,
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    result = VisionEncodeResult(
+        embeddings=[_make_buffer(5, hidden)], per_image_token_counts=[3]
+    )
+    with pytest.raises(ValueError):
+        manager.cache_vision_embeddings(
+            context_batch=_as_vlm_batch([ctx]),
+            selection=selection,
+            encode_result=result,
+            empty_embeddings=[_make_buffer(0, hidden)],
+        )
+    assert manager.lookup(0xA) is None
+
+
+def test_manager_release_drops_refs() -> None:
+    """``release`` mirrors the KV release path: drops this request's refs."""
+    manager = _make_manager()
+    manager.insert(0xA, [_make_buffer(2)], num_tokens=2)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 2, image_hash=0xA)],
+    )
+    manager.select(_as_vlm_batch([ctx]))
+    assert _ref_count(manager, 0xA) == 1
+    manager.release_request(RequestID("r1"))
+    assert _ref_count(manager, 0xA) == 0
+
+
+def test_manager_disabled_when_zero_entries() -> None:
+    """``max_entries=0`` disables the cache (manager reflects it)."""
+    manager = _make_manager(max_entries=0)
+    assert not manager.enabled
+
+
+class _FakeEncodeModel:
+    """Minimal SupportsVisionEncoding double recording pack/execute calls."""
+
+    def __init__(self, hidden: int = 4, pack_result: object = "PACKED") -> None:
+        self.hidden = hidden
+        self._pack_result = pack_result
+        self.calls: list[tuple[str, object]] = []
+
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> object:
+        self.calls.append(("pack", self._pack_result))
+        return self._pack_result
+
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: object,
+    ) -> VisionEncodeResult:
+        self.calls.append(("vision_execute", packed))
+        counts = [
+            img.end_idx - img.start_idx
+            for _ctx, miss_images in selection
+            for img in miss_images
+        ]
+        rows = sum(counts)
+        return VisionEncodeResult(
+            embeddings=[_make_buffer(rows, self.hidden)],
+            per_image_token_counts=counts,
+        )
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        return [_make_buffer(0, self.hidden)]
+
+
+_FAKE_DEVICES: list[Device] = []
+
+
+def test_run_vision_encode_text_only_returns_none() -> None:
+    """A batch with no vision contexts skips the encoder entirely."""
+    manager = _make_manager()
+    model = _FakeEncodeModel()
+    ctx = FakeContext(request_id=RequestID("r1"), needs_vision=False)
+    out = manager.run_vision_encode(
+        model, [_as_vlm_batch([ctx])], _FAKE_DEVICES
+    )
+    assert out is None
+    assert model.calls == []  # neither pack nor encode ran
+
+
+def test_run_vision_encode_all_hits_assembles_from_cache() -> None:
+    """All-cache-hits: assemble from cache, no pack/encode."""
+    manager = _make_manager()
+    model = _FakeEncodeModel()
+    manager.insert(0xA, [_make_buffer(3, 4)], num_tokens=3)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 3, image_hash=0xA)],
+        image_token_indices=np.array([0, 1, 2], dtype=np.int32),
+        processed_length=0,
+        active_length=3,
+    )
+    out = manager.run_vision_encode(
+        model, [_as_vlm_batch([ctx])], _FAKE_DEVICES
+    )
+    assert out is not None
+    embeds, scatter = out
+    assert model.calls == []  # nothing to encode
+    assert int(embeds[0].shape[0]) == 3  # assembled from the resident entry
+    np.testing.assert_array_equal(scatter, [0, 1, 2])
+
+
+def test_run_vision_encode_passes_packed_none_through() -> None:
+    """``pack_vision_inputs`` returning None is passed through to execute."""
+    manager = _make_manager()
+    model = _FakeEncodeModel(pack_result=None)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 3, image_hash=0xB)],
+        image_token_indices=np.array([0, 1, 2], dtype=np.int32),
+        processed_length=0,
+        active_length=3,
+    )
+    out = manager.run_vision_encode(
+        model, [_as_vlm_batch([ctx])], _FAKE_DEVICES
+    )
+    assert out is not None
+    assert ("pack", None) in model.calls
+    assert ("vision_execute", None) in model.calls  # packed=None reached it
+    assert manager.lookup(0xB) is not None  # encoded + cached
+
+
+def test_derive_disabled_cache_chunked_prefill_no_false_raise() -> None:
+    """Disabled cache + chunked prefill: counts follow the selection, not all images.
+
+    Regression: deriving over ``ctx.images`` filtered by cache lookups would,
+    with the cache disabled, count already-processed images the encoder emitted
+    no rows for and falsely raise in validation.
+    """
+    manager = _make_manager(max_entries=0)  # disabled
+    assert not manager.enabled
+    img_a = _make_image_meta(0, 2, image_hash=0xA)
+    img_b = _make_image_meta(2, 7, image_hash=0xB)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[img_a, img_b],  # A already processed in a prior chunk
+        next_images=[img_b],  # only B is in this chunk
+        image_token_indices=np.array([2, 3, 4, 5, 6], dtype=np.int32),
+        processed_length=2,
+        active_length=5,
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    assert [c for c, _ in selection] == [ctx]
+    assert [img.image_hash for _, miss in selection for img in miss] == [0xB]
+    result = VisionEncodeResult(embeddings=[_make_buffer(5, 4)])
+    embeds, _indices = manager.cache_vision_embeddings(
+        context_batch=_as_vlm_batch([ctx]),
+        selection=selection,
+        encode_result=result,
+        empty_embeddings=[_make_buffer(0, 4)],
+    )
+    assert int(embeds[0].shape[0]) == 5
+
+
+def test_derive_enabled_partial_hit_counts_match_selection() -> None:
+    """Enabled cache, partial hit: counts cover only the freshly-encoded image."""
+    manager = _make_manager()
+    manager.insert(0xA, [_make_buffer(2, 4)], num_tokens=2)  # A resident
+    img_a = _make_image_meta(0, 2, image_hash=0xA)
+    img_b = _make_image_meta(2, 7, image_hash=0xB)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[img_a, img_b],
+        next_images=[img_a, img_b],  # both in-chunk, but A is a cache hit
+        image_token_indices=np.array([0, 1, 2, 3, 4, 5, 6], dtype=np.int32),
+        processed_length=0,
+        active_length=7,
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    assert [img.image_hash for _, miss in selection for img in miss] == [0xB]
+    result = VisionEncodeResult(embeddings=[_make_buffer(5, 4)])  # B only
+    embeds, _indices = manager.cache_vision_embeddings(
+        context_batch=_as_vlm_batch([ctx]),
+        selection=selection,
+        encode_result=result,
+        empty_embeddings=[_make_buffer(0, 4)],
+    )
+    assert int(embeds[0].shape[0]) == 7  # A (2, from cache) + B (5)
+
+
+def test_prepare_vision_outputs_splits_by_passed_selection() -> None:
+    """The store follows the caller's ``uncached_images``, not a re-derivation
+    over ``ctx.images`` — so hashes stay aligned with the encoder rows and the
+    strict-zip split can't diverge."""
+    cache = _make_cache()
+    hidden = 4
+    img_a = _make_image_meta(0, 2, image_hash=0xA)
+    img_b = _make_image_meta(2, 5, image_hash=0xB)
+    cache.insert(0xA, [_make_buffer(2, hidden)], num_tokens=2)  # A resident
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[img_a, img_b],
+        image_token_indices=np.array([0, 1, 2, 3, 4], dtype=np.int32),
+        processed_length=0,
+        active_length=5,
+    )
+    embeddings, _ = cache.prepare_vision_outputs(
+        context_batch=_as_vlm_batch([ctx]),
+        uncached_contexts=_as_vlm_batch([ctx]),
+        uncached_images=[[img_b]],
+        vision_embeds=[_make_buffer(3, hidden)],
+        per_image_token_counts=[3],
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    entry_b = cache.lookup(0xB)
+    assert entry_b is not None and entry_b.num_tokens == 3  # B stored
+    assert int(embeddings[0].shape[0]) == 5  # A(2, cached) + B(3) assembled
+
+
+def test_assemble_tolerates_evicted_prior_image_row_aligned() -> None:
+    """A prefix-hit prior image evicted from the vision cache must not
+    crash assembly. Its tokens are all outside the active window (OOB in the
+    merge indices), so it gets shape-correct placeholder rows and
+    image_embeddings stays row-aligned with those indices."""
+    cache = _make_cache()
+    hidden = 4
+    img_a = _make_image_meta(0, 2, image_hash=0xA)  # prior chunk, evicted
+    img_b = _make_image_meta(2, 5, image_hash=0xB)  # encoded this step
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[img_a, img_b],
+        next_images=[img_b],
+        # Realistic: placeholder tokens span BOTH images (A at 0-1, B at 2-4).
+        image_token_indices=np.array([0, 1, 2, 3, 4], dtype=np.int32),
+        processed_length=2,  # A fully processed (end_idx 2); B in the window
+        active_length=3,
+    )
+    # A is NOT inserted -> evicted. Encoder output covers only B (3 rows).
+    vision_embeds = [
+        Buffer.from_numpy(np.full((3, hidden), 7.0, dtype=np.float32))
+    ]
+    embeddings, indices = cache.prepare_vision_outputs(
+        context_batch=_as_vlm_batch([ctx]),
+        uncached_contexts=_as_vlm_batch([ctx]),
+        uncached_images=[[img_b]],
+        vision_embeds=vision_embeds,
+        per_image_token_counts=[3],
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    arr = embeddings[0].to_numpy()
+    # The invariant that was violated: one embedding row per merge index.
+    assert arr.shape == (5, hidden)
+    assert len(indices) == arr.shape[0]
+    # A's placeholder rows are zeros (OOB in indices); B's rows are the encoder
+    # output (its indices are valid).
+    np.testing.assert_array_equal(arr[:2], 0.0)
+    np.testing.assert_allclose(arr[2:], 7.0)
+    oob = np.iinfo(np.int32).min
+    assert (indices[:2] == oob).all()
+    assert (indices[2:] >= 0).all()
+    # B is cached; A is never fabricated into the cache.
+    assert cache.lookup(0xB) is not None
+    assert cache.lookup(0xA) is None
+
+
+def test_assemble_missing_active_image_still_raises() -> None:
+    """A missing image whose tokens are in the active window is a genuine
+    _cache_and_split bug and must still fail loudly, not get silent filler."""
+    cache = _make_cache()
+    hidden = 4
+    img_a = _make_image_meta(0, 3, image_hash=0xA)  # active, never stored
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[img_a],
+        next_images=[img_a],
+        image_token_indices=np.array([0, 1, 2], dtype=np.int32),
+        processed_length=0,  # in the active window, not prior
+        active_length=3,
+    )
+    with pytest.raises(AssertionError, match="Active image"):
+        cache.prepare_vision_outputs(
+            context_batch=_as_vlm_batch([ctx]),
+            uncached_contexts=_as_vlm_batch([ctx]),
+            uncached_images=[[]],
+            vision_embeds=[_make_buffer(0, hidden)],
+            per_image_token_counts=[],
+            n_devices=1,
+            empty_embeddings=[_make_buffer(0, hidden)],
+        )

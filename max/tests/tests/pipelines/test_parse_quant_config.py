@@ -33,7 +33,11 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.pipelines.lib.quant import parse_quant_config
+from max.pipelines.weights.quant import (
+    _modelopt_ignore_patterns,
+    _modelopt_shared_experts_quantized_dtype,
+    parse_quant_config,
+)
 from transformers import AutoConfig
 
 # Define a base path for test data.
@@ -797,6 +801,67 @@ def test_parse_float4_from_standalone_hf_quant_config(
 
     assert quant_config is not None
     assert quant_config.format == QuantFormat.NVFP4
+
+
+@pytest.fixture
+def hf_config_glm_5_1_nvfp4() -> AutoConfig:
+    """Modelopt NVFP4 config with selective ``ignore`` (GLM-5.1-style)."""
+    config_path = TEST_DATA_PATH / "lukealonso_glm_5_1_nvfp4_quant.json"
+    return AutoConfig.from_pretrained(str(config_path), trust_remote_code=True)
+
+
+def test_parse_modelopt_nvfp4_respects_ignore_patterns(
+    hf_config_glm_5_1_nvfp4: AutoConfig,
+) -> None:
+    """Parses modelopt ``ignore`` globs like lukealonso/GLM-5.1-NVFP4.
+
+    Dense layers 0-2 skip MLP; layer 3+ MoE is NVFP4. All listed layers keep
+    BF16 attention (``self_attn*`` ignored). ``*shared_experts*`` does not
+    remove a layer from ``mlp_quantized_layers``.
+    """
+    state_dict = {
+        "embed_tokens.weight": WeightData(
+            name="embed_tokens.weight",
+            shape=Shape((1, 1)),
+            dtype=DType.bfloat16,
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.bfloat16)),
+        ),
+    }
+    quant_config = parse_quant_config(
+        hf_config_glm_5_1_nvfp4, state_dict, DType.uint8
+    )
+
+    assert quant_config is not None
+    assert quant_config.format == QuantFormat.NVFP4
+    assert quant_config.mlp_quantized_layers == {3}
+    assert quant_config.attn_quantized_layers == set()
+    assert quant_config.embedding_output_dtype == DType.bfloat16
+    assert quant_config.shared_experts_weight_dtype == DType.bfloat16
+
+
+def test_modelopt_ignore_normalizes_block_sparse_moe_shared_experts() -> None:
+    """``block_sparse_moe.shared_experts`` ignore globs map to ``mlp.shared_experts``."""
+    ignore_patterns = _modelopt_ignore_patterns(
+        {
+            "ignore": [
+                "model.language_model.layers.3.block_sparse_moe.shared_experts*",
+            ]
+        }
+    )
+    assert ignore_patterns == ["layers.3.mlp.shared_experts*"]
+
+    global_ignore = _modelopt_ignore_patterns(
+        {
+            "ignore": [
+                "model.language_model.layers.*.block_sparse_moe.shared_experts*"
+            ]
+        }
+    )
+    assert global_ignore == ["layers.*.mlp.shared_experts*"]
+    assert (
+        _modelopt_shared_experts_quantized_dtype(global_ignore)
+        == DType.bfloat16
+    )
 
 
 def test_parse_float4_skips_gptq_quant_method(

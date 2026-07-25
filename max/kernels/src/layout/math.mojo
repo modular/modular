@@ -18,7 +18,17 @@ from std.sys.info import simd_width_of
 import std.algorithm.reduction as reduction
 from std.algorithm import vectorize
 from std.math.math import max as b_max
-from layout import Coord, Idx, LayoutTensor, TileTensor, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    Idx,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 
 from std.utils.index import IndexList
 
@@ -75,7 +85,7 @@ def outer_product_acc(
 def _reduce[
     axis: Int,
     init_func: def[dtype: DType, width: Int]() thin -> SIMD[dtype, width],
-    func: def[dtype: DType, width: SIMDSize](
+    func: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> (SIMD[dtype, width]),
 ](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
@@ -176,7 +186,7 @@ def sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
         return 0
 
     def sum_func[
-        dtype: DType, width: SIMDSize
+        dtype: DType, width: SIMDLength
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return a + b
 
@@ -208,7 +218,7 @@ def max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
         return SIMD[dtype, width].MIN
 
     def max_func[
-        dtype: DType, width: SIMDSize
+        dtype: DType, width: SIMDLength
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return b_max(a, b)
 
@@ -343,7 +353,7 @@ def sum[
     return res_tensor
 
 
-def mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
+def mean(src: LayoutTensor) raises -> Scalar[src.dtype]:
     """Computes the mean value of the elements in a buffer.
 
     Args:
@@ -374,7 +384,7 @@ def mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
 
 def mean[
     reduce_axis: Int
-](src: LayoutTensor[...], dst: LayoutTensor[mut=True, src.dtype, ...]) raises:
+](src: LayoutTensor, dst: LayoutTensor[mut=True, src.dtype, ...]) raises:
     """Computes the mean across reduce_axis of a LayoutTensor.
 
     Parameters:
@@ -434,7 +444,7 @@ def mean[
 
 
 def variance(
-    src: LayoutTensor[...], correction: Int = 1
+    src: LayoutTensor, correction: Int = 1
 ) raises -> Scalar[src.dtype]:
     """Computes the variance value of the elements in a buffer.
 

@@ -31,9 +31,10 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.compile import _compile_code
-from std.memory import memset_zero, stack_allocation
+from std.memory import unsafe_memset_zero, stack_allocation
 from std.testing import *
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
@@ -120,18 +121,14 @@ def erf_elementwise(
     var tid = granularity * global_idx.x
 
     @always_inline
-    @__copy_capture(tid)
-    @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
-        var offset = tid + idx[0]
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
+        var offset = tid + Int(idx[0].value())
         if offset >= len:
             return
         buf[offset] = erf(buf[offset])
 
-    elementwise[func, simd_width=simd_width_of[DType.float32](), target="gpu"](
-        granularity, ctx
+    elementwise[simd_width=simd_width_of[DType.float32](), target="gpu"](
+        func, Coord(granularity), ctx
     )
 
 
@@ -194,7 +191,7 @@ def test_erf_kernel_sm90() raises:
 
 
 def test_shared_stack_allocation() -> (
-    UnsafePointer[Int8, MutAnyOrigin, address_space=AddressSpace.SHARED]
+    UnsafePointer[Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED]
 ):
     return stack_allocation[
         999, DType.int8, 8, address_space=AddressSpace.SHARED
@@ -306,7 +303,7 @@ def gemm(
     # Privatization of the C matrix.
     var c_reg = stack_allocation[TILE_SZ_B, DType.float32]()
 
-    memset_zero(c_reg, TILE_SZ_B)
+    unsafe_memset_zero(c_reg, TILE_SZ_B)
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):

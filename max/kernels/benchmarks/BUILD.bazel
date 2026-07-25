@@ -25,10 +25,18 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist
     "gpu/comm/bench_allreduce.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "gpu/comm/bench_allreduce_residual_rmsnorm_fp8.mojo": select({
+    "gpu/comm/bench_allreduce_residual_rmsnorm.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist
+    "gpu/comm/bench_lamport_allreduce_rmsnorm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # No multi-GPU Metal machines exist; needs P2P
+    "gpu/comm/bench_reducescatter_rmsnorm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # No multi-GPU Metal machines exist; needs P2P
     "gpu/comm/bench_broadcast.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -41,7 +49,18 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
-    "gpu/linalg/bench_apple_gpu_matmul.mojo": ["//:apple_gpu"],  # Apple M5 simdgroup matmul — Metal only
+    "gpu/nn/bench_fused_qkv_index_matmul.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: PRDT-506 (paged KV + matmul, same as sibling)
+    "gpu/linalg/bench_apple_gpu_matmul.mojo": ["//:apple_gpu"],  # Apple M5 simdgroup matmul (incl. split-K) — Metal only
+    "gpu/linalg/bench_apple_fp4_matmul.mojo": ["//:apple_gpu"],  # Apple M5 weight-only NVFP4 (W4A16) matmul — Metal only
+    "gpu/linalg/bench_apple_fp4_reconcile.mojo": ["//:apple_gpu"],  # Apple M5 W4A16 dispatch-path benchmark — Metal only
+    "gpu/linalg/bench_apple_int8_matmul.mojo": ["//:apple_gpu"],  # Apple M5 int8 W8A8 GEMM+dequant + activation-quant — Metal only
+    "gpu/linalg/bench_apple_fp8_gemv.mojo": ["//:apple_gpu"],  # Apple M5 FP8 W8A16 GEMV + tiled matmul — Metal only
+    "gpu/linalg/bench_grouped_matmul_apple_fp8.mojo": ["//:apple_gpu"],  # Apple M5 grouped (MoE) FP8 W8A16 tiled vs naive — Metal only
+    "gpu/nn/bench_conv2d_apple.mojo": ["//:apple_gpu"],  # Apple M5 im2col conv2d vs naive — Metal only
+    "gpu/nn/bench_apple_fa_prefill.mojo": ["//:apple_gpu"],  # Apple M5 MMA flash-attention prefill (no-SMEM + SMEM-staged) — Metal only
     "gpu/linalg/bench_matmul.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -76,10 +95,13 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # Kernel uses NVIDIA SM90 TMA primitives; Metal AIR codegen crashes.
-    "gpu/nn/attention/bench_mha_sm100_fp8_kv.mojo": ["//:b200_gpu"],  # SM100 fp8 KV dequant + bf16 MHA
+    "gpu/nn/bench_topk_bitonic.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Uses NVIDIA GPU barrier primitives.
     "gpu/nn/bench_conv2d_sm100.mojo": ["//:b200_gpu"],  # SM100-specific TMA im2col
-    "gpu/nn/bench_hk_mha_prefill.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + from_expcnt
-    "gpu/nn/bench_hk_mha_prefill_paged.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + paged KV operand
+    "gpu/nn/bench_mha_prefill_v2.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + from_expcnt
+    "gpu/nn/bench_mha_prefill_v2_paged.mojo": ["//:mi355_gpu"],  # gfx950 MFMA 32x32x16 BF16 + paged KV operand
     "gpu/linalg/bench_block_scaled_matmul.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
     "gpu/linalg/bench_matmul_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific TMA epilogue matmul
     "gpu/linalg/bench_matmul_1d_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific 1D bias TMA epilogue matmul
@@ -192,6 +214,9 @@ _CPU_TESTS = glob(
             "gpu/nn/bench_conv2d.mojo",
             "gpu/layout/bench_tile_io_copy.mojo",
             "gpu/nn/bench_conv3d.mojo",
+            # Needs `-D fp32_scores/cadence` (gated FP32-scores path);
+            # the generic glob can't pass them. Dedicated target below.
+            "gpu/nn/bench_mla_prefill_v2.mojo",
         ],
     )
 ]
@@ -208,9 +233,45 @@ _CPU_TESTS = glob(
             "gpu/nn/bench_conv2d.mojo",
             "gpu/layout/bench_tile_io_copy.mojo",
             "gpu/nn/bench_conv3d.mojo",
+            # Needs `-D fp32_scores/cadence` (gated FP32-scores path);
+            # the generic glob can't pass them. Dedicated target below.
+            "gpu/nn/bench_mla_prefill_v2.mojo",
         ],
     )
 ]
+
+# MlaPrefillV2 device-timed TFLOPS bench.
+# Delegates numeric steps to the gated MlaPrefillV2Core FP32-scores / reference-cadence
+# path, so it MUST compile with `-D fp32_scores=true -D cadence=true`
+# (enables the gated path for THIS compile only; no kernel source is modified).
+# gfx950 / MFMA 32x32x64 FP8. Excluded from the generic gpu/** glob above.
+mojo_binary(
+    name = "gpu/nn/bench_mla_prefill_v2",
+    srcs = ["gpu/nn/bench_mla_prefill_v2.mojo"],
+    copts = [
+        "-D",
+        "fp32_scores=true",
+        "-D",
+        "cadence=true",
+    ],
+    enable_assertions = False,
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/nn/bench_mla_prefill_v2.test",
+    tags = ["gpu"],
+    targets = ["gpu/nn/bench_mla_prefill_v2"],
+)
 
 # Runnable GPU benchmark targets (mojo_test wrappers so they execute on the
 # remote GPU via `bazel test --config=remote-b200 ...`).
@@ -279,6 +340,217 @@ mojo_test(
         "@mojo//:std",
     ],
 )
+
+# --- SM100 FA4 warp-specialized (WS) vs baseline A/B benches ---
+# Execute on a remote B200 via `bazel test --config=remote-b200[-benchmark] ...`
+# (mojo_test so the run is a remote *test action*; `bazel run` would execute locally).
+# Comptime cells (each a separate compiled target): FA4_FORCE_CONFIG (0=auto, 1=WS,
+# 2=baseline) x FA4_WS_SPLITK_FORCE (P) x depth. Baseline (run_base, FORCE=2) comptime-kills
+# the WS block (dispatch.mojo:558-559) -> byte-identical to main's selected non-WS path.
+# Runtime shape (seq_len/num_keys/cache_len/batch_size) is forwarded per invocation via
+# `--test_arg=--name=value` (arg_parse matches "--<name>=", internal_utils/_utils.mojo:205);
+# always add `--nocache_test_results` for a benchmark. See plan crystalline-leaping-sunrise.md.
+#
+# The `run_wse*` / `*_g16` cells are the Layout-E (BM=64, m_pack=2) split-K
+# threshold campaign (Phase 4). All are group=16: `_G16` bakes `group=16`
+# (read by bench_mha; num_heads=32 default => kv=2) and `num_kv_heads=2` (read by
+# the ragged bench; num_q_heads=32 default => group=16). Each bench ignores the
+# other's unused define, so one cell drives both vehicles. Bench at seq=4 =>
+# group*seq=64 = one fully-packed BM=64 tile. `run_wse*` force Layout-E
+# (FA4_FORCE_CONFIG=3) at P in {1,2,4,6,8,10,16} to find the min-keys/partition
+# crossovers; the `*_g16` comparators force Layout-G / baseline / auto at the
+# same g16 shape for the ladder-boundary check.
+_G16 = [
+    "-D",
+    "group=16",
+    "-D",
+    "num_kv_heads=2",
+]
+
+# Also group=16 but with num_q_heads=16 / num_kv_heads=1 (16 q-heads fused onto
+# 1 kv-head), the absolute head counts matter: num_heads_sched = num_kv_heads
+# sets the split-K grid (= tiles * num_kv_heads * batch), so 1 kv-head gives a
+# smaller grid than `_G16`'s 2 and the wave-fit guard admits a larger cluster P.
+# Ragged bench only (num_q_heads/num_kv_heads are its defines; bench_mha ignores
+# them and keeps its own defaults, so its variant of this cell is unused).
+_G16_1KV = [
+    "-D",
+    "num_q_heads=16",
+    "-D",
+    "num_kv_heads=1",
+]
+
+_FA4_WS_CELLS = {
+    "run_auto": [
+        "-D",
+        "FA4_FORCE_CONFIG=0",
+    ],
+    "run_ws": [
+        "-D",
+        "FA4_FORCE_CONFIG=1",
+    ],
+    "run_ws_p2": [
+        "-D",
+        "FA4_FORCE_CONFIG=1",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=2",
+    ],
+    "run_ws_p4": [
+        "-D",
+        "FA4_FORCE_CONFIG=1",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=4",
+    ],
+    "run_base": [
+        "-D",
+        "FA4_FORCE_CONFIG=2",
+    ],
+    # Layout-E (BM=64) forced single-CTA, P in {1,2,4,6,8,10,16}.
+    "run_wse": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+    ] + _G16,
+    "run_wse_p2": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=2",
+    ] + _G16,
+    "run_wse_p4": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=4",
+    ] + _G16,
+    "run_wse_p6": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=6",
+    ] + _G16,
+    "run_wse_p8": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=8",
+    ] + _G16,
+    "run_wse_p10": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=10",
+    ] + _G16,
+    "run_wse_p16": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=16",
+    ] + _G16,
+    # g16 comparators for the ladder-boundary check (Layout-E vs these at seq=4).
+    "run_wsg_g16": [
+        "-D",
+        "FA4_FORCE_CONFIG=1",
+    ] + _G16,
+    "run_base_g16": [
+        "-D",
+        "FA4_FORCE_CONFIG=2",
+    ] + _G16,
+    "run_auto_g16": [
+        "-D",
+        "FA4_FORCE_CONFIG=0",
+    ] + _G16,
+    # Auto dispatch at num_q_heads=16 / num_kv_heads=1 for a "vs main" sweep:
+    # on this branch (seq=4 => single BM=64 tile) auto routes to Layout-E; on
+    # main (no Layout-E) it routes to 1Q (BM=128). Same cell, both behaviors.
+    "run_auto_g16_1kv": [
+        "-D",
+        "FA4_FORCE_CONFIG=0",
+    ] + _G16_1KV,
+}
+
+# Deps/data/env mirror the generic gpu/** glob (above) that already compiles these srcs.
+_FA4_WS_DEPS = [
+    "//max:comm",
+    "//max:internal_utils",
+    "//max:layout",
+    "//max:nn",
+    "//max:shmem",
+    "//max:structured_kernels",
+    "@mojo//:std",
+]
+
+# bench_mha (contiguous): depth is comptime via `-D depth=<d>`.
+[
+    mojo_test(
+        name = "gpu/nn/bench_mha.mojo.%s_d%d" % (suffix, depth),
+        size = "enormous",
+        srcs = ["gpu/nn/bench_mha.mojo"],
+        copts = copts + [
+            "-D",
+            "depth=%d" % depth,
+        ],
+        data = select({
+            "//:nvidia_gpu": ["@nvshmem_prebuilt//:host"],
+            "//conditions:default": [],
+        }),
+        enable_assertions = False,
+        env = select({
+            "//:nvidia_gpu": {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
+            "//conditions:default": {},
+        }),
+        exec_properties = {
+            "test.resources:gpu-memory": "64",
+        },
+        tags = [
+            "gpu",
+            "manual",
+        ],
+        target_compatible_with = ["//:b200_gpu"],
+        deps = _FA4_WS_DEPS,
+    )
+    for suffix, copts in _FA4_WS_CELLS.items()
+    for depth in [
+        64,
+        128,
+    ]
+]
+
+# bench_kv_cache_ragged_flash_attention (ragged, long-cache/small-grid vehicle):
+# depth is comptime via `-D head_dim=<d>`.
+[
+    mojo_test(
+        name = "gpu/nn/bench_kv_cache_ragged_flash_attention.mojo.%s_d%d" % (suffix, depth),
+        size = "enormous",
+        srcs = ["gpu/nn/bench_kv_cache_ragged_flash_attention.mojo"],
+        copts = copts + [
+            "-D",
+            "head_dim=%d" % depth,
+        ],
+        data = select({
+            "//:nvidia_gpu": ["@nvshmem_prebuilt//:host"],
+            "//conditions:default": [],
+        }),
+        enable_assertions = False,
+        env = select({
+            "//:nvidia_gpu": {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
+            "//conditions:default": {},
+        }),
+        exec_properties = {
+            "test.resources:gpu-memory": "40",
+        },
+        tags = [
+            "gpu",
+            "manual",
+        ],
+        target_compatible_with = ["//:b200_gpu"],
+        deps = _FA4_WS_DEPS,
+    )
+    for suffix, copts in _FA4_WS_CELLS.items()
+    for depth in [
+        64,
+        128,
+    ]
+]
 
 pkg_files(
     name = "kernel_benchmark_input_files",

@@ -21,11 +21,18 @@ import os
 from typing import Any
 
 from max.pipelines.lib.config.model_config import MAXModelConfig
-from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.lib.weight_loader import WeightLoader, _role_prefixed_loader
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
 
 logger = logging.getLogger(__name__)
+
+# Fields whose values feed weight-path identity resolution (the parse in
+# MAXModelConfig.__init__ that splits an external ``org/repo/file`` weight
+# path into a weights repo id and a repo-relative file name). Overriding any
+# of them via model_copy() bypasses __init__, so with_override() re-resolves.
+_WEIGHT_IDENTITY_FIELDS = frozenset({"model_path", "weight_path"})
 
 
 class ModelManifest(dict[str, MAXModelConfig]):
@@ -248,6 +255,31 @@ class ModelManifest(dict[str, MAXModelConfig]):
             )
         return sum(config.weights_size() for config in self.values())
 
+    def loader(self) -> WeightLoader:
+        """Returns a :class:`WeightLoader` over the role-prefixed union.
+
+        Public entry point for multi-component pipelines (diffusion,
+        speculative decoding). Each role's loader is exposed under its
+        dotted role prefix, so a query like
+        ``"transformer.blocks.0.attn.qkv_proj.weight"`` routes to the
+        ``transformer`` config's loader with ``"blocks.0.attn.qkv_proj.weight"``.
+
+        Single-model pipelines should call ``manifest["main"].loader()``
+        instead -- the role prefix is not useful when there's only one
+        source and the Module tree's parameter names don't carry it.
+
+        Resolution is lazy: per-role loaders defer to the underlying
+        :class:`~max.graph.weights.Weights` source, so weight bytes only
+        page in when the Module's adapter chain actually queries them.
+
+        Returns:
+            A :class:`WeightLoader` resolving ``f"{role}.{name}"`` keys
+            against the per-role source loaders.
+        """
+        return _role_prefixed_loader(
+            {role: config.loader() for role, config in self.items()}
+        )
+
     # ------------------------------------------------------------------
     # Logging
     # ------------------------------------------------------------------
@@ -269,12 +301,13 @@ class ModelManifest(dict[str, MAXModelConfig]):
     # ------------------------------------------------------------------
 
     def resolve(self) -> None:
-        """Validates and resolves every config in the manifest.
+        """Freezes the manifest against further mutation.
 
-        Delegates to ``MAXModelConfig.resolve()`` for each component.
+        Per-component weight-path identity is resolved in
+        ``MAXModelConfig.__init__`` and repo access is validated at
+        ``PipelineConfig`` construction, so this only flips the freeze flag
+        (use ``with_override()`` to change the manifest afterward).
         """
-        for config in self.values():
-            config.resolve()
         self._resolved = True
 
     # ------------------------------------------------------------------
@@ -346,6 +379,10 @@ class ModelManifest(dict[str, MAXModelConfig]):
         updated_config = (
             base.model_copy(update=field_overrides) if field_overrides else base
         )
+        if not _WEIGHT_IDENTITY_FIELDS.isdisjoint(field_overrides):
+            updated_config._resolve_weight_path_identity(
+                reset_weights_repo_id="weight_path" in field_overrides
+            )
         new_models = {**self, role: updated_config}
         return ModelManifest(new_models, metadata=self._metadata)
 

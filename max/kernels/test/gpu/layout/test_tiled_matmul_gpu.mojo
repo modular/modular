@@ -453,14 +453,15 @@ def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     ]
 
     ctx.enqueue_function[sram_blocked_matmul_dynamic_nd_buffer_kernel](
-        mat_c.as_any_origin(),
-        mat_a.as_any_origin(),
-        mat_b.as_any_origin(),
+        mat_c.as_unsafe_any_origin(),
+        mat_a.as_unsafe_any_origin(),
+        mat_b.as_unsafe_any_origin(),
         grid_dim=(N // BN, M // BM),
         block_dim=(comptime (thread_layout.size())),
     )
 
     ctx.enqueue_copy(mat_c_ptr, mat_c_dev)
+    ctx.synchronize()
 
     for m in range(M):
         for n in range(N):

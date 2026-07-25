@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from .block_manager import PrefixCacheHits
 from .block_utils import InsufficientBlocksError
 from .cache_manager import PagedKVCacheManager
 from .dummy_cache_manager import DummyKVCache
-from .increment_cache_lengths import IncrementCacheLengthsProcessor
 from .transfer_engine import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -25,11 +25,11 @@ from .transfer_engine import (
 
 __all__ = [
     "DummyKVCache",
-    "IncrementCacheLengthsProcessor",
     "InsufficientBlocksError",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
     "PagedKVCacheManager",
+    "PrefixCacheHits",
     "TransferReqData",
     "available_port",
 ]

@@ -16,36 +16,50 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, ClassVar, Generic
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
 
+import numpy as np
+import numpy.typing as npt
 from max.driver import (
     Buffer,
     Device,
-    enable_all_peer_access,
     is_virtual_device_mode,
 )
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph import DeviceRef, Value
+from max.engine import InferenceSession, Model
+from max.experimental import functional as F
+from max.experimental.tensor import default_dtype
+from max.graph import DeviceRef, Graph, Module, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import (
     KVCacheInputs,
+    KVCacheInputsInterface,
     KVCacheParamInterface,
     PagedCacheValues,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib.lora import LoRAManager
+from max.pipelines.context import BaseContextType, LogProbabilities
+from max.pipelines.kv_cache.config import (
+    KVCacheConfig,
+    cache_dtype_for_encoding,
+)
+from max.pipelines.lib.utils import (
+    CompilationTimer,
+    parse_state_dict_from_weights,
+)
+from max.pipelines.lora import LoRAInputs, LoRAManager
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
-from max.pipelines.modeling.kv_cache_config import KVCacheConfig
-from max.pipelines.modeling.types import BaseContextType, LogProbabilities
+from max.profiler import traced
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
-    from max.pipelines.lib.interfaces.arch_config import ArchConfig
+
+    from .batch_processor import BatchProcessor
 
 logger = logging.getLogger("max.pipelines")
 
@@ -86,52 +100,11 @@ class AlwaysSignalBuffersMixin:
         if is_virtual_device_mode():
             return []
 
-        # Enable P2P access between all GPUs before any collective operations.
-        # This must happen before the first allreduce/broadcast/etc. executes.
-        if len(self.devices) > 1:
-            try:
-                enable_all_peer_access()
-            except RuntimeError:
-                logger.warning(
-                    "Failed to enable peer-to-peer GPU access. "
-                    "Collective operations will fall back to slower paths."
-                )
-
         # Import here to avoid circular dependency
         from max.nn.comm import Signals
 
-        return [
-            Buffer.zeros(
-                shape=(Signals.NUM_BYTES,),
-                dtype=DType.uint8,
-                device=dev,
-            )
-            for dev in self.devices
-        ]
-
-    @classmethod
-    def estimate_signal_buffer_memory(
-        cls,
-        pipeline_config: PipelineConfig,
-        arch_config: ArchConfig | None = None,
-    ) -> int:
-        """Account for the mixin's always-allocate behaviour at single-GPU.
-
-        For multi-GPU, returns the same default as :class:`PipelineModel`.
-        For single-GPU, allocates one set on the lone device.
-
-        Note: this implementation calls ``pipeline_config.estimate_signal_buffer_memory()``
-        directly rather than chaining through ``super()``, mirroring the
-        :attr:`signal_buffers` property on this mixin. If a concrete model
-        needs custom signal-buffer accounting, override on the model class
-        itself — MRO ensures it wins over this method.
-        """
-        if len(pipeline_config.model.device_specs) > 1:
-            return pipeline_config.estimate_signal_buffer_memory(arch_config)
-        # Import here to avoid circular dependency
-        from max.nn.comm import Signals
-
-        return Signals.NUM_BYTES
+        # Signals.allocate initializes the signal buffers and enables p2p access
+        return Signals.allocate(self.devices)
 
 
 @dataclass
@@ -180,6 +153,15 @@ class ModelOutputs:
     For data parallel models, the hs will be on the first gpu since it is replicated.
     """
 
+    sampled_tokens: Buffer | None = None
+    """Greedy token ids selected inside the forward graph, shape ``[B, 1]``.
+
+    Present only when ``fold_sampler_into_graph`` is enabled and the
+    architecture emits a folded argmax output. Consumed by the overlap
+    pipeline for all-greedy decode batches in place of a separate sampler
+    submission; ``None`` otherwise.
+    """
+
 
 @dataclass(kw_only=True)
 class ModelInputs:
@@ -208,13 +190,23 @@ class ModelInputs:
         list(inputs) == [tokens, input_row_offsets]  # Output: True
     """
 
-    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None
+    kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None
+    """KV cache graph inputs holding every (DP replica x TP shard) device's
+    inputs: a ``KVCacheInputs`` leaf, or a ``MultiKVCacheInputs`` tree for
+    multi-cache models. ``flatten()`` yields the full positional input list."""
 
-    lora_ids: Buffer | None = None
-    """Buffer containing the LoRA ids."""
+    lora: LoRAInputs | None = None
+    """Per-batch LoRA adapter buffers, or ``None`` when LoRA is disabled."""
 
-    lora_ranks: Buffer | None = None
-    """Buffer containing the LoRA ranks"""
+    vision_embeddings: list[Buffer] | None = None
+    """Assembled per-device vision embeddings for this step, set by the
+    pipeline from the ``VisionEncoderCache`` (an input, like
+    :attr:`kv_cache_inputs`). ``None`` on text-only / no-vision steps, where
+    the model uses its own empties."""
+
+    vision_scatter_indices: npt.NDArray[np.int32] | None = None
+    """Scatter (merge) indices for :attr:`vision_embeddings`, set by the
+    pipeline alongside it; the model copies them to device."""
 
     hidden_states: Buffer | list[Buffer] | None = None
     """Hidden states for a variable number of tokens per sequence.
@@ -255,8 +247,85 @@ class UnifiedEagleOutputs(ModelOutputs):
     hidden_states: None = None
 
 
+@dataclass(kw_only=True)
+class UnifiedSpecDecodeInputs(ModelInputs):
+    """Shared spec-decode fields + buffer-tail packing for unified ``*Inputs``.
+
+    Each arch composes the tail via :meth:`_spec_decode_tail_buffers`, which
+    mirrors ``build_spec_decode_input_types`` and must stay in lockstep with it.
+    """
+
+    draft_tokens: Buffer | None = None
+    seed: Buffer | None = None
+    temperature: Buffer | None = None
+    top_k: Buffer | None = None
+    max_k: Buffer | None = None
+    top_p: Buffer | None = None
+    min_top_p: Buffer | None = None
+    in_thinking_phase: Buffer | None = None
+    pinned_bitmask: Buffer | None = None
+    wait_payload: Buffer | None = None
+    device_bitmask_scratch: Buffer | None = None
+
+    structured_output: bool = False
+    """Whether this graph was compiled with constrained-decoding bitmask
+    inputs. Mirrors ``pipeline_config.needs_bitmask_constraints`` -- the same
+    value that gates the bitmask triple in ``build_spec_decode_input_types`` --
+    so the buffer tail and the graph signature derive the decision from one
+    place. Set by each capable module's ``prepare_initial_token_inputs``."""
+
+    def _spec_decode_tail_buffers(
+        self,
+        *,
+        include_in_thinking_phase: bool,
+        supports_structured_output: bool = True,
+    ) -> tuple[Buffer, ...]:
+        # draft_tokens, seed, and the five sampling params are unconditional in
+        # build_spec_decode_input_types; assert them so a missing one is a loud
+        # error, not a silently shortened ABI tuple. (Draft KV lives in the
+        # {"target", "draft"} tree, packed by super().buffers.)
+        assert self.draft_tokens is not None
+        tail: tuple[Buffer, ...] = (self.draft_tokens,)
+        assert self.seed is not None
+        tail += (self.seed,)
+        assert self.temperature is not None
+        assert self.top_k is not None
+        assert self.max_k is not None
+        assert self.top_p is not None
+        assert self.min_top_p is not None
+        tail += (
+            self.temperature,
+            self.top_k,
+            self.max_k,
+            self.top_p,
+            self.min_top_p,
+        )
+        if include_in_thinking_phase:
+            assert self.in_thinking_phase is not None
+            tail += (self.in_thinking_phase,)
+        # Gate the bitmask triple on two compile-time flags, not a runtime
+        # pinned_bitmask is not None check: supports_structured_output
+        # is False for dflash (sets pinned_bitmask but declares no bitmask graph
+        # inputs); structured_output mirrors needs_bitmask_constraints.
+        if supports_structured_output and self.structured_output:
+            assert self.pinned_bitmask is not None
+            assert self.wait_payload is not None
+            assert self.device_bitmask_scratch is not None
+            tail += (
+                self.pinned_bitmask,
+                self.wait_payload,
+                self.device_bitmask_scratch,
+            )
+        return tail
+
+
 class PipelineModel(ABC, Generic[BaseContextType]):
     """A pipeline model with setup, input preparation and execution methods."""
+
+    #: Optional batch processor class for input/output handling.
+    batch_processor_cls: ClassVar[type[BatchProcessor[Any, Any]] | None] = None
+    #: Config class used to delegate ``calculate_max_seq_len`` and KV params.
+    model_config_cls: ClassVar[type[Any] | None] = None
 
     def __init__(
         self,
@@ -268,8 +337,10 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         self.pipeline_config = pipeline_config
+        self.max_batch_size = max_batch_size
         self.devices = devices
         self.device_refs = [DeviceRef.from_device(d) for d in devices]
         self.kv_cache_config = kv_cache_config
@@ -291,11 +362,43 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 self.huggingface_config.num_attention_heads,
                 self.huggingface_config.num_key_value_heads,
                 self.huggingface_config.head_dim,
-                pipeline_config.runtime.zmq_endpoint_base,
+                self.max_seq_len * max_batch_size,
             )
             if pipeline_config.lora
             else None
         )
+
+        self._batch_processor: BatchProcessor[Any, Any] | None = None
+        batch_processor_cls = type(self).batch_processor_cls
+        if batch_processor_cls is not None:
+            from .batch_processor import BatchProcessorRuntime
+
+            model_config_cls = getattr(type(self), "model_config_cls", None)
+            if model_config_cls is None:
+                raise ValueError(
+                    f"{type(self).__qualname__} sets batch_processor_cls but "
+                    "does not define model_config_cls."
+                )
+            arch_config = model_config_cls.initialize(pipeline_config)
+            pad_token_id = getattr(self.huggingface_config, "pad_token_id", 0)
+            self._batch_processor = batch_processor_cls(
+                arch_config,
+                BatchProcessorRuntime(
+                    pipeline_config=pipeline_config,
+                    devices=devices,
+                    return_logits=return_logits,
+                    return_hidden_states=return_hidden_states,
+                    signal_buffers=self.signal_buffers,
+                    lora_manager=self._lora_manager,
+                    pad_token_id=pad_token_id or 0,
+                    max_batch_size=self.max_batch_size,
+                ),
+            )
+
+    @property
+    def batch_processor(self) -> BatchProcessor[Any, Any] | None:
+        """Returns the batch processor when configured."""
+        return self._batch_processor
 
     @property
     def huggingface_config(self) -> AutoConfig:
@@ -345,27 +448,11 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         if len(self.devices) <= 1:
             return []
 
-        # Enable P2P access between all GPUs before any collective operations.
-        # This must happen before the first allreduce/broadcast/etc. executes.
-        try:
-            enable_all_peer_access()
-        except RuntimeError:
-            logger.warning(
-                "Failed to enable peer-to-peer GPU access. "
-                "Collective operations will fall back to slower paths."
-            )
-
         # Import here to avoid circular dependency
         from max.nn.comm import Signals
 
-        return [
-            Buffer.zeros(
-                shape=(Signals.NUM_BYTES,),
-                dtype=DType.uint8,
-                device=dev,
-            )
-            for dev in self.devices
-        ]
+        # Signals.allocate initializes the signal buffers and enables p2p access
+        return Signals.allocate(self.devices)
 
     @property
     def dtype(self) -> DType:
@@ -375,32 +462,51 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             raise ValueError("quantization_encoding must not be None")
         return supported_encoding_dtype(quantization_encoding)
 
+    @property
+    def sampler_custom_extensions(self) -> Sequence[Path]:
+        """Custom-op extension paths to compile the sampler graph with."""
+        return ()
+
+    @property
+    def emits_folded_sampled_tokens(self) -> bool:
+        """Whether the forward graph appends a folded greedy-token output.
+
+        Architectures that fold the sampler (argmax) into the forward graph
+        emit the sampled-token buffer as a trailing graph output and override
+        this to return ``True``. Callers must peel that trailing output into
+        :attr:`ModelOutputs.sampled_tokens` only when this is ``True``;
+        otherwise the ``fold_sampler_into_graph`` runtime flag is a no-op for
+        the architecture.
+        """
+        return False
+
     @classmethod
-    @abstractmethod
+    def _calculate_max_seq_len_from_config(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Delegates to ``model_config_cls.calculate_max_seq_len`` or ``initialize().get_max_seq_len()``."""
+        model_config_cls = cls.model_config_cls
+        if model_config_cls is None:
+            raise NotImplementedError(
+                f"{cls.__qualname__} must set `model_config_cls` "
+                "or override `calculate_max_seq_len()`."
+            )
+        calculate = getattr(model_config_cls, "calculate_max_seq_len", None)
+        if calculate is not None:
+            return calculate(pipeline_config, huggingface_config)
+        return model_config_cls.initialize(pipeline_config).get_max_seq_len()
+
+    @classmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
         """Calculates the optimal max sequence length for the model.
 
-        Models are expected to implement this method. The following example
-        shows how to implement it for a Mistral model:
-
-        .. code-block:: python
-
-            class MistralModel(PipelineModel):
-                @classmethod
-                def calculate_max_seq_len(cls, pipeline_config, huggingface_config) -> int:
-                    try:
-                        return upper_bounded_default(
-                            upper_bound=huggingface_config.max_seq_len,
-                            default=pipeline_config.model.max_length,
-                        )
-                    except ValueError as e:
-                        raise ValueError(
-                            "Unable to infer max_length for Mistral, the provided "
-                            f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                            f"model's max_seq_len ({huggingface_config.max_seq_len})."
-                        ) from e
+        Default implementation delegates to ``model_config_cls``. Override when
+        pipeline-model semantics differ from the config (for example, bounding
+        ``max_length`` where the config is permissive).
 
         Args:
             pipeline_config: Configuration for the pipeline.
@@ -409,64 +515,9 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         Returns:
             int: The maximum sequence length to use.
         """
-        raise NotImplementedError(
-            "PipelineModel must implement calculate_max_seq_len"
+        return cls._calculate_max_seq_len_from_config(
+            pipeline_config, huggingface_config
         )
-
-    @classmethod
-    def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:
-        """Calculates the estimated memory consumption of our model."""
-        # TODO move this logic to the PipelineModel instead of PipelineConfig class.
-        # Better yet, make this more accurate by loading and measuring memory consumption
-        # after we load the model
-        return pipeline_config.model.weights_size()
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Estimates the activation memory required for model execution.
-
-        This accounts for temporary memory buffers used during model execution,
-        such as intermediate activations and working buffers.
-
-        The default implementation returns 0 for backward compatibility.
-        Models with significant activation memory requirements should override
-        this method to provide accurate estimates.
-
-        Args:
-            pipeline_config: Pipeline configuration
-            huggingface_config: Hugging Face model configuration
-
-        Returns:
-            Estimated activation memory in bytes
-        """
-        del pipeline_config, huggingface_config  # Unused.
-        return 0
-
-    @classmethod
-    def estimate_signal_buffer_memory(
-        cls,
-        pipeline_config: PipelineConfig,
-        arch_config: ArchConfig | None = None,
-    ) -> int:
-        """Estimates total signal-buffer memory for this model across all devices.
-
-        Defaults to :meth:`PipelineConfig.estimate_signal_buffer_memory`, which
-        covers the main model graph and :class:`BlockOffloadEngine`. Models with
-        additional allocation sites (always-allreduce mixins, diffusion
-        component graphs, separate vision encoders) should override.
-
-        Args:
-            pipeline_config: Pipeline configuration
-            arch_config: Optional architecture config used to tighten estimates
-                (e.g. gate :class:`BlockOffloadEngine` signal-buffer accounting
-                on whether the KV cache actually replicates across TP).
-
-        Returns:
-            Estimated total signal-buffer memory in bytes (across all devices).
-        """
-        return pipeline_config.estimate_signal_buffer_memory(arch_config)
 
     @abstractmethod
     def execute(
@@ -486,11 +537,10 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         to define their specific execution logic.
         """
 
-    @abstractmethod
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[BaseContextType]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs to be passed to ``execute()``.
@@ -500,21 +550,29 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         a KV cache manager, and ``kv_cache_inputs`` (or None if the model does
         not use KV cache). This method typically batches encoded tensors,
         claims a KV cache slot if needed, and returns the inputs and caches.
-        """
-        ...
 
-    @abstractmethod
-    def prepare_next_token_inputs(
+        When :attr:`batch_processor_cls` is set, delegates to the batch processor.
+        """
+        if self._batch_processor is not None:
+            return self._batch_processor.prepare_initial_token_inputs(
+                replica_batches,
+                kv_cache_inputs=kv_cache_inputs,
+                return_n_logits=return_n_logits,
+            )
+        return self._prepare_initial_token_inputs(
+            replica_batches, kv_cache_inputs, return_n_logits
+        )
+
+    def _prepare_initial_token_inputs(
         self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
+        replica_batches: Sequence[Sequence[BaseContextType]],
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        return_n_logits: int = 1,
     ) -> ModelInputs:
-        """Prepares the secondary inputs to be passed to ``execute()``.
-
-        While ``prepare_initial_token_inputs`` is responsible for managing the initial inputs.
-        This function is responsible for updating the inputs, for each step in a multi-step execution pattern.
-        """
-        ...
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement prepare_initial_token_inputs "
+            "or set batch_processor_cls."
+        )
 
     def compute_log_probabilities(
         self,
@@ -530,7 +588,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         Args:
             session: Inference session to compute log probabilities within.
             model_inputs: Inputs to the model returned by
-                `prepare_*_token_inputs()`.
+                ``prepare_initial_token_inputs()``.
             model_outputs: Outputs returned by `execute()`.
             next_tokens: Sampled tokens. Should have shape=[batch size]
             batch_top_n: Number of top log probabilities to return per input in
@@ -547,13 +605,143 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         )
 
 
+class GraphPipelineModel(PipelineModel[BaseContextType]):
+    """Graph-API pipeline model without KV cache.
+
+    Subclasses implement :meth:`_build_graph_for_compile` and optionally
+    :meth:`_create_model_config` and :meth:`_wire_batch_processor`.
+    """
+
+    state_dict: dict[str, Any]
+
+    @traced
+    def load_model(self, session: InferenceSession) -> Model:
+        """Load weights, build the graph, compile, and wire the batch processor."""
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+
+        with CompilationTimer("model") as timer:
+            graph, weights_registry = self._build_graph_for_compile(
+                session, state_dict, model_config
+            )
+            timer.mark_build_complete()
+            self.state_dict = weights_registry
+            model = session.load(graph, weights_registry=weights_registry)
+
+        self._wire_batch_processor(model, model_config)
+        return model
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        """Load and optionally adapt weights from the configured source."""
+        if self.adapter:
+            return self.adapter(dict(self.weights.items()))
+        return {key: value.data() for key, value in self.weights.items()}
+
+    def _hf_config_for_weights(self) -> AutoConfig | None:
+        """Optional HuggingFace config override for weight loading."""
+        return None
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        """Optional hook; returns ``None`` when no arch config object is needed."""
+        del state_dict
+        return None
+
+    def _wire_batch_processor(
+        self, model: Any = None, model_config: Any = None
+    ) -> None:
+        """Optional hook to construct ``self.batch_processor`` after compile."""
+        del model, model_config
+
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        """Build the graph and return ``(graph, weights_registry)``."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement _build_graph_for_compile"
+        )
+
+
+class ModuleV3PipelineModel(PipelineModel[BaseContextType]):
+    """ModuleV3 eager pipeline model without KV cache.
+
+    Subclasses implement :meth:`_instantiate_module` and optionally
+    :meth:`_create_model_config`, :meth:`_prepare_state_dict`, and
+    :meth:`_module_default_dtype`.
+    """
+
+    @traced
+    def load_model(self) -> Callable[..., Any]:
+        """Build and compile the ModuleV3 callable."""
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+        state_dict = self._prepare_state_dict(state_dict, model_config)
+
+        with CompilationTimer("model") as timer:
+            module_default_dtype = self._module_default_dtype(
+                state_dict, model_config
+            )
+            with F.lazy(), default_dtype(module_default_dtype):
+                nn_model = self._instantiate_module(model_config)
+            compile_input_types = self._get_compile_input_types(model_config)
+            timer.mark_build_complete()
+            return nn_model.compile(*compile_input_types, weights=state_dict)
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        """Load and optionally adapt weights from the configured source."""
+        if self.adapter:
+            return self.adapter(dict(self.weights.items()))
+        return {key: value.data() for key, value in self.weights.items()}
+
+    def _hf_config_for_weights(self) -> AutoConfig | None:
+        """Optional HuggingFace config override for weight loading."""
+        return None
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        """Builds model config from ``state_dict``."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_create_model_config`."
+        )
+
+    def _prepare_state_dict(
+        self, state_dict: dict[str, Any], model_config: Any
+    ) -> dict[str, Any]:
+        """Optional hook to cast or rewrite weights before ``nn.compile``."""
+        del model_config
+        return state_dict
+
+    def _module_default_dtype(
+        self, state_dict: dict[str, Any], model_config: Any
+    ) -> DType:
+        """Default dtype for the eager module build context."""
+        del state_dict, model_config
+        return self.dtype
+
+    def _instantiate_module(self, model_config: Any) -> Any:
+        """Constructs and places the nn module under ``F.lazy()``."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_instantiate_module`."
+        )
+
+    def _get_compile_input_types(self, model_config: Any) -> tuple[Any, ...]:
+        """Symbolic inputs passed to ``nn_model.compile``."""
+        del model_config
+        batch_processor = self.batch_processor
+        assert batch_processor is not None
+        return tuple(
+            batch_processor.get_symbolic_inputs(
+                kv_params=cast(KVCacheParamInterface, None),
+                device_refs=self.device_refs,
+            )
+        )
+
+
 class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
     """A pipeline model that supports KV cache."""
 
     kv_params: KVCacheParamInterface
-
-    #: Config class implementing ``construct_kv_params`` for this model.
-    model_config_cls: ClassVar[type[Any] | None] = None
 
     def __init__(
         self,
@@ -565,6 +753,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
         adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config=pipeline_config,
@@ -575,23 +764,27 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             adapter=adapter,
             return_logits=return_logits,
             return_hidden_states=return_hidden_states,
+            max_batch_size=max_batch_size,
         )
         self.kv_params = type(self).get_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=self.device_refs,
             kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
+            cache_dtype=cache_dtype_for_encoding(
+                self.pipeline_config.model.quantization_encoding,
+                self.pipeline_config.model.kv_cache.kv_cache_format,
+            ),
         )
 
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        return list(
-            self.kv_params.get_symbolic_inputs()
-            .unflatten(iter(kv_inputs_flat))
-            .inputs
-        )
+        # This helper supports single-cache (leaf) models; multi-cache trees
+        # are unflattened by the architecture itself.
+        kv_inputs = self.kv_params.unflatten_kv_inputs(iter(kv_inputs_flat))
+        assert isinstance(kv_inputs, KVCacheInputs)
+        return list(kv_inputs.inputs)
 
     @classmethod
     def get_kv_params(
@@ -619,4 +812,334 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             devices,
             kv_cache_config,
             cache_dtype,
+        )
+
+    def _load_state_dict(self) -> dict[str, Any]:
+        """Loads weights via :func:`~max.pipelines.lib.utils.parse_state_dict_from_weights`."""
+        return parse_state_dict_from_weights(
+            self.pipeline_config,
+            self.weights,
+            self.adapter,
+            hf_config=self._hf_config_for_weights(),
+        )
+
+    def _hf_config_for_weights(self) -> AutoConfig | None:
+        """HuggingFace config passed to the weight adapter, if any."""
+        return None
+
+    def _wire_batch_processor(
+        self,
+        model: Any = None,
+        model_config: Any = None,
+    ) -> None:
+        """Post-compile wiring into the batch processor (EP bind, vision, etc.)."""
+        del model, model_config
+        batch_processor = self.batch_processor
+        if batch_processor is None:
+            return
+        bind_ep = getattr(batch_processor, "bind_ep_comm_initializer", None)
+        if bind_ep is not None:
+            bind_ep(getattr(self, "ep_comm_initializer", None))
+
+
+class GraphPipelineModelWithKVCache(PipelineModelWithKVCache[BaseContextType]):
+    """Graph-API pipeline model with shared compile-and-load template.
+
+    Subclasses override :meth:`_build_graph_for_compile` (and optionally
+    :meth:`_create_model_config`, :meth:`_init_distributed_runtime`) rather than
+    duplicating weight loading, timing, and EP batch-processor wiring.
+
+    ModuleV3 (eager) models and multi-graph VLMs should inherit
+    :class:`MultiGraphPipelineModelWithKVCache` instead.
+    """
+
+    @traced
+    def load_model(self, session: InferenceSession) -> Model:
+        """Build, compile, and load the model graph into ``session``."""
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+        self._init_distributed_runtime(session, model_config)
+
+        with CompilationTimer("model") as timer:
+            graph, weights_registry = self._build_graph_for_compile(
+                session,
+                state_dict,
+                model_config,
+            )
+            timer.mark_build_complete()
+            self.state_dict = weights_registry
+            model = session.load(graph, weights_registry=weights_registry)
+
+        self._wire_batch_processor(model, model_config)
+        return model
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        """Builds model config from ``state_dict``.
+
+        Subclasses implement ``initialize`` / ``finalize`` (or heavier setup)
+        here. There is no separate finalize hook.
+        """
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_create_model_config`."
+        )
+
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: Any,
+    ) -> None:
+        """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
+        del session, model_config
+
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        """Instantiates the nn module, captures the graph, returns the registry."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_build_graph_for_compile`."
+        )
+
+
+class MultiGraphPipelineModelWithKVCache(
+    PipelineModelWithKVCache[BaseContextType]
+):
+    """Graph-API VLM with unified :meth:`load_model` and per-tower hooks.
+
+    :meth:`_create_model_config` should return the full VLM config (with
+    ``.vision_config`` and ``.text_config`` / ``.llm_config`` subconfigs) and
+    assign :attr:`model_config`. Both :meth:`_build_*` hooks receive that same
+    ``model_config``.
+
+    Override :meth:`load_model` when graph capture or weight loading does not
+    fit this flow (e.g. Qwen2.5VL, Kimi-K2.5).
+    """
+
+    _vision_weights_dict: dict[str, Any]
+    _language_weights_dict: dict[str, Any]
+
+    @traced
+    def load_model(
+        self, session: InferenceSession
+    ) -> tuple[Model | None, Model]:
+        """Build, compile, and load vision and language graphs into ``session``."""
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+        self._init_distributed_runtime(session, model_config)
+
+        with CompilationTimer("vision + language model") as timer:
+            graph_module = Module()
+
+            vision_graph: Graph | None = None
+            vision_registry: dict[str, Any] = {}
+            if self._include_vision_graph(model_config):
+                vision_graph, vision_registry = self._build_vision_graph(
+                    model_config,
+                    self._vision_weights_dict,
+                    module=graph_module,
+                )
+
+            language_graph, language_registry = self._build_language_graph(
+                model_config,
+                self._language_weights_dict,
+                module=graph_module,
+            )
+            timer.mark_build_complete()
+
+            models = session.load_all(
+                graph_module,
+                weights_registry={**vision_registry, **language_registry},
+            )
+
+        vision_model = (
+            models[vision_graph.name] if vision_graph is not None else None
+        )
+        language_model = models[language_graph.name]
+        self._wire_batch_processor(vision_model, model_config)
+        return vision_model, language_model
+
+    def _include_vision_graph(self, model_config: Any) -> bool:
+        """Whether to capture and load a vision graph (override for text-only VLMs)."""
+        del model_config
+        return True
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        """Builds the full VLM config from ``state_dict``.
+
+        Should assign :attr:`model_config` and return the same object.
+        """
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_create_model_config`."
+        )
+
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: Any,
+    ) -> None:
+        """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
+        del session, model_config
+
+    def _build_vision_graph(
+        self,
+        model_config: Any,
+        state_dict: dict[str, Any],
+        module: Module,
+    ) -> tuple[Graph, dict[str, Any]]:
+        """Captures the vision tower graph and its ``nn.state_dict()`` registry."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_build_vision_graph`."
+        )
+
+    def _build_language_graph(
+        self,
+        model_config: Any,
+        state_dict: dict[str, Any],
+        module: Module,
+    ) -> tuple[Graph, dict[str, Any]]:
+        """Captures the language tower graph and its ``nn.state_dict()`` registry."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_build_language_graph`."
+        )
+
+
+class ModuleV3PipelineModelWithKVCache(
+    PipelineModelWithKVCache[BaseContextType]
+):
+    """ModuleV3 (eager) pipeline model with shared compile template.
+
+    Subclasses override :meth:`_instantiate_module` (and optionally
+    :meth:`_create_model_config`, :meth:`_init_distributed_runtime`,
+    :meth:`_module_default_dtype`, :meth:`_get_compile_input_types`) rather than
+    duplicating weight loading, timing, and ``nn.compile`` wiring.
+
+    Graph-API models should inherit :class:`GraphPipelineModelWithKVCache`
+    instead. Encoder models without KV cache should inherit
+    :class:`ModuleV3PipelineModel` instead. Multi-graph VLMs should inherit
+    :class:`MultiGraphPipelineModelWithKVCache` (graph API) or
+    :class:`ModuleV3MultiGraphPipelineModelWithKVCache` (ModuleV3).
+    ``ComponentModel`` types and unified spec-decode pipelines should override
+    :meth:`load_model` entirely.
+    """
+
+    _modulev3_extra_input_types: list[Any]
+
+    @traced
+    def load_model(self) -> Callable[..., Any]:
+        """Build and compile the ModuleV3 callable."""
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+        self._init_distributed_runtime(model_config)
+        module_default_dtype = self._module_default_dtype(
+            state_dict, model_config
+        )
+        with F.lazy(), default_dtype(module_default_dtype):
+            nn_model = self._instantiate_module(model_config)
+        compile_input_types = self._get_compile_input_types(model_config)
+        self._wire_batch_processor(nn_model, model_config)
+        return nn_model.compile(*compile_input_types, weights=state_dict)
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        """Builds model config from ``state_dict``."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_create_model_config`."
+        )
+
+    def _init_distributed_runtime(self, model_config: Any) -> None:
+        """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
+        del model_config
+        self._modulev3_extra_input_types = []
+
+    def _module_default_dtype(
+        self, state_dict: dict[str, Any], model_config: Any
+    ) -> DType:
+        """Default dtype for the eager module build context."""
+        del state_dict
+        return model_config.dtype
+
+    def _instantiate_module(self, model_config: Any) -> Any:
+        """Constructs and places the nn module under ``F.lazy()``."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_instantiate_module`."
+        )
+
+    def _get_compile_input_types(self, model_config: Any) -> tuple[Any, ...]:
+        """Symbolic inputs passed to ``nn_model.compile``."""
+        del model_config
+        batch_processor = self.batch_processor
+        assert batch_processor is not None
+        input_types = list(
+            batch_processor.get_symbolic_inputs(
+                kv_params=self.kv_params,
+                device_refs=self.device_refs,
+            )
+        )
+        input_types.extend(self._modulev3_extra_input_types)
+        return tuple(input_types)
+
+
+class ModuleV3MultiGraphPipelineModelWithKVCache(
+    PipelineModelWithKVCache[BaseContextType]
+):
+    """ModuleV3 VLM with separate vision and language compiled callables.
+
+    Subclasses implement :meth:`_load_state_dict` (tower weight prep),
+    :meth:`_create_model_config`, and :meth:`_compile_vision_model` /
+    :meth:`_compile_language_model`. The base :meth:`load_model` passes each
+    tower's ``WeightData`` dict into the matching compile hook (the vision or
+    language slice of :attr:`_vision_weights_dict` / :attr:`_language_weights_dict`,
+    not the raw checkpoint returned from :meth:`_load_state_dict`).
+
+    Graph-API VLMs should inherit :class:`MultiGraphPipelineModelWithKVCache`
+    instead.
+    """
+
+    _vision_weights_dict: dict[str, Any]
+    _language_weights_dict: dict[str, Any]
+
+    @traced
+    def load_model(
+        self,
+    ) -> tuple[Callable[..., Any] | None, Callable[..., Any]]:
+        """Build and compile vision and language ModuleV3 callables."""
+        state_dict = self._load_state_dict()
+        model_config = self._create_model_config(state_dict)
+        self._init_distributed_runtime(model_config)
+
+        vision_model = self._compile_vision_model(
+            model_config, self._vision_weights_dict
+        )
+        language_model = self._compile_language_model(
+            model_config, self._language_weights_dict
+        )
+
+        self._wire_batch_processor(vision_model, model_config)
+        return vision_model, language_model
+
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        """Builds model config from ``state_dict``."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_create_model_config`."
+        )
+
+    def _init_distributed_runtime(self, model_config: Any) -> None:
+        """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
+        del model_config
+
+    def _compile_vision_model(
+        self, model_config: Any, state_dict: dict[str, Any]
+    ) -> Callable[..., Any]:
+        """Builds and compiles the vision tower."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_compile_vision_model`."
+        )
+
+    def _compile_language_model(
+        self, model_config: Any, state_dict: dict[str, Any]
+    ) -> Callable[..., Any]:
+        """Builds and compiles the language tower."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement `_compile_language_model`."
         )

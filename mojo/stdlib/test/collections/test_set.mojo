@@ -14,7 +14,7 @@
 from std.collections import Set
 from std.hashlib import hash
 
-from test_utils import check_write_to
+from test_utils import ExplicitDestroyKey, MoveOnly, check_write_to
 from std.testing import (
     assert_false,
     assert_equal,
@@ -531,14 +531,14 @@ def test_set_write_repr_to() raises:
     var s = {1, 2, 3}
     var output = String()
     s.write_repr_to(output)
-    assert_true(output.startswith("Set[Int, Hasher="))
+    assert_true(output.startswith("Set[SIMD[DType.int, 1], Hasher="))
     assert_true(output.endswith("]({Int(1), Int(2), Int(3)})"))
 
     # Test empty set
     var empty = Set[Int]()
     var empty_output = String()
     empty.write_repr_to(empty_output)
-    assert_true(empty_output.startswith("Set[Int, Hasher="))
+    assert_true(empty_output.startswith("Set[SIMD[DType.int, 1], Hasher="))
     assert_true(empty_output.endswith("]({})"), empty_output)
 
 
@@ -559,13 +559,33 @@ def test_set_conditional_conformances() raises:
     assert_true(conforms_to(Set[Int], Comparable))
     assert_true(conforms_to(Set[Int], Hashable))
     assert_true(conforms_to(Set[Int], Writable))
+    assert_true(conforms_to(Set[MoveOnly[Int]], IterableOwned))
+
+    # Move-only element type drops the copy-requiring conformances.
+    assert_false(conforms_to(Set[MoveOnly[Int]], Copyable))
+    assert_false(conforms_to(Set[MoveOnly[Int]], Equatable))
+    assert_false(conforms_to(Set[MoveOnly[Int]], Comparable))
+    assert_false(conforms_to(Set[MoveOnly[Int]], Hashable))
+    assert_false(conforms_to(Set[MoveOnly[Int]], Writable))
+
+    # ImplicitlyDeletable conformance is conditional on the element type.
+    assert_true(conforms_to(Set[Int], ImplicitlyDeletable))
+    assert_true(conforms_to(Set[String], ImplicitlyDeletable))
+    assert_true(conforms_to(Set[MoveOnly[Int]], ImplicitlyDeletable))
+    # A linear (explicitly-destroyed) element makes the set itself linear.
+    assert_false(conforms_to(Set[ExplicitDestroyKey], ImplicitlyDeletable))
 
 
 def test_set_iter_owned() raises:
-    var s = Set[Int](1, 2, 3)
+    # Test that owned iteration works, for non-Copyable types
+    var s = Set[MoveOnly[Int]]()
+    s.add(MoveOnly(1))
+    s.add(MoveOnly(2))
+    s.add(MoveOnly(3))
+
     var elems = List[Int]()
-    for elem in s^:
-        elems.append(elem)
+    for var elem in s^:
+        elems.append(elem.data)
 
     assert_equal(len(elems), 3)
     assert_true(1 in elems)
@@ -583,6 +603,123 @@ def test_set_iter_owned_bounds() raises:
     assert_equal(it.bounds()[0], 1)
     _ = it.__next__()
     assert_equal(it.bounds()[0], 0)
+
+
+def test_set_move_only_element() raises:
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `Set[T: KeyElement & ImplicitlyDeletable, H]`
+    # where the element type is move-only. Copy-requiring ops (`union`,
+    # `intersection`, iteration, ...) are unavailable for this `T`, but the
+    # add / remove / contains / pop / discard / clear core remains usable.
+    assert_false(conforms_to(Set[MoveOnly[Int]], Copyable))
+
+    var s = Set[MoveOnly[Int]]()
+    s.add(MoveOnly[Int](1))
+    s.add(MoveOnly[Int](2))
+    s.add(MoveOnly[Int](3))
+    assert_equal(len(s), 3)
+    assert_true(MoveOnly[Int](1) in s)
+    assert_true(MoveOnly[Int](2) in s)
+    assert_true(MoveOnly[Int](3) in s)
+    assert_false(MoveOnly[Int](99) in s)
+
+    # Adding a duplicate is a no-op on membership.
+    s.add(MoveOnly[Int](1))
+    assert_equal(len(s), 3)
+
+    # `remove` removes by key without copying the key.
+    s.remove(MoveOnly[Int](2))
+    assert_equal(len(s), 2)
+    assert_false(MoveOnly[Int](2) in s)
+
+    # `discard` on a missing element is a no-op.
+    s.discard(MoveOnly[Int](99))
+    assert_equal(len(s), 2)
+
+    # `pop` moves an element out.
+    var popped = s.pop()
+    assert_equal(len(s), 1)
+    assert_false(popped in s)
+
+    s.clear()
+    assert_equal(len(s), 0)
+    assert_false(s.__bool__())
+
+
+def test_set_insert_linear() raises:
+    # `insert` on a linear (non-`ImplicitlyDeletable`) element type moves any
+    # displaced equal element out and returns it instead of destroying it in
+    # place. The returned `Optional[T]` is itself linear and is consumed via
+    # `deinit_with`. The final `deinit_with` covers `Set`'s per-element
+    # teardown path end-to-end.
+    var s = Set[ExplicitDestroyKey]()
+    var disposed = List[Int]()
+
+    def dispose(var key: ExplicitDestroyKey) {mut}:
+        disposed.append(key.value)
+        key^.destroy()
+
+    # New elements: nothing displaced, so each returned `Optional` is empty.
+    s.insert(ExplicitDestroyKey(1)).deinit_with(dispose)
+    s.insert(ExplicitDestroyKey(2)).deinit_with(dispose)
+    var len_after_new = len(s)
+    var disposed_after_new = len(disposed)
+
+    # Inserting an equal element displaces the previously-present one, which
+    # comes back and is disposed by the caller (not the just-inserted element).
+    s.insert(ExplicitDestroyKey(1)).deinit_with(dispose)
+    var len_after_dup = len(s)
+    var disposed_after_dup = len(disposed)
+
+    s^.deinit_with(dispose)
+
+    assert_equal(len_after_new, 2)
+    assert_equal(disposed_after_new, 0)
+    assert_equal(len_after_dup, 2)
+    assert_equal(disposed_after_dup, 1)
+    # Final teardown disposed the two survivors (1 and 2).
+    assert_equal(len(disposed), 3)
+    assert_true(1 in disposed)
+    assert_true(2 in disposed)
+
+
+def test_set_clear_with_linear() raises:
+    # `clear_with` on a populated linear `Set`: every element reaches the
+    # closure once, the set empties, and its capacity is reused.
+    var s = Set[ExplicitDestroyKey]()
+    var disposed = List[Int]()
+
+    def dispose(var key: ExplicitDestroyKey) {mut}:
+        disposed.append(key.value)
+        key^.destroy()
+
+    s.insert(ExplicitDestroyKey(1)).deinit_with(dispose)
+    s.insert(ExplicitDestroyKey(2)).deinit_with(dispose)
+    s.insert(ExplicitDestroyKey(3)).deinit_with(dispose)
+    var len_before_clear = len(s)
+
+    s.clear_with(dispose)
+    var cleared = disposed.copy()
+    var len_after_clear = len(s)
+
+    # Capacity is retained, so the emptied set is reusable.
+    s.insert(ExplicitDestroyKey(4)).deinit_with(dispose)
+    var len_after_reuse = len(s)
+
+    s^.deinit_with(dispose)
+
+    assert_equal(len_before_clear, 3)
+    assert_equal(len_after_clear, 0)
+    assert_equal(len_after_reuse, 1)
+
+    assert_equal(len(cleared), 3)
+    assert_true(1 in cleared)
+    assert_true(2 in cleared)
+    assert_true(3 in cleared)
+
+    # Final teardown disposed the reused survivor (4).
+    assert_equal(len(disposed), 4)
+    assert_true(4 in disposed)
 
 
 def main() raises:

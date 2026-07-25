@@ -17,8 +17,9 @@ from contextlib import contextmanager
 
 import hf_repo_lock
 from max.driver import DeviceSpec, scan_available_devices
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import TextGenerationPipeline, generate_local_model_path
+from max.pipelines.lib.memory_estimation import _MemoryPlan
 
 from .pipeline_config import (
     DummyMAXModelConfig,
@@ -79,9 +80,12 @@ def retrieve_mock_text_generation_pipeline(
         pipeline: TextGenerationPipeline[TextContext] = TextGenerationPipeline(
             pipeline_config=mock_config,
             pipeline_model=MockPipelineModel,
-            eos_token_id=eos_token,
             weight_adapters={},
             tokenizer=tokenizer,
+            memory_plan=_MemoryPlan(
+                max_batch_size=mock_config.runtime.max_batch_size or 1,
+                footprint=0,
+            ),
         )
 
         yield tokenizer, pipeline

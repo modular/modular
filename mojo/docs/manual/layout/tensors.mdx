@@ -200,11 +200,12 @@ comptime columns = 1024
 comptime buf_size = rows * columns
 comptime layout = Layout.row_major(rows, columns)
 var ptr = alloc[Float32](buf_size)
-memset(ptr, 0, buf_size)
+unsafe_memset(ptr, 0, buf_size)
 var tensor = LayoutTensor[DType.float32, layout](ptr)
 ```
 
-Note that this example uses [`memset()`](/docs/std/memory/memory/memset/)
+Note that this example uses
+[`unsafe_memset()`](/docs/std/memory/memory/unsafe_memset/)
 instead of the `LayoutTensor` `fill()` method. The `fill()` method performs
 elementwise initialization of the tensor, so it may be slow for large tensors.
 
@@ -255,8 +256,9 @@ def initialize_tensor_from_cpu_example() raises:
 
 
     def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
-        if global_idx.y < UInt(tensor.shape[0]()) and global_idx.x < UInt(
-            tensor.shape[1]()
+        if (
+            global_idx.y < tensor.shape[0]()
+            and global_idx.x < tensor.shape[1]()
         ):
             tensor[global_idx.y, global_idx.x] = (
                 tensor[global_idx.y, global_idx.x] + 1
@@ -312,7 +314,6 @@ comptime tile_layout = Layout.row_major(16, 16)
 var shared_tile = LayoutTensor[
     dtype,
     tile_layout,
-    MutAnyOrigin,
     address_space=AddressSpace.SHARED,
 ].stack_allocation()
 ```
@@ -445,7 +446,6 @@ comptime tile_layout = Layout.row_major(4, 4)
 var iter = LayoutTensorIter[
     DType.int16,
     tile_layout,
-    MutAnyOrigin
 ](storage.unsafe_ptr(), buf_size)
 
 for i in range(ceildiv(buf_size, comptime (tile_layout.size()))):
@@ -620,7 +620,6 @@ def copy_from_async_example():
         var shared_tile = LayoutTensor[
             dtype,
             tile_layout,
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ].stack_allocation()
 

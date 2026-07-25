@@ -19,10 +19,12 @@ from std.collections.string.format import _FormatUtils
 from std.collections.string.string_slice import (
     CodepointSliceIter,
     CodepointsIter,
+    GraphemeSliceIter,
     StaticString,
 )
 from std.os import PathLike
 from std.ffi import c_char, CStringSlice
+from std.python import ConvertibleToPython, PythonObject
 
 # ===-----------------------------------------------------------------------===#
 # StringLiteral
@@ -213,56 +215,47 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return String(self)
 
-    @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
-    def __iter__(self) -> CodepointSliceIter[StaticConstantOrigin]:
-        """Return an iterator over the string literal.
+    def __iter__(self) -> GraphemeSliceIter[ImmStaticOrigin]:
+        """Iterate over the grapheme clusters in the string literal.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen, such as a base letter together with
+        any combining marks. See `graphemes()` for the precise definition.
+
+        To iterate by Unicode codepoint or by byte instead, use
+        `codepoints()`/`codepoint_slices()` or `as_bytes()`.
 
         Returns:
-            An iterator over the string.
+            An iterator yielding each grapheme cluster as a `StringSlice`.
         """
-        return self.codepoint_slices()
+        return self.graphemes()
 
-    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
-    def __reversed__(self) -> CodepointSliceIter[StaticConstantOrigin, False]:
-        """Iterate backwards over the string, returning immutable references.
+    def __reversed__(self) -> GraphemeSliceIter[ImmStaticOrigin, False]:
+        """Iterate backwards over the grapheme clusters in the string literal.
+
+        See `graphemes()` for the definition of a grapheme cluster. Reverse
+        iteration is more expensive per element than forward iteration; see
+        `graphemes_reversed()` for details.
 
         Returns:
-            A reversed iterator over the string.
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
         """
-        return self.codepoint_slices_reversed()
+        return self.graphemes_reversed()
 
-    def __getitem__[I: Indexer, //](self, idx: I) -> StaticString:
-        """Gets the character at the specified position.
+    comptime ConversionToPythonErrorType = Error
+    """The error type raised if conversion to a PythonObject fails."""
 
-        Parameters:
-            I: The inferred type of an indexer argument.
-
-        Args:
-            idx: The index value.
+    def to_python_object(var self) raises -> PythonObject:
+        """Initialize the object from a string literal.
 
         Returns:
-            A StringSlice view containing the character at the specified position.
+            A PythonObject representing the string literal.
+
+        Raises:
+            If the string is not valid UTF-8.
         """
-        return StaticString(
-            unsafe_from_utf8=Span(ptr=self.unsafe_ptr() + idx, length=1)
-        )
-
-    # TODO(MSTDL-1327): Reduce pain when string literals can't be
-    # nonmaterializable by making them merge into StaticString.  They should
-    # eventually merge into String through nonmaterialization.
-    @always_inline("nodebug")
-    def __merge_with__[
-        other_type: type_of(StringLiteral[_]),
-    ](self) -> StaticString:
-        """Returns a StaticString after merging with another string literal.
-
-        Parameters:
-            other_type: The type of the string literal to merge with.
-
-        Returns:
-            A StaticString after merging with the specified `other_type`.
-        """
-        return self
+        return PythonObject(StringSlice(self))
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -278,7 +271,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Notes:
             This does not include the trailing null terminator in the count.
         """
-        return Int(mlir_value=__mlir_op.`pop.string.size`(self.value))
+        return Int(
+            SIMDLength(mlir_value=__mlir_op.`pop.string.size`(self.value))
+        )
 
     @always_inline
     def count_codepoints(self) -> Int:
@@ -334,32 +329,34 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     @always_inline("nodebug")
     def unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, StaticConstantOrigin]:
-        """Get raw pointer to the underlying data.
+    ) -> Pointer[Byte, ImmStaticOrigin]:
+        """Get a pointer to the underlying data.
 
         Returns:
-            The raw pointer to the data.
+            The pointer to the data.
         """
-        var ptr = UnsafePointer[_, StaticConstantOrigin](
-            __mlir_op.`pop.string.address`(self.value)
+        var ptr = Pointer[_, ImmStaticOrigin](
+            _mlir_value=__mlir_op.`pop.string.address`(self.value)
         )
 
         # TODO(MSTDL-555):
         #   Remove bitcast after changing pop.string.address
         #   return type.
-        return ptr.bitcast[Byte]()
+        return ptr.unsafe_bitcast[Byte]()
 
     @always_inline
     def as_c_string_slice(
         self,
-    ) -> CStringSlice[StaticConstantOrigin]:
+    ) -> CStringSlice[ImmStaticOrigin]:
         """Return a `CStringSlice` to the underlying memory of the string.
 
         Returns:
             The `CStringSlice` of the string.
         """
         # Safety: StringLiteral is guaranteed to be nul-terminated.
-        return CStringSlice(unsafe_from_ptr=self.unsafe_ptr().bitcast[c_char]())
+        return CStringSlice(
+            unsafe_from_ptr=self.unsafe_ptr().unsafe_bitcast[c_char]()
+        )
 
     @always_inline("nodebug")
     def as_string_slice(self) -> StaticString:
@@ -374,13 +371,13 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         #   guaranteed to be valid.
         return StaticString(
             unsafe_from_utf8=Span(
-                ptr=self.unsafe_ptr(),
+                unsafe_ptr=self.unsafe_ptr(),
                 length=self.byte_length(),
             )
         )
 
     @always_inline("nodebug")
-    def as_bytes(self) -> Span[Byte, StaticConstantOrigin]:
+    def as_bytes(self) -> Span[Byte, ImmStaticOrigin]:
         """
         Returns a contiguous Span of the bytes owned by this string.
 
@@ -388,8 +385,8 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             A contiguous slice pointing to the bytes owned by this string.
         """
 
-        return Span[Byte, StaticConstantOrigin](
-            ptr=self.unsafe_ptr(), length=self.byte_length()
+        return Span[Byte, ImmStaticOrigin](
+            unsafe_ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
     def write_to(self, mut writer: Some[Writer]):
@@ -696,7 +693,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return StringSlice(self).lstrip()
 
-    def codepoint_slices(self) -> CodepointSliceIter[StaticConstantOrigin]:
+    def codepoint_slices(self) -> CodepointSliceIter[ImmStaticOrigin]:
         """Iterate over the string's codepoints as immutable slices.
 
         Returns:
@@ -706,7 +703,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
     def codepoint_slices_reversed(
         self,
-    ) -> CodepointSliceIter[StaticConstantOrigin, False]:
+    ) -> CodepointSliceIter[ImmStaticOrigin, False]:
         """Iterates backwards over the string literal, returning single-character slices.
 
         Each returned slice points to a single Unicode codepoint encoded in the
@@ -716,17 +713,40 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A reversed iterator of references to the string literal elements.
         """
-        return CodepointSliceIter[StaticConstantOrigin, False](
-            StringSlice(self)
-        )
+        return CodepointSliceIter[ImmStaticOrigin, False](StringSlice(self))
 
-    def codepoints(self) -> CodepointsIter[StaticConstantOrigin]:
+    def codepoints(self) -> CodepointsIter[ImmStaticOrigin]:
         """Iterate over the `Codepoint`s in this string constant.
 
         Returns:
             An iterator over successive `Codepoint` values.
         """
         return StringSlice(self).codepoints()
+
+    def graphemes(self) -> GraphemeSliceIter[ImmStaticOrigin]:
+        """Return an iterator over the grapheme clusters in this string.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen.
+
+        Returns:
+            An iterator yielding each grapheme cluster as a `StringSlice`.
+        """
+        return StringSlice(self).graphemes()
+
+    def graphemes_reversed(
+        self,
+    ) -> GraphemeSliceIter[ImmStaticOrigin, False]:
+        """Return an iterator over the grapheme clusters in this string,
+        yielding them in reverse order.
+
+        See `graphemes()` for the definition of a grapheme cluster.
+
+        Returns:
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
+        """
+        return StringSlice(self).graphemes_reversed()
 
     def format[*Ts: Writable](self, *args: *Ts) -> String:
         """Produce a formatted string using the current string as a template.
@@ -761,7 +781,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         _FormatUtils.format_to_comptime[StaticString(Self())](buffer, *args)
         return buffer^
 
-    def join[T: Copyable & Writable, //](self, elems: Span[T, ...]) -> String:
+    def join[T: Copyable & Writable, //](self, elems: Span[T, _]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write

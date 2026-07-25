@@ -70,15 +70,14 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
     @parameter
     def bench_fn() raises:
         @always_inline
-        @parameter
         def reduce_fn[
-            _dtype: DType, width: Int
+            _dtype: DType, width: SIMDLength
         ](
             input_val: SIMD[_dtype, width], update_val: SIMD[_dtype, width]
         ) -> SIMD[_dtype, width]:
             return input_val + update_val
 
-        scatter_elements[reduce_fn](
+        scatter_elements[reduce_fn=reduce_fn](
             data_tensor,
             indices_tensor,
             updates_tensor,

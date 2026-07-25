@@ -21,19 +21,34 @@ types are obtained through the lifecycle chain
 from __future__ import annotations
 
 import mojo.importer
+from max.dtype import DType
 
+from .array import Array
+from .buffer import Buffer, BufferView
+from .bundle import Bundle
 from .context import Context
 from .device import Device
 from .driver import Driver
 from .event import Event
+from .function import Function
+from .memory import copy, fill, set_memory
 from .queue import Queue
 from .stream import Stream
 
 __all__ = [
+    "Array",
+    "Buffer",
+    "BufferView",
+    "Bundle",
     "Context",
+    "DType",
     "Device",
     "Driver",
     "Event",
+    "Function",
     "Queue",
     "Stream",
+    "copy",
+    "fill",
+    "set_memory",
 ]

@@ -70,7 +70,7 @@ def legalize_topk_ids[
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
-        def is_duplicate() {read} -> Int:
+        def is_duplicate() {imm} -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if topk_ids_for_token[i] == topk_ids_for_token[j]:
@@ -452,7 +452,7 @@ def test_dispatch[
                             remote_rank_top_k_ids[
                                 remote_loc * Int32(top_k) + remote_topk_id
                             ],
-                            curr_expert,
+                            Int32(curr_expert),
                         )
 
                         var remote_rank_input_tokens = (

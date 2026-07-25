@@ -16,7 +16,7 @@ from std.random import random_float64
 
 from std.algorithm.functional import parallelize_over_rows
 from std.benchmark import Bench, Bencher, BenchId
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, Idx, PointerStorage, TileTensor, row_major
 from nn.toppminp import min_p_sampling, top_p_sampling
 from std.testing import assert_equal
 
@@ -24,6 +24,12 @@ from std.utils import IndexList
 
 comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
+
+comptime FillFnType = def[dtype: DType](
+    mut TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
+) -> None
 
 
 struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
@@ -66,8 +72,13 @@ def time_kernel[
     m.bench_function[bench_func](BenchId(kernel_name))
 
 
-@parameter
-def fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
+def fill_random[
+    dtype: DType
+](
+    mut buffer: TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
+):
     comptime min_val = -1e6
     comptime max_val = 1e6
     var total_elements = buffer.num_elements()
@@ -76,9 +87,14 @@ def fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
         buffer.raw_store(i, random_value.cast[dtype]())
 
 
-@parameter
-def fill_iota[dtype: DType](mut buf: TileTensor[mut=True, dtype, ...]):
-    iota(buf.ptr, buf.num_elements())
+def fill_iota[
+    dtype: DType
+](
+    mut buf: TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
+):
+    iota(buf._storage, buf.num_elements())
 
 
 def test_is_sorted_descending[
@@ -143,10 +159,8 @@ def print_test_case(test_case: TestCase):
 
 
 def test_case_sampling[
-    fill_fn: def[dtype: DType](
-        mut TileTensor[mut=True, dtype, ...]
-    ) capturing -> None,
-](test_case: TestCase) raises:
+    FillFn: ImplicitlyCopyable & FillFnType,
+](test_case: TestCase, fill_fn: FillFn) raises:
     print_test_case(test_case)
     comptime rank = 2
     comptime dtype = test_case.dtype
@@ -154,8 +168,8 @@ def test_case_sampling[
     comptime is_top_p = test_case.is_top_p
     var batch_size = test_case.batch_size
     var vocab_size = test_case.vocab_size
-    var temperature = rebind[Scalar[dtype]](test_case.temperature)
-    var p_threshold = rebind[Scalar[dtype]](test_case.p_threshold)
+    var temperature = test_case.temperature
+    var p_threshold = test_case.p_threshold
 
     var m = Bench()
 
@@ -240,10 +254,8 @@ def test_case_sampling[
 def test_toppminp[
     dtype: DType,
     out_idx_type: DType,
-    fill_fn: def[dtype: DType](
-        mut TileTensor[mut=True, dtype, ...]
-    ) capturing -> None,
-]() raises:
+    FillFn: ImplicitlyCopyable & FillFnType,
+](fill_fn: FillFn) raises:
     comptime test_case1 = TestCase[dtype, out_idx_type, _is_top_p=True](
         batch_size=1, vocab_size=1024, temperature=1.0, p_threshold=0.9
     )
@@ -257,33 +269,29 @@ def test_toppminp[
         p_threshold=0.1,
     )
 
-    test_case_sampling[fill_fn](test_case1)
-    test_case_sampling[fill_fn](test_case2)
-    test_case_sampling[fill_fn](test_case3)
+    test_case_sampling(test_case1, fill_fn)
+    test_case_sampling(test_case2, fill_fn)
+    test_case_sampling(test_case3, fill_fn)
 
 
 def test_all_out_idx_types[
     dtype: DType,
-    fill_fn: def[dtype: DType](
-        mut TileTensor[mut=True, dtype, ...]
-    ) capturing -> None,
-]() raises:
-    test_toppminp[dtype, DType.int32, fill_fn]()
-    test_toppminp[dtype, DType.int64, fill_fn]()
-    test_toppminp[dtype, DType.uint64, fill_fn]()
+    FillFn: ImplicitlyCopyable & FillFnType,
+](fill_fn: FillFn) raises:
+    test_toppminp[dtype, DType.int32](fill_fn)
+    test_toppminp[dtype, DType.int64](fill_fn)
+    test_toppminp[dtype, DType.uint64](fill_fn)
 
 
 def test_all_types[
-    fill_fn: def[dtype: DType](
-        mut TileTensor[mut=True, dtype, ...]
-    ) capturing -> None,
-]() raises:
+    FillFn: ImplicitlyCopyable & FillFnType,
+](fill_fn: FillFn) raises:
     print("\n=== Testing Float32 ===")
-    test_all_out_idx_types[DType.float32, fill_fn]()
+    test_all_out_idx_types[DType.float32](fill_fn)
 
 
 def main() raises:
     print("\n====== Testing Fill Iota ======\n")
-    test_all_types[fill_iota]()
+    test_all_types(fill_iota)
     print("\n====== Testing Fill Random ======\n")
-    test_all_types[fill_random]()
+    test_all_types(fill_random)

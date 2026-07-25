@@ -19,7 +19,7 @@ This module registers operations for variable-length selective scan:
 
 from std.math import ceildiv
 
-import extensibility as compiler
+import extensibility
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 
@@ -45,7 +45,7 @@ comptime Strides4D = IndexList[4]
 # ============================================================================
 
 
-@compiler.register("varlen_selective_scan_fwd")
+@extensibility.register("varlen_selective_scan_fwd")
 struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
     """Variable-length selective scan forward pass.
 
@@ -425,22 +425,46 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        u: InputTensor[dtype=dtype, rank=2, ...],
-        delta: InputTensor[dtype=dtype, rank=2, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=3, ...],
-        C: InputTensor[dtype=dtype, rank=3, ...],
-        D: InputTensor[dtype=dtype, rank=1, ...],
-        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
-        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
-    ) -> IndexList[2]:
-        return u.shape()
+
+@extensibility.register_shape_function("varlen_selective_scan_fwd")
+def varlen_selective_scan_fwd_shape[
+    dtype: DType,
+](
+    u: InputTensor[dtype=dtype, rank=2, ...],
+    delta: InputTensor[dtype=dtype, rank=2, ...],
+    A: InputTensor[dtype=dtype, rank=2, ...],
+    B: InputTensor[dtype=dtype, rank=3, ...],
+    C: InputTensor[dtype=dtype, rank=3, ...],
+    D: InputTensor[dtype=dtype, rank=1, ...],
+    delta_bias: InputTensor[dtype=dtype, rank=1, ...],
+    query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
+    cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+    has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+) -> IndexList[2]:
+    """Returns the output shape for the `varlen_selective_scan_fwd` op.
+
+    The variable-length selective scan output has the same shape as the
+    packed input `u`: `(dim, total_length)`.
+
+    Parameters:
+        dtype: Element type of the scan input and output tensors.
+
+    Args:
+        u: Packed input tensor with shape `(dim, total_length)`.
+        delta: Time-step tensor with shape `(dim, total_length)`.
+        A: State transition matrix with shape `(dim, dstate)`.
+        B: Input projection with shape `(ngroups, dstate, total_length)`.
+        C: Output projection with shape `(ngroups, dstate, total_length)`.
+        D: Skip connection with shape `(dim,)`.
+        delta_bias: Delta bias with shape `(dim,)`.
+        query_start_loc: Cumulative sequence lengths with shape `(batch + 1,)`.
+        cache_indices: Indices into SSM states with shape `(batch,)`.
+        has_initial_state: Boolean mask with shape `(batch,)`.
+
+    Returns:
+        The output tensor shape `(dim, total_length)`.
+    """
+    return u.shape()
 
 
 # ============================================================================
@@ -448,7 +472,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
 # ============================================================================
 
 
-@compiler.register("varlen_selective_state_update")
+@extensibility.register("varlen_selective_state_update")
 struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
     """Varlen selective state update for autoregressive inference.
 
@@ -835,22 +859,46 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        x: InputTensor[dtype=dtype, rank=3, ...],
-        dt: InputTensor[dtype=dtype, rank=3, ...],
-        A: InputTensor[dtype=dtype, rank=3, ...],
-        B: InputTensor[dtype=dtype, rank=3, ...],
-        C: InputTensor[dtype=dtype, rank=3, ...],
-        D: InputTensor[dtype=dtype, rank=2, ...],
-        z: InputTensor[dtype=dtype, rank=3, ...],
-        dt_bias: InputTensor[dtype=dtype, rank=2, ...],
-        state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-    ) -> Tuple[IndexList[4], IndexList[3]]:
-        var batch = x.dim_size(0)
-        var nheads = x.dim_size(1)
-        var dim = x.dim_size(2)
-        var dstate = A.dim_size(2)
-        return (IndexList[4](batch, nheads, dim, dstate), x.shape())
+
+@extensibility.register_shape_function("varlen_selective_state_update")
+def varlen_selective_state_update_shape[
+    dtype: DType,
+](
+    x: InputTensor[dtype=dtype, rank=3, ...],
+    dt: InputTensor[dtype=dtype, rank=3, ...],
+    A: InputTensor[dtype=dtype, rank=3, ...],
+    B: InputTensor[dtype=dtype, rank=3, ...],
+    C: InputTensor[dtype=dtype, rank=3, ...],
+    D: InputTensor[dtype=dtype, rank=2, ...],
+    z: InputTensor[dtype=dtype, rank=3, ...],
+    dt_bias: InputTensor[dtype=dtype, rank=2, ...],
+    state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+) -> Tuple[IndexList[4], IndexList[3]]:
+    """Returns the output shapes for the `varlen_selective_state_update` op.
+
+    The update produces the updated SSM state and the single-step output.
+
+    Parameters:
+        dtype: Element type of the state update input and output tensors.
+
+    Args:
+        x: Input tensor with shape `(batch, nheads, dim)`.
+        dt: Time-delta tensor with shape `(batch, nheads, dim)`.
+        A: State transition matrix with shape `(nheads, dim, dstate)`.
+        B: Input matrix with shape `(batch, ngroups, dstate)`.
+        C: Output matrix with shape `(batch, ngroups, dstate)`.
+        D: Skip connection with shape `(nheads, dim)`.
+        z: Gating tensor with shape `(batch, nheads, dim)`.
+        dt_bias: Time-delta bias with shape `(nheads, dim)`.
+        state_batch_indices: Batch indices into the state buffer with shape
+            `(batch,)`.
+
+    Returns:
+        A tuple `(state_shape, output_shape)` where `state_shape` is
+        `(batch, nheads, dim, dstate)` and `output_shape` matches `x.shape()`.
+    """
+    var batch = x.dim_size(0)
+    var nheads = x.dim_size(1)
+    var dim = x.dim_size(2)
+    var dstate = A.dim_size(2)
+    return (IndexList[4](batch, nheads, dim, dstate), x.shape())

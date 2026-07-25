@@ -54,7 +54,6 @@ leading to the final output.
 
 from std.math import exp
 
-from compiler import register
 from std.gpu.host import DeviceContext
 from std.gpu import block_idx
 from std.gpu.memory import AddressSpace
@@ -63,7 +62,7 @@ from layout import Layout, LayoutTensor
 from layout.math import max, sum
 from layout.tensor_core import TensorCore
 
-from extensibility import InputTensor, OutputTensor
+from extensibility import register, InputTensor, OutputTensor
 
 from std.utils import Index
 

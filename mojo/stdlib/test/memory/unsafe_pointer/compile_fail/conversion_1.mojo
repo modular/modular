@@ -23,9 +23,9 @@ def test_cannot_cast_immutable_to_mutable[
 def main() raises:
     var x = 42
 
-    var p = UnsafePointer(to=x).as_immutable()
+    var p = UnsafePointer(to=x).as_imm()
     # FIXME: this probably should be a parameter inference error, not the type
     # conversion error.
 
-    # CHECK: invalid call to 'test_cannot_cast_immutable_to_mutable': value passed to 'p' cannot be converted from 'UnsafePointer[Int, {{.*}}]' to 'UnsafePointer[T, {{.*}}]'
+    # CHECK: invalid call to 'test_cannot_cast_immutable_to_mutable': value passed to 'p' cannot be converted from 'Pointer[Int, {{.*}}]' to 'Pointer[T, {{.*}}]'
     test_cannot_cast_immutable_to_mutable(p)

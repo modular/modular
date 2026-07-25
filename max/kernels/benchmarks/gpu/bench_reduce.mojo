@@ -26,7 +26,6 @@ from layout import Layout, LayoutTensor, RuntimeLayout
 from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import (
     CacheBustingBuffer,
-    ScalarArray,
     get_defined_shape,
     int_list_to_tuple,
 )
@@ -42,14 +41,16 @@ def align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
 
 
 def run_reduce[
-    reduce_fn: def[dtype: DType, width: Int](
+    reduce_fn: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
     rank: Int,
     num_reductions: Int = 1,
     cache_busting: Bool = True,
-](mut m: Bench, shape: IndexList[rank], axis: Int, ctx: DeviceContext,) raises:
+    *,
+    axis: Int,
+](mut m: Bench, shape: IndexList[rank], ctx: DeviceContext,) raises:
     print("run_reduce", shape)
 
     var out_shape = shape
@@ -63,7 +64,7 @@ def run_reduce[
     var cb_in = CacheBustingBuffer[dtype](in_size, align, ctx, cache_busting)
 
     # Allocate & initialize host data
-    var expected_vals = ScalarArray[dtype](count=out_size, alignment=align)
+    var expected_vals = alloc[Scalar[dtype]](out_size, alignment=align)
 
     var in_host = List(length=cb_in.alloc_size(), fill=Scalar[dtype](1))
     var res_host = List(length=out_size, fill=Scalar[dtype](0))
@@ -84,7 +85,7 @@ def run_reduce[
     @always_inline
     @parameter
     def reduce_wrapper[
-        dtype: DType, width: Int, reduction_idx: Int
+        dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert reduction_idx < num_reductions, "invalid reduction idx"
 
@@ -93,7 +94,7 @@ def run_reduce[
     @__copy_capture(res_device)
     @parameter
     def output_fn[
-        _dtype: DType, width: Int, _rank: Int
+        _dtype: DType, width: SIMDLength, _rank: Int
     ](
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
@@ -102,16 +103,13 @@ def run_reduce[
             rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
         )
 
-    @__copy_capture(axis)
     @parameter
     @always_inline
     def bench_func(mut b: Bencher):
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var input_lt = LayoutTensor[
-                dtype, Layout.row_major[rank](), MutAnyOrigin
-            ](
+            var input_lt = LayoutTensor[dtype, Layout.row_major[rank]()](
                 cb_in.offset_ptr(iteration),
                 RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
             )
@@ -128,8 +126,14 @@ def run_reduce[
                 )
 
             reduce_launch[
-                num_reductions, input_fn, output_fn, reduce_wrapper, rank, dtype
-            ](shape, axis, StaticTuple[_, num_reductions](init), ctx)
+                num_reductions,
+                input_fn,
+                output_fn,
+                reduce_wrapper,
+                rank,
+                dtype,
+                reduce_dim=axis,
+            ](shape, StaticTuple[_, num_reductions](init), ctx)
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -158,13 +162,15 @@ def run_reduce[
     _ = cb_in
     _ = res_device
 
+    expected_vals.free()
     _ = in_host^
+    _ = res_host^
 
 
 @parameter
 def reduce_add[
     dtype: DType,
-    width: Int,
+    width: SIMDLength,
 ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return x + y
 
@@ -172,7 +178,7 @@ def reduce_add[
 def main() raises:
     comptime dtype = DType._from_str(
         get_defined_string["dtype", "DType.float16"]()
-    )
+    ).value()
 
     comptime shape_in_list = get_defined_shape["shape", "1x1x4096"]()
     comptime shape = int_list_to_tuple[shape_in_list]()
@@ -182,10 +188,9 @@ def main() raises:
     var m = Bench()
     with DeviceContext() as ctx:
         comptime dims = shape
-        run_reduce[reduce_add, dtype, cache_busting=cache_busting](
+        run_reduce[reduce_add, dtype, cache_busting=cache_busting, axis=axis](
             m,
             dims,
-            axis,
             ctx,
         )
 

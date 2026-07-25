@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements spatial merge, which compresses vision token grids by merging spatial blocks before attention."""
 
 from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
@@ -22,11 +23,11 @@ from std.utils.index import IndexList
 def spatial_merge_kernel[
     dtype: DType,
     InputLayoutType: TensorLayout,
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     GridThwLayoutType: TensorLayout,
-    grid_thw_origin: ImmutOrigin,
+    grid_thw_origin: ImmOrigin,
 ](
     output: TileTensor[dtype, OutputLayoutType, output_origin],
     input: TileTensor[dtype, InputLayoutType, input_origin],
@@ -40,6 +41,16 @@ def spatial_merge_kernel[
 
     Grid: 1D over all output patches (one block per output patch).
     Threads: loop over channels (hidden_size x merge_size^2).
+
+    Parameters:
+        dtype: Element type of the input and output tensors.
+        InputLayoutType: Compile-time `TensorLayout` of the input tensor.
+        input_origin: Immutable origin of the input tensor.
+        OutputLayoutType: Compile-time `TensorLayout` of the output tensor.
+        output_origin: Mutable origin of the output tensor.
+        GridThwLayoutType: Compile-time `TensorLayout` of the `grid_thw`
+            tensor.
+        grid_thw_origin: Immutable origin of the `grid_thw` tensor.
 
     Args:
         output: Output tensor.
@@ -60,6 +71,7 @@ def spatial_merge_kernel[
     # Compute input/output offsets on-the-fly by scanning grid_thw.
     # Simultaneously find which batch item this patch belongs to.
     var b = 0
+    var found = False
     for i in range(batch_size):
         var t = grid_thw[i, 0]
         var h = grid_thw[i, 1]
@@ -71,11 +83,16 @@ def spatial_merge_kernel[
         # Check if patch_idx falls in this batch item.
         if patch_idx < Int(offset_out + num_output_patches):
             b = i
+            found = True
             break
 
         # Accumulate offsets.
         offset_in += rebind[Int64](h * w)
         offset_out += rebind[Int64](num_output_patches)
+
+    # Skip blocks whose patch index is past the last output patch.
+    if not found:
+        return
 
     # Local patch index (i.e., within this batch item).
     var patch_local_idx = patch_idx - Int(offset_out)
@@ -169,18 +186,37 @@ def spatial_merge[
     merge_size: Int,
     ctx: DeviceContext,
 ) raises:
+    """
+    Launches the spatial merge kernel that compresses vision token grids by merging spatial blocks before attention.
+
+    Parameters:
+        dtype: Element type of the input and output tensors.
+
+    Args:
+        output: Output tensor holding the merged patches.
+        input: Input tensor holding the original patch grid.
+        grid_thw: Grid dimensions tensor of shape `(batch_size, 3)` with `[t, h, w]` per item.
+        hidden_size: Hidden dimension size of each patch.
+        merge_size: Size of the spatial merge blocks.
+        ctx: Device context used to enqueue the kernel.
+    """
     comptime threads_per_block = 256
     var batch_size = Int(grid_thw.dim[0]())
-    var num_blocks = Int(output.dim[0]())
+    # One block per merged output patch: each block writes
+    # merge_size * merge_size * hidden_size elements, so the block count is the
+    # output element count divided by that per-patch size.
+    var num_blocks = Int(output.dim[0]() * output.dim[1]()) // (
+        merge_size * merge_size * hidden_size
+    )
 
     comptime kernel = spatial_merge_kernel[
         dtype,
         input.LayoutType,
-        ImmutOrigin(input.origin),
+        ImmOrigin(input.origin),
         output.LayoutType,
         output.origin,
         grid_thw.LayoutType,
-        ImmutOrigin(grid_thw.origin),
+        ImmOrigin(grid_thw.origin),
     ]
 
     ctx.enqueue_function[kernel](

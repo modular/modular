@@ -177,9 +177,9 @@ def _build_shared_b[
         input_scales_host_ptr[i] = 1.0 + Float32(i + 1) * 0.01
 
     rand(b_host_ptr, b_size, min=0, max=255)
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(b_scales_host._storage, b_scales_host.num_elements())
     for i in range(b_scales_perm_host.num_elements()):
-        b_scales_perm_host.ptr[i] = Scalar[scales_dtype](0.0)
+        b_scales_perm_host._storage[i] = Scalar[scales_dtype](0.0)
 
     var b_expert_sf_size = (
         Int(b_scales_host.dim(1))
@@ -493,10 +493,10 @@ def _test_swiglu_dispatch[
     var S_test_host_ptr = alloc[Scalar[scales_dtype]](S_size)
 
     # ---- Init A-side data (per-test) ----
-    rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
+    rand(a_host._storage, a_host.num_elements(), min=0, max=255)
 
     for i in range(a_scales_host.num_elements()):
-        a_scales_host.ptr[i] = Scalar[scales_dtype](0.0)
+        a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
 
     var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
 
@@ -559,7 +559,7 @@ def _test_swiglu_dispatch[
                 Idx[SF_ATOM_K],
             )
         ),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
     comptime n_groups_b = ceildiv(N, SF_MN_GROUP_SIZE)
     var b_scales_perm_tt = TileTensor(
         shared.b_scales_perm,
@@ -573,11 +573,11 @@ def _test_swiglu_dispatch[
                 Idx[SF_ATOM_K],
             )
         ),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
     var expert_scales_tt = TileTensor(
         shared.expert_scales,
         row_major(Coord(Int64(num_experts))),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
 
     # ============================================================
     # REF: manual chain (matmul -> fused_silu_nvfp4_interleaved).

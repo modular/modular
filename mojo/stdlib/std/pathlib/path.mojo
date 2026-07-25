@@ -601,7 +601,9 @@ struct Path(
         """
         return std.os.path.basename(self)
 
-    def parts(self) -> List[StringSlice[origin_of(self.path)]]:
+    def parts(
+        self,
+    ) -> List[StringSlice[origin_of(self.path)._get_owned_interior["bytes"]]]:
         """Returns the parts of the path separated by `DIR_SEPARATOR`.
 
         Returns:

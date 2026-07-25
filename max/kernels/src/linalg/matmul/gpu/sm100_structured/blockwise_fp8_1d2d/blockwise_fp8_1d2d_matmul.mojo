@@ -64,13 +64,17 @@ def grouped_matmul_1d2d_blockwise_fp8[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    comptime a_type = config.a_type
-    comptime b_type = config.b_type
-    comptime c_type = config.c_type
-    """Launch grouped 1D-1D blockwise FP8 matmul kernel.
+    """Launch grouped 1D-2D blockwise FP8 matmul kernel for MoE layers.
 
     This function sets up TMA descriptors and launches the kernel with the
-    proper configuration for 1D-1D tensor layout with blockwise FP8 scaling.
+    proper configuration for 1D-2D tensor layout with blockwise FP8 scaling.
+
+    Parameters:
+        a_scales_type: `DType` of the A scaling factors (inferred).
+        b_scales_type: `DType` of the B scaling factors (inferred).
+        transpose_b: Whether B is transposed (inferred). Must be `True`.
+        config: `MatmulConfig` controlling MMA shape, CTA group, cluster
+            shape, and swizzle modes for the kernel.
 
     Args:
         c_device: Output tensor (total_tokens, N).
@@ -84,6 +88,9 @@ def grouped_matmul_1d2d_blockwise_fp8[
         num_active_experts: Number of active experts.
         ctx: Device context.
     """
+    comptime a_type = config.a_type
+    comptime b_type = config.b_type
+    comptime c_type = config.c_type
     comptime assert transpose_b, "Only support transposed B"
     comptime assert (
         a_type == b_type and a_type == DType.float8_e4m3fn
@@ -230,6 +237,25 @@ def grouped_matmul_dynamic_scaled_fp8_1d2d[
     """Compatibility wrapper that matches the existing dispatch API.
 
     Creates the default config and calls the new structured kernel.
+
+    Parameters:
+        a_scales_type: `DType` of the A scaling factors (inferred).
+        b_scales_type: `DType` of the B scaling factors (inferred).
+        transpose_b: Whether B is transposed (defaults to `True`).
+
+    Args:
+        c: Output tensor of shape `(total_tokens, N)`.
+        a: Input A tensor of shape `(total_tokens, K)`.
+        b: Weight tensor B of shape `(num_experts, N, K)`.
+        a_scales: Scaling factors for A of shape `(K//128, total_tokens)`,
+            FP32.
+        b_scales: Scaling factors for B of shape
+            `(num_experts, N//128, K//128)`, FP32.
+        a_offsets: Per-expert offsets of length `num_active_experts + 1`.
+        expert_ids: Active expert IDs of length `num_active_experts`.
+        expert_scales: Per-expert output scaling of length `num_experts`.
+        num_active_experts: Number of active experts.
+        ctx: Device context for kernel launch.
     """
     comptime umma_shape: IndexList[3] = Index(64, 64, 32)
     # A-scales: 1 x BM floats per pipeline stage

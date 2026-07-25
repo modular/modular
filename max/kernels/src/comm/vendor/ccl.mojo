@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides Mojo FFI bindings for NCCL (NVIDIA) and RCCL (AMD) collective operations.
+
+Selects and loads the correct vendor library at runtime: `librccl.so` on AMD
+systems and `libnccl.so` on NVIDIA systems. Exposes allreduce, allgather, and
+broadcast collectives, along with communicator initialization helpers and
+availability probes.
+"""
 
 from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
 from std.pathlib import Path
@@ -22,21 +29,26 @@ from std.ffi import OwnedDLHandle, _Global
 from std.collections.optional import Optional
 from layout import TensorLayout, TileTensor
 from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.alloc import Layout as AllocLayout
 from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
 from comm import MAX_GPUS, Signal
 from comm.allreduce import elementwise_epilogue_type
 from std.gpu.primitives.grid_controls import PDLLevel
+from std.utils.coord import Coord
 
-# Safety: don't use `ExternalOrigin` here as that will turn of extending the
-# lifetime of any Mojo structs that pass an internal pointer to the functions
-# below.
-comptime ncclComm_t = _CPointer[NoneType, AnyOrigin[mut=True]]
+comptime ncclComm_t = _CPointer[NoneType, MutUntrackedOrigin]
 
 
 @fieldwise_init
 struct ncclResult_t(Equatable, TrivialRegisterPassable, Writable):
+    """Status code returned by NCCL/RCCL collective operations.
+
+    Wraps the integer error code from the NCCL/RCCL C API. Use
+    `ncclResult_t.ncclSuccess` (value 0) to check for a successful call.
+    """
+
     var _value: Int32
     comptime ncclSuccess = Self(0)
 
@@ -52,6 +64,12 @@ struct ncclResult_t(Equatable, TrivialRegisterPassable, Writable):
 
 @fieldwise_init
 struct ncclRedOp_t(TrivialRegisterPassable):
+    """Reduction operation selector for NCCL/RCCL collective calls.
+
+    Wraps the `ncclRedOp_t` C enum. Only `ncclSum` (value 0) is currently
+    used; other operations from the NCCL API may be added in the future.
+    """
+
     var _value: Int32
     comptime ncclSum = Self(0)
 
@@ -61,6 +79,13 @@ struct ncclRedOp_t(TrivialRegisterPassable):
 
 @fieldwise_init
 struct ncclDataType_t(TrivialRegisterPassable):
+    """Data-type selector for NCCL/RCCL collective calls.
+
+    Wraps the `ncclDataType_t` C enum for the floating-point types supported by
+    the collective bridge. Supported aliases: `ncclFloat16`, `ncclFloat32`, and
+    `ncclBfloat16`.
+    """
+
     var _value: Int32
     comptime ncclFloat16 = Self(6)
     comptime ncclFloat32 = Self(7)
@@ -121,6 +146,16 @@ struct _Group:
 
 
 def group() -> _Group:
+    """Returns a context manager that groups NCCL/RCCL collective calls.
+
+    Use as a `with` statement to bracket a series of collective API calls
+    between `ncclGroupStart` and `ncclGroupEnd`, enabling the NCCL/RCCL
+    library to fuse or pipeline them for better performance.
+
+    Returns:
+        A `_Group` context manager that calls `ncclGroupStart` on entry and
+        `ncclGroupEnd` on exit.
+    """
     return _Group()
 
 
@@ -129,6 +164,25 @@ def ncclCommInitAll(
     ndev: Int,
     devlist: UnsafePointer[Int32, _],
 ) raises -> ncclResult_t:
+    """Initializes NCCL/RCCL communicators for a set of GPUs.
+
+    Thin FFI wrapper around `ncclCommInitAll`. Allocates one communicator per
+    device in `devlist` and stores the handles in `comms`. Must be called from
+    a single thread; concurrent calls for the same device set cause undefined
+    behavior in the NCCL library.
+
+    Args:
+        comms: Output array of communicator handles; must have room for `ndev`
+            entries.
+        ndev: Number of GPUs to include in the communicator group.
+        devlist: Array of CUDA/ROCm device IDs to include.
+
+    Returns:
+        `ncclResult_t.ncclSuccess` on success; a non-zero status on failure.
+
+    Raises:
+        If the CCL function symbol cannot be resolved from the vendor library.
+    """
     return _get_ccl_function[
         "ncclCommInitAll",
         def(type_of(comms), Int, type_of(devlist)) thin -> ncclResult_t,
@@ -221,7 +275,7 @@ def _ccl_broadcast(
 @always_inline
 def _ccl_stream_ptr(
     ctx: DeviceContext,
-) raises -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
+) raises -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
     comptime if has_amd_gpu_accelerator():
         return unsafe_cast[Type=NoneType](HIP(ctx.stream()))
     else:
@@ -230,8 +284,19 @@ def _ccl_stream_ptr(
 
 @fieldwise_init
 struct Communicators(ImplicitlyCopyable):
+    """Holds NCCL/RCCL communicator handles for a fixed set of GPUs.
+
+    Stores one `ncclComm_t` handle per GPU (up to `MAX_GPUS`). Instances are
+    initialized lazily by `_get_global_comms` and cached process-wide; call
+    `init_comms()` from a single thread before using multi-threaded collectives
+    to avoid the check-then-create race in `_get_global_comms`.
+    """
+
     var ngpus: Int
+    """The number of GPUs participating in the communicator group."""
+
     var comms: InlineArray[ncclComm_t, MAX_GPUS]
+    """Per-GPU communicator handles, valid for indices `0..ngpus-1`."""
 
     def __init__(out self, *, copy: Self):
         self.ngpus = copy.ngpus
@@ -274,8 +339,8 @@ def _get_global_comms(ngpus: Int) raises -> Communicators:
 
     var c = Communicators(ngpus=ngpus, comms=comms.copy())
 
-    var ptr = alloc[Communicators](1)
-    ptr.init_pointee_move(c)
+    var ptr = alloc(AllocLayout[Communicators].single()).unsafe_leak()
+    ptr.unsafe_write(c)
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(NAME), ptr.bitcast[NoneType]()
     )
@@ -312,6 +377,8 @@ def allreduce[
     in_layout: TensorLayout,
     in_origin: Origin[mut=False],
     rank_sigs_origin: Origin[mut=True],
+    out_layout: TensorLayout,
+    out_origin: MutOrigin,
     //,
     ngpus: Int,
     output_lambda: Optional[elementwise_epilogue_type] = None,
@@ -322,7 +389,7 @@ def allreduce[
     input_tensors: InlineArray[
         TileTensor[dtype, in_layout, in_origin], 1 if use_multimem else ngpus
     ],
-    output_tensor: TileTensor[mut=True, dtype, ...],
+    output_tensor: TileTensor[mut=True, dtype, out_layout, out_origin],
     rank_sigs: InlineArray[UnsafePointer[Signal, rank_sigs_origin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
@@ -348,8 +415,8 @@ def allreduce[
 
     _check_ccl_ok(
         _ccl_allreduce(
-            input_tensor.ptr.bitcast[NoneType](),
-            output_tensor.ptr.bitcast[NoneType](),
+            input_tensor._storage.bitcast[NoneType](),
+            output_tensor._storage.bitcast[NoneType](),
             count,
             dtype_ccl,
             op,
@@ -362,27 +429,24 @@ def allreduce[
         comptime epilogue = output_lambda.value()
         comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
-        @parameter
-        @__copy_capture(output_tensor)
         def epilogue_wrapper[
-            simd_width: Int, _rank: Int, alignment: Int = 1
-        ](idx: IndexList[_rank]):
-            var flat_idx = idx[0]
+            simd_width: Int, alignment: Int = 1
+        ](idx: Coord) {var}:
+            var flat_idx = idx[0].value()
             var val = output_tensor.raw_load[
                 width=simd_width,
                 alignment=alignment * size_of[dtype](),
             ](flat_idx)
             epilogue[dtype, simd_width, alignment=alignment](
-                output_tensor.layout.idx2crd(flat_idx),
+                output_tensor.layout.idx2crd(Int(flat_idx)),
                 val,
             )
 
         elementwise[
-            epilogue_wrapper,
             simd_size,
             target="gpu",
             _trace_description="ccl_epilogue",
-        ](IndexList[1](output_tensor.num_elements()), ctx)
+        ](epilogue_wrapper, Coord(output_tensor.num_elements()), ctx)
 
 
 @parameter
@@ -397,14 +461,41 @@ def _is_ccl_symbol_available[name: StaticString]() -> Bool:
 
 
 def is_allreduce_available() -> Bool:
+    """Reports whether the vendor CCL allreduce symbol is loadable at runtime.
+
+    Probes the NCCL/RCCL shared library for the `ncclAllReduce` symbol without
+    calling it. Returns `False` if the library is absent or the symbol cannot
+    be resolved.
+
+    Returns:
+        `True` if `ncclAllReduce` is available, `False` otherwise.
+    """
     return _is_ccl_symbol_available["ncclAllReduce"]()
 
 
 def is_allgather_available() -> Bool:
+    """Reports whether the vendor CCL allgather symbol is loadable at runtime.
+
+    Probes the NCCL/RCCL shared library for the `ncclAllGather` symbol without
+    calling it. Returns `False` if the library is absent or the symbol cannot
+    be resolved.
+
+    Returns:
+        `True` if `ncclAllGather` is available, `False` otherwise.
+    """
     return _is_ccl_symbol_available["ncclAllGather"]()
 
 
 def is_broadcast_available() -> Bool:
+    """Reports whether the vendor CCL broadcast symbol is loadable at runtime.
+
+    Probes the NCCL/RCCL shared library for the `ncclBroadcast` symbol without
+    calling it. Returns `False` if the library is absent or the symbol cannot
+    be resolved.
+
+    Returns:
+        `True` if `ncclBroadcast` is available, `False` otherwise.
+    """
     return _is_ccl_symbol_available["ncclBroadcast"]()
 
 
@@ -424,6 +515,35 @@ def allgather[
     ],
     list_of_ctx: List[DeviceContext],
 ) raises:
+    """Performs an allgather across all GPUs via the vendor CCL library.
+
+    Each GPU contributes its local `inputs[i]` chunk; after the call every
+    output slot `outputs[dev * ngpus + src]` on device `dev` holds a copy of
+    the input from device `src`. Uses `ncclAllGather` (NVIDIA) or
+    `rcclAllGather` (AMD) internally, wrapped inside an NCCL group for
+    correct pipelining.
+
+    Parameters:
+        dtype: Element data type of all input and output tensors.
+        in_layout: `TensorLayout` of each per-GPU input.
+        in_origin: Origin tag for the input tensors.
+        out_layout: `TensorLayout` of each per-GPU output slot.
+        out_origin: Mutable origin tag for the output tensors.
+        ngpus: Number of participating GPUs.
+
+    Args:
+        inputs: Per-GPU input `TileTensor`s; must all have the same element
+            count.
+        outputs: Flat array of `ngpus * ngpus` output `TileTensor`s. Slot
+            `i * ngpus + j` on device `i` receives device `j`'s input.
+        list_of_ctx: Device context for each GPU; length must equal `ngpus`.
+
+    Raises:
+        If `ngpus < 1` or `ngpus > MAX_GPUS`.
+        If `len(list_of_ctx) != ngpus`.
+        If any input element count differs from `inputs[0]`'s count.
+        If the CCL collective call fails.
+    """
     if ngpus < 1:
         raise Error("ngpus must be >= 1")
     if ngpus > MAX_GPUS:
@@ -450,7 +570,7 @@ def allgather[
             with list_of_ctx[i].push_context():
                 _check_ccl_ok(
                     _ccl_allgather(
-                        inputs[i].ptr.bitcast[NoneType](),
+                        inputs[i]._storage.bitcast[NoneType](),
                         recv_tmp[i].unsafe_ptr().bitcast[NoneType](),
                         count,
                         dtype_nccl,
@@ -465,7 +585,7 @@ def allgather[
             var src_off = src * count
             var out_idx = dev * ngpus + src
             var dest_db = DeviceBuffer[dtype](
-                ctx, outputs[out_idx].ptr, count, owning=False
+                ctx, outputs[out_idx]._storage, count, owning=False
             )
             var src_db = DeviceBuffer[dtype](
                 ctx, recv_tmp[dev].unsafe_ptr() + src_off, count, owning=False
@@ -479,13 +599,15 @@ def broadcast[
     dtype: DType,
     in_layout: TensorLayout,
     in_origin: Origin,
+    out_layout: TensorLayout,
+    out_origin: MutOrigin,
     //,
     ngpus: Int,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
     input_tensor: TileTensor[dtype, in_layout, in_origin],
-    output_tensor: TileTensor[mut=True, dtype, ...],
+    output_tensor: TileTensor[mut=True, dtype, out_layout, out_origin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
@@ -507,8 +629,8 @@ def broadcast[
 
     _check_ccl_ok(
         _ccl_broadcast(
-            input_tensor.ptr.bitcast[NoneType](),
-            output_tensor.ptr.bitcast[NoneType](),
+            input_tensor._storage.bitcast[NoneType](),
+            output_tensor._storage.bitcast[NoneType](),
             count,
             dtype_ccl,
             root,

@@ -11,9 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for MAXModelConfig.resolve() encoding inference and weight path resolution.
+"""Tests for MAXModelConfig encoding inference and weight path resolution.
 
 All tests use fake local safetensors/GGUF repos with no network access.
+
+Encoding/weight-path inference for LLM models happens during
+architecture-level validation (``validate_and_resolve_quantization_encoding_weight_path()``
+/ ``validate_and_resolve_with_resolved_quantization_encoding()``), called by
+``PipelineConfig``/the registry -- not inside ``MAXModelConfig.resolve()``,
+which only validates device_specs and parses weight-path identity. Most
+tests below call those methods directly rather than going through the
+full ``PipelineConfig``/registry machinery, to keep the setup narrow.
 """
 
 import json
@@ -27,8 +35,12 @@ from unittest.mock import patch
 
 import pytest
 from max.driver import DeviceSpec
+from max.graph.weights import WeightsFormat
 from max.pipelines.lib import MAXModelConfig
-from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.modeling.config_enums import SupportedEncoding
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
+
+_DEFAULT_ENCODING: SupportedEncoding = "bfloat16"
 
 GPU_DEVICE_SPEC = DeviceSpec(id=0, device_type="gpu")
 CPU_DEVICE_SPEC = DeviceSpec(id=0, device_type="cpu")
@@ -117,10 +129,6 @@ def _resolve_mocks(
     """
     with (
         patch(
-            "max.pipelines.lib.config.model_config.devices_exist",
-            return_value=True,
-        ),
-        patch(
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=weight_path_return,
         ),
@@ -146,6 +154,37 @@ def _make_config(
     )
 
 
+def _resolve_encoding(
+    config: MAXModelConfig,
+    default_encoding: SupportedEncoding = _DEFAULT_ENCODING,
+) -> None:
+    """Resolves quantization_encoding the way a caller (architecture-level
+    validation) does, rather than via resolve()'s best-effort pass.
+    """
+    config.validate_and_resolve_quantization_encoding_weight_path(
+        default_encoding=default_encoding
+    )
+
+
+def _resolve_encoding_and_weight_path(
+    config: MAXModelConfig,
+    default_encoding: SupportedEncoding = _DEFAULT_ENCODING,
+    supported_encodings: set[SupportedEncoding] | None = None,
+    default_weights_format: WeightsFormat = WeightsFormat.safetensors,
+) -> None:
+    """Resolves both encoding and weight_path via the same two
+    architecture-validation entry points ``_validate_model_config_against_arch()``
+    calls in production, in the same order.
+    """
+    _resolve_encoding(config, default_encoding=default_encoding)
+    assert config.quantization_encoding is not None
+    config.validate_and_resolve_with_resolved_quantization_encoding(
+        supported_encodings=supported_encodings
+        or {config.quantization_encoding},
+        default_weights_format=default_weights_format,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Category A: Single-Encoding Repos — Encoding Inference
 # ---------------------------------------------------------------------------
@@ -158,48 +197,42 @@ class TestSingleEncodingInference:
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(tmpdir, {"model.safetensors": {"w": "BF16"}})
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding(config)
             assert config.quantization_encoding == "bfloat16"
 
     def test_infer_encoding_single_f32_on_gpu_casts_to_bf16(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(tmpdir, {"model.safetensors": {"w": "F32"}})
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding(config)
             assert config.quantization_encoding == "bfloat16"
 
     def test_infer_encoding_single_f32_on_cpu_stays_f32(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(tmpdir, {"model.safetensors": {"w": "F32"}})
             config = _make_config(tmpdir, device_specs=[CPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding(config)
             assert config.quantization_encoding == "float32"
 
     def test_infer_encoding_single_fp8_safetensors(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(tmpdir, {"model.safetensors": {"w": "F8_E4M3"}})
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding(config)
             assert config.quantization_encoding == "float8_e4m3fn"
 
     def test_infer_encoding_single_fp4_safetensors(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(tmpdir, {"model.safetensors": {"w": "U8"}})
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding(config)
             assert config.quantization_encoding == "float4_e2m1fnx2"
 
     def test_infer_encoding_gguf_q4_k_from_filename(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(tmpdir, gguf_files=["model-Q4_K_M.gguf"])
             config = _make_config(tmpdir, device_specs=[CPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding(config)
             assert config.quantization_encoding == "q4_k"
 
 
@@ -225,8 +258,7 @@ class TestMixedEncodingInference:
                 },
             )
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding(config)
             assert config.quantization_encoding == "float4_e2m1fnx2"
 
     def test_mixed_bf16_and_f32_selects_bf16_on_gpu(self) -> None:
@@ -242,12 +274,14 @@ class TestMixedEncodingInference:
                 },
             )
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding(config)
             assert config.quantization_encoding == "bfloat16"
 
     def test_mixed_bf16_and_f32_ambiguous_on_cpu(self) -> None:
-        """On CPU, multiple non-quantized encodings are ambiguous."""
+        """On CPU, multiple non-quantized encodings are ambiguous, so
+        architecture-level resolution falls back to the architecture's
+        declared default_encoding rather than guessing.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(
                 tmpdir,
@@ -259,9 +293,10 @@ class TestMixedEncodingInference:
                 },
             )
             config = _make_config(tmpdir, device_specs=[CPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
-            assert config.quantization_encoding is None
+            # Use a default_encoding not present in the repo's file, so a
+            # match proves it came from the fallback, not real inference.
+            _resolve_encoding(config, default_encoding="float8_e4m3fn")
+            assert config.quantization_encoding == "float8_e4m3fn"
 
     def test_sharded_fp8_with_bf16_first_shard(self) -> None:
         """FP8 must be detected even when first shard is BF16-only norms."""
@@ -285,8 +320,7 @@ class TestMixedEncodingInference:
                 },
             )
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding(config)
             assert config.quantization_encoding == "float8_e4m3fn"
 
     def test_gptq_detected_from_local_config_json(self) -> None:
@@ -306,7 +340,7 @@ class TestMixedEncodingInference:
 
 
 class TestWeightPathResolution:
-    """Tests for weight file discovery during resolve()."""
+    """Tests for weight file discovery during architecture-level validation."""
 
     def test_resolve_weight_path_sharded_safetensors(self) -> None:
         """Sharded safetensors should all be discovered."""
@@ -319,8 +353,7 @@ class TestWeightPathResolution:
                 },
             )
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding_and_weight_path(config)
             paths = sorted(str(p) for p in config.weight_path)
             assert paths == [
                 "model-00001-of-00002.safetensors",
@@ -336,8 +369,7 @@ class TestWeightPathResolution:
                 gguf_files=["model-Q4_K_M.gguf"],
             )
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding_and_weight_path(config)
             paths = [str(p) for p in config.weight_path]
             assert paths == ["model.safetensors"]
 
@@ -346,8 +378,7 @@ class TestWeightPathResolution:
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(tmpdir, gguf_files=["model-Q4_K_M.gguf"])
             config = _make_config(tmpdir, device_specs=[CPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding_and_weight_path(config)
             paths = [str(p) for p in config.weight_path]
             assert paths == ["model-Q4_K_M.gguf"]
 
@@ -356,8 +387,7 @@ class TestWeightPathResolution:
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(tmpdir, {"model.safetensors": {"w": "F32"}})
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding_and_weight_path(config)
             assert config.quantization_encoding == "bfloat16"
             paths = [str(p) for p in config.weight_path]
             assert paths == ["model.safetensors"]
@@ -373,9 +403,10 @@ class TestWeightPathResolution:
                 },
             )
             explicit = [Path("model.safetensors")]
-            config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks(weight_path_return=(explicit, None)):
-                config.resolve()
+            config = _make_config(
+                tmpdir, device_specs=[GPU_DEVICE_SPEC], weight_path=explicit
+            )
+            _resolve_encoding_and_weight_path(config)
             assert config.weight_path == [Path("model.safetensors")]
 
     def test_consolidated_safetensors_excluded(self) -> None:
@@ -390,8 +421,7 @@ class TestWeightPathResolution:
                 },
             )
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding_and_weight_path(config)
             paths = sorted(str(p) for p in config.weight_path)
             assert "consolidated.safetensors" not in paths
             assert len(paths) == 2
@@ -410,21 +440,25 @@ class TestEncodingFromExplicitWeightPath:
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(tmpdir, gguf_files=["model-Q4_K_M.gguf"])
             explicit = [Path("model-Q4_K_M.gguf")]
-            config = _make_config(tmpdir, device_specs=[CPU_DEVICE_SPEC])
-            with _resolve_mocks(weight_path_return=(explicit, None)):
-                config.resolve()
+            config = _make_config(
+                tmpdir, device_specs=[CPU_DEVICE_SPEC], weight_path=explicit
+            )
+            _resolve_encoding(config)
             assert config.quantization_encoding == "q4_k"
 
     def test_encoding_from_remote_safetensors_via_repo(self) -> None:
         """For remote safetensors, encoding is inferred from the repo."""
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(tmpdir, {"model.safetensors": {"w": "BF16"}})
-            # Simulate remote: weight_path points to a non-local file, so
-            # _try_infer_encoding falls through to encoding_for_file.
+            # Simulate remote: weight_path points to a non-local file (a
+            # relative path, not the absolute path under tmpdir), so
+            # resolution falls through to the repo-based encoding_for_file
+            # lookup instead of the local-file branch.
             explicit = [Path("model.safetensors")]
-            config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks(weight_path_return=(explicit, None)):
-                config.resolve()
+            config = _make_config(
+                tmpdir, device_specs=[GPU_DEVICE_SPEC], weight_path=explicit
+            )
+            _resolve_encoding(config)
             assert config.quantization_encoding == "bfloat16"
 
     def test_encoding_from_local_safetensors_with_name_hint(self) -> None:
@@ -433,9 +467,10 @@ class TestEncodingFromExplicitWeightPath:
             fp = os.path.join(tmpdir, "model-bf16.safetensors")
             _write_fake_safetensors(fp, dtype="BF16")
             explicit = [Path(fp)]
-            config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks(weight_path_return=(explicit, None)):
-                config.resolve()
+            config = _make_config(
+                tmpdir, device_specs=[GPU_DEVICE_SPEC], weight_path=explicit
+            )
+            _resolve_encoding(config)
             assert config.quantization_encoding == "bfloat16"
 
 
@@ -447,8 +482,9 @@ class TestEncodingFromExplicitWeightPath:
 class TestDeterminism:
     """Tests that encoding inference and weight path resolution are deterministic.
 
-    These run resolve() multiple times with fresh MAXModelConfig instances to
-    exercise the set→list conversion in supported_encodings.
+    These resolve encoding/weight_path multiple times with fresh
+    MAXModelConfig instances to exercise the set→list conversion in
+    supported_encodings.
     """
 
     def test_deterministic_mixed_fp4_bf16(self) -> None:
@@ -467,8 +503,7 @@ class TestDeterminism:
             results = []
             for _ in range(50):
                 config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-                with _resolve_mocks():
-                    config.resolve()
+                _resolve_encoding(config)
                 results.append(config.quantization_encoding)
             assert all(r == "float4_e2m1fnx2" for r in results), (
                 f"Non-deterministic results: {set(results)}"
@@ -490,8 +525,7 @@ class TestDeterminism:
             results = []
             for _ in range(50):
                 config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-                with _resolve_mocks():
-                    config.resolve()
+                _resolve_encoding(config)
                 results.append(config.quantization_encoding)
             assert all(r == "float8_e4m3fn" for r in results), (
                 f"Non-deterministic results: {set(results)}"
@@ -512,8 +546,7 @@ class TestDeterminism:
             results = []
             for _ in range(10):
                 config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-                with _resolve_mocks():
-                    config.resolve()
+                _resolve_encoding_and_weight_path(config)
                 results.append(sorted(str(p) for p in config.weight_path))
             assert all(r == results[0] for r in results), (
                 f"Non-deterministic weight paths: {results}"
@@ -528,35 +561,49 @@ class TestDeterminism:
 class TestEdgeCases:
     """Tests for edge cases in resolve()."""
 
-    def test_empty_model_path_and_weight_path_raises(self) -> None:
-        """Empty model_path with no weight_path should raise ValueError."""
-        config = _make_config("", device_specs=[CPU_DEVICE_SPEC])
-        with (
-            _resolve_mocks(),
-            pytest.raises(ValueError, match="model must be provided"),
-        ):
-            config.resolve()
+    def test_empty_model_path_is_constructible(self) -> None:
+        """A model-less config constructs and passes repo-access validation.
+
+        ``validate_repo_access`` only checks a *specified* remote repo, so a
+        placeholder config (no model_path, no weight_path) is a no-op rather
+        than an error -- requiring a model to run is enforced later, during
+        architecture resolution.
+        """
+        with _resolve_mocks():
+            config = _make_config("", device_specs=[CPU_DEVICE_SPEC])
+        config.validate_repo_access()  # should not raise
 
     def test_corrupt_safetensors_suppresses_exception(self) -> None:
-        """Corrupt safetensors should not crash resolve()."""
+        """A corrupt safetensors header must not raise during resolution.
+
+        HuggingFaceRepo._detect_safetensors_encodings_from_files() catches
+        per-file parse errors internally and just skips the file, so the
+        repo reports zero supported encodings -- same as a genuinely empty
+        repo. Architecture-level resolution treats that as "no signal" and
+        falls back to default_encoding rather than raising.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             corrupt_path = os.path.join(tmpdir, "model.safetensors")
             with open(corrupt_path, "wb") as f:
                 # Write truncated header (only 4 bytes instead of 8).
                 f.write(b"\x00\x00\x00\x00")
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
-            assert config.quantization_encoding is None
+            _resolve_encoding(config)
+            assert config.quantization_encoding == _DEFAULT_ENCODING
 
     def test_no_weight_files_in_repo(self) -> None:
-        """Empty repo should resolve without error."""
+        """An empty repo resolves to the architecture's default_encoding.
+
+        No weight files means no signal either way, so resolution falls
+        back to default_encoding rather than raising -- weight_path
+        discovery itself is not attempted (it would raise for a repo with
+        no matching files), matching this test's original scope.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
-            with _resolve_mocks():
-                config.resolve()
+            _resolve_encoding(config)
             assert config.weight_path == []
-            assert config.quantization_encoding is None
+            assert config.quantization_encoding == _DEFAULT_ENCODING
 
     def test_encoding_for_file_honors_preferred_encoding(self) -> None:
         """encoding_for_file should return preferred_encoding when available."""
@@ -591,3 +638,100 @@ class TestEdgeCases:
             repo = HuggingFaceRepo(repo_id=tmpdir)
             result = repo.encoding_for_file("model.safetensors")
             assert result == "float4_e2m1fnx2"
+
+
+# ---------------------------------------------------------------------------
+# Category G: PipelineArgs write-through regressions
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineArgsWriteThroughRegressions:
+    """`MAXModelConfig.from_pipeline_args()` rebuilds a fresh `MAXModelConfig`
+    on every call, unlike `PipelineConfig.model`, which returns the live
+    stored object. Code migrated from the old `PipelineConfig` API kept the
+    `config.model.foo = x` write-through pattern, which is silently discarded
+    against `PipelineArgs`. These regression tests guard the fixed call
+    sites: writes must go through `PipelineArgs`'s own fields/private attrs.
+    """
+
+    def test_weights_repo_id_must_be_set_on_args_not_model_property(
+        self,
+    ) -> None:
+        """Regression test (QUA-729/QUA-730): MAXModelConfig.from_pipeline_args()
+        rebuilds a fresh MAXModelConfig on every call, so
+        `MAXModelConfig.from_pipeline_args(config)._weights_repo_id = x` (the
+        pattern GenericOracle used, mirroring the old PipelineConfig API
+        where `.model` returned the live stored object) is silently
+        discarded. Setting `config._weights_repo_id` directly on the
+        PipelineArgs instance is the only way it survives to
+        `MAXModelConfig.from_pipeline_args()`, which is what a cross-repo
+        weights setup (e.g. a bartowski GGUF repo supplying weights for a
+        meta-llama config repo) depends on to find weight files in the right
+        repo instead of the (potentially gated, GGUF-less) model repo.
+        """
+        from max.pipelines.lib import MAXModelConfig, PipelineArgs
+
+        args = PipelineArgs(model_path="meta-llama/Meta-Llama-3-8B-Instruct")
+
+        # The buggy pattern: mutating the returned object's copy is a no-op.
+        MAXModelConfig.from_pipeline_args(
+            args
+        )._weights_repo_id = "bartowski/Meta-Llama-3-8B-Instruct-GGUF"
+        assert (
+            MAXModelConfig.from_pipeline_args(args).huggingface_weight_repo_id
+            == "meta-llama/Meta-Llama-3-8B-Instruct"
+        )
+
+        # The fix: set the private attr on PipelineArgs itself.
+        args._weights_repo_id = "bartowski/Meta-Llama-3-8B-Instruct-GGUF"
+        assert (
+            MAXModelConfig.from_pipeline_args(args).huggingface_weight_repo_id
+            == "bartowski/Meta-Llama-3-8B-Instruct-GGUF"
+        )
+
+    def test_multi_component_manifest_rejects_nested_runtime_kwarg(
+        self,
+    ) -> None:
+        """Regression guard for the FLUX/QUA-727 crash.
+
+        Unlike PipelineConfig, PipelineArgs has no `runtime` field -- its
+        runtime knobs (`prefer_module_v3`, `denoising_cache`, etc.) are flat
+        top-level fields. `create_pipelines.py`'s FLUX oracle used to pass
+        `runtime=PipelineRuntimeConfig(...)` (a leftover from the pre-
+        PipelineArgs `PipelineConfig(models=..., runtime=...)` pattern),
+        which raises "Extra inputs are not permitted" since ConfigFileModel
+        forbids extra fields -- a hard crash for every multi-component
+        (diffusion) pipeline that set prefer_module_v3 or denoising_cache.
+        """
+        from max.pipelines.diffusion.cache import DenoisingCacheConfig
+        from max.pipelines.lib import (
+            ModelManifest,
+            PipelineArgs,
+            PipelineRuntimeConfig,
+        )
+        from pydantic import ValidationError
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(tmpdir, {"model.safetensors": {"w": "BF16"}})
+            models = ModelManifest(
+                {
+                    "transformer": _make_config(
+                        tmpdir, device_specs=[GPU_DEVICE_SPEC]
+                    )
+                }
+            )
+
+            with pytest.raises(ValidationError, match="runtime"):
+                PipelineArgs(
+                    models=models,
+                    runtime=PipelineRuntimeConfig(prefer_module_v3=True),
+                )
+
+            # The correct pattern: pass runtime knobs as flat fields.
+            args = PipelineArgs(
+                models=models,
+                prefer_module_v3=True,
+                denoising_cache=DenoisingCacheConfig(taylorseer=True),
+            )
+            assert args.prefer_module_v3 is True
+            assert args.denoising_cache.taylorseer is True

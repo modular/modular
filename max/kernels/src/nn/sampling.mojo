@@ -10,10 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides token-sampling utilities including logit-penalty application and repetition-penalty kernels."""
 
 from std.math import ceildiv, iota
 from std.sys.info import simd_width_of
 
+from std.math import isfinite
 import std.gpu.primitives.block as block
 from std.algorithm.functional import elementwise
 from std.gpu import block_idx, thread_idx
@@ -23,6 +25,7 @@ from layout import TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from std.utils import IndexList
+from std.utils.coord import Coord, coord_to_index_list
 
 
 def apply_penalties_to_logits[
@@ -32,11 +35,11 @@ def apply_penalties_to_logits[
     target: StaticString,
 ](
     logits: TileTensor[mut=True, logit_type, ...],
-    compressed_frequency_data: TileTensor[DType.int32, ...],
-    frequency_offsets: TileTensor[DType.uint32, ...],
-    frequency_penalty: TileTensor[penalty_type, ...],
-    presence_penalty: TileTensor[penalty_type, ...],
-    repetition_penalty: TileTensor[penalty_type, ...],
+    compressed_frequency_data: TileTensor[mut=False, DType.int32, ...],
+    frequency_offsets: TileTensor[mut=False, DType.uint32, ...],
+    frequency_penalty: TileTensor[mut=False, penalty_type, ...],
+    presence_penalty: TileTensor[mut=False, penalty_type, ...],
+    repetition_penalty: TileTensor[mut=False, penalty_type, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -47,6 +50,27 @@ def apply_penalties_to_logits[
     array is a 2D array, where:
     - frequency_data[i, 0] is the token id
     - frequency_data[i, 1] is the frequency of the token in the sequence
+
+    Parameters:
+        logit_type: Element type of the `logits` tensor (inferred).
+        penalty_type: Element type of the per-batch penalty tensors (inferred).
+        target: Target device to dispatch the elementwise kernel to.
+
+    Args:
+        logits: 2D logits tensor of shape `[batch, vocab]` updated in place
+            with the applied penalties.
+        compressed_frequency_data: 2D CSR frequency data where column 0 is the
+            token id and column 1 is the token count within the sequence.
+        frequency_offsets: 1D tensor of starting indices into
+            `compressed_frequency_data` for each sequence in the batch.
+        frequency_penalty: Per-batch scalar multiplied by the token count and
+            subtracted from each seen token's logit.
+        presence_penalty: Per-batch scalar subtracted from each seen token's
+            logit.
+        repetition_penalty: Per-batch scalar dividing positive logits and
+            multiplying non-positive logits of seen tokens; must be finite
+            and positive.
+        ctx: Device context used to dispatch the kernel.
     """
 
     comptime assert frequency_offsets.flat_rank == 1
@@ -65,18 +89,21 @@ def apply_penalties_to_logits[
     comptime assert logits.element_size == 1
 
     @always_inline
-    @parameter
-    def apply_penalties_fn[
-        width: Int, rank_: Int, alignment: Int = 1
-    ](idx: IndexList[rank_]):
-        comptime assert rank_ == 1, "apply_penalties_fn: rank must be 1"
+    def apply_penalties_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        comptime assert idx.rank == 1, "apply_penalties_fn: rank must be 1"
 
-        var batch_id = get_batch_from_row_offsets(frequency_offsets, idx[0])
+        var batch_id = get_batch_from_row_offsets(
+            frequency_offsets, Int(idx[0].value())
+        )
         var token = Int(compressed_frequency_data[idx[0], 0])
 
         var repetition_penalty_val = repetition_penalty[batch_id][0]
         var presence_penalty_val = presence_penalty[batch_id][0]
         var frequency_penalty_val = frequency_penalty[batch_id][0]
+        debug_assert(
+            isfinite(presence_penalty_val) and isfinite(frequency_penalty_val),
+            "frequency/presence penalty must be finite",
+        )
         # skip padding tokens
         if token >= 0:
             var count = compressed_frequency_data[idx[0], 1][0].cast[
@@ -86,6 +113,12 @@ def apply_penalties_to_logits[
             var logit = logits[batch_id, token][0]
 
             if logit > 0:
+                debug_assert(
+                    repetition_penalty_val[0] > 0
+                    and isfinite(repetition_penalty_val[0]),
+                    "repetition_penalty must be finite and > 0, was ",
+                    repetition_penalty_val[0],
+                )
                 logit = logit / repetition_penalty_val.cast[logit_type]()
             else:
                 logit = logit * repetition_penalty_val.cast[logit_type]()
@@ -97,22 +130,21 @@ def apply_penalties_to_logits[
 
             logits[batch_id, token] = logit
 
-    var dispatch_shape = IndexList[1](Int(compressed_frequency_data.dim[0]()))
+    var dispatch_shape = Coord(Int(compressed_frequency_data.dim[0]()))
     elementwise[
-        func=apply_penalties_fn,
         simd_width=1,
         target=target,
         _trace_description="apply_penalties_to_logits",
-    ](dispatch_shape, ctx)
+    ](apply_penalties_fn, dispatch_shape, ctx)
 
 
 @__name(t"update_frequency_data_{token_type}")
 def update_frequency_data_kernel[
     freq_data_origin: MutOrigin,
     FreqDataLayoutType: TensorLayout,
-    freq_offsets_origin: ImmutOrigin,
+    freq_offsets_origin: ImmOrigin,
     FreqOffsetsLayoutType: TensorLayout,
-    new_tokens_origin: ImmutOrigin,
+    new_tokens_origin: ImmOrigin,
     NewTokensLayoutType: TensorLayout,
     token_type: DType,
     block_size: Int,
@@ -130,6 +162,28 @@ def update_frequency_data_kernel[
 
     Searches for new tokens in existing frequency data and either increments
     their count or adds them to the first available padding slot.
+
+    Parameters:
+        freq_data_origin: Mutable origin of the `compressed_frequency_data`
+            tensor.
+        FreqDataLayoutType: Layout type of the
+            `compressed_frequency_data` tensor.
+        freq_offsets_origin: Immutable origin of the `frequency_offsets`
+            tensor.
+        FreqOffsetsLayoutType: Layout type of the `frequency_offsets` tensor.
+        new_tokens_origin: Immutable origin of the `new_tokens` tensor.
+        NewTokensLayoutType: Layout type of the `new_tokens` tensor.
+        token_type: Element type of the `new_tokens` tensor.
+        block_size: Number of threads per GPU block used to scan a sequence's
+            frequency entries.
+
+    Args:
+        compressed_frequency_data: 2D CSR frequency data where column 0 is the
+            token id and column 1 is the token count within the sequence,
+            updated in place.
+        frequency_offsets: 1D tensor of starting indices into
+            `compressed_frequency_data` for each sequence in the batch.
+        new_tokens: 1D tensor of new token ids, one per sequence in the batch.
     """
 
     comptime assert frequency_offsets.flat_rank == 1
@@ -198,9 +252,11 @@ def update_frequency_data[
         mut=True, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
     frequency_offsets: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    new_tokens: TileTensor[token_type, address_space=AddressSpace.GENERIC, ...],
+    new_tokens: TileTensor[
+        mut=False, token_type, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     """
@@ -208,6 +264,19 @@ def update_frequency_data[
 
     The frequency data is stored in a CSR format. This kernel expects there will be
     enough padding for each sequence to store the new tokens.
+
+    Parameters:
+        token_type: Element type of the `new_tokens` tensor (inferred).
+        target: Target device to dispatch the kernel to.
+
+    Args:
+        compressed_frequency_data: Mutable 2D CSR frequency data where column
+            0 is the token id and column 1 is the token count within the
+            sequence, updated in place.
+        frequency_offsets: 1D tensor of starting indices into
+            `compressed_frequency_data` for each sequence in the batch.
+        new_tokens: 1D tensor of new token ids, one per sequence in the batch.
+        ctx: Device context used to dispatch the kernel.
     """
     comptime assert frequency_offsets.flat_rank == 1
     comptime assert compressed_frequency_data.flat_rank == 2
@@ -222,9 +291,9 @@ def update_frequency_data[
         comptime kernel = update_frequency_data_kernel[
             freq_data_origin=compressed_frequency_data.origin,
             FreqDataLayoutType=compressed_frequency_data.LayoutType,
-            freq_offsets_origin=ImmutOrigin(frequency_offsets.origin),
+            freq_offsets_origin=ImmOrigin(frequency_offsets.origin),
             FreqOffsetsLayoutType=frequency_offsets.LayoutType,
-            new_tokens_origin=ImmutOrigin(new_tokens.origin),
+            new_tokens_origin=ImmOrigin(new_tokens.origin),
             NewTokensLayoutType=new_tokens.LayoutType,
             token_type=token_type,
             block_size=block_size,
@@ -240,16 +309,15 @@ def update_frequency_data[
     else:
 
         @always_inline
-        @parameter
         def update_frequency_data_fn[
-            width: Int, rank_: Int, alignment: Int = 1
-        ](idx: IndexList[rank_]):
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {var}:
             comptime assert (
-                rank_ == 1
+                idx.rank == 1
             ), "update_frequency_data_fn: rank must be 1"
 
-            var tok_start = frequency_offsets[idx[0]]
-            var tok_end = frequency_offsets[idx[0] + 1]
+            var tok_start = frequency_offsets[idx]
+            var tok_end = frequency_offsets[idx[0].value() + 1]
 
             var new_token = new_tokens[idx[0]][0].cast[DType.int32]()
 
@@ -265,10 +333,9 @@ def update_frequency_data[
                     compressed_frequency_data[tok_id, 1] = 1
                     break
 
-        var dispatch_shape = IndexList[1](new_tokens.num_elements())
+        var dispatch_shape = Coord(new_tokens.num_elements())
         elementwise[
-            func=update_frequency_data_fn,
             simd_width=1,
             target=target,
             _trace_description="update_frequency_data",
-        ](dispatch_shape, ctx)
+        ](update_frequency_data_fn, dispatch_shape, ctx)

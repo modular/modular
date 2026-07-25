@@ -28,13 +28,15 @@ from std.algorithm import elementwise
 from std.gpu import barrier, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu
-from std.memory import alloc, stack_allocation
+from std.memory import alloc, dealloc, stack_allocation
+from std.memory.alloc import Layout as AllocLayout
 from std.atomic import Atomic
 from std.sys import simd_width_of
 from std.utils.numerics import isinf, isnan
 
 from std.math import ceildiv
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 from extensibility import InputTensor, OutputTensor
 
@@ -97,50 +99,49 @@ def nan_check_count[
 
     Read-only: does not modify the input tensor. Outputs two single-element
     int32 tensors with the NaN and Inf counts. No D2H transfer or
-    synchronization is performed — the counts stay on the same device as
+    synchronization is performed: the counts stay on the same device as
     the input.
     """
     var total = input.size()
 
     comptime if is_cpu[target]():
         # CPU path: vectorized scan using elementwise with atomic accumulators.
-        var nan_acc = alloc[Scalar[DType.int32]](1)
-        var inf_acc = alloc[Scalar[DType.int32]](1)
-        nan_acc[] = Int32(0)
-        inf_acc[] = Int32(0)
+        var nan_acc = alloc(
+            AllocLayout[Scalar[DType.int32]](count=1)
+        ).into_deletable()
+        var inf_acc = alloc(
+            AllocLayout[Scalar[DType.int32]](count=1)
+        ).into_deletable()
 
-        @parameter
+        var nan_acc_ptr = nan_acc.unsafe_ptr()
+        var inf_acc_ptr = inf_acc.unsafe_ptr()
+
+        nan_acc_ptr[] = Int32(0)
+        inf_acc_ptr[] = Int32(0)
+
         @always_inline
-        def scan[
-            width: Int, _rank: Int, alignment: Int = 1
-        ](idx: IndexList[_rank]) capturing:
-            var flat = idx[0]
+        def scan[width: Int, alignment: Int = 1](idx: Coord) {var}:
+            var flat = idx[0].value()
             var ptr = input.unsafe_ptr()
             var val = ptr.load[width=width](flat)
             var nans = isnan(val).cast[DType.int32]().reduce_add()
             var infs = isinf(val).cast[DType.int32]().reduce_add()
             if nans > 0:
-                _ = Atomic.fetch_add(nan_acc, nans)
+                _ = Atomic.fetch_add(nan_acc_ptr, nans)
             if infs > 0:
-                _ = Atomic.fetch_add(inf_acc, infs)
+                _ = Atomic.fetch_add(inf_acc_ptr, infs)
 
-        elementwise[scan, simd_width_of[dtype]()](total, ctx)
+        elementwise[simd_width_of[dtype]()](scan, Coord(total), ctx)
 
-        nan_count_out.unsafe_ptr()[] = nan_acc[]
-        inf_count_out.unsafe_ptr()[] = inf_acc[]
-        nan_acc.free()
-        inf_acc.free()
+        nan_count_out.unsafe_ptr()[] = nan_acc_ptr[]
+        inf_count_out.unsafe_ptr()[] = inf_acc_ptr[]
     else:
         # GPU path: parallel reduction writing directly to output tensors.
         # Zero the output counts first via a single-thread init kernel,
         # then run the reduction that atomically accumulates into them.
         var gpu_ctx = ctx
-        var out_nan_ptr = rebind[
-            UnsafePointer[Scalar[DType.int32], MutAnyOrigin]
-        ](nan_count_out.unsafe_ptr())
-        var out_inf_ptr = rebind[
-            UnsafePointer[Scalar[DType.int32], MutAnyOrigin]
-        ](inf_count_out.unsafe_ptr())
+        var out_nan_ptr = nan_count_out.unsafe_ptr()
+        var out_inf_ptr = inf_count_out.unsafe_ptr()
 
         @parameter
         @__name(t"nan_check_zero_counts")
@@ -160,9 +161,7 @@ def nan_check_count[
 
         comptime kernel = _nan_check_gpu_kernel[dtype]
         gpu_ctx.enqueue_function[kernel](
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                input.unsafe_ptr()
-            ),
+            input.unsafe_ptr(),
             total,
             out_nan_ptr,
             out_inf_ptr,

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides CPU and GPU implementations of argsort that return indices permuting a tensor into sorted order."""
 
 
 from std.math import ceildiv, iota
@@ -32,6 +33,7 @@ from std.memory import stack_allocation
 from layout import Idx, TensorLayout, TileTensor, row_major
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList, StaticTuple
 
 
@@ -40,7 +42,7 @@ def _argsort_cpu[
     ascending: Bool = True,
 ](
     indices: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
 ) raises:
     """
     Performs argsort on CPU.
@@ -54,18 +56,19 @@ def _argsort_cpu[
     """
     comptime assert input.flat_rank == 1
 
-    @parameter
-    def fill_indices_iota[
-        width: Int, rank: Int, alignment: Int = 1
-    ](offset: IndexList[rank]):
-        indices.raw_store(
-            offset[0],
-            iota[indices.dtype, width](Scalar[indices.dtype](offset[0])),
+    def fill_indices_iota[width: Int, alignment: Int = 1](offset: Coord) {var}:
+        indices.store(
+            offset,
+            iota[indices.dtype, width](
+                Scalar[indices.dtype](offset[0].value())
+            ),
         )
 
-    elementwise[
-        fill_indices_iota, simd_width_of[indices.dtype](), target="cpu"
-    ](indices.num_elements(), DeviceContext(api="cpu"))
+    elementwise[simd_width_of[indices.dtype](), target="cpu"](
+        fill_indices_iota,
+        Coord(indices.num_elements()),
+        DeviceContext(api="cpu"),
+    )
 
     @parameter
     def cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
@@ -80,7 +83,7 @@ def _argsort_cpu[
         Span[
             Scalar[indices.dtype],
             indices.origin,
-        ](ptr=indices.ptr, length=indices.num_elements())
+        ](unsafe_ptr=indices.ptr, length=indices.num_elements())
     )
 
 
@@ -380,7 +383,7 @@ def _argsort_gpu[
     ascending: Bool = True,
 ](
     indices: TileTensor[mut=True, ...],
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -404,12 +407,10 @@ def _argsort_gpu[
         var input_copy = TileTensor(input_copy_buffer, row_major(n))
 
         # Initialize indices with iota.
-        @parameter
-        @__copy_capture(indices, input, input_copy)
         def fill_indices_iota_no_padding[
-            width: Int, rank: Int, alignment: Int = 1
-        ](offset: IndexList[rank]):
-            var i = offset[0]
+            width: Int, alignment: Int = 1
+        ](offset: Coord) {var}:
+            var i = offset[0].value()
 
             indices.raw_store(
                 i,
@@ -420,14 +421,13 @@ def _argsort_gpu[
             )
 
         elementwise[
-            fill_indices_iota_no_padding,
             simd_width=min(
                 simd_width_of[indices.dtype, target=get_gpu_target()](),
                 simd_width_of[input.dtype, target=get_gpu_target()](),
             ),
             target="gpu",
             _trace_description="argsort_fill_indices",
-        ](n, ctx)
+        ](fill_indices_iota_no_padding, Coord(n), ctx)
 
         _argsort_gpu_impl[ascending=ascending](indices, input_copy, ctx)
         _ = input_copy_buffer^
@@ -451,12 +451,8 @@ def _argsort_gpu[
     )
 
     # Initialize indices with sequential values and copy input data to device
-    @parameter
-    @__copy_capture(padded_indices, padded_input, input, indices, n)
-    def fill_indices_iota[
-        width: Int, rank: Int, alignment: Int = 1
-    ](offset: IndexList[rank]):
-        var i = offset[0]
+    def fill_indices_iota[width: Int, alignment: Int = 1](offset: Coord) {var}:
+        var i = Int(offset[0].value())
         if i < n:
             padded_indices.raw_store(
                 i, iota[padded_indices.dtype, width](Scalar[indices.dtype](i))
@@ -481,39 +477,33 @@ def _argsort_gpu[
     # we want to fill one element at a time to handle the case where n is not a
     # power of 2, so we set the simdwidth to be 1.
     elementwise[
-        fill_indices_iota,
         simd_width=1,
         target="gpu",
         _trace_description="argsort_fill_indices_padded",
-    ](pow_2_length, ctx)
+    ](fill_indices_iota, Coord(pow_2_length), ctx)
 
     # Run the argsort implementation with the padded input and indices.
     _argsort_gpu_impl[ascending=ascending](padded_indices, padded_input, ctx)
 
     # Extract the unpadded indices from the padded indices.
-    @parameter
-    @__copy_capture(padded_indices, indices)
-    def extract_indices[
-        width: Int, rank: Int, alignment: Int = 1
-    ](offset: IndexList[rank]):
-        indices.raw_store(
-            offset[0], padded_indices.raw_load[width=width](offset[0])
-        )
+    def extract_indices[width: Int, alignment: Int = 1](offset: Coord) {var}:
+        indices.store(offset, padded_indices.load[width=width](offset))
 
     # Extract the unpadded indices from the padded indices.
     elementwise[
-        extract_indices,
         simd_width=simd_width_of[indices.dtype, target=get_gpu_target()](),
         target="gpu",
         _trace_description="argsort_extract_indices",
-    ](n, ctx)
+    ](extract_indices, Coord(n), ctx)
 
     # Free the temporary input buffer
     _ = padded_input_buffer^
     _ = padded_indices_buffer^
 
 
-def _validate_argsort(input: TileTensor, output: TileTensor) raises:
+def _validate_argsort(
+    input: TileTensor[mut=False, ...], output: TileTensor[mut=False, ...]
+) raises:
     """
     Validates input and output buffers for argsort operation.
 
@@ -535,7 +525,7 @@ def argsort[
     target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -568,7 +558,7 @@ def argsort[
     ascending: Bool = True
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
 ) raises:
     """
     CPU-only version of argsort.

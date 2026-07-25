@@ -16,8 +16,10 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
+"""Registers quantization and dequantization graph ops backed by the `quantization` and `linalg` kernels."""
+
 from std.sys.info import size_of
-import extensibility as compiler
+import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -26,10 +28,11 @@ import extensibility as compiler
 from std.gpu.host import DeviceContext
 from layout.tile_tensor import row_major
 from std.gpu.host.info import is_cpu, is_gpu
+from internal_utils.fp8_utils import fp8_quantize
+from builtin_primitives.primitives import foreach
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, row_major
 from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
-    quantize_static_scaled_fp8,
     quantize_tensor_dynamic_scaled_fp8,
 )
 from linalg.fp4_quantization import (
@@ -91,8 +94,13 @@ from std.utils.index import Index
 from .kernels import *
 
 
-@compiler.register("rms_norm_fused_quantize_dynamic_scaled_fp8")
+@extensibility.register(
+    "mo.composite.rms_norm_fused_quantize_dynamic_scaled_fp8"
+)
 struct RMSNormFusedQuantizeDynamicScaledFP8:
+    """Registers the `mo.composite.rms_norm_fused_quantize_dynamic_scaled_fp8` graph op with the graph compiler.
+    """
+
     @staticmethod
     def execute[
         input_dtype: DType,
@@ -105,7 +113,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         scales: OutputTensor[dtype=scale_dtype, rank=rank, ...],
         input: FusedInputTensor[dtype=input_dtype, rank=rank, ...],
         gamma: InputTensor[dtype=input_dtype, rank=1, ...],
-        epsilon: Scalar[dtype=input_dtype],
+        epsilon: Float32,
         weight_offset: Scalar[dtype=input_dtype],
         scale_ub: Float32,
         ctx: DeviceContext,
@@ -140,22 +148,29 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
             scales.to_tile_tensor[DType.int64](),
         )
 
-    @staticmethod
-    def shape[
-        input_dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=input_dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=input_dtype, rank=1, ...],
-        epsilon: Scalar[dtype=input_dtype],
-        weight_offset: Scalar[dtype=input_dtype],
-        scale_ub: Float32,
-    ) -> IndexList[rank]:
-        return input.shape()
+
+@extensibility.register_shape_function(
+    "mo.composite.rms_norm_fused_quantize_dynamic_scaled_fp8"
+)
+def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape[
+    input_dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=input_dtype, rank=rank, ...],
+    gamma: InputTensor[dtype=input_dtype, rank=1, ...],
+    epsilon: Float32,
+    weight_offset: Scalar[dtype=input_dtype],
+    scale_ub: Float32,
+) -> IndexList[rank]:
+    """Computes the output shapes for the fused RMS norm and dynamic scaled FP8 quantization op.
+    """
+    return input.shape()
 
 
-@compiler.register("mo.resize.nearest")
+@extensibility.register("mo.resize.nearest")
 struct ResizeNearest:
+    """Registers the `mo.resize.nearest` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         coordinate_transform_mode: Int,
@@ -177,22 +192,26 @@ struct ResizeNearest:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        rank: Int
-    ](
-        input: InputTensor[rank=rank, ...],
-        size: InputTensor[rank=1, ...],
-    ) -> IndexList[rank]:
-        var shape = IndexList[rank]()
-        for i in range(rank):
-            shape[i] = Int(size[i])
 
-        return shape
+@extensibility.register_shape_function("mo.resize.nearest")
+def resize_nearest_shape[
+    rank: Int
+](
+    input: InputTensor[rank=rank, ...],
+    size: InputTensor[rank=1, ...],
+) -> IndexList[rank]:
+    """Computes the output shape for the `mo.resize.nearest` graph op."""
+    var shape = IndexList[rank]()
+    for i in range(rank):
+        shape[i] = Int(size[i])
+
+    return shape
 
 
-@compiler.register("mo.resize.linear")
+@extensibility.register("mo.resize.linear")
 struct ResizeLinear:
+    """Registers the `mo.resize.linear` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         coordinate_transform_mode: Int,
@@ -211,22 +230,26 @@ struct ResizeLinear:
             output.to_tile_tensor[DType.int64](),
         )
 
-    @staticmethod
-    def shape[
-        rank: Int
-    ](
-        input: InputTensor[rank=rank, ...],
-        size: InputTensor[rank=1, ...],
-    ) -> IndexList[rank]:
-        var shape = IndexList[rank]()
-        for i in range(rank):
-            shape[i] = Int(size[i])
 
-        return shape
+@extensibility.register_shape_function("mo.resize.linear")
+def resize_linear_shape[
+    rank: Int
+](
+    input: InputTensor[rank=rank, ...],
+    size: InputTensor[rank=1, ...],
+) -> IndexList[rank]:
+    """Computes the output shape for the `mo.resize.linear` graph op."""
+    var shape = IndexList[rank]()
+    for i in range(rank):
+        shape[i] = Int(size[i])
+
+    return shape
 
 
-@compiler.register("mo.resize.bicubic")
+@extensibility.register("mo.resize.bicubic")
 struct ResizeBicubic:
+    """Registers the `mo.resize.bicubic` graph op with the graph compiler."""
+
     @staticmethod
     def execute[
         rank: Int,
@@ -245,21 +268,25 @@ struct ResizeBicubic:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        rank: Int
-    ](
-        input: InputTensor[rank=rank, ...], size: InputTensor[rank=1, ...]
-    ) -> IndexList[rank]:
-        var shape = IndexList[rank]()
-        for i in range(rank):
-            shape[i] = Int(size[i])
 
-        return shape
+@extensibility.register_shape_function("mo.resize.bicubic")
+def resize_bicubic_shape[
+    rank: Int
+](
+    input: InputTensor[rank=rank, ...], size: InputTensor[rank=1, ...]
+) -> IndexList[rank]:
+    """Computes the output shape for the `mo.resize.bicubic` graph op."""
+    var shape = IndexList[rank]()
+    for i in range(rank):
+        shape[i] = Int(size[i])
+
+    return shape
 
 
-@compiler.register("ggml_q4_0_dequantize")
+@extensibility.register("ggml_q4_0_dequantize")
 struct GGMLQ40Dequantize:
+    """Registers the `ggml_q4_0_dequantize` graph op with the graph compiler."""
+
     @staticmethod
     @always_inline
     def execute[
@@ -276,21 +303,24 @@ struct GGMLQ40Dequantize:
             output.shape(),
         )
 
-    @staticmethod
-    @always_inline
-    def shape(
-        input: InputTensor[dtype=DType.uint8, rank=2, ...]
-    ) -> IndexList[2]:
-        comptime block_nbytes = size_of[Q4sym[group_size=32]]()
-        comptime quants_per_block = 32
-        var num_block_per_batch = (
-            input.size() // input.dim_size[0]()
-        ) // block_nbytes
-        return (input.dim_size[0](), quants_per_block * num_block_per_batch)
+
+@extensibility.register_shape_function("ggml_q4_0_dequantize")
+def ggml_q4_0_dequantize_shape(
+    input: InputTensor[dtype=DType.uint8, rank=2, ...]
+) -> IndexList[2]:
+    """Computes the output shape for the `ggml_q4_0_dequantize` graph op."""
+    comptime block_nbytes = size_of[Q4sym[group_size=32]]()
+    comptime quants_per_block = 32
+    var num_block_per_batch = (
+        input.size() // input.dim_size[0]()
+    ) // block_nbytes
+    return (input.dim_size[0](), quants_per_block * num_block_per_batch)
 
 
-@compiler.register("vroom_q4_0_matmul")
+@extensibility.register("vroom_q4_0_matmul")
 struct VroomQ40Matmul:
+    """Registers the `vroom_q4_0_matmul` graph op with the graph compiler."""
+
     @staticmethod
     @always_inline
     def execute[
@@ -310,17 +340,21 @@ struct VroomQ40Matmul:
             Optional[DeviceContext](ctx),
         )
 
-    @staticmethod
-    @always_inline
-    def shape(
-        a: InputTensor[dtype=DType.float32, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
-    ) -> IndexList[2]:
-        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+
+@extensibility.register_shape_function("vroom_q4_0_matmul")
+def vroom_q4_0_matmul_shape(
+    a: InputTensor[dtype=DType.float32, rank=2, ...],
+    b: InputTensor[dtype=DType.uint8, rank=2, ...],
+) -> IndexList[2]:
+    """Computes the output shape for the `vroom_q4_0_matmul` graph op."""
+    return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
 
-@compiler.register("vroom_q4_0_repack_weights")
+@extensibility.register("vroom_q4_0_repack_weights")
 struct VroomQ40RepackWeights:
+    """Registers the `vroom_q4_0_repack_weights` graph op with the graph compiler.
+    """
+
     @staticmethod
     @always_inline
     def execute[
@@ -334,14 +368,20 @@ struct VroomQ40RepackWeights:
             b_packed.to_tile_tensor[DType.int64](),
         )
 
-    @staticmethod
-    @always_inline
-    def shape(b: InputTensor[dtype=DType.uint8, rank=2, ...]) -> IndexList[2]:
-        return b.shape()
+
+@extensibility.register_shape_function("vroom_q4_0_repack_weights")
+def vroom_q4_0_repack_weights_shape(
+    b: InputTensor[dtype=DType.uint8, rank=2, ...]
+) -> IndexList[2]:
+    """Computes the output shape for the `vroom_q4_0_repack_weights` graph op.
+    """
+    return b.shape()
 
 
-@compiler.register("ggml_q4_k_dequantize")
+@extensibility.register("ggml_q4_k_dequantize")
 struct GGMLQ4KDequantize:
+    """Registers the `ggml_q4_k_dequantize` graph op with the graph compiler."""
+
     @staticmethod
     @always_inline
     def execute[
@@ -355,26 +395,29 @@ struct GGMLQ4KDequantize:
             output.to_tile_tensor[DType.int64](),
         )
 
-    @staticmethod
-    @always_inline
-    def shape(
-        input: InputTensor[dtype=DType.uint8, rank=2, ...]
-    ) -> IndexList[2]:
-        comptime block_nbytes = size_of[block_Q4_K]()
-        comptime elements_per_block = block_QK_K.quantized_k
 
-        var num_block_per_batch = (
-            input.size() // input.dim_size[0]()
-        ) // block_nbytes
+@extensibility.register_shape_function("ggml_q4_k_dequantize")
+def ggml_q4_k_dequantize_shape(
+    input: InputTensor[dtype=DType.uint8, rank=2, ...]
+) -> IndexList[2]:
+    """Computes the output shape for the `ggml_q4_k_dequantize` graph op."""
+    comptime block_nbytes = size_of[block_Q4_K]()
+    comptime elements_per_block = block_QK_K.quantized_k
 
-        return (
-            input.dim_size[0](),
-            elements_per_block * num_block_per_batch,
-        )
+    var num_block_per_batch = (
+        input.size() // input.dim_size[0]()
+    ) // block_nbytes
+
+    return (
+        input.dim_size[0](),
+        elements_per_block * num_block_per_batch,
+    )
 
 
-@compiler.register("vroom_q4_k_matmul")
+@extensibility.register("vroom_q4_k_matmul")
 struct VroomQ4KMatmul:
+    """Registers the `vroom_q4_k_matmul` graph op with the graph compiler."""
+
     @staticmethod
     @always_inline
     def execute[
@@ -394,17 +437,21 @@ struct VroomQ4KMatmul:
             Optional[DeviceContext](ctx),
         )
 
-    @staticmethod
-    @always_inline
-    def shape(
-        a: InputTensor[dtype=DType.float32, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
-    ) -> IndexList[2]:
-        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+
+@extensibility.register_shape_function("vroom_q4_k_matmul")
+def vroom_q4_k_matmul_shape(
+    a: InputTensor[dtype=DType.float32, rank=2, ...],
+    b: InputTensor[dtype=DType.uint8, rank=2, ...],
+) -> IndexList[2]:
+    """Computes the output shape for the `vroom_q4_k_matmul` graph op."""
+    return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
 
-@compiler.register("vroom_q4_k_repack_weights")
+@extensibility.register("vroom_q4_k_repack_weights")
 struct VroomQ4KRepackWeights:
+    """Registers the `vroom_q4_k_repack_weights` graph op with the graph compiler.
+    """
+
     @staticmethod
     @always_inline
     def execute[
@@ -418,16 +465,20 @@ struct VroomQ4KRepackWeights:
             b_packed.to_tile_tensor[DType.int64](),
         )
 
-    @staticmethod
-    @always_inline
-    def shape(
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
-    ) -> IndexList[2]:
-        return b.shape()
+
+@extensibility.register_shape_function("vroom_q4_k_repack_weights")
+def vroom_q4_k_repack_weights_shape(
+    b: InputTensor[dtype=DType.uint8, rank=2, ...],
+) -> IndexList[2]:
+    """Computes the output shape for the `vroom_q4_k_repack_weights` graph op.
+    """
+    return b.shape()
 
 
-@compiler.register("ggml_q6_k_dequantize")
+@extensibility.register("ggml_q6_k_dequantize")
 struct GGMLQ6KDequantize:
+    """Registers the `ggml_q6_k_dequantize` graph op with the graph compiler."""
+
     @staticmethod
     @always_inline
     def execute[
@@ -444,26 +495,29 @@ struct GGMLQ6KDequantize:
             output.shape(),
         )
 
-    @staticmethod
-    @always_inline
-    def shape(
-        input: InputTensor[dtype=DType.uint8, rank=2, ...]
-    ) -> IndexList[2]:
-        comptime block_nbytes = size_of[block_Q6_K]()
-        comptime elements_per_block = block_QK_K.quantized_k
 
-        var num_block_per_batch = (
-            input.size() // input.dim_size[0]()
-        ) // block_nbytes
+@extensibility.register_shape_function("ggml_q6_k_dequantize")
+def ggml_q6_k_dequantize_shape(
+    input: InputTensor[dtype=DType.uint8, rank=2, ...]
+) -> IndexList[2]:
+    """Computes the output shape for the `ggml_q6_k_dequantize` graph op."""
+    comptime block_nbytes = size_of[block_Q6_K]()
+    comptime elements_per_block = block_QK_K.quantized_k
 
-        return (
-            input.dim_size[0](),
-            elements_per_block * num_block_per_batch,
-        )
+    var num_block_per_batch = (
+        input.size() // input.dim_size[0]()
+    ) // block_nbytes
+
+    return (
+        input.dim_size[0](),
+        elements_per_block * num_block_per_batch,
+    )
 
 
-@compiler.register("vroom_q6_k_matmul")
+@extensibility.register("vroom_q6_k_matmul")
 struct VroomQ6KMatmul:
+    """Registers the `vroom_q6_k_matmul` graph op with the graph compiler."""
+
     @staticmethod
     @always_inline
     def execute[
@@ -483,17 +537,21 @@ struct VroomQ6KMatmul:
             Optional[DeviceContext](ctx),
         )
 
-    @staticmethod
-    @always_inline
-    def shape(
-        a: InputTensor[dtype=DType.float32, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
-    ) -> IndexList[2]:
-        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+
+@extensibility.register_shape_function("vroom_q6_k_matmul")
+def vroom_q6_k_matmul_shape(
+    a: InputTensor[dtype=DType.float32, rank=2, ...],
+    b: InputTensor[dtype=DType.uint8, rank=2, ...],
+) -> IndexList[2]:
+    """Computes the output shape for the `vroom_q6_k_matmul` graph op."""
+    return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
 
-@compiler.register("vroom_q6_k_repack_weights")
+@extensibility.register("vroom_q6_k_repack_weights")
 struct VroomQ6KRepackWeights:
+    """Registers the `vroom_q6_k_repack_weights` graph op with the graph compiler.
+    """
+
     @staticmethod
     @always_inline
     def execute[
@@ -507,16 +565,20 @@ struct VroomQ6KRepackWeights:
             b_packed.to_tile_tensor[DType.int64](),
         )
 
-    @staticmethod
-    @always_inline
-    def shape(
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
-    ) -> IndexList[2]:
-        return b.shape()
+
+@extensibility.register_shape_function("vroom_q6_k_repack_weights")
+def vroom_q6_k_repack_weights_shape(
+    b: InputTensor[dtype=DType.uint8, rank=2, ...],
+) -> IndexList[2]:
+    """Computes the output shape for the `vroom_q6_k_repack_weights` graph op.
+    """
+    return b.shape()
 
 
-@compiler.register("qmatmul_b4_g32")
+@extensibility.register("qmatmul_b4_g32")
 struct QMatmulGPU_b4_g32:
+    """Registers the `qmatmul_b4_g32` graph op with the graph compiler."""
+
     @staticmethod
     @always_inline
     def execute[
@@ -537,17 +599,20 @@ struct QMatmulGPU_b4_g32:
             ctx,
         )
 
-    @staticmethod
-    @always_inline
-    def shape(
-        a: InputTensor[dtype=DType.float32, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
-    ) -> IndexList[2]:
-        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+
+@extensibility.register_shape_function("qmatmul_b4_g32")
+def qmatmul_b4_g32_shape(
+    a: InputTensor[dtype=DType.float32, rank=2, ...],
+    b: InputTensor[dtype=DType.uint8, rank=2, ...],
+) -> IndexList[2]:
+    """Computes the output shape for the `qmatmul_b4_g32` graph op."""
+    return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
 
-@compiler.register("qmatmul_b4_g128")
+@extensibility.register("qmatmul_b4_g128")
 struct QMatmulGPU_b4_g128:
+    """Registers the `qmatmul_b4_g128` graph op with the graph compiler."""
+
     @staticmethod
     @always_inline
     def execute[
@@ -568,17 +633,20 @@ struct QMatmulGPU_b4_g128:
             ctx,
         )
 
-    @staticmethod
-    @always_inline
-    def shape(
-        a: InputTensor[dtype=DType.float32, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
-    ) -> IndexList[2]:
-        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+
+@extensibility.register_shape_function("qmatmul_b4_g128")
+def qmatmul_b4_g128_shape(
+    a: InputTensor[dtype=DType.float32, rank=2, ...],
+    b: InputTensor[dtype=DType.uint8, rank=2, ...],
+) -> IndexList[2]:
+    """Computes the output shape for the `qmatmul_b4_g128` graph op."""
+    return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
 
-@compiler.register("GGUF_gpu_repack_q4_0")
+@extensibility.register("GGUF_gpu_repack_q4_0")
 struct QMatmulGPURepackGGUF:
+    """Registers the `GGUF_gpu_repack_q4_0` graph op with the graph compiler."""
+
     @staticmethod
     @always_inline
     def execute[
@@ -592,19 +660,23 @@ struct QMatmulGPURepackGGUF:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         gpu_qint4_repack_Q4_0[target](
-            b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx
+            b.to_tile_tensor(), b_packed.to_tile_tensor(), ctx
         )
 
-    @staticmethod
-    @always_inline
-    def shape(
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
-    ) -> IndexList[2]:
-        return b.shape()
+
+@extensibility.register_shape_function("GGUF_gpu_repack_q4_0")
+def GGUF_gpu_repack_q4_0_shape(
+    b: InputTensor[dtype=DType.uint8, rank=2, ...],
+) -> IndexList[2]:
+    """Computes the output shape for the `GGUF_gpu_repack_q4_0` graph op."""
+    return b.shape()
 
 
-@compiler.register("GPTQ_gpu_repack_b4_g128")
+@extensibility.register("GPTQ_gpu_repack_b4_g128")
 struct QMatmulGPURepackGPTQ_b4_g128:
+    """Registers the `GPTQ_gpu_repack_b4_g128` graph op with the graph compiler.
+    """
+
     @staticmethod
     @always_inline
     def execute[
@@ -618,19 +690,23 @@ struct QMatmulGPURepackGPTQ_b4_g128:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         gpu_qint4_repack_GPTQ[128, target](
-            b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx=ctx
+            b.to_tile_tensor(), b_packed.to_tile_tensor(), ctx=ctx
         )
 
-    @staticmethod
-    @always_inline
-    def shape(
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
-    ) -> IndexList[2]:
-        return IndexList[2](b.dim_size[1](), b.dim_size[0]())
+
+@extensibility.register_shape_function("GPTQ_gpu_repack_b4_g128")
+def GPTQ_gpu_repack_b4_g128_shape(
+    b: InputTensor[dtype=DType.uint8, rank=2, ...],
+) -> IndexList[2]:
+    """Computes the output shape for the `GPTQ_gpu_repack_b4_g128` graph op."""
+    return IndexList[2](b.dim_size[1](), b.dim_size[0]())
 
 
-@compiler.register("GPTQ_gpu_repack_b4_g128_desc_act")
+@extensibility.register("GPTQ_gpu_repack_b4_g128_desc_act")
 struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
+    """Registers the `GPTQ_gpu_repack_b4_g128_desc_act` graph op with the graph compiler.
+    """
+
     @staticmethod
     @always_inline
     def execute[
@@ -646,28 +722,33 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
 
         var perm_idx_lt = perm_idx.to_layout_tensor()
         gpu_qint4_repack_GPTQ[128, target](
-            b.to_layout_tensor(),
-            b_packed.to_layout_tensor(),
+            b.to_tile_tensor(),
+            b_packed.to_tile_tensor(),
             LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
                 perm_idx_lt.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     perm_idx_lt.runtime_layout.shape.value.canonicalize()
                 ),
-            ).get_immutable(),
+            ).as_imm(),
             ctx=ctx,
         )
 
-    @staticmethod
-    @always_inline
-    def shape(
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
-        perm_idx: InputTensor[dtype=DType.int32, rank=1, ...],
-    ) -> IndexList[2]:
-        return IndexList[2](b.dim_size(1), b.dim_size(0))
+
+@extensibility.register_shape_function("GPTQ_gpu_repack_b4_g128_desc_act")
+def GPTQ_gpu_repack_b4_g128_desc_act_shape(
+    b: InputTensor[dtype=DType.uint8, rank=2, ...],
+    perm_idx: InputTensor[dtype=DType.int32, rank=1, ...],
+) -> IndexList[2]:
+    """Computes the output shape for the `GPTQ_gpu_repack_b4_g128_desc_act` graph op.
+    """
+    return IndexList[2](b.dim_size(1), b.dim_size(0))
 
 
-@compiler.register("mo.quantize.dynamic.block.scaled")
+@extensibility.register("mo.quantize.dynamic.block.scaled")
 struct Struct_quantize_dynamic_block_scaled:
+    """Registers the `mo.quantize.dynamic.block.scaled` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -690,7 +771,6 @@ struct Struct_quantize_dynamic_block_scaled:
             " block scaled support"
         )
 
-        cuda_ctx = context
         quantize_dynamic_block_scaled[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             target=target,
@@ -699,12 +779,15 @@ struct Struct_quantize_dynamic_block_scaled:
             scales.to_tile_tensor[DType.int64](),
             input.to_tile_tensor[DType.int64](),
             tensor_sf,
-            cuda_ctx,
+            context,
         )
 
 
-@compiler.register("mo.grouped.quantize.dynamic.block.scaled")
+@extensibility.register("mo.grouped.quantize.dynamic.block.scaled")
 struct Struct_grouped_quantize_dynamic_block_scaled:
+    """Registers the `mo.grouped.quantize.dynamic.block.scaled` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -728,7 +811,6 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
             target
         ](), "grouped quantize dynamic block scaled only supports GPUs"
 
-        cuda_ctx = context
         grouped_quantize_dynamic_scaled_fp4_async(
             output.to_tile_tensor[DType.int64](),
             scales.to_tile_tensor[DType.int64](),
@@ -737,12 +819,15 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
             scales_offsets.to_tile_tensor[DType.int64](),
             expert_ids.to_tile_tensor[DType.int64](),
             sf_tensor.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
         )
 
 
-@compiler.register("mo.quantize.dynamic.block.scaled.mxfp4")
+@extensibility.register("mo.quantize.dynamic.block.scaled.mxfp4")
 struct Struct_quantize_dynamic_block_scaled_mxfp4:
+    """Registers the `mo.quantize.dynamic.block.scaled.mxfp4` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -768,8 +853,10 @@ struct Struct_quantize_dynamic_block_scaled_mxfp4:
         )
 
 
-@compiler.register("mo.dequant.mxfp4")
+@extensibility.register("mo.dequant.mxfp4")
 struct Struct_dequant_mxfp4:
+    """Registers the `mo.dequant.mxfp4` graph op with the graph compiler."""
+
     @always_inline
     @staticmethod
     def execute[
@@ -796,8 +883,6 @@ struct Struct_dequant_mxfp4:
             scales_type == DType.float8_e8m0fnu
         ), "MXFP4 dequant scales must be float8_e8m0fnu"
 
-        cuda_ctx = context
-
         var in_tt = input.to_tile_tensor[DType.int64]()
         var scales_tt = scales.to_tile_tensor[DType.int64]()
         var out_tt = output.to_tile_tensor[DType.int64]()
@@ -807,7 +892,7 @@ struct Struct_dequant_mxfp4:
         var num_cols = Int(in_tt.dim[1]()) * 2
 
         dequant_mxfp4(
-            cuda_ctx,
+            context,
             out_tt,
             in_tt,
             scales_tt,
@@ -816,8 +901,11 @@ struct Struct_dequant_mxfp4:
         )
 
 
-@compiler.register("mo.interleave.block.scales")
+@extensibility.register("mo.interleave.block.scales")
 struct Struct_interleave_block_scales:
+    """Registers the `mo.interleave.block.scales` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -835,15 +923,14 @@ struct Struct_interleave_block_scales:
             " block scaled support"
         )
 
-        cuda_ctx = context
         block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target](
             output_scales.to_tile_tensor[DType.int64](),
             input_scales.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
         )
 
 
-@compiler.register("mo.mxfp4.preshuffle.b.5d")
+@extensibility.register("mo.mxfp4.preshuffle.b.5d")
 struct Struct_mxfp4_preshuffle_b_5d:
     """Run the AMD CDNA4 MXFP4 B 5D preshuffle as a custom op.
 
@@ -875,8 +962,68 @@ struct Struct_mxfp4_preshuffle_b_5d:
         )
 
 
-@compiler.register("mo.unfused_qkv_matmul.ragged.paged.gguf_quantized")
+@extensibility.register("mo.mxfp4.preshuffle.scale.4d_per_expert")
+struct Struct_mxfp4_preshuffle_scale_4d_per_expert:
+    """Per-step A-scale preshuffle for the AMD CDNA4 preb grouped matmul.
+
+    Takes row-major E8M0 A-scales `[total_tokens, K_SCALES]` and writes
+    cell-packed scales into per-expert fixed-stride slots of size
+    `max_padded_M = align_up(max_num_tokens_per_expert, 32)`. The
+    `mxfp4_grouped_matmul_amd_preb` kernel reads slot `e * max_padded_M`
+    for expert slot `e`. Inactive slots and pad rows are left untouched
+    by this kernel; the matmul's per-expert tight V# bound guards
+    out-of-range reads.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        input: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "mo.mxfp4.preshuffle.scale.4d_per_expert is GPU-only"
+
+        # E8M0 bytes feed the launcher as raw uint8 (the cell-packing is
+        # byte-level). Bitcast the input/output tile pointers so dtype
+        # metadata matches the launcher's `DType.uint8` TileTensor sig.
+        var raw_e8 = input.to_tile_tensor[DType.int64]()
+        var dst_e8 = output.to_tile_tensor[DType.int64]()
+        var raw_tt = TileTensor[mut=False](
+            raw_e8.ptr.bitcast[Scalar[DType.uint8]](), raw_e8.layout
+        )
+        var dst_tt = TileTensor[mut=True](
+            dst_e8.ptr.bitcast[Scalar[DType.uint8]](), dst_e8.layout
+        )
+        var a_off_tt = expert_start_indices.to_tile_tensor[DType.int64]()
+        comptime K_SCALES = type_of(raw_tt).static_shape[1]
+        # Persistent grid: one CTA per WG slot, grid-strides real tiles.
+        # `cu_count * 2` matches the matmul's persistent dispatch (see
+        # `PreShuffledBGroupedGEMM.total_wg`).
+        comptime total_wg = context.default_device_info.sm_count * 2
+        Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=K_SCALES](
+            raw_tt,
+            dst_tt,
+            a_off_tt,
+            Int(num_active_experts),
+            Int(max_num_tokens_per_expert),
+            total_wg,
+            context,
+        )
+
+
+@extensibility.register("mo.unfused_qkv_matmul.ragged.paged.gguf_quantized")
 struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
+    """Registers the `mo.unfused_qkv_matmul.ragged.paged.gguf_quantized` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -893,7 +1040,8 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
         kv_blocks: MutableInputTensor[dtype=DType.float32, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -901,7 +1049,8 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
             kv_blocks,
             cache_lengths,
             kv_lookup_table,
-            max_lengths,
+            max_prompt_length,
+            max_cache_length,
         )
         unfused_qkv_matmul_ragged_paged_gguf_quantized[
             quantization_encoding_q,
@@ -920,8 +1069,11 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
         )
 
 
-@compiler.register("mo.quantize_static_scaled_float8")
+@extensibility.register("mo.quantize_static_scaled_float8")
 struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
+    """Registers the `mo.quantize_static_scaled_float8` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -931,26 +1083,47 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_type, rank=2, ...],
-        input: InputTensor[dtype=input_type, rank=2, ...],
+        input: FusedInputTensor[dtype=input_type, rank=2, ...],
         scale: Scalar[scale_type],
         ctx: DeviceContext,
-    ) raises:
+    ) capturing raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
         comptime assert output_type in (
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
         ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
-        var scale_loaded = scale.cast[DType.float32]()
-        quantize_static_scaled_fp8[scale_is_inverted=Self.scale_is_inverted](
-            output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
-            scale_loaded,
-            ctx,
-        )
+
+        # A single-use elementwise producer feeding this quantize (MLP relu2,
+        # the gated-group-norm final cast, residual casts) fuses INTO this
+        # load lambda, saving one kernel launch + one full-width HBM
+        # materialization per FP8 Linear activation. Math is bit-identical to
+        # the standalone `quantize_static_scaled_fp8` path: cast to f32, then
+        # `fp8_quantize(v, 1.0/scale)`. The original kernel ignored the
+        # `scale_is_inverted` param and always used `1.0/scale`; preserved here.
+        var inversed_scale = 1.0 / scale.cast[DType.float32]()
+
+        @always_inline
+        def quant_fn[
+            width: Int, element_alignment: Int
+        ](idx: IndexList[2]) {var input, var inversed_scale} -> SIMD[
+            output_type, width
+        ]:
+            var v = input._fused_load[
+                width, element_alignment=element_alignment
+            ](idx).cast[DType.float32]()
+            return fp8_quantize[output_type, use_clamp=True](v, inversed_scale)
+
+        foreach[
+            target=target,
+            _trace_name="scaled_fp8_quant",
+        ](quant_fn, output, ctx)
 
 
-@compiler.register("mo.quantize_tensor_dynamic_scaled_float8")
+@extensibility.register("mo.quantize_tensor_dynamic_scaled_float8")
 struct QuantizeTensorDynamicScaledFloat8:
+    """Registers the `mo.quantize_tensor_dynamic_scaled_float8` graph op with the graph compiler.
+    """
+
     @always_inline
     @staticmethod
     def execute[
@@ -969,23 +1142,20 @@ struct QuantizeTensorDynamicScaledFloat8:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        @parameter
         @always_inline
         def input_fn[
             width: Int, alignment: Int
-        ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
+        ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
                 Index(row, col)
             )
 
         quantize_tensor_dynamic_scaled_fp8[
-            out_dtype=output_type,
             in_dtype=input_type,
-            scales_dtype=scales_type,
-            input_fn,
-            group_size_or_per_token,
+            group_size_or_per_token=group_size_or_per_token,
             num_cols=Int(input.static_spec.shape_tuple[1]),
         ](
+            input_fn,
             output.to_tile_tensor[DType.int64](),
             scales.to_tile_tensor[DType.int64](),
             scale_ub,
@@ -994,8 +1164,11 @@ struct QuantizeTensorDynamicScaledFloat8:
         )
 
 
-@compiler.register("mo.quantize_dynamic_scaled_float8")
+@extensibility.register("mo.quantize_dynamic_scaled_float8")
 struct QuantizeDynamicScaledFloat8:
+    """Registers the `mo.quantize_dynamic_scaled_float8` graph op with the graph compiler.
+    """
+
     @parameter
     @always_inline
     @staticmethod
@@ -1015,23 +1188,20 @@ struct QuantizeDynamicScaledFloat8:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        @parameter
         @always_inline
         def input_fn[
             width: Int, alignment: Int
-        ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
+        ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
                 Index(row, col)
             )
 
         quantize_dynamic_scaled_fp8[
-            out_dtype=output_type,
             in_dtype=input_type,
-            scales_dtype=scales_type,
-            input_fn,
-            group_size_or_per_token,
+            group_size_or_per_token=group_size_or_per_token,
             num_cols=Int(input.static_spec.shape_tuple[1]),
         ](
+            input_fn,
             output.to_tile_tensor[DType.int64](),
             scales.to_tile_tensor[DType.int64](),
             scale_ub,

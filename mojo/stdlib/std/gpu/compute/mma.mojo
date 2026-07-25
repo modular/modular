@@ -47,34 +47,34 @@ from .arch.mma_amd import _mma_amd
 from .arch.mma_apple import _mma_apple
 
 
-def get_amd_fp8_dtype() -> DType:
+def get_amd_fp8_dtype() -> Optional[DType]:
     """Gets the appropriate FP8 dtype for the current AMD GPU architecture.
 
     Returns:
         - `DType.float8_e4m3fn` for CDNA4+ and RDNA4+ GPUs
         - `DType.float8_e4m3fnuz` for CDNA1-3 GPUs
-        - `DType.invalid` for RDNA3 (no native FP8 support).
+        - `None` for RDNA3 (no native FP8 support).
     """
 
     comptime if _is_amd_rdna3():
-        return DType.invalid
+        return None
     elif _is_amd_rdna4() or _cdna_4_or_newer():
         return DType.float8_e4m3fn
     else:
         return DType.float8_e4m3fnuz
 
 
-def get_amd_bf8_dtype() -> DType:
+def get_amd_bf8_dtype() -> Optional[DType]:
     """Gets the appropriate BF8 dtype for the current AMD GPU architecture.
 
     Returns:
         - `DType.float8_e5m2` for CDNA4+ and RDNA4+ GPUs
         - `DType.float8_e5m2fnuz` for CDNA1-3 GPUs
-        - `DType.invalid` for RDNA3 (no native BF8 support).
+        - `None` for RDNA3 (no native BF8 support).
     """
 
     comptime if _is_amd_rdna3():
-        return DType.invalid
+        return None
     elif _is_amd_rdna4() or _cdna_4_or_newer():
         return DType.float8_e5m2
     else:
@@ -86,10 +86,10 @@ def _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # fmt: off
     comptime assert False, String(
         "no valid implementation of mma for a=",
-        a.size, "x",  a.dtype,
-        ", b=",  b.size, "x",  b.dtype,
-        ", c=",  c.size, "x",  c.dtype,
-        ", and d=", d.size, "x", d.dtype,
+        Int(a.size), "x",  a.dtype,
+        ", b=",  Int(b.size), "x",  b.dtype,
+        ", c=",  Int(c.size), "x",  c.dtype,
+        ", and d=", Int(d.size), "x", d.dtype,
     )
     # fmt: on
 
@@ -162,11 +162,11 @@ def _dtype_to_nvvm_wgmma_type[
 def _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
     return __mlir_deferred_attr[
         `#nvvm.shape<m =`,
-        +m._int_mlir_index(),
+        +m.__mlir_index__(),
         `, n =`,
-        +n._int_mlir_index(),
+        +n.__mlir_index__(),
         `, k =`,
-        +k._int_mlir_index(),
+        +k.__mlir_index__(),
         `>`,
     ]
 
@@ -271,10 +271,11 @@ def ld_matrix[
 
         ```mojo
         from std.gpu.compute.mma import ld_matrix
-        from std.memory import alloc, free, Layout
+        from std.memory import alloc, dealloc, Layout
 
         var layout = Layout[Scalar[DType.float16]](count=8)
-        var ptr = alloc(layout)
+        var allocation = alloc(layout)
+        var ptr = allocation.unsafe_ptr()
 
         # Load 8x8 matrix of float16 values
         var data = ld_matrix[simd_width=8](ptr)
@@ -282,7 +283,7 @@ def ld_matrix[
         # Load transposed matrix
         var transposed = ld_matrix[simd_width=8, transpose=True](ptr)
 
-        free(ptr, layout)
+        dealloc(allocation^)
         ```
     """
 
@@ -396,7 +397,11 @@ def st_matrix[
         must execute this instruction to avoid deadlock.
     """
 
-    comptime assert dtype in (DType.bfloat16, DType.float32), ""
+    comptime assert dtype in (
+        DType.bfloat16,
+        DType.float16,
+        DType.float32,
+    ), ""
 
     comptime num_matrices = simd_width
 
@@ -757,7 +762,7 @@ def wgmma_async[
     n: Int,
     k: Int,
     c_dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     /,
     *,
     a_type: DType,
@@ -811,7 +816,7 @@ def wgmma_async[
         c_dtype
     ](), String(
         "Number of output registers ",
-        String(width),
+        String(Int(width)),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
     )
@@ -879,8 +884,8 @@ def wgmma_async[
     k: Int,
     a_dtype: DType,
     c_dtype: DType,
-    frag_a_width: SIMDSize,
-    frag_c_width: SIMDSize,
+    frag_a_width: SIMDLength,
+    frag_c_width: SIMDLength,
     /,
     *,
     a_type: DType,
@@ -934,7 +939,7 @@ def wgmma_async[
         accum_type
     ]() == frag_c_width * size_of[c_dtype](), String(
         "Number of output registers ",
-        String(frag_c_width),
+        String(Int(frag_c_width)),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
     )
@@ -943,7 +948,7 @@ def wgmma_async[
         a_type
     ]() == frag_a_width * size_of[a_dtype](), String(
         "Number of input a registers ",
-        String(frag_a_width),
+        String(Int(frag_a_width)),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
     )

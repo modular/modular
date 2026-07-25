@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides CPU and GPU implementations of the argmax and argmin reduction operations."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -29,7 +30,7 @@ from layout import TileTensor
 def _argn[
     is_max: Bool
 ](
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
     axis: Int,
     output: TileTensor[mut=True, ...],
     ctx: Optional[DeviceContext] = None,
@@ -101,7 +102,7 @@ def _argn[
         @parameter
         @always_inline
         def cmpeq[
-            dtype: DType, simd_width: SIMDSize
+            dtype: DType, simd_width: SIMDLength
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
@@ -113,7 +114,7 @@ def _argn[
         @parameter
         @always_inline
         def cmp[
-            dtype: DType, simd_width: SIMDSize
+            dtype: DType, simd_width: SIMDLength
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
@@ -190,7 +191,7 @@ def _argn[
 
 
 def argmax(
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
     axis: Int,
     output: TileTensor[mut=True, ...],
     ctx: Optional[DeviceContext] = None,
@@ -209,8 +210,8 @@ def argmax(
 
 
 def argmax(
-    input: TileTensor,
-    axis_buf: TileTensor,
+    input: TileTensor[mut=False, ...],
+    axis_buf: TileTensor[mut=False, ...],
     output: TileTensor[mut=True, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises where axis_buf.flat_rank == 1:
@@ -233,7 +234,7 @@ def argmax(
 
 
 def argmin(
-    input: TileTensor,
+    input: TileTensor[mut=False, ...],
     axis: Int,
     output: TileTensor[mut=True, ...],
     ctx: Optional[DeviceContext] = None,
@@ -252,8 +253,8 @@ def argmin(
 
 
 def argmin(
-    input: TileTensor,
-    axis_buf: TileTensor,
+    input: TileTensor[mut=False, ...],
+    axis_buf: TileTensor[mut=False, ...],
     output: TileTensor[mut=True, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises where axis_buf.flat_rank == 1:

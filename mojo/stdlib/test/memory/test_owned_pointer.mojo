@@ -14,6 +14,7 @@
 from std.memory import OwnedPointer
 from test_utils import (
     ExplicitCopyOnly,
+    ExplicitDelOnly,
     ImplicitCopyOnly,
     MoveOnly,
     ObservableDel,
@@ -36,8 +37,8 @@ def test_basic_ref() raises:
 def test_from_unsafe_pointer_constructor() raises:
     var deleted = False
     var unsafe_ptr = alloc[ObservableDel[]](1)
-    unsafe_ptr.init_pointee_move(
-        ObservableDel(UnsafePointer(to=deleted).as_any_origin())
+    unsafe_ptr.unsafe_write(
+        ObservableDel(Pointer(to=deleted).as_unsafe_any_origin())
     )
 
     var ptr = OwnedPointer(unsafe_from_raw_pointer=unsafe_ptr)
@@ -99,7 +100,7 @@ def test_multiple_refs() raises:
 
 def test_basic_del() raises:
     var deleted = False
-    var b = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var b = OwnedPointer(ObservableDel(Pointer(to=deleted)))
 
     assert_false(deleted)
 
@@ -116,7 +117,7 @@ def test_take() raises:
 
 def test_moveinit() raises:
     var deleted = False
-    var b = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var b = OwnedPointer(ObservableDel(Pointer(to=deleted)))
     var p1 = Int(b.unsafe_ptr())
 
     var b2 = b^
@@ -133,7 +134,7 @@ def test_moveinit() raises:
 def test_steal_data() raises:
     var deleted = False
 
-    var owned_ptr = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var owned_ptr = OwnedPointer(ObservableDel(Pointer(to=deleted)))
 
     var ptr = owned_ptr^.steal_data()
 
@@ -143,6 +144,27 @@ def test_steal_data() raises:
     _ = OwnedPointer(unsafe_from_raw_pointer=ptr)
 
 
+def test_owned_pointer_linear_type() raises:
+    # An `OwnedPointer` holding a linear (non-`ImplicitlyDeletable`) element
+    # has no implicit destructor, so it is consumed explicitly with `take()`.
+    # The linear value is destroyed before any raising assert runs (the
+    # linear-in-`raises` idiom).
+    var b = OwnedPointer(ExplicitDelOnly(5))
+    var v = b^.take()
+    var data = v.data
+    v^.destroy()
+    assert_equal(data, 5)
+
+    # `steal_data()` releases the raw pointer without touching the pointee, so
+    # it also works for a linear element type.
+    var b2 = OwnedPointer(ExplicitDelOnly(7))
+    var b3 = OwnedPointer(unsafe_from_raw_pointer=b2^.steal_data())
+    var v3 = b3^.take()
+    var data3 = v3.data
+    v3^.destroy()
+    assert_equal(data3, 7)
+
+
 def test_write_to() raises:
     check_write_to(OwnedPointer(42), expected="42", is_repr=False)
     check_write_to(OwnedPointer("hello"), expected="hello", is_repr=False)
@@ -150,7 +172,9 @@ def test_write_to() raises:
 
 def test_write_repr_to() raises:
     check_write_to(
-        OwnedPointer(42), expected="OwnedPointer[Int](Int(42))", is_repr=True
+        OwnedPointer(42),
+        expected="OwnedPointer[SIMD[DType.int, 1]](Int(42))",
+        is_repr=True,
     )
     check_write_to(
         OwnedPointer("hello"),

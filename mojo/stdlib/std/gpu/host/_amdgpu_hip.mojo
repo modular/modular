@@ -35,9 +35,9 @@ struct _ihipModule_t:
     pass
 
 
-comptime hipDevice_t = _CPointer[_ihipDevice_t, ExternalOrigin[mut=True]]
-comptime hipStream_t = _CPointer[_ihipStream_t, ExternalOrigin[mut=True]]
-comptime hipModule_t = _CPointer[_ihipModule_t, ExternalOrigin[mut=True]]
+comptime hipDevice_t = _CPointer[_ihipDevice_t, UntrackedOrigin[mut=True]]
+comptime hipStream_t = _CPointer[_ihipStream_t, UntrackedOrigin[mut=True]]
+comptime hipModule_t = _CPointer[_ihipModule_t, UntrackedOrigin[mut=True]]
 
 
 # Accessor function to get access to the underlying hipDevice_t from an abstract DeviceContext.
@@ -49,7 +49,7 @@ def HIP(ctx: DeviceContext) raises -> hipDevice_t:
     # const char *AsyncRT_DeviceContext_hip_device(hipDevice_t *result, const DeviceContext *ctx)
     _checked(
         external_call["AsyncRT_DeviceContext_hip_device", _CString[]](
-            UnsafePointer(to=result),
+            Pointer(to=result),
             ctx._handle,
         )
     )
@@ -67,7 +67,7 @@ def HIP(stream: DeviceStream) raises -> hipStream_t:
             "AsyncRT_DeviceStream_hip_stream",
             _CString[],
         ](
-            UnsafePointer(to=result),
+            Pointer(to=result),
             stream._handle,
         )
     )
@@ -84,7 +84,7 @@ def HIP_MODULE(func: DeviceFunction) raises -> hipModule_t:
             "AsyncRT_DeviceFunction_hip_module",
             _CString[],
         ](
-            UnsafePointer(to=result),
+            Pointer(to=result),
             func._handle,
         )
     )

@@ -24,7 +24,7 @@ def test_scale() raises:
     """Intro example: read capture with multiplier."""
     var multiplier = 3
 
-    def scale(x: Int) {read multiplier} -> Int:
+    def scale(x: Int) {imm multiplier} -> Int:
         return x * multiplier
 
     assert_equal(scale(5), 15)
@@ -38,7 +38,7 @@ def test_capture_list_read_mut() raises:
     var x = 10
     var y = 20
 
-    def inner(z: Int) {read x, mut y} -> Int:
+    def inner(z: Int) {imm x, mut y} -> Int:
         y += z
         return x + y
 
@@ -53,7 +53,7 @@ def test_read_threshold() raises:
     """Explicit read capture: is_over checks threshold."""
     var threshold = 100
 
-    def is_over(x: Int) {read threshold} -> Bool:
+    def is_over(x: Int) {imm threshold} -> Bool:
         return x > threshold
 
     assert_true(not is_over(50))
@@ -64,7 +64,7 @@ def test_read_sees_live_updates() raises:
     """Read captures a reference, so it sees later mutations."""
     var limit = 10
 
-    def check(x: Int) {read limit} -> Bool:
+    def check(x: Int) {imm limit} -> Bool:
         return x < limit
 
     assert_true(check(5))
@@ -73,11 +73,11 @@ def test_read_sees_live_updates() raises:
 
 
 def test_read_implicit() raises:
-    """Implicit read: {read} captures all used outer values."""
+    """Implicit read: {imm} captures all used outer values."""
     var a = 1
     var b = 2
 
-    def sum_ab() {read} -> Int:
+    def sum_ab() {imm} -> Int:
         return a + b
 
     assert_equal(sum_ab(), 3)
@@ -202,7 +202,7 @@ def test_ref_capture_mutability() raises:
 
         return report()
 
-    def from_read(read xs: List[Int]) -> String:
+    def from_read(imm xs: List[Int]) -> String:
         return check_mutability(xs)
 
     def from_mut(mut xs: List[Int]) -> String:
@@ -238,7 +238,7 @@ def test_mixed_conventions() raises:
     var count = 0
     var label = "run-1"
 
-    def process() {read config, mut count, var label} -> String:
+    def process() {imm config, mut count, var label} -> String:
         count += 1
         return config + " " + String(count) + " " + label
 
@@ -312,7 +312,7 @@ def test_greet_all() raises:
     var names: List[String] = ["Alice", "Bob"]
     var greeting = "Hello"
 
-    def greeter(name: String) {read greeting, mut results}:
+    def greeter(name: String) {imm greeting, mut results}:
         results.append(greeting + ", " + name + "!")
 
     greet_all(names, greeter)

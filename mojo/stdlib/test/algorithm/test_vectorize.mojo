@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.algorithm import vectorize
-from std.memory import memcmp
+from std.memory import unsafe_memcmp
 from std.testing import assert_equal
 from std.testing import TestSuite
 from std.math import iota
@@ -26,8 +26,8 @@ def test_vectorize() raises:
 
     @always_inline
     def add_two[width: Int](idx: Int) {var vector}:
-        vector.unsafe_ptr().store[width=width](
-            idx, vector.unsafe_ptr().load[width=width](idx) + 2
+        vector.unsafe_ptr().unsafe_store[width=width](
+            idx, vector.unsafe_ptr().unsafe_load[width=width](idx) + 2
         )
 
     vectorize[2](len(vector), add_two)
@@ -40,10 +40,10 @@ def test_vectorize() raises:
 
     @always_inline
     def add[width: Int](idx: Int) {var vector}:
-        vector.unsafe_ptr().store[width=width](
+        vector.unsafe_ptr().unsafe_store[width=width](
             idx,
-            vector.unsafe_ptr().load[width=width](idx)
-            + vector.unsafe_ptr().load[width=width](idx),
+            vector.unsafe_ptr().unsafe_load[width=width](idx)
+            + vector.unsafe_ptr().unsafe_load[width=width](idx),
         )
 
     vectorize[2](len(vector), add)
@@ -63,8 +63,8 @@ def test_vectorize_evl() raises:
     @always_inline
     def add_two[width: Int](idx: Int, evl: Int) {var vector}:
         if evl == width:
-            vector.unsafe_ptr().store[width=width](
-                idx, vector.unsafe_ptr().load[width=width](idx) + 2
+            vector.unsafe_ptr().unsafe_store[width=width](
+                idx, vector.unsafe_ptr().unsafe_load[width=width](idx) + 2
             )
         else:
             for i in range(evl):
@@ -81,13 +81,13 @@ def test_vectorize_evl() raises:
     @always_inline
     def add[width: Int](idx: Int, evl: Int) {var vector}:
         if evl == width:
-            vector.unsafe_ptr().store[width=width](
+            vector.unsafe_ptr().unsafe_store[width=width](
                 idx,
-                vector.unsafe_ptr().load[width=width](idx)
-                + vector.unsafe_ptr().load[width=width](idx),
+                vector.unsafe_ptr().unsafe_load[width=width](idx)
+                + vector.unsafe_ptr().unsafe_load[width=width](idx),
             )
         else:
-            var ptr = vector.unsafe_ptr() + idx
+            var ptr = vector.unsafe_ptr().unsafe_offset(idx)
             var incr = iota[DType.int32, width]()
             var mask = incr.lt(Int32(evl))
             var loaded = masked_load[width](
@@ -119,18 +119,18 @@ def test_vectorize_unroll() raises:
 
     @always_inline
     def double_buf[simd_width: Int](idx: Int) {var buf}:
-        buf.unsafe_ptr().store[width=simd_width](
+        buf.unsafe_ptr().unsafe_store[width=simd_width](
             idx,
-            buf.unsafe_ptr().load[width=simd_width](idx)
-            + buf.unsafe_ptr().load[width=simd_width](idx),
+            buf.unsafe_ptr().unsafe_load[width=simd_width](idx)
+            + buf.unsafe_ptr().unsafe_load[width=simd_width](idx),
         )
 
     @always_inline
     def double_vec[simd_width: Int](idx: Int) {var vec}:
-        vec.unsafe_ptr().store[width=simd_width](
+        vec.unsafe_ptr().unsafe_store[width=simd_width](
             idx,
-            vec.unsafe_ptr().load[width=simd_width](idx)
-            + vec.unsafe_ptr().load[width=simd_width](idx),
+            vec.unsafe_ptr().unsafe_load[width=simd_width](idx)
+            + vec.unsafe_ptr().unsafe_load[width=simd_width](idx),
         )
 
     comptime simd_width = 4
@@ -139,7 +139,7 @@ def test_vectorize_unroll() raises:
     vectorize[simd_width, unroll_factor=unroll_factor](len(vec), double_vec)
     vectorize[simd_width](len(buf), double_buf)
 
-    var err = memcmp(vec.unsafe_ptr(), buf.unsafe_ptr(), len(buf))
+    var err = unsafe_memcmp(vec.unsafe_ptr(), buf.unsafe_ptr(), len(buf))
     assert_equal(err, 0)
 
 

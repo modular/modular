@@ -51,7 +51,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
             from os import abort
 
             @export
-            def PyInit_mojo_module() -> PythonObject:
+            def PyInit_mojo_module() abi("C") -> PythonObject:
                 try:
                     var m = PythonModuleBuilder("thing")
                     m.def_function[hello]("hello", docstring="Hello!")
@@ -81,7 +81,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
             from gpu.host import DeviceContext
             from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
-            @compiler.register("histogram")
+            @extensibility.register("histogram")
             struct Histogram:
                 @staticmethod
                 fn execute[

@@ -92,30 +92,31 @@ def max_pool2d(
     padding: int | tuple[int, int] = 0,
     ceil_mode: bool = False,
 ) -> TensorValue:
-    """Perform a 2D max pooling operation on the input tensor.
+    """Applies 2D max pooling to a tensor.
 
-    Applies a 2D max pooling operation to the input tensor with layout
-    ``[N, H, W, C]``. The pooling operation slides a window of size
-    ``kernel_size`` over the spatial dimensions and selects the maximum
-    value within each window.
+    Slides a window of size ``kernel_size`` over the spatial dimensions
+    and replaces each window with its maximum value. The input is in
+    ``(N, H, W, C)`` (channels-last) layout.
 
     Args:
-        input: The input tensor with shape ``[N, H, W, C]``.
-        kernel_size: The height and width of the sliding window.
-        stride: The stride of the sliding window. Can be a single integer
-            applied to both spatial dimensions or a tuple ``(stride_h,
-            stride_w)``. Defaults to 1.
-        dilation: The spacing between kernel elements. Can be a single
-            integer or a tuple ``(dilation_h, dilation_w)``. Defaults to 1.
-        padding: Zero-padding added to both sides of each spatial dimension.
-            Can be a single integer or a tuple ``(pad_h, pad_w)``.
-            Defaults to 0.
-        ceil_mode: If ``True``, uses ceil instead of floor when computing
-            the output spatial shape. Defaults to ``False``.
+        input: The input tensor with shape ``(N, H, W, C)``.
+        kernel_size: A tuple ``(kernel_h, kernel_w)`` giving the height
+            and width of the sliding window.
+        stride: The stride of the sliding window. Either a single ``int``
+            applied to both spatial dimensions, or a tuple
+            ``(stride_h, stride_w)``. Defaults to ``1``.
+        dilation: The spacing between kernel elements. Either a single
+            ``int`` applied to both spatial dimensions, or a tuple
+            ``(dilation_h, dilation_w)``. Defaults to ``1``.
+        padding: Zero-padding added to both sides of each spatial
+            dimension. Either a single ``int`` applied to both spatial
+            dimensions, or a tuple ``(pad_h, pad_w)``. Defaults to ``0``.
+        ceil_mode: When ``True``, uses ceil instead of floor when
+            computing the output spatial shape. Defaults to ``False``.
 
     Returns:
-        A symbolic tensor with the max pooling applied, with shape
-        ``[N, H_out, W_out, C]``.
+        A symbolic tensor with shape ``(N, H_out, W_out, C)`` containing
+        the max-pooled values.
     """
     input = TensorValue(input)
 

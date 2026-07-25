@@ -82,7 +82,7 @@ def _get_run_name[
 
 
 comptime epilogue_func_type = def[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
@@ -90,10 +90,10 @@ comptime epilogue_func_type = def[
 @parameter
 def elementwise_epilogue_fn[
     dtype: DType,
-    width: Int,
+    width: SIMDLength,
     *,
     alignment: Int = 1,
-](val: SIMD[dtype, width],) -> SIMD[dtype, width]:
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return val + 2
 
 
@@ -136,7 +136,7 @@ def bench_bmm[
     var a_device = TileTensor(
         a_device_buffer,
         row_major(Coord(b, m, k)),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
 
     var b_device = TileTensor(
         b_device_buffer,
@@ -147,11 +147,11 @@ def bench_bmm[
                 Idx[KType.static_value if transpose_b else NType.static_value],
             )
         ),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
     var c_device = TileTensor(
         c_device_buffer,
         row_major(Coord(b, m, n)),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
 
     # Initialize data on the device
     init_vector_launch[a_type](a_device_buffer, a_size, init_type, ctx)
@@ -162,11 +162,11 @@ def bench_bmm[
     @__copy_capture(c_device)
     def epilogue_fn[
         dtype: DType,
-        width: Int,
+        width: SIMDLength,
         rank: Int,
         *,
         alignment: Int = 1,
-    ](idx: IndexList[rank], val: SIMD[dtype, width],) capturing -> None:
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) capturing -> None:
         comptime func = lambda_fn.value()
         var update_val = func(val)
         c_device.store_linear(idx, update_val.cast[c_device.dtype]())
@@ -174,17 +174,12 @@ def bench_bmm[
     comptime pack_size = simd_width_of[c_type, target=get_gpu_target()]()
 
     @always_inline
-    @__copy_capture(c_device, b, m, n)
-    @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[3]](idx0)
-        var val = c_device.load_linear[width=simd_width](idx)
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
+        var val = c_device.load[width=simd_width](idx)
         comptime element_lambda = lambda_fn.value()
         var update_val = element_lambda(val)
 
-        c_device.store_linear(
+        c_device.store(
             idx,
             update_val,
         )
@@ -268,10 +263,9 @@ def bench_bmm[
 
                 # Epilogue
                 comptime if lambda_fn:
-                    elementwise[func, pack_size, target="gpu"](
-                        IndexList[3](
-                            Int(b.value()), Int(m.value()), Int(n.value())
-                        ),
+                    elementwise[pack_size, target="gpu"](
+                        func,
+                        (b, m, n),
                         ctx,
                     )
             else:

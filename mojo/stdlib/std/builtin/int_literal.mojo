@@ -212,6 +212,18 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
     @always_inline("builtin")
+    def __add__(self, rhs: FloatLiteral) -> type_of(FloatLiteral(self) + rhs):
+        """Return `self + rhs`.
+
+        Args:
+            rhs: The value to add.
+
+        Returns:
+            `self + rhs` value.
+        """
+        return {}
+
+    @always_inline("builtin")
     def __sub__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
@@ -223,6 +235,18 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
             `>> : !pop.int_literal`,
         ]
     ]:
+        """Return `self - rhs`.
+
+        Args:
+            rhs: The value to subtract.
+
+        Returns:
+            `self - rhs` value.
+        """
+        return {}
+
+    @always_inline("builtin")
+    def __sub__(self, rhs: FloatLiteral) -> type_of(FloatLiteral(self) - rhs):
         """Return `self - rhs`.
 
         Args:
@@ -252,6 +276,32 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
 
         Returns:
             `self * rhs` value.
+        """
+        return {}
+
+    @always_inline("builtin")
+    def __mul__(self, rhs: FloatLiteral) -> type_of(FloatLiteral(self) * rhs):
+        """Return `self * rhs`.
+
+        Args:
+            rhs: The value to multiply with.
+
+        Returns:
+            `self * rhs` value.
+        """
+        return {}
+
+    @always_inline("builtin")
+    def __truediv__(
+        self, rhs: FloatLiteral
+    ) -> type_of(FloatLiteral(self) / rhs):
+        """Return `self / rhs`.
+
+        Args:
+            rhs: The value to divide with.
+
+        Returns:
+            `self / rhs` value.
         """
         return {}
 
@@ -451,7 +501,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             The value as an integer of platform-specific width.
         """
-        return Int(mlir_value=self.__mlir_index__())
+        return Int(SIMDLength(mlir_value=self.__mlir_index__()))
 
     @always_inline("builtin")
     def __ceil__(self) -> Self:

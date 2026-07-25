@@ -26,11 +26,10 @@ from std.collections import Set
 import std.format._utils as fmt
 
 from std.reflection import get_function_name, call_location, SourceLocation
-from std.sys.intrinsics import _type_is_eq
 from std.sys import argv
 
 
-struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
+struct _Indent[W: Writable, origin: ImmOrigin](Writable):
     """Indents the given writable by the given level."""
 
     comptime IndentStr = "  "
@@ -48,7 +47,7 @@ struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
         writer.write(self.writable[])
 
 
-def _format_nsec(nanoseconds: UInt) -> String:
+def _format_nsec(nanoseconds: Int) -> String:
     """Formats the given number of nanoseconds as milliseconds.
 
     The returned string is in the format of "NNN.NNN"
@@ -144,7 +143,7 @@ struct TestReport(Copyable, Writable):
     var name: String
     """The name of the test."""
 
-    var duration_ns: UInt
+    var duration_ns: Int
     """The duration of the test in nanoseconds."""
 
     var result: TestResult
@@ -154,7 +153,7 @@ struct TestReport(Copyable, Writable):
     """The error associated with a failing test."""
 
     @staticmethod
-    def passed(*, var name: String, duration_ns: UInt) -> Self:
+    def passed(*, var name: String, duration_ns: Int) -> Self:
         """Create a passing test report.
 
         Args:
@@ -171,9 +170,7 @@ struct TestReport(Copyable, Writable):
         }
 
     @staticmethod
-    def failed(
-        *, var name: String, duration_ns: UInt, var error: Error
-    ) -> Self:
+    def failed(*, var name: String, duration_ns: Int, var error: Error) -> Self:
         """Create a failing test report.
 
         Args:
@@ -208,7 +205,7 @@ struct TestReport(Copyable, Writable):
         out self,
         *,
         var name: String,
-        duration_ns: UInt,
+        duration_ns: Int,
         result: TestResult,
         var error: Optional[Error] = {},
     ):
@@ -263,7 +260,7 @@ struct TestSuiteReport(Copyable, Writable):
     var reports: List[TestReport]
     """The reports for each test in the suite."""
 
-    var total_duration_ns: UInt
+    var total_duration_ns: Int
     """The total duration of the suite in nanoseconds."""
 
     var failures: Int
@@ -375,7 +372,7 @@ struct _Test(Copyable):
 
 
 @explicit_destroy("TestSuite must be destroyed via `run()`")
-struct TestSuite(Movable):
+struct TestSuite(ImplicitlyDeletable where False, Movable):
     """A suite of tests to run.
 
     You can automatically collect and register test functions starting with
@@ -455,7 +452,7 @@ struct TestSuite(Movable):
             comptime test_func = test_funcs[idx]
 
             comptime if get_function_name[test_func]().startswith("test_"):
-                comptime if _type_is_eq[type_of(test_func), _Test.fn_type]():
+                comptime if type_of(test_func) == _Test.fn_type:
                     self.test[rebind[_Test.fn_type](test_func)]()
                 else:
                     raise Error(
@@ -531,18 +528,19 @@ struct TestSuite(Movable):
         if num_args <= 1:
             return
 
-        if args[1] == "--only":
+        ref first_arg = args[1]
+        if first_arg == "--only":
             self.allow_list = Set[String]()
-        elif args[1] == "--skip-all":
+        elif first_arg == "--skip-all":
             if num_args > 2:
                 raise Error("'--skip-all' does not take any arguments")
             # --skip-all implies an empty allow list.
             self.allow_list = Set[String]()
             return
-        elif args[1] != "--skip":
+        elif first_arg != "--skip":
             raise Error(
                 "invalid argument: ",
-                args[1],
+                first_arg,
                 " (expected '--only' or '--skip')",
             )
 

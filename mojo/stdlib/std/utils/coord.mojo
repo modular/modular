@@ -12,12 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Unified layout system for mixed compile-time and runtime indices."""
 
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.os import abort
-from std.sys.intrinsics import _type_is_eq
+from std.reflection import reflect
 from std.utils import IndexList
 from std.math.uutils import umod, ufloordiv
-
-from std.sys.intrinsics import _type_is_eq_parse_time
 
 
 trait CoordLike(
@@ -261,12 +260,21 @@ comptime All = _All()
 
 
 @fieldwise_init("implicit")
-struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
+struct Coord[*element_types: CoordLike](
+    CoordLike, DevicePassable, Sized, Writable
+):
     """A struct representing tuple-like data with compile-time and runtime elements.
 
     Parameters:
         element_types: The list of element types that implement `CoordLike`.
     """
+
+    comptime device_type = Self
+    """Indicate the type being used on accelerator devices.
+
+    A `Coord` holds only plain integer data (zero-sized `ComptimeInt` dims and
+    POD `Scalar` leaves), so its host and device layouts match and it transfers
+    by a straight bit-copy, just like `IndexList`."""
 
     comptime ParamListType = Self.element_types
     """The element types of this `Coord`."""
@@ -334,7 +342,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         self = type_of(self)()
 
         comptime for i in range(rank):
-            UnsafePointer(to=self[i]).init_pointee_copy(
+            Pointer(to=self[i]).unsafe_write(
                 rebind[type_of(self[i])](Scalar[dtype](index_list[i]))
             )
 
@@ -653,18 +661,18 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
             comptime if FlatType.is_static_value:
                 # Compile-time known value
-                UnsafePointer(to=flat_tuple[i]).init_pointee_copy(
+                Pointer(to=flat_tuple[i]).unsafe_write(
                     rebind[FlatType](ComptimeInt[FlatType.static_value]())
                 )
             else:
                 # Runtime value - use _get_flattened to get the value
                 var val = _get_flattened[i](self)
-                comptime if _type_is_eq[FlatType, Int]():
-                    UnsafePointer(to=flat_tuple[i]).init_pointee_copy(
+                comptime if FlatType == Int:
+                    Pointer(to=flat_tuple[i]).unsafe_write(
                         rebind[FlatType](val)
                     )
                 else:
-                    UnsafePointer(to=flat_tuple[i]).init_pointee_copy(
+                    Pointer(to=flat_tuple[i]).unsafe_write(
                         rebind[FlatType](Scalar[FlatType.DTYPE](val))
                     )
 
@@ -698,7 +706,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
         comptime for i in range(Self.__len__()):
             # Convert all elements to Scalar[dtype]
-            UnsafePointer(to=result[i]).init_pointee_copy(
+            Pointer(to=result[i]).unsafe_write(
                 rebind[ResultTypes[i]](Scalar[dtype](self[i].value()))
             )
 
@@ -750,14 +758,47 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         comptime for i in range(Self.__len__()):
             comptime ResultType = ResultTypes[i]
             comptime if ResultType.is_static_value:
-                UnsafePointer(to=result[i]).init_pointee_copy(
-                    rebind[ResultType](self[i])
-                )
+                Pointer(to=result[i]).unsafe_write(rebind[ResultType](self[i]))
             else:
-                UnsafePointer(to=result[i]).init_pointee_copy(
+                Pointer(to=result[i]).unsafe_write(
                     rebind[ResultType](Scalar[dtype](self[i].value()))
                 )
 
+        return result
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        NOTE: This should only be called by `DeviceContext` during invocation
+        of accelerator kernels.
+
+        Args:
+            encoder: The encoder to convert the host type to a device type.
+            target: The target address to store the converted device type.
+        """
+        encoder.encode(self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Get the human-readable type name for this `Coord`.
+
+        This is used for error messages when passing types to the device.
+
+        Returns:
+            A string representation of the type, e.g. "Coord[ComptimeInt[2],
+            Int64]".
+        """
+        var result = String("Coord[")
+
+        comptime for i in range(Self.rank):
+            comptime if i > 0:
+                result += ", "
+            result += reflect[Self.element_types[i]].name()
+
+        result += "]"
         return result
 
 
@@ -998,14 +1039,14 @@ def idx2crd[
                 var nested = idx2crd[out_dtype=out_dtype](
                     idx, shape_t[i], stride_t[i]
                 )
-                UnsafePointer(to=result[i]).init_pointee_copy(
+                Pointer(to=result[i]).unsafe_write(
                     rebind[ResultTypes[i]](nested)
                 )
             elif (
                 Shape.ParamListType[i].is_static_value
                 and Shape.ParamListType[i].static_value == 1
             ):
-                UnsafePointer(to=result[i]).init_pointee_copy(
+                Pointer(to=result[i]).unsafe_write(
                     rebind[ResultTypes[i]](ComptimeInt[0]())
                 )
             else:
@@ -1013,12 +1054,12 @@ def idx2crd[
                 var shape_val = Int(shape_t[i].value())
                 var coord_val = _linear_idx_to_coord(idx, stride_val, shape_val)
 
-                UnsafePointer(to=result[i]).init_pointee_copy(
+                Pointer(to=result[i]).unsafe_write(
                     rebind[ResultTypes[i]](Scalar[out_dtype](coord_val))
                 )
     else:
         comptime if Shape.is_static_value and Shape.static_value == 1:
-            UnsafePointer(to=result[0]).init_pointee_copy(
+            Pointer(to=result[0]).unsafe_write(
                 rebind[ResultTypes[0]](ComptimeInt[0]())
             )
         else:
@@ -1027,7 +1068,7 @@ def idx2crd[
             )
 
             comptime for i in range(shape_len):
-                UnsafePointer(to=result[i]).init_pointee_copy(
+                Pointer(to=result[i]).unsafe_write(
                     rebind[ResultTypes[i]](Scalar[out_dtype](coord_val))
                 )
 
@@ -1096,14 +1137,14 @@ def idx2crd[
                 var nested = idx2crd[out_dtype=out_dtype](
                     Int(idx.value()), shape_t[i], stride_t[i]
                 )
-                UnsafePointer(to=result[i]).init_pointee_copy(
+                Pointer(to=result[i]).unsafe_write(
                     rebind[ResultTypes[i]](nested)
                 )
             elif (
                 Shape.ParamListType[i].is_static_value
                 and Shape.ParamListType[i].static_value == 1
             ):
-                UnsafePointer(to=result[i]).init_pointee_copy(
+                Pointer(to=result[i]).unsafe_write(
                     rebind[ResultTypes[i]](ComptimeInt[0]())
                 )
             elif (
@@ -1119,12 +1160,12 @@ def idx2crd[
                 var coord_val = _linear_idx_to_coord(
                     Int(idx.value()), stride_val, shape_val
                 )
-                UnsafePointer(to=result[i]).init_pointee_copy(
+                Pointer(to=result[i]).unsafe_write(
                     rebind[ResultTypes[i]](Scalar[out_dtype](coord_val))
                 )
     else:
         comptime if Shape.is_static_value and Shape.static_value == 1:
-            UnsafePointer(to=result[0]).init_pointee_copy(
+            Pointer(to=result[0]).unsafe_write(
                 rebind[ResultTypes[0]](ComptimeInt[0]())
             )
         elif (
@@ -1140,7 +1181,7 @@ def idx2crd[
             )
 
             comptime for i in range(shape_len):
-                UnsafePointer(to=result[i]).init_pointee_copy(
+                Pointer(to=result[i]).unsafe_write(
                     rebind[ResultTypes[i]](Scalar[out_dtype](coord_val))
                 )
 
@@ -1170,8 +1211,9 @@ def coord_to_index_list[
     return result
 
 
-def coord[
-    dtype: DType, *element_types: Movable
+@always_inline
+def dyn_coord[
+    dtype: DType, *element_types: Movable & ImplicitlyDeletable
 ](
     var values: Tuple[*element_types],
     out result: Coord[
@@ -1195,22 +1237,21 @@ def coord[
     result = {}
 
     comptime for i in range(type_of(values).__len__()):
-        UnsafePointer(to=result[i]).init_pointee_copy(
+        Pointer(to=result[i]).unsafe_write(
             rebind[type_of(result[i])](Scalar[dtype](rebind[Int](values[i])))
         )
 
 
-def coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
-    """Create a `Coord` from compile-time integer values.
+# values is a ZST since all elements are comptime
+comptime coord[*values: Int]: Coord[*_IntToComptimeInt[*values]] = {}
+"""Create a `Coord` from compile-time integer values.
 
-    Parameters:
-        values: The compile-time integer values.
+Parameters:
+    values: The compile-time integer values.
 
-    Returns:
-        A `Coord` instance containing `ComptimeInt` elements for each value.
-    """
-    # values is a ZST since all elements are comptime
-    return {}
+Returns:
+    A `Coord` instance containing `ComptimeInt` elements for each value.
+"""
 
 
 comptime DynamicCoord[dtype: DType, size: Int] = Coord[
@@ -1334,13 +1375,30 @@ def _get_flattened[
 
 comptime _IsStaticPredicate[T: CoordLike] = T.is_static_value
 
-comptime _AllStatic[*element_types: CoordLike] = element_types.all_satisfies[
+comptime _IsNotTuplePredicate[T: CoordLike] = not T.is_tuple
+
+comptime _IsFlat[*element_types: CoordLike] = element_types.all_satisfies[
+    _IsNotTuplePredicate,
+]()
+"""True iff no element in the variadic is a tuple. Single-pass; lets
+`_AllStatic` / `_StaticProduct` skip the multi-pass `_Flattened` rewrite
+on the (typical) flat path."""
+
+
+comptime _AllStaticFlat[
+    *element_types: CoordLike
+] = element_types.all_satisfies[
     _IsStaticPredicate,
 ]()
 
-comptime _AllEqualPredicate[
-    T1: AnyType, T2: type_of(T1)
-] = _type_is_eq_parse_time[T1, T2]()
+
+comptime _AllStatic[*element_types: CoordLike] = _AllStaticFlat[
+    *element_types
+] if _IsFlat[*element_types] else _AllStaticFlat[*_Flattened[*element_types]]
+"""True iff every leaf element in the (possibly nested) variadic is a
+compile-time-known dim."""
+
+comptime _AllEqualPredicate[T1: AnyType, T2: type_of(T1)] = T1 == T2
 
 comptime _AllEqual[
     T: AnyType, *element_types: AnyType
@@ -1353,10 +1411,20 @@ comptime _StaticProductReducer[
     T: CoordLike,
 ] = Prev * T.static_value
 
-comptime _StaticProduct[*element_types: CoordLike] = element_types.reduce[
+comptime _StaticProductFlat[*element_types: CoordLike] = element_types.reduce[
     1,
     _StaticProductReducer,
 ]
+
+
+comptime _StaticProduct[*element_types: CoordLike] = _StaticProductFlat[
+    *element_types
+] if _IsFlat[*element_types] else _StaticProductFlat[
+    *_Flattened[*element_types]
+]
+"""Compile-time product of all leaf dimensions in the (possibly nested)
+variadic. Caller should gate on `_AllStatic` first — a dynamic leaf
+(`static_value == -1`) makes the product meaningless."""
 
 comptime _IntToComptimeIntMapper[
     idx: Int,
@@ -1609,7 +1677,7 @@ struct _RegTuple[*element_types: CoordLike](
         # Move each element into the tuple storage.
         @parameter
         def init_elt[idx: Int](var elt: Self.element_types[idx]):
-            UnsafePointer(to=self[idx]).init_pointee_move(elt)
+            Pointer(to=self[idx]).unsafe_write(elt)
 
         args^.consume_elements[init_elt]()
 
@@ -1648,14 +1716,14 @@ struct _RegTuple[*element_types: CoordLike](
         """
         # Return a reference to an element at the specified index, propagating
         # mutability of self.
-        var storage_kgen_ptr = UnsafePointer(to=self._mlir_value).address
+        var storage_kgen_ptr = Pointer(to=self._mlir_value)._get_kgen_pointer()
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
-            index=idx._int_mlir_index(),
-            _type=UnsafePointer[Self.element_types[idx]]._mlir_type,
+            index=idx.__mlir_index__(),
+            _type=Pointer[Self.element_types[idx]]._mlir_type,
         ](storage_kgen_ptr)
-        return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
+        return Pointer[_, origin_of(self)](_mlir_value=elt_kgen_ptr)[]
 
     @always_inline("nodebug")
     def __init__[*elt_types: CoordLike](out self: _RegTuple[*elt_types]):
@@ -1671,7 +1739,7 @@ struct _RegTuple[*element_types: CoordLike](
         )
 
         comptime for i in range(type_of(self).__len__()):
-            UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
+            Pointer(to=self[i]).unsafe_write(elt_types[i]())
 
     @always_inline("nodebug")
     def reverse(
@@ -1698,7 +1766,7 @@ struct _RegTuple[*element_types: CoordLike](
         )
 
         comptime for i in range(type_of(result).__len__()):
-            UnsafePointer(to=result[i]).init_pointee_copy(
+            Pointer(to=result[i]).unsafe_write(
                 rebind[type_of(result[i])](
                     self[Self.element_types.size - 1 - i]
                 )
@@ -1743,12 +1811,12 @@ struct _RegTuple[*element_types: CoordLike](
         comptime self_len = Self.__len__()
 
         comptime for i in range(self_len):
-            UnsafePointer(to=result[i]).init_pointee_copy(
+            Pointer(to=result[i]).unsafe_write(
                 rebind[type_of(result[i])](self[i])
             )
 
         comptime for i in range(type_of(other).__len__()):
-            UnsafePointer(to=result[self_len + i]).init_pointee_copy(
+            Pointer(to=result[self_len + i]).unsafe_write(
                 rebind[type_of(result[self_len + i])](other[i])
             )
 
@@ -1775,7 +1843,7 @@ struct _RegTuple[*element_types: CoordLike](
         """
 
         comptime for i in range(type_of(self).__len__()):
-            comptime if _type_is_eq[Self.element_types[i], T]():
+            comptime if Self.element_types[i] == T:
                 if rebind[T](self[i]) == value:
                     return True
 
@@ -1900,7 +1968,7 @@ def _linear_idx_to_coord(idx: Int, stride: Int, shape: Int) -> Int:
 
 @always_inline
 def _coerce_dynamic[T: CoordLike](value: Int) -> T:
-    comptime if _type_is_eq_parse_time[T, Int]():
+    comptime if T == Int:
         return rebind[T](value)
     else:
         return rebind[T](Scalar[T.DTYPE](value))

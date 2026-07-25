@@ -31,7 +31,6 @@ Warning:
 
 import std.math
 from std.math import floor
-from std.memory.alloc import alloc, free, Layout
 from std.time import perf_counter_ns
 
 from ._rng import _get_global_random_state
@@ -162,7 +161,7 @@ def randint[
 def randint[
     dtype: DType
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    ptr: Pointer[mut=True, Scalar[dtype], _],
     size: Int,
     low: Int,
     high: Int,
@@ -196,10 +195,14 @@ def randint[
 
     comptime if dtype.is_signed():
         for si in range(size):
-            ptr[si] = random_si64(Int64(low), Int64(high)).cast[dtype]()
+            ptr.unsafe_offset(si)[] = random_si64(Int64(low), Int64(high)).cast[
+                dtype
+            ]()
     else:
         for ui in range(size):
-            ptr[ui] = random_ui64(UInt64(low), UInt64(high)).cast[dtype]()
+            ptr.unsafe_offset(ui)[] = random_ui64(
+                UInt64(low), UInt64(high)
+            ).cast[dtype]()
 
 
 def rand[
@@ -235,7 +238,7 @@ def rand[
 def rand[
     dtype: DType
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
+    ptr: Pointer[mut=True, Scalar[dtype], ...],
     size: Int,
     /,
     *,
@@ -281,13 +284,13 @@ def rand[
             var scale_double: Float64 = Float64(1 << scale_val)
             for i in range(size):
                 var rnd = random_float64(min, max)
-                ptr[i] = (floor(rnd * scale_double) / scale_double).cast[
-                    dtype
-                ]()
+                ptr.unsafe_offset(i)[] = (
+                    floor(rnd * scale_double) / scale_double
+                ).cast[dtype]()
         else:
             for i in range(size):
                 var rnd = random_float64(min, max)
-                ptr[i] = rnd.cast[dtype]()
+                ptr.unsafe_offset(i)[] = rnd.cast[dtype]()
 
         return
 
@@ -299,7 +302,7 @@ def rand[
             max.cast[DType.int64](), Scalar[dtype].MAX.cast[DType.int64]()
         )
         for i in range(size):
-            ptr[i] = random_si64(min_, max_).cast[dtype]()
+            ptr.unsafe_offset(i)[] = random_si64(min_, max_).cast[dtype]()
         return
 
     comptime if dtype == DType.bool or dtype.is_unsigned():
@@ -308,7 +311,7 @@ def rand[
             max.cast[DType.uint64](), Scalar[dtype].MAX.cast[DType.uint64]()
         )
         for i in range(size):
-            ptr[i] = random_ui64(min_, max_).cast[dtype]()
+            ptr.unsafe_offset(i)[] = random_ui64(min_, max_).cast[dtype]()
         return
 
 
@@ -362,7 +365,7 @@ def randn[
 def randn[
     dtype: DType
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
+    ptr: Pointer[mut=True, Scalar[dtype], ...],
     size: Int,
     mean: Float64 = 0.0,
     standard_deviation: Float64 = 1.0,
@@ -396,7 +399,9 @@ def randn[
     """
 
     for i in range(size):
-        ptr[i] = randn_float64(mean, standard_deviation).cast[dtype]()
+        ptr.unsafe_offset(i)[] = randn_float64(mean, standard_deviation).cast[
+            dtype
+        ]()
     return
 
 

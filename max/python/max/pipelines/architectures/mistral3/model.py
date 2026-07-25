@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+from typing import Any, ClassVar
+
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -24,10 +26,13 @@ from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers import AutoConfig
 
 from ..mistral.model import MistralModel
+from .model_config import Mistral3Config
 
 
 class Mistral3Model(MistralModel):
     """Text-only Mistral3 pipeline model implementation."""
+
+    model_config_cls: ClassVar[type[Any]] = Mistral3Config
 
     def __init__(
         self,
@@ -38,6 +43,7 @@ class Mistral3Model(MistralModel):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -47,6 +53,7 @@ class Mistral3Model(MistralModel):
             weights,
             adapter,
             return_logits,
+            max_batch_size=max_batch_size,
         )
 
     @classmethod

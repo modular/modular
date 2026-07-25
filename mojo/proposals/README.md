@@ -87,6 +87,7 @@ These proposals are still being discussed or refined.
 | [mojo-and-dynamism](mojo-and-dynamism.md)         | Mojo and dynamic features                               | Proposed |
 | [parameter-to-comptime](parameter-to-comptime.md) | Replace `@parameter` with `comptime` statement modifier | Proposed |
 | [struct-extensions](struct-extensions.md)         | Struct extension mechanism                              | Draft    |
+| [unavailable-decorator](unavailable-decorator.md) | `@unavailable` decorator for intentionally-removed APIs | Accepted |
 
 ## Abandoned Proposals
 

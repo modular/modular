@@ -571,7 +571,7 @@ def test_result_filename_reaches_main_with_parsed_args(
     result_path = str(tmp_path / "result.json")
     received: dict[str, str | None] = {}
 
-    def capture_config(config: object) -> list[object]:
+    def capture_config(config: object, **kwargs: object) -> list[object]:
         received["result_filename"] = getattr(
             config, "result_filename", "NOT_SET"
         )
@@ -612,7 +612,7 @@ def test_result_filename_none_when_not_provided(
     """When --result-filename is not passed, config.result_filename must be None."""
     received: dict[str, str | None] = {}
 
-    def capture_config(config: object) -> list[object]:
+    def capture_config(config: object, **kwargs: object) -> list[object]:
         received["result_filename"] = getattr(
             config, "result_filename", "NOT_SET"
         )
@@ -666,7 +666,7 @@ def test_save_result_json_writes_valid_json(
     )
 
     mock_result = MagicMock()
-    mock_result.metrics.aggregates.completed = 5
+    mock_result.aggregates.completed = 5
     mock_result.to_result_dict.return_value = {
         "duration": 1.0,
         "completed": 5,
@@ -710,7 +710,7 @@ def test_result_json_written_at_specified_path(
     """
     result_path = tmp_path / "output" / "result.json"
 
-    def fake_benchmark(config: object) -> list[object]:
+    def fake_benchmark(config: object, **kwargs: object) -> list[object]:
         filename = getattr(config, "result_filename", None)
         if filename:
             Path(filename).parent.mkdir(parents=True, exist_ok=True)
@@ -757,6 +757,57 @@ def test_result_json_written_at_specified_path(
         data = json.load(f)
     assert data["model_id"] == "myorg/mymodel"
     assert data["backend"] == "modular"
+
+
+def test_image_to_video_workload_selects_pixel_writer(
+    tmp_path: Path,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    """image-to-video must route to the pixel-gen CSV writer, not the LLM one.
+
+    Regression for a duplicated task list in run_sweep that omitted
+    image-to-video, routing video results into LLMBenchmarkResultWriter whose
+    _format_task_values asserts isinstance(result, LLMBenchmarkResult) and
+    crashed. run_sweep now derives pixel-gen from PIXEL_GENERATION_TASKS.
+    """
+    workload = tmp_path / "i2v.yaml"
+    workload.write_text(
+        yaml.safe_dump(
+            {
+                "dataset-name": "local-image",
+                "benchmark-task": "image-to-video",
+                "num-frames": 17,
+            }
+        )
+    )
+    pixel_writer = mocker.patch.object(
+        sweep_benchmark_serving, "TextToImageBenchmarkResultWriter"
+    )
+    llm_writer = mocker.patch.object(
+        sweep_benchmark_serving, "LLMBenchmarkResultWriter"
+    )
+    mocker.patch(
+        "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
+        return_value=[],
+    )
+
+    sweep_benchmark_serving.main(
+        [
+            "--model",
+            "myorg/mymodel",
+            "--workload-config",
+            str(workload),
+            "--max-concurrency",
+            "1",
+            "--num-prompts",
+            "2",
+            "--log-dir",
+            str(tmp_path / "logs"),
+        ]
+    )
+
+    pixel_writer.assert_called_once()
+    llm_writer.assert_not_called()
 
 
 # ===========================================================================
@@ -1026,11 +1077,12 @@ def test_upload_writes_correct_data_to_correct_files(
 
     def fake_benchmark_serving_main(
         config: ServingBenchmarkConfig,
+        **kwargs: object,
     ) -> Iterator[BenchmarkRunResult]:
         assert config.model is not None
         for mc, sentinel in [(1, MC1_SENTINEL), (2, MC2_SENTINEL)]:
             mock_result = MagicMock()
-            mock_result.metrics.aggregates.completed = 5
+            mock_result.aggregates.completed = 5
             mock_result.to_result_dict.return_value = {
                 "duration": float(mc),
                 "completed": 5,

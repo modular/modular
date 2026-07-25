@@ -17,7 +17,7 @@ from std.sys import simd_width_of
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.bit import count_trailing_zeros
-from std.memory import memcmp, pack_bits
+from std.memory import unsafe_memcmp, pack_bits
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
@@ -167,21 +167,21 @@ def _memmem_baseline[
     for i in range(0, vectorized_end, bool_mask_width):
         var bool_mask = (
             haystack.unsafe_ptr()
-            .load[width=bool_mask_width](i)
+            .unsafe_load[width=bool_mask_width](i)
             .eq(first_needle)
         )
         var mask = pack_bits(bool_mask)
         while mask:
             var offset = Int(type_of(mask)(i) + count_trailing_zeros(mask))
             if (
-                memcmp(
-                    haystack.unsafe_ptr() + offset + 1,
-                    needle.unsafe_ptr() + 1,
+                unsafe_memcmp(
+                    haystack.unsafe_ptr().unsafe_offset(offset + 1),
+                    needle.unsafe_ptr().unsafe_offset(1),
                     len(needle) - 1,
                 )
                 == 0
             ):
-                return haystack.unsafe_ptr() + offset
+                return haystack.unsafe_ptr().unsafe_offset(offset)
             mask = mask & (mask - 1)
 
     for i in range(vectorized_end, len(haystack) - len(needle) + 1):
@@ -189,14 +189,14 @@ def _memmem_baseline[
             continue
 
         if (
-            memcmp(
-                haystack.unsafe_ptr() + i + 1,
-                needle.unsafe_ptr() + 1,
+            unsafe_memcmp(
+                haystack.unsafe_ptr().unsafe_offset(i + 1),
+                needle.unsafe_ptr().unsafe_offset(1),
                 len(needle) - 1,
             )
             == 0
         ):
-            return haystack.unsafe_ptr() + i
+            return haystack.unsafe_ptr().unsafe_offset(i)
     return {}
 
 

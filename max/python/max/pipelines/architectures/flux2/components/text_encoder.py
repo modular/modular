@@ -20,8 +20,12 @@ from typing import Any
 from max.driver import Buffer, load_devices
 from max.engine import InferenceSession, Model
 from max.graph import Graph
+from max.graph import Module as GraphModule
 from max.graph.weights import Weights, load_weights
 from max.pipelines.lib.compiled_component import CompiledComponent
+from max.pipelines.lib.config.model_config import (
+    _resolve_component_encoding_and_weights,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.profiler import traced
 
@@ -50,12 +54,17 @@ class TextEncoder(CompiledComponent):
         self,
         manifest: ModelManifest,
         session: InferenceSession,
+        *,
+        graphs_module: GraphModule | None = None,
     ) -> None:
-        super().__init__(manifest, session)
+        super().__init__(manifest, session, graphs_module=graphs_module)
 
         config = manifest["text_encoder"]
         config_dict = config.huggingface_config.to_dict()
-        encoding = config.quantization_encoding or "bfloat16"
+        resolved_encoding, resolved_weight_path = (
+            _resolve_component_encoding_and_weights(config)
+        )
+        encoding = resolved_encoding or "bfloat16"
         devices = load_devices(config.device_specs)
 
         mistral_config = Mistral3TextEncoderConfig.initialize_from_config(
@@ -64,20 +73,22 @@ class TextEncoder(CompiledComponent):
         # Pad outputs to static sequence length expected by denoiser.
         mistral_config.output_seq_len = FLUX2_TEXT_SEQ_LEN
 
-        paths = config.resolved_weight_paths()
+        paths = config.resolved_weight_paths(resolved_weight_path)
         weights = load_weights(paths)
         state_dict = self._adapt_state_dict(weights)
 
         module = Mistral3TextEncoderTransformer(mistral_config)
         module.load_state_dict(state_dict, weight_alignment=1, strict=True)
 
-        with Graph("text_encode", input_types=module.input_types()) as graph:
+        with Graph(
+            "text_encode",
+            input_types=module.input_types(),
+            module=self._graphs_module,
+        ) as graph:
             outputs = module(*(v.tensor for v in graph.inputs))
             graph.output(outputs)
 
-        self._model = self._load_graph(
-            graph, weights_registry=module.state_dict()
-        )
+        self._load_graph(graph, weights_registry=module.state_dict())
 
     @traced(message="TextEncoder.__call__")
     def __call__(self, tokens: Buffer) -> Buffer:

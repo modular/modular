@@ -19,7 +19,6 @@ These are Mojo built-ins, so you don't need to import them.
 from std.hashlib.hasher import Hasher
 from std.os import abort
 from std.sys import CompilationTarget, bit_width_of, size_of
-from std.sys.intrinsics import _type_is_eq
 
 comptime _mIsSigned = __mlir_attr.`#kgen.simd<1> : !kgen.scalar<ui8>`
 comptime _mIsInteger = __mlir_attr.`#kgen.simd<128> : !kgen.scalar<ui8>`
@@ -85,11 +84,6 @@ struct DType(
     # ===-------------------------------------------------------------------===#
     # Aliases
     # ===-------------------------------------------------------------------===#
-
-    comptime invalid = DType(
-        mlir_value=__mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
-    )
-    """Represents an invalid or unknown data type."""
 
     comptime bool = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`
@@ -314,11 +308,14 @@ struct DType(
         self._mlir_value = mlir_value
 
     @staticmethod
-    def _from_str(str: StringSlice) -> DType:
+    def _from_str(str: StringSlice) -> Optional[DType]:
         """Construct a DType from a string.
 
         Args:
             str: The name of the DType.
+
+        Returns:
+            The parsed DType, or None if the string does not name a DType.
         """
         if str.startswith("DType."):
             return Self._from_str(str.removeprefix("DType."))
@@ -382,7 +379,7 @@ struct DType(
             return DType.float64
 
         else:
-            return DType.invalid
+            return None
 
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
@@ -393,6 +390,9 @@ struct DType(
             writer: The object to write to.
         """
 
+        # This per-`dtype` chain must stay in sync with
+        # `_scalar_repr_alias` in `simd.mojo`, which maps the same set of
+        # `dtype`s to their `Scalar` alias names for scalar `repr()`.
         if self == DType.bool:
             return writer.write("bool")
         elif self == DType.int:
@@ -451,9 +451,6 @@ struct DType(
 
         elif self == DType.float64:
             return writer.write("float64")
-
-        elif self == DType.invalid:
-            return writer.write("invalid")
 
         return writer.write("<<unknown>>")
 

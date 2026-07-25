@@ -34,7 +34,7 @@ from layout.layout import (
     coalesce,
 )
 from layout.int_tuple import flatten
-from std.memory import UnsafePointer, memset
+from std.memory import UnsafePointer, unsafe_memset
 from std.testing import assert_equal
 from std.utils import Index, IndexList
 
@@ -104,7 +104,7 @@ def layout_tensor_from_pointer_example() raises:
     comptime buf_size = rows * columns
     comptime layout = Layout.row_major(rows, columns)
     var ptr = alloc[Float32](buf_size)
-    memset(ptr, 0, buf_size)
+    unsafe_memset(ptr, 0, buf_size)
     var tensor = LayoutTensor[DType.float32, layout](ptr)
     # end-layout-tensor-from-pointer-example
     assert_equal(tensor.size(), rows * columns)
@@ -146,7 +146,7 @@ def layout_tensor_iterator_example() raises:
     for i in range(buf_size):
         storage[i] = Int16(i)
     comptime tile_layout = Layout.row_major(4, 4)
-    var iter = LayoutTensorIter[DType.int16, tile_layout, MutAnyOrigin](
+    var iter = LayoutTensorIter[DType.int16, tile_layout](
         storage.unsafe_ptr(), buf_size
     )
 

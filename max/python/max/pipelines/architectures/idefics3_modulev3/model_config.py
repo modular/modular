@@ -17,14 +17,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.kv_cache import cache_dtype_for_encoding
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ArchVLConfigWithTextSubconfig,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
@@ -38,7 +41,7 @@ from ..llama3_modulev3.model_config import Llama3Config
 
 
 @dataclass(kw_only=True)
-class Idefics3Config(ArchConfigWithKVCache):
+class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Configuration for Idefics3 models (ModuleV3)."""
 
     devices: list[DeviceRef]
@@ -72,31 +75,6 @@ class Idefics3Config(ArchConfigWithKVCache):
         """Returns the KV cache parameters from the embedded text config."""
         return self.text_config.get_kv_params()
 
-    def get_max_seq_len(self) -> int:
-        """Returns the maximum sequence length from the embedded text config."""
-        return self.text_config.get_max_seq_len()
-
-    @staticmethod
-    def construct_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Get KV cache parameters for the language model."""
-        # Delegate to Llama3Config for language model parameters.
-        text_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return Llama3Config.construct_kv_params(
-            huggingface_config=text_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
-
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         """Get number of layers in the language model."""
@@ -104,19 +82,6 @@ class Idefics3Config(ArchConfigWithKVCache):
             huggingface_config, "text_config", huggingface_config
         )
         return text_config.num_hidden_layers
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculate maximum sequence length for Idefics3."""
-        text_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config=pipeline_config,
-            huggingface_config=text_config,
-        )
 
     @override
     @classmethod
@@ -198,7 +163,9 @@ def _create_llama3_text_config(
     if quantization_encoding is None:
         raise ValueError("quantization_encoding must not be None")
     dtype = supported_encoding_dtype(quantization_encoding)
-    cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+    cache_dtype = cache_dtype_for_encoding(
+        quantization_encoding, pipeline_config.model.kv_cache.kv_cache_format
+    )
 
     _weights_format = weights_format(pipeline_config.model.weight_path)
     interleaved_rope_weights = (

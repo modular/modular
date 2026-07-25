@@ -107,7 +107,7 @@ def test_assert_almost_equal() raises:
 
     @parameter
     def _should_succeed[
-        dtype: DType, size: SIMDSize
+        dtype: DType, size: SIMDLength
     ](
         lhs: SIMD[dtype, size],
         rhs: SIMD[dtype, size],
@@ -142,7 +142,7 @@ def test_assert_almost_equal() raises:
 
     @parameter
     def _should_fail[
-        dtype: DType, size: SIMDSize
+        dtype: DType, size: SIMDLength
     ](
         lhs: SIMD[dtype, size],
         rhs: SIMD[dtype, size],
@@ -226,18 +226,18 @@ def test_assert_equal_stringslice() raises:
 
     def _build(value: StaticString, start: Int, end: Int) -> StaticString:
         return StaticString(
-            unsafe_from_utf8=Span(
-                ptr=value.unsafe_ptr() + start,
+            unsafe_from_utf8=Span[Byte, ImmStaticOrigin](
+                unsafe_ptr=value.unsafe_ptr().unsafe_offset(start),
                 length=end - start,
             )
         )
 
     def _build(
-        read value: String, start: Int, end: Int
+        imm value: String, start: Int, end: Int
     ) -> StringSlice[origin_of(value)]:
         return StringSlice[origin_of(value)](
-            unsafe_from_utf8=Span(
-                ptr=value.unsafe_ptr() + start,
+            unsafe_from_utf8=Span[Byte, origin_of(value)](
+                unsafe_ptr=value.unsafe_ptr().unsafe_offset(start),
                 length=end - start,
             )
         )

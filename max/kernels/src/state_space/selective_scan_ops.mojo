@@ -20,7 +20,7 @@ This module registers the following ops:
 
 from std.math import ceildiv
 
-import extensibility as compiler
+import extensibility
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 
@@ -37,7 +37,7 @@ from state_space.selective_scan import (
 )
 
 
-@compiler.register("selective_scan_fwd")
+@extensibility.register("selective_scan_fwd")
 struct SelectiveScanFwd[delta_softplus: Bool = False]:
     """Selective scan forward pass operation for Mamba SSM.
 
@@ -306,23 +306,45 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         else:
             raise Error("Unsupported target: " + target)
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        u: InputTensor[dtype=dtype, rank=3, ...],
-        delta: InputTensor[dtype=dtype, rank=3, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=4, ...],
-        C: InputTensor[dtype=dtype, rank=4, ...],
-        D: InputTensor[dtype=dtype, rank=1, ...],
-        z: InputTensor[dtype=dtype, rank=3, ...],
-        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> IndexList[3]:
-        return u.shape()
+
+@extensibility.register_shape_function("selective_scan_fwd")
+def selective_scan_fwd_shape[
+    dtype: DType,
+](
+    u: InputTensor[dtype=dtype, rank=3, ...],
+    delta: InputTensor[dtype=dtype, rank=3, ...],
+    A: InputTensor[dtype=dtype, rank=2, ...],
+    B: InputTensor[dtype=dtype, rank=4, ...],
+    C: InputTensor[dtype=dtype, rank=4, ...],
+    D: InputTensor[dtype=dtype, rank=1, ...],
+    z: InputTensor[dtype=dtype, rank=3, ...],
+    delta_bias: InputTensor[dtype=dtype, rank=1, ...],
+) -> IndexList[3]:
+    """Returns the output shape for the `selective_scan_fwd` op.
+
+    The output of a selective scan forward pass has the same shape as the
+    input sequence `u`: `(batch, dim, seqlen)`.
+
+    Parameters:
+        dtype: Element type of the input tensors (inferred).
+
+    Args:
+        u: Input sequence tensor with shape `(batch, dim, seqlen)`.
+        delta: Time-step tensor with shape `(batch, dim, seqlen)`.
+        A: State transition matrix with shape `(dim, dstate)`.
+        B: Input projection with shape `(batch, n_groups, dstate, seqlen)`.
+        C: Output projection with shape `(batch, n_groups, dstate, seqlen)`.
+        D: Skip connection with shape `(dim,)`.
+        z: Gating tensor with shape `(batch, dim, seqlen)`.
+        delta_bias: Delta bias with shape `(dim,)`.
+
+    Returns:
+        The shape of the output tensor `(batch, dim, seqlen)`.
+    """
+    return u.shape()
 
 
-@compiler.register("selective_scan_fwd_minimal")
+@extensibility.register("selective_scan_fwd_minimal")
 struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
     """Minimal selective scan forward pass - no optional D, z, or delta_bias.
 
@@ -533,20 +555,36 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        u: InputTensor[dtype=dtype, rank=3, ...],
-        delta: InputTensor[dtype=dtype, rank=3, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=4, ...],
-        C: InputTensor[dtype=dtype, rank=4, ...],
-    ) -> IndexList[3]:
-        return u.shape()
+
+@extensibility.register_shape_function("selective_scan_fwd_minimal")
+def selective_scan_fwd_minimal_shape[
+    dtype: DType,
+](
+    u: InputTensor[dtype=dtype, rank=3, ...],
+    delta: InputTensor[dtype=dtype, rank=3, ...],
+    A: InputTensor[dtype=dtype, rank=2, ...],
+    B: InputTensor[dtype=dtype, rank=4, ...],
+    C: InputTensor[dtype=dtype, rank=4, ...],
+) -> IndexList[3]:
+    """Returns the output shape for the `selective_scan_fwd_minimal` op.
+
+    The output of the minimal selective scan forward pass has the same shape
+    as the input sequence `u`: `(batch, dim, seqlen)`.
+
+    Args:
+        u: Input sequence tensor with shape `(batch, dim, seqlen)`.
+        delta: Time-step tensor with shape `(batch, dim, seqlen)`.
+        A: State transition matrix with shape `(dim, dstate)`.
+        B: Input projection with shape `(batch, n_groups, dstate, seqlen)`.
+        C: Output projection with shape `(batch, n_groups, dstate, seqlen)`.
+
+    Returns:
+        The shape of the output tensor `(batch, dim, seqlen)`.
+    """
+    return u.shape()
 
 
-@compiler.register("selective_scan_update")
+@extensibility.register("selective_scan_update")
 struct SelectiveScanUpdate[delta_softplus: Bool = False]:
     """Selective scan update operation for autoregressive inference.
 
@@ -804,18 +842,39 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         else:
             raise Error("Unsupported target: " + target)
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        state_in: InputTensor[dtype=dtype, rank=3, ...],
-        x: InputTensor[dtype=dtype, rank=2, ...],
-        dt: InputTensor[dtype=dtype, rank=2, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=3, ...],
-        C: InputTensor[dtype=dtype, rank=3, ...],
-        D: InputTensor[dtype=dtype, rank=1, ...],
-        z: InputTensor[dtype=dtype, rank=2, ...],
-        dt_bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> Tuple[IndexList[3], IndexList[2]]:
-        return (state_in.shape(), x.shape())
+
+@extensibility.register_shape_function("selective_scan_update")
+def selective_scan_update_shape[
+    dtype: DType,
+](
+    state_in: InputTensor[dtype=dtype, rank=3, ...],
+    x: InputTensor[dtype=dtype, rank=2, ...],
+    dt: InputTensor[dtype=dtype, rank=2, ...],
+    A: InputTensor[dtype=dtype, rank=2, ...],
+    B: InputTensor[dtype=dtype, rank=3, ...],
+    C: InputTensor[dtype=dtype, rank=3, ...],
+    D: InputTensor[dtype=dtype, rank=1, ...],
+    z: InputTensor[dtype=dtype, rank=2, ...],
+    dt_bias: InputTensor[dtype=dtype, rank=1, ...],
+) -> Tuple[IndexList[3], IndexList[2]]:
+    """Returns the output shapes for the `selective_scan_update` op.
+
+    The update step produces two tensors: the updated SSM state and the
+    single-step output for the new token.
+
+    Args:
+        state_in: Input SSM state with shape `(batch, dim, dstate)`.
+        x: Input token with shape `(batch, dim)`.
+        dt: Time-delta tensor with shape `(batch, dim)`.
+        A: State transition matrix with shape `(dim, dstate)`.
+        B: Input matrix with shape `(batch, n_groups, dstate)`.
+        C: Output matrix with shape `(batch, n_groups, dstate)`.
+        D: Skip connection with shape `(dim,)`.
+        z: Gating tensor with shape `(batch, dim)`.
+        dt_bias: Time-delta bias with shape `(dim,)`.
+
+    Returns:
+        A tuple of `(state_out_shape, output_shape)` where `state_out_shape`
+        matches `state_in.shape()` and `output_shape` matches `x.shape()`.
+    """
+    return (state_in.shape(), x.shape())

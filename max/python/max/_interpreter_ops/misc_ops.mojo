@@ -29,20 +29,18 @@ from std.algorithm.functional import elementwise, IndexList
 from extensibility import (
     ManagedTensorSlice,
 )
-from extensibility import FusedOutput
+from extensibility import IOSpec
 from extensibility import StaticTensorSpec
-from builtin_kernels import Range
+from builtin_kernels import Range, range_shape
 
-from std.utils.numerics import get_accum_type
+from std.utils.coord import Coord
 
 from op_utils import (
     _get_dtype,
     _get_buffer_ptr,
     _get_size,
     _get_ctx,
-    _get_shape,
     _make_ptr,
-    MAX_RANK,
     Dispatchable,
     dispatch_dtype,
 )
@@ -54,7 +52,7 @@ from op_utils import (
 
 
 @export
-def PyInit_misc_ops() -> PythonObject:
+def PyInit_misc_ops() abi("C") -> PythonObject:
     """Create a Python module with miscellaneous kernel function bindings."""
     try:
         var b = PythonModuleBuilder("misc_ops")
@@ -69,9 +67,6 @@ def PyInit_misc_ops() -> PythonObject:
         b.def_function[random_uniform_dispatcher](
             "RandomUniform", docstring="Random uniform distribution"
         )
-        b.def_function[cumsum_dispatcher](
-            "CumSum", docstring="Cumulative sum along axis"
-        )
         return b.finalize()
     except e:
         abort(t"failed to create misc op bindings module: {e}")
@@ -83,13 +78,14 @@ def PyInit_misc_ops() -> PythonObject:
 
 
 @fieldwise_init
-struct _RangeShapeBody(Dispatchable):
+struct _RangeShapeBody[origin: MutOrigin](Dispatchable):
     """Dispatch body for the RangeShape operation over data dtypes."""
 
     var start_addr: Int
     var stop_addr: Int
     var step_addr: Int
-    var result_ptr: UnsafePointer[Int, MutAnyOrigin]
+
+    var result_ptr: UnsafePointer[Int, Self.origin]
 
     def call[t: DType](self) raises -> None:
         comptime if t == DType.bool:
@@ -164,10 +160,10 @@ def range_dispatcher(
 def range_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    start_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    stop_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    step_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    start_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    stop_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    step_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     ctx: DeviceContext,
 ) raises:
@@ -190,7 +186,7 @@ def range_op[
 
     comptime out_spec = StaticTensorSpec[dtype, 1, ...].get_unknown()
     var output_tensor = ManagedTensorSlice[
-        io_spec=FusedOutput, static_spec=out_spec
+        io_spec=IOSpec.FusedOutput, static_spec=out_spec
     ](out_ptr, IndexList[1](size))
 
     if ctx.api() == "cpu":
@@ -207,19 +203,17 @@ def range_op[
                 # the Metal shader compiler cannot handle. Use elementwise
                 # with simd_width=1 to avoid this issue on all GPU targets.
                 @always_inline
-                @parameter
-                @__copy_capture(out_ptr, start, step)
                 def range_func[
-                    width: Int, rank: Int, alignment: Int = 1
-                ](idx: IndexList[rank]):
-                    var i = rebind[IndexList[1]](idx)[0]
+                    width: Int, alignment: Int = 1
+                ](idx: Coord) {var}:
+                    var i = Int(idx[0].value())
                     var result = start + (
                         iota[dtype, width](Scalar[dtype](i)) * step
                     )
                     out_ptr.store[width=width](i, result)
 
-                elementwise[range_func, simd_width=1, target="gpu"](
-                    IndexList[1](size), ctx
+                elementwise[simd_width=1, target="gpu"](
+                    range_func, Coord(size), ctx
                 )
             else:
                 raise Error(
@@ -237,9 +231,9 @@ def range_op[
 def range_shape_op[
     dtype: DType
 ](
-    start_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    stop_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    step_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    start_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    stop_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    step_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
 ) raises -> Int:
     """Compute range output size using Range.shape from the `kernels` package.
 
@@ -257,7 +251,7 @@ def range_shape_op[
     var start = start_ptr.load()
     var stop = stop_ptr.load()
     var step = step_ptr.load()
-    var shape = Range.shape[dtype](start, stop, step)
+    var shape = range_shape[dtype](start, stop, step)
     return shape[0]
 
 
@@ -286,7 +280,10 @@ def range_shape_dispatcher(
     var result: Int = 0
     dispatch_dtype(
         _RangeShapeBody(
-            start_addr, stop_addr, step_addr, UnsafePointer(to=result)
+            start_addr,
+            stop_addr,
+            step_addr,
+            UnsafePointer(to=result),
         ),
         dtype,
     )
@@ -301,7 +298,7 @@ def range_shape_dispatcher(
 def random_normal_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     mean: Float32,
     variance: Float32,
@@ -364,13 +361,11 @@ def random_normal_op[
             raise Error("No GPU accelerator available")
 
     @always_inline
-    @parameter
-    @__copy_capture(out_ptr, mean, variance, seed_value, grid_block)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert (
             width == 1
         ), "PyTorch-compat normal kernel uses scalar lanes"
-        var i = rebind[IndexList[1]](idx)[0]
+        var i = Int(idx[0].value())
         var thread_id = UInt64(i % grid_block)
         var within_thread = i // grid_block
 
@@ -380,13 +375,11 @@ def random_normal_op[
         out_ptr.store[width=1](i, SIMD[dtype, 1](value))
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](IndexList[1](size), ctx)
+        elementwise[simd_width=1](func, Coord(size), ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=1, target="gpu"](
-                    IndexList[1](size), ctx
-                )
+                elementwise[simd_width=1, target="gpu"](func, Coord(size), ctx)
 
 
 def random_normal_dispatcher(
@@ -460,7 +453,7 @@ def random_normal_dispatcher(
 def random_uniform_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     lower_bound: Float32,
     upper_bound: Float32,
@@ -486,23 +479,19 @@ def random_uniform_op[
     var delta = upper_bound - lower_bound
 
     @always_inline
-    @parameter
-    @__copy_capture(out_ptr, lower_bound, delta, seed_value)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = rebind[IndexList[1]](idx)[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        var i = Int(idx[0].value())
         var generator = Random(seed=seed_value, offset=UInt64(i))
         var values: SIMD[DType.float32, 4] = generator.step_uniform()
         values = values * delta + lower_bound
         out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=4](IndexList[1](size), ctx)
+        elementwise[simd_width=4](func, Coord(size), ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=4, target="gpu"](
-                    IndexList[1](size), ctx
-                )
+                elementwise[simd_width=4, target="gpu"](func, Coord(size), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for random_uniform"
@@ -573,143 +562,3 @@ def random_uniform_dispatcher(
         )
     else:
         raise Error("Unsupported dtype for random_uniform: " + String(dtype))
-
-
-# ===----------------------------------------------------------------------=== #
-# Cumsum operation
-# ===----------------------------------------------------------------------=== #
-
-
-def _cumsum_cpu[
-    dtype: DType,
-](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    dim0: Int,
-    dim1: Int,
-    dim2: Int,
-    exclusive: Int,
-    reverse: Int,
-):
-    """CPU cumsum on a rank-3 normalized buffer [dim0, dim1, dim2].
-
-    Cumsum is applied along axis=1 (dim1). dim0 is the product of dimensions
-    before the original axis, dim2 is the product of dimensions after.
-
-    Parameters:
-        dtype: The data type of the arrays.
-
-    Args:
-        out_ptr: Pointer to the output buffer.
-        in_ptr: Pointer to the input buffer.
-        dim0: Product of dimensions before the cumsum axis.
-        dim1: Size of the cumsum axis.
-        dim2: Product of dimensions after the cumsum axis.
-        exclusive: 1 for exclusive cumsum (first element is 0), 0 otherwise.
-        reverse: 1 for reverse direction along the axis, 0 otherwise.
-    """
-    # Use float64 accumulator for float32 for precision, same type otherwise.
-    # This matches the behavior in nn/cumsum.mojo.
-    comptime accum_type = DType.float64 if dtype == DType.float32 else get_accum_type[
-        dtype
-    ]()
-
-    # Strides for row-major [dim0, dim1, dim2] layout.
-    var stride0 = dim1 * dim2
-    var stride1 = dim2
-
-    for i0 in range(dim0):
-        for i2 in range(dim2):
-            var accumulator: Scalar[accum_type] = 0
-
-            for d in range(dim1):
-                var d_adj = (dim1 - 1 - d) if reverse else d
-                var idx = i0 * stride0 + d_adj * stride1 + i2
-
-                if exclusive:
-                    out_ptr[idx] = accumulator.cast[dtype]()
-                    accumulator += in_ptr[idx].cast[accum_type]()
-                else:
-                    accumulator += in_ptr[idx].cast[accum_type]()
-                    out_ptr[idx] = accumulator.cast[dtype]()
-
-
-@fieldwise_init
-struct _CumsumBody(Dispatchable):
-    """Dispatch body for the CumSum operation over data dtypes."""
-
-    var out_addr: Int
-    var in_addr: Int
-    var dim0: Int
-    var dim1: Int
-    var dim2: Int
-    var exclusive: Int
-    var reverse: Int
-
-    def call[t: DType](self) raises -> None:
-        comptime if t == DType.bool:
-            raise Error("Unsupported dtype for cumsum: bool")
-        else:
-            _cumsum_cpu[t](
-                _make_ptr[t](self.out_addr),
-                _make_ptr[t](self.in_addr),
-                self.dim0,
-                self.dim1,
-                self.dim2,
-                self.exclusive,
-                self.reverse,
-            )
-
-
-def cumsum_dispatcher(
-    out_buffer: PythonObject,
-    in_buffer: PythonObject,
-    axis: PythonObject,
-    exclusive: PythonObject,
-    reverse: PythonObject,
-) raises:
-    """Cumsum dispatcher with dtype dispatch.
-
-    Normalizes the input to rank-3 [dim0, dim1, dim2] and dispatches by dtype.
-
-    Args:
-        out_buffer: The output buffer object (same shape as input).
-        in_buffer: The input buffer object.
-        axis: The axis along which to compute cumsum (non-negative integer).
-        exclusive: 1 for exclusive cumsum, 0 otherwise.
-        reverse: 1 for reverse cumsum, 0 otherwise.
-    """
-    var dtype = _get_dtype(in_buffer)
-    var axis_val = Int(py=axis)
-    var exclusive_val = Int(py=exclusive)
-    var reverse_val = Int(py=reverse)
-
-    # Extract input shape and compute normalized rank-3 shape:
-    # dim0: product of dims before axis
-    # dim1: the cumsum axis dimension
-    # dim2: product of dims after axis
-    var in_shape_py = in_buffer.shape
-    var rank = Int(py=len(in_shape_py))
-    var in_shape = _get_shape(in_shape_py, rank)
-
-    var dim0 = 1
-    for i in range(axis_val):
-        dim0 *= in_shape[i]
-
-    var dim1 = in_shape[axis_val]
-
-    var dim2 = 1
-    for i in range(axis_val + 1, rank):
-        dim2 *= in_shape[i]
-
-    var out_addr = Int(py=out_buffer._data_ptr())
-    var in_addr = Int(py=in_buffer._data_ptr())
-
-    if dtype == DType.bool:
-        raise Error("Unsupported dtype for cumsum: " + String(dtype))
-    dispatch_dtype(
-        _CumsumBody(
-            out_addr, in_addr, dim0, dim1, dim2, exclusive_val, reverse_val
-        ),
-        dtype,
-    )

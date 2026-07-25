@@ -51,6 +51,7 @@ from .amd_4wave_matmul import AMD4WaveMatmul, KernelConfig
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(t"amd_4wave_split_k_reduce_{c_type}_SK{num_splits}")
 def _split_k_reduce_kernel[
     num_splits: Int,
     c_type: DType,
@@ -72,8 +73,8 @@ def _split_k_reduce_kernel[
     When `elementwise_lambda_fn` is set, the reduced f32 value at
     flat index `tid` is delivered to the lambda with global
     coords `(tid // N, tid % N)` instead of being stored to `c_ptr`.
-    The lambda fires exactly once per output cell — on the reduced
-    sum, not on each partial — which is the correct epilogue semantics
+    The lambda fires exactly once per output cell (on the reduced
+    sum, not on each partial), which is the correct epilogue semantics
     for split-K.
     """
     var tid = Int(global_idx.x)
@@ -156,12 +157,12 @@ def amd_4wave_split_k_matmul[
     c: TileTensor[mut=True, c_type, ...],
     ctx: DeviceContext,
     *,
-    workspace: SplitKWorkspace[num_splits],
+    mut workspace: SplitKWorkspace[num_splits],
 ) raises:
     """Launches the single-launch split-K 4-wave matmul on the device.
 
     Production callers go through a higher-level dispatcher that
-    selects tile shapes based on M, N, K, and dtype — it should set
+    selects tile shapes based on M, N, K, and dtype; it should set
     `block_{m,n,k}_override` explicitly. The internal auto-pick is a
     convenience default for direct/ad-hoc/benchmark callers.
 
@@ -178,12 +179,12 @@ def amd_4wave_split_k_matmul[
     Pre-allocate `workspace = SplitKWorkspace[num_splits](ctx, M*N)`
     and re-use across calls with the same shape. The workspace holds
     `num_splits * M * N` f32 partials; the final output (FP8 / bf16 /
-    fp16 — matches `c_type`) is reduced into `c` by the reduce kernel.
+    fp16, which matches `c_type`) is reduced into `c` by the reduce kernel.
 
     When `elementwise_lambda_fn` is set, the reduce kernel fires the
     lambda once per output cell on the reduced f32 sum and skips the
     write to `c`. The matmul kernels themselves do not see the lambda
-    — they always write f32 partials to the workspace — which is the
+    (they always write f32 partials to the workspace), which is the
     correct semantics: the lambda must observe the FINAL value, not
     the per-split partials.
 

@@ -95,9 +95,11 @@ comptime allgather_tuning_table = Table(
         DefaultCommTuningConfig(
             ngpus=-1, num_bytes=-1, sm_version="sm_103a", num_blocks=512
         ),
-        # default for CDNA4 (MI355X, encoded with ngpus=-1, num_bytes=-1)
+        # default for CDNA4 (MI355X, encoded with ngpus=-1, num_bytes=-1).
+        # Interleaved peer copy saturates the PCIe fabric at ~128 blocks
+        # (measured peak, TP4); more only adds barrier/scheduling overhead.
         DefaultCommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="CDNA4", num_blocks=216
+            ngpus=-1, num_bytes=-1, sm_version="CDNA4", num_blocks=128
         ),
         # global default for unknown architectures
         DefaultCommTuningConfig(
@@ -136,7 +138,7 @@ def _allgather_naive[
             DeviceBuffer(
                 rctx,
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                    input_buffers[i].ptr
+                    input_buffers[i]._storage
                 ),
                 input_buffers[i].num_elements(),
                 owning=False,
@@ -147,7 +149,7 @@ def _allgather_naive[
         var output_device_buffer = DeviceBuffer(
             ctx,
             rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                output_buffers[input_idx].ptr
+                output_buffers[input_idx]._storage
             ),
             output_buffers[input_idx].num_elements(),
             owning=False,
@@ -169,6 +171,7 @@ def _allgather_p2p_kernel[
     ngpus: Int,
     *,
     BLOCK_SIZE: Int,
+    domain_id: Int = 0,
 ](
     outputs: StaticTuple[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus],
     src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
@@ -204,34 +207,50 @@ def _allgather_p2p_kernel[
 
     with PDL():
         # Synchronize before reading.
-        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
+            rank_sigs, my_sig, my_rank
+        )
 
-        # Copy data from each source GPU to corresponding output buffer.
-        # outputs[i] should contain data from GPU i.
+        # Copy each source GPU's data to its output buffer (outputs[i] holds
+        # GPU i). Peer copies are interleaved (all `ngpus` loads issued before
+        # any store) for `ngpus`-way memory-level parallelism.
+        var num_simd_vectors = InlineArray[Int, ngpus](uninitialized=True)
+        var max_num_simd_vectors = 0
         comptime for gpu_idx in range(ngpus):
-            var length = lengths_rr[gpu_idx]
-            var num_simd_vectors, remainder = divmod(length, simd_width)
+            var nsv = lengths_rr[gpu_idx] // simd_width
+            num_simd_vectors[gpu_idx] = nsv
+            max_num_simd_vectors = max(max_num_simd_vectors, nsv)
 
-            # Grid-strided loop for this source (vectorized).
-            for idx in range(global_tid, num_simd_vectors, stride):
-                var elem_idx = idx * simd_width
-                # Read directly from source GPU.
-                var data = (
-                    src_ptrs_rr[gpu_idx]
-                    .address_space_cast[_target_address_space]()
-                    .load[
-                        width=simd_width,
-                        alignment=alignment,
-                    ](elem_idx)
-                )
-                # Write to output buffer for this source GPU.
-                out_ptrs_rr[gpu_idx].address_space_cast[
-                    _target_address_space
-                ]().store[width=simd_width, alignment=alignment](elem_idx, data)
+        # Grid-strided loop over the longest source; per-peer guards skip
+        # shorter sources.
+        for idx in range(global_tid, max_num_simd_vectors, stride):
+            var elem_idx = idx * simd_width
+            var data = InlineArray[SIMD[dtype, simd_width], ngpus](
+                uninitialized=True
+            )
+            # Issue all peer reads first (memory-level parallelism).
+            comptime for gpu_idx in range(ngpus):
+                if idx < num_simd_vectors[gpu_idx]:
+                    data[gpu_idx] = (
+                        src_ptrs_rr[gpu_idx]
+                        .address_space_cast[_target_address_space]()
+                        .load[width=simd_width, alignment=alignment](elem_idx)
+                    )
+            # Then store each peer's data.
+            comptime for gpu_idx in range(ngpus):
+                if idx < num_simd_vectors[gpu_idx]:
+                    out_ptrs_rr[gpu_idx].address_space_cast[
+                        _target_address_space
+                    ]().store[width=simd_width, alignment=alignment](
+                        elem_idx, data[gpu_idx]
+                    )
 
-            # Handle remainder elements with scalar operations.
+        # Scalar remainder per source.
+        comptime for gpu_idx in range(ngpus):
+            var nsv = num_simd_vectors[gpu_idx]
+            var remainder = lengths_rr[gpu_idx] - nsv * simd_width
             if remainder > 0:
-                var tail_start = num_simd_vectors * simd_width
+                var tail_start = nsv * simd_width
                 # Use first warp to handle tail to minimize divergence.
                 if global_tid < WARP_SIZE:
                     for i in range(global_tid, remainder, WARP_SIZE):
@@ -241,7 +260,9 @@ def _allgather_p2p_kernel[
                         ]
 
         # Synchronize after writing.
-        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
+            rank_sigs, my_sig, my_rank
+        )
 
 
 @__llvm_metadata(
@@ -254,6 +275,7 @@ def _allgather_tma_kernel[
     *,
     BLOCK_SIZE: Int,
     BYTES_PER_COPY: Int,
+    domain_id: Int = 0,
 ](
     outputs: StaticTuple[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus],
     src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
@@ -315,7 +337,9 @@ def _allgather_tma_kernel[
     var total_chunks = ceildiv(nbytes, BYTES_PER_COPY)
 
     with PDL():
-        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
+            rank_sigs, my_sig, my_rank
+        )
 
         if is_leader:
             var phase = UInt32(0)
@@ -338,13 +362,16 @@ def _allgather_tma_kernel[
                 cp_async_bulk_commit_group()
                 cp_async_bulk_wait_group[0]()
 
-        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
+            rank_sigs, my_sig, my_rank
+        )
 
 
 @always_inline
 def _allgather_p2p_tma[
     dtype: DType,
     ngpus: Int,
+    domain_id: Int = 0,
 ](
     output_ptrs: StaticTuple[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus],
     list_of_in_ptrs: StaticTuple[
@@ -386,6 +413,7 @@ def _allgather_p2p_tma[
         ngpus,
         BLOCK_SIZE=TMA_BLOCK_SIZE,
         BYTES_PER_COPY=TMA_BYTES_PER_COPY,
+        domain_id=domain_id,
     ]
     ctx.enqueue_function[tma_kernel](
         output_ptrs,
@@ -410,6 +438,7 @@ def _allgather_p2p[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
+    domain_id: Int = 0,
 ](
     input_buffers: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
     output_buffers: InlineArray[
@@ -431,7 +460,7 @@ def _allgather_p2p[
     comptime for i in range(ngpus):
         list_of_in_ptrs[i] = rebind[
             UnsafePointer[Scalar[dtype], ImmutAnyOrigin]
-        ](input_buffers[i].ptr)
+        ](input_buffers[i]._storage)
         lengths[i] = input_buffers[i].num_elements()
 
     # Prepare output pointers.
@@ -442,7 +471,7 @@ def _allgather_p2p[
     comptime for src_idx in range(ngpus):
         output_ptrs[src_idx] = rebind[
             UnsafePointer[Scalar[dtype], MutAnyOrigin]
-        ](output_buffers[src_idx].ptr)
+        ](output_buffers[src_idx]._storage)
 
     # TMA path: NVIDIA sm100+ with 16-byte-aligned (possibly zero) inputs.
     # Uses cp.async.bulk DMA for both NVLink reads and local HBM writes.
@@ -454,7 +483,7 @@ def _allgather_p2p[
                 tma_ok = False
 
         if tma_ok:
-            return _allgather_p2p_tma(
+            return _allgather_p2p_tma[domain_id=domain_id](
                 output_ptrs,
                 list_of_in_ptrs,
                 rank_sigs,
@@ -490,6 +519,7 @@ def _allgather_p2p[
         rank,
         ngpus,
         BLOCK_SIZE=BLOCK_SIZE,
+        domain_id=domain_id,
     ]
     ctx.enqueue_function[allgather_p2p_kernel](
         output_ptrs,
@@ -512,6 +542,7 @@ def allgather[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
+    domain_id: Int = 0,
 ](
     input_buffers: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
     output_buffers: InlineArray[
@@ -538,6 +569,9 @@ def allgather[
         in_origin: Origin of the input TileTensors.
         out_layout: Layout of the output TileTensors.
         out_origin: Origin of the output TileTensors.
+        domain_id: Barrier counter bank to use (0 for full-world; a distinct
+            nonzero value for grouped collectives sharing the same Signal
+            buffers). See `_multi_gpu_barrier`.
 
     Args:
         input_buffers: Input buffers from ALL GPUs as TileTensors.
@@ -564,7 +598,7 @@ def allgather[
     if not is_p2p_enabled():
         return _allgather_naive(input_buffers, output_buffers, ctx)
     else:
-        return _allgather_p2p[rank=1](
+        return _allgather_p2p[rank=1, domain_id=domain_id](
             input_buffers,
             output_buffers,
             rank_sigs,

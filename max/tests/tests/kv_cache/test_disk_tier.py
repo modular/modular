@@ -28,9 +28,28 @@ def cache_dir(tmp_path: Path) -> str:
     return str(tmp_path / "disk_cache")
 
 
+def _int_block_hash(n: int) -> bytes:
+    """Encode an int test hash as the canonical 8-byte signed-BE block hash."""
+    return n.to_bytes(8, "big", signed=True)
+
+
 def _make_block(block_nbytes: int, seed: int = 0) -> npt.NDArray[np.uint8]:
     rng = np.random.RandomState(seed)
     return rng.randint(0, 256, size=(block_nbytes,), dtype=np.uint8)
+
+
+# -- Startup capacity preflight --
+
+
+def test_init_rejects_budget_over_disk_capacity(cache_dir: str) -> None:
+    # A 1 EiB budget cannot fit on any real filesystem, so construction must
+    # fail fast rather than filling the disk until it is exhausted.
+    with pytest.raises(RuntimeError, match="disk_offload_max_gb"):
+        DiskTier(
+            cache_dir=cache_dir,
+            block_nbytes=16,
+            max_disk_size_bytes=1 << 60,
+        )
 
 
 # -- Write/read round-trip correctness --
@@ -44,7 +63,7 @@ def test_read_missing_hash_raises(cache_dir: str) -> None:
     )
     dest = np.zeros((16,), dtype=np.uint8)
     with pytest.raises(KeyError):
-        tier.read_block_async(block_hash=999, dest=dest)
+        tier.read_block_async(block_hash=_int_block_hash(999), dest=dest)
 
     tier.shutdown()
 
@@ -58,11 +77,11 @@ def test_write_read_roundtrip(cache_dir: str) -> None:
     )
 
     src = _make_block(block_nbytes, seed=42)
-    tier.write_block_async(block_hash=100, src=src)
+    tier.write_block_async(block_hash=_int_block_hash(100), src=src)
     tier.wait_for_writes()
 
     dest = np.zeros(block_nbytes, dtype=np.uint8)
-    future = tier.read_block_async(block_hash=100, dest=dest)
+    future = tier.read_block_async(block_hash=_int_block_hash(100), dest=dest)
     future.result()
 
     np.testing.assert_array_equal(src, dest)
@@ -79,11 +98,11 @@ def test_write_read_large_block(cache_dir: str) -> None:
     )
 
     src = _make_block(block_nbytes, seed=7)
-    tier.write_block_async(block_hash=1, src=src)
+    tier.write_block_async(block_hash=_int_block_hash(1), src=src)
     tier.wait_for_writes()
 
     dest = np.zeros(block_nbytes, dtype=np.uint8)
-    future = tier.read_block_async(block_hash=1, dest=dest)
+    future = tier.read_block_async(block_hash=_int_block_hash(1), dest=dest)
     future.result()
 
     np.testing.assert_array_equal(src, dest)
@@ -100,16 +119,16 @@ def test_contains_after_write(cache_dir: str) -> None:
         block_nbytes=16,
         max_disk_size_bytes=10_000,
     )
-    assert not tier.contains(42)
+    assert not tier.contains(_int_block_hash(42))
 
     src = _make_block(16, seed=0)
-    tier.write_block_async(block_hash=42, src=src)
+    tier.write_block_async(block_hash=_int_block_hash(42), src=src)
 
     # Pending writes are not visible via contains()
-    assert not tier.contains(42)
+    assert not tier.contains(_int_block_hash(42))
     tier.wait_for_writes()
     # True after write completes
-    assert tier.contains(42)
+    assert tier.contains(_int_block_hash(42))
 
     tier.shutdown()
 
@@ -122,16 +141,16 @@ def test_contains_after_eviction(cache_dir: str) -> None:
         max_disk_size_bytes=16,
     )
     src1 = _make_block(16, seed=1)
-    tier.write_block_async(block_hash=1, src=src1)
+    tier.write_block_async(block_hash=_int_block_hash(1), src=src1)
     tier.wait_for_writes()
-    assert tier.contains(1)
+    assert tier.contains(_int_block_hash(1))
 
     # Writing a second block should evict the first
     src2 = _make_block(16, seed=2)
-    tier.write_block_async(block_hash=2, src=src2)
+    tier.write_block_async(block_hash=_int_block_hash(2), src=src2)
     tier.wait_for_writes()
-    assert tier.contains(2)
-    assert not tier.contains(1)
+    assert tier.contains(_int_block_hash(2))
+    assert not tier.contains(_int_block_hash(1))
 
     tier.shutdown()
 
@@ -149,20 +168,20 @@ def test_lru_eviction_order(cache_dir: str) -> None:
 
     for h in [10, 20]:
         src = _make_block(16, seed=h)
-        tier.write_block_async(block_hash=h, src=src)
+        tier.write_block_async(block_hash=_int_block_hash(h), src=src)
         tier.wait_for_writes()
 
-    assert tier.contains(10)
-    assert tier.contains(20)
+    assert tier.contains(_int_block_hash(10))
+    assert tier.contains(_int_block_hash(20))
 
     # Write a third — should evict hash 10 (LRU)
     src = _make_block(16, seed=30)
-    tier.write_block_async(block_hash=30, src=src)
+    tier.write_block_async(block_hash=_int_block_hash(30), src=src)
     tier.wait_for_writes()
 
-    assert not tier.contains(10)
-    assert tier.contains(20)
-    assert tier.contains(30)
+    assert not tier.contains(_int_block_hash(10))
+    assert tier.contains(_int_block_hash(20))
+    assert tier.contains(_int_block_hash(30))
 
     tier.shutdown()
 
@@ -178,65 +197,35 @@ def test_reset_clears_all(cache_dir: str) -> None:
     )
     for h in range(5):
         src = _make_block(16, seed=h)
-        tier.write_block_async(block_hash=h, src=src)
+        tier.write_block_async(block_hash=_int_block_hash(h), src=src)
     tier.wait_for_writes()
 
     tier.reset()
 
     for h in range(5):
-        assert not tier.contains(h)
+        assert not tier.contains(_int_block_hash(h))
 
     tier.shutdown()
 
 
-# -- Metadata persistence across DiskTier instances --
+# -- shutdown removes the cache directory --
 
 
-def test_persistence_reload(cache_dir: str) -> None:
-    tier1 = DiskTier(
+def test_shutdown_removes_cache_dir(cache_dir: str) -> None:
+    """The disk cache is ephemeral: shutdown deletes the whole cache_dir tree."""
+    tier = DiskTier(
         cache_dir=cache_dir,
         block_nbytes=16,
         max_disk_size_bytes=10_000,
     )
-    src = _make_block(16, seed=99)
-    tier1.write_block_async(block_hash=99, src=src)
-    tier1.shutdown()
-
-    # Create a new DiskTier pointing to same dir
-    tier2 = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=16,
-        max_disk_size_bytes=10_000,
+    tier.write_block_async(
+        block_hash=_int_block_hash(1), src=_make_block(16, seed=1)
     )
-    assert tier2.contains(99)
+    tier.wait_for_writes()
+    assert Path(cache_dir).exists()
 
-    # Verify data is readable
-    dest = np.zeros(16, dtype=np.uint8)
-    future = tier2.read_block_async(block_hash=99, dest=dest)
-    future.result()
-    np.testing.assert_array_equal(src, dest)
-
-    tier2.shutdown()
-
-
-def test_persistence_config_mismatch(cache_dir: str) -> None:
-    tier1 = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=16,
-        max_disk_size_bytes=10_000,
-    )
-    src = _make_block(16, seed=7)
-    tier1.write_block_async(block_hash=7, src=src)
-    tier1.shutdown()
-
-    # Different block_nbytes → cache should be wiped
-    tier2 = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=32,
-        max_disk_size_bytes=10_000,
-    )
-    assert not tier2.contains(7)
-    tier2.shutdown()
+    tier.shutdown()
+    assert not Path(cache_dir).exists()
 
 
 # -- Duplicate write detection --
@@ -249,17 +238,17 @@ def test_no_duplicate_write(cache_dir: str) -> None:
         max_disk_size_bytes=10_000,
     )
     src = _make_block(16, seed=5)
-    tier.write_block_async(block_hash=5, src=src)
+    tier.write_block_async(block_hash=_int_block_hash(5), src=src)
     tier.wait_for_writes()
 
     # Second write with same hash should be a no-op
     src2 = _make_block(16, seed=6)
-    tier.write_block_async(block_hash=5, src=src2)
+    tier.write_block_async(block_hash=_int_block_hash(5), src=src2)
     tier.wait_for_writes()
 
     # Read should return original data
     dest = np.zeros(16, dtype=np.uint8)
-    future = tier.read_block_async(block_hash=5, dest=dest)
+    future = tier.read_block_async(block_hash=_int_block_hash(5), dest=dest)
     future.result()
     np.testing.assert_array_equal(src, dest)
 
@@ -276,12 +265,12 @@ def test_remove_block(cache_dir: str) -> None:
         max_disk_size_bytes=10_000,
     )
     src = _make_block(16, seed=11)
-    tier.write_block_async(block_hash=11, src=src)
+    tier.write_block_async(block_hash=_int_block_hash(11), src=src)
     tier.wait_for_writes()
-    assert tier.contains(11)
+    assert tier.contains(_int_block_hash(11))
 
-    tier.remove(11)
-    assert not tier.contains(11)
+    tier.remove(_int_block_hash(11))
+    assert not tier.contains(_int_block_hash(11))
 
     tier.shutdown()
 
@@ -297,7 +286,7 @@ def test_returns_future_for_new_block(cache_dir: str) -> None:
         max_disk_size_bytes=10_000,
     )
     src = _make_block(16, seed=1)
-    result = tier.write_block_async(block_hash=1, src=src)
+    result = tier.write_block_async(block_hash=_int_block_hash(1), src=src)
     assert result is not None, "Should return a Future for new block"
     result.result()
     tier.shutdown()
@@ -311,12 +300,12 @@ def test_returns_none_for_duplicate_block(cache_dir: str) -> None:
         max_disk_size_bytes=10_000,
     )
     src = _make_block(16, seed=1)
-    tier.write_block_async(block_hash=1, src=src)
+    tier.write_block_async(block_hash=_int_block_hash(1), src=src)
     tier.wait_for_writes()
 
     # Second write with same hash → None (already on disk)
     src2 = _make_block(16, seed=2)
-    result = tier.write_block_async(block_hash=1, src=src2)
+    result = tier.write_block_async(block_hash=_int_block_hash(1), src=src2)
     assert result is None, "Should return None for duplicate block"
     tier.shutdown()
 
@@ -329,136 +318,167 @@ def test_returns_none_for_pending_block(cache_dir: str) -> None:
         max_disk_size_bytes=10_000,
     )
     src1 = _make_block(16, seed=1)
-    first = tier.write_block_async(block_hash=1, src=src1)
+    first = tier.write_block_async(block_hash=_int_block_hash(1), src=src1)
     assert first is not None
 
     # While first write is in-flight, submit same hash
     src2 = _make_block(16, seed=2)
-    second = tier.write_block_async(block_hash=1, src=src2)
+    second = tier.write_block_async(block_hash=_int_block_hash(1), src=src2)
     assert second is None, "Should return None for in-flight block"
 
     tier.wait_for_writes()
     tier.shutdown()
 
 
-# -- O_DIRECT disk I/O support --
-
-
-def test_direct_io_fallback_when_unavailable(cache_dir: str) -> None:
-    """DiskTier gracefully disables O_DIRECT when not available."""
-    import os
-
-    has_odirect = hasattr(os, "O_DIRECT")
-
-    # Even if we request direct_io, it should work (either natively
-    # or by falling back to buffered I/O).
-    tier = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=16,
-        max_disk_size_bytes=10_000,
-        use_direct_io=True,
-    )
-
-    if not has_odirect:
-        assert not tier._use_direct_io, "Should fall back to buffered I/O"
-
-    # Regardless of mode, read/write should still work
-    src = _make_block(16, seed=42)
-    tier.write_block_async(block_hash=100, src=src)
-    tier.wait_for_writes()
-
-    dest = np.zeros(16, dtype=np.uint8)
-    future = tier.read_block_async(block_hash=100, dest=dest)
-    future.result()
-    np.testing.assert_array_equal(src, dest)
-
-    tier.shutdown()
-
-
-@pytest.mark.skipif(
-    not hasattr(__import__("os"), "O_DIRECT"),
-    reason="O_DIRECT not available on this platform",
-)
-def test_direct_io_roundtrip(cache_dir: str) -> None:
-    """Verify O_DIRECT read/write roundtrip when available.
-
-    Uses 4096-byte blocks (FS-aligned) and relies on numpy's aligned
-    allocator so the buffer itself meets O_DIRECT requirements.
-    """
-    tier = DiskTier(
-        cache_dir=cache_dir,
-        block_nbytes=4096,
-        max_disk_size_bytes=10 * 4096,
-        use_direct_io=True,
-    )
-
-    if not tier._use_direct_io:
-        pytest.skip("O_DIRECT disabled due to alignment constraints")
-
-    src = _make_block(4096, seed=99)
-    tier.write_block_async(block_hash=50, src=src)
-    tier.wait_for_writes()
-
-    dest = np.zeros(4096, dtype=np.uint8)
-    future = tier.read_block_async(block_hash=50, dest=dest)
-    future.result()
-    np.testing.assert_array_equal(src, dest)
-
-    tier.shutdown()
-
-
-def test_concurrent_metadata_saves(cache_dir: str) -> None:
-    """Multiple threads saving metadata simultaneously must not crash."""
+def test_concurrent_writes_all_committed(cache_dir: str) -> None:
+    """Every block from a batch of concurrent writes lands in the index."""
     tier = DiskTier(
         cache_dir=cache_dir,
         block_nbytes=16,
         max_disk_size_bytes=10_000,
         num_workers=8,
     )
-    # Force metadata_save_interval=1 so every write triggers a save,
-    # maximizing the chance of concurrent _save_metadata calls.
-    tier._metadata_save_interval = 1
 
     num_blocks = 64
     futures = []
     for h in range(num_blocks):
         src = _make_block(16, seed=h)
-        f = tier.write_block_async(block_hash=h, src=src)
+        f = tier.write_block_async(block_hash=_int_block_hash(h), src=src)
         if f is not None:
             futures.append(f)
 
-    # All writes (and their metadata saves) must complete without error.
     for f in futures:
         f.result()
 
-    # Verify all blocks persisted correctly.
+    assert tier.num_used_blocks == num_blocks
     for h in range(num_blocks):
-        assert tier.contains(h)
+        assert tier.contains(_int_block_hash(h))
 
     tier.shutdown()
 
-    # Verify metadata reload works after concurrent saves.
-    tier2 = DiskTier(
+
+# -- Async eviction (off the scheduler critical path) --
+
+
+def test_eviction_reclaims_disk_space(cache_dir: str) -> None:
+    """Async eviction unlinks files so on-disk usage stays within budget."""
+    # Budget for exactly 2 blocks.
+    tier = DiskTier(
+        cache_dir=cache_dir,
+        block_nbytes=16,
+        max_disk_size_bytes=32,
+    )
+    # Drain between writes so each eviction sees the prior committed blocks
+    # (eviction is keyed on the committed index, which updates on completion).
+    for h in range(5):
+        tier.write_block_async(
+            block_hash=_int_block_hash(h), src=_make_block(16, seed=h)
+        )
+        tier.wait_for_writes()
+
+    # wait_for_writes drains in-flight evictions, so the evicted files are
+    # actually gone from disk -- not just dropped from the in-memory index.
+    on_disk = list(Path(cache_dir).rglob("*.bin"))
+    assert len(on_disk) == 2
+    assert tier.num_used_blocks == 2
+
+    tier.shutdown()
+
+
+def test_rewrite_after_eviction(cache_dir: str) -> None:
+    """A hash can be re-written after it was evicted and its delete drained."""
+    # Room for a single block.
+    tier = DiskTier(
+        cache_dir=cache_dir,
+        block_nbytes=16,
+        max_disk_size_bytes=16,
+    )
+    h1 = _int_block_hash(1)
+    h2 = _int_block_hash(2)
+    assert tier.write_block_async(block_hash=h1, src=_make_block(16, 1))
+    tier.wait_for_writes()
+
+    # Writing a second block evicts hash 1.
+    assert tier.write_block_async(block_hash=h2, src=_make_block(16, 2))
+    tier.wait_for_writes()
+    assert not tier.contains(h1)
+
+    # Hash 1's delete has drained, so it can be written again (evicting 2).
+    assert tier.write_block_async(block_hash=h1, src=_make_block(16, 1))
+    tier.wait_for_writes()
+    assert tier.contains(h1)
+    assert not tier.contains(h2)
+
+    tier.shutdown()
+
+
+# -- In-flight tracking / drain --
+
+
+def test_wait_for_writes_drains_writes_and_evictions(cache_dir: str) -> None:
+    """wait_for_writes drains every write and the deletes eviction triggers.
+
+    Regression guard for the cyclic-GC stall: outstanding work is tracked by
+    an in-flight counter, not a growing list of completed Futures, so the
+    count is back to zero once drained.
+    """
+    tier = DiskTier(
+        cache_dir=cache_dir,
+        block_nbytes=16,
+        max_disk_size_bytes=32,
+    )
+
+    for h in range(8):
+        tier.write_block_async(
+            block_hash=_int_block_hash(h), src=_make_block(16, seed=h)
+        )
+        tier.wait_for_writes()
+        assert tier.inflight_disk_ops == 0
+
+    assert tier.num_used_blocks == 2
+
+    tier.shutdown()
+
+
+def test_wait_for_writes_drains_reads(cache_dir: str) -> None:
+    """wait_for_writes also waits for in-flight reads, not just writes."""
+    tier = DiskTier(
         cache_dir=cache_dir,
         block_nbytes=16,
         max_disk_size_bytes=10_000,
     )
-    for h in range(num_blocks):
-        assert tier2.contains(h)
-    tier2.shutdown()
+    block_hash = _int_block_hash(1)
+    tier.write_block_async(block_hash=block_hash, src=_make_block(16, seed=1))
+    tier.wait_for_writes()
+    assert tier.inflight_disk_ops == 0
+
+    dest = np.empty(16, dtype=np.uint8)
+    tier.read_block_async(block_hash=block_hash, dest=dest)
+    tier.wait_for_writes()
+    assert tier.inflight_disk_ops == 0
+
+    tier.shutdown()
 
 
-def test_direct_io_disabled_on_unaligned_blocks(cache_dir: str) -> None:
-    """Verify O_DIRECT is disabled when block size is not FS-aligned."""
+# -- Directory sharding layout --
+
+
+def test_blocks_stored_in_shard_subdirs(cache_dir: str) -> None:
+    """Blocks live under a per-hash bucket subdir, not the cache root."""
     tier = DiskTier(
         cache_dir=cache_dir,
-        block_nbytes=17,  # Not aligned to any FS block size
+        block_nbytes=16,
         max_disk_size_bytes=10_000,
-        use_direct_io=True,
     )
-    # 17 bytes is not aligned to 4096 (typical FS block size), so
-    # O_DIRECT should be disabled automatically.
-    assert not tier._use_direct_io, (
-        "Should disable O_DIRECT for unaligned block sizes"
-    )
+    block_hash = _int_block_hash(0x123)
+    tier.write_block_async(block_hash=block_hash, src=_make_block(16, seed=1))
+    tier.wait_for_writes()
+
+    # No block files at the root; exactly one under a two-hex bucket directory
+    # named for the first byte of the hash.
+    assert list(Path(cache_dir).glob("*.bin")) == []
+    sharded = list(Path(cache_dir).glob("*/*.bin"))
+    assert len(sharded) == 1
+    assert sharded[0].parent.name == f"{block_hash[0]:02x}"
+
     tier.shutdown()

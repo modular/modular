@@ -19,15 +19,12 @@ from dataclasses import dataclass
 
 @dataclass
 class DatasetRegistryEntry:
-    """Registry entry for a benchmark dataset.
-
-    Attributes:
-        class_name: The name of the BenchmarkDataset subclass that implements this dataset.
-        has_multiturn_chat_support: Whether this dataset supports multiturn chat scenarios.
-    """
+    """Registry entry for a benchmark dataset."""
 
     class_name: str
+    """The name of the BenchmarkDataset subclass that implements this dataset."""
     has_multiturn_chat_support: bool
+    """Whether this dataset supports multiturn chat scenarios."""
 
 
 """Registry mapping dataset names to their implementation metadata and capabilities.
@@ -59,6 +56,10 @@ Adding New Datasets:
            has_multiturn_chat_support=True,  # or False
        )
 
+    3. Document the dataset in max/python/docs/cli/benchmark.rst (Datasets
+       section): name, source, required flags, and any dataset-specific CLI
+       options.
+
 Notes:
     - The registry is loaded at module import time and should not be modified
       at runtime unless you understand the implications for ongoing benchmarks
@@ -68,6 +69,10 @@ Notes:
 """
 
 DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
+    "artificial-analysis": DatasetRegistryEntry(
+        class_name="ArtificialAnalysisBenchmarkDataset",
+        has_multiturn_chat_support=False,
+    ),
     "arxiv-summarization": DatasetRegistryEntry(
         class_name="ArxivSummarizationBenchmarkDataset",
         has_multiturn_chat_support=False,

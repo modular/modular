@@ -11,6 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""
+Implements the SM100 (Blackwell) MLA prefill attention kernel with blockwise
+FP8 scaling, converting block-scaled FP8 K_rope tiles to BF16 in shared
+memory before the MMA stage.
+"""
+
 from std.sys import size_of
 from std.math import ceildiv, align_up
 from nn.attention.mha_operand import MHAOperand
@@ -26,13 +32,14 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     VConsumerPipeline,
     kv_sub_tile_rows,
     kv_num_sub_tiles,
+    o_store_tma_blocks_per_op,
     PagedRowIndices,
     SharedMemPointer,
     elect,
     expect_bytes_pred,
 )
 from nn.attention.gpu.mha import q_num_matrix_view_rows
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     get_seq_info,
     KVTMATile,
     kv_coord,
@@ -72,6 +79,7 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_utils import (
     SM100MLA,
     MLAPositionSummary,
     MLAKVLayouts,
+    select_mla_prefill_config,
     split_smem,
     TMAtoCvtPipeline,
     CvtToMMAPipeline,
@@ -84,6 +92,9 @@ from nn.attention.gpu.nvidia.sm100.smem import SM100AttentionSMem
 
 @fieldwise_init
 struct WarpRole(Equatable, TrivialRegisterPassable):
+    """Tags each warp with its specialized role in the warp-specialized MLA prefill kernel.
+    """
+
     var _role: Int32
     comptime Softmax0 = Self(0)
     comptime Softmax1 = Self(1)
@@ -99,6 +110,15 @@ struct WarpRole(Equatable, TrivialRegisterPassable):
 
 
 def warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
+    """Maps a global warp index to its `WarpRole` based on warpgroup assignment.
+
+    Args:
+        warp_idx: Global warp index within the CTA, where each warpgroup
+            spans four consecutive warps. Determines the specialized role
+            (softmax, correction, MMA, load, or FP8-to-BF16 conversion) via
+            `warp_idx // 4` for warpgroup assignment and direct index checks
+            for warps 12 and above.
+    """
     var wg_idx = warp_idx // 4
     if wg_idx == 0:
         return WarpRole.Softmax0
@@ -128,7 +148,7 @@ __extension SM100MLA:
             Int32(Self.config.num_threads)
         )
     )
-    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDLength(1))
     @__name(
         t"sm100_mla_prefill_blockscale_{Self.qkv_dtype}_{Self.output_dtype}_{blockwise_scale}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )
@@ -159,14 +179,26 @@ __extension SM100MLA:
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BN=kv_sub_tile_rows(Self.config.BN, Self.page_size),
-            BK=Self.nope_depth,
+            BK=Self.ov_depth,  # V tile: ov_depth-wide
         ],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_dtype,
             Self.config.output_swizzle_mode,
-            BM=Self.config.fa4_config.BM // 2,
+            # `// fa4_config.num_q` matches fa4_softmax's unified
+            # 1Q/2Q signature; numerically `// 2` for num_q=2.
+            BM=Self.config.fa4_config.BM // Self.config.fa4_config.num_q,
             BN=Self.config.fa4_config.ov_depth,
+            middle_dim=Self.config.num_q_heads,
             group=config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
+            # Concrete value: a GPU-kernel entry must be a fully-bound function.
+            # Matches the created store.
+            tma_blocks_per_op=o_store_tma_blocks_per_op[
+                Self.output_dtype,
+                Self.config.output_swizzle_mode,
+                Self.config.fa4_config.ov_depth,
+                config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
+                depth_splits=2,
+            ](),
         ],
         kv_lut: Self.KVLUTType,
         k_rope_lut: Self.KRopeType,
@@ -214,11 +246,11 @@ __extension SM100MLA:
         max_seq_len = pack.max_seq_len
         partition = pack.partition
 
-        comptime num_qo = Self.config.num_qo()
-        # TODO: We may want to support num_qo>2 for depth=64?
+        comptime num_q = Self.config.num_q()
+        # TODO: We may want to support num_q>2 for depth=64?
         comptime assert (
-            num_qo == 1 or num_qo == 2
-        ), "Currently only support num_qo == 1 or 2"
+            num_q == 1 or num_q == 2
+        ), "Currently only support num_q == 1 or 2"
         # Blockscale uses its own extra barriers for the FP8→BF16 rope
         # conversion pipeline, so skip FA4MiscMBars rope barriers to stay
         # within the 32-barrier hardware limit.
@@ -299,6 +331,11 @@ __extension SM100MLA:
 
         barrier()
 
+        # Read the TMEM base from SMEM ONCE here, post-barrier (alloc + this
+        # barrier publish it), and carry it by register into the shared
+        # fa4_softmax / fa4_correction consumers (see depth-512 fix).
+        var tmem_addr = ptr_tmem_addr[0]
+
         var role = warp_idx_to_role(warp_idx)
 
         # warp group partitioning
@@ -328,6 +365,7 @@ __extension SM100MLA:
                 Self.MaxSeqLenType,
             ](
                 attn_smem,
+                tmem_addr,
                 pos.score_row,
                 seq_info,
                 mask,
@@ -357,6 +395,8 @@ __extension SM100MLA:
                 Self.page_size,
             ](
                 attn_smem,
+                tmem_addr,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -414,6 +454,7 @@ __extension SM100MLA:
             Self.mma(
                 ptr_tmem_addr[0],
                 cvt_to_mma_pipeline,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -440,7 +481,7 @@ __extension SM100MLA:
 
             var iter_count: UInt32 = (
                 mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
-                    pos.score_row, pos.num_keys
+                    seq_info.prompt_idx, pos.score_row, pos.num_keys
                 )
                 - 1
             )
@@ -495,7 +536,7 @@ __extension SM100MLA:
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BN=kv_sub_tile_rows(Self.config.BN, Self.page_size),
-            BK=Self.nope_depth,
+            BK=Self.ov_depth,  # V tile: ov_depth-wide
         ],
         kv_lut: Self.KVLUTType,
         k_rope_lut: Self.KRopeType,
@@ -507,7 +548,7 @@ __extension SM100MLA:
         comptime KVPipeType = MLAKVLayouts[
             Self.KVLUTType.dtype,
             Self.KRopeType.dtype,
-            DType.invalid,
+            None,
             Self.config,
         ]
 
@@ -567,7 +608,7 @@ __extension SM100MLA:
 
         var kv_row: UInt32 = mask.start_column[
             Self.BM, Self.BN, Self.page_size
-        ](score_row)
+        ](seq_info.prompt_idx, score_row)
         var paged_rows = kv_lut.populate[Self.config.BN, base_alignment](
             seq_info.prompt_idx, kv_row
         )
@@ -576,7 +617,7 @@ __extension SM100MLA:
         ](seq_info.prompt_idx, kv_row)
         var iter_count: UInt32 = (
             mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
-                score_row, num_keys
+                seq_info.prompt_idx, score_row, num_keys
             )
             - 1
         )
@@ -607,8 +648,9 @@ __extension SM100MLA:
         comptime k_rope_bytes_pp = (
             Self.rope_depth * rope_sub_BN * size_of[Self.KRopeType.dtype]()
         )
+        # V sub-page bytes use the V head dim (`ov_depth`), not `nope_depth`.
         comptime v_bytes_pp = (
-            Self.nope_depth * kv_sub_BN * size_of[Self.qkv_dtype]()
+            Self.ov_depth * kv_sub_BN * size_of[Self.qkv_dtype]()
         )
 
         @parameter
@@ -636,7 +678,7 @@ __extension SM100MLA:
             )
 
         # ---- Mode-shared sub-tile constants ----
-        # The K_rope sub-tile shape is identical in fused-KV and split-KV
+        # The K_rope sub-tile shape is identical in shared-KV and non-shared-KV
         # mode (`rope_depth * rope_sub_BN` FP8 elements). Hoist the
         # constants and the SmemTensor type so the unified `_produce_k_rope`
         # closure below works for both modes — the only mode-specific
@@ -652,8 +694,9 @@ __extension SM100MLA:
         comptime k_rope_full_bytes = (
             Self.rope_depth * Self.config.BN * size_of[Self.KRopeType.dtype]()
         )
+        # V full-tile bytes use the V head dim (`ov_depth`), not `nope_depth`.
         comptime kv_data_full_bytes = (
-            Self.nope_depth * Self.config.BN * size_of[Self.qkv_dtype]()
+            Self.ov_depth * Self.config.BN * size_of[Self.qkv_dtype]()
         )
 
         @parameter
@@ -670,8 +713,8 @@ __extension SM100MLA:
             signaling completion on the CVT producer mbar.
 
             `smem_base_ptr` is the FP8 base of this tile's K_rope smem
-            region — the caller pre-bitcasts (fused-KV) or pre-rebounds
-            (split-KV) so this closure can advance by `_p *
+            region, the caller pre-bitcasts (shared-KV) or pre-rebounds
+            (non-shared-KV) so this closure can advance by `_p *
             k_rope_sub_elems` in FP8-element units. Folds in
             `expect_bytes_pred` for the CVT producer mbar so the byte
             count and the `_p`-loop stay in sync. `partial=True` early-
@@ -764,13 +807,13 @@ __extension SM100MLA:
             0
         ] == TileMaskStatus.UNKNOWN_MASK
 
-        comptime if Self.config.fa4_config.use_fused_kv:
-            # ---- Fused KV mode ----
-            # K_nope and V alternate in the same circular buffer (padded_v_depth
-            # wide). K_rope (FP8) goes into the separate rope smem buffer via
-            # tma_to_cvt_pipeline.
+        comptime if Self.config.fa4_config.use_shared_kv:
+            # ---- Shared KV mode ----
+            # K_nope/V alternate in the same circular buffer; a stage fits the
+            # wider of the two (shared_kv_cols). K_rope (FP8) goes into the
+            # separate rope smem buffer via tma_to_cvt_pipeline.
             comptime kv_stage_elems = (
-                Self.config.fa4_config.padded_ov_depth * Self.config.BN
+                Self.config.fa4_config.shared_kv_cols() * Self.config.BN
             )
             comptime rope_stage_elems = (
                 Self.config.rope_depth * Self.config.BN
@@ -916,7 +959,9 @@ __extension SM100MLA:
 
                 comptime if check_mask:
                     if (
-                        Self.mask_status(mask, score_row, kv_row)
+                        Self.mask_status(
+                            mask, seq_info.prompt_idx, score_row, kv_row
+                        )
                         == TileMaskStatus.FULL_MASK
                     ):
                         continue
@@ -951,7 +996,9 @@ __extension SM100MLA:
                     var _skip_last = False
                     comptime if check_mask:
                         if (
-                            Self.mask_status(mask, score_row, kv_row)
+                            Self.mask_status(
+                                mask, seq_info.prompt_idx, score_row, kv_row
+                            )
                             == TileMaskStatus.FULL_MASK
                         ):
                             _skip_last = True
@@ -990,7 +1037,7 @@ __extension SM100MLA:
                         kv_pipeline.state.step()
 
         else:
-            # ---- Split KV mode (original) ----
+            # ---- Non-shared mode (original) ----
 
             # Separate K and V pipelines
             comptime VPipeType = VProducerPipeline[
@@ -1003,9 +1050,11 @@ __extension SM100MLA:
             var pipeline_v: VPipeType = {mbars.get_v_mbars(), v_smem_base}
 
             # K stage may contain mixed dtypes (e.g. FP8 nope + BF16 rope).
-            # Compute byte size then convert to qkv_dtype element count.
+            # Compute byte size then convert to qkv_dtype element count. The
+            # K_nope part is `padded_nope_depth` wide (non-shared-KV: V has its own
+            # `pipeline_v`), so this is K-only.
             comptime k_stage_bytes = (
-                Self.config.fa4_config.padded_ov_depth
+                Self.config.fa4_config.padded_nope_depth
                 * Self.config.BN
                 * Self.qkv_dt_size
                 + Self.config.rope_depth
@@ -1035,8 +1084,8 @@ __extension SM100MLA:
                 shared `_produce_k_rope` closure.
 
                 Includes the `split_smem` decomposition into K_nope and
-                K_rope smem regions. Note: unlike generic split-KV,
-                blockscale's K_rope bytes are NOT on the K barrier — so
+                K_rope smem regions. Note: unlike generic non-shared-KV,
+                blockscale's K_rope bytes are NOT on the K barrier, so
                 the K-barrier expect only carries Q + K_nope.
                 """
                 # Q + K_nope bytes go on the K barrier.
@@ -1094,7 +1143,7 @@ __extension SM100MLA:
             def _split_v_smem_ptr(
                 pair: type_of(pipeline_v.get_tile[qk_stage=0]()),
             ) -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
-                """V destination smem ptr for split-KV's V pipeline pair.
+                """V destination smem ptr for non-shared-KV's V pipeline pair.
 
                 Note we switched from `pipeline_v.get_v(e)` (which auto-
                 emits a fixed-size `expect_bytes`) to
@@ -1155,7 +1204,9 @@ __extension SM100MLA:
 
                 comptime if check_mask:
                     if (
-                        Self.mask_status(mask, score_row, kv_row)
+                        Self.mask_status(
+                            mask, seq_info.prompt_idx, score_row, kv_row
+                        )
                         == TileMaskStatus.FULL_MASK
                     ):
                         continue
@@ -1188,7 +1239,9 @@ __extension SM100MLA:
                     var _skip_last = False
                     comptime if check_mask:
                         if (
-                            Self.mask_status(mask, score_row, kv_row)
+                            Self.mask_status(
+                                mask, seq_info.prompt_idx, score_row, kv_row
+                            )
                             == TileMaskStatus.FULL_MASK
                         ):
                             _skip_last = True
@@ -1254,8 +1307,8 @@ __extension SM100MLA:
             Self.KVLUTType.dtype, TensorMapSwizzle.SWIZZLE_128B
         ]()
 
-        # In split mode, k_rope sits after k_nope within each K stage.
-        # In fused mode, k_rope is in a separate rope smem buffer.
+        # In non-shared mode, k_rope sits after k_nope within each K stage.
+        # In shared mode, k_rope is in a separate rope smem buffer.
         comptime k_stage_stride = Self.config.padded_qk_depth * Self.config.BN
         comptime k_rope_offset = Self.config.BN * Self.nope_depth
         comptime rope_stage_elems = Self.config.rope_depth * Self.config.BN
@@ -1263,10 +1316,10 @@ __extension SM100MLA:
         while True:
             tma_to_cvt_pipeline.consumer_wait()
 
-            # In fused mode, k_rope is in a separate rope smem buffer.
-            # In split mode, k_rope sits after k_nope within each K stage.
+            # In shared mode, k_rope is in a separate rope smem buffer.
+            # In non-shared mode, k_rope sits after k_nope within each K stage.
             var k_rope_smem_ptr: SharedMemPointer[Scalar[Self.KVLUTType.dtype]]
-            comptime if Self.config.fa4_config.use_fused_kv:
+            comptime if Self.config.fa4_config.use_shared_kv:
                 k_rope_smem_ptr = (
                     rope_smem_base
                     + tma_to_cvt_pipeline.state.index()
@@ -1329,6 +1382,7 @@ __extension SM100MLA:
     def mma(
         tmem_addr: UInt32,
         mut cvt_to_mma_pipeline: CvtToMMAPipeline,
+        seq_id: UInt32,
         score_row: UInt32,
         num_keys: UInt32,
         mask: Self.MaskType,
@@ -1363,14 +1417,15 @@ __extension SM100MLA:
         q0 = Self.descriptor_q(q_smem)
         q1 = q0 + q0_bytes
 
-        comptime if Self.config.fa4_config.use_fused_kv:
-            # ---- Fused KV mode ----
-            # K_nope and V alternate in the same buffer (padded_v_depth wide).
-            # K_rope (BF16 after CVT conversion) is in a separate rope buffer.
+        comptime if Self.config.fa4_config.use_shared_kv:
+            # ---- Shared KV mode ----
+            # K_nope/V alternate in the same buffer; a stage fits the wider of
+            # the two (shared_kv_cols). K_rope (BF16 after CVT) is in a separate
+            # rope buffer.
             # Q@K' = Q_nope@K_nope (c_scale=0) + Q_rope@K_rope (c_scale=1).
 
             comptime kv_stage_bytes = (
-                Self.config.fa4_config.padded_ov_depth
+                Self.config.fa4_config.shared_kv_cols()
                 * Self.config.BN
                 * size_of[Self.KVLUTType.dtype]()
             )
@@ -1380,14 +1435,16 @@ __extension SM100MLA:
                 * size_of[Self.KVLUTType.dtype]()
             )
 
-            # K_nope descriptor: k_major for Q@K_nope'
+            # K_nope descriptor: k_major for Q@K_nope'. Width is the K_nope
+            # depth (`padded_nope_depth`), the Q@K' contraction dim.
             kv_desc_k = smem_descriptor[
                 BMN=Self.config.BN,
-                BK=Self.config.fa4_config.padded_ov_depth,
+                BK=Self.config.fa4_config.padded_nope_depth,
                 swizzle_mode=Self.config.qkv_swizzle_mode,
                 is_k_major=True,
             ](k_smem_base)
-            # V descriptor: mn_major for P@V
+            # V descriptor: mn_major for P@V. Width is the V head dim
+            # (`padded_ov_depth`).
             kv_desc_v = smem_descriptor[
                 BMN=Self.config.fa4_config.padded_ov_depth,
                 BK=Self.config.BN,
@@ -1415,7 +1472,7 @@ __extension SM100MLA:
 
             var iter_count: UInt32 = (
                 mask.total_iters[Self.BM, Self.BN, Self.page_size](
-                    score_row, num_keys
+                    seq_id, score_row, num_keys
                 )
                 - 1
             )
@@ -1539,7 +1596,7 @@ __extension SM100MLA:
             kv_pipeline.consumer_release_at(v_prev_idx, e)  # release V_last
 
         else:
-            # ---- Split KV mode (original) ----
+            # ---- Non-shared mode (original) ----
 
             # Separate K and V consumer pipelines
             comptime KConType = KConsumerPipeline[
@@ -1554,7 +1611,7 @@ __extension SM100MLA:
             # We peel the first iteration, as we want to wait on q1
             var iter_count: UInt32 = (
                 mask.total_iters[Self.BM, Self.BN, Self.page_size](
-                    score_row, num_keys
+                    seq_id, score_row, num_keys
                 )
                 - 1
             )
@@ -1643,6 +1700,7 @@ def mla_sm100_prefill_blockscale[
     output_dtype: DType,
     q_type: DType,
     KVType: MHAOperand,
+    VType: MHAOperand,
     KRopeType: MHAOperand,
     MaskType: MHAMask,
     MaxPromptLenType: OptionallyStaticInt,
@@ -1653,11 +1711,12 @@ def mla_sm100_prefill_blockscale[
     cache_depth: Int,
     _ndbuffer_mha_operand: Bool,
     blockwise_scale: Int = 0,
+    v_depth: Int = -1,
 ](
     output: TileTensor[output_dtype, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: KVType,
-    v: KVType,
+    v: VType,
     k_rope: KRopeType,
     mask_functor: MaskType,
     valid_length: TileTensor[
@@ -1668,26 +1727,106 @@ def mla_sm100_prefill_blockscale[
     batch_size: Int,
     ctx: DeviceContext,
 ) raises:
-    comptime fa4_config = MLAConfig[
-        q_type, rope_gmem_dtype=KRopeType.dtype, rope_mma_dtype=q_type
+    """Launches the SM100 MLA prefill kernel with blockwise FP8 scaling.
+
+    Selects an FA4 MLA config, builds the TMA tiles for Q, K_nope, K_rope, and
+    V, then enqueues the warp-specialized `mla_prefill_kernel_blockscale` kernel
+    that converts block-scaled FP8 K_rope to BF16 before the MMA stage.
+
+    Parameters:
+        output_dtype: The element dtype of the output tensor.
+        q_type: The element dtype of the query tensor.
+        KVType: The `MHAOperand` type for K_nope, carrying gmem layout
+            and page-size metadata.
+        VType: The `MHAOperand` type for V, carrying gmem layout and
+            page-size metadata.
+        KRopeType: The `MHAOperand` type for K_rope, carrying gmem
+            layout, page-size, and dtype (FP8 for blockscale).
+        MaskType: The `MHAMask` type controlling causal and padding
+            behavior.
+        MaxPromptLenType: The `OptionallyStaticInt` type of
+            `max_prompt_len`, either a compile-time constant or a
+            runtime integer.
+        config: The `MHAConfig` holding tile sizes, stage counts, and
+            head counts (inferred).
+        group: The GQA group size, namely the number of query heads per
+            KV head (inferred).
+        q_depth: The total query head dimension, combining nope and rope
+            depth (inferred).
+        cache_depth: The total KV cache depth, combining nope and rope
+            depth (inferred).
+        _ndbuffer_mha_operand: Whether the MHA operand uses the ndbuffer
+            layout (inferred).
+        blockwise_scale: The blockwise FP8 scaling mode flag (defaults
+            to 0, inferred).
+        v_depth: The V and output head dimension, or -1 for the DeepSeek
+            shape where V width equals nope width (defaults to -1,
+            inferred).
+
+    Args:
+        output: The output tensor of shape
+            `[batch * num_rows, num_q_heads, ov_depth]`.
+        q: The query tensor of shape
+            `[batch * num_rows, num_q_heads, qk_depth]`.
+        k: The K_nope operand for the non-rotary part of the KV cache.
+        v: The V operand for the value part of the KV cache.
+        k_rope: The K_rope operand for the rotary-position-encoded part
+            of K, stored as block-scaled FP8.
+        mask_functor: The attention mask functor applied to the score
+            matrix.
+        valid_length: The per-sequence valid length tensor of shape
+            `[batch]` as `uint32`.
+        max_prompt_len: The maximum prompt length across the batch, as
+            a compile-time or runtime integer.
+        scale: The softmax scale factor applied to the Q@K' dot product.
+        batch_size: The number of sequences in the batch.
+        ctx: The `DeviceContext` used to enqueue the kernel.
+    """
+    comptime assert (
+        KVType.dtype == VType.dtype
+    ), "k and v must share an element dtype for SM100 MLA prefill"
+    # Select the supported config: the standard 2-O config first (byte-identical
+    # to the pre-decoupling path when v_head_dim == qk_nope_head_dim), else a
+    # single-O fallback for a wide V. `v_depth` (V/output head dim) is `-1` for
+    # the DeepSeek shape (V width == nope width). Shared with the generic /
+    # per-token-scale kernels so the fallback policy lives in one place.
+    comptime fa4_config = select_mla_prefill_config[
+        q_type,
+        rope_gmem_dtype=KRopeType.dtype,
+        rope_mma_dtype=q_type,
     ](
         num_q_heads=config.num_heads,
         group=group,
         depth=q_depth,
         page_size=KVType.page_size,
+        v_depth=v_depth,
     )
+    comptime assert fa4_config.supported()
+    # V / output head dim (= v_head_dim).
+    comptime ov_depth = fa4_config.fa4_config.ov_depth
 
     var num_rows_q = q_num_matrix_view_rows(q)
 
+    # Batched O store: half-depth box (depth_splits=2, shared with the 1Q
+    # combine) for SWIZZLE_NONE group==1; 0 (per-block) otherwise.
+    comptime store_blocks_per_op = o_store_tma_blocks_per_op[
+        output_dtype,
+        fa4_config.output_swizzle_mode,
+        ov_depth,
+        1,
+        depth_splits=2,
+    ]()
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_dtype,
         fa4_config.output_swizzle_mode,
-        BM=fa4_config.fa4_config.BM // 2,
-        BN=fa4_config.fa4_config.ov_depth,
+        BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_q,
+        BN=ov_depth,
+        middle_dim=fa4_config.num_q_heads,
+        tma_blocks_per_op=store_blocks_per_op,
     ]
 
     var ragged_tma_store = RaggedStoreType.create(
-        ctx, output.ptr, rows=num_rows_q, middle_dim=fa4_config.num_q_heads
+        ctx, output.ptr, rows=num_rows_q
     )
 
     q_tma_op = q_tma[
@@ -1718,13 +1857,15 @@ def mla_sm100_prefill_blockscale[
         BK=fa4_config.rope_depth,
     ](ctx)
 
-    # [batch_size * num_keys, num_heads, kv_depth]
+    # [batch_size * num_keys, num_heads, v_depth] — V gmem width is ov_depth.
     v_tma_op = v.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KVType.page_size),
-        depth=fa4_config.nope_depth,
+        depth=ov_depth,
     ](ctx)
 
+    # Rebind V to the dispatch's V tile type (distinct from k_nope when
+    # ov_depth != nope_depth).
     _mla_prefill_sm100_valid_length_dispatch[
         fa4_config=fa4_config,
         cache_depth=cache_depth,
@@ -1735,7 +1876,16 @@ def mla_sm100_prefill_blockscale[
         q_tma_op,
         k_nope_tma_op,
         k_rope_tma_op,
-        v_tma_op,
+        rebind[
+            KVTMATile[
+                KVType.dtype,
+                fa4_config.qkv_swizzle_mode,
+                BN=kv_sub_tile_rows(fa4_config.BN, KVType.page_size),
+                BK=padded_depth[
+                    KVType.dtype, fa4_config.qkv_swizzle_mode, ov_depth
+                ](),
+            ]
+        ](v_tma_op),
         k,
         k_rope,
         mask_functor,
@@ -1764,8 +1914,11 @@ def _mla_prefill_sm100_valid_length_dispatch[
     ragged_tma_store: RaggedTMA3DTile[
         output_dtype,
         fa4_config.output_swizzle_mode,
-        BM=fa4_config.fa4_config.BM // 2,
+        BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_q,
         BN=fa4_config.fa4_config.ov_depth,
+        # Inferred from the created store; forwarded to the kernel impl.
+        middle_dim=_,
+        tma_blocks_per_op=_,
     ],
     q_tma_op: QTMATile[
         q_type,
@@ -1789,12 +1942,14 @@ def _mla_prefill_sm100_valid_length_dispatch[
         BN=kv_sub_tile_rows(fa4_config.BN, KRopeType.page_size),
         BK=fa4_config.rope_depth,
     ],
-    v_tma_op: KVTMATile[
+    v_tma_op: KVTMATile[  # V tile: ov_depth-wide
         KVType.dtype,
         fa4_config.qkv_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KVType.page_size),
         BK=padded_depth[
-            KVType.dtype, fa4_config.qkv_swizzle_mode, fa4_config.nope_depth
+            KVType.dtype,
+            fa4_config.qkv_swizzle_mode,
+            fa4_config.fa4_config.ov_depth,
         ](),
     ],
     kv_lut: KVType,

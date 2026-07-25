@@ -198,7 +198,8 @@ def matrix_multiplication(
         graph.output(output)
 
     print("Compiling...")
-    model = session.load(graph)
+    compiled = session.compile(graph)
+    model = session.init(compiled)
 
     print("Executing...")
     result = model.execute(a_tensor, b_tensor)[0]
@@ -868,12 +869,12 @@ showing pathways to get the most speed out of modern GPUs using MAX and Mojo.
 - Follow [our tutorial for building a custom operation from
 scratch](/max/develop/build-custom-ops).
 
-- See the [GPU programming](https://mojolang.org/docs/manual/gpu/gpu-basics)
+- See the [GPU programming](https://mojolang.org/docs/manual/gpu/architecture)
   page in the Mojo manual.
 
 - See the [`gpu`](https://mojolang.org/docs/std/gpu/) module for detail on
   Mojo's GPU programming functions and types, and the documentation on
-  [`@compiler.register`](https://mojolang.org/docs/manual/decorators/compiler-register/)
+  [`@extensibility.register`](https://mojolang.org/docs/manual/decorators/extensibility-register/)
   shows how to register custom graph operations.
 
 - Join our [Modular Forum](https://forum.modular.com/) and [Discord

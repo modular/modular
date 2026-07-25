@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
-from std.memory.unsafe_pointer import alloc
+from std.gpu.host import DeviceContext, DeviceContextArray
+from std.memory import alloc
 from std.testing import assert_equal, assert_true
 
 
@@ -44,7 +44,7 @@ def test_func_closure_writes_to_memory(ctx: DeviceContext) raises:
     ptr[] = 0
     var expected = 42
 
-    def write_val() {read}:
+    def write_val() {imm}:
         ptr[] = expected
 
     ctx.enqueue_cpu_function(write_val)
@@ -100,11 +100,10 @@ def test_range_writes_indices(ctx: DeviceContext) raises:
     for i in range(count):
         ptr[i] = -1
 
-    @parameter
-    def write_index(i: Int) -> None:
+    def write_index(i: Int) {mut} -> None:
         ptr[i] = i
 
-    ctx.enqueue_cpu_range[write_index](count=count)
+    ctx.enqueue_cpu_range(write_index, count=count)
     ctx.synchronize()
     for i in range(count):
         assert_equal(ptr[i], i)
@@ -117,11 +116,10 @@ def test_range_large(ctx: DeviceContext) raises:
     for i in range(count):
         ptr[i] = 0
 
-    @parameter
-    def write_squared(i: Int) -> None:
+    def write_squared(i: Int) {mut} -> None:
         ptr[i] = i * i
 
-    ctx.enqueue_cpu_range[write_squared](count=count)
+    ctx.enqueue_cpu_range(write_squared, count=count)
     ctx.synchronize()
     for i in range(count):
         assert_equal(ptr[i], i * i)
@@ -139,13 +137,12 @@ def test_func_then_range(ctx: DeviceContext) raises:
         for j in range(count):
             ptr[j] = 1
 
-    @parameter
-    def add_index(i: Int) -> None:
+    def add_index(i: Int) {mut} -> None:
         ptr[i] += i
 
     # First fill with 1s, then add the index.
     ctx.enqueue_cpu_function[set_all_to_one]()
-    ctx.enqueue_cpu_range[add_index](count=count)
+    ctx.enqueue_cpu_range(add_index, count=count)
     ctx.synchronize()
     for i in range(count):
         assert_equal(ptr[i], 1 + i)
@@ -158,20 +155,36 @@ def test_two_ranges_sequential(ctx: DeviceContext) raises:
     for i in range(count):
         ptr[i] = 0
 
-    @parameter
-    def write_index(i: Int) -> None:
+    def write_index(i: Int) {mut} -> None:
         ptr[i] = i
 
-    @parameter
-    def double_value(i: Int) -> None:
+    def double_value(i: Int) {mut} -> None:
         ptr[i] *= 2
 
-    ctx.enqueue_cpu_range[write_index](count=count)
-    ctx.enqueue_cpu_range[double_value](count=count)
+    ctx.enqueue_cpu_range(write_index, count=count)
+    ctx.enqueue_cpu_range(double_value, count=count)
     ctx.synchronize()
     for i in range(count):
         assert_equal(ptr[i], i * 2)
     ptr.free()
+
+
+def test_device_context_array(ctx: DeviceContext) raises:
+    var arr: DeviceContextArray[2] = [ctx, ctx]
+    assert_equal(len(arr), 2)
+    assert_equal(arr[0].api(), ctx.api())
+    assert_equal(arr[1].api(), ctx.api())
+
+    # The length is inferred from the element count of the literal.
+    var inferred: DeviceContextArray[_] = [ctx, ctx, ctx]
+    comptime assert type_of(inferred).length == 3
+    assert_equal(len(inferred), 3)
+
+    # Direct variadic call, as synthesized by the graph compiler's
+    # multi-device lowering.
+    var direct = DeviceContextArray[2](ctx, ctx)
+    assert_equal(len(direct), 2)
+    assert_equal(direct[0].api(), ctx.api())
 
 
 def main() raises:
@@ -185,3 +198,4 @@ def main() raises:
         test_range_large(ctx)
         test_func_then_range(ctx)
         test_two_ranges_sequential(ctx)
+        test_device_context_array(ctx)

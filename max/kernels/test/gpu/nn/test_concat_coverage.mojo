@@ -107,15 +107,20 @@ def test_concat_d2d_copy_path(ctx: DeviceContext) raises:
 
     # This should take the d2d copy path
     _concat_gpu[epilogue_fn=None](
-        output_dyn.as_any_origin(),
+        output_dyn.as_unsafe_any_origin(),
         0,  # axis=0 makes outer_dims=1
         StaticTuple[
-            TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
+            TileTensor[
+                dtype,
+                input_0_dyn.LayoutType,
+                ImmutAnyOrigin,
+                Storage=input_0_dyn.Storage,
+            ],
             3,
         ](
-            input_0_dyn.as_any_origin().as_immut(),
-            input_1_dyn.as_any_origin().as_immut(),
-            input_2_dyn.as_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_immut(),
+            input_1_dyn.as_unsafe_any_origin().as_immut(),
+            input_2_dyn.as_unsafe_any_origin().as_immut(),
         ),
         ctx,
     )
@@ -222,14 +227,19 @@ def test_concat_non_last_axis(ctx: DeviceContext) raises:
     )
 
     _concat_gpu[epilogue_fn=None](
-        output_dyn.as_any_origin(),
+        output_dyn.as_unsafe_any_origin(),
         axis,
         StaticTuple[
-            TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
+            TileTensor[
+                dtype,
+                input_0_dyn.LayoutType,
+                ImmutAnyOrigin,
+                Storage=input_0_dyn.Storage,
+            ],
             2,
         ](
-            input_0_dyn.as_any_origin().as_immut(),
-            input_1_dyn.as_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_immut(),
+            input_1_dyn.as_unsafe_any_origin().as_immut(),
         ),
         ctx,
     )
@@ -321,14 +331,19 @@ def test_concat_last_axis_vectorized(ctx: DeviceContext) raises:
     )
 
     _concat_gpu[epilogue_fn=None](
-        output_dyn.as_any_origin(),
+        output_dyn.as_unsafe_any_origin(),
         axis,
         StaticTuple[
-            TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
+            TileTensor[
+                dtype,
+                input_0_dyn.LayoutType,
+                ImmutAnyOrigin,
+                Storage=input_0_dyn.Storage,
+            ],
             2,
         ](
-            input_0_dyn.as_any_origin().as_immut(),
-            input_1_dyn.as_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_immut(),
+            input_1_dyn.as_unsafe_any_origin().as_immut(),
         ),
         ctx,
     )
@@ -419,14 +434,19 @@ def test_concat_last_axis_unaligned(ctx: DeviceContext) raises:
     )
 
     _concat_gpu[epilogue_fn=None](
-        output_dyn.as_any_origin(),
+        output_dyn.as_unsafe_any_origin(),
         axis,
         StaticTuple[
-            TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
+            TileTensor[
+                dtype,
+                input_0_dyn.LayoutType,
+                ImmutAnyOrigin,
+                Storage=input_0_dyn.Storage,
+            ],
             2,
         ](
-            input_0_dyn.as_any_origin().as_immut(),
-            input_1_dyn.as_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_immut(),
+            input_1_dyn.as_unsafe_any_origin().as_immut(),
         ),
         ctx,
     )
@@ -505,7 +525,7 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(output_dyn)
     def output_fn[
-        c_type: DType, _rank: Int, width: Int, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output_dyn.flat_rank >= coord.flat_rank
@@ -519,11 +539,11 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
         input_fn,
         output_fn,
         output_dyn.LayoutType,
+        axis=axis,
         target="gpu",
     ](
-        axis,
         StaticTuple[IndexList[rank], 2](input_shape_0, input_shape_1),
-        output_dyn.as_any_origin(),
+        output_dyn.as_unsafe_any_origin(),
         ctx,
     )
 
@@ -616,7 +636,7 @@ def test_concat_with_epilogue(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(output_dyn)
     def epilogue_scale_by_2[
-        c_type: DType, _rank: Int, width: Int, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output_dyn.flat_rank >= coord.flat_rank
@@ -627,14 +647,19 @@ def test_concat_with_epilogue(ctx: DeviceContext) raises:
     _concat_gpu[
         epilogue_fn=Optional[elementwise_epilogue_type](epilogue_scale_by_2)
     ](
-        output_dyn.as_any_origin(),
+        output_dyn.as_unsafe_any_origin(),
         axis,
         StaticTuple[
-            TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
+            TileTensor[
+                dtype,
+                input_0_dyn.LayoutType,
+                ImmutAnyOrigin,
+                Storage=input_0_dyn.Storage,
+            ],
             2,
         ](
-            input_0_dyn.as_any_origin().as_immut(),
-            input_1_dyn.as_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_immut(),
+            input_1_dyn.as_unsafe_any_origin().as_immut(),
         ),
         ctx,
     )
@@ -725,14 +750,19 @@ def test_concat_different_dtypes(ctx: DeviceContext) raises:
     )
 
     _concat_gpu[epilogue_fn=None](
-        output_dyn.as_any_origin(),
+        output_dyn.as_unsafe_any_origin(),
         axis,
         StaticTuple[
-            TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
+            TileTensor[
+                dtype,
+                input_0_dyn.LayoutType,
+                ImmutAnyOrigin,
+                Storage=input_0_dyn.Storage,
+            ],
             2,
         ](
-            input_0_dyn.as_any_origin().as_immut(),
-            input_1_dyn.as_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_immut(),
+            input_1_dyn.as_unsafe_any_origin().as_immut(),
         ),
         ctx,
     )
@@ -821,14 +851,19 @@ def test_concat_high_rank(ctx: DeviceContext) raises:
     )
 
     _concat_gpu[epilogue_fn=None](
-        output_dyn.as_any_origin(),
+        output_dyn.as_unsafe_any_origin(),
         axis,
         StaticTuple[
-            TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
+            TileTensor[
+                dtype,
+                input_0_dyn.LayoutType,
+                ImmutAnyOrigin,
+                Storage=input_0_dyn.Storage,
+            ],
             2,
         ](
-            input_0_dyn.as_any_origin().as_immut(),
-            input_1_dyn.as_any_origin().as_immut(),
+            input_0_dyn.as_unsafe_any_origin().as_immut(),
+            input_1_dyn.as_unsafe_any_origin().as_immut(),
         ),
         ctx,
     )

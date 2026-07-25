@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from . import DeviceContext
 from std.ffi import external_call
 from std.gpu.host.device_context import (
     _CString,
@@ -23,7 +24,7 @@ struct _MTLDevice:
     pass
 
 
-comptime MTLDevice = UnsafePointer[_MTLDevice, MutAnyOrigin]
+comptime MTLDevice = Pointer[_MTLDevice, MutAnyOrigin]
 
 
 # Accessor function to get access to the underlying MTLDevice from an abstract DeviceContext.
@@ -38,7 +39,7 @@ def metal_device(ctx: DeviceContext) raises -> MTLDevice:
             "AsyncRT_DeviceContext_metal_device",
             _CString[],
         ](
-            UnsafePointer(to=result),
+            Pointer(to=result),
             ctx._handle,
         )
     )

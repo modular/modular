@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides batched matrix multiplication (BMM) for CPU and GPU targets."""
+
 from std.math import align_up, ceildiv, gcd
 from std.sys import align_of, size_of
 from std.sys.info import (
@@ -22,11 +24,10 @@ from std.sys.info import (
     is_nvidia_gpu,
     simd_width_of,
 )
-from std.sys.intrinsics import _type_is_eq
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.algorithm import elementwise, sync_parallelize
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
-from std.gpu import block_idx, global_idx
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import A100, is_cpu, is_valid_target
@@ -41,12 +42,15 @@ from layout import (
     RuntimeLayout,
     TensorLayout,
     TileTensor,
+    lt_to_tt,
     coord_to_index_list,
     row_major,
 )
 from layout.tma_async import TMATensorTile, create_tensor_tile
 from layout.tile_layout import Layout as TileLayout
 from std.logger import Logger
+from std.memory import dealloc
+from std.memory.alloc import Layout as AllocLayout
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.gpu.host.info import H100, _is_sm10x_gpu
@@ -58,7 +62,7 @@ from .matmul.cpu.apple_accelerate import (
     use_apple_accelerate_lib,
 )
 from .matmul.cpu.impl import _submatmul_sequential_sync
-from .matmul.gpu import _matmul_gpu
+from .matmul.gpu import _matmul_gpu, _amdgpu_get_mma_shape
 from .matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from .matmul.gpu.amd import AMDMatmul
 from .matmul.gpu.sm100.blockwise_fp8 import (
@@ -85,7 +89,7 @@ comptime logger = Logger()
 
 comptime elementwise_epilogue_type = def[
     c_type: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     rank: Int,
     *,
     alignment: Int = 1,
@@ -155,7 +159,6 @@ def _reshape_tile_tensor_with_batch_to_3d(
         origin=tensor.origin,
         address_space=tensor.address_space,
         linear_idx_type=tensor.linear_idx_type,
-        element_size=tensor.element_size,
     ],
 ):
     """
@@ -177,12 +180,12 @@ def _reshape_tile_tensor_with_batch_to_3d(
         comptime StrideType = out_stride_types[i]
 
         comptime if StrideType.is_static_value:
-            stride_ptr.init_pointee_copy(
+            stride_ptr.unsafe_write(
                 rebind[StrideType](Idx[StrideType.static_value])
             )
         else:
             var stride_val = tensor.layout.stride[idx]().value()
-            stride_ptr.init_pointee_copy(
+            stride_ptr.unsafe_write(
                 rebind[StrideType](Scalar[StrideType.DTYPE](stride_val))
             )
 
@@ -191,7 +194,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
         comptime ShapeType = out_shape_types[i]
 
         comptime if ShapeType.is_static_value:
-            shape_ptr.init_pointee_copy(
+            shape_ptr.unsafe_write(
                 rebind[ShapeType](Idx[ShapeType.static_value])
             )
         else:
@@ -201,10 +204,10 @@ def _reshape_tile_tensor_with_batch_to_3d(
                 comptime for batch_idx in range(rank - 3):
                     shape_val *= Int(tensor.layout.shape[batch_idx]().value())
 
-            comptime if _type_is_eq[ShapeType, Int]():
-                shape_ptr.init_pointee_copy(rebind[ShapeType](shape_val))
+            comptime if ShapeType == Int:
+                shape_ptr.unsafe_write(rebind[ShapeType](shape_val))
             else:
-                shape_ptr.init_pointee_copy(
+                shape_ptr.unsafe_write(
                     rebind[ShapeType](Scalar[ShapeType.DTYPE](shape_val))
                 )
 
@@ -230,8 +233,12 @@ def _batched_matmul_cpu[
     c_tile: TileTensor[
         mut=True, c_type, address_space=AddressSpace.GENERIC, ...
     ],
-    a_tile: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b_tile: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    a_tile: TileTensor[
+        mut=False, a_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_tile: TileTensor[
+        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
@@ -387,7 +394,7 @@ def _batched_matmul_cpu[
 
             @parameter
             def elementwise_lambda_2d[
-                c_type: DType, width: SIMDSize, *, alignment: Int = 1
+                c_type: DType, width: SIMDLength, *, alignment: Int = 1
             ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
                 # the caller provided the elementwise epilogue def over the original
                 # buffer rank, not the collapsed buffer rank
@@ -409,14 +416,18 @@ def _batched_matmul_cpu[
                 return
 
             comptime if use_i8mm:
-                a_packed_ptr = alloc[Scalar[a_type]](
-                    mh * kh, alignment=alignment
+                a_packed_alloc = alloc(
+                    AllocLayout[Scalar[a_type]](
+                        count=mh * kh, alignment=alignment
+                    )
                 )
                 var a_packed = TileTensor(
-                    a_packed_ptr,
+                    a_packed_alloc.unsafe_ptr(),
                     row_major(Coord(mh, kh)),
                 )
-                packA_i8mm[a_type](0, m, k, a_view.ptr, a_packed_ptr)
+                packA_i8mm[a_type](
+                    0, m, k, a_view.ptr, a_packed_alloc.unsafe_ptr()
+                )
 
                 _submatmul_sequential_sync[
                     config,
@@ -435,7 +446,7 @@ def _batched_matmul_cpu[
                     GemmShape(sub_matmul_config.shape),
                     GemmShape(sub_matmul_config.offset),
                 )
-                a_packed_ptr.free()
+                dealloc(a_packed_alloc^)
             else:
                 _submatmul_sequential_sync[
                     config,
@@ -479,6 +490,29 @@ def naive_batched_matmul_kernel[
     b_tensor: TileTensor[b_type, BTensorType, ImmutAnyOrigin],  # 1 * k
     c_buff_nd_shape: IndexList[rank],
 ) -> None:
+    """
+    Computes one element per thread of a batched matrix multiplication using a
+    naive scalar accumulation loop over the contraction dimension.
+
+    Parameters:
+        rank: Rank of the original (un-collapsed) output tensor.
+        c_type: Output tensor element dtype.
+        a_type: LHS input tensor element dtype.
+        b_type: RHS input tensor element dtype.
+        CTensorType: Layout type of the output tensor.
+        ATensorType: Layout type of the LHS input tensor.
+        BTensorType: Layout type of the RHS input tensor.
+        transpose_b: Whether the RHS input is transposed.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+        accum_type: Accumulator dtype used during the contraction.
+
+    Args:
+        c_tensor: Rank-3 output tensor of shape `(batch, m, n)`.
+        a_tensor: Rank-3 LHS input tensor of shape `(batch, m, k)`.
+        b_tensor: Rank-3 RHS input tensor of shape `(batch, k, n)`.
+        c_buff_nd_shape: Shape of the original output tensor before collapsing
+            to 3D, used to un-collapse batch coordinates for the epilogue.
+    """
     comptime assert (
         c_tensor.rank == 3 and a_tensor.rank == 3 and b_tensor.rank == 3
     ), "expecting rank-3 TileTensor"
@@ -518,6 +552,11 @@ def naive_batched_matmul_kernel[
         c_tensor[z, y, x] = val.cast[c_type]()
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(config.num_threads())
+    )
+)
 @__name(
     t"batched_matmul_kernel_gpu_{c_type}_{a_type}_{b_type}_{transpose_b}",
 )
@@ -535,10 +574,28 @@ def batched_matmul_kernel_gpu[
     c_tensor: TileTensor[c_type, CTensorType, MutAnyOrigin],  # m
     a_tensor: TileTensor[a_type, ATensorType, ImmutAnyOrigin],  # m * k
     b_tensor: TileTensor[b_type, BTensorType, ImmutAnyOrigin],  # 1 * k
-    m: Int,
-    n: Int,
-    k: Int,
 ):
+    """
+    Computes a single batch slice of a batched matrix multiplication on the
+    GPU by dispatching to the multistage GEMM kernel on NVIDIA or the
+    `AMDMatmul` kernel on AMD hardware.
+
+    Parameters:
+        c_type: Output tensor element dtype.
+        a_type: LHS input tensor element dtype.
+        b_type: RHS input tensor element dtype.
+        CTensorType: Layout type of the output tensor.
+        ATensorType: Layout type of the LHS input tensor.
+        BTensorType: Layout type of the RHS input tensor.
+        transpose_b: Whether the RHS input is transposed.
+        config: Matmul kernel configuration for the target hardware.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+
+    Args:
+        c_tensor: Rank-3 output tensor of shape `(batch, m, n)`.
+        a_tensor: Rank-3 LHS input tensor of shape `(batch, m, k)`.
+        b_tensor: Rank-3 RHS input tensor of shape `(batch, k, n)`.
+    """
     var batch_idx = block_idx.z
     var a_ptr = a_tensor.ptr + batch_idx * Int(
         a_tensor.layout.stride[0]().value()
@@ -549,6 +606,8 @@ def batched_matmul_kernel_gpu[
     var c_ptr = c_tensor.ptr + batch_idx * Int(
         c_tensor.layout.stride[0]().value()
     )
+
+    var m = Int(c_tensor.dim[1]())
 
     comptime k_static = a_tensor.static_shape[2]
     comptime n_static = b_tensor.static_shape[1]
@@ -577,7 +636,7 @@ def batched_matmul_kernel_gpu[
 
     @parameter
     def elementwise_epilogue_fn_wrapper[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
         comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
@@ -617,8 +676,8 @@ def _batched_matmul_gpu[
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: TileTensor[mut=True, c_type, ...],
-    a_buf: TileTensor[a_type, ...],
-    b_buf: TileTensor[b_type, ...],
+    a_buf: TileTensor[mut=False, a_type, ...],
+    b_buf: TileTensor[mut=False, b_type, ...],
     ctx: DeviceContext,
 ) raises:
     comptime rank = c_buf.rank
@@ -630,10 +689,10 @@ def _batched_matmul_gpu[
     var a_tensor_reshaped = _reshape_tile_tensor_with_batch_to_3d(a_buf)
     var b_tensor_reshaped = _reshape_tile_tensor_with_batch_to_3d(b_buf)
 
-    var batch_size = c_tensor_reshaped.dim(0)
-    var m = Int(c_tensor_reshaped.dim(1))
-    var n = Int(c_tensor_reshaped.dim(2))
-    var k = Int(a_tensor_reshaped.dim(2))
+    var batch_size = c_tensor_reshaped.dim[0]()
+    var m = Int(c_tensor_reshaped.dim[1]())
+    var n = Int(c_tensor_reshaped.dim[2]())
+    var k = Int(a_tensor_reshaped.dim[2]())
 
     if batch_size == 0 or m == 0 or n == 0 or k == 0:
         return
@@ -681,7 +740,7 @@ def _batched_matmul_gpu[
                 @parameter
                 @__copy_capture(c_buf)
                 def elementwise_epilogue_fn_wrapper[
-                    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+                    dtype: DType, width: SIMDLength, *, alignment: Int = 1
                 ](
                     out_coords: IndexList[2], val: SIMD[dtype, width]
                 ) capturing -> None:
@@ -735,22 +794,19 @@ def _batched_matmul_gpu[
                 # SM100+ supports 32B load/store to global memory.
                 comptime simd_size = 32 // size_of[c_type]()
 
-                @parameter
-                @__copy_capture(c_tensor_reshaped)
                 def epilogue_wrapper[
-                    simd_width: Int, rank: Int, alignment: Int = 1
-                ](idx: IndexList[rank]):
-                    var c_coord = Index(idx[0], idx[1], idx[2])
-                    var c_val = c_tensor_reshaped.load_linear[
+                    simd_width: Int, alignment: Int = 1
+                ](idx: Coord) {var}:
+                    var c_val = c_tensor_reshaped.load[
                         width=simd_width,
                         alignment=alignment * size_of[c_type](),
-                    ](c_coord)
+                    ](idx)
                     epilogue[c_type, simd_width, alignment=alignment](
-                        c_coord, c_val
+                        coord_to_index_list(idx), c_val
                     )
 
-                elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                    Index(batch_size, m, n), ctx
+                elementwise[simd_size, target="gpu"](
+                    epilogue_wrapper, Coord(batch_size, m, n), ctx
                 )
 
             return
@@ -786,9 +842,6 @@ def _batched_matmul_gpu[
             c_tensor_reshaped,
             a_tensor_reshaped.as_immut(),
             b_tensor_reshaped.as_immut(),
-            m,
-            n,
-            k,
             grid_dim=(grid_dim[0], grid_dim[1], batch_size),
             block_dim=kernels.ampere_128x128_4.block_dim(),
             shared_mem_bytes=kernels.ampere_128x128_4.shared_mem_usage(),
@@ -800,17 +853,12 @@ def _batched_matmul_gpu[
 
         @always_inline
         @parameter
-        def kernel_helper[
-            block_m: Int,
-            block_n: Int,
-            *,
-            num_k_partitions: Int = 1,
-            num_pipeline_stages: Int = 1,
-        ]() raises:
+        def kernel_helper[block_m: Int, block_n: Int]() raises:
             comptime block_k = 64
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(block_m, block_n, block_k),
                 warp_tile_shape=Index(block_m // 2, block_n // 2, block_k),
+                mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                 num_pipeline_stages=1,
                 num_k_partitions=1,
             )
@@ -831,26 +879,18 @@ def _batched_matmul_gpu[
                 c_tensor_reshaped,
                 a_tensor_reshaped.as_immut(),
                 b_tensor_reshaped.as_immut(),
-                m,
-                n,
-                k,
                 grid_dim=(
                     ceildiv(n, block_n),
                     ceildiv(m, block_m),
                     batch_size,
                 ),
-                block_dim=(256, 1, 1),
+                block_dim=config.block_dim(),
             )
 
-        # DeepSeek size tuning
-        if m == 256 and n == 128 and k == 512:
-            kernel_helper[128, 64]()
-        elif m == 256 and n == 512 and k == 128:
-            kernel_helper[64, 64]()
-        elif m == 14 and n == 3072 and k == 12288:
+        if m <= 32:
             kernel_helper[32, 32]()
-        elif m == 600 and n == 18256 and k == 4096:
-            kernel_helper[128, 64]()
+        elif m <= 256:
+            kernel_helper[64, 64]()
         else:
             kernel_helper[128, 128]()
 
@@ -894,12 +934,33 @@ def batched_matmul[
     target: StaticString = "cpu",
 ](
     c_buf: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a_buf: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b_buf: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     *,
     context: Optional[DeviceContext] = None,
 ) raises:
-    """TileTensor primary implementation of `batched_matmul`."""
+    """TileTensor primary implementation of `batched_matmul`.
+
+    Parameters:
+        transpose_a: Whether the LHS input is transposed (defaults to
+            `False`; not yet supported).
+        transpose_b: Whether the RHS input is transposed (defaults to
+            `False`).
+        elementwise_epilogue_fn: Optional epilogue applied to each output
+            element (defaults to `None`).
+        saturated_vnni: Whether to use saturated VNNI accumulation on CPU
+            (defaults to `False`; not applicable on GPU).
+        target: Target hardware for the operation (defaults to `"cpu"`).
+
+    Args:
+        c_buf: Output tensor of shape `(..., m, n)`; rank must be at least
+            2 and match the inputs.
+        a_buf: LHS input tensor of shape `(..., m, k)`.
+        b_buf: RHS input tensor of shape `(..., k, n)`, or `(..., n, k)`
+            when `transpose_b` is set.
+        context: Optional device context used for dispatch and parallelism
+            (defaults to `None`).
+    """
     comptime assert c_buf.rank >= 2, "c must be at least rank 2"
     comptime assert (
         c_buf.rank == a_buf.rank == b_buf.rank
@@ -977,7 +1038,9 @@ def batched_matmul[
 @always_inline
 def batched_matmul_shape[
     rank: Int
-](a_buff: TileTensor, b_buff: TileTensor,) raises -> IndexList[rank]:
+](
+    a_buff: TileTensor[mut=False, ...], b_buff: TileTensor[mut=False, ...]
+) raises -> IndexList[rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the
     inputs are compatible.
@@ -1036,9 +1099,9 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     c_type: DType,
     a_scales_type: DType,
     b_scales_type: DType,
-    a_layout: Layout,
+    a_layout: TensorLayout,
     c_layout: Layout,
-    a_scales_layout: Layout,
+    a_scales_layout: TensorLayout,
     b_scales_layout: Layout,
     a_tile_rank: Int,
     a_tile_shape: IndexList[a_tile_rank],
@@ -1100,7 +1163,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
 
     @parameter
     def elementwise_epilogue_fn_wrapper[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
         comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
@@ -1109,6 +1172,13 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
             batch_coords[1] = out_coords[0]
             elementwise_epilogue(batch_coords, val)
 
+    # Compatibility boundary: the SM100 blockwise FP8 kernel is TileTensor-
+    # native. This BMM entry point still slices legacy LayoutTensor views, so
+    # adapt exactly once at the call boundary instead of reintroducing
+    # LayoutTensor inside matmul/gpu/sm100.
+    var c_tt = lt_to_tt(c)
+    var b_scales_tt = lt_to_tt(b_scales)
+
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         a_type,
         b_type,
@@ -1116,9 +1186,9 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         a_scales_type,
         b_scales_type,
         a_layout,
-        type_of(c).layout,
+        type_of(c_tt).LayoutType,
         a_scales_layout,
-        type_of(b_scales).layout,
+        type_of(b_scales_tt).LayoutType,
         type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
@@ -1141,9 +1211,9 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     ](
         a_tma_op,
         b_tma_op,
-        c,
+        c_tt,
         a_scales_tma_op,
-        b_scales,
+        b_scales_tt,
         num_iters,
     )
 
@@ -1170,6 +1240,33 @@ def bmm_sm100_blockwise_scaled_fp8[
     b_scales_: TileTensor[mut=False, b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
+    """
+    Computes a batched blockwise scaled FP8 matrix multiplication on SM100
+    (Blackwell) hardware by constructing TMA descriptors for the inputs and
+    scales and enqueuing the blockwise FP8 kernel per batch slice.
+
+    Parameters:
+        c_type: Output tensor element dtype.
+        a_type: LHS input tensor element dtype.
+        b_type: RHS input tensor element dtype.
+        a_scales_type: LHS scales tensor element dtype.
+        b_scales_type: RHS scales tensor element dtype.
+        transpose_b: Whether the RHS input is transposed (must be `True`).
+        umma_shape: UMMA instruction shape `(m, n, k)` used by the kernel.
+        block_tile_shape: CTA tile shape `(BM, BN, BK)`.
+        a_swizzle: TMA swizzle mode for the LHS input tensor.
+        b_swizzle: TMA swizzle mode for the RHS input tensor.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+        b_scaling_block_n: N-direction scale block size for the RHS scales.
+
+    Args:
+        c_: Rank-3 output tensor of shape `(batch, m, n)`.
+        a_: Rank-3 LHS input tensor of shape `(batch, m, k)`.
+        b_: Rank-3 RHS input tensor of shape `(batch, k, n)`.
+        a_scales_: Rank-3 LHS scales tensor.
+        b_scales_: Rank-3 RHS scales tensor.
+        ctx: Device context used to enqueue the kernel.
+    """
     # Convert to LayoutTensor for internal operations.
     var c = c_.to_layout_tensor()
     var a = a_.to_layout_tensor()
@@ -1218,15 +1315,13 @@ def bmm_sm100_blockwise_scaled_fp8[
     # The K-direction scale granularity is fixed at BK
     # (k_scale_granularity == BK). The N-direction granularity may be
     # finer and is independent of BK_kernel — encoded in b_scales.dim(1)
-    # = N // n_scale_granularity.
-    if (
-        a_scales_dim0 != b_scales_dim1
-        or K % a_scales_dim0 != 0
-        or (K // a_scales_dim0) != BK
-    ):
+    # = N // n_scale_granularity. K need not be a multiple of BK: the
+    # last K-tile is covered by TMA OOB zero-padding and the matching
+    # ceildiv scale row, contributing zero to the accumulator.
+    if a_scales_dim0 != b_scales_dim1 or a_scales_dim0 != ceildiv(K, BK):
         raise Error(
-            "a_scales.dim(1) must equal b_scales.dim(2), K must be divisible"
-            " by a_scales.dim(1), and (K // a_scales.dim(1)) must equal BK."
+            "a_scales.dim(1) must equal b_scales.dim(2) and equal"
+            " ceildiv(K, BK)."
         )
 
     if N % b_scales_dim0 != 0 or (N // b_scales_dim0) not in (64, 128):
@@ -1296,9 +1391,9 @@ def bmm_sm100_blockwise_scaled_fp8[
         c_type,
         a_scales_type,
         b_scales_type,
-        type_of(a).layout,
+        type_of(a_).LayoutType,
         type_of(c).layout,
-        type_of(a_scales).layout,
+        type_of(a_scales_).LayoutType,
         type_of(b_scales).layout,
         type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
@@ -1353,6 +1448,29 @@ def batched_matmul_dynamic_scaled_fp8_naive[
     b_scales_: TileTensor[mut=False, b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
+    """
+    Computes a batched blockwise scaled FP8 matrix multiplication using a
+    naive per-batch loop that calls the 2D blockwise scaled FP8 kernel for
+    each batch slice.
+
+    Parameters:
+        c_type: Output tensor element dtype.
+        a_type: LHS input tensor element dtype.
+        b_type: RHS input tensor element dtype.
+        a_scales_type: LHS scales tensor element dtype.
+        b_scales_type: RHS scales tensor element dtype.
+        scales_granularity_mnk: Scale granularity `(m, n, k)`; only
+            `(1, 128, 128)` is currently supported.
+        transpose_b: Whether the RHS input is transposed.
+
+    Args:
+        c_: Rank-3 output tensor of shape `(batch, m, n)`.
+        a_: Rank-3 LHS input tensor of shape `(batch, m, k)`.
+        b_: Rank-3 RHS input tensor of shape `(batch, k, n)`.
+        a_scales_: Rank-3 LHS scales tensor.
+        b_scales_: Rank-3 RHS scales tensor.
+        ctx: Device context used to dispatch the per-batch kernels.
+    """
     comptime assert (
         scales_granularity_mnk[0] == 1
         and scales_granularity_mnk[1] == scales_granularity_mnk[2] == 128
@@ -1413,7 +1531,7 @@ def batched_matmul_dynamic_scaled_fp8_naive[
         ](
             a_scales.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[a_scales_layout_2d](
-                Index(K // BLOCK_SCALE_K, M_a_scales),
+                Index(ceildiv(K, BLOCK_SCALE_K), M_a_scales),
                 Index(a_scales.stride(1), a_scales.stride(2)),
             ),
         )
@@ -1424,7 +1542,7 @@ def batched_matmul_dynamic_scaled_fp8_naive[
         ](
             b_scales.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[b_scales_layout_2d](
-                Index(N // BLOCK_SCALE_K, K // BLOCK_SCALE_K),
+                Index(ceildiv(N, BLOCK_SCALE_K), ceildiv(K, BLOCK_SCALE_K)),
                 Index(b_scales.stride(1), b_scales.stride(2)),
             ),
         )
@@ -1465,6 +1583,35 @@ def batched_matmul_dynamic_scaled_fp8[
     b_scales: TileTensor[mut=False, b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
+    """
+    Dispatches a batched blockwise scaled FP8 matrix multiplication to the
+    SM100 blockwise kernel on Blackwell hardware or falls back to the naive
+    per-batch implementation on H100.
+
+    Parameters:
+        c_type: Output tensor element dtype.
+        a_type: LHS input tensor element dtype.
+        b_type: RHS input tensor element dtype.
+        a_scales_type: LHS scales tensor element dtype.
+        b_scales_type: RHS scales tensor element dtype.
+        input_scale_granularity: Scale granularity mode for the LHS input
+            (only `"block"` is supported).
+        weight_scale_granularity: Scale granularity mode for the RHS input
+            (only `"block"` is supported).
+        m_scale_granularity: M-direction scale granularity (must be `1`).
+        n_scale_granularity: N-direction scale granularity (`64` or `128`).
+        k_scale_granularity: K-direction scale granularity (`64` or `128`).
+        transpose_b: Whether the RHS input is transposed.
+        target: Target platform string.
+
+    Args:
+        c: Rank-3 output tensor of shape `(batch, m, n)`.
+        a: Rank-3 LHS input tensor of shape `(batch, m, k)`.
+        b: Rank-3 RHS input tensor of shape `(batch, k, n)`.
+        a_scales: Rank-3 LHS scales tensor.
+        b_scales: Rank-3 RHS scales tensor.
+        ctx: Device context used to dispatch the kernel.
+    """
     comptime assert (
         _is_sm10x_gpu(ctx.default_device_info)
         or ctx.default_device_info == H100

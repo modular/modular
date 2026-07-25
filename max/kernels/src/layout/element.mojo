@@ -30,8 +30,8 @@ from std.sys import align_of
 
 from layout.layout import coalesce, is_contiguous_dim
 
-from . import Layout, RuntimeLayout
-from .int_tuple import UNKNOWN_VALUE, _get_index_type
+from . import Layout, RuntimeLayout, RuntimeTuple
+from .int_tuple import IntTuple, UNKNOWN_VALUE, _get_index_type
 
 
 @always_inline
@@ -299,8 +299,6 @@ struct Element[
         comptime if Self.layout.stride[0] == 1:
             comptime size = Int(Self.layout.shape[0])
             comptime elements = Int(Self.layout.shape[1])
-            comptime vec_type = SIMD[dtype, size]
-            comptime alignment = align_of[vec_type]
             var element_data = Self.element_data_type()
             if runtime_layout.dim(0) < size:
                 comptime dim_0 = Int(Self.layout.shape[0])
@@ -330,8 +328,6 @@ struct Element[
         elif Self.layout.stride[1] == 1:
             comptime size = Int(Self.layout.shape[1])
             comptime elements = Int(Self.layout.shape[0])
-            comptime vec_type = SIMD[dtype, size]
-            comptime alignment = align_of[vec_type]
             var element_data = Self.element_data_type()
             if runtime_layout.dim(1) < size:
                 comptime dim_0 = Int(Self.layout.shape[0])
@@ -686,6 +682,7 @@ struct MemoryElement[
         """
         return type_of(result).load(self.ptr, self.runtime_layout)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def store(
         self: Self._AsMut,
@@ -706,6 +703,7 @@ struct MemoryElement[
         """
         return src.store(self.ptr)
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def transfer(self: Self._AsMut, src: MemoryElement):
         """Transfers data from another `MemoryElement` to this one.

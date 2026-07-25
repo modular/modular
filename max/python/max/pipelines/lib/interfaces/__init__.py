@@ -12,41 +12,73 @@
 # ===----------------------------------------------------------------------=== #
 """Interfaces for MAX pipelines."""
 
-from max.pipelines.diffusion.interface import (
-    DiffusionPipeline,
-    DiffusionPipelineOutput,
+from max.pipelines.lib.interfaces.batch_processor import (
+    BatchProcessor,
+    BatchProcessorRuntime,
+    ModuleV3SingleReplicaBatchProcessor,
+    RaggedBatchProcessor,
+    SingleReplicaRaggedBatchProcessor,
+    build_single_replica_ragged_token_arrays,
+    process_ragged_kv_outputs,
+    ragged_kv_symbolic_inputs,
+    single_replica_context_batch,
 )
 
 from .arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
-    ArchConfigWithKVAndVisionCache,
+    ArchConfigWithBoundedMaxSeqLen,
     ArchConfigWithKVCache,
+    ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
+    ArchVLConfigWithTextSubconfig,
 )
 from .generate import GenerateMixin
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,
+    GraphPipelineModel,
+    GraphPipelineModelWithKVCache,
     ModelInputs,
     ModelOutputs,
+    ModuleV3MultiGraphPipelineModelWithKVCache,
+    ModuleV3PipelineModel,
+    ModuleV3PipelineModelWithKVCache,
+    MultiGraphPipelineModelWithKVCache,
     PipelineModel,
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
+    UnifiedSpecDecodeInputs,
 )
 
 __all__ = [
     "AlwaysSignalBuffersMixin",
     "ArchConfig",
     "ArchConfigWithAttentionKVCache",
-    "ArchConfigWithKVAndVisionCache",
+    "ArchConfigWithBoundedMaxSeqLen",
     "ArchConfigWithKVCache",
+    "ArchConfigWithPermissiveMaxSeqLen",
     "ArchConfigWithStoredKVParams",
-    "DiffusionPipeline",
-    "DiffusionPipelineOutput",
+    "ArchVLConfigWithTextSubconfig",
+    "BatchProcessor",
+    "BatchProcessorRuntime",
     "GenerateMixin",
+    "GraphPipelineModel",
+    "GraphPipelineModelWithKVCache",
     "ModelInputs",
     "ModelOutputs",
+    "ModuleV3MultiGraphPipelineModelWithKVCache",
+    "ModuleV3PipelineModel",
+    "ModuleV3PipelineModelWithKVCache",
+    "ModuleV3SingleReplicaBatchProcessor",
+    "MultiGraphPipelineModelWithKVCache",
     "PipelineModel",
     "PipelineModelWithKVCache",
+    "RaggedBatchProcessor",
+    "SingleReplicaRaggedBatchProcessor",
     "UnifiedEagleOutputs",
+    "UnifiedSpecDecodeInputs",
+    "build_single_replica_ragged_token_arrays",
+    "process_ragged_kv_outputs",
+    "ragged_kv_symbolic_inputs",
+    "single_replica_context_batch",
 ]

@@ -1,18 +1,33 @@
 load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
 
-modular_py_test(
+modular_eager_py_test(
     name = "tests",
-    srcs = glob(["**/*.py"]),
+    # test_module_gpu.py is a separate GPU target below.
+    srcs = glob(
+        ["**/*.py"],
+        exclude = ["test_module_gpu.py"],
+    ),
+    # CPU-only suite; the accelerator-guarded cases self-skip when hidden.
+    cpu_only = True,
     data = ["//max/tests/integration/Inputs/kernel_verification_ops"],
     env = {
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
+    },
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
+    per_test_shard_count = {
+        # Each case compiles its own graph; shard so the per-test compiles run
+        # in parallel and the suite stays well under the per-target timeout.
+        "test_subgraph.py": 4,
     },
     per_test_tags = {
         "rope/test_rope.py": ["skip-external-ci"],
@@ -20,6 +35,7 @@ modular_py_test(
         "test_module.py": ["skip-external-ci"],
         "test_module_gpt2.py": ["manual"],
         "test_module_typing.py": ["skip-external-ci"],
+        "test_print_hook.py": ["skip-external-ci"],
     },
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -27,12 +43,39 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
         "//max/python/max/experimental/nn",
+        "//max/python/max/experimental/testing",
         "//max/python/max/graph",
+        "//max/python/max/nn/hooks:print_hook",
+        requirement("numpy"),
         requirement("torch"),
         requirement("typing-extensions"),
+    ],
+)
+
+modular_py_test(
+    name = "test_module_gpu",
+    srcs = ["test_module_gpu.py"],
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        # FIXME: MOCO-2411
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": ["//:nvidia_gpu"],
+    }),
+    deps = [
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
     ],
 )

@@ -19,6 +19,7 @@ from std.python import PythonObject
 ```
 """
 
+from . import ConvertibleToPython
 from std.os import abort
 from std.sys import bit_width_of
 from std.ffi import _CPointer, c_ssize_t
@@ -26,7 +27,14 @@ import std.format._utils as fmt
 
 from std.reflection import reflect
 
-from ._cpython import CPython, GILAcquired, PyObject, PyObjectPtr, PyTypeObject
+from ._cpython import (
+    CPython,
+    GILAcquired,
+    PyObject,
+    PyObjectPtr,
+    PyTypeObject,
+    PyTypeObjectPtr,
+)
 from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object
 from .python import Python
 
@@ -170,7 +178,7 @@ struct PythonObject(
 
     @always_inline
     def __init__[
-        T: Movable & ImplicitlyDestructible
+        T: Movable & ImplicitlyDeletable
     ](out self, *, var alloc: T) raises:
         """Allocate a new `PythonObject` and store a Mojo value in it.
 
@@ -1197,7 +1205,7 @@ struct PythonObject(
             _ = cpy.PyTuple_SetItem(
                 args_ptr, i, cpy.Py_NewRef(args[i].steal_data())
             )
-        var kwargs_ptr = Python._dict(kwargs)
+        var kwargs_ptr = Python.dict(**kwargs^).steal_data()
         var res_ptr = cpy.PyObject_Call(self._obj_ptr, args_ptr, kwargs_ptr)
         cpy.Py_DecRef(args_ptr)
         cpy.Py_DecRef(kwargs_ptr)
@@ -1323,7 +1331,7 @@ struct PythonObject(
 
     def unsafe_get_as_pointer[
         dtype: DType
-    ](self) raises -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+    ](self) raises -> Pointer[Scalar[dtype], MutAnyOrigin]:
         """Reinterpret a Python integer as a Mojo pointer.
 
         Warning: converting from an integer to a pointer is unsafe! The
@@ -1335,7 +1343,7 @@ struct PythonObject(
             dtype: The desired DType of the pointer.
 
         Returns:
-            An `UnsafePointer` for the underlying Python data.
+            A pointer for the underlying Python data.
 
         Raises:
             If the operation fails.
@@ -1345,8 +1353,8 @@ struct PythonObject(
         )
 
     def downcast_value_ptr[
-        T: ImplicitlyDestructible
-    ](self, *, func: Optional[StaticString] = None) raises -> UnsafePointer[
+        T: ImplicitlyDeletable
+    ](self, *, func: Optional[StaticString] = None) raises -> Pointer[
         T, MutAnyOrigin
     ]:
         """Get a pointer to the expected contained Mojo value of type `T`.
@@ -1397,8 +1405,8 @@ struct PythonObject(
             )
 
     def _try_downcast_value[
-        T: ImplicitlyDestructible
-    ](var self) raises -> Optional[UnsafePointer[T, MutAnyOrigin]]:
+        T: ImplicitlyDeletable
+    ](var self) raises -> Optional[Pointer[T, MutAnyOrigin]]:
         """Try to get a pointer to the expected contained Mojo value of type `T`.
 
         None will be returned if the type of this object does not match the
@@ -1420,12 +1428,12 @@ struct PythonObject(
         if type == expected_type:
             ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]().value()[]
             if mojo_obj.is_initialized:
-                return UnsafePointer(to=mojo_obj.mojo_value).as_any_origin()
+                return Pointer(to=mojo_obj.mojo_value).as_unsafe_any_origin()
         return None
 
     def unchecked_downcast_value_ptr[
-        mut: Bool, origin: Origin[mut=mut], //, T: ImplicitlyDestructible
-    ](ref[origin] self) -> UnsafePointer[T, origin]:
+        mut: Bool, origin: Origin[mut=mut], //, T: ImplicitlyDeletable
+    ](ref[origin] self) -> Pointer[T, origin]:
         """Get a pointer to the expected Mojo value of type `T`.
 
         This function assumes that this Python object was allocated as an
@@ -1460,7 +1468,7 @@ struct PythonObject(
 
 def _unsafe_alloc[
     T: AnyType
-](type_obj_ptr: _CPointer[PyTypeObject, MutAnyOrigin]) raises -> PyObjectPtr:
+](type_obj_ptr: PyTypeObjectPtr) raises -> PyObjectPtr:
     """Allocate an uninitialized Python object for storing a Mojo value.
 
     Parameters:
@@ -1483,7 +1491,7 @@ def _unsafe_alloc[
 
 
 def _unsafe_init[
-    T: Movable & ImplicitlyDestructible,
+    T: Movable & ImplicitlyDeletable,
     //,
 ](obj_ptr: PyObjectPtr, var mojo_value: T) raises:
     """Initialize a Python object pointer with a Mojo value.
@@ -1501,16 +1509,14 @@ def _unsafe_init[
      type object. Use of any other pointer is invalid.
     """
     ref mojo_obj = obj_ptr.bitcast[PyMojoObject[T]]().value()[]
-    UnsafePointer(to=mojo_obj.mojo_value).init_pointee_move(mojo_value^)
+    Pointer(to=mojo_obj.mojo_value).unsafe_write(mojo_value^)
     mojo_obj.is_initialized = True
 
 
 def _unsafe_alloc_init[
-    T: Movable & ImplicitlyDestructible,
+    T: Movable & ImplicitlyDeletable,
     //,
-](
-    type_obj_ptr: _CPointer[PyTypeObject, MutAnyOrigin], var mojo_value: T
-) raises -> PythonObject:
+](type_obj_ptr: PyTypeObjectPtr, var mojo_value: T) raises -> PythonObject:
     """Allocate a Python object pointer and initialize it with a Mojo value.
 
     Parameters:

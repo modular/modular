@@ -13,7 +13,8 @@
 
 from std.sys import size_of
 from std.bit import rotate_bits_left
-from std.memory import Span, bitcast
+from std.memory import bitcast
+from std.collections import Span
 
 from .hasher import Hasher
 
@@ -42,7 +43,7 @@ def _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
 
 
 @always_inline
-def _read_small(data: UnsafePointer[mut=False, UInt8, _], length: Int) -> U128:
+def _read_small(data: Pointer[mut=False, UInt8, _], length: Int) -> U128:
     """Produce a `SIMD[DType.uint64, 2]` value from data which is smaller than or equal to `8` bytes.
 
     Args:
@@ -55,23 +56,31 @@ def _read_small(data: UnsafePointer[mut=False, UInt8, _], length: Int) -> U128:
     if length >= 2:
         if length >= 4:
             # len 4-8
-            var a = data.bitcast[UInt32]().load().cast[DType.uint64]()
+            var a = (
+                data.unsafe_bitcast[UInt32]().unsafe_load().cast[DType.uint64]()
+            )
             var b = (
-                (data + length - 4)
-                .bitcast[UInt32]()
-                .load()
+                data.unsafe_offset(length - 4)
+                .unsafe_bitcast[UInt32]()
+                .unsafe_load()
                 .cast[DType.uint64]()
             )
             return U128(a, b)
         else:
             # len 2-3
-            var a = data.bitcast[UInt16]().load().cast[DType.uint64]()
-            var b = (data + length - 1).load().cast[DType.uint64]()
+            var a = (
+                data.unsafe_bitcast[UInt16]().unsafe_load().cast[DType.uint64]()
+            )
+            var b = (
+                data.unsafe_offset(length - 1)
+                .unsafe_load()
+                .cast[DType.uint64]()
+            )
             return U128(a, b)
     else:
         # len 0-1
         if length > 0:
-            var a = data.load().cast[DType.uint64]()
+            var a = data.unsafe_load().cast[DType.uint64]()
             return U128(a, a)
         else:
             return U128(0, 0)
@@ -133,16 +142,28 @@ struct AHasher[key: U256](Defaultable, Hasher):
         self.buffer = (self.buffer + UInt64(length)) * MULTIPLE
         if length > 8:
             if length > 16:
-                var tail = (ptr + length - 16).bitcast[UInt64]().load[width=2]()
+                var tail = (
+                    ptr.unsafe_offset(length - 16)
+                    .unsafe_bitcast[UInt64]()
+                    .unsafe_load[width=2]()
+                )
                 self._large_update(tail)
                 var offset = 0
                 while length - offset > 16:
-                    var block = (ptr + offset).bitcast[UInt64]().load[width=2]()
+                    var block = (
+                        ptr.unsafe_offset(offset)
+                        .unsafe_bitcast[UInt64]()
+                        .unsafe_load[width=2]()
+                    )
                     self._large_update(block)
                     offset += 16
             else:
-                var a = ptr.bitcast[UInt64]().load()
-                var b = (ptr + length - 8).bitcast[UInt64]().load()
+                var a = ptr.unsafe_bitcast[UInt64]().unsafe_load()
+                var b = (
+                    ptr.unsafe_offset(length - 8)
+                    .unsafe_bitcast[UInt64]()
+                    .unsafe_load()
+                )
                 self._large_update(U128(a, b))
         else:
             var value = _read_small(ptr, length)
@@ -202,4 +223,4 @@ struct AHasher[key: U256](Defaultable, Hasher):
         """
         var rot = self.buffer & 63
         var folded = _folded_multiply(self.buffer, self.pad)
-        return (folded << rot) | (folded >> ((64 - rot) & 63))
+        return (folded << rot) | (folded >> ((UInt64(64) - rot) & UInt64(63)))

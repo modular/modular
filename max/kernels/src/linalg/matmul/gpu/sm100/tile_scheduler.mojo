@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Schedules output-tile work for persistent SM100 matmul kernels using Cluster Launch Control (CLC), rasterization order, and block swizzling."""
+
 from std.sys import _RegisterPackType, size_of
 from std.sys._assembly import inlined_assembly
 
@@ -31,6 +33,9 @@ from ..tile_scheduler import RasterOrder
 
 @fieldwise_init
 struct WorkInfo(TrivialRegisterPassable, Writable):
+    """Holds the coordinates and validity of a single output tile assigned to a cluster for persistent matmul scheduling.
+    """
+
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -66,6 +71,27 @@ struct TileScheduler[
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
 ](TrivialRegisterPassable):
+    """Schedules output-tile work across SM100 clusters for persistent matmul kernels using Cluster Launch Control (CLC).
+
+    Applies a configurable rasterization order and optional block swizzling to map
+    cluster-level work tiles to global output-tile coordinates, and drives
+    producer/consumer synchronization through shared-memory barriers.
+
+    Parameters:
+        num_stages: Number of pipeline stages used for producer/consumer
+            synchronization across waves; `0` means only the initial wave
+            is valid and subsequent work is invalid.
+        cluster_shape: Three-element `IndexList` giving the number of CTA
+            blocks per cluster along the M, N, and K output-tile axes
+            (defaults to `(1, 1, 1)`).
+        rasterize_order: Direction the scheduler rasterizes clusters across
+            output tiles, either along M or N (defaults to
+            `RasterOrder.AlongM`).
+        block_swizzle_size: Size of the block-swizzle group used to remap
+            cluster coordinates for improved L2 reuse; one of `0`, `1`, `2`,
+            `4`, or `8`, where `0` disables swizzling (defaults to `8`).
+    """
+
     comptime cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
         1
     ] * Self.cluster_shape[2]
@@ -78,16 +104,21 @@ struct TileScheduler[
     var log_cluster_dim_n: FastDiv[DType.uint32]
     var log_cluster_dim_k: FastDiv[DType.uint32]
 
+    @__allow_legacy_any_origin_fields
     var clc_response: UnsafePointer[
         UInt128,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
+
+    @__allow_legacy_any_origin_fields
     var full_mbar: UnsafePointer[
         SharedMemBarrier,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
+
+    @__allow_legacy_any_origin_fields
     var empty_mbar: UnsafePointer[
         SharedMemBarrier,
         MutAnyOrigin,
@@ -120,9 +151,9 @@ struct TileScheduler[
         self.log_cluster_dim_m = FastDiv[DType.uint32](Int(cluster_dim[0]))
         self.log_cluster_dim_n = FastDiv[DType.uint32](Int(cluster_dim[1]))
         self.log_cluster_dim_k = FastDiv[DType.uint32](Int(cluster_dim[2]))
-        self.clc_response = clc_response_ptr
-        self.full_mbar = full_mbar_ptr
-        self.empty_mbar = empty_mbar_ptr
+        self.clc_response = clc_response_ptr.as_unsafe_any_origin()
+        self.full_mbar = full_mbar_ptr.as_unsafe_any_origin()
+        self.empty_mbar = empty_mbar_ptr.as_unsafe_any_origin()
 
     @always_inline
     @staticmethod

@@ -17,7 +17,7 @@ from std.sys import has_nvidia_gpu_accelerator, simd_width_of
 import linalg.matmul.vendor.blas as vendor_blas
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, Idx, PointerStorage, TileTensor, row_major
 from layout.tile_layout import Layout
 from linalg.bmm import _batched_matmul_gpu
 
@@ -26,7 +26,7 @@ from std.testing import assert_almost_equal
 from std.utils import IndexList
 
 comptime epilogue_func_type = def[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
@@ -34,7 +34,7 @@ comptime epilogue_func_type = def[
 @parameter
 def elementwise_epilogue_fn[
     dtype: DType,
-    width: Int,
+    width: SIMDLength,
     *,
     alignment: Int = 1,
 ](val: SIMD[dtype, width],) -> SIMD[dtype, width]:
@@ -48,10 +48,34 @@ def run_bmm_and_check_result[
     lambda_fn: Optional[epilogue_func_type] = None,
     check_against_naive_kernel: Bool = False,
 ](
-    a_host: TileTensor[mut=True, dtype, ...],
-    b_host: TileTensor[mut=True, dtype, ...],
-    c_host: TileTensor[mut=True, dtype, ...],
-    c_host_ref: TileTensor[mut=True, dtype, ...],
+    a_host: TileTensor[
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
+    b_host: TileTensor[
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
+    c_host: TileTensor[
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
+    c_host_ref: TileTensor[
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
     ctx: DeviceContext,
     rtol: Float64 = 1e-3 if dtype == DType.float32 else 1e-2,
 ) raises:
@@ -72,14 +96,14 @@ def run_bmm_and_check_result[
     var c_device = TileTensor[dtype](c_device_buffer, c_host.layout)
     var c_device_ref = TileTensor[dtype](c_device_ref_buffer, c_host_ref.layout)
 
-    rand(a_host.ptr, a_size)
-    rand(b_host.ptr, b_size)
+    rand(a_host._storage, a_size)
+    rand(b_host._storage, b_size)
     c_device_buffer.enqueue_fill(0)
     c_device_ref_buffer.enqueue_fill(0)
 
     # Copy operands to the Device
-    ctx.enqueue_copy(a_device_buffer, a_host.ptr)
-    ctx.enqueue_copy(b_device_buffer, b_host.ptr)
+    ctx.enqueue_copy(a_device_buffer, a_host._storage)
+    ctx.enqueue_copy(b_device_buffer, b_host._storage)
 
     # Run BMM
     @parameter
@@ -87,7 +111,7 @@ def run_bmm_and_check_result[
     @__copy_capture(c_device)
     def epilogue_fn[
         dtype: DType,
-        width: Int,
+        width: SIMDLength,
         rank: Int,
         *,
         alignment: Int = 1,
@@ -133,13 +157,13 @@ def run_bmm_and_check_result[
         )
     else:
         for i in range(a_host.dim(0)):
-            var c_ptr = c_device_ref.ptr + i * Scalar[a_host.linear_idx_type](
-                c_device_ref.layout.stride[0]().value()
-            )
-            var a_ptr = a_device.ptr + i * Scalar[a_host.linear_idx_type](
+            var c_ptr = c_device_ref._storage + i * Scalar[
+                a_host.linear_idx_type
+            ](c_device_ref.layout.stride[0]().value())
+            var a_ptr = a_device._storage + i * Scalar[a_host.linear_idx_type](
                 a_device.layout.stride[0]().value()
             )
-            var b_ptr = b_device.ptr + i * Scalar[a_host.linear_idx_type](
+            var b_ptr = b_device._storage + i * Scalar[a_host.linear_idx_type](
                 b_device.layout.stride[0]().value()
             )
 
@@ -162,13 +186,7 @@ def run_bmm_and_check_result[
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     @always_inline
-    @__copy_capture(c_device_ref)
-    @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[3]](idx0)
-        var coord = Coord((idx[0], idx[1], idx[2]))
+    def func[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         comptime assert c_device_ref.flat_rank >= 3
         var val = c_device_ref.load[width=simd_width](coord)
         comptime element_lambda = lambda_fn.value()
@@ -180,13 +198,14 @@ def run_bmm_and_check_result[
         )
 
     comptime if lambda_fn:
-        elementwise[func, pack_size, target="gpu"](
-            IndexList[3](b, m, n),
+        elementwise[pack_size, target="gpu"](
+            func,
+            (b, m, n),
             ctx,
         )
 
-    ctx.enqueue_copy(c_host.ptr, c_device_buffer)
-    ctx.enqueue_copy(c_host_ref.ptr, c_device_ref_buffer)
+    ctx.enqueue_copy(c_host._storage, c_device_buffer)
+    ctx.enqueue_copy(c_host_ref._storage, c_device_ref_buffer)
     ctx.synchronize()
 
     for batch_idx in range(b):

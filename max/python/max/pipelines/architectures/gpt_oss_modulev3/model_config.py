@@ -21,9 +21,11 @@ from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import YarnScalingParams
 from max.nn.transformer import ReturnLogits
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
+    ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -33,7 +35,11 @@ from typing_extensions import Self, override
 
 
 @dataclass(kw_only=True)
-class GptOssConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
+class GptOssConfig(
+    ArchConfigWithPermissiveMaxSeqLen,
+    ArchConfigWithStoredKVParams,
+    ArchConfigWithKVCache,
+):
     """Configuration for GPT OSS models.
 
     Contains parameters specific to the GPT OSS architecture, typically
@@ -136,9 +142,6 @@ class GptOssConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     """Whether to return the last token, all logits, or a variable number of logits."""
 
-    def get_max_seq_len(self) -> int:
-        return self.max_position_embeddings
-
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         """Retrieves the number of hidden layers from the HuggingFace configuration.
@@ -150,28 +153,6 @@ class GptOssConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             The number of hidden layers specified in the configuration.
         """
         return huggingface_config.num_hidden_layers
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the model.
-
-        Uses the `max_length` from the :obj:`max.pipelines.config.PipelineConfig` if provided,
-        otherwise falls back to the `max_position_embeddings` from the HuggingFace
-        configuration's text config.
-
-        Args:
-            pipeline_config: The MAX Engine pipeline configuration.
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The calculated maximum sequence length.
-        """
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
 
     @override
     @classmethod
@@ -206,7 +187,9 @@ class GptOssConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = model_config.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
 
         _weights_format = weights_format(model_config.weight_path)
         interleaved_rope_weights = (

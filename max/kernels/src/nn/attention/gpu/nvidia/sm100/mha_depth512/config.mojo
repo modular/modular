@@ -38,13 +38,17 @@ from nn.attention.gpu.nvidia.sm100.attention import SM100_RESERVED_SMEM_BYTES
 struct Depth512SM100Config[
     qkv_dtype: DType,
     *,
-    rope_dtype: DType = DType.invalid,
-    scale_dtype: DType = DType.invalid,
+    rope_dtype_: Optional[DType] = None,
+    scale_dtype_: Optional[DType] = None,
 ](TrivialRegisterPassable):
-    # --- Type sizes ---
+    # --- Type sizes (0 when the optional dtype is unset) ---
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
-    comptime rope_dtype_size: Int = size_of[Self.rope_dtype]()
-    comptime scale_dtype_size: Int = size_of[Self.scale_dtype]()
+    comptime rope_dtype_size: Int = size_of[
+        Self.rope_dtype_.value()
+    ]() if Self.rope_dtype_ else 0
+    comptime scale_dtype_size: Int = size_of[
+        Self.scale_dtype_.value()
+    ]() if Self.scale_dtype_ else 0
 
     # --- MMA geometry ---
     comptime MMA_K: Int = 16 if Self.qkv_dtype.is_half_float() else 32
@@ -111,7 +115,10 @@ struct Depth512SM100Config[
         self.group = group
         self.qk_depth = qk_depth
         self.ov_depth = ov_depth
-        self.swizzle_mode = swizzle_mode
+        comptime if Self.qkv_dtype.is_float8():
+            self.swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
+        else:
+            self.swizzle_mode = swizzle_mode
 
         # Depth-dependent MMA geometry.
         # depth>256: MMA_M=128, BM=64, split O into O_lo/O_hi (each MMA_N=ov_depth/2)
@@ -193,6 +200,9 @@ struct Depth512SM100Config[
 
         remaining = Self.sm100_smem_carveout - smem_use
         self.num_kv_stages = remaining // bytes_per_slot
+        self.num_kv_stages = min(
+            self.num_kv_stages, (32 - misc_mbars_fixed) // 2
+        )
         smem_use += self.num_kv_stages * bytes_per_slot
 
         self.smem_used = smem_use
@@ -213,7 +223,7 @@ struct Depth512SM100Config[
         return self.qk_depth - self.ov_depth
 
     @always_inline
-    def num_qo(self) -> Int:
+    def num_q(self) -> Int:
         return 1
 
     @always_inline

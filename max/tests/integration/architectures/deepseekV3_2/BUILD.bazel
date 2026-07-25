@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -38,11 +37,27 @@ modular_py_test(
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
+    # Graph-compile-heavy MLA test files spread across shards so the
+    # compiles run in parallel on CI workers (unsharded they exceed the
+    # 900s "large" timeout).
+    per_test_shard_count = {
+        # Each sparse decode test compiles its own graph (~120-220s under CI
+        # contention); shard so those compiles run in parallel.
+        "test_mla_sparse_decode_graph_gpu.py": 3,
+    },
+    # `manual` keeps this out of `//...` wildcards and CI while still runnable
+    # explicitly.
+    per_test_tags = {
+        "test_mla_sparse_prefill_graph_gpu.py": ["manual"],
+    },
     tags = [
         "gpu",
     ],
@@ -53,8 +68,9 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV3_2",
         "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/test_common:context_utils",
         "//max/tests/integration/test_common:graph_utils",
         requirement("numpy"),

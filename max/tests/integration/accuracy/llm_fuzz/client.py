@@ -445,9 +445,7 @@ class FuzzClient:
         """Open a raw TCP connection. Optionally send partial HTTP headers, then hold open."""
         t0 = time.perf_counter()
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(5)
-            s.connect((self._host, self._port))
+            s = self._make_socket(5)
             if send_partial:
                 s.sendall(
                     b"POST " + self._chat_path.encode() + b" HTTP/1.1\r\n"

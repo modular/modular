@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from enum import Enum
-from typing import Any, TypeVar
+from typing import TypeVar
 
 from max.dtype import DType
 from max.graph import (
@@ -23,13 +23,18 @@ from max.graph import (
     Graph,
     TensorValue,
     TensorValueLike,
-    Value,
     ops,
 )
 
 from ..embedding import Embedding
 from ..kv_cache import KVCacheParams, PagedCacheValues
-from ..layer import Layer, LayerList, Module
+from ..layer import (
+    Layer,
+    LayerList,
+    Module,
+    SubgraphInput,
+    _flatten_graph_inputs,
+)
 from ..linear import Linear
 from ..rotary_embedding import RotaryEmbedding
 
@@ -58,7 +63,7 @@ def forward_sharded_layers(
 
 def _call_layer_directly(
     layer: Module,
-    values: list[Value[Any] | Sequence[Value[Any]]],
+    values: Sequence[SubgraphInput],
 ) -> list[TensorValue]:
     result = layer(*values)
     if isinstance(result, tuple):
@@ -71,7 +76,7 @@ def forward_sequential_layers(
     *,
     inputs_for_layer: Callable[
         [int, list[TensorValue]],
-        list[Value[Any] | Sequence[Value[Any]]],
+        Sequence[SubgraphInput],
     ],
     initial_hidden_states: list[TensorValue],
     on_layer_output: Callable[[int, list[TensorValue]], None] | None = None,
@@ -95,6 +100,17 @@ def forward_sequential_layers(
             subgraph. If `None` or empty, all layers are called directly
             without subgraphs. Layers not listed in any group also fall through
             to direct call.
+
+            .. note::
+
+               All layers in a group must share the same operand types.
+               The subgraph signature is fixed at the first layer in
+               the group; other layers calling it with different shapes
+               fail with an MLIR
+               ``Subgraph ... has wrong type for argument`` error.
+               Architectures with per-layer-variable shapes (variable
+               head count, mixed dense and sparse MLP) must group
+               layers by signature.
         name_for_subgraph: A callable that takes the group index and returns
             the subgraph name.
         weight_prefix_for_layer: A callable that takes the layer index and
@@ -137,20 +153,16 @@ def forward_sequential_layers(
             if group_idx not in group_idx_to_subgraph:
                 group_idx_to_subgraph[group_idx] = layer.build_subgraph(
                     name=name_for_subgraph(group_idx),
-                    input_types=[
-                        v.type if isinstance(v, Value) else [x.type for x in v]
-                        for v in values
-                    ],
+                    inputs=values,
                     weight_prefix=weight_prefix_for_layer(layer_idx),
                 )
 
+            flat_args = [
+                leaf for v in values for leaf in _flatten_graph_inputs(v)
+            ]
             call_results = ops.call(
                 group_idx_to_subgraph[group_idx],
-                *[
-                    x
-                    for v in values
-                    for x in (v if isinstance(v, list) else [v])
-                ],
+                *flat_args,
                 prefix=weight_prefix_for_layer(layer_idx),
             )
             h = [x.tensor for x in call_results]
@@ -165,7 +177,7 @@ def extract_hs(
     return_hidden_states: ReturnHiddenStates,
     last_token_hs_distributed: Sequence[TensorValue],
     all_hs_distributed: Sequence[TensorValue],
-    normalizer: Sequence[Callable[[TensorValue], TensorValue]],
+    normalizer: Sequence[Callable[[TensorValue], TensorValue]] | None = None,
     capture_hidden_states: list[list[TensorValue]] | None = None,
 ) -> tuple[TensorValue, ...]:
     """Extract hidden states from the model.
@@ -177,7 +189,8 @@ def extract_hs(
         all_hs_distributed: Per-device hidden states from all tokens — one
             entry per device (distinct batch shards in DP, identical
             replicas in TP/single-device).
-        normalizer: Per-device normalization functions.
+        normalizer: Per-device normalization functions. Required when
+            ``return_hidden_states`` is ``ALL_NORMALIZED``.
         capture_hidden_states: A list of per-layer captured hidden states at specific layer indices.  Each entry is a
             per-device list of tensors. The entries are concatenated along the
             feature dimension to produce a single fused hidden-state tensor
@@ -198,6 +211,7 @@ def extract_hs(
     elif return_hidden_states == ReturnHiddenStates.ALL:
         return tuple(all_hs_distributed)
     elif return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
+        assert normalizer is not None
         norm_hs = forward_sharded_layers(normalizer, all_hs_distributed)
         return tuple(norm_hs)
     elif return_hidden_states == ReturnHiddenStates.SELECTED_LAYERS:

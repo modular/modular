@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.python import PythonObject
 from std.sys import bit_width_of
+from std.python import PythonObject
 from std.testing import (
     assert_equal,
     assert_false,
@@ -20,7 +20,6 @@ from std.testing import (
     assert_true,
     TestSuite,
 )
-from test_utils import check_convertible_to_python, check_python_object
 
 
 def test_properties() raises:
@@ -207,14 +206,6 @@ def test_decimal_digit_count() raises:
     assert_equal(Int.MIN._decimal_digit_count(), 19)
 
 
-def test_int_uint() raises:
-    var u1 = UInt(42)
-    assert_equal(42, Int(u1))
-
-    var u2 = UInt(0)
-    assert_equal(0, Int(u2))
-
-
 def test_comparison() raises:
     assert_true(Int(5).__lt__(Int(10)))
     assert_true(Int(-10).__lt__(Int(-5)))
@@ -262,19 +253,6 @@ def test_is_power_of_two() raises:
     assert_equal(Int(4).is_power_of_two(), True)
     assert_equal(Int(5).is_power_of_two(), False)
     assert_equal(UInt64(Int.MAX).is_power_of_two(), False)
-
-
-def test_convertible_to_python() raises:
-    check_convertible_to_python(42, "42")
-
-    # test implicit conversion
-    check_python_object(42, "42")
-
-    # non raising conversion to PythonObject
-    def non_raising_to_python(var value: Int) -> PythonObject:
-        return PythonObject(value)
-
-    assert_equal(String(non_raising_to_python(42)), "42")
 
 
 def main() raises:

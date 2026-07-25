@@ -13,20 +13,19 @@
 """Implements `TString`, a template string that captures interpolated values at compile-time."""
 from std.collections.string.format import _FormatUtils, _comptime_list_to_span
 from std.utils import Variant
-from std.reflection.traits import AllWritable
 import std.format._utils as fmt
 
 
 @always_inline
-def _strlen(ptr: UnsafePointer[mut=False, Byte, _]) -> Int:
+def _strlen(ptr: Pointer[mut=False, Byte, _]) -> Int:
     var offset = 0
-    while ptr[offset]:
+    while ptr[unsafe_offset=offset]:
         offset += 1
     return offset
 
 
 struct TString[
-    origins: ImmutOrigin, //, format_string: StaticString, *Ts: Writable
+    origins: ImmOrigin, //, format_string: StaticString, *Ts: Writable
 ](Movable, Writable):
     """A template string that captures interpolated values at compile-time.
 
@@ -62,11 +61,13 @@ struct TString[
         var offset = 0
 
         @always_inline
-        def write_string() {read encoded_bytes, read offset, mut writer} -> Int:
-            var literal_start = encoded_bytes.unsafe_ptr() + offset
+        def write_string() {imm encoded_bytes, imm offset, mut writer} -> Int:
+            var literal_start = encoded_bytes.unsafe_ptr().unsafe_offset(offset)
             var literal_length = _strlen(literal_start)
             var string_literal = StringSlice(
-                unsafe_from_utf8=Span(ptr=literal_start, length=literal_length)
+                unsafe_from_utf8=Span(
+                    unsafe_ptr=literal_start, length=literal_length
+                )
             )
             writer.write_string(string_literal)
             return literal_length
@@ -112,7 +113,9 @@ struct TString[
             writer: The writer to output the debug representation to.
         """
 
-        comptime assert AllWritable[*Self.Ts]  # satisfy where clause.
+        comptime assert Self.Ts.all_conforms_to[
+            Writable
+        ]()  # satisfy where clause.
 
         @parameter
         def fields(mut writer: Some[Writer]):
@@ -130,7 +133,7 @@ def __make_tstring[
 ](
     *args: *Ts,
     out tstring: TString[
-        origins=ImmutOrigin(type_of(args).origin),
+        origins=ImmOrigin(type_of(args).origin),
         StaticString(format_string),
         *Ts,
     ],
@@ -225,10 +228,10 @@ def _encode_format_string(format: StringSlice) raises -> List[Byte]:
     var bytes = format.as_bytes()
     var i = 0
 
-    var immut_bytes = bytes.get_immutable()
+    var immut_bytes = bytes.as_imm()
 
     @always_inline
-    def peek_next_is(byte: Byte) {read} -> Bool:
+    def peek_next_is(byte: Byte) {imm} -> Bool:
         return i + 1 < len(immut_bytes) and immut_bytes[i + 1] == byte
 
     while i < len(bytes):

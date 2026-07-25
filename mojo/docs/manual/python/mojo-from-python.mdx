@@ -70,7 +70,7 @@ from std import math
 from std.os import abort
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module")
         m.def_function[factorial]("factorial", docstring="Compute n!")
@@ -143,6 +143,32 @@ always safe to delete the contents of a `__mojocache__` directory. Needed
 artifacts will simply be rebuilt the next time the Mojo module is imported.
 :::
 
+### The `abi` of exported functions
+
+An [`@export`](/docs/reference/decorators/export/) function must declare which
+calling convention it uses with an explicit
+[`abi`](/docs/reference/function-declarations#abi-c) effect. In a Python
+extension module, the only function you need to export is the
+`PyInit_<module>` entry point, and it must use `abi("C")`:
+
+```mojo
+@export
+def PyInit_mojo_module() abi("C") -> PythonObject:
+    ...
+```
+
+This is because the CPython runtime locates and calls `PyInit_<module>`
+directly across the C boundary, so it must expose the C calling convention. A
+`abi("C")` function can't be marked `raises`, which is why the examples above
+catch any error inside the body and `abort` instead of propagating it.
+
+The functions, methods, and initializers you register with the module builder
+(`def_function`, `def_method`, `def_py_init`, and so on) don't need `@export` at
+all; you pass them by reference, and Mojo generates the C wrapper that CPython
+actually calls. That wrapper invokes your function using the Mojo calling
+convention and translates any raised error into a Python exception, so a
+registered function such as `factorial` above can freely be marked `raises`.
+
 Now that we've looked at the basics of how Mojo can be used from Python, let's
 dig into the available features and how you can leverage them to accelerate
 your Python with Mojo.
@@ -162,7 +188,7 @@ struct Person(Movable, Writable):
     var age: Int
 
 @export
-def PyInit_person_module() -> PythonObject:
+def PyInit_person_module() abi("C") -> PythonObject:
     try:
         var mb = PythonModuleBuilder("person_module")
         var person_type = mb.add_type[Person]("Person")
@@ -208,7 +234,7 @@ you add the type to your module. For example:
 
 ```mojo
 @export
-def PyInit_person_module() -> PythonObject:
+def PyInit_person_module() abi("C") -> PythonObject:
     try:
         var mb = PythonModuleBuilder("person_module")
         # highlight-start
@@ -395,7 +421,7 @@ Python as well, using
 
 Currently, Mojo methods being exposed to Python must be written with a
 modification compared to normal Mojo methods: they must be a `@staticmethod`
-that takes either `py_self: PythonObject` or `self_ptr: UnsafePointer[Self]`:
+that takes either `py_self: PythonObject` or `self_ptr: Pointer[Self]`:
 
 ```mojo
 from std.python import PythonObject
@@ -403,7 +429,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.os import abort
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var mb = PythonModuleBuilder("mojo_module")
         # highlight-start
@@ -427,7 +453,7 @@ struct Person(Writable):
 
     @staticmethod
     def set_age(
-        self_ptr: UnsafePointer[mut=True, Self],
+        self_ptr: Pointer[mut=True, Self],
         new_age: PythonObject,
     ) raises:
         self_ptr[].age = Int(new_age)
@@ -439,7 +465,7 @@ struct Person(Writable):
 
 Taking `py_self: PythonObject` allows access to the full `PythonObject`
 allocation that a Mojo object instance is stored inside of. Typically though,
-taking `py_self: UnsafePointer[Self]` will minimize boilerplate in the common
+taking `self_ptr: Pointer[Self]` will minimize boilerplate in the common
 case that a method merely needs to access the fields of an object.
 
 Mojo methods called from Python are currently required to take non-standard self
@@ -459,7 +485,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.os import abort
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var mb = PythonModuleBuilder("mojo_module")
         # highlight-start
@@ -504,11 +530,11 @@ two forms:
    This is not currently supported in Python Mojo bindings.
 2. [Variadic keyword arguments](/docs/manual/functions/#variadic-keyword-arguments):
    `def foo(**kwargs: Int)` This is supported in Python Mojo bindings when used
-   in the unsugared form: `def foo(kwargs: OwnedKwargsDict)`. (The `**kwargs`
-   syntax limitation will be removed in the future.)
+   in the unsugared form: `def foo(kwargs: StringDict)`. (The `**kwargs` syntax
+   limitation will be removed in the future.)
 
 You can define Mojo functions that accept variadic keyword arguments using
-[`OwnedKwargsDict[PythonObject]`](/docs/std/collections/dict/OwnedKwargsDict/)
+[`StringDict[PythonObject]`](/docs/std/collections/dict/StringDict/)
 as the last argument. A simple example looks like:
 
 ```python
@@ -518,9 +544,9 @@ result = mojo_module.sum_kwargs_ints(a=10, b=20, c=30)  # returns 60
 ```
 
 ```mojo
-from std.collections import OwnedKwargsDict
+from std.collections import StringDict
 
-def sum_kwargs_ints(kwargs: OwnedKwargsDict[PythonObject]) raises -> PythonObject:
+def sum_kwargs_ints(kwargs: StringDict[PythonObject]) raises -> PythonObject:
     var total = 0
     for entry in kwargs.items():
         total += Int(entry.value)
@@ -529,15 +555,15 @@ def sum_kwargs_ints(kwargs: OwnedKwargsDict[PythonObject]) raises -> PythonObjec
 
 Keyword arguments are also supported following normal positional arguments.
 Additionally, getting specific keyword arguments is a dictionary lookup on the
-`OwnedKwargsDict`:
+`StringDict`:
 
 ```mojo
-from std.collections import OwnedKwargsDict
+from std.collections import StringDict
 
 def duration_in_seconds(
     hours_obj: PythonObject,
     minutes_obj: PythonObject,
-    kwargs: OwnedKwargsDict[PythonObject]
+    kwargs: StringDict[PythonObject]
 ) raises -> PythonObject:
     var hours = Int(hours_obj)
     var minutes = Int(minutes_obj)
@@ -583,7 +609,7 @@ provided:
 
 ```mojo
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
         b.def_py_function[count_args]("count_args")
@@ -677,7 +703,7 @@ be lifted over time.
 
 - **Keyword arguments syntax.**
   Currently, Mojo functions called from Python only accept keyword arguments
-  when using a trailing `kwargs: OwnedKwargsDict[PythonObject]` argument.
+  when using a trailing `kwargs: StringDict[PythonObject]` argument.
   Support for native `**kwargs` syntax will be added in the future.
 
 - **Mojo package dependencies.**

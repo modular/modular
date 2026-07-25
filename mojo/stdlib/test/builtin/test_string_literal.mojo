@@ -264,12 +264,12 @@ def test_layout() raises:
 
     # Test non-empty StringLiteral C string
     var ptr = "hello".as_c_string_slice().unsafe_ptr()
-    assert_equal(ptr[0], Int8(ord("h")))
-    assert_equal(ptr[1], Int8(ord("e")))
-    assert_equal(ptr[2], Int8(ord("l")))
-    assert_equal(ptr[3], Int8(ord("l")))
-    assert_equal(ptr[4], Int8(ord("o")))
-    assert_equal(ptr[5], 0)  # Verify NUL terminated
+    assert_equal(ptr[unsafe_offset=0], Int8(ord("h")))
+    assert_equal(ptr[unsafe_offset=1], Int8(ord("e")))
+    assert_equal(ptr[unsafe_offset=2], Int8(ord("l")))
+    assert_equal(ptr[unsafe_offset=3], Int8(ord("l")))
+    assert_equal(ptr[unsafe_offset=4], Int8(ord("o")))
+    assert_equal(ptr[unsafe_offset=5], 0)  # Verify NUL terminated
 
 
 def test_lower_upper() raises:

@@ -27,8 +27,10 @@ from layout import (
 )
 from layout.tile_layout import Layout as TileLayout
 from layout.swizzle import Swizzle
+from std.math import exp
 from std.testing import (
     TestSuite,
+    assert_almost_equal,
     assert_equal,
     assert_true,
 )
@@ -42,7 +44,8 @@ def test_distribute() raises:
     comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var array = InlineArray[UInt32, 16](fill=-1)
-    var ptr = array.unsafe_ptr()
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var ptr: UnsafePointer[UInt32, origin_of(array)] = array.unsafe_ptr()
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
@@ -88,7 +91,8 @@ def test_distribute_with_swizzle() raises:
     comptime swizzle = Swizzle(1, 0, 2)
 
     var array = InlineArray[UInt32, 16](fill=-1)
-    var ptr = array.unsafe_ptr()
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var ptr: UnsafePointer[UInt32, origin_of(array)] = array.unsafe_ptr()
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
@@ -141,11 +145,17 @@ def test_distribute_swizzle_vs_no_swizzle() raises:
 
     # Array without swizzle
     var array_no_swizzle = InlineArray[UInt32, 16](fill=0)
-    var ptr_no_swizzle = array_no_swizzle.unsafe_ptr()
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var ptr_no_swizzle: UnsafePointer[
+        UInt32, origin_of(array_no_swizzle)
+    ] = array_no_swizzle.unsafe_ptr()
 
     # Array with swizzle
     var array_with_swizzle = InlineArray[UInt32, 16](fill=0)
-    var ptr_with_swizzle = array_with_swizzle.unsafe_ptr()
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var ptr_with_swizzle: UnsafePointer[
+        UInt32, origin_of(array_with_swizzle)
+    ] = array_with_swizzle.unsafe_ptr()
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
@@ -605,7 +615,8 @@ def test_distribute_runtime_dims() raises:
     comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var array = InlineArray[UInt32, 16](fill=-1)
-    var ptr = array.unsafe_ptr()
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var ptr: UnsafePointer[UInt32, origin_of(array)] = array.unsafe_ptr()
 
     # Create 4x4 tensor with runtime first dim.
     var layout_tensor = TileTensor(
@@ -636,7 +647,8 @@ def test_distribute_with_offset_runtime_dims() raises:
     comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var array = InlineArray[UInt32, 16](fill=-1)
-    var ptr = array.unsafe_ptr()
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var ptr: UnsafePointer[UInt32, origin_of(array)] = array.unsafe_ptr()
 
     # Create 4x4 tensor with runtime dims.
     var layout_tensor = TileTensor(
@@ -847,8 +859,10 @@ def test_load_store_linear_non_trivial_stride() raises:
     # Column-major layout: stride[0]=1, stride[1]=2
     comptime col_major_shape = Coord[ComptimeInt[2], ComptimeInt[3]]
     comptime col_major_stride = Coord[ComptimeInt[1], ComptimeInt[2]]
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var data_ptr: UnsafePointer[Int32, origin_of(data)] = data.unsafe_ptr()
     var tensor = TileTensor(
-        ptr=data.unsafe_ptr(),
+        ptr=data_ptr,
         layout=TileLayout(
             shape=col_major_shape(Idx[2], Idx[3]),
             stride=col_major_stride(Idx[1], Idx[2]),
@@ -1269,8 +1283,12 @@ def test_copy_from_respects_non_contiguous_layout() raises:
 
     comptime padded_shape = Coord[ComptimeInt[2], ComptimeInt[3]]
     comptime padded_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var dst_data_ptr: UnsafePointer[
+        Int32, origin_of(dst_data)
+    ] = dst_data.unsafe_ptr()
     var dst = TileTensor(
-        ptr=dst_data.unsafe_ptr(),
+        ptr=dst_data_ptr,
         layout=TileLayout(
             shape=padded_shape(Idx[2], Idx[3]),
             stride=padded_stride(Idx[4], Idx[1]),
@@ -1497,3 +1515,272 @@ def test_split_dynamic_alignment_trailing_zero_partition() raises:
     assert_equal(split0[1, 3], 11)
     assert_equal(split1[0, 0], 4)
     assert_equal(split1[1, 3], 15)
+
+
+def test_iadd_same_shape() raises:
+    """In-place elementwise add of two same-shape tensors."""
+    var a_data = InlineArray[Int32, 4](fill=0)
+    var b_data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 1
+    a[0, 1] = 2
+    a[1, 0] = 3
+    a[1, 1] = 4
+    b[0, 0] = 10
+    b[0, 1] = 20
+    b[1, 0] = 30
+    b[1, 1] = 40
+
+    a += b
+
+    assert_equal(a[0, 0], 11)
+    assert_equal(a[0, 1], 22)
+    assert_equal(a[1, 0], 33)
+    assert_equal(a[1, 1], 44)
+
+
+def test_imul_same_shape() raises:
+    """In-place elementwise multiply of two same-shape tensors."""
+    var a_data = InlineArray[Int32, 4](fill=0)
+    var b_data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 1
+    a[0, 1] = 2
+    a[1, 0] = 3
+    a[1, 1] = 4
+    b[0, 0] = 2
+    b[0, 1] = 3
+    b[1, 0] = 4
+    b[1, 1] = 5
+
+    a *= b
+
+    assert_equal(a[0, 0], 2)
+    assert_equal(a[0, 1], 6)
+    assert_equal(a[1, 0], 12)
+    assert_equal(a[1, 1], 20)
+
+
+def test_isub_same_shape() raises:
+    """In-place elementwise subtract of two same-shape tensors."""
+    var a_data = InlineArray[Int32, 4](fill=0)
+    var b_data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 10
+    a[0, 1] = 20
+    a[1, 0] = 30
+    a[1, 1] = 40
+    b[0, 0] = 1
+    b[0, 1] = 2
+    b[1, 0] = 3
+    b[1, 1] = 4
+
+    a -= b
+
+    assert_equal(a[0, 0], 9)
+    assert_equal(a[0, 1], 18)
+    assert_equal(a[1, 0], 27)
+    assert_equal(a[1, 1], 36)
+
+
+def test_ifloordiv_same_shape() raises:
+    """In-place elementwise floor-divide of two same-shape tensors."""
+    var a_data = InlineArray[Int32, 4](fill=0)
+    var b_data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 10
+    a[0, 1] = 20
+    a[1, 0] = 30
+    a[1, 1] = 40
+    b[0, 0] = 3
+    b[0, 1] = 7
+    b[1, 0] = 4
+    b[1, 1] = 9
+
+    a //= b
+
+    assert_equal(a[0, 0], 3)
+    assert_equal(a[0, 1], 2)
+    assert_equal(a[1, 0], 7)
+    assert_equal(a[1, 1], 4)
+
+
+def test_itruediv_same_shape() raises:
+    """In-place elementwise true-divide of two same-shape tensors."""
+    var a_data = InlineArray[Float32, 4](fill=0)
+    var b_data = InlineArray[Float32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 10.0
+    a[0, 1] = 20.0
+    a[1, 0] = 30.0
+    a[1, 1] = 40.0
+    b[0, 0] = 4.0
+    b[0, 1] = 5.0
+    b[1, 0] = 8.0
+    b[1, 1] = 16.0
+
+    a /= b
+
+    assert_equal(a[0, 0], 2.5)
+    assert_equal(a[0, 1], 4.0)
+    assert_equal(a[1, 0], 3.75)
+    assert_equal(a[1, 1], 2.5)
+
+
+def test_min_same_shape() raises:
+    """In-place elementwise minimum of two same-shape tensors."""
+    var a_data = InlineArray[Int32, 4](fill=0)
+    var b_data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 1
+    a[0, 1] = 20
+    a[1, 0] = 3
+    a[1, 1] = 40
+    b[0, 0] = 10
+    b[0, 1] = 2
+    b[1, 0] = 30
+    b[1, 1] = 4
+
+    a.min(b)
+
+    assert_equal(a[0, 0], 1)
+    assert_equal(a[0, 1], 2)
+    assert_equal(a[1, 0], 3)
+    assert_equal(a[1, 1], 4)
+
+
+def test_max_same_shape() raises:
+    """In-place elementwise maximum of two same-shape tensors."""
+    var a_data = InlineArray[Int32, 4](fill=0)
+    var b_data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 1
+    a[0, 1] = 20
+    a[1, 0] = 3
+    a[1, 1] = 40
+    b[0, 0] = 10
+    b[0, 1] = 2
+    b[1, 0] = 30
+    b[1, 1] = 4
+
+    a.max(b)
+
+    assert_equal(a[0, 0], 10)
+    assert_equal(a[0, 1], 20)
+    assert_equal(a[1, 0], 30)
+    assert_equal(a[1, 1], 40)
+
+
+def test_abs() raises:
+    """In-place elementwise absolute value."""
+    var data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(data, row_major[2, 2]())
+
+    a[0, 0] = -1
+    a[0, 1] = 2
+    a[1, 0] = -3
+    a[1, 1] = 0
+
+    a.abs()
+
+    assert_equal(a[0, 0], 1)
+    assert_equal(a[0, 1], 2)
+    assert_equal(a[1, 0], 3)
+    assert_equal(a[1, 1], 0)
+
+
+def test_abs_float() raises:
+    """In-place elementwise absolute value on a floating-point tensor."""
+    var data = InlineArray[Float32, 4](fill=0)
+    var a = TileTensor(data, row_major[2, 2]())
+
+    a[0, 0] = -1.5
+    a[0, 1] = 2.5
+    a[1, 0] = -0.0
+    a[1, 1] = -4.25
+
+    a.abs()
+
+    assert_equal(a[0, 0], 1.5)
+    assert_equal(a[0, 1], 2.5)
+    assert_equal(a[1, 0], 0.0)
+    assert_equal(a[1, 1], 4.25)
+
+
+def test_recip() raises:
+    """In-place elementwise reciprocal."""
+    var data = InlineArray[Float32, 4](fill=0)
+    var a = TileTensor(data, row_major[2, 2]())
+
+    a[0, 0] = 2.0
+    a[0, 1] = 4.0
+    a[1, 0] = -8.0
+    a[1, 1] = 16.0
+
+    a.recip()
+
+    assert_equal(a[0, 0], 0.5)
+    assert_equal(a[0, 1], 0.25)
+    assert_equal(a[1, 0], -0.125)
+    assert_equal(a[1, 1], 0.0625)
+
+
+def test_exp() raises:
+    """In-place elementwise exponential with the default scale of 1."""
+    var data = InlineArray[Float32, 4](fill=0)
+    var a = TileTensor(data, row_major[2, 2]())
+
+    a[0, 0] = 0.0
+    a[0, 1] = 1.0
+    a[1, 0] = -1.0
+    a[1, 1] = 2.0
+
+    a.exp()
+
+    assert_almost_equal(a[0, 0], 1.0)
+    assert_almost_equal(a[0, 1], exp(Float32(1.0)))
+    assert_almost_equal(a[1, 0], exp(Float32(-1.0)))
+    assert_almost_equal(a[1, 1], exp(Float32(2.0)))
+
+
+def test_exp_scale() raises:
+    """In-place elementwise `exp(scale * x)` with a non-unit scale."""
+    var data = InlineArray[Float32, 4](fill=0)
+    var a = TileTensor(data, row_major[2, 2]())
+
+    a[0, 0] = 0.0
+    a[0, 1] = 1.0
+    a[1, 0] = -1.0
+    a[1, 1] = 0.5
+
+    a.exp[scale=Float32(2.0)]()
+
+    assert_almost_equal(a[0, 0], 1.0)
+    assert_almost_equal(a[0, 1], exp(Float32(2.0)))
+    assert_almost_equal(a[1, 0], exp(Float32(-2.0)))
+    assert_almost_equal(a[1, 1], exp(Float32(1.0)))
+
+
+def test_tuple_getter() raises:
+    var data = InlineArray[Float32, 4](fill=0)
+    var a = TileTensor(data, row_major[2, 2]())
+    comptime for i in range(data.length):
+        data[i] = Float32(i)
+
+    assert_equal(a[(1, 1)], 3)
+    var a10 = (1, 0)
+    assert_equal(a[a10], 2)

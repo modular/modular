@@ -40,7 +40,7 @@ def _assert_equal_error(
 
 struct PrintChecker(Movable):
     var tmp: NamedTemporaryFile
-    var cursor: UInt64
+    var cursor: Int
     var call_location: SourceLocation
 
     @always_inline
@@ -63,7 +63,7 @@ struct PrintChecker(Movable):
             raise _assert_equal_error(
                 String(result), expected, msg, self.call_location
             )
-        self.cursor += UInt64(result.byte_length() + 1)
+        self.cursor += result.byte_length() + 1
 
     def check_line_starts_with(
         mut self, prefix: String, msg: String = ""
@@ -81,7 +81,7 @@ struct PrintChecker(Movable):
                 msg,
                 self.call_location,
             )
-        self.cursor += UInt64(result.byte_length() + 1)
+        self.cursor += result.byte_length() + 1
 
 
 def test_print() raises:
@@ -124,18 +124,32 @@ def test_print() raises:
 
 
 def test_print_end() raises:
+    # Test string literals
     with PrintChecker() as checker:
         print("Hello", end=" World\n", file=checker.stream())
         checker.check_line("Hello World")
 
+    # Test runtime strings
+    with PrintChecker() as checker:
+        var dyn_string: String = "End\n"
+        print("Start", end=dyn_string, file=checker.stream())
+        checker.check_line("StartEnd")
+
 
 def test_print_sep() raises:
+    # Test string literals
     with PrintChecker() as checker:
         print("a", "b", "c", sep="/", file=checker.stream())
         checker.check_line("a/b/c")
 
         print("a", 1, 2, sep="/", end="xx\n", file=checker.stream())
         checker.check_line("a/1/2xx")
+
+    # Test runtime strings
+    with PrintChecker() as checker:
+        var dyn_string: String = ":"
+        print("1", "2", sep=dyn_string, file=checker.stream())
+        checker.check_line("1:2")
 
 
 def main() raises:

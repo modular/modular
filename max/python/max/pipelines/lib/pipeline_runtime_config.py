@@ -20,7 +20,6 @@ import os
 from max.config import ConfigFileModel
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.modeling.config_enums import PipelineRole
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import Field, PrivateAttr
 
 # Default max batch input tokens for chunked prefill and memory estimation.
@@ -70,8 +69,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "Soft floor on the decode batch size. If the TG batch size is "
             "larger, the scheduler continues TG batches; if it falls below, the "
             "scheduler prioritizes CE. This is not a strict minimum. By "
-            "default, this is ``max_queue_size_tg``. Experimental for the TTS "
-            "scheduler."
+            "default, this is ``max_queue_size_tg``."
         ),
     )
 
@@ -91,11 +89,20 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    eplb_profile: bool = Field(
+        default_factory=lambda: os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()
+        in ("1", "true", "yes"),
+        description=(
+            "When True, enables expert-parallel load balancing (EPLB) MoE "
+            "routing histogram profiling in the pipeline. Mirrors "
+            "Settings.eplb_profile for pipeline code that doesn't have "
+            "access to Settings."
+        ),
+    )
     ce_delay_ms: float = Field(
         default=0.0,
         description=(
-            "Duration of scheduler sleep prior to starting a prefill batch. "
-            "Experimental for the TTS scheduler."
+            "Duration of scheduler sleep prior to starting a prefill batch."
         ),
     )
 
@@ -104,7 +111,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "When enabled, the scheduler always runs a TG batch immediately "
             "after a CE batch with the same requests. This may reduce "
-            "time-to-first-chunk latency. Experimental for the TTS scheduler."
+            "time-to-first-chunk latency."
         ),
     )
 
@@ -116,6 +123,23 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    chunked_prefill_min_chunk_size: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Floor, in tokens, on any chunk created by chunked prefill. "
+            "When splitting a request against the CE token budget, the cut "
+            "is moved earlier so that neither the chunk nor the remainder "
+            "is smaller than this; if no legal cut point exists within the "
+            "remaining budget, the request is left unsplit for a later "
+            "step. 0 (default) disables the floor: cuts land exactly on "
+            "the budget boundary, which can produce very small chunks. "
+            "Values above ``max_batch_input_tokens / 2`` forbid most "
+            "splits; a sane range is roughly 64-1024."
+        ),
+    )
+    """Minimum tokens in any chunk created by chunked prefill (0 = off)."""
+
     enable_in_flight_batching: bool = Field(
         default=False,
         description=(
@@ -124,13 +148,24 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    max_num_steps: int = Field(
-        default=-1,
+    eplb_replicas_per_gpu: int = Field(
+        default=0,
         description=(
-            "The number of steps to run for multi-step scheduling. ``-1`` "
-            "specifies a default value based on configuration and platform. "
-            "Ignored for models which are not auto-regressive (for example, "
-            "embedding models)."
+            "Number of redundant expert replicas to add per GPU when EPLB is "
+            "active. 0 (default) means no replication. k > 0 adds k extras "
+            "per GPU; total redundant slots = k * ep_size (so num_redundant "
+            "is always a multiple of the device count, which the rebalance "
+            "algorithm requires)."
+        ),
+    )
+
+    max_num_steps: int = Field(
+        default=1,
+        description=(
+            "Deprecated. Multi-step pipeline execution is no longer supported; "
+            "the pipeline always runs single-step decode. Values other than "
+            "``1`` (including the legacy default ``-1``) are ignored after "
+            "logging a warning."
         ),
     )
 
@@ -170,26 +205,22 @@ class PipelineRuntimeConfig(ConfigFileModel):
     custom_architectures: list[str] = Field(
         default_factory=list,
         description=(
-            "Custom architecture implementations to register. Each input can "
-            "either be a raw module name or an import path followed by a colon "
-            "and the module name. Each module must expose an ``ARCHITECTURES`` list "
-            "of architectures to register."
-        ),
-    )
-
-    zmq_endpoint_base: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description=(
-            "Prefix for ZMQ endpoints used for IPC. This ensures unique "
-            "endpoints across MAX Serve instances on the same host. Example: "
-            "``lora_request_zmq_endpoint = "
-            'f"{zmq_endpoint_base}-lora_request"``.'
+            "Custom architecture implementations to register. Each input is "
+            "either a path to a single custom-architecture module directory "
+            "or an ``IMPORT_PATH:MODULE_NAME`` colon-form. Each module must "
+            "expose a top-level ``ARCHITECTURES`` list of "
+            "``SupportedArchitecture`` instances."
         ),
     )
 
     execute_empty_batches: bool = Field(
         default=False,
-        description="Whether the scheduler should execute empty batches.",
+        description=(
+            "When enabled, the scheduler runs the model's forward pass even "
+            "for an empty batch, so expert-parallel and data-parallel replicas "
+            "still reach their collective barrier points; output processing is "
+            "skipped. The architecture must support empty batches."
+        ),
     )
 
     max_batch_total_tokens: int | None = Field(
@@ -211,11 +242,39 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    fold_sampler_into_graph: bool = Field(
+        default=True,
+        description=(
+            "Fold greedy token selection (argmax) into the captured forward "
+            "graph so a single device-graph replay materializes the sampled "
+            "token, avoiding a separate sampler submission and its blocking "
+            "readback. Only takes effect for all-greedy decode batches on "
+            "architectures that emit the folded token output (Nemotron-H); "
+            "any non-greedy request falls back to the separate sampler. "
+            "Default on."
+        ),
+    )
+
     force: bool = Field(
         default=False,
         description=(
             "Skip validation of user provided flags against the architecture's "
             "required arguments."
+        ),
+    )
+
+    max_pending_futures: int = Field(
+        default=1,
+        description=(
+            "Maximum number of unrealized future-token placeholders a request "
+            "may hold at once. The default of 1 is the classic overlap-"
+            "scheduler depth: one forward in flight per request. A value of 2 "
+            "enables experimental schedule-ahead decoding in the overlap "
+            "pipeline: two forwards stay in flight and each step's outputs "
+            "are consumed one step late, for pure-greedy token-generation "
+            "batches only (other batches drain to the classic depth). Not "
+            "supported with speculative decoding; prefill-only workers pin "
+            "to 1."
         ),
     )
 
@@ -266,6 +325,45 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "``--no-enable-overlap-scheduler --force``."
         ),
     )
+
+    dp_ce_balance_timeout_ms: float = Field(
+        default=-1.0,
+        description=(
+            "Max time in milliseconds a context-encoding request's work may "
+            "be deferred, from arrival, while awaiting token-balanced "
+            "scheduling across data-parallel replicas. -1 disables the "
+            "balancer (requests bind to a replica on arrival; current "
+            "default behavior); 0 enables post-cache-weighted placement "
+            "with late binding but never defers; > 0 additionally defers "
+            "unbalanced CE work until ``dp_ce_balance_threshold`` is met, "
+            "the deadline expires, or there is nothing else to run."
+        ),
+    )
+    """Deferral deadline for DP-balanced CE scheduling (-1 = disabled)."""
+
+    dp_ce_balance_threshold: float = Field(
+        default=0.8,
+        description=(
+            "Per-step CE active-token occupancy across DP replicas "
+            "(mean/max, 0-1) at or above which CE work is scheduled without "
+            "further deferral. Only consulted when "
+            "``dp_ce_balance_timeout_ms`` > 0."
+        ),
+    )
+    """Occupancy threshold (0-1) that schedules CE work without deferral."""
+
+    dp_ce_balance_enable_dynamic_chunk_size: bool = Field(
+        default=True,
+        description=(
+            "Whether a below-threshold CE step with work on 2+ replicas "
+            "runs immediately with each replica's chunk size reduced to "
+            "the balance level, deferring only the excess. When False, "
+            "such steps are held whole until the threshold is met, a "
+            "deadline expires, or there is nothing else to run. Only "
+            "consulted when ``dp_ce_balance_timeout_ms`` > 0."
+        ),
+    )
+    """Whether below-threshold CE steps run at a reduced chunk size."""
 
     allow_unsupported_logprobs: bool = Field(
         default=False,
@@ -321,6 +419,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    emit_reasoning_content: bool = Field(
+        default=False,
+        description=(
+            "When ``True``, chat completion responses emit a thinking model's "
+            "chain-of-thought under ``reasoning_content`` only (``reasoning`` "
+            "is omitted). The ``reasoning_content`` alias is used by vLLM, "
+            "SGLang, and the DeepSeek API; some clients require it. When "
+            "``False`` (default), responses emit reasoning under ``reasoning`` "
+            "only."
+        ),
+    )
+
     temperature: float | None = Field(
         default=None,
         description=(
@@ -332,6 +442,14 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    top_k: int | None = Field(
+        default=None,
+        description=(
+            "Default top-k sampling limit. When set, this server-level default "
+            "applies to all requests that do not explicitly provide ``top_k``."
+        ),
+    )
+
     thinking_temperature: float | None = Field(
         default=None,
         description=(
@@ -340,13 +458,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "that do not explicitly provide ``thinking_temperature``. Requires "
             "a reasoning parser to be configured; ignored otherwise."
         ),
-    )
-
-    # TODO(SERVSYS-1096): Remove this field once we've reworked how required
-    # config fields are validated.
-    defer_resolve: bool = Field(
-        default=False,
-        description="Whether to defer resolving the pipeline config.",
     )
 
     max_vision_cache_entries: int = Field(

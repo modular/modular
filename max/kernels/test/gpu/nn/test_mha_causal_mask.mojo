@@ -100,16 +100,20 @@ def test[
 
     # K and V are filled with uniform constants for this test instead of being
     # randomly initialized.
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    rand(k_ptr.as_span())
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
-    k_device_ptr.enqueue_fill(Scalar[qkv_type](0.25))
 
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    rand(v_ptr.as_span())
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
-    v_device_ptr.enqueue_fill(Scalar[qkv_type](0.5))
 
     var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy(q_device_ptr, q_ptr)
+    ctx.enqueue_copy(k_device_ptr, k_ptr)
+    ctx.enqueue_copy(v_device_ptr, v_ptr)
 
     # Construct device buffers.
     var q_device = TileTensor(
@@ -502,13 +506,16 @@ def main() raises:
         def make_vl(
             val: UInt32, ctx: DeviceContext
         ) raises -> LayoutTensor[
-            DType.uint32, Layout.row_major(1), MutAnyOrigin
+            DType.uint32, Layout.row_major(1), MutUntrackedOrigin
         ]:
             var dev_buf = ctx.enqueue_create_buffer[DType.uint32](1)
             ctx.enqueue_memset(dev_buf, val)
-            return LayoutTensor[
-                DType.uint32, Layout.row_major(1), MutAnyOrigin
-            ](dev_buf.unsafe_ptr())
+            # TODO(KERN-3155): This is a bug!
+            # The returned device buffer will have its deleter run
+            # before the return potentially causing a read/writer-after-free.
+            return {
+                dev_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+            }
 
         # valid_length == num_keys (equivalent to CausalMask).
         var vl_128_t = make_vl(128, ctx)

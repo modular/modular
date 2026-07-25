@@ -20,17 +20,27 @@ the internal refactor.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU
+from max.driver import (
+    CPU,
+    Accelerator,
+    accelerator_count,
+    get_virtual_cpu_target,
+    set_virtual_cpu_target,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
 from max.dtype import DType
 from max.engine import CompiledModel, InferenceSession, Model
 from max.engine._compilation_stats import collect_compilation_stats
 from max.experimental.nn._compilation_timer import CompilationTimer
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, Module, TensorType, TensorValue, ops
 
 
 @dataclass
@@ -41,13 +51,14 @@ class Unity:
         return ops.constant(1.0, dtype=DType.float32, device=DeviceRef.CPU())
 
 
-def _unity_graph(name: str = "unity") -> Graph:
+def _unity_graph(name: str = "unity", module: Module | None = None) -> Graph:
     return Graph(
         name,
         forward=Unity(),
         input_types=[
             TensorType(DType.float32, ["batch", "dim"], device=DeviceRef.CPU())
         ],
+        module=module,
     )
 
 
@@ -199,6 +210,64 @@ def test_compilation_timer_populates_outer_collector() -> None:
     assert stats.num_phases == 1
 
 
+@pytest.fixture
+def virtual_device_mode() -> Iterator[None]:
+    set_virtual_device_api("cuda")
+    set_virtual_device_target_arch("sm_80")
+    set_virtual_device_count(1)
+    try:
+        yield
+    finally:
+        set_virtual_device_count(0)
+
+
+def test_accelerator_constructs_in_virtual_device_mode(
+    virtual_device_mode: None,
+) -> None:
+    """Virtual-device mode must apply to device creation, not just counting.
+
+    The virtual-device settings are process-wide state in the MLRT driver. If
+    any image in the process (the ``_core`` extension, libmax, the Mojo
+    bindings dylib) ends up with its own copy of that state, the
+    ``set_virtual_device_*`` setters and ``accelerator_count()`` see one copy
+    while ``Accelerator()`` construction sees another — so construction takes
+    the real-hardware path even though the count reports virtual devices.
+    That split broke CPU-only Linux runners ('No supported "gpu" device
+    available') when the extension statically linked the driver
+    implementation, and macOS for any device id beyond the physical GPU
+    (DRIV-209, Mach-O two-level namespace binding the two halves of the API
+    to different dylibs).
+
+    Requesting id 1 with a virtual count of 2 is the discriminating check:
+    no CI machine class is guaranteed two physical GPUs, so this only
+    succeeds if creation consults the same virtual-device state the setters
+    wrote.
+    """
+    set_virtual_device_count(2)
+    assert accelerator_count() == 2
+    # Must not raise, even on machines with zero or one physical GPU.
+    Accelerator(0)
+    Accelerator(1)
+
+
+def test_init_all_in_virtual_device_mode_returns_dict(
+    virtual_device_mode: None,
+) -> None:
+    """Cross-compilation: init_all() returns a subscriptable dict keyed by
+    graph name even when virtual devices are in use, so multi-graph callers
+    like the Kimi K2.5 vision+language pipeline can do
+    ``models[vision_graph.name]``.
+    """
+    session = InferenceSession(devices=[CPU()])
+    module = Module()
+    encoder = _unity_graph(name="encoder", module=module)
+    decoder = _unity_graph(name="decoder", module=module)
+    compiled = session.compile(module)
+    models = session.init_all(compiled)
+
+    assert set(models.keys()) == {encoder.name, decoder.name}
+
+
 def test_nested_collectors_both_observe_phases() -> None:
     """Inner CompilationTimer's local stats and the outer collector both see
     compile and init events; nesting no longer shadows."""
@@ -212,3 +281,16 @@ def test_nested_collectors_both_observe_phases() -> None:
 
     assert outer.compile_seconds >= inner.compile_seconds
     assert outer.init_seconds >= inner.init_seconds
+
+
+def test_virtual_cpu_target_roundtrip() -> None:
+    """The virtual CPU target setter/getter round-trips and defaults empty."""
+    assert get_virtual_cpu_target() == ""
+    try:
+        set_virtual_cpu_target("x86-64-v3")
+        assert get_virtual_cpu_target() == "x86-64-v3"
+        set_virtual_cpu_target("generic")
+        assert get_virtual_cpu_target() == "generic"
+    finally:
+        set_virtual_cpu_target("")
+    assert get_virtual_cpu_target() == ""

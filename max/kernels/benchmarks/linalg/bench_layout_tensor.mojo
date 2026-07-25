@@ -20,7 +20,7 @@ import std.benchmark
 from std.algorithm import Static2DTileUnitFunc as Tile2DFunc
 from std.algorithm import sync_parallelize, vectorize
 from layout import *
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from std.python import Python
 
 comptime M = 512  # rows of A and C
@@ -31,15 +31,17 @@ comptime dtype = DType.float32
 
 
 struct Matrix[rows: Int, cols: Int]:
-    var data: UnsafePointer[Scalar[dtype], MutAnyOrigin]
+    var data: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]
 
     # Initialize zeroeing all values
     def __init__(out self):
         self.data = alloc[Scalar[dtype]](Self.rows * Self.cols)
-        memset_zero(self.data, Self.rows * Self.cols)
+        unsafe_memset_zero(self.data, Self.rows * Self.cols)
 
     # Initialize taking a pointer, don't set any elements
-    def __init__(out self, data: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
+    def __init__(
+        out self, data: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]
+    ):
         self.data = data
 
     ## Initialize with random values
@@ -104,7 +106,7 @@ def matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
 
                     def dot[
                         simd_size: Int
-                    ](n: Int) {x, mut C, mut A_val, read B, read m, mut k}:
+                    ](n: Int) {x, mut C, mut A_val, imm B, imm m, mut k}:
                         var idx = n + x
                         C.store(
                             m,
@@ -179,7 +181,7 @@ def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
 
 def alloc_aligned_tile[
     M: Int, N: Int, dtype: DType
-]() -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+]() -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
     comptime alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
     comptime cache_width = ((N + alignment - 1) // alignment) * alignment
     return alloc[Scalar[dtype]](M * cache_width, alignment=alignment)
@@ -310,11 +312,10 @@ def bench[
     var C = Matrix[M, N]()
 
     @always_inline
-    @parameter
-    def test_fn():
+    def test_fn() {mut C, imm A, imm B}:
         _ = func(C, A, B)
 
-    var secs = std.benchmark.run[test_fn](max_runtime_secs=0.5).mean()
+    var secs = std.benchmark.run(test_fn, max_runtime_secs=0.5).mean()
 
     A.data.free()
     B.data.free()

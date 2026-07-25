@@ -141,7 +141,7 @@ struct qgemm_Q4_0(QuantizedGemm):
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
+    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q4_0]())
         var block_ptr = b_ptr.bitcast[_block_Q4_0]()
@@ -152,7 +152,7 @@ struct qgemm_Q4_0(QuantizedGemm):
                 fill_random(block_ptr[].q_bits)
                 block_ptr += 1
 
-        return LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin](
+        return LayoutTensor[DType.uint8, Layout.row_major[2]()](
             b_ptr,
             RuntimeLayout[Layout.row_major[2]()].row_major(
                 Index(N, k_groups * size_of[_block_Q4_0]())
@@ -203,16 +203,18 @@ struct qgemm_Q4_0(QuantizedGemm):
         )
 
         # Decode the bits of the weight data.
-        var q_packed_bits = (
-            block_ptr[]
-            .q_bits.unsafe_ptr()
-            .load[width=_block_Q4_0.group_size // 2]()
-        )
+        var q_bits_ptr: UnsafePointer[
+            UInt8, origin_of(block_ptr[].q_bits)
+        ] = block_ptr[].q_bits.unsafe_ptr()
+        var q_packed_bits = q_bits_ptr.load[width=_block_Q4_0.group_size // 2]()
 
+        var b_quant_data_ptr: UnsafePointer[
+            UInt8, origin_of(b_quant_data)
+        ] = b_quant_data.unsafe_ptr()
         for j in range(2):
             var idx = j * _block_Q4_0.group_size // 2
             var q_bits = (q_packed_bits >> UInt8(j * 4)) & 15
-            b_quant_data.unsafe_ptr().store(idx, q_bits)
+            b_quant_data_ptr.store(idx, q_bits)
 
         var sum: Int32 = 0
 
@@ -239,7 +241,7 @@ struct qgemm_Q4_K(QuantizedGemm):
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
+    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q4_K]())
         var block_ptr = b_ptr.bitcast[_block_Q4_K]()
@@ -252,7 +254,7 @@ struct qgemm_Q4_K(QuantizedGemm):
                 fill_random(block_ptr[].q_bits)
                 block_ptr += 1
 
-        return LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin](
+        return LayoutTensor[DType.uint8, Layout.row_major[2]()](
             b_ptr,
             RuntimeLayout[Layout.row_major[2]()].row_major(
                 Index(N, k_groups * size_of[_block_Q4_K]())
@@ -297,10 +299,14 @@ struct qgemm_Q4_K(QuantizedGemm):
         var a_block_sums = InlineArray[Int32, _block_Q4_K.group_count](
             uninitialized=True
         )
+        var a_quant_data_ptr: UnsafePointer[
+            Int8, origin_of(a_quant_data)
+        ] = a_quant_data.unsafe_ptr()
         for i in range(_block_Q4_K.group_count):
             a_block_sums[i] = (
-                a_quant_data.unsafe_ptr()
-                .load[width=_block_Q4_K.group_size](i * _block_Q4_K.group_size)
+                a_quant_data_ptr.load[width=_block_Q4_K.group_size](
+                    i * _block_Q4_K.group_size
+                )
                 .cast[DType.int32]()
                 .reduce_add()
             )
@@ -327,16 +333,21 @@ struct qgemm_Q4_K(QuantizedGemm):
         var b_quant_data = InlineArray[UInt8, _block_QK_K.quantized_k](
             uninitialized=True
         )
+        var b_quant_data_ptr: UnsafePointer[
+            UInt8, origin_of(b_quant_data)
+        ] = b_quant_data.unsafe_ptr()
 
         # Decode the bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 2, 32):
-            var q_bits_ptr = block_ptr[].q_bits.unsafe_ptr()
+            var q_bits_ptr: UnsafePointer[
+                UInt8, origin_of(block_ptr[].q_bits)
+            ] = block_ptr[].q_bits.unsafe_ptr()
             var q_packed_bits = q_bits_ptr.load[width=32](i)
 
             for j in range(2):
                 var idx = i * 2 + j * 32
                 var q_bits = (q_packed_bits >> UInt8(j * 4)) & 15
-                b_quant_data.unsafe_ptr().store(idx, q_bits)
+                b_quant_data_ptr.store(idx, q_bits)
 
         var sum2: Int32 = 0
 
@@ -370,7 +381,7 @@ struct qgemm_Q6_K(QuantizedGemm):
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
+    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q6_K]())
         var block_ptr = b_ptr.bitcast[_block_Q6_K]()
@@ -383,7 +394,7 @@ struct qgemm_Q6_K(QuantizedGemm):
                 block_ptr[].base_scale = random_float16(max=0.001)
                 block_ptr += 1
 
-        return LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin](
+        return LayoutTensor[DType.uint8, Layout.row_major[2]()](
             b_ptr,
             RuntimeLayout[Layout.row_major[2]()].row_major(
                 Index(N, k_groups * size_of[_block_Q6_K]())
@@ -428,27 +439,34 @@ struct qgemm_Q6_K(QuantizedGemm):
         var b_quant_data = InlineArray[UInt8, _block_QK_K.quantized_k](
             uninitialized=True
         )
+        var b_quant_data_ptr: UnsafePointer[
+            UInt8, origin_of(b_quant_data)
+        ] = b_quant_data.unsafe_ptr()
 
         # Decode the bottom bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 2, 64):
-            var q_bits_lo_ptr = block_ptr[].q_bits_lo.unsafe_ptr()
+            var q_bits_lo_ptr: UnsafePointer[
+                UInt8, origin_of(block_ptr[].q_bits_lo)
+            ] = block_ptr[].q_bits_lo.unsafe_ptr()
             var q_packed_bits = q_bits_lo_ptr.load[width=64](i)
 
             for j in range(2):
                 var idx = i * 2 + j * 64
                 var q_bits = (q_packed_bits >> UInt8(j * 4)) & 15
-                b_quant_data.unsafe_ptr().store(idx, q_bits)
+                b_quant_data_ptr.store(idx, q_bits)
 
         # Decode the top bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 4, 32):
-            var q_bits_hi_ptr = block_ptr[].q_bits_hi.unsafe_ptr()
+            var q_bits_hi_ptr: UnsafePointer[
+                UInt8, origin_of(block_ptr[].q_bits_hi)
+            ] = block_ptr[].q_bits_hi.unsafe_ptr()
             var q_packed_bits = q_bits_hi_ptr.load[width=32](i)
 
             for j in range(4):
                 var idx = i * 4 + j * 32
-                var q_bits_lo = b_quant_data.unsafe_ptr().load[width=32](idx)
+                var q_bits_lo = b_quant_data_ptr.load[width=32](idx)
                 var q_bits_hi = ((q_packed_bits >> UInt8(j * 2)) & 3) << 4
-                b_quant_data.unsafe_ptr().store(idx, q_bits_hi | q_bits_lo)
+                b_quant_data_ptr.store(idx, q_bits_hi | q_bits_lo)
 
         var sum = dot_product_QK_K[
             group_size=_block_Q6_K.group_size, b_zero_point=32
@@ -502,10 +520,19 @@ def reference_gemm[
 
 
 struct GemmContext[qgemm: QuantizedGemm]:
+    @__allow_legacy_any_origin_fields
     var a: LayoutTensor[DType.float32, Layout.row_major[2](), MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var b: LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var b_packed: LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var c: LayoutTensor[DType.float32, Layout.row_major[2](), MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var c_golden: LayoutTensor[
         DType.float32, Layout.row_major[2](), MutAnyOrigin
     ]
@@ -514,12 +541,12 @@ struct GemmContext[qgemm: QuantizedGemm]:
     def _build_float_buffer(
         M: Int, N: Int
     ) raises -> LayoutTensor[
-        DType.float32, Layout.row_major[2](), MutAnyOrigin
+        DType.float32, Layout.row_major[2](), MutUntrackedOrigin
     ]:
         var ptr = alloc[Float32](M * N)
         for i in range(M * N):
             ptr[i] = random_float64(min=-1.0, max=+1.0).cast[DType.float32]()
-        return LayoutTensor[DType.float32, Layout.row_major[2](), MutAnyOrigin](
+        return LayoutTensor[DType.float32, Layout.row_major[2]()](
             ptr, RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, N))
         )
 
@@ -532,11 +559,11 @@ struct GemmContext[qgemm: QuantizedGemm]:
     @staticmethod
     def _pack_b_buffer(
         b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _]
-    ) raises -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
+    ) raises -> LayoutTensor[
+        DType.uint8, Layout.row_major[2](), MutUntrackedOrigin
+    ]:
         var b_packed_buffer = alloc[UInt8](b.size())
-        var b_packed = LayoutTensor[
-            DType.uint8, Layout.row_major[2](), MutAnyOrigin
-        ](
+        var b_packed = LayoutTensor[DType.uint8, Layout.row_major[2]()](
             b_packed_buffer,
             RuntimeLayout[Layout.row_major[2]()].row_major(
                 b.runtime_layout.shape.value.canonicalize()

@@ -80,7 +80,7 @@ def bench_scatter[
     dp_size: Int,
     *,
     cache_busting: Bool,
-](mut b: Bench, list_of_ctx: List[DeviceContext], num_elems: Int,) raises:
+](mut b: Bench, list_of_ctx: List[DeviceContext], num_elems: Int) raises:
     comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
     comptime assert ngpus >= dp_size, "ngpus must be >= dp_size"
     comptime tp_size = ceildiv(ngpus, dp_size)
@@ -148,7 +148,10 @@ def bench_scatter[
             signal_buffers[gpu_idx], 0
         )
         rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+            signal_buffers[gpu_idx]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
         )
 
     # Build TileTensor arrays for the scatter API.

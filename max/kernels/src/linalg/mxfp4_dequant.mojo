@@ -31,11 +31,12 @@ from std.gpu.primitives.grid_controls import (
 )
 from std.utils import StaticTuple
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
-from layout import TileTensor
+from layout import TensorStorage, TileTensor
 from layout.coord import Coord, Idx
 from layout.tile_layout import TensorLayout
 from .fp4_utils import cast_uint_to_fp4e2m1, MXFP4_SF_VECTOR_SIZE
 from std.algorithm.functional import elementwise
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import Index, IndexList
 from std.sys.info import simd_width_of
 
@@ -51,13 +52,22 @@ def _dequant_mxfp4_to_fp8_kernel[
     output_layout: TensorLayout,
     scales_layout: TensorLayout,
     input_layout: TensorLayout,
+    output_storage: TensorStorage,
+    scales_storage: TensorStorage,
+    input_storage: TensorStorage,
     *,
     SF_VECTOR_SIZE: Int = 32,
     ELEMENTS_PER_THREAD: Int = 8,
 ](
-    output: TileTensor[out_dtype, output_layout, MutAnyOrigin],
-    input: TileTensor[in_dtype, input_layout, MutAnyOrigin],
-    scales: TileTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    output: TileTensor[
+        out_dtype, output_layout, MutAnyOrigin, Storage=output_storage
+    ],
+    input: TileTensor[
+        in_dtype, input_layout, MutAnyOrigin, Storage=input_storage
+    ],
+    scales: TileTensor[
+        scales_dtype, scales_layout, MutAnyOrigin, Storage=scales_storage
+    ],
     num_rows: Int,
     num_cols: Int,
 ):
@@ -134,6 +144,9 @@ def dequant_mxfp4[
 ) raises:
     """Dequantize MXFP4 packed weights to FP8 or BF16.
 
+    Parameters:
+        SF_VECTOR_SIZE: Number of consecutive elements each E8M0 block scale covers (defaults to 32).
+
     Args:
         ctx: Device context for kernel launch.
         output: Output tensor [num_rows, num_cols] of float8_e4m3fn or bfloat16.
@@ -188,13 +201,19 @@ def dequant_mxfp4[
 
     # Rebind immutable origins to MutAnyOrigin for the GPU kernel.
     var input_tt = rebind[
-        TileTensor[in_dtype, type_of(input).LayoutType, MutAnyOrigin]
+        TileTensor[
+            in_dtype,
+            type_of(input).LayoutType,
+            MutAnyOrigin,
+            Storage=type_of(input).Storage,
+        ]
     ](input)
     var scales_tt = rebind[
         TileTensor[
             scales_dtype,
             type_of(scales).LayoutType,
             MutAnyOrigin,
+            Storage=type_of(scales).Storage,
         ]
     ](scales)
 
@@ -205,6 +224,9 @@ def dequant_mxfp4[
         type_of(output).LayoutType,
         type_of(scales_tt).LayoutType,
         type_of(input_tt).LayoutType,
+        type_of(output).Storage,
+        type_of(scales_tt).Storage,
+        type_of(input_tt).Storage,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
     ]
@@ -229,31 +251,22 @@ def _cast_bf16_to_fp8(
     num_cols: Int,
 ) raises:
     """Cast BF16 tensor to FP8 using elementwise kernel."""
-    var out_tt = output.as_any_origin()
-    var in_tt = input.as_any_origin()
+    var out_tt = output.as_unsafe_any_origin()
+    var in_tt = input.as_unsafe_any_origin()
     comptime assert out_tt.flat_rank == 2, "output must be rank 2"
     comptime assert in_tt.flat_rank == 2, "input must be rank 2"
     comptime assert out_tt.mut, "output must be mutable"
 
     @always_inline
-    @__copy_capture(out_tt, in_tt)
-    @parameter
-    def cast_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank],):
-        comptime assert rank == 2, "cast_fn only supports rank-2 tensors"
-        var idx = rebind[IndexList[2]](idx_arg)
-        var coord = Coord(idx)
-        comptime assert in_tt.flat_rank >= coord.flat_rank
-        comptime assert out_tt.flat_rank >= coord.flat_rank
+    def cast_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        comptime assert idx.rank == 2, "cast_fn only supports rank-2 tensors"
         out_tt.store[width=width](
-            coord,
-            in_tt.load[width=width](coord).cast[out_tt.dtype](),
+            idx,
+            in_tt.load[width=width](idx).cast[out_tt.dtype](),
         )
 
     elementwise[
-        cast_fn,
         simd_width_of[input.dtype](),
         target="gpu",
         _trace_description="mxfp4_dequant_cast",
-    ](Index(num_rows, num_cols), ctx)
+    ](cast_fn, (num_rows, num_cols), ctx)

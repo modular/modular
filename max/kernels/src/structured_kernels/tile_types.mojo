@@ -36,9 +36,7 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    LTToTTLayout,
     LayoutTensor,
-    Layout as LegacyLayout,
     TensorLayout,
     TileTensor,
     row_major,
@@ -373,6 +371,28 @@ comptime tma_desc_layout_3d[
 ]
 """3D TMA descriptor layout: [dim0, dim1, swizzle_elems], strides [1,1,1]."""
 
+
+# Variant of tma_desc_layout_3d that takes the innermost dim size explicitly
+# instead of deriving it from the swizzle atom size. The default helper is
+# bound to swizzle.bytes() // size_of[dtype](), which matches the per-swizzle
+# upper bound for swizzled modes. For SWIZZLE_NONE, however, the driver only
+# requires boxDim[0] * elem_size to be a multiple of 16 bytes (no upper cap
+# beyond the 256-element limit), so callers may want a larger innermost dim
+# matching their actual SMEM tile width. Use this helper for those cases.
+comptime tma_desc_layout_3d_explicit_inner[
+    tile_dim0: Int,
+    tile_dim1: Int,
+    inner_elems: Int,
+] = Layout[
+    Coord[
+        ComptimeInt[tile_dim0],
+        ComptimeInt[tile_dim1],
+        ComptimeInt[inner_elems],
+    ].element_types,
+    Coord[ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]].element_types,
+]
+"""3D TMA descriptor layout with explicit innermost dim (in elements)."""
+
 comptime tma_desc_layout_4d[
     dtype: DType,
     tile_dim0: Int,
@@ -460,7 +480,7 @@ def create_tma_tile[
     tile_shape: IndexList[tma_tile_layout.rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: LayoutTensor[...]) raises -> TmaOpType[
+](ctx: DeviceContext, tensor: LayoutTensor[mut=False, ...]) raises -> TmaOpType[
     tensor.dtype, tma_tile_layout, tma_desc_layout
 ]:
     """Create a TMATensorTile using new Layout types.
@@ -496,7 +516,7 @@ def create_tma_tile[
     tile_shape: IndexList[tma_tile_layout.rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: TileTensor) raises -> TmaOpType[
+](ctx: DeviceContext, tensor: TileTensor[mut=False, ...]) raises -> TmaOpType[
     tensor.dtype, tma_tile_layout, tma_desc_layout
 ]:
     """TileTensor overload of create_tma_tile.
@@ -533,13 +553,13 @@ def create_tma_tile[
 
 comptime GMEMTile[
     dtype: DType,
-    lt_layout: LegacyLayout,
+    tt_layout: TensorLayout,
 ] = TileTensor[
     dtype,
-    LTToTTLayout[lt_layout],
+    tt_layout,
     MutAnyOrigin,
 ]
-"""Global memory TileTensor derived from a legacy Layout.
+"""Global memory TileTensor for global memory kernel parameters.
 
 Used for kernel parameter types, replacing LayoutTensor parameters.
 """
@@ -638,7 +658,9 @@ struct SMemTileArrayWithLayout[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutUntrackedOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -672,6 +694,9 @@ struct SMemTileArrayWithLayout[
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
+
         Args:
             index: The tile index.
 
@@ -679,7 +704,7 @@ struct SMemTileArrayWithLayout[
             A TileTensor with correct swizzled layout at the given index.
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
-        return Self.Tile(tile_ptr, Self.tile_layout)
+        return Self.Tile(tile_ptr.as_unsafe_any_origin(), Self.tile_layout)
 
     def slice[
         length: Int
@@ -787,7 +812,9 @@ struct SMemTileArray[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutUntrackedOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -821,6 +848,9 @@ struct SMemTileArray[
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
+
         Args:
             index: The tile index.
 
@@ -833,7 +863,7 @@ struct SMemTileArray[
             Coord[*Self.shape_types](),
             Coord[*Self.stride_types](),
         )
-        return Self.Tile(tile_ptr, layout)
+        return Self.Tile(tile_ptr.as_unsafe_any_origin(), layout)
 
     def slice[
         length: Int
@@ -952,7 +982,9 @@ struct SMemTileArray2D[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutUntrackedOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -991,6 +1023,9 @@ struct SMemTileArray2D[
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
+
         Args:
             index: The tile index.
 
@@ -999,7 +1034,7 @@ struct SMemTileArray2D[
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
         return Self.Tile(
-            tile_ptr,
+            tile_ptr.as_unsafe_any_origin(),
             Self.tile_layout,
         )
 
@@ -1027,7 +1062,7 @@ struct SMemTileArray2D[
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
         return SMemTile[Self.dtype, tile_layout, alignment=Self.alignment](
-            tile_ptr, tile_layout
+            tile_ptr.as_unsafe_any_origin(), tile_layout
         )
 
     def slice[
@@ -1122,7 +1157,9 @@ struct SMemTileArray2DRowMajor[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutUntrackedOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -1156,6 +1193,9 @@ struct SMemTileArray2DRowMajor[
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
 
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
+
         Args:
             index: The tile index.
 
@@ -1164,7 +1204,7 @@ struct SMemTileArray2DRowMajor[
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
         return Self.Tile(
-            tile_ptr,
+            tile_ptr.as_unsafe_any_origin(),
             Self.tile_layout,
         )
 

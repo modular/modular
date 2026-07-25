@@ -14,7 +14,11 @@
 
 from std.builtin.rebind import downcast
 from std.os import abort
-from std.memory import is_trivially_copyable, is_trivially_movable, memset_zero
+from std.memory import (
+    is_trivially_copyable,
+    is_trivially_movable,
+    unsafe_memset_zero,
+)
 
 
 struct UnsafeMaybeUninit[T: AnyType](
@@ -103,7 +107,7 @@ struct UnsafeMaybeUninit[T: AnyType](
             An `UnsafeMaybeUninit` with the memory set to all 0 bytes.
         """
         var result = Self()
-        memset_zero(UnsafePointer(to=result), 1)
+        unsafe_memset_zero(Pointer(to=result), 1)
         return result^
 
     def __init__(out self, *, copy: Self):
@@ -116,13 +120,11 @@ struct UnsafeMaybeUninit[T: AnyType](
         Args:
             copy: The instance to copy from.
         """
-        comptime assert (
-            conforms_to(Self.T, Copyable)
-            and is_trivially_copyable[downcast[Self.T, Copyable]]()
-        )
+        comptime assert conforms_to(Self.T, Copyable)
+        comptime assert is_trivially_copyable[Self.T]()
         self._array = copy._array
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Moves the raw bits from another `UnsafeMaybeUninit` instance.
 
         This performs a bitwise move of the underlying memory without invoking
@@ -130,14 +132,13 @@ struct UnsafeMaybeUninit[T: AnyType](
         the held value `T` must be trivially movable.
 
         Args:
-            take: The value to move from.
+            move: The value to move from.
         """
-        comptime assert (
-            conforms_to(Self.T, Movable)
-            and is_trivially_movable[downcast[Self.T, Movable]]()
-        )
-        self._array = take._array
+        comptime assert conforms_to(Self.T, Movable)
+        comptime assert is_trivially_movable[Self.T]()
+        self._array = move._array
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def init_from[
         MovableType: Movable
@@ -154,7 +155,7 @@ struct UnsafeMaybeUninit[T: AnyType](
         Args:
             value: The value to store in memory.
         """
-        self.unsafe_ptr().init_pointee_move(value^)
+        self.unsafe_ptr().unsafe_write(value^)
 
     @always_inline
     def unsafe_assume_init_ref(ref self) -> ref[self._array] Self.T:
@@ -167,6 +168,7 @@ struct UnsafeMaybeUninit[T: AnyType](
         """
         return self.unsafe_ptr()[]
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def unsafe_assume_init_take[
         U: Movable, //
@@ -183,12 +185,12 @@ struct UnsafeMaybeUninit[T: AnyType](
         Returns:
             The initialized value that was stored in this container.
         """
-        return self.unsafe_ptr().take_pointee()
+        return self.unsafe_ptr().unsafe_take_pointee()
 
     @always_inline
     def unsafe_ptr(
         ref self,
-    ) -> UnsafePointer[Self.T, origin_of(self._array)]:
+    ) -> Pointer[Self.T, origin_of(self._array)]:
         """Get a pointer to the underlying element.
 
         Note that this method does not assumes that the memory is initialized
@@ -197,32 +199,33 @@ struct UnsafeMaybeUninit[T: AnyType](
         Returns:
             A pointer to the underlying element.
         """
-        return UnsafePointer(to=self._array).bitcast[Self.T]()
+        return Pointer(to=self._array).unsafe_bitcast[Self.T]()
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def unsafe_assume_init_destroy[
-        D: ImplicitlyDestructible
+        D: ImplicitlyDeletable
     ](mut self: UnsafeMaybeUninit[D]):
         """Runs the destructor of the internal value.
 
         Calling this method assumes that the memory is initialized.
 
         Parameters:
-            D: An element type that is implicitly destructible.
+            D: An element type that is implicitly deletable.
 
         """
-        self.unsafe_ptr().destroy_pointee()
+        self.unsafe_ptr().unsafe_deinit_pointee()
 
 
 @always_inline
 def _is_trivially_copyable[T: AnyType]() -> Bool:
     comptime if conforms_to(T, Copyable):
-        return is_trivially_copyable[downcast[T, Copyable]]()
+        return is_trivially_copyable[T]()
     return False
 
 
 @always_inline
 def _is_trivially_movable[T: AnyType]() -> Bool:
     comptime if conforms_to(T, Movable):
-        return is_trivially_movable[downcast[T, Movable]]()
+        return is_trivially_movable[T]()
     return False

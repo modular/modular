@@ -38,7 +38,8 @@ from std.algorithm import vectorize
 from std.bit import count_trailing_zeros
 from std.builtin.dtype import _integral_type_of
 from std.builtin.simd import _modf, _simd_apply
-from std.memory import Span
+from std.collections import Span
+from . import pi, inf, isfinite, isinf, isnan, nan, nextafter
 
 from std.utils.numerics import FPUtils, isnan, nan
 from std.utils.static_tuple import StaticTuple
@@ -214,7 +215,7 @@ def _sqrt_nvvm(x: SIMD, out res: type_of(x)):
 
 @always_inline
 def sqrt[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Performs elementwise square root on the elements of a SIMD vector.
 
@@ -243,9 +244,11 @@ def sqrt[
     elif is_nvidia_gpu():
         comptime if dtype in (DType.float16, DType.bfloat16):
             return _sqrt_nvvm(x.cast[DType.float32]()).cast[dtype]()
-        comptime assert (
-            dtype != DType.float64
-        ), "DType.float64 is not supported for approx sqrt on NVIDIA GPU"
+        comptime if dtype == DType.float64:
+            # NVIDIA has no approximate f64 sqrt (`sqrt.approx.d` does not
+            # exist); use the IEEE correctly-rounded hardware sqrt via the
+            # generic intrinsic, which lowers to `sqrt.rn.f64`.
+            return _llvm_unary_fn["llvm.sqrt"](x)
         return _sqrt_nvvm(x)
     elif is_apple_gpu():
         return _llvm_unary_fn["llvm.air.sqrt"](x)
@@ -274,7 +277,7 @@ def _rsqrt_nvvm(x: SIMD, out res: type_of(x)):
 
 @always_inline
 def rsqrt[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x):
     """Performs elementwise reciprocal square root on a SIMD vector.
 
@@ -331,7 +334,7 @@ def _recip_nvvm(x: SIMD, out res: type_of(x)):
 
 @always_inline
 def recip[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x):
     """Performs elementwise reciprocal on a SIMD vector.
 
@@ -372,7 +375,7 @@ def recip[
 
 @always_inline
 def exp2[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Computes elementwise 2 raised to the power of n, where n is an element
     of the input SIMD vector.
@@ -425,7 +428,7 @@ def exp2[
     comptime if dtype == DType.float32:
         return _exp2_float32(x._refine[DType.float32]())._refine[dtype]()
     elif dtype == DType.float64:
-        return 2**x
+        return SIMD[dtype, width](2.0) ** x
     else:
         return exp2(x.cast[DType.float32]()).cast[dtype]()
 
@@ -465,7 +468,7 @@ def _exp2_float32(x: SIMD[DType.float32, _]) -> type_of(x):
 
 @always_inline
 def _ldexp_impl[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width], exp: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes elementwise ldexp function.
 
@@ -527,7 +530,7 @@ def _ldexp_impl[
 
 @always_inline
 def ldexp[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width], exp: SIMD[DType.int32, width]) -> SIMD[
     dtype, width
 ] where dtype.is_floating_point():
@@ -570,7 +573,7 @@ trait _Expable:
 
 @always_inline
 def _exp_taylor[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     comptime coefficients = [
         Scalar[dtype](1.0),
@@ -588,13 +591,19 @@ def _exp_taylor[
         2.0876756987868098979e-9,
     ]
     return polynomial_evaluate[
-        coefficients if dtype == DType.float64 else coefficients[:8],
+        coefficients[:] if dtype == DType.float64 else coefficients[:8],
     ](x)
+
+
+comptime _ExpPluginHookFnType = def[dtype: DType, width: SIMDLength, //](
+    SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
+"""Plugin-hook signature for `PluginHooks.exp_fn`; keep in sync with `exp`."""
 
 
 @always_inline
 def exp[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Calculates elementwise exponential of the input vector.
 
@@ -706,7 +715,10 @@ def _exp2_approx_f32[
     # trick.
     # We use 1.5 * 2^23 (i.e., 2^23 + 2^22) so it works cleanly with
     # round-to-nearest-even across positive/negative inputs in this range.
-    comptime ROUND_BIAS_F32 = 3 * FPUtils[DType.float32].mantissa_mask()
+    # Decomposed as (1.5 * 2) * 2^(23 -1) to avoid floating point arithmetic.
+    comptime ROUND_BIAS_F32 = 3 * (
+        1 << (FPUtils[DType.float32].mantissa_width() - 1)
+    )
     comptime NEG_ROUND_BIAS_F32 = -ROUND_BIAS_F32
 
     # Lower clamp for exp2 range reduction:
@@ -818,7 +830,7 @@ def _frexp_mask2[
 
 @always_inline
 def frexp[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> StaticTuple[
     SIMD[dtype, width], 2
 ] where dtype.is_floating_point():
@@ -869,7 +881,7 @@ def frexp[
 
 @always_inline
 def _log_base[
-    dtype: DType, width: SIMDSize, //, base: Int
+    dtype: DType, width: SIMDLength, //, base: Int
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Performs elementwise log of a SIMD vector with a specific base.
 
@@ -927,7 +939,7 @@ def _log_base[
 
 @always_inline
 def log[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Performs elementwise natural log (base E) of a SIMD vector.
 
@@ -962,7 +974,7 @@ def log[
 
 @always_inline
 def log2[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Performs elementwise log (base 2) of a SIMD vector.
 
@@ -1004,7 +1016,7 @@ def log2[
 
 @always_inline
 def copysign[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](magnitude: SIMD[dtype, width], sign: SIMD[dtype, width]) -> SIMD[
     dtype, width
 ]:
@@ -1044,7 +1056,7 @@ def copysign[
 
 @always_inline
 def erf[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Performs the elementwise Erf on a SIMD vector.
 
@@ -1098,9 +1110,15 @@ def erf[
 # ===----------------------------------------------------------------------=== #
 
 
+comptime _TanhPluginHookFnType = def[dtype: DType, width: SIMDLength, //](
+    SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
+"""Plugin-hook signature for `PluginHooks.tanh_fn`; keep in sync with `tanh`."""
+
+
 @always_inline
 def tanh[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Performs elementwise evaluation of the tanh function.
 
@@ -1114,6 +1132,9 @@ def tanh[
     Returns:
         The result of the elementwise tanh operation.
     """
+
+    comptime if CurrentPlugin.tanh_fn[dtype, width]:
+        return comptime (CurrentPlugin.tanh_fn[dtype, width].value())(x)
 
     comptime if is_nvidia_gpu():
         comptime instruction = "tanh.approx.f32"
@@ -1191,7 +1212,7 @@ def tanh[
 @always_inline
 def isclose[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     *,
     symmetrical: Bool = True,
 ](
@@ -1262,7 +1283,7 @@ def isclose[
 @always_inline
 def iota[
     dtype: DType, width: Int
-](offset: Scalar[dtype] = 0) -> SIMD[dtype, width]:
+](offset: Scalar[dtype] = Scalar[dtype](0)) -> SIMD[dtype, width]:
     """Creates a SIMD vector containing an increasing sequence, starting from
     offset.
 
@@ -1297,7 +1318,7 @@ def iota[
 def iota[
     dtype: DType, //
 ](
-    buff: UnsafePointer[mut=True, Scalar[dtype], _, address_space=_],
+    buff: Pointer[mut=True, Scalar[dtype], _, address_space=_],
     len: Int,
     offset: Int = 0,
 ):
@@ -1317,7 +1338,7 @@ def iota[
 
     @always_inline
     def fill[width: Int](i: Int) {var offset, var buff}:
-        buff.store(i, iota[dtype, width](Scalar[dtype](offset + i)))
+        buff.unsafe_store(i, iota[dtype, width](Scalar[dtype](offset + i)))
 
     vectorize[simd_width_of[dtype]()](len, fill)
 
@@ -1344,7 +1365,7 @@ def iota(span: Span[mut=True, Int, _], offset: Int = 0):
         span: The Span to fill with numbers.
         offset: The starting value to fill at index 0.
     """
-    var buff = span.unsafe_ptr().bitcast[Scalar[DType.int]]()
+    var buff = span.unsafe_ptr().unsafe_bitcast[Scalar[DType.int]]()
     iota(buff, len(span), offset=offset)
 
 
@@ -1372,7 +1393,7 @@ def fma(a: Int, b: Int, c: Int) -> Int:
 
 @always_inline("nodebug")
 def fma[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](
     a: SIMD[dtype, width],
     b: SIMD[dtype, width],
@@ -1424,7 +1445,7 @@ def align_down(value: Int, alignment: Int) -> Int:
 
 @always_inline
 def align_down[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](value: SIMD[dtype, width], alignment: SIMD[dtype, width]) -> SIMD[
     dtype, width
 ] where dtype.is_integral():
@@ -1471,7 +1492,7 @@ def align_up(value: Int, alignment: Int) -> Int:
 
 @always_inline
 def align_up[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](value: SIMD[dtype, width], alignment: SIMD[dtype, width]) -> SIMD[
     dtype, width
 ] where dtype.is_integral():
@@ -1500,7 +1521,7 @@ def align_up[
 
 
 def acos[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `acos` of the inputs.
 
@@ -1577,7 +1598,7 @@ def acos[
 
 
 def asin[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `asin` of the inputs.
 
@@ -1648,7 +1669,7 @@ def asin[
 
 
 def atan[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `atan` of the inputs.
 
@@ -1675,7 +1696,7 @@ def atan[
 
 
 def atan2[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](y: SIMD[dtype, width], x: SIMD[dtype, width]) -> SIMD[
     dtype, width
 ] where dtype.is_floating_point():
@@ -1722,7 +1743,7 @@ def atan2[
 
 
 def cos[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Computes the `cos` of the inputs.
 
@@ -1765,7 +1786,7 @@ def cos[
 
 
 def sin[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Computes the `sin` of the inputs.
 
@@ -1808,7 +1829,7 @@ def sin[
 
 
 def tan[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `tan` of the inputs.
 
@@ -1835,7 +1856,7 @@ def tan[
 
 
 def acosh[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `acosh` of the inputs.
 
@@ -1862,7 +1883,7 @@ def acosh[
 
 
 def asinh[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `asinh` of the inputs.
 
@@ -1932,7 +1953,7 @@ def _atanh_float32(x: SIMD) -> type_of(x) where x.dtype.is_floating_point():
 
 @always_inline
 def atanh[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `atanh` of the inputs.
 
@@ -1968,7 +1989,7 @@ def atanh[
 
 
 def cosh[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `cosh` of the inputs.
 
@@ -2002,7 +2023,7 @@ def cosh[
 
 
 def sinh[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `sinh` of the inputs.
 
@@ -2047,7 +2068,7 @@ def sinh[
 
 @always_inline
 def _expm1_float32[
-    width: SIMDSize, //
+    width: SIMDLength, //
 ](d: SIMD[DType.float32, width]) -> type_of(d):
     # Constants for range reduction
     # R_LN2f = 1/ln(2) for converting to base-2 exponent
@@ -2100,7 +2121,7 @@ def _expm1_float32[
 
 @always_inline
 def expm1[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `expm1` of the inputs.
 
@@ -2133,7 +2154,7 @@ def expm1[
 
 
 def log10[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `log10` of the inputs.
 
@@ -2178,7 +2199,7 @@ def log10[
 
 @always_inline
 def _log1p_f64[
-    width: SIMDSize, //
+    width: SIMDLength, //
 ](x: SIMD[DType.float64, width]) -> type_of(x):
     # This uses the approximation from cephes to compute log1p via the approximation
     # log(1+x) = x - x**2/2 + x**3 P(x)/Q(x)
@@ -2223,7 +2244,7 @@ def _log1p_f64[
 
 
 def log1p[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `log1p` of the inputs.
 
@@ -2252,7 +2273,7 @@ def log1p[
 
 
 def logb[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `logb` of the inputs.
 
@@ -2279,7 +2300,7 @@ def logb[
 
 
 def _ilogb[
-    width: SIMDSize
+    width: SIMDLength
 ](x: SIMD[DType.float32, width]) -> SIMD[DType.int32, width]:
     """Extract binary exponent from floating-point number.
 
@@ -2440,7 +2461,7 @@ def _cbrtf(x: Float32) -> Float32:
 
 
 def cbrt[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `cbrt` of the inputs.
 
@@ -2478,7 +2499,7 @@ def cbrt[
 
 # TODO: implement for variadic inputs as Python.
 def hypot[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[
     dtype, width
 ] where dtype.is_floating_point():
@@ -2648,7 +2669,7 @@ def _erfcf(x: Float32) -> Float32:
 
 
 def erfc[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `erfc` of the inputs.
 
@@ -2685,7 +2706,7 @@ def erfc[
 
 
 def lgamma[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `lgamma` of the inputs.
 
@@ -2712,7 +2733,7 @@ def lgamma[
 
 
 def gamma[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Gamma of the input.
 
@@ -2741,7 +2762,7 @@ def gamma[
 
 
 def remainder[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
     dtype, width
 ] where dtype.is_floating_point():
@@ -2791,7 +2812,7 @@ def remainder[
 
 
 def j0[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Bessel function of the first kind of order 0 for each input
     value.
@@ -2819,7 +2840,7 @@ def j0[
 
 
 def j1[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Bessel function of the first kind of order 1 for each input
     value.
@@ -2847,7 +2868,7 @@ def j1[
 
 
 def y0[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Bessel function of the second kind of order 0 for each input
     value.
@@ -2875,7 +2896,7 @@ def y0[
 
 
 def y1[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Bessel function of the second kind of order 1 for each input
     value.
@@ -2903,7 +2924,7 @@ def y1[
 
 
 def scalb[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[
     dtype, width
 ] where dtype.is_floating_point():
@@ -3081,7 +3102,7 @@ def lcm(*values: Int) -> Int:
 
 
 def modf[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> Tuple[type_of(x), type_of(x)]:
     """Computes the integral and fractional part of the value.
 
@@ -3105,7 +3126,7 @@ def modf[
 
 @always_inline
 def ulp[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Computes the ULP (units of last place) or (units of least precision) of
     the number.
@@ -3284,24 +3305,8 @@ def clamp(
     return max(min(val, upper_bound), lower_bound)
 
 
-def clamp(
-    val: UInt, lower_bound: type_of(val), upper_bound: type_of(val)
-) -> type_of(val):
-    """Clamps the integer value vector to be in a certain range.
-
-    Args:
-        val: The value to clamp.
-        lower_bound: Minimum of the range to clamp to.
-        upper_bound: Maximum of the range to clamp to.
-
-    Returns:
-        An integer clamped to be within lower_bound and upper_bound.
-    """
-    return max(min(val, upper_bound), lower_bound)
-
-
 def clamp[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](
     val: SIMD[dtype, width],
     lower_bound: type_of(val),
@@ -3337,7 +3342,7 @@ def clamp[
 @always_inline("nodebug")
 def _llvm_unary_fn[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     fn_name: StaticString,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -3347,7 +3352,7 @@ def _llvm_unary_fn[
 @always_inline("nodebug")
 def _call_libm[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     func_name: StaticString,
 ](arg: SIMD[dtype, width]) -> SIMD[
@@ -3402,7 +3407,7 @@ def _call_ptx_intrinsic_scalar[
 
 def _call_ptx_intrinsic[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     *,
     instruction: StaticString,
@@ -3424,7 +3429,7 @@ def _call_ptx_intrinsic[
 
 def _call_ptx_intrinsic[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     *,
     scalar_instruction: StaticString,
@@ -3454,7 +3459,7 @@ def _call_ptx_intrinsic[
 
 def _call_ptx_intrinsic[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     *,
     scalar_instruction: StaticString,
@@ -3802,18 +3807,18 @@ def divmod[T: DivModable](numerator: T, denominator: T) -> Tuple[T, T]:
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline("nodebug")
-def max(x: Int, y: Int, /) -> Int:
-    """Gets the maximum of two integers.
+# @always_inline("nodebug")
+# def max(x: Int, y: Int, /) -> Int:
+#     """Gets the maximum of two integers.
 
-    Args:
-        x: Integer input to max.
-        y: Integer input to max.
+#     Args:
+#         x: Integer input to max.
+#         y: Integer input to max.
 
-    Returns:
-        Maximum of x and y.
-    """
-    return Int(mlir_value=__mlir_op.`index.maxs`(x._mlir_value, y._mlir_value))
+#     Returns:
+#         Maximum of x and y.
+#     """
+#     return Int(mlir_value=__mlir_op.`index.maxs`(x._mlir_value, y._mlir_value))
 
 
 @always_inline("nodebug")
@@ -3845,7 +3850,7 @@ def max[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-def max[T: Copyable & Comparable](x: T, *ys: T) -> T:
+def max[T: Copyable & Comparable & ImplicitlyDeletable](x: T, *ys: T) -> T:
     """Gets the maximum value from a sequence of values.
 
     Parameters:
@@ -3868,20 +3873,6 @@ def max[T: Copyable & Comparable](x: T, *ys: T) -> T:
 # ===----------------------------------------------------------------------=== #
 # min
 # ===----------------------------------------------------------------------=== #
-
-
-@always_inline("nodebug")
-def min(x: Int, y: Int, /) -> Int:
-    """Gets the minimum of two integers.
-
-    Args:
-        x: Integer input to min.
-        y: Integer input to min.
-
-    Returns:
-        Minimum of x and y.
-    """
-    return Int(mlir_value=__mlir_op.`index.mins`(x._mlir_value, y._mlir_value))
 
 
 @always_inline("nodebug")
@@ -3913,7 +3904,7 @@ def min[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-def min[T: Copyable & Comparable](x: T, *ys: T) -> T:
+def min[T: Copyable & Comparable & ImplicitlyDeletable](x: T, *ys: T) -> T:
     """Gets the minimum value from a sequence of values.
 
     Parameters:

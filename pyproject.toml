@@ -17,29 +17,45 @@ force-exclude = '''
     | third-party/vllm-benchmarks
     | \.derived
     | venv
-    | utils/mblack
     | KGEN/test/mojo-parser
     | KGEN/test/mojo-tool/format
+    | KGEN/tools/mblack
     | max/python/max/serve/schemas
     | utils/packaging/tests
     | Faux/mojo_llm_from_scratch
+    | utils/kb/sol-execbench
   )/
 )
 '''
 
 [tool.ruff]
 line-length = 80  # Must match above
+# Honor extend-exclude even for explicitly-passed files (presubmit fast-mode
+# lints changed files by path); matches [tool.black] force-exclude above.
+force-exclude = true
 src = ["something-that-doesnt-exist"] # Stop ruff from assuming any root directory is a python module
 extend-exclude = [
+  # Machine-authored agent state (skills, agent scripts). Already excluded from
+  # rumdl and typos; these helper scripts are not shipped product code.
+  ".claude",
   "**/lit.cfg.py", # Globals that aren't imported
   "*.ipynb",
   "*_pb2.py", # Generated protobuf stubs
   "*_pb2.pyi", # Generated protobuf stubs
   "*max/serve/schemas/openai.py", # Generated file
   "third-party",
+  # Vendored verbatim from xgrammar v0.2.2 (hack-to-own); kept unformatted so a
+  # future re-vendor diffs cleanly against upstream.
+  "*max/python/max/_xgrammar/structural_tag.py",
+  "*max/python/max/_xgrammar/builtin_structural_tag.py",
+  "*max/python/max/_xgrammar/openai_tool_call_schema.py",
   "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
-  "utils/mblack/tests",
+  "KGEN/tools/mblack/tests",
   "Faux/mojo_llm_from_scratch/**", # Experimental from-scratch LLM project
+  # SOL-ExecBench candidate reproduction packages: frozen byte-faithful
+  # snapshots of tuned candidates (solution + custom ops + gate + verbatim
+  # oracle), committed as records and never reformatted.
+  "utils/kb/sol-execbench",
 ]
 
 [tool.ruff.lint]
@@ -97,7 +113,6 @@ convention = "google"
 # With exceptions for these packages:
 "max/python/max/benchmark/**/*" = ["D"]
 "max/python/max/config/**/*" = ["D"]
-"max/python/max/entrypoints/**/*" = ["D"]
 "max/python/max/pipelines/kv_cache/connectors/**/*" = ["D"]
 "max/python/max/mlir/**/*" = ["D"]
 "max/python/max/nn/**/*" = ["D"]
@@ -108,14 +123,16 @@ convention = "google"
 # Exclude private packages and modules (NOTE: this allows max/_core/*.pyi files):
 "max/python/max/_core_mojo/**/*" = ["D"]
 "max/python/max/_core_types/**/*" = ["D"]
+"max/python/max/_entrypoints/**/*" = ["D"]
 "max/python/max/_interpreter_ops/**/*" = ["D"]
 "max/python/max/_mlir/**/*" = ["D"]
 "max/python/max/_core/dialects/**/*" = ["D"]
 "max/python/max/_core/internal/**/*" = ["D"]
 "max/python/max/**/_*.py" = ["D"]
-# Ignore ANN001 (function argument missing type annotation) for auto-generated
-# stubfiles
-"*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206", "D200", "D212", "D418"]
+# Disable most annotations for third-party stubfiles
+"*/_mlir/*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206", "D200", "D212", "D418"]
+# Be a little less strict with docs in first-party stubfiles
+"*/_core/*.pyi" = ["D200", "D212", "D418"]
 # Ignore type annotations for the llm-book tutorial files
 "oss/llm-book/**/*.py" = ["ANN001", "ANN201", "ANN202"]
 # Ignore type annotations, intentional math unicode (×), and common tutorial code patterns
@@ -156,6 +173,21 @@ follow_imports = "skip"
 module = "cyclopts.*"
 ignore_missing_imports = true
 
+# Private MiniMax-M3 graph hooks diverge from the shared load_model template
+# signatures; suppress only the files that inherit those hooks.
+[[tool.mypy.overrides]]
+module = "minimax_m3.model"
+disable_error_code = ["misc"]
+
+[[tool.mypy.overrides]]
+module = "minimax_m3.eagle3_model"
+disable_error_code = ["override"]
+
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = true
+
+[tool.ty.environment]
+extra-paths = [
+    "max/python",
+]

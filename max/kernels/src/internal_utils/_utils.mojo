@@ -28,7 +28,7 @@ from std.benchmark import (
 )
 from std.compile import compile_info
 from std.gpu import block_dim, global_idx, grid_dim
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
 from std.random import Random
 from std.utils import IndexList
 
@@ -101,7 +101,9 @@ def bench_compile_time[
                 keep(s.unsafe_ptr())
             elif emission_kind == "ptx":
                 with DeviceContext() as ctx:
-                    var func = ctx.compile_function_unchecked[func]()
+                    var func = DeviceFunction[
+                        func, TypeList.of[Trait=AnyType]()
+                    ](ctx)
                     # Ensure that the compilation step is not optimized away.
                     keep(UnsafePointer(to=func))
                     clobber_memory()
@@ -137,9 +139,11 @@ def parse_shape[name: StaticString]() -> List[Int]:
     Returns:
         A List[Int] parameter value.
     """
-    comptime zero = "0".unsafe_ptr()[0]
-    comptime x_ptr = "x".unsafe_ptr()[0]
-    comptime name_unsafe_ptr = name.unsafe_ptr()
+    comptime zero = "0".unsafe_ptr()[unsafe_offset=0]
+    comptime x_ptr = "x".unsafe_ptr()[unsafe_offset=0]
+    comptime name_unsafe_ptr: UnsafePointer[
+        Byte, ImmStaticOrigin
+    ] = name.unsafe_ptr()
 
     var vals: List[Int] = List[Int]()
     var sum: Int = 0
@@ -458,7 +462,7 @@ def _init_block_scaled_scales_gpu[
 
 def _init_block_scaled_scales_launch[
     dtype: DType, block_dim: Int = 256
-](out_device: DeviceBuffer[dtype], length: Int, context: DeviceContext,) raises:
+](out_device: DeviceBuffer[dtype], length: Int, context: DeviceContext) raises:
     var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
     # using num-threads = 1/4th of length to initialize the array
 

@@ -31,7 +31,7 @@ pre-filled from sink_weights); the kernel body needs no sink-specific code.
 """
 
 from std.sys import llvm_intrinsic, get_defined_bool
-from std.sys.intrinsics import _type_is_eq, readfirstlane
+from std.sys.intrinsics import readfirstlane
 from std.gpu import warp_id as get_warp_id
 from std.gpu.sync import s_waitcnt
 from layout.swizzle import Swizzle
@@ -49,11 +49,18 @@ from .mma import TiledMmaOp
 
 @always_inline
 def barrier():
+    """Emits the AMD GPU `s.barrier` instruction to synchronize all waves in the workgroup.
+    """
     llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
 
 
 @always_inline
 def block_sync_lds_direct_load[*, vmcnt: UInt32 = 0]():
+    """Waits for outstanding vector-memory instructions to complete before a direct LDS load.
+
+    Parameters:
+        vmcnt: The count of vector-memory instructions to wait on; zero waits for all outstanding VM operations.
+    """
     s_waitcnt[vmcnt=vmcnt]()
 
 
@@ -64,7 +71,7 @@ def block_sync_lds_direct_load[*, vmcnt: UInt32 = 0]():
 
 __extension Attention:
     def mha_prefill(mut self):
-        """Unified gfx950 MHA prefill — BF16+FP8, any mask, depth∈{64,128,256,512}.
+        """Unified gfx950 MHA prefill: BF16+FP8, any mask, depth∈{64,128,256,512}.
 
         See module docstring for the recipe.
         """
@@ -137,7 +144,10 @@ __extension Attention:
             self.k,
             self.batch_idx,
             self.kv_head_idx(),
-            KBufT.SmemParentType(self.k_smem_ptr, KBufT._SmemParentLayout()),
+            KBufT.SmemParentType(
+                self.k_smem_ptr.as_unsafe_any_origin(),
+                KBufT._SmemParentLayout(),
+            ),
             self.num_keys,
             warp_id,
         )
@@ -145,7 +155,10 @@ __extension Attention:
             self.v,
             self.batch_idx,
             self.kv_head_idx(),
-            VBufT.SmemParentType(self.v_smem_ptr, VBufT._SmemParentLayout()),
+            VBufT.SmemParentType(
+                self.v_smem_ptr.as_unsafe_any_origin(),
+                VBufT._SmemParentLayout(),
+            ),
             self.num_keys,
             warp_id,
         )
@@ -199,10 +212,12 @@ __extension Attention:
         # =============================================================
 
         var score_row = UInt32(self.mask_block_row + UInt32(self.start_pos))
-        var start_col = self.mask.start_column[Self.BM, Self.BN, 1](score_row)
+        var start_col = self.mask.start_column[Self.BM, Self.BN, 1](
+            UInt32(self.batch_idx), score_row
+        )
         var num_tiles = Int(
             self.mask.last_masked_set_end[Self.BM, Self.BN, 1](
-                score_row, UInt32(self.num_keys)
+                UInt32(self.batch_idx), score_row, UInt32(self.num_keys)
             )
         )
 
@@ -229,9 +244,7 @@ __extension Attention:
         # guarantee no FULL_MASK tiles in the iteration range.  Non-causal
         # masks (e.g. ChunkedCausalMask) can have interior FULL_MASK tiles,
         # so we need a per-tile status check.
-        comptime has_interior_full_mask = not _type_is_eq[
-            Self.mask_t, CausalMask
-        ]()
+        comptime has_interior_full_mask = Self.mask_t != CausalMask
 
         # =============================================================
         # process_tile — one KV tile: wait K, mma_qk, prefetch next,

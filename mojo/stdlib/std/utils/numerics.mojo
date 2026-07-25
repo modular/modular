@@ -406,7 +406,7 @@ struct FlushDenormals(Defaultable):
                 mxcsr |= 0x8000  # flush to zero
                 mxcsr |= 0x40  # denormals are zero
             llvm_intrinsic["llvm.x86.sse.ldmxcsr", NoneType](
-                UnsafePointer[Int32](to=mxcsr)
+                Pointer[Int32](to=mxcsr)
             )
             _ = mxcsr
             return
@@ -445,7 +445,7 @@ struct FlushDenormals(Defaultable):
         comptime if CompilationTarget.has_sse4():
             var mxcsr = Int32()
             llvm_intrinsic["llvm.x86.sse.stmxcsr", NoneType](
-                UnsafePointer[Int32](to=mxcsr)
+                Pointer[Int32](to=mxcsr)
             )
             return mxcsr
 
@@ -528,7 +528,7 @@ def nan[dtype: DType]() -> Scalar[dtype]:
 
 @always_inline("nodebug")
 def isnan[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
     """Checks if the value is Not a Number (NaN).
 
@@ -817,7 +817,7 @@ def min_or_neg_inf[dtype: DType]() -> Scalar[dtype]:
 
 @always_inline("nodebug")
 def isinf[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
     """Checks if the value is infinite.
 
@@ -835,9 +835,10 @@ def isinf[
     """
 
     comptime if not dtype.is_floating_point() or dtype in (
+        DType.float8_e4m3fn,
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
-        # The OCP MX FP4 (E2M1) format has no Inf encoding.
+        DType.float8_e8m0fnu,
         DType.float4_e2m1fn,
     ):
         return SIMD[DType.bool, width](fill=False)
@@ -864,7 +865,7 @@ def isinf[
 
 @always_inline("nodebug")
 def isfinite[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
     """Checks if the value is not infinite.
 
@@ -952,7 +953,7 @@ def get_accum_type[
 
 
 def nextafter[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes next representable value of `arg0` in the direction of `arg1`.
 

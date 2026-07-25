@@ -94,8 +94,9 @@ from a compiled `.mojoc` file. It makes no real difference to Mojo
 which way you import a package. When importing from source files, the directory
 name works as the package name, whereas when importing from a compiled package,
 the filename is the package name (which you specify with the [`mojo
-package`](/docs/cli/precompile) command—it can differ from the directory
-name).
+precompile`](/docs/cli/precompile) command—it can differ from the directory
+name). For examples, see the section below about
+[naming and identifiers](#package-naming-and-identifiers).
 
 For example, consider a project with these files:
 
@@ -231,11 +232,11 @@ This feature explains why some members in the Mojo standard library can be
 imported from their package name, while others required the
 `<package_name>.<module_name>` notation. For example, the
 [`functional`](/docs/std/algorithm/functional/) module resides in the
-`algorithm` package, so you can import members of that module (such as the
+`std.algorithm` package, so you can import members of that module (such as the
 `map()` function) like this:
 
 ```mojo
-from algorithm.functional import map
+from std.algorithm.functional import map
 ```
 
 However, the `algorithm/__init__.mojo` file also includes these lines:
@@ -250,7 +251,7 @@ naming the package. That is, you can drop the `functional` name from the import
 statement, and it also works:
 
 ```mojo
-from algorithm import map
+from std.algorithm import map
 ```
 
 :::note
@@ -260,3 +261,20 @@ scope varies, and is subject to change. Refer to the [documentation for each
 module](/docs/std/) to see how you can import its members.
 
 :::
+
+### Package naming and identifiers
+
+Package names are taken from directory names in the case of source packages, or
+the precompiled (`.mojoc`) filename for binary ones.
+
+Note that if the package name is not a valid identifier, an escaped identifier
+may be used instead:
+
+```mojo
+import `модул`
+import `package-with-hyphens and a space!` as package_without_hyphens_or_a_space
+
+def main():
+    `модул`.`здрасти`()
+    package_without_hyphens_or_a_space.hello()
+```

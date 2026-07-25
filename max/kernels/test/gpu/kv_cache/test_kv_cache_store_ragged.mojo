@@ -21,7 +21,7 @@ from kv_cache.types import (
 )
 from layout import *
 from layout._utils import ManagedLayoutTensor, UNKNOWN_VALUE
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from nn.kv_cache_ragged import kv_cache_store_padded, kv_cache_store_ragged
 from std.testing import assert_almost_equal
 
@@ -245,7 +245,7 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
         kv_block_runtime_layout, ctx
     )
     var kv_block_tensor = kv_block_managed.tensor()
-    memset_zero(kv_block_tensor.ptr, kv_block_shape.flattened_length())
+    unsafe_memset_zero(kv_block_tensor.ptr, kv_block_shape.flattened_length())
 
     var paged_lut = PagedLookupTable[page_size].build(
         valid_lengths,
@@ -308,9 +308,10 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
             valid_lengths_host[i] = UInt32(valid_lengths[i])
 
     var valid_lengths_tensor = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32,
+        Layout.row_major(UNKNOWN_VALUE),
     ](
-        valid_lengths_device.unsafe_ptr(),
+        valid_lengths_device,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             IndexList[1](batch_size)
         ),

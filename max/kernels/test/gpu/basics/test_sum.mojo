@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv
+from std.math import ceildiv, iota
 
 from std.gpu import global_idx
 from std.gpu.primitives import block, warp
@@ -41,7 +41,7 @@ def test_warp_sum(ctx: DeviceContext) raises:
 
     # Allocate and initialize host memory
     var in_host = ctx.enqueue_create_host_buffer[dtype](size)
-    std.math.iota(in_host.as_span())
+    iota(in_host.as_span())
     var out_host = ctx.enqueue_create_host_buffer[dtype](size)
 
     # Create device buffers and copy input data
@@ -97,7 +97,7 @@ def test_block_sum(ctx: DeviceContext) raises:
 
     # Allocate and initialize host memory
     var in_host = ctx.enqueue_create_host_buffer[dtype](size)
-    std.math.iota(in_host.as_span())
+    iota(in_host.as_span())
     var out_host = ctx.enqueue_create_host_buffer[dtype](size)
 
     # Create device buffers and copy input data

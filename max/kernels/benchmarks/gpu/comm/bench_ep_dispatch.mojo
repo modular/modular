@@ -58,7 +58,7 @@ def legalize_topk_ids[
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
-        def is_duplicate() {read} -> Int:
+        def is_duplicate() {imm} -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if topk_ids_for_token[i] == topk_ids_for_token[j]:
@@ -236,10 +236,10 @@ def bench_dispatch[
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
             var recv_buf_ptrs: InlineArray[
                 UnsafePointer[UInt8, MutAnyOrigin], 1
-            ] = [recv_buf]
+            ] = [recv_buf.as_unsafe_any_origin()]
             var recv_count_ptrs: InlineArray[
                 UnsafePointer[UInt64, MutAnyOrigin], 1
-            ] = [recv_count]
+            ] = [recv_count.as_unsafe_any_origin()]
 
             ctx.enqueue_function(
                 func,
@@ -335,7 +335,7 @@ def bench_dispatch[
 
         var bf16_output = output_tensor.bitcast[
             DType.bfloat16
-        ]().as_any_origin()
+        ]().as_unsafe_any_origin()
         var format_handler = token_fmt_type(bf16_output)
 
         setup_and_run_benchmark[
@@ -360,7 +360,9 @@ def bench_dispatch[
             top_k,
         ]
 
-        var fp8_output = output_tensor.bitcast[token_dtype]().as_any_origin()
+        var fp8_output = output_tensor.bitcast[
+            token_dtype
+        ]().as_unsafe_any_origin()
         var format_handler = token_fmt_type(fp8_output, output_scales_tensor)
 
         setup_and_run_benchmark[

@@ -96,6 +96,7 @@ def execute_kv_cache_ragged_flash_attention[
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
+        ...,
     ]
 
     debug_assert(
@@ -149,11 +150,12 @@ def execute_kv_cache_ragged_flash_attention[
                 cache_lengths_host[i] = curr_cache_length
                 total_seq_len += curr_seq_length
 
-                flop_count += Int(
-                    UInt32(4 * num_q_heads)
-                    * (curr_cache_length + curr_seq_length)
-                    * curr_seq_length
-                    * UInt32(head_dim)
+                flop_count += (
+                    4
+                    * num_q_heads
+                    * Int(curr_cache_length + curr_seq_length)
+                    * Int(curr_seq_length)
+                    * head_dim
                 )
 
             row_offsets_host[batch_size] = total_seq_len
@@ -263,21 +265,21 @@ def execute_kv_cache_ragged_flash_attention[
 
     var kv_collection_device = CollectionType(
         LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
-            kv_block_tensor.ptr,
+            kv_block_tensor.ptr.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[6]()](
                 kv_block_tensor.runtime_layout.shape.value,
                 kv_block_tensor.runtime_layout.stride.value,
             ),
         ),
         LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-            cache_lengths_tensor.ptr,
+            cache_lengths_tensor.ptr.as_imm().as_unsafe_any_origin(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths_tensor.runtime_layout.shape.value,
                 cache_lengths_tensor.runtime_layout.stride.value,
             ),
         ),
         LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-            lookup_table_tensor.ptr,
+            lookup_table_tensor.ptr.as_imm().as_unsafe_any_origin(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 lookup_table_tensor.runtime_layout.shape.value,
                 lookup_table_tensor.runtime_layout.stride.value,
@@ -304,7 +306,7 @@ def execute_kv_cache_ragged_flash_attention[
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             flash_attention[ragged=True](
-                output_device_tensor.to_layout_tensor().as_any_origin(),
+                output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
                 q_tensor.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,

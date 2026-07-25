@@ -312,19 +312,17 @@ struct LayoutTensor[
     def _is_convertible_to_device_type[T: AnyType]() -> Bool:
         comptime if Self.mut:
             return TypeList.of[
-                Trait=AnyType,
                 Self,
                 Self.OriginCastType[MutAnyOrigin],
-                Self.OriginCastType[MutExternalOrigin],
+                Self.OriginCastType[MutUntrackedOrigin],
                 Self.OriginCastType[ImmutAnyOrigin],
-                Self.OriginCastType[ImmutExternalOrigin],
+                Self.OriginCastType[ImmUntrackedOrigin],
             ]().contains[T]()
         else:
             return TypeList.of[
-                Trait=AnyType,
                 Self,
                 Self.OriginCastType[ImmutAnyOrigin],
-                Self.OriginCastType[ImmutExternalOrigin],
+                Self.OriginCastType[ImmUntrackedOrigin],
             ]().contains[T]()
 
     def _to_device_type(
@@ -851,17 +849,7 @@ struct LayoutTensor[
     @implicit
     def __init__(
         other: LayoutTensor,
-        out self: LayoutTensor[
-            other.dtype,
-            other.layout,
-            ImmutOrigin(other.origin),
-            address_space=other.address_space,
-            element_layout=other.element_layout,
-            layout_int_type=other.layout_int_type,
-            linear_idx_type=other.linear_idx_type,
-            masked=other.masked,
-            alignment=other.alignment,
-        ],
+        out self: type_of(other).Immut,
     ):
         """Implicitly cast a mutable LayoutTensor to immutable.
 
@@ -869,6 +857,32 @@ struct LayoutTensor[
             other: The mutable LayoutTensor to cast from.
         """
         self.ptr = other.ptr
+        self.runtime_layout = other.runtime_layout
+        self.runtime_element_layout = other.runtime_element_layout
+
+    @always_inline("builtin")
+    @implicit
+    @doc_hidden
+    def __init__[
+        __disambig: Int = 0
+    ](
+        other: LayoutTensor[mut=True, ...],
+        out self: type_of(other).OriginCastType[MutAnyOrigin],
+    ):
+        self.ptr = other.ptr.as_unsafe_any_origin()
+        self.runtime_layout = other.runtime_layout
+        self.runtime_element_layout = other.runtime_element_layout
+
+    @always_inline("builtin")
+    @implicit
+    @doc_hidden
+    def __init__[
+        __disambig: Int = 0
+    ](
+        other: LayoutTensor,
+        out self: type_of(other).OriginCastType[ImmutAnyOrigin],
+    ):
+        self.ptr = other.ptr.as_unsafe_any_origin()
         self.runtime_layout = other.runtime_layout
         self.runtime_element_layout = other.runtime_element_layout
 
@@ -989,29 +1003,42 @@ struct LayoutTensor[
         origin: The origin for the result tensor.
     """
 
+    comptime Immut = Self.OriginCastType[ImmOrigin(Self.origin)]
+    """Type alias for an immutably-casted tensor."""
+
     comptime MutableAnyType = Self.OriginCastType[MutAnyOrigin]
     """Mutable LayoutTensor type with MutAnyOrigin."""
     comptime _AsMut = Self.OriginCastType[mut=True, _]
 
     @always_inline("nodebug")
-    def as_any_origin(
+    def as_unsafe_any_origin(
         self,
-    ) -> type_of(self).OriginCastType[AnyOrigin[mut=Self.mut]]:
-        """Casts the origin of the `LayoutTensor` to `AnyOrigin`.
+    ) -> type_of(self).OriginCastType[UnsafeAnyOrigin[mut=Self.mut]]:
+        """Casts the origin of the `LayoutTensor` to `UnsafeAnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `AnyOrigin`.
+            A tensor with the origin set to `UnsafeAnyOrigin`.
 
-        It is usually preferred to maintain concrete origin values instead of
-        using `AnyOrigin`. However, if it is needed, keep in mind that
-        `AnyOrigin` can alias any memory value, so Mojo's ASAP
-        destruction will not apply during the lifetime of the tensor.
+        Safety:
+
+        It is **always** preferred to maintain a concrete origin values instead of
+        using `UnsafeAnyOrigin`. Casting to `UnsafeAnyOrigin` is an inherently unsafe
+        operation that will silently extend unrelated lifetimes and turn off
+        exclusivity checking.
         """
         return {
-            self.ptr.as_any_origin(),
+            self.ptr.as_unsafe_any_origin(),
             self.runtime_layout,
             self.runtime_element_layout,
         }
+
+    @doc_hidden
+    @always_inline("nodebug")
+    @deprecated(use=as_unsafe_any_origin)
+    def as_any_origin(
+        self,
+    ) -> type_of(self).OriginCastType[AnyOrigin[mut=Self.mut]]:
+        return self.as_unsafe_any_origin()
 
     comptime AddressSpaceCastType[
         address_space: AddressSpace = Self.address_space,
@@ -1052,9 +1079,9 @@ struct LayoutTensor[
         )
 
     @always_inline
-    def get_immutable(
+    def as_imm(
         self,
-    ) -> Self.OriginCastType[ImmutOrigin(Self.origin)]:
+    ) -> Self.OriginCastType[ImmOrigin(Self.origin)]:
         """
         Return an immutable version of this tensor.
 
@@ -1062,10 +1089,23 @@ struct LayoutTensor[
             A `LayoutTensor` covering the same elements, but without mutability.
         """
         return {
-            self.ptr.as_immutable(),
+            self.ptr.as_imm(),
             self.runtime_layout,
             self.runtime_element_layout,
         }
+
+    @always_inline
+    @deprecated(use=as_imm)
+    def get_immutable(
+        self,
+    ) -> Self.OriginCastType[ImmOrigin(Self.origin)]:
+        """
+        Return an immutable version of this tensor.
+
+        Returns:
+            A `LayoutTensor` covering the same elements, but without mutability.
+        """
+        return self.as_imm()
 
     @always_inline
     def _offset(self, m: Int, n: Int) -> Int:
@@ -2405,9 +2445,10 @@ struct LayoutTensor[
             self._offset(coords)
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def store[
-        width: SIMDSize, store_alignment: Int = Self.alignment
+        width: SIMDLength, store_alignment: Int = Self.alignment
     ](
         self: LayoutTensor[mut=True, Self.dtype, ...],
         m: Int,
@@ -2482,9 +2523,10 @@ struct LayoutTensor[
             self._offset(m, n), val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def store[
-        width: SIMDSize, store_alignment: Int = Self.alignment
+        width: SIMDLength, store_alignment: Int = Self.alignment
     ](
         self: LayoutTensor[mut=True, Self.dtype, ...],
         coords: IndexList[...],
@@ -2527,10 +2569,11 @@ struct LayoutTensor[
             self._offset(coords), val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def aligned_store[
-        width: SIMDSize
-    ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width],):
+        width: SIMDLength
+    ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width]):
         """Store a SIMD vector with alignment guarantees to the tensor.
 
         Performs an aligned vectorized store operation to the tensor's memory,
@@ -2645,7 +2688,7 @@ struct LayoutTensor[
                 Self.dtype,
                 alignment=stack_alignment,
                 address_space=Self.address_space,
-            ]()
+            ]().as_unsafe_any_origin()
         )
 
     @staticmethod
@@ -2700,7 +2743,8 @@ struct LayoutTensor[
             copy = self.stack_allocation()
         else:
             copy = Self.StackTensorType(
-                self.ptr.mut_cast[True]().as_any_origin(), self.runtime_layout
+                self.ptr.mut_cast[True]().as_unsafe_any_origin(),
+                self.runtime_layout,
             )
 
         def self_value(
@@ -4313,7 +4357,7 @@ struct LayoutTensor[
                 )
 
     comptime ShapeVectorizedType[
-        origin: ImmutOrigin,
+        origin: ImmOrigin,
         vector_shape: IntTuple,
         linear_vectorize: Bool,
     ] = LayoutTensor[
@@ -4367,7 +4411,7 @@ struct LayoutTensor[
 
     @always_inline
     def _vectorize_2[
-        _origin: ImmutOrigin,  # FIXME: MOCO-1912
+        _origin: ImmOrigin,  # FIXME: MOCO-1912
         vector_shape: IntTuple,
         check_rank: Bool = True,
         linear_vectorize: Bool = vector_shape.is_value(),
@@ -4426,7 +4470,7 @@ struct LayoutTensor[
                     self.runtime_layout.stride.value[i] * vector_shape_i
                 )
 
-        var ptr = self.ptr.as_immutable().unsafe_origin_cast[_origin]()
+        var ptr = self.ptr.as_imm().unsafe_origin_cast[_origin]()
 
         comptime if Self.layout.all_dims_known():
             comptime if vectorized_type.masked:
@@ -5216,9 +5260,10 @@ struct LayoutTensor[
         """
         return self.CompositionType[rhs_layout, dst_layout](self.ptr)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def distance(
-        self,
+        self: Self.Immut,
         addr: UnsafePointer[
             mut=False,
             Scalar[Self.dtype],
@@ -5266,14 +5311,19 @@ struct LayoutTensor[
             Int(self.ptr) - Int(addr)
         ) // Scalar[Self.linear_idx_type](size_of[Self.dtype]())
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def distance[
         _layout: Layout,
         _uint_dtype: DType = _get_unsigned_type(_layout, Self.address_space),
     ](
-        self,
+        self: Self.Immut,
         src: LayoutTensor[
-            Self.dtype, _layout, address_space=Self.address_space, ...
+            mut=False,
+            Self.dtype,
+            _layout,
+            address_space=Self.address_space,
+            ...,
         ],
     ) -> Scalar[_uint_dtype]:
         """Calculate the element-wise distance between this tensor and another
@@ -5345,6 +5395,7 @@ struct LayoutTensor[
             )(rt)
             return idx
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def copy_from(self: Self._AsMut, other: LayoutTensor):
         """Copy data from another tensor to this tensor.
@@ -5690,6 +5741,7 @@ struct LayoutTensor[
                     dst_ptr + dst_idx,
                 )
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def fill[
         *,
@@ -6848,7 +6900,7 @@ def copy_dram_to_sram_async[
     ](dst, src)
 
 
-comptime binary_op_type = def[dtype: DType, width: SIMDSize](
+comptime binary_op_type = def[dtype: DType, width: SIMDLength](
     lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]
 ) thin -> SIMD[dtype, width]
 """
@@ -7796,8 +7848,9 @@ def copy_local_to_shared[
             return
 
     comptime assert src.dtype == dst.dtype or (
-        src.dtype == DType.float32 and dst.dtype.is_half_float()
-    ), "Only support FP32 -> half precision downcast during copy."
+        src.dtype == DType.float32
+        and (dst.dtype.is_half_float() or dst.dtype.is_float8())
+    ), "Only support FP32 -> half-precision or FP8 downcast during copy."
     comptime assert (
         src.element_size == dst.element_size
     ), "src and dst element size mismatch."
@@ -8093,11 +8146,13 @@ struct LayoutTensorIter[
         # TODO: Temporary stop-gap to avoid refactoring all `LayoutTensor`s
         # to expect a non-null pointer. Do NOT copy this pattern; new code
         # should use a properly-initialized `UnsafePointer` instead.
+        # Or to explicitly model nullability, use `Optional[UnsafePointer]`.
+        var this_is_a_hack = 0
         self.ptr = UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
-        ](unsafe_from_address=0)
+        ](unsafe_from_address=this_is_a_hack)
         self.offset = 0
         self.stride = 0
         self.bound = 0
@@ -8239,22 +8294,26 @@ struct LayoutTensorIter[
         self.dimension_bound = dimension_bound
         self.idx = idx
 
+    comptime _OriginCastType[
+        to_mut: Bool, //, to_origin: Origin[mut=to_mut]
+    ] = LayoutTensorIter[
+        Self.dtype,
+        Self.layout,
+        to_origin,
+        address_space=Self.address_space,
+        alignment=Self.alignment,
+        circular=Self.circular,
+        axis=Self.axis,
+        layout_int_type=Self.layout_int_type,
+        linear_idx_type=Self.linear_idx_type,
+        masked=Self.masked,
+    ]
+
     @always_inline("builtin")
     @implicit
     def __init__(
         other: LayoutTensorIter,
-        out self: LayoutTensorIter[
-            other.dtype,
-            other.layout,
-            ImmutOrigin(other.origin),
-            address_space=other.address_space,
-            alignment=other.alignment,
-            circular=other.circular,
-            axis=other.axis,
-            layout_int_type=other.layout_int_type,
-            linear_idx_type=other.linear_idx_type,
-            masked=other.masked,
-        ],
+        out self: type_of(other)._OriginCastType[ImmOrigin(other.origin)],
     ):
         """Implicitly cast a mutable LayoutTensorIter to immutable.
 
@@ -8262,6 +8321,40 @@ struct LayoutTensorIter[
             other: The mutable LayoutTensorIter to cast from.
         """
         self.ptr = other.ptr
+        self.bound = other.bound
+        self.stride = other.stride
+        self.runtime_layout = other.runtime_layout
+        self.offset = other.offset
+        self.dimension_bound = other.dimension_bound
+        self.idx = other.idx
+
+    @always_inline("builtin")
+    @implicit
+    @doc_hidden
+    def __init__[
+        __disambig: Int = 0,
+    ](
+        other: LayoutTensorIter[mut=True, ...],
+        out self: type_of(other)._OriginCastType[MutAnyOrigin],
+    ):
+        self.ptr = other.ptr.as_unsafe_any_origin()
+        self.bound = other.bound
+        self.stride = other.stride
+        self.runtime_layout = other.runtime_layout
+        self.offset = other.offset
+        self.dimension_bound = other.dimension_bound
+        self.idx = other.idx
+
+    @always_inline("builtin")
+    @implicit
+    @doc_hidden
+    def __init__[
+        __disambig: Int = 0,
+    ](
+        other: LayoutTensorIter[...],
+        out self: type_of(other)._OriginCastType[ImmutAnyOrigin],
+    ):
+        self.ptr = other.ptr.as_unsafe_any_origin()
         self.bound = other.bound
         self.stride = other.stride
         self.runtime_layout = other.runtime_layout

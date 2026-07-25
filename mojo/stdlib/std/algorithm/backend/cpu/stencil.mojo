@@ -44,12 +44,12 @@ def _stencil_impl_cpu[
         dtype, simd_width
     ],
     compute_init_fn: def[simd_width: Int]() -> SIMD[dtype, simd_width],
-    compute_fn: def[simd_width: SIMDSize](
+    compute_fn: def[simd_width: SIMDLength](
         IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width],
-    compute_finalize_fn: def[simd_width: SIMDSize](
+    compute_finalize_fn: def[simd_width: SIMDLength](
         IndexList[rank, ...], SIMD[dtype, simd_width]
     ) -> None,
 ](
@@ -134,13 +134,13 @@ def _stencil_impl_cpu[
                 simd_width: Int
             ](idx: Int) {
                 mut indices,
-                read input_shape,
-                read map_fn_closure,
-                read map_strides_closure,
-                read load_fn_closure,
-                read compute_init_fn_closure,
-                read compute_fn_closure,
-                read compute_finalize_fn_closure,
+                imm input_shape,
+                imm map_fn_closure,
+                imm map_strides_closure,
+                imm load_fn_closure,
+                imm compute_init_fn_closure,
+                imm compute_fn_closure,
+                imm compute_finalize_fn_closure,
             }:
                 indices[rank - 1] = idx
                 var stencil_indices = IndexList[

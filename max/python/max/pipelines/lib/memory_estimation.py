@@ -16,29 +16,82 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from io import StringIO
 from typing import TYPE_CHECKING, cast
 
 from max.driver import Device, is_virtual_device_mode
 from max.nn.kv_cache import (
+    KVCacheParamInterface,
     compute_max_seq_len_fitting_in_cache,
     estimated_memory_size,
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 if TYPE_CHECKING:
+    from max.pipelines.lib.registry import SupportedArchitecture
+
     from .config import PipelineConfig
 
 from .config.model_config import MAXModelConfig
 from .interfaces import (
     ArchConfig,
-    ArchConfigWithKVAndVisionCache,
     ArchConfigWithKVCache,
 )
 
 logger = logging.getLogger("max.pipelines")
 
 _DEFAULT_BATCH_SIZE = 512
+
+
+def _kv_params_per_layer_depth(params: KVCacheParamInterface) -> int:
+    """Returns the largest ``num_layers`` among the pool's per-layer sub-pools.
+
+    Recurses into a :class:`~max.nn.kv_cache.MultiKVCacheParams` tree. A leaf
+    with ``per_layer_buffers`` set contributes its ``num_layers``; every other
+    cache contributes ``1`` (a single multi-layer buffer). Returns ``1`` when no
+    cache uses per-layer buffers.
+    """
+    children = getattr(params, "children", None)
+    if children is not None:
+        return max(
+            (_kv_params_per_layer_depth(child) for child in children.values()),
+            default=1,
+        )
+    if getattr(params, "per_layer_buffers", False):
+        return max(int(getattr(params, "num_layers", 1)), 1)
+    return 1
+
+
+def _max_per_layer_buffer_count(arch_config: ArchConfig) -> int:
+    """Returns the per-device allocation-cap multiplier for the KV pool.
+
+    A pool that uses one buffer *per layer* splits its per-device allocation
+    into ``num_layers`` independent buffers, each bounded by the per-allocation
+    cap, so the pool may use up to ``num_layers`` times that cap per device.
+    Returns the depth of the largest per-layer sub-pool, or ``1`` when no cache
+    uses per-layer buffers (leaving the cap unchanged).
+    """
+    if not isinstance(arch_config, ArchConfigWithKVCache):
+        return 1
+    return _kv_params_per_layer_depth(arch_config.get_kv_params())
+
+
+@dataclass(frozen=True)
+class _MemoryPlan:
+    """Result of memory planning for a pipeline.
+
+    Note: ``estimate_memory_footprint`` still mutates ``model_config.max_length``
+    directly; that mutation is the next thing to clean up as part of removing
+    ``resolve()``.
+    """
+
+    max_batch_size: int
+    footprint: int
+    available_cache_memory: int | None = None
+    """Committed KV-cache byte budget; ``None`` when not computed (virtual-device
+    early-outs and non-KV models)."""
+
 
 # Vision encoder cache and paged token KV share the same pre-KV memory pool
 # (see ``estimate_memory_footprint``). Without an explicit cap, reduction could
@@ -54,7 +107,13 @@ class MemoryEstimator:
     def free_memory(cls, devices: list[Device]) -> int:
         """Returns the total free memory available across all provided devices."""
         try:
-            return int(sum(d.stats["free_memory"] for d in devices))
+            free_memory = int(sum(d.stats["free_memory"] for d in devices))
+            if free_memory == 0:
+                total_memory = int(
+                    sum(d.stats.get("total_memory", 0) for d in devices)
+                )
+                return total_memory
+            return free_memory
         except Exception as e:
             logger.warning(
                 "Unable to estimate memory footprint of model, can't query device stats: "
@@ -124,6 +183,7 @@ class MemoryEstimator:
         devices: list[Device],
         arch_config: ArchConfig,
         signal_buffer_size: int = 0,
+        available_cache_memory: int | None = None,
     ) -> int | None:
         """Computes the hard upper bound on tokens for a single request.
 
@@ -156,9 +216,8 @@ class MemoryEstimator:
         # ``available_kv_cache_memory()`` (pre-vision) can overcount blocks and clamp
         # ``max_length`` above the physical paged KV capacity, causing runtime
         # InsufficientBlocksError when ``len(tokens)`` reaches ``total_blocks * page_size + 1``.
-        allocated_kv = model_config.kv_cache._available_cache_memory
-        if allocated_kv is not None:
-            kvcache_mem = allocated_kv
+        if available_cache_memory is not None:
+            kvcache_mem = available_cache_memory
         else:
             kvcache_mem = cls.available_kv_cache_memory(
                 model_weights_size,
@@ -182,8 +241,17 @@ class MemoryEstimator:
         model_weights_size: int,
         activation_memory_size: int,
         signal_buffer_size: int = 0,
-    ) -> None:
-        """Estimates memory footprint and validates ``max_length``/``max_batch_size`` fit."""
+        arch: SupportedArchitecture | None = None,
+        max_batch_size: int | None = None,
+    ) -> _MemoryPlan:
+        """Estimates memory footprint and validates ``max_length``/``max_batch_size`` fit.
+
+        Returns:
+            A :class:`_MemoryPlan` whose ``max_batch_size`` is the resolved
+            value for this pipeline. Callers are responsible for storing and
+            threading it; it is no longer written back to
+            ``pipeline_config.runtime``.
+        """
         is_draft_model = (
             pipeline_config.draft_model is not None
             and model_config is pipeline_config.draft_model
@@ -197,29 +265,30 @@ class MemoryEstimator:
                 "Skipping memory estimation in virtual device mode "
                 "(cross-compilation)"
             )
-            if not pipeline_config.runtime.max_batch_size:
-                pipeline_config.runtime.max_batch_size = 1
+            max_batch_size = max_batch_size or 1
             if not model_config.max_length:
                 model_config.max_length = arch_config.get_max_seq_len()
-            # Set a large available cache memory value since we're not actually
-            # allocating memory during cross-compilation. Use 1TB as a reasonable
-            # large value that should work for any model.
-            model_config.kv_cache._available_cache_memory = (
-                1024 * 1024 * 1024 * 1024  # 1TB
+            # Report a large cache budget since we're only cross-compiling, not
+            # allocating memory. 1TB works for any model.
+            return _MemoryPlan(
+                max_batch_size=max_batch_size,
+                footprint=0,
+                available_cache_memory=1024 * 1024 * 1024 * 1024,  # 1TB
             )
-            return
 
         try:
             free_memory = cls.free_memory(devices)
         except Exception:
             if is_draft_model:
                 # Early return for draft model - we don't modify the original config
-                return
-            if not pipeline_config.runtime.max_batch_size:
-                pipeline_config.runtime.max_batch_size = 1
+                return _MemoryPlan(
+                    max_batch_size=max_batch_size or 1,
+                    footprint=0,
+                )
+            resolved = max_batch_size or 1
             if not model_config.max_length:
                 model_config.max_length = arch_config.get_max_seq_len()
-            return
+            return _MemoryPlan(max_batch_size=resolved, footprint=0)
 
         # Total static memory requirement (weights + activations + signal buffers)
         static_memory_size = (
@@ -251,11 +320,15 @@ class MemoryEstimator:
                 f"Try running a smaller model, using a smaller precision, or using a device with more memory."
             )
 
-        # KV cache is one buffer per device; budget can't exceed the
-        # per-allocation cap (Metal's maxBufferLength).
+        # KV cache is normally one buffer per device, so the budget can't
+        # exceed the per-allocation cap (e.g. Metal's maxBufferLength). A pool
+        # that uses one buffer *per layer* (``per_layer_buffers``) splits that
+        # allocation into ``num_layers`` independent buffers, each bounded by
+        # the cap, so it may use up to ``num_layers`` times the cap per device.
+        per_alloc_layers = _max_per_layer_buffer_count(arch_config)
         available_kv_cache_memory = min(
             available_kv_cache_memory,
-            sum(d.max_single_alloc_size for d in devices),
+            per_alloc_layers * sum(d.max_single_alloc_size for d in devices),
         )
 
         vision_cache_bytes = cls._reserve_vision_cache_memory(
@@ -264,14 +337,13 @@ class MemoryEstimator:
             available_kv_cache_memory,
             devices,
             arch_config,
+            arch=arch,
         )
         available_kv_cache_memory -= vision_cache_bytes
         total_size += vision_cache_bytes
 
         user_provided_max_length = model_config.max_length is not None
-        user_provided_max_batch_size = (
-            pipeline_config.runtime.max_batch_size is not None
-        )
+        user_provided_max_batch_size = max_batch_size is not None
 
         if is_draft_model:
             if not model_config.quantization_encoding:
@@ -279,18 +351,20 @@ class MemoryEstimator:
                     "quantization_encoding must be provided for draft model"
                 )
 
-            assert pipeline_config.runtime.max_batch_size is not None, (
+            assert max_batch_size is not None, (
                 "max_batch_size must be provided for draft model"
             )
             kv_cache_size = cls._calculate_kv_cache_size(
                 arch_config=arch_config,
-                max_batch_size=pipeline_config.runtime.max_batch_size,
+                max_batch_size=max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
             )
 
-            model_config.kv_cache._available_cache_memory = kv_cache_size
-
-            return  # Don't modify pipeline config values
+            return _MemoryPlan(
+                max_batch_size=max_batch_size,
+                footprint=int(total_size),
+                available_cache_memory=kv_cache_size,
+            )
 
         if not user_provided_max_length:
             model_config.max_length = arch_config.get_max_seq_len()
@@ -300,30 +374,25 @@ class MemoryEstimator:
                 "quantization_encoding must be provided in pipeline_config"
             )
 
-        if not user_provided_max_batch_size:
-            pipeline_config.runtime.max_batch_size = (
-                cls._infer_optimal_batch_size(arch_config, devices)
-            )
-
-        assert pipeline_config.runtime.max_batch_size is not None
-        if (
-            pipeline_config.runtime.max_batch_size
-            > pipeline_config.runtime.max_batch_input_tokens
-        ):
+        if user_provided_max_batch_size:
+            assert max_batch_size is not None
+        else:
+            max_batch_size = cls._infer_optimal_batch_size(arch_config, devices)
+        if max_batch_size > pipeline_config.runtime.max_batch_input_tokens:
             logger.info(
-                f"max_batch_size of {pipeline_config.runtime.max_batch_size} cannot be larger than max_batch_input_tokens of {pipeline_config.runtime.max_batch_input_tokens}, overriding max_batch_size to {pipeline_config.runtime.max_batch_input_tokens}"
+                f"max_batch_size of {max_batch_size} cannot be larger than max_batch_input_tokens of {pipeline_config.runtime.max_batch_input_tokens}, overriding max_batch_size to {pipeline_config.runtime.max_batch_input_tokens}"
             )
-            pipeline_config.runtime.max_batch_size = (
-                pipeline_config.runtime.max_batch_input_tokens
-            )
+            max_batch_size = pipeline_config.runtime.max_batch_input_tokens
 
         actual_kv_cache_size = cls._calculate_kv_cache_size(
             arch_config=arch_config,
-            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_batch_size=max_batch_size,
             available_kv_cache_memory=available_kv_cache_memory,
         )
 
-        model_config.kv_cache._available_cache_memory = actual_kv_cache_size
+        # Committed KV byte budget (captured before the OOM-fit search below may
+        # reassign ``actual_kv_cache_size``); threaded to consumers on the plan.
+        available_cache_memory = actual_kv_cache_size
 
         total_size += actual_kv_cache_size
         # If the model is too large to fit in memory, and the user did not
@@ -333,12 +402,13 @@ class MemoryEstimator:
             (
                 found_valid_max_length,
                 inferred_max_length,
-                _,
+                max_batch_size,
             ) = cls._find_valid_max_length(
                 pipeline_config,
                 arch_config,
                 available_kv_cache_memory,
                 user_provided_max_batch_size,
+                max_batch_size,
                 devices=devices,
             )
 
@@ -352,7 +422,7 @@ class MemoryEstimator:
 
             actual_kv_cache_size = cls._calculate_kv_cache_size(
                 arch_config=arch_config,
-                max_batch_size=pipeline_config.runtime.max_batch_size,
+                max_batch_size=max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
             )
             total_size = model_weights_size + actual_kv_cache_size
@@ -366,6 +436,7 @@ class MemoryEstimator:
                     arch_config,
                     user_provided_max_length,
                     user_provided_max_batch_size,
+                    max_batch_size,
                     total_size,
                     free_memory,
                     available_kv_cache_memory,
@@ -377,6 +448,12 @@ class MemoryEstimator:
                     "Estimated model and kv cache memory use nears available memory. You may experience errors."
                 )
 
+        return _MemoryPlan(
+            max_batch_size=max_batch_size,
+            footprint=int(total_size),
+            available_cache_memory=available_cache_memory,
+        )
+
     @classmethod
     def _find_valid_max_length(
         cls,
@@ -384,6 +461,7 @@ class MemoryEstimator:
         arch_config: ArchConfig,
         available_kv_cache_memory: int,
         user_provided_max_batch_size: bool,
+        max_batch_size: int,
         devices: list[Device],
     ) -> tuple[bool, int, int]:
         """Binary search to find a valid max_length configuration.
@@ -392,11 +470,10 @@ class MemoryEstimator:
             Tuple containing:
             - found_valid_max_length: Whether a valid max_length was found
             - inferred_max_length: The suggested max_length value
-            - inferred_max_length_compatible_batch_size: Compatible batch size for the max_length
+            - max_batch_size: The batch size used/inferred during the search
         """
         model_config = pipeline_config.model
         assert model_config.max_length is not None
-        assert pipeline_config.runtime.max_batch_size is not None
 
         found_valid_max_length = False
         lower = 1
@@ -413,14 +490,14 @@ class MemoryEstimator:
             model_config.max_length = inferred_max_length
 
             if not user_provided_max_batch_size:
-                pipeline_config.runtime.max_batch_size = (
-                    cls._infer_optimal_batch_size(arch_config, devices)
+                max_batch_size = cls._infer_optimal_batch_size(
+                    arch_config, devices
                 )
 
             # Use max_seq_len_override for binary search since we're varying model_config.max_length
             kv_cache_size = cls._calculate_kv_cache_size(
                 arch_config=arch_config,
-                max_batch_size=pipeline_config.runtime.max_batch_size,
+                max_batch_size=max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
                 max_seq_len_override=inferred_max_length,
             )
@@ -439,7 +516,7 @@ class MemoryEstimator:
         return (
             found_valid_max_length,
             inferred_max_length,
-            pipeline_config.runtime.max_batch_size,
+            max_batch_size,
         )
 
     @classmethod
@@ -449,6 +526,7 @@ class MemoryEstimator:
         available_kv_cache_memory: int,
         original_max_length: int,
         user_provided_max_batch_size: bool,
+        max_batch_size: int,
         arch_config: ArchConfig,
     ) -> tuple[bool, int]:
         """Binary search to find a valid batch size configuration.
@@ -464,19 +542,16 @@ class MemoryEstimator:
 
         found_valid_max_batch_size = False
         pipeline_config.model.max_length = original_max_length
-        inferred_max_batch_size = cast(
-            int, pipeline_config.runtime.max_batch_size
-        )
+        inferred_max_batch_size = max_batch_size
         lower = 1
-        upper = cast(int, pipeline_config.runtime.max_batch_size)
+        upper = max_batch_size
 
         while not found_valid_max_batch_size:
             inferred_max_batch_size = (lower + upper) // 2
-            pipeline_config.runtime.max_batch_size = inferred_max_batch_size
 
             kv_cache_size = cls._calculate_kv_cache_size(
                 arch_config=arch_config,
-                max_batch_size=pipeline_config.runtime.max_batch_size,
+                max_batch_size=inferred_max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
                 max_seq_len_override=original_max_length,
             )
@@ -537,6 +612,7 @@ class MemoryEstimator:
         arch_config: ArchConfig,
         user_provided_max_length: bool,
         user_provided_max_batch_size: bool,
+        max_batch_size: int,
         total_size: int,
         original_free_memory: int,
         available_kv_cache_memory: int,
@@ -563,9 +639,6 @@ class MemoryEstimator:
                             +----------------+----------------------+--------------------------+
         """
         original_max_length = cast(int, pipeline_config.model.max_length)
-        original_max_batch_size = cast(
-            int, pipeline_config.runtime.max_batch_size
-        )
 
         # Find valid configurations through binary search
         (
@@ -577,10 +650,9 @@ class MemoryEstimator:
             arch_config,
             available_kv_cache_memory,
             user_provided_max_batch_size,
+            max_batch_size,
             devices,
         )
-
-        pipeline_config.runtime.max_batch_size = original_max_batch_size
 
         found_valid_max_batch_size, inferred_max_batch_size = (
             cls._find_valid_batch_size(
@@ -588,6 +660,7 @@ class MemoryEstimator:
                 available_kv_cache_memory,
                 original_max_length,
                 user_provided_max_batch_size,
+                max_batch_size,
                 arch_config=arch_config,
             )
         )
@@ -771,12 +844,13 @@ class MemoryEstimator:
         available_memory: int,
         devices: list[Device],
         arch_config: ArchConfig,
+        arch: SupportedArchitecture | None = None,
     ) -> int:
         """Estimate and reserve memory for the vision encoder cache.
 
-        Calls ``arch_config.estimate_vision_cache_entry_bytes()`` to get the
-        per-entry size.  Non-VLM architectures that don't implement this
-        method return 0 and no memory is reserved.
+        Delegates to ``arch.memory_planner.estimate_vision_cache_entry_bytes()``.
+        Non-VLM architectures whose planner returns ``0`` reserve no vision
+        cache memory.
 
         Vision cache is capped to at most a fraction of the shared KV+vision pool
         (see ``_VISION_CACHE_MAX_FRACTION_OF_KV_BUDGET``) so token KV cache retains
@@ -790,24 +864,16 @@ class MemoryEstimator:
         if max_entries <= 0:
             return 0
 
-        if not isinstance(arch_config, ArchConfigWithKVAndVisionCache):
-            hf_config = model_config.huggingface_config
-            is_vlm = hf_config is not None and hasattr(
-                hf_config, "vision_config"
-            )
-            if is_vlm:
-                logger.warning(
-                    "VLM architecture %s does not implement "
-                    "ArchConfigWithKVAndVisionCache; vision encoder "
-                    "cache memory will not be reserved.",
-                    type(arch_config).__name__,
-                )
+        hf_config = model_config.huggingface_config
+
+        if arch is None:
             return 0
 
-        hf_config = model_config.huggingface_config
-        per_entry_bytes = arch_config.estimate_vision_cache_entry_bytes(
-            hf_config
-        )
+        if arch.memory_planner is None:
+            return 0
+
+        planner = arch.memory_planner(arch_config)
+        per_entry_bytes = planner.estimate_vision_cache_entry_bytes(hf_config)
         if per_entry_bytes <= 0:
             return 0
 

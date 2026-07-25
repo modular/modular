@@ -53,6 +53,7 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 
 from std.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
+from std.memory import UnsafePointer
 from nn.fold import fold
 
 
@@ -82,7 +83,12 @@ def test[
         capacity=input_shape.flattened_length()
     )
     input_stack.resize(input_shape.flattened_length(), 0)
-    var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
+    # TODO(MOCO-4334): a safe `Pointer` from `unsafe_ptr()` collapses to an
+    # immutable origin in the tensor ctor; pin to a mutable `UnsafePointer`.
+    var input_stack_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(input_stack)
+    ] = input_stack.unsafe_ptr()
+    var input = TileTensor(input_stack_ptr, input_layout)
     _copy_values_to_tile_tensor(input, input_values)
 
     # Create expected tensor with dynamic layout
@@ -91,7 +97,12 @@ def test[
         capacity=output_shape.flattened_length()
     )
     expected_stack.resize(output_shape.flattened_length(), 0)
-    var expected = TileTensor(expected_stack.unsafe_ptr(), output_layout)
+    # TODO(MOCO-4334): a safe `Pointer` from `unsafe_ptr()` collapses to an
+    # immutable origin in the tensor ctor; pin to a mutable `UnsafePointer`.
+    var expected_stack_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(expected_stack)
+    ] = expected_stack.unsafe_ptr()
+    var expected = TileTensor(expected_stack_ptr, output_layout)
     _copy_values_to_tile_tensor(expected, expected_output)
 
     # Create output tensor with dynamic layout
@@ -99,7 +110,12 @@ def test[
         capacity=output_shape.flattened_length()
     )
     output_stack.resize(output_shape.flattened_length(), 0)
-    var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
+    # TODO(MOCO-4334): a safe `Pointer` from `unsafe_ptr()` collapses to an
+    # immutable origin in the tensor ctor; pin to a mutable `UnsafePointer`.
+    var output_stack_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(output_stack)
+    ] = output_stack.unsafe_ptr()
+    var output = TileTensor(output_stack_ptr, output_layout)
 
     fold[stride=stride, dilation=dilation, padding=padding, target="cpu"](
         input=input,

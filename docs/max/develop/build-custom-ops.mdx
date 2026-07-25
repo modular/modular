@@ -9,7 +9,6 @@ is_tutorial: true
 
 import Requirements from '@site/src/components/Requirements';
 import { requirementsWithGPU } from '../../requirements';
-import MDXListing from '@site/src/components/Listing/MDXListing';
 
 When the built-in ops in a MAX graph don't cover your computation (a
 specialized activation, a fused operation, or a domain-specific kernel),
@@ -106,7 +105,7 @@ function arguments.
 Let's inspect the struct and function signatures:
 
 ```mojo title="kernels/add_one.mojo"
-@compiler.register("add_one")
+@extensibility.register("add_one")
 struct AddOne:
     @staticmethod
     def execute[
@@ -120,9 +119,10 @@ struct AddOne:
 ```
 
 The struct must include the
-[`@compiler.register()`](/max/api/mojo-decorators/compiler-register) decorator,
-which registers the custom op with MAX. The `add_one` name we set here is the
-name we'll use to add the op to our Python graph in the next section.
+[`@extensibility.register()`](/max/api/mojo-decorators/extensibility-register)
+decorator, which registers the custom op with MAX. The `add_one` name we set
+here is the name we'll use to add the op to our Python graph in the next
+section.
 
 The rest of the `execute()` signature describes the custom op's graph node to
 the graph compiler: the parameters, inputs, and outputs. The `execute()`
@@ -150,7 +150,7 @@ the following code. The op's core computation that adds `1` to each element in
 the tensor happens in the `elementwise_add_one()` closure function.
 
 ```mojo title="kernels/add_one.mojo" {11-18}
-@compiler.register("add_one")
+@extensibility.register("add_one")
 struct AddOne:
     @staticmethod
     def execute[
@@ -164,7 +164,7 @@ struct AddOne:
         @always_inline
         def elementwise_add_one[
             width: Int
-        ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        ](idx: Coord) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
         foreach[elementwise_add_one, target=target](output, ctx)
@@ -181,6 +181,18 @@ code runs with optimal performance on CPU or GPU with no changes required.
 Also notice that we pass the `target` parameter to the `foreach()` function,
 which allows it to optimize for the hardware device. (We'll do this ourselves in
 the [next example](#example-2-write-device-specific-kernels).)
+
+### Declare the output shape
+
+If you don't annotate output shapes manually in the Python graph, you must tell
+the compiler how to infer them by registering a shape function with
+[`@extensibility.register_shape_function()`](/max/api/mojo-decorators/extensibility-register):
+
+```mojo title="kernels/add_one.mojo"
+@extensibility.register_shape_function("add_one")
+def add_one_shape(x: InputTensor) -> IndexList[x.rank]:
+    return x.shape()
+```
 
 ### Add the custom op to a Python graph
 
@@ -243,7 +255,8 @@ session = InferenceSession(
     devices=[device],
 )
 
-model = session.load(graph)
+compiled = session.compile(graph)
+model = session.init(compiled)
 ```
 
 Finally, we generate some random data and pass it as input:
@@ -304,7 +317,7 @@ written specifically for parallelism across GPU threads.
 The vector addition op in `kernels/vector_addition.mojo` looks like this:
 
 ```mojo title="kernels/vector_addition.mojo"
-@compiler.register("vector_addition")
+@extensibility.register("vector_addition")
 struct VectorAddition:
     @staticmethod
     def execute[
@@ -347,8 +360,7 @@ def _vector_addition_gpu(
     def vector_addition_gpu_kernel(length: Int):
         var tid = block_dim.x * block_idx.x + thread_idx.x
         if tid < length:
-            var idx = IndexList[output.rank](tid)
-            var result = lhs.load[1](idx) + rhs.load[1](idx)
+            var result = lhs[tid] + rhs[tid]
             output.store[1](idx, result)
 
     var num_blocks = ceildiv(vector_length, BLOCK_SIZE)
@@ -388,9 +400,9 @@ memory access patterns.
 
 ## Next steps
 
-export const docs = [
-  '../../develop/modules.mdx',
-  '../../develop/custom-ops-matmul.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Build a model graph with Module](/max/develop/modules): Learn how to
+  compose modules, write custom modules with explicit weights, load checkpoint
+  data, and construct a model graph.
+- [Optimize custom ops for GPUs with Mojo](/max/develop/custom-ops-matmul):
+  Learn to use Mojo's GPU programming abstractions to progressively optimize a
+  matrix multiplication.

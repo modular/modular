@@ -415,15 +415,15 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                 Required by this dataset; the abstract base declares it
                 optional for datasets that don't tokenize via a pool.
             **kwargs: Additional parameters:
-                input_len (str): Distribution spec for input lengths, e.g.
+                input_len: Distribution spec for input lengths, e.g.
                     "1024", "N(1024, 200)", "U(500, 1500)", "G(2, 500)".
-                output_len (str): Distribution spec for output lengths.
-                sys_prompt_ratio (float): Ratio of system prompt to input.
-                max_num_unique_sys_prompt (int): Max unique system prompts.
-                min_input_len (int): Minimum input length (default: 4).
-                min_output_len (int): Minimum output length (default: 1).
-                image_size (str): Image dimensions as "width,height".
-                image_count (int): Number of images per request.
+                output_len: Distribution spec for output lengths.
+                sys_prompt_ratio: Ratio of system prompt to input.
+                max_num_unique_sys_prompt: Max unique system prompts.
+                min_input_len: Minimum input length (default: 4).
+                min_output_len: Minimum output length (default: 1).
+                image_size: Image dimensions as "width,height".
+                image_count: Number of images per request.
         """
         if pool is None:
             raise ValueError(

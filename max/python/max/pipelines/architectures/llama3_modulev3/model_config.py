@@ -27,11 +27,11 @@ from max.nn.rotary_embedding import (
     LongRoPEScalingParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
-    upper_bounded_default,
 )
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
@@ -78,9 +78,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
 
-    def get_max_seq_len(self) -> int:
-        return self.max_seq_len
-
     @classmethod
     def construct_kv_params(
         cls,
@@ -98,7 +95,10 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             num_layers=cls.get_num_layers(huggingface_config),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            num_eagle_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
+            speculative_method=pipeline_config.speculative.speculative_method
+            if pipeline_config.speculative
+            else None,
+            num_draft_tokens=pipeline_config.speculative.num_speculative_tokens
             if pipeline_config.speculative
             else 0,
         )
@@ -123,24 +123,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             ),
         )
 
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for Llama3, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
-
     @override
     @classmethod
     def initialize(
@@ -162,12 +144,14 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = model_config.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
 
         _weights_format = weights_format(model_config.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and model_config.rope_type == "normal"
+            and (model_config.rope_type or "normal") == "normal"
         )
 
         device_refs = [
@@ -307,10 +291,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
         rms_norm_eps = None
         if norm_method == "rms_norm":
-            if huggingface_config.model_type == "exaone":
-                rms_norm_eps = huggingface_config.layer_norm_epsilon
-            else:
-                rms_norm_eps = huggingface_config.rms_norm_eps
+            rms_norm_eps = huggingface_config.rms_norm_eps
 
         self.norm_method = norm_method
         self.rms_norm_eps = rms_norm_eps

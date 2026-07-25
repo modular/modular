@@ -18,14 +18,17 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkResult,
     PercentileMetrics,
+    PixelGenAggregates,
     RatePercentileMetrics,
-    ServingBenchmarkMetrics,
+    SpecDecodeStats,
     StandardPercentileMetrics,
     TextGenAggregates,
     ThroughputMetrics,
     _compute_confidence_info,
 )
+from pydantic import ValidationError
 
 # ---------------------------------------------------------------------------
 # PercentileMetrics construction and formatting
@@ -482,7 +485,7 @@ def test_rate_percentile_metrics_fraction_mode_bound() -> None:
 
 
 # ---------------------------------------------------------------------------
-# ServingBenchmarkMetrics.validate_metrics()
+# BenchmarkResult.validate_metrics()
 # ---------------------------------------------------------------------------
 
 
@@ -490,6 +493,7 @@ def _make_metrics(
     *,
     completed: int = 10,
     failures: int = 0,
+    excluded_successful: int = 0,
     total_input: int = 500,
     total_output: int = 200,
     max_output: int = 50,
@@ -499,8 +503,8 @@ def _make_metrics(
     itl_values: list[float] | None = None,
     ttft_values: list[float] | None = None,
     latency_values: list[float] | None = None,
-) -> ServingBenchmarkMetrics:
-    """Build a text-gen ServingBenchmarkMetrics with defaults that pass validation.
+) -> BenchmarkResult:
+    """Build a text-gen BenchmarkResult with defaults that pass validation.
 
     Individual fields can be overridden to inject specific degenerate values.
     """
@@ -510,7 +514,7 @@ def _make_metrics(
     ttft_values = ttft_values or [0.05]
     latency_values = latency_values or [0.5]
 
-    return ServingBenchmarkMetrics(
+    return BenchmarkResult(
         task_type="text",
         max_concurrency=1,
         peak_gpu_memory_mib=[],
@@ -520,6 +524,7 @@ def _make_metrics(
             duration=10.0,
             completed=completed,
             failures=failures,
+            excluded_successful=excluded_successful,
             request_throughput=request_throughput,
             latency_ms=StandardPercentileMetrics(
                 latency_values, scale_factor=1000.0, unit="ms"
@@ -570,6 +575,38 @@ def test_zero_completed_detected() -> None:
     ok, errors = _make_metrics(completed=0).validate_metrics()
     assert ok is False
     assert any("completed=0" in e for e in errors)
+
+
+def test_all_excluded_by_skip_reports_insufficient_data() -> None:
+    """Successes eaten by the skip windows report one insufficient-data error.
+
+    Mirrors the Meta-Llama-3.1 multi-turn-v2 mc=64 failure: 91 successful turns, all
+    excluded by skip_first=64 + skip_last=64. The server completed requests,
+    so "No requests completed" / "No output tokens generated" would misread
+    as a dead server.
+    """
+    ok, errors = _make_metrics(
+        completed=0,
+        excluded_successful=91,
+        total_output=0,
+        request_throughput=0.0,
+    ).validate_metrics()
+    assert ok is False
+    assert len(errors) == 1
+    assert "Insufficient data" in errors[0]
+    assert "91" in errors[0]
+    assert not any("No requests completed" in e for e in errors)
+    assert not any("total_output" in e for e in errors)
+
+
+def test_partial_exclusion_does_not_mask_other_errors() -> None:
+    """A nonzero measured set keeps normal validation even with exclusions."""
+    ok, errors = _make_metrics(
+        completed=5, excluded_successful=100, total_output=0
+    ).validate_metrics()
+    assert ok is False
+    assert any("total_output=0" in e for e in errors)
+    assert not any("Insufficient data" in e for e in errors)
 
 
 def test_zero_output_tokens_detected() -> None:
@@ -873,14 +910,14 @@ def test_benchmark_metrics_to_result_dict_keys() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Pixel-gen ServingBenchmarkMetrics.to_result_dict
+# Pixel-gen BenchmarkResult.to_result_dict
 # ---------------------------------------------------------------------------
 
 
 def test_pixel_metrics_to_result_dict() -> None:
     from max.benchmark.benchmark_shared.metrics import PixelGenAggregates
 
-    pm = ServingBenchmarkMetrics(
+    pm = BenchmarkResult(
         task_type="pixel",
         max_concurrency=2,
         peak_gpu_memory_mib=[],
@@ -901,3 +938,57 @@ def test_pixel_metrics_to_result_dict() -> None:
     assert d["total_generated_outputs"] == 8
     assert "mean_latency_ms" in d
     assert "p99_latency_ms" in d
+
+
+def test_benchmark_result_rejects_text_only_fields_for_pixel_task() -> None:
+    """Diagnostic steady-state scalars on a pixel task raise ValidationError."""
+    with pytest.raises(ValidationError):
+        BenchmarkResult(
+            task_type="pixel",
+            max_concurrency=1,
+            steady_state_detected=False,
+            pixel_data=PixelGenAggregates(
+                duration=1.0,
+                completed=1,
+                failures=0,
+                request_throughput=1.0,
+                latency_ms=StandardPercentileMetrics(
+                    [0.5], scale_factor=1000.0
+                ),
+                total_generated_outputs=1,
+            ),
+        )
+
+
+def test_benchmark_result_to_result_dict_includes_diagnostic_scalars() -> None:
+    """to_result_dict emits steady-state diagnostic scalars and spec_decode fields."""
+    result = _make_metrics()
+    result = result.model_copy(
+        update={
+            "steady_state_detected": True,
+            "steady_state_window_count": 120,
+            "steady_state_mode": "full",
+            "steady_state_warning": None,
+            "num_outliers_rejected": 3,
+            "spec_decode_stats": SpecDecodeStats(
+                acceptance_rate=55.0,
+                acceptance_length=2.0,
+            ),
+        }
+    )
+    d = result.to_result_dict()
+    assert d["steady_state_detected"] is True
+    assert d["steady_state_window_count"] == 120
+    assert d["steady_state_mode"] == "full"
+    assert d["steady_state_warning"] is None
+    assert d["num_outliers_rejected"] == 3
+    assert d["spec_decode_acceptance_rate"] == 55.0
+
+
+def test_benchmark_result_to_result_dict_omits_diagnostics_when_none() -> None:
+    """When steady_state_detected is None the diagnostic keys are absent."""
+    result = _make_metrics()
+    d = result.to_result_dict()
+    assert "steady_state_detected" not in d
+    assert "steady_state_window_count" not in d
+    assert "num_outliers_rejected" not in d

@@ -81,7 +81,7 @@ from std.utils import Variant
 
 @fieldwise_init
 struct _PrecompiledEntries[
-    format_origin: ImmutOrigin, entry_origin: ImmutOrigin, //, *Ts: Writable
+    format_origin: ImmOrigin, entry_origin: ImmOrigin, //, *Ts: Writable
 ](ImplicitlyCopyable):
     """Holds a non-owning view of precompiled format string entries.
 
@@ -108,9 +108,9 @@ struct _PrecompiledEntries[
 
 
 @fieldwise_init
-struct _PrecompiledEntriesRuntime[
-    format_origin: ImmutOrigin, //, *Ts: Writable
-](Movable):
+struct _PrecompiledEntriesRuntime[format_origin: ImmOrigin, //, *Ts: Writable](
+    Movable
+):
     """Holds precompiled format string entries with owned runtime-allocated storage.
 
     This struct is similar to `_PrecompiledEntries` but uses a `List` to own
@@ -130,15 +130,15 @@ struct _PrecompiledEntriesRuntime[
 
 @always_inline
 def _comptime_list_to_span[
-    T: ImplicitlyDestructible & Copyable, //, list: List[T]
-]() -> Span[T, StaticConstantOrigin]:
+    T: ImplicitlyDeletable & Copyable, //, list: List[T]
+]() -> Span[T, ImmStaticOrigin]:
     """Convert a comptime list to a runtime span of static constant origin."""
 
     def list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
         var array = InlineArray[T, len(list)](uninitialized=True)
 
         comptime for i in range(len(list)):
-            UnsafePointer(to=array[i]).init_pointee_copy(materialize[list]()[i])
+            Pointer(to=array[i]).unsafe_write(materialize[list[i].copy()]())
         return array^
 
     comptime array = list_to_array[list]()
@@ -167,7 +167,7 @@ struct _FormatUtils:
             p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(
-                unsafe_from_utf8=Span(ptr=p + start, length=end - start)
+                unsafe_from_utf8=Span(unsafe_ptr=p + start, length=end - start)
             )
 
         var auto_arg_index = 0
@@ -283,9 +283,7 @@ struct _FormatUtils:
     ](
         format: StringSlice,
     ) -> Variant[
-        _PrecompiledEntriesRuntime[
-            format_origin=ImmutOrigin(format.origin), *Ts
-        ],
+        _PrecompiledEntriesRuntime[format_origin=ImmOrigin(format.origin), *Ts],
         Error,
     ]:
         """Parses and compiles a format string without raising an error.
@@ -305,7 +303,7 @@ struct _FormatUtils:
     ](
         format: StringSlice,
     ) raises -> _PrecompiledEntriesRuntime[
-        format_origin=ImmutOrigin(format.origin), *Ts
+        format_origin=ImmOrigin(format.origin), *Ts
     ]:
         """Parses and compiles a format string at runtime.
 
@@ -328,7 +326,7 @@ struct _FormatUtils:
             An error if the format string is invalid or if replacement fields
             don't match the provided argument types.
         """
-        comptime FormatOrigin = ImmutOrigin(format.origin)
+        comptime FormatOrigin = ImmOrigin(format.origin)
         comptime EntryType = _FormatCurlyEntry[FormatOrigin]
 
         var manual_indexing_count = 0
@@ -353,7 +351,7 @@ struct _FormatUtils:
             if skip_next:
                 skip_next = False
                 continue
-            if fmt_ptr[i] == `{`:
+            if fmt_ptr[unsafe_offset=i] == `{`:
                 if not start:
                     start = i
                     continue
@@ -363,10 +361,12 @@ struct _FormatUtils:
                 entries.append(EntryType(start.value(), i, field=False))
                 start = None
                 continue
-            elif fmt_ptr[i] == `}`:
+            elif fmt_ptr[unsafe_offset=i] == `}`:
                 if not start:
                     # python escapes double curlies
-                    if (i + 1) < fmt_len and fmt_ptr[i + 1] == `}`:
+                    if (i + 1) < fmt_len and fmt_ptr[
+                        unsafe_offset=i + 1
+                    ] == `}`:
                         entries.append(EntryType(i, i + 1, field=True))
                         total_estimated_entry_byte_width += 2
                         skip_next = True
@@ -422,7 +422,7 @@ struct _FormatUtils:
 # And going a step further it might even be worth it adding custom format
 # specification start character, and custom format specs themselves (by defining
 # a trait that all format specifications conform to)
-struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
+struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
     """The struct that handles string formatting by curly braces entries.
     This is internal for the types: `StringSlice` compatible types.
     """
@@ -527,10 +527,12 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
     ) raises -> Bool:
         @always_inline("nodebug")
         def _build_slice(
-            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
+            p: Pointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(
-                unsafe_from_utf8=Span(ptr=p + start, length=end - start)
+                unsafe_from_utf8=Span[UInt8, p.origin](
+                    unsafe_ptr=p.unsafe_offset(start), length=end - start
+                )
             )
 
         var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
@@ -539,7 +541,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         var exclamation_index = -1
         var idx = 0
         while idx < field_len:
-            if field_ptr[idx] == UInt8(ord("!")):
+            if field_ptr[unsafe_offset=idx] == UInt8(ord("!")):
                 exclamation_index = idx
                 break
             idx += 1
@@ -547,7 +549,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         if exclamation_index != -1:
             if new_idx == field_len:
                 raise Error("Empty conversion flag.")
-            var conversion_flag = field_ptr[new_idx]
+            var conversion_flag = field_ptr[unsafe_offset=new_idx]
             if field_len - new_idx > 1 or (
                 conversion_flag not in Self.supported_conversion_flags
             ):
@@ -605,13 +607,13 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         comptime s_value = UInt8(ord("s"))
         # alias a_value = UInt8(ord("a")) # TODO
 
-        def _format(idx: Int) {read self, read args, mut writer}:
+        def _format(idx: Int) {imm self, imm args, mut writer}:
             comptime for i in range(Ts.size):
                 if i == idx:
                     var flag = self.conversion_flag
                     var empty = flag == 0
 
-                    ref arg = trait_downcast[Writable](args[i])
+                    ref arg = args[i]
                     if empty or flag == s_value:
                         arg.write_to(writer)
                     elif flag == r_value:

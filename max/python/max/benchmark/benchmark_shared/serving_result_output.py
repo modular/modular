@@ -47,11 +47,9 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
 )
 from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkResult,
     LoRAMetrics,
-    PixelGenerationBenchmarkResult,
-    ServingBenchmarkMetrics,
     SpecDecodeStats,
-    TextGenerationBenchmarkResult,
 )
 from max.benchmark.benchmark_shared.server_metrics import print_server_metrics
 from max.benchmark.benchmark_shared.utils import print_section
@@ -290,7 +288,7 @@ def print_lora_benchmark_results(metrics: LoRAMetrics) -> None:
 
 
 def print_benchmark_summary(
-    metrics: ServingBenchmarkMetrics,
+    metrics: BenchmarkResult,
     request_rate: float,
     max_concurrency: int | None,
     achieved_request_rate: float,
@@ -359,16 +357,18 @@ def print_benchmark_summary(
     if metrics.text_data is not None:
         t = metrics.text_data
         print_section(title="Client Experience Metrics")
-        print(
-            t.input_throughput.format_with_prefix(
-                prefix="input token throughput", unit="tok/s"
+        if t.input_throughput is not None:
+            print(
+                t.input_throughput.format_with_prefix(
+                    prefix="input token throughput", unit="tok/s"
+                )
             )
-        )
-        print(
-            t.output_throughput.format_with_prefix(
-                prefix="output token throughput", unit="tok/s"
+        if t.output_throughput is not None:
+            print(
+                t.output_throughput.format_with_prefix(
+                    prefix="output token throughput", unit="tok/s"
+                )
             )
-        )
         total_tpm = (
             (t.total_input + t.total_output) * 60.0 / agg.duration
             if agg.duration > 0
@@ -386,19 +386,22 @@ def print_benchmark_summary(
             )
             + "%"
         )
-        print_section(title="Time to First Token")
-        print(t.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
-        print_section(title="Time per Output Token")
-        print("[(latency - TTFT) / (output_tokens - 1), per request]")
-        print(t.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
+        if t.ttft_ms is not None:
+            print_section(title="Time to First Token")
+            print(t.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
+        if t.tpot_ms is not None:
+            print_section(title="Time per Output Token")
+            print("[(latency - TTFT) / (output_tokens - 1), per request]")
+            print(t.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
         if t.step_tpot_ms is not None:
             print_section(title="Time per Output Token (step-based)")
             print("[ITL / tokens_per_step, per decode step]")
             print(
                 t.step_tpot_ms.format_with_prefix(prefix="Step TPOT", unit="ms")
             )
-        print_section(title="Inter-token Latency")
-        print(t.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
+        if t.itl_ms is not None:
+            print_section(title="Inter-token Latency")
+            print(t.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
         if t.per_turn_cached_token_rate is not None:
             print_section(title="Per-Turn Cached Token Rate")
             print(
@@ -407,10 +410,21 @@ def print_benchmark_summary(
                 )
             )
 
-    print_section(title="Per-Request E2E Latency")
-    print(
-        agg.latency_ms.format_with_prefix(prefix="Request Latency", unit="ms")
-    )
+        if t.per_turn_cache_retention is not None:
+            print_section(title="Per-Turn KV Cache Retention")
+            print(
+                t.per_turn_cache_retention.format_with_prefix(
+                    prefix="Per-Turn Cache Retention", unit="%"
+                )
+            )
+
+    if agg.latency_ms is not None:
+        print_section(title="Per-Request E2E Latency")
+        print(
+            agg.latency_ms.format_with_prefix(
+                prefix="Request Latency", unit="ms"
+            )
+        )
 
     if metrics.text_data is not None:
         t = metrics.text_data
@@ -527,8 +541,7 @@ def _parse_metadata(metadata: list[str] | None) -> dict[str, str]:
 def save_result_json(
     result_filename: str | None,
     args: ServingBenchmarkConfig,
-    benchmark_result: TextGenerationBenchmarkResult
-    | PixelGenerationBenchmarkResult,
+    benchmark_result: BenchmarkResult,
     *,
     benchmark_task: BenchmarkTask,
     model_id: str,
@@ -552,7 +565,7 @@ def save_result_json(
         "tokenizer_id": tokenizer_id,
         "num_prompts": (
             agg.completed
-            if (agg := benchmark_result.metrics.aggregates) is not None
+            if (agg := benchmark_result.aggregates) is not None
             else 0
         ),
         "dataset_name": args.dataset_name,
@@ -579,8 +592,7 @@ def save_result_json(
 
 def save_output_lengths(
     args: ServingBenchmarkConfig,
-    benchmark_result: TextGenerationBenchmarkResult
-    | PixelGenerationBenchmarkResult,
+    benchmark_result: BenchmarkResult,
     benchmark_task: BenchmarkTask,
     *,
     iteration_config: tuple[int | None, float] | None = None,
@@ -593,7 +605,6 @@ def save_output_lengths(
             "--record-output-lengths is only supported for text-generation"
         )
         return
-    assert isinstance(benchmark_result, TextGenerationBenchmarkResult)
     args_to_save = (
         "backend",
         "burstiness",
@@ -616,7 +627,7 @@ def save_output_lengths(
         args_dict["max_concurrency"] = mc_snap
         args_dict["request_rate"] = rr_snap
     output_lens_dict["args"] = {x: args_dict[x] for x in args_to_save}
-    text_data = benchmark_result.metrics.text_data
+    text_data = benchmark_result.text_data
     output_lens_dict["output_lengths"] = (
         text_data.output_lens if text_data is not None else []
     )

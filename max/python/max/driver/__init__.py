@@ -17,17 +17,26 @@ from max._core.driver import (
     DeviceEvent,
     __unsafe_pack_py_host_func,
     enable_all_peer_access,
+    get_virtual_cpu_target,
     get_virtual_device_api,
     get_virtual_device_count,
     get_virtual_device_target_arch,
     is_virtual_device_mode,
+    set_virtual_cpu_target,
     set_virtual_device_api,
     set_virtual_device_count,
     set_virtual_device_target_arch,
 )
 from max._core_types.driver import DLPackArray
 
-from .buffer import Buffer, DevicePinnedBuffer, load_max_buffer
+from .buffer import (
+    Buffer,
+    DevicePinnedBuffer,
+    _unsafe_alloc_fast_pinned_buffer,
+    _unsafe_free_fast_pinned_buffer,
+    copy_pinned_to_destinations,
+    load_max_buffer,
+)
 from .driver import (
     CPU,
     NPU,
@@ -65,8 +74,10 @@ __all__ = [
     "accelerator_count",
     "calculate_virtual_device_count",
     "calculate_virtual_device_count_from_cli",
+    "copy_pinned_to_destinations",
     "devices_exist",
     "enable_all_peer_access",
+    "get_virtual_cpu_target",
     "get_virtual_device_api",
     "get_virtual_device_count",
     "get_virtual_device_target_arch",
@@ -74,6 +85,7 @@ __all__ = [
     "load_devices",
     "load_max_buffer",
     "scan_available_devices",
+    "set_virtual_cpu_target",
     "set_virtual_device_api",
     "set_virtual_device_count",
     "set_virtual_device_target_arch",

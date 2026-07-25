@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements GPU-specific tensor padding kernels with constant or edge-fill strategies."""
 
 from std.algorithm.functional import vectorize
 from std.gpu import block_dim, block_idx, thread_idx
@@ -46,7 +47,7 @@ def _vectorized_copy_row[
     dtype: DType,
     simd_width: Int,
 ](
-    input_ptr: UnsafePointer[Scalar[dtype], _],
+    input_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
     output_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     row_length: Int,
     threads_per_row: Int,
@@ -106,7 +107,7 @@ def _vectorized_copy_row[
 @__name(t"padded_copy_{dtype}_w{simd_width}")
 def padded_copy_kernel[
     InputLayoutType: TensorLayout,
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     dtype: DType,
@@ -118,6 +119,33 @@ def padded_copy_kernel[
     total_rows: Int,
     row_length: Int,
 ):
+    """Copies rows from `input_tensor` into the unpadded region of
+    `output_tensor` using a cooperatively vectorized, coalesced row copy.
+
+    Each block processes `rows_per_sm` rows (clamped to `total_rows`), and
+    threads along the x-dimension cooperate on a single row via
+    `_vectorized_copy_row`, advancing through rows in steps of `block_dim.y`.
+    The input is treated as a flat row-major buffer of `total_rows` rows each
+    of length `row_length`, while the output offset for each row is derived
+    from `output_tensor`'s layout so the copy lands in the correct position
+    within the padded output.
+
+    Parameters:
+        InputLayoutType: Layout type of the input `TileTensor`.
+        input_origin: Origin (mutability) of the input `TileTensor`.
+        OutputLayoutType: Layout type of the output `TileTensor`.
+        output_origin: Origin (mutability) of the output `TileTensor`.
+        dtype: Element type of the tensors.
+        simd_width: SIMD vector width used for the coalesced row copy.
+
+    Args:
+        input_tensor: Source `TileTensor` of contiguous row-major data.
+        output_tensor: Destination `TileTensor` whose layout maps each row
+            to its padded output position.
+        rows_per_sm: Maximum rows assigned to a single thread block.
+        total_rows: Total number of rows to copy.
+        row_length: Number of elements in each row.
+    """
     var start_row = block_idx.x * rows_per_sm
     var threads_per_row = block_dim.x
 
@@ -148,12 +176,26 @@ def _pad_constant_impl[
     max_threads: Int = 256,
     threads_per_row: Int = 16,
 ](
-    input_tensor: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input_tensor: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     output_tensor: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
+    # Zero-element input (e.g. a ``(B, C, 0, 0)`` tensor padded out to
+    # ``(B, C, 1, 1)`` in a diffusion VAE encoder for the text-to-image
+    # placeholder): nothing to copy.  The caller -- ``pad_constant`` --
+    # has already filled the output buffer with the constant value via
+    # ``enqueue_fill`` before reaching this function, which is exactly
+    # the correct output (every position is "padded" because there's no
+    # input region to copy from).  Without this guard the kernel would
+    # divide by zero computing ``total_rows = num_elements // row_length``
+    # and launch with ``grid_dim=(0)`` which is undefined.
+    if input_tensor.num_elements() == 0:
+        return
+
     var row_length = Int(input_tensor.dim(input_tensor.rank - 1))
     var total_rows = input_tensor.num_elements() // row_length
 
@@ -174,7 +216,7 @@ def _pad_constant_impl[
 
     comptime block_rows = max_threads // threads_per_row
     comptime kernel = padded_copy_kernel[
-        input_origin=ImmutOrigin(input_tensor.origin),
+        input_origin=ImmOrigin(input_tensor.origin),
         InputLayoutType=input_tensor.LayoutType,
         output_origin=output_tensor.origin,
         OutputLayoutType=output_tensor.LayoutType,
@@ -198,9 +240,9 @@ def pad_constant[
 ](
     output: UnsafePointer[mut=True, Scalar[dtype], _],
     output_shape: IndexList[rank],
-    input: UnsafePointer[Scalar[dtype], _],
+    input: UnsafePointer[mut=False, Scalar[dtype], _],
     input_shape: IndexList[rank],
-    paddings: UnsafePointer[Scalar[padding_type], _],
+    paddings: UnsafePointer[mut=False, Scalar[padding_type], _],
     constant: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -274,8 +316,23 @@ def get_padding_output_shape[
     rank: Int
 ](
     input_shape: IndexList[rank],
-    paddings: TileTensor[DType.int, ...],
+    paddings: TileTensor[mut=False, DType.int, ...],
 ) -> IndexList[rank]:
+    """Computes the output shape produced by padding `input_shape` with the
+    before/after amounts given in `paddings`.
+
+    `paddings` is a flat one-dimensional tensor of length `2 * rank` ordered
+    as `(before_axis0, after_axis0, before_axis1, after_axis1, ...)`, and the
+    returned shape has each axis `i` set to `before[i] + input_shape[i] +
+    after[i]`.
+
+    Args:
+        input_shape: Shape of the tensor before padding.
+        paddings: Flat `(before, after)` padding sizes for each axis.
+
+    Returns:
+        The padded output shape with the same rank as `input_shape`.
+    """
     comptime assert (
         paddings.flat_rank == 1 and paddings.static_shape[0] == 2 * rank
     )

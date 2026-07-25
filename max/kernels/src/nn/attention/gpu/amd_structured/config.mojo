@@ -34,6 +34,20 @@ struct AMDStructuredConfig[
     token_gen: Bool = False,
     mla_mode: Bool = False,
 ](ImplicitlyCopyable):
+    """Holds the tile layout and indexing helpers for GFX950 structured attention.
+
+    Wraps an `MHAConfig` with group-query and MLA metadata, deriving the
+    comptime shared-memory decisions (`shared_kv`, `full_kv`,
+    `depth_padded`, `double_buffer`) and exposing query/key-value head and
+    tile index helpers used by the attention kernels.
+
+    Parameters:
+        config: The base multi-head attention configuration.
+        group: Number of query heads sharing one key-value head.
+        token_gen: Selects decode (`True`) versus prefill (`False`) tiling.
+        mla_mode: Enables multi-latent attention tiling when `True`.
+    """
+
     comptime shared_kv = Self.token_gen and Self.config.depth > 256
     comptime full_kv = True
     comptime depth_padded = False
@@ -84,8 +98,15 @@ struct AMDStructuredConfig[
     def get_mma_shape() -> IndexList[3]:
         comptime if Self.config.dtype.is_float8():
             comptime if Self.token_gen:
-                # FP8 decode: 16x16x128 when depth%128==0, else 32x32x64.
-                comptime if Self.config.depth % 128 == 0:
+                # MLA decode with `num_heads <= 16` packs at most one MFMA
+                # row group, so `16x16x128` with `BM=WM=16` puts one warp
+                # on one full tile with no wasted M lanes (Kimi-K2.5
+                # per-GPU under TP=4 lands at exactly 16 query heads).
+                # Otherwise prefer `16x16x128` when `depth % 128 == 0`
+                # and fall back to `32x32x64` for full M-dim utilization.
+                comptime if (
+                    Self.mla_mode and Self.config.num_heads <= 16
+                ) or Self.config.depth % 128 == 0:
                     return IndexList[3](16, 16, 128)
                 return IndexList[3](32, 32, 64)
             # FP8 prefill: 32x32x64.

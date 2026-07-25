@@ -14,7 +14,7 @@
 
 There are a few main tools in this module:
 
-- `Hashable` trait for types implementing `__hash__(self) -> UInt`
+- `Hashable` trait for types implementing `__hash__(self, mut hasher)`
 - `hash[T: Hashable](hashable: T) -> Int` built-in function.
 - A `hash()` implementation for arbitrary byte strings,
   `hash(data: UnsafePointer[mut=False, UInt8], n: Int) -> Int`,
@@ -25,8 +25,8 @@ There are a few main tools in this module:
     These are useful helpers to specialize for the general bytes implementation.
 """
 
-from std.builtin.constrained import _constrained_field_conforms_to
-from std.memory import Span
+from std.builtin.constrained import _field_conforms_to_error
+from std.collections import Span
 from std.reflection import reflect
 
 from .hasher import Hasher, default_hasher
@@ -88,15 +88,14 @@ trait Hashable:
         comptime names = r.field_names()
         comptime types = r.field_types()
 
-        comptime for i in range(names.size):
+        comptime for i in range(names.length):
             comptime T = types[i]
-            _constrained_field_conforms_to[
-                conforms_to(T, Hashable),
+            comptime assert conforms_to(T, Hashable), _field_conforms_to_error[
                 Parent=Self,
                 FieldIndex=i,
                 ParentConformsTo="Hashable",
             ]()
-            hasher.update(trait_downcast[Hashable](r.field_ref[i](self)))
+            hasher.update(r.field_ref[i](self))
 
 
 def hash[
@@ -122,7 +121,7 @@ def hash[
 
 def hash[
     HasherType: Hasher = default_hasher
-](bytes: UnsafePointer[mut=False, UInt8, _], n: Int) -> UInt64:
+](bytes: Pointer[mut=False, UInt8, _], n: Int) -> UInt64:
     """Hash a sequence of bytes using the specified hasher.
 
     Parameters:
@@ -136,6 +135,6 @@ def hash[
         A 64-bit integer hash value.
     """
     var hasher = HasherType()
-    hasher._update_with_bytes(Span(ptr=bytes, length=n))
+    hasher._update_with_bytes(Span(unsafe_ptr=bytes, length=n))
     var value = hasher^.finish()
     return value

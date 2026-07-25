@@ -15,7 +15,7 @@ from std.ffi import _Global
 from std.memory import (
     UnsafeMaybeUninit,
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
 )
 from std.os import abort
@@ -46,7 +46,7 @@ def _initialize_poison() -> Bool:
     return False
 
 
-def _poison_ptr() -> UnsafePointer[Bool, MutExternalOrigin]:
+def _poison_ptr() -> Pointer[Bool, MutUntrackedOrigin]:
     try:
         return TEST_VARIANT_POISON.get_or_create_ptr()
     except:
@@ -54,7 +54,7 @@ def _poison_ptr() -> UnsafePointer[Bool, MutExternalOrigin]:
 
 
 def assert_no_poison() raises:
-    assert_false(_poison_ptr().take_pointee())
+    assert_false(_poison_ptr().unsafe_take_pointee())
 
 
 struct Poison(ImplicitlyCopyable):
@@ -62,13 +62,13 @@ struct Poison(ImplicitlyCopyable):
         pass
 
     def __init__(out self, *, copy: Self):
-        _poison_ptr().init_pointee_move(True)
+        _poison_ptr().unsafe_write(True)
 
-    def __init__(out self, *, deinit take: Self):
-        _poison_ptr().init_pointee_move(True)
+    def __init__(out self, *, deinit move: Self):
+        _poison_ptr().unsafe_write(True)
 
     def __del__(deinit self):
-        _poison_ptr().init_pointee_move(True)
+        _poison_ptr().unsafe_write(True)
 
 
 comptime TestVariant = Variant[MoveCopyCounter, Poison]
@@ -135,7 +135,7 @@ def test_move() raises:
 def test_del() raises:
     comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
-    var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
+    var v1 = TestDeleterVariant(ObservableDel(Pointer(to=deleted)))
     _ = v1^  # call __del__
     assert_true(deleted)
     # test that we didn't call the other deleter too!
@@ -146,8 +146,8 @@ def test_set_calls_deleter() raises:
     comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
     var deleted2: Bool = False
-    var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
-    v1.set(ObservableDel(UnsafePointer(to=deleted2)))
+    var v1 = TestDeleterVariant(ObservableDel(Pointer(to=deleted)))
+    v1.set(ObservableDel(Pointer(to=deleted2)))
     assert_true(deleted)
     assert_false(deleted2)
     _ = v1^
@@ -166,7 +166,7 @@ def test_replace() raises:
 def test_take_doesnt_call_deleter() raises:
     comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
-    var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
+    var v1 = TestDeleterVariant(ObservableDel(Pointer(to=deleted)))
     assert_false(deleted)
     var v2 = v1^.unsafe_take[ObservableDel[]]()
     assert_false(deleted)
@@ -219,33 +219,33 @@ def test_variant_linear_type_take() raises:
     assert_equal(data, 5)
 
 
-def test_variant_linear_type_destroy_with() raises:
+def test_variant_linear_type_deinit_with() raises:
     # Test destroying a linear variant element in-place
     var v1 = Variant[ExplicitDelOnly, String](ExplicitDelOnly(5))
-    v1^.destroy_with[ExplicitDelOnly](ExplicitDelOnly.destroy)
+    v1^.deinit_with[ExplicitDelOnly](ExplicitDelOnly.destroy)
 
     # Test destroying a non-linear variant element in-place
     var v2 = Variant[ExplicitDelOnly, String]("notlinear")
-    v2^.destroy_with[String](String.__del__)
+    v2^.deinit_with[String](String.__del__)
 
 
 def test_variant_linear_type_move() raises:
     var v1 = Variant[ExplicitDelOnly, String](ExplicitDelOnly(5))
     var v2 = v1^
 
-    v2^.destroy_with[ExplicitDelOnly](ExplicitDelOnly.destroy)
+    v2^.deinit_with[ExplicitDelOnly](ExplicitDelOnly.destroy)
 
 
-def test_variant_destroy_with_stateful_closure() raises:
+def test_variant_deinit_with_stateful_closure() raises:
     # Verify a closure capturing local state can be passed as
-    # `destroy_func` (not just a thin function reference).
+    # `deinit_func` (not just a thin function reference).
     var counter = 0
 
     def increment_counter(var _value: Int) {mut counter}:
         counter += 1
 
     var v = Variant[Int, String](42)
-    v^.destroy_with[Int](increment_counter)
+    v^.deinit_with[Int](increment_counter)
     assert_equal(counter, 1)
 
 
@@ -253,13 +253,13 @@ def test_variant_trivial_del() raises:
     comptime yes = ConfigureTrivial[del_is_trivial=True]
     comptime no = ConfigureTrivial[del_is_trivial=False]
 
-    assert_true(is_trivially_destructible[Variant[yes]]())
-    assert_false(is_trivially_destructible[Variant[no]]())
-    assert_false(is_trivially_destructible[Variant[yes, no]]())
+    assert_true(is_trivially_deletable[Variant[yes]]())
+    assert_false(is_trivially_deletable[Variant[no]]())
+    assert_false(is_trivially_deletable[Variant[yes, no]]())
 
     # TODO (MOCO-3016):
     # check variant of linear type
-    # assert_false(is_trivially_destructible[Variant[LinearType]]())
+    # assert_false(is_trivially_deletable[Variant[LinearType]]())
 
 
 def test_variant_trivial_copyinit() raises:
@@ -299,9 +299,13 @@ def test_variant_write_to() raises:
 
 def test_variant_write_repr_to() raises:
     var v = Variant[Int, String](42)
-    check_write_to(v, expected="Variant[Int, String](Int(42))", is_repr=True)
+    check_write_to(
+        v, expected="Variant[SIMD[DType.int, 1], String](Int(42))", is_repr=True
+    )
     v = "hello"
-    check_write_to(v, expected="Variant[Int, String]('hello')", is_repr=True)
+    check_write_to(
+        v, expected="Variant[SIMD[DType.int, 1], String]('hello')", is_repr=True
+    )
 
 
 @fieldwise_init
@@ -411,6 +415,22 @@ def test_variant_hash() raises:
     assert_true(hash(V1(42)) != hash(V1(99)))
 
 
+@fieldwise_init
+struct _Bare(Movable):
+    """A `Movable & ImplicitlyDeletable` type that conforms to nothing
+    else — used to exercise the negative case of `Variant`'s conditional
+    conformances."""
+
+    var n: Int
+
+
+@fieldwise_init
+struct _Pinned(Movable where False):
+    """A non-`Movable` (pinned) type; still implicitly deletable by default."""
+
+    var value: Int
+
+
 def test_variant_conditional_conformances() raises:
     assert_true(conforms_to(Variant[Int, String], Equatable))
     assert_true(conforms_to(Variant[Int], Equatable))
@@ -419,9 +439,9 @@ def test_variant_conditional_conformances() raises:
     assert_true(conforms_to(Variant[Int, String], Writable))
     assert_true(conforms_to(Variant[Int], Writable))
 
-    assert_false(conforms_to(Variant[MoveOnly[Int]], Equatable))
-    assert_false(conforms_to(Variant[MoveOnly[Int]], Hashable))
-    assert_false(conforms_to(Variant[MoveOnly[Int]], Writable))
+    assert_false(conforms_to(Variant[_Bare], Equatable))
+    assert_false(conforms_to(Variant[_Bare], Hashable))
+    assert_false(conforms_to(Variant[_Bare], Writable))
 
     # Copyable: all types Copyable
     assert_true(conforms_to(Variant[Int, String], Copyable))
@@ -447,6 +467,91 @@ def test_variant_conditional_conformances() raises:
     # RegisterPassable: mixture of RP and non-RP
     assert_false(conforms_to(Variant[Int, String], RegisterPassable))
     assert_false(conforms_to(Variant[Bool, List[Int], Int], RegisterPassable))
+
+    # Movable: all types Movable
+    assert_true(conforms_to(Variant[Int, String], Movable))
+
+    # Movable: non-Movable (pinned) alternative
+    assert_false(conforms_to(Variant[_Pinned, Int], Movable))
+
+    # Movable: linear alternative (Movable, not ImplicitlyDeletable)
+    assert_true(conforms_to(Variant[ExplicitDelOnly, Int], Movable))
+
+
+def test_variant_admits_non_movable_type() raises:
+    # The `AnyType` floor admits a non-`Movable` type in the type list. The
+    # value constructor still requires `Movable`, so it stores the movable
+    # type; the non-`Movable` type is populated via `call=` (see
+    # `test_variant_closure_construction`).
+    var v = Variant[_Pinned, Int](42)
+    assert_true(v.isa[Int]())
+    assert_false(v.isa[_Pinned]())
+    assert_equal(v[Int], 42)
+
+
+def test_variant_closure_construction() raises:
+    # Populate a non-`Movable` (pinned) type in place via a closure.
+    def make_pinned() -> _Pinned:
+        return _Pinned(7)
+
+    var v = Variant[_Pinned, Int](call=make_pinned)
+    assert_true(v.isa[_Pinned]())
+    assert_false(v.isa[Int]())
+    assert_equal(v[_Pinned].value, 7)
+
+    # The closure's return type selects the type; here a `Movable` one.
+    def make_int() -> Int:
+        return 42
+
+    var v2 = Variant[_Pinned, Int](call=make_int)
+    assert_true(v2.isa[Int]())
+    assert_equal(v2[Int], 42)
+
+
+def test_variant_closure_replacement() raises:
+    # Replace the movable value with a closure-constructed non-`Movable` value.
+    def make_pinned() -> _Pinned:
+        return _Pinned(9)
+
+    var v = Variant[_Pinned, Int](0)
+    assert_true(v.isa[Int]())
+    v.set(call=make_pinned)
+    assert_true(v.isa[_Pinned]())
+    assert_equal(v[_Pinned].value, 9)
+
+
+def test_variant_closure_called_once() raises:
+    # The initializer closure is invoked exactly once per construction/set.
+    var calls = 0
+
+    def make() {mut calls} -> Int:
+        calls += 1
+        return 5
+
+    var v = Variant[Int, String](call=make)
+    assert_equal(calls, 1)
+    assert_equal(v[Int], 5)
+
+    v.set(call=make)
+    assert_equal(calls, 2)
+    assert_equal(v[Int], 5)
+
+
+def test_variant_closure_set_calls_deleter() raises:
+    # Closure-based `set` destroys the outgoing value before emplacing the new
+    # one.
+    comptime TestDeleterVariant = Variant[ObservableDel[], Int]
+    var deleted = False
+    var v = TestDeleterVariant(ObservableDel(Pointer(to=deleted)))
+    assert_false(deleted)
+
+    def make() -> Int:
+        return 5
+
+    v.set(call=make)
+    assert_true(deleted)
+    assert_true(v.isa[Int]())
+    assert_equal(v[Int], 5)
 
 
 def main() raises:

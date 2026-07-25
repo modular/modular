@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""SM90 (Hopper) FlashAttention-3 multi-head attention kernel and dispatch layer.
+
+This module implements the warp-specialized, TMA-based MHA kernel for NVIDIA
+H100 GPUs, along with the dispatch chain that materializes comptime
+configuration choices (scheduler, sink, KV row offsets, ragged valid lengths)
+into concrete kernel instantiations.
+"""
 
 from std.math import ceildiv, exp2, recip
 from std.math.uutils import umod, uceildiv
@@ -45,7 +52,6 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
-    RaggedTMA3DTile,
 )
 from nn.attention.mha_operand import kv_sub_tile_rows as _kv_sub_tile_rows
 from nn.attention.gpu.nvidia.sm90.attention import (
@@ -130,6 +136,54 @@ def mha_sm90_dispatch[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
 ) raises:
+    """Dispatches the SM90 FlashAttention-3 MHA kernel for a single batch.
+
+    Selects a transient, tiled, or queued tile scheduler based on the
+    persistent-kernel configuration, builds the Q/K/V TMA tile descriptors,
+    and forwards the request down the dispatch chain to the enqueued kernel.
+
+    Parameters:
+        q_type: The dtype of the query tensor (inferred).
+        KVType: The K/V operand type encoding dtype, page size, and layout
+            (inferred).
+        MaskType: The mask functor type applied to attention scores
+            (inferred).
+        output_type: The dtype of the output tensor (inferred).
+        MaxPromptLenType: The maximum prompt length, possibly known at
+            compile time (inferred).
+        PartitionType: The scheme for partitioning attention work across
+            SMs (inferred).
+        config: The MHA configuration holding block sizes, head count,
+            depth, and algorithm.
+        group: The query grouping factor, the number of query heads per
+            KV head.
+        ragged: Whether per-row valid lengths vary and require ragged
+            masking.
+        sink: Whether attention sink weights are applied.
+        _is_cache_length_accurate: Whether the supplied cache length is
+            exact and needs no clamping.
+
+    Args:
+        output: The device buffer that receives the attention output.
+        q_arg: The device buffer holding the query tensor.
+        k: The key operand lookup table.
+        v: The value operand lookup table.
+        num_rows_q: The number of query rows in the batch.
+        mask_functor: The mask functor instance applied to attention
+            scores.
+        valid_length: The per-batch valid sequence length buffer.
+        max_prompt_len_arg: The maximum prompt length after padding.
+        max_cache_valid_length_arg: The maximum valid length of the KV
+            cache.
+        scale: The scaling factor applied to the QK^T product.
+        kv_input_row_offsets: Optional row offsets into the KV cache for
+            ragged layouts.
+        batch_size_arg: The number of sequences in the batch.
+        partition: The partition instance describing the work split.
+        ctx: The device context used to enqueue the kernel.
+        sink_weights: Optional sink weights tensor applied when sink is
+            enabled.
+    """
     comptime assert (
         config.dtype == KVType.dtype and config.dtype == q_type
     ), "config, kv, and q types must all match for FA3."
@@ -313,7 +367,9 @@ def mha_sm90_dispatch[
         var schedule = ctx.enqueue_create_buffer[DType.uint32](1)
         schedule.enqueue_fill(UInt32(H100.sm_count))
         ctx.synchronize()
-        var scheduler: SchedulerType = SchedulerType(schedule.unsafe_ptr())
+        var scheduler: SchedulerType = SchedulerType(
+            schedule.unsafe_ptr().as_unsafe_any_origin()
+        )
         _mha_sm90_sink_dispatch[
             SchedulerType=SchedulerType,
             KVLUTType=KVType,
@@ -915,7 +971,7 @@ def _mha_sm90[
 
     The general data layout and steps conform to flash attention. Two exceptions:
 
-    1 Partition across B, H, and num_keys (TODO).  The last one is split-K and
+    1 Partition across B, H, and num_keys (TODO). The last one is split-K and
       will need a separate reduction kernel at the end.
 
     2 First bmm becomes gemv and second bmm becomes gevm.
@@ -1162,7 +1218,7 @@ def _mha_sm90[
         max_seq_len.as_uint32(),
     )
     var state: MHATileState = scheduler.initial_state(
-        block_idx_ptr, tile_summary
+        block_idx_ptr.as_unsafe_any_origin(), tile_summary
     )
 
     # returns `true` if we are done
@@ -1227,7 +1283,7 @@ def _mha_sm90[
         ],
     ):
         comptime sz = BN * config.padded_depth
-        k_smem = {kv_smem + UInt32(sz) * idx}
+        k_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
     @parameter
     @always_inline
@@ -1244,7 +1300,7 @@ def _mha_sm90[
         ],
     ):
         comptime sz = BN * config.padded_depth
-        v_smem = {kv_smem + UInt32(sz) * idx}
+        v_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
     @parameter
     @always_inline
@@ -1289,12 +1345,12 @@ def _mha_sm90[
                 q_tma_op,
                 k_tma_op,
                 v_tma_op,
-                q_smem,
-                kv_smem,
-                produced_mbar_kv,
-                consumed_mbar_kv,
-                produced_mbar_q,
-                consumed_mbar_q,
+                q_smem.as_unsafe_any_origin(),
+                kv_smem.as_unsafe_any_origin(),
+                produced_mbar_kv.as_unsafe_any_origin(),
+                consumed_mbar_kv.as_unsafe_any_origin(),
+                produced_mbar_q.as_unsafe_any_origin(),
+                consumed_mbar_q.as_unsafe_any_origin(),
                 kv_lut,
                 position,
                 partition,
@@ -1330,7 +1386,7 @@ def _mha_sm90[
             address_space=AddressSpace.SHARED,
             alignment=128,
         ]:
-            return {q_smem + UInt32(q_size) * q_idx}
+            return {(q_smem + UInt32(q_size) * q_idx).as_unsafe_any_origin()}
 
         # layout is
         # shape  = (2, num_m_mmas) x (2, num_n_mmas)
@@ -1564,7 +1620,7 @@ def _mha_sm90[
                 tid,
                 local_warp_group_idx,
                 warp_y,
-                q_smem + q_idx * q_tile_size,
+                (q_smem + q_idx * q_tile_size).as_unsafe_any_origin(),
                 output_reg_tile,
             )
             # Guard writing to shared memory.

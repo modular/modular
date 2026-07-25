@@ -21,10 +21,15 @@ to device when needed for prefix cache hits.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 
-from max.driver import Buffer
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
 
@@ -39,34 +44,37 @@ class LocalConnector:
 
     Manages host memory as a secondary cache tier. Committed device blocks
     can be offloaded via save() and loaded back via lookup()/load().
+
+    .. deprecated::
+        Superseded by the Rust ``rust_tiered`` connector (host + disk), which
+        runs its copies on a dedicated copy engine and reports completion
+        through :class:`KVConnectorTransfer` so onloads overlap GPU compute.
+        This connector issues its H2D on the forward stream (ordered by the
+        deprecated :meth:`wait_for_loads` barrier), so a large onload stalls the
+        GPU. Kept for backward compatibility.
     """
 
     @traced
     def __init__(
         self,
-        params: KVCacheParams,
-        device_buffers: list[Buffer],
+        replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
         total_num_host_blocks: int,
-        non_replicated_device_buffers_to_offload: list[Buffer] | None = None,
     ) -> None:
-        """Initialize the local host memory connector."""
-        if not params.enable_prefix_caching:
-            raise ValueError(
-                "LocalConnector requires prefix caching to be enabled"
-            )
+        """Initialize the local host memory connector.
+
+        The host tier is shared across every DP replica: ``replica_kv_memory``
+        holds each replica's device buffers, and a single pinned host buffer +
+        host block pool serve them all (SERVOPT-1501).
+        """
         if total_num_host_blocks <= 0:
             raise ValueError("LocalConnector requires host blocks")
-
-        self._block_size = params.page_size
 
         self._total_num_host_blocks = total_num_host_blocks
 
         # Create BlockOffloadEngine for memory transfers
         self._block_copy_engine = BlockOffloadEngine(
             total_num_host_blocks,
-            device_buffers,
-            replicate_kv_across_tp=params.replicates_kv_across_tp,
-            non_replicated_device_buffers_to_offload=non_replicated_device_buffers_to_offload,
+            replica_kv_memory,
         )
 
         # Host block pool for managing host memory
@@ -110,55 +118,138 @@ class LocalConnector:
     def load(
         self,
         device_block_ids: list[int],
-        block_hashes: list[int],
-    ) -> int:
-        """Load data from host cache into device blocks.
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> KVConnectorTransfer:
+        """Load data from host cache into ``replica_idx``'s device blocks.
 
         Returns:
-            Number of blocks loaded from host cache.
+            A :class:`CompletedTransfer`: the H2D rides the forward stream and
+            is ordered ahead of the forward by :meth:`wait_for_loads`, so from
+            the manager's perspective it is already complete. ``g0_blocks`` are
+            the device blocks that were loaded.
         """
-        hit = 0
         host_cache = self._host_block_pool.prefix_cache
+        dsts: list[int] = []
+        srcs: list[int] = []
         for block_hash, device_block_id in zip(
             block_hashes, device_block_ids, strict=True
         ):
             if block_hash in host_cache:
-                host_block = host_cache[block_hash]
-                self._block_copy_engine.memcpy_h2d(
-                    device_block_id, host_block.bid
-                )
-                self._h2d_blocks_copied += 1
-                hit += 1
+                dsts.append(device_block_id)
+                srcs.append(host_cache[block_hash].bid)
             else:
                 break
 
-        return hit
+        self._block_copy_engine.memcpy_h2d(dsts, srcs, replica_idx)
+        self._h2d_blocks_copied += len(dsts)
+        return CompletedTransfer(TransferDirection.LOAD, dsts)
+
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        """Counts contiguous leading blocks resident in the host cache.
+
+        Read-only companion to ``load``: same walk order and stop condition,
+        but no copies and no LRU updates.
+        """
+        host_cache = self._host_block_pool.prefix_cache
+        num_host_hits = 0
+        for block_hash in block_hashes:
+            if block_hash not in host_cache:
+                break
+            num_host_hits += 1
+        return (num_host_hits, 0)
 
     @traced
     def offload(
         self,
         block_ids: list[int],
-        block_hashes: list[int],
+        block_hashes: Sequence[bytes],
+        parent_seq_hash: bytes | None = None,
+        replica_idx: int = 0,
+    ) -> KVConnectorTransfer:
+        """Offload ``replica_idx``'s device blocks to the host cache.
+
+        ``parent_seq_hash`` is ignored: host blocks are keyed by hash.
+
+        Kicks off the D2H copies on the auxiliary stream without synchronizing.
+        The main/aux stream sync runs once per forward pass in
+        ``wait_for_loads``; ``offload`` is now called once per request
+        (multiple times per forward pass), so syncing here would re-serialize
+        the copies against the forward pass and destroy the overlap.
+
+        Returns:
+            A :class:`CompletedTransfer`: the D2H is stream-ordered, so the
+            manager keeps no pin. ``g0_blocks`` are the offloaded device blocks.
+        """
+        dsts: list[int] = []
+        srcs: list[int] = []
+        for block_id, block_hash in zip(block_ids, block_hashes, strict=True):
+            pair = self._maybe_offload_to_host(block_id, block_hash)
+            if pair is not None:
+                dsts.append(pair[0])
+                srcs.append(pair[1])
+
+        self._block_copy_engine.memcpy_d2h(dsts, srcs, replica_idx)
+        self._d2h_blocks_copied += len(dsts)
+        return CompletedTransfer(TransferDirection.OFFLOAD, srcs)
+
+    def touch(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
     ) -> None:
-        """Offload the device blocks to the external cache."""
+        """No-op: this connector does not refresh recency on device-cache hits."""
+        return None
+
+    def wait_for_loads(self) -> None:
+        """Synchronize the main and auxiliary streams once per forward pass.
+
+        Called once before the forward pass and before the per-request
+        ``offload`` calls. This duplex sync makes the forward pass wait for
+        in-flight H2D loads and the previous step's D2H offloads (so reused
+        blocks are safe), and orders subsequent D2H copies after the forward
+        pass. Doing it here once — rather than at the head of every ``offload``
+        — keeps the forward pass overlapping with the D2H transfers.
+        """
         self._block_copy_engine.wait_for_completion()
 
-        for block_id, block_hash in zip(block_ids, block_hashes, strict=True):
-            self._maybe_offload_to_host(block_id, block_hash)
-
     @traced
-    def sync(self) -> None:
-        """Wait for pending loads/offloads to complete."""
+    def wait_for_offloads(self) -> None:
+        """Drain offloads posted this step by syncing the copy streams.
+
+        Called after the forward pass. Waits for in-flight D2H copies on the
+        auxiliary stream to complete.
+        """
         self._block_copy_engine.wait_for_completion()
 
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
-        # Wait for any pending transfers
-        self._block_copy_engine.wait_for_completion()
+        # Syncs the copy streams and frees the (non-GC-freed) host buffer.
+        self._block_copy_engine.close()
 
     def reset_prefix_cache(self) -> None:
         """Reset the host prefix cache."""
         self._host_block_pool.reset_prefix_cache()
+
+    def _maybe_offload_to_host(
+        self, device_block_id: int, block_hash: bytes
+    ) -> tuple[int, int] | None:
+        """Reserve a host slot for device_block_id if not already cached.
+
+        Returns ``(host_block_id, device_block_id)`` when a slot was reserved,
+        or ``None`` if the block is already in the host cache. D2H copy is
+        NOT issued here; the caller batches all pairs and calls memcpy_d2h once.
+        """
+        if block_hash in self._host_block_pool.prefix_cache:
+            return None
+
+        assert self._host_block_pool.total_num_blocks > 0
+        host_block, _ = self._host_block_pool.alloc_block()
+        self._host_block_pool.commit_into_prefix_cache(block_hash, host_block)
+        self._host_block_pool.free_block(host_block)
+        return host_block.bid, device_block_id
 
     @property
     def metrics(self) -> KVCacheMetrics:
@@ -168,29 +259,11 @@ class LocalConnector:
             d2h_blocks_copied=self._d2h_blocks_copied,
         )
 
-    @traced
-    def _maybe_offload_to_host(
-        self, device_block_id: int, block_hash: int
-    ) -> None:
-        """Offload a device block to host memory if not already cached."""
-        # Skip if already in host cache
-        if block_hash in self._host_block_pool.prefix_cache:
-            return
+    def reset_metrics(self) -> None:
+        """Clear transfer counters after the scheduler samples a batch."""
+        self._h2d_blocks_copied = 0
+        self._d2h_blocks_copied = 0
 
-        # Allocate host block. This should never fail!
-        assert (
-            self._host_block_pool.num_free_blocks
-            == self._host_block_pool.total_num_blocks
-        )
-        assert self._host_block_pool.total_num_blocks > 0
-        host_block, _ = self._host_block_pool.alloc_block()
-
-        # Copy from device to host
-        self._block_copy_engine.memcpy_d2h(host_block.bid, device_block_id)
-        self._d2h_blocks_copied += 1
-
-        # Commit to host prefix cache
-        self._host_block_pool.commit_into_prefix_cache(block_hash, host_block)
-
-        # Mark as free (host blocks are never "active", only cached)
-        self._host_block_pool.free_block(host_block)
+    @property
+    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
+        return frozenset({"ahash64", "sha256", "sha256_64"})

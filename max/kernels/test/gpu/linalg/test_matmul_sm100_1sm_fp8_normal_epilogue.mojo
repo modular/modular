@@ -156,8 +156,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             for k in range(Int(k.value())):
                 b_host[n, k] = Float32(n + k).cast[b_type]()
     else:
-        rand(a_host.ptr, a_host.num_elements())
-        rand(b_host.ptr, b_host.num_elements())
+        rand(a_host._storage, a_host.num_elements())
+        rand(b_host._storage, b_host.num_elements())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -181,11 +181,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     @__copy_capture(c_tensor_lt)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDLength,
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[alignment=alignment * size_of[c_type](),](
+        c_tensor_lt.store[store_alignment=alignment * size_of[c_type](),](
             idx, rebind[SIMD[c_type, width]](val)
         )
 
@@ -230,8 +230,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,

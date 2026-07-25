@@ -12,11 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import MPNetBatchProcessor
 from .model import MPNetPipelineModel
 from .model_config import MPNetConfig
 
@@ -40,4 +41,5 @@ mpnet_arch = SupportedArchitecture(
     },
     required_arguments={"enable_prefix_caching": False},
     config=MPNetConfig,
+    batching=MPNetBatchProcessor,
 )

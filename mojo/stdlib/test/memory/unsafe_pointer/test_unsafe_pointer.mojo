@@ -13,8 +13,10 @@
 
 from std.compile import compile_info
 from std.ffi import external_call
+from std.gpu.host import get_gpu_target
 from std.memory import UnsafeMaybeUninit
-from std.sys import align_of, size_of
+from std.sys import align_of, bit_width_of, size_of
+import std.memory.alloc
 
 from test_utils import (
     ExplicitCopyOnly,
@@ -40,15 +42,7 @@ def _mutable_pointer(p: MutUnsafePointer[Int, ...]) raises:
     assert_equal(p[], 42)
 
 
-def _immutable_pointer(p: ImmutUnsafePointer[Int, ...]) raises:
-    assert_equal(p[], 42)
-
-
-def _mutable_any_pointer(p: UnsafePointer[Int, MutAnyOrigin, ...]) raises:
-    assert_equal(p[], 42)
-
-
-def _immutable_any_pointer(p: UnsafePointer[Int, ImmutAnyOrigin, ...]) raises:
+def _immutable_pointer(p: ImmUnsafePointer[Int, ...]) raises:
     assert_equal(p[], 42)
 
 
@@ -68,35 +62,29 @@ def test_mutable_conversions() raises:
     _named_origin[origin_of(x)](p)
     _mutable_pointer(p)
     _immutable_pointer(p)
-    _mutable_any_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
 def test_immutable_conversions() raises:
     var x = 42
-    var p = UnsafePointer(to=x).as_immutable()
+    var p = UnsafePointer(to=x).as_imm()
     _named_origin[mut=False, origin_of(x)](p)
     _immutable_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
 def test_mutable_any_conversions() raises:
     var x = 42
-    var p = UnsafePointer(to=x).as_any_origin()
+    var p = UnsafePointer(to=x).as_unsafe_any_origin()
     _mutable_pointer(p)
     _immutable_pointer(p)
-    _mutable_any_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
 def test_immutable_any_conversions() raises:
     var x = 42
-    var p = UnsafePointer(to=x).as_immutable().as_any_origin()
+    var p = UnsafePointer(to=x).as_imm().as_unsafe_any_origin()
     _immutable_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
@@ -107,12 +95,12 @@ def test_immutable_any_conversions() raises:
 
 def test_unsafepointer_of_move_only_type() raises:
     var actions = List[String]()
-    var actions_ptr = UnsafePointer(to=actions).as_immutable()
+    var actions_ptr = UnsafePointer(to=actions).as_imm()
 
     comptime ObserveType = ObservableMoveOnly[actions_ptr.origin]
 
     var ptr = alloc[ObserveType](1)
-    ptr.init_pointee_move(ObserveType(42, actions_ptr))
+    ptr.unsafe_write(ObserveType(42, actions_ptr))
     assert_equal(len(actions_ptr[0]), 2)
     assert_equal(actions_ptr[0][0], "__init__")
     assert_equal(actions_ptr[0][1], "move ctor", msg="emplace_value")
@@ -137,7 +125,7 @@ def test_unsafepointer_move_pointee_move_count() raises:
 
     var value = MoveCounter(5)
     assert_equal(0, value.move_count)
-    ptr.init_pointee_move(value^)
+    ptr.unsafe_write(value^)
 
     # -----
     # Test that `UnsafePointer.move_pointee` performs exactly one move.
@@ -146,19 +134,19 @@ def test_unsafepointer_move_pointee_move_count() raises:
     assert_equal(1, ptr[].move_count)
 
     var ptr_2 = alloc[MoveCounter[Int]](1)
-    ptr_2.init_pointee_move_from(ptr)
+    ptr_2.unsafe_write_move_from(ptr)
 
     assert_equal(2, ptr_2[].move_count)
 
 
-def test_unsafepointer_init_pointee_copy() raises:
+def test_unsafepointer_unsafe_write() raises:
     var ptr = alloc[ExplicitCopyOnly](1)
 
     var orig = ExplicitCopyOnly(5)
     assert_equal(orig.copy_count, 0)
 
     # Test initialize pointee from `Copyable` type
-    ptr.init_pointee_copy(orig)
+    ptr.unsafe_write(copy=orig)
 
     assert_equal(ptr[].value, 5)
     assert_equal(ptr[].copy_count, 1)
@@ -222,15 +210,15 @@ def test_unsafepointer_string() raises:
 def test_eq() raises:
     var local = 1
     # FIXME(#5133): should just be UnsafePointer[mut=False](to=local)
-    var p1 = UnsafePointer(to=local).as_immutable()
+    var p1 = UnsafePointer(to=local).as_imm()
     var p2 = p1
     assert_equal(p1, p2)
 
     var other_local = 2
-    var p3 = UnsafePointer(to=other_local).as_immutable()
+    var p3 = UnsafePointer(to=other_local).as_imm()
     assert_not_equal(Int(p1), Int(p3))
 
-    var p4 = UnsafePointer(to=local).as_immutable()
+    var p4 = UnsafePointer(to=local).as_imm()
     assert_equal(p1, p4)
     _ = local
     _ = other_local
@@ -287,7 +275,7 @@ def test_unsafepointer_alloc_origin() raises:
     var did_del_1 = False
 
     # Allocate pointer with MutAnyOrigin.
-    var ptr_1 = alloc[Int](1).as_any_origin()
+    var ptr_1 = alloc[Int](1).as_unsafe_any_origin()
 
     var obj_1 = ObservableDel(UnsafePointer(to=did_del_1))
 
@@ -399,6 +387,37 @@ def test_offset() raises:
     ptr2.free()
 
 
+def test_offset_from() raises:
+    var ptr = alloc[Int32](8)
+    var end = ptr + 8
+
+    assert_equal(end.offset_from(ptr), 8)
+    assert_equal(ptr.offset_from(end), -8)
+    assert_equal(ptr.offset_from(ptr), 0)
+    assert_equal((ptr + 3).offset_from(ptr + 1), 2)
+
+    assert_equal(end - ptr, 8)
+    assert_equal(ptr - end, -8)
+
+    ptr.free()
+
+    var wide = alloc[SIMD[DType.int64, 4]](3)
+    assert_equal((wide + 2) - wide, 2)
+    assert_equal(wide - (wide + 2), -2)
+    wide.free()
+
+    # offset_from() and the `-` operator work on safe pointers too, and the
+    # operands may mix pointer safety.
+    var data = List[Int32](length=4, fill=0)
+    var first: Pointer[Int32, origin_of(data)] = data.unsafe_ptr()
+    var last = first.unsafe_offset(3)
+    assert_equal(last.offset_from(first), 3)
+    assert_equal(first.offset_from(last), -3)
+    assert_equal(last - first, 3)
+    assert_equal(first - last, -3)
+    assert_equal(data.unsafe_ptr() - first, 0)
+
+
 def test_load_and_store_simd() raises:
     var ptr = alloc[Int8](16)
     for i in range(16):
@@ -441,6 +460,27 @@ def test_load_and_store_simd_bool() raises:
     p.free()
 
 
+def test_unsafe_methods_on_safe_pointer() raises:
+    var data = List[Int32](length=8, fill=0)
+    for i in range(len(data)):
+        data[i] = Int32(i)
+
+    var ptr: Pointer[Int32, origin_of(data)] = data.unsafe_ptr()
+
+    assert_equal(ptr.unsafe_offset(2)[], Int32(2))
+    assert_equal(ptr[unsafe_offset=3], Int32(3))
+
+    ptr.unsafe_store(4, SIMD[DType.int32, 4](10, 11, 12, 13))
+    assert_equal(
+        ptr.unsafe_load[width=4](4), SIMD[DType.int32, 4](10, 11, 12, 13)
+    )
+
+    assert_equal(
+        Int(ptr.unsafe_address_space_cast[AddressSpace.GENERIC]()), Int(ptr)
+    )
+    assert_equal(Int(ptr.unsafe_as_noalias()), Int(ptr))
+
+
 def test_volatile_load_and_store_simd() raises:
     var ptr = alloc[Int8](16)
     for i in range(16):
@@ -479,8 +519,8 @@ def test_merge() raises:
 
 def test_swap_pointees_trivial_move() raises:
     var a = 42
-    UnsafePointer(to=a).as_any_origin().swap_pointees(
-        UnsafePointer(to=a).as_any_origin()
+    UnsafePointer(to=a).as_unsafe_any_origin().swap_pointees(
+        UnsafePointer(to=a).as_unsafe_any_origin()
     )
     assert_equal(a, 42)
 
@@ -493,8 +533,8 @@ def test_swap_pointees_trivial_move() raises:
 
 def test_swap_pointees_non_trivial_move() raises:
     var counter = MoveCounter[Int](42)
-    UnsafePointer(to=counter).as_any_origin().swap_pointees(
-        UnsafePointer(to=counter).as_any_origin()
+    UnsafePointer(to=counter).as_unsafe_any_origin().swap_pointees(
+        UnsafePointer(to=counter).as_unsafe_any_origin()
     )
     # Pointers point to the same object, so no move should be performed
     assert_equal(counter.value, 42)
@@ -511,12 +551,12 @@ def test_swap_pointees_non_trivial_move() raises:
     assert_equal(counterB.move_count, 2)
 
 
-def test_as_any_origin_mutable() raises:
+def test_as_unsafe_any_origin_mutable() raises:
     var deleted = False
     var observer = ObservableDel[origin_of(deleted)](UnsafePointer(to=deleted))
     var x = 42
 
-    var mutable = UnsafePointer(to=x).as_any_origin()
+    var mutable = UnsafePointer(to=x).as_unsafe_any_origin()
     assert_true(mutable.mut)
     assert_false(deleted)
 
@@ -524,12 +564,12 @@ def test_as_any_origin_mutable() raises:
     assert_true(deleted)  # AnyOrigin extends all lifetimes
 
 
-def test_as_any_origin_immutable() raises:
+def test_as_unsafe_any_origin_immutable() raises:
     var deleted = False
     var observer = ObservableDel[origin_of(deleted)](UnsafePointer(to=deleted))
     var x = 42
 
-    var immutable = UnsafePointer(to=x).as_any_origin().as_immutable()
+    var immutable = UnsafePointer(to=x).as_unsafe_any_origin().as_imm()
     assert_false(immutable.mut)
     assert_false(deleted)
 
@@ -537,11 +577,11 @@ def test_as_any_origin_immutable() raises:
     assert_true(deleted)  # AnyOrigin extends all lifetimes
 
 
-def test_as_immutable() raises:
+def test_as_imm() raises:
     var x = 42
     var mutable = UnsafePointer(to=x)
     assert_true(mutable.mut)
-    assert_false(mutable.as_immutable().mut)
+    assert_false(mutable.as_imm().mut)
 
 
 def test_unsafe_mut_cast() raises:
@@ -553,7 +593,7 @@ def test_unsafe_mut_cast() raises:
     assert_true(_mutable.mut)
 
 
-def _ref_to[origin: ImmutOrigin](ref[origin] to: String):
+def _ref_to[origin: ImmOrigin](ref[origin] to: String):
     pass
 
 
@@ -566,7 +606,7 @@ def test_unsafe_origin_cast() raises:
     _ref_to[origin_of(y)](ptr.unsafe_origin_cast[origin_of(y)]()[])
 
 
-def _ptr_to_int(ptr: UnsafePointer[Int, MutExternalOrigin]) -> Int:
+def _ptr_to_int(ptr: UnsafePointer[Int, MutUntrackedOrigin]) -> Int:
     return Int(ptr)
 
 
@@ -579,7 +619,7 @@ def test_ptr_to_int_llvm_lowering() raises:
     assert_false("ptrtoaddr" in info.asm)
 
 
-def _from_address(x: Int, out result: UnsafePointer[Int, MutExternalOrigin]):
+def _from_address(x: Int, out result: UnsafePointer[Int, MutUntrackedOrigin]):
     result = type_of(result)(unsafe_from_address=x)
 
 
@@ -595,6 +635,25 @@ def test_unsafe_from_address() raises:
     assert_equal(ptr2[], 42)
 
 
+def test_unsafe_from_address_pointer_width() raises:
+    # `unsafe_from_address`'s bound is address-space specific: the overflow
+    # `debug_assert` is only compiled in when the pointer is narrower than
+    # `Int`. On an AMDGPU target, GENERIC pointers are 64-bit (as wide as
+    # `Int`, so the check is elided) while SHARED pointers are 32-bit.
+    comptime AMD_TARGET = get_gpu_target["mi355x"]()
+
+    comptime GenericPtr = UnsafePointer[Int, MutUntrackedOrigin]
+    comptime SharedPtr = UnsafePointer[
+        Int, MutUntrackedOrigin, address_space=AddressSpace.SHARED
+    ]
+
+    assert_equal(
+        bit_width_of[GenericPtr, target=AMD_TARGET](),
+        bit_width_of[Int, target=AMD_TARGET](),
+    )
+    assert_equal(bit_width_of[SharedPtr, target=AMD_TARGET](), 32)
+
+
 def test_write_to() raises:
     var x = 42
     check_write_to(UnsafePointer(to=x), contains="0x", is_repr=False)
@@ -608,15 +667,15 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafePointer(to=x),
         contains=(
-            "UnsafePointer[mut=True, Int,"
+            "Pointer[mut=True, SIMD[DType.int, 1],"
             " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
     )
     check_write_to(
-        UnsafePointer(to=x).as_immutable(),
+        UnsafePointer(to=x).as_imm(),
         contains=(
-            "UnsafePointer[mut=False, Int,"
+            "Pointer[mut=False, SIMD[DType.int, 1],"
             " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
@@ -624,7 +683,8 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafePointer(to=x).address_space_cast[AddressSpace.SHARED](),
         contains=(
-            "UnsafePointer[mut=True, Int, address_space=AddressSpace.SHARED](0x"
+            "Pointer[mut=True, SIMD[DType.int, 1],"
+            " address_space=AddressSpace.SHARED](0x"
         ),
         is_repr=True,
     )
@@ -633,8 +693,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafePointer(to=s),
         contains=(
-            "UnsafePointer[mut=True, String,"
-            " address_space=AddressSpace.GENERIC](0x"
+            "Pointer[mut=True, String, address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
     )
@@ -642,7 +701,7 @@ def test_write_repr_to() raises:
 
 def test_unsafe_pointer_niche() raises:
     var x = 42
-    comptime UP = UnsafePointer[Int, ImmutOrigin(origin_of(x))]
+    comptime UP = UnsafePointer[Int, ImmOrigin(origin_of(x))]
     assert_equal(size_of[UP](), size_of[Optional[UP]]())
 
     var storage = UnsafeMaybeUninit[UP]()
@@ -654,10 +713,10 @@ def test_unsafe_pointer_niche() raises:
 
 
 def test_unsafe_pointer_dangling() raises:
-    var int_ptr = UnsafePointer[Int, MutExternalOrigin].unsafe_dangling()
+    var int_ptr = UnsafePointer[Int, MutUntrackedOrigin].unsafe_dangling()
     assert_equal(Int(int_ptr) % align_of[Int](), 0)
 
-    var str_ptr = UnsafePointer[String, MutExternalOrigin].unsafe_dangling()
+    var str_ptr = UnsafePointer[String, MutUntrackedOrigin].unsafe_dangling()
     assert_equal(Int(str_ptr) % align_of[String](), 0)
 
 
@@ -693,6 +752,59 @@ def test_optional_unsafe_pointer_llvm_lowering() raises:
             return
 
     raise Error("did not find _test_lower function")
+
+
+def test_alloc_free_single_zst() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = std.memory.alloc.Layout[ZST](count=1)
+    var ptr = alloc(layout).unsafe_leak()
+
+    assert_equal(0, len(ptr[0]))  # dereference the pointer
+
+    std.memory.alloc.dealloc(
+        std.memory.alloc.ThinAllocation(
+            unsafe_assume_ownership=ptr
+        ).unsafe_with_layout(layout)
+    )
+
+
+def test_alloc_free_many_zst() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = std.memory.alloc.Layout[ZST](count=Int.MAX)
+    var ptr = alloc(layout).unsafe_leak()
+
+    assert_equal(0, len(ptr[0]))  # dereference the pointer
+    assert_equal(0, len(ptr[Int.MAX]))
+
+    std.memory.alloc.dealloc(
+        std.memory.alloc.ThinAllocation(
+            unsafe_assume_ownership=ptr
+        ).unsafe_with_layout(layout)
+    )
+
+
+# TODO(MOCO-4334)
+# def origin_superset_conversion(
+#     a: String, b: String, c: Bool
+# ) -> UnsafePointer[String, origin_of(a, b)]:
+#     # These pointers should implicitly convert.
+#     if c:
+#         return UnsafePointer(to=a)
+#     else:
+#         return UnsafePointer(to=b)
+
+
+# def test_implicit_conversion_to_super_origin() raises:
+#     # Parse-time only test, but call it anyway.
+#     _ = origin_superset_conversion("", "bar", True)
 
 
 def main() raises:

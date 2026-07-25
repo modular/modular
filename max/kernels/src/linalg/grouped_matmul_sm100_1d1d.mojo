@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides block-scaled grouped GEMM for 1D×1D scale layouts on SM100 (B200) GPUs."""
+
 from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, simd_width_of, size_of
@@ -59,6 +61,7 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    LTToTTLayout,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
@@ -160,6 +163,47 @@ def copy_accum_to_gmem[
     expert_scale: Float32,
     group_end_idx: UInt32,
 ):
+    """Copies one accumulator stage from TMEM to global memory via shared memory.
+
+    Loads the MMA result from tensor memory, applies the per-expert scale and an
+    optional elementwise epilogue, packs the result through `stmatrix` into shared
+    memory, and stores it to global memory with TMA (or a CUDA-core fallback for
+    unaligned tails). Handles both the transposed (`transpose_c`) and
+    non-transposed output layouts.
+
+    Parameters:
+        c_type: The data type of the output tensor C.
+        c_tile_rank: The rank of the C TMA tile.
+        c_tile_shape: The shape of the C TMA tile.
+        c_desc_shape: The descriptor shape of the C TMA tile.
+        num_accum_pipeline_stages: The number of accumulator pipeline stages.
+        c_tensor_layout: The layout of the output LayoutTensor.
+        c_smem_layout: The layout of the C shared memory tile.
+        repeat: The number of `tcgen05_ld` repetitions per stage.
+        accum_type: The accumulator data type held in TMEM.
+        cta_group: The number of CTAs cooperating per output tile (1 or 2).
+        epilogue_dtype: The dtype used for the cast output before storing.
+        block_tile_shape: The (BM, BN, BK) block tile shape.
+        mma_shape: The (MMA_M, MMA_N, MMA_K) MMA shape.
+        num_output_warps: The number of epilogue warps.
+        c_swizzle: The TMA swizzle mode for C.
+        elementwise_compute_lambda_fn: Optional fused elementwise epilogue.
+        register_based_epilogue: Whether the epilogue runs in registers.
+        transpose_c: Whether the output is stored transposed.
+        scale_c_coord: Whether to scale tile coordinates by block tile strides.
+
+    Args:
+        c_smem_base: Base pointer to the C shared memory buffer.
+        c_tma_op: The TMA tensor tile descriptor for C.
+        c: The output LayoutTensor in global memory.
+        mma_output_pipeline: The producer/consumer pipeline for MMA output.
+        mma_output_stage: The accumulator pipeline stage to drain.
+        tmem_offset: The column offset into TMEM for this stage.
+        c_coord: The (row, column) tile coordinate of the output tile.
+        c_shape: The (M, N) extent of the output tensor.
+        expert_scale: The per-expert scale factor applied to the accumulator.
+        group_end_idx: The exclusive end row index for the current expert group.
+    """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime MMA_M = mma_shape[0]
@@ -268,7 +312,7 @@ def copy_accum_to_gmem[
                     elementwise_compute_lambda_fn.value(),
                     num_output_warps,
                     epilogue_dtype,
-                    upper_frag_casted.size,
+                    upper_frag_casted.length,
                     repeat,
                     transpose_c,
                     cta_group=cta_group,
@@ -344,10 +388,10 @@ def copy_accum_to_gmem[
                     c_smem_warp_tt.tile[data_paths, stageN](1, 0),
                 )
 
-            var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
+            var c_smem_warp_tile_upper = c_smem_warp_tt.tile[
                 data_paths, stageN
             ](0, 0)
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
+            var c_smem_warp_tile_lower = c_smem_warp_tt.tile[
                 data_paths, stageN
             ](1, 0)
 
@@ -365,8 +409,6 @@ def copy_accum_to_gmem[
                         c_smem_warp_tile_upper.dtype,
                         c_smem_tile.shape[1](),
                         simd_size,
-                        c_smem_warp_tile_upper.layout,
-                        c_smem_warp_tile_lower.layout,
                         swizzle,
                         elementwise_compute_lambda_fn.value(),
                         num_output_warps,
@@ -628,7 +670,7 @@ def multi_stage_store_C[
     scale_c_coord: Bool = True,
 ](
     c_smem_base: UnsafePointer[
-        Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[c_type], _, address_space=AddressSpace.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
@@ -641,6 +683,47 @@ def multi_stage_store_C[
     N: UInt32,
     group_end_idx: UInt32,
 ):
+    """Drains one MMA output tile from TMEM into global memory in stages.
+
+    Waits for the MMA producer to signal completion, computes the TMEM column
+    offset for the current accumulator stage, and delegates to
+    `copy_accum_to_gmem` to perform the multi-stage store of the output tile.
+
+    Parameters:
+        c_type: The data type of the output tensor C.
+        c_tile_rank: The rank of the C TMA tile.
+        c_tile_shape: The shape of the C TMA tile.
+        c_desc_shape: The descriptor shape of the C TMA tile.
+        num_accum_pipeline_stages: The number of accumulator pipeline stages.
+        c_tensor_layout: The layout of the output LayoutTensor.
+        c_smem_layout: The layout of the C shared memory tile.
+        input_type: The data type of the input tensor A (used to select the
+            epilogue dtype).
+        accum_type: The accumulator data type held in TMEM.
+        block_tile_shape: The (BM, BN, BK) block tile shape.
+        mma_shape: The (MMA_M, MMA_N, MMA_K) MMA shape.
+        stage_stride_cols: The TMEM column stride between accumulator stages.
+        c_swizzle: The TMA swizzle mode for C.
+        cta_group: The number of CTAs cooperating per output tile (1 or 2).
+        num_output_warps: The number of epilogue warps.
+        elementwise_compute_lambda_fn: Optional fused elementwise epilogue.
+        register_based_epilogue: Whether the epilogue runs in registers.
+        transpose_c: Whether the output is stored transposed.
+        scale_c_coord: Whether to scale tile coordinates by block tile strides.
+
+    Args:
+        c_smem_base: Base pointer to the C shared memory buffer.
+        c_tma_op: The TMA tensor tile descriptor for C.
+        c: The output LayoutTensor in global memory.
+        mma_output_pipeline: The producer/consumer pipeline for MMA output.
+        tmem_addr: The base TMEM address for this CTA's accumulator.
+        work_tile_coord: The (row, column) coordinate of the output tile.
+        elect_one_warp: Whether the calling warp is the elected leader warp.
+        expert_scale: The per-expert scale factor applied to the accumulator.
+        M: The total number of rows in the output tensor.
+        N: The total number of columns in the output tensor.
+        group_end_idx: The exclusive end row index for the current expert group.
+    """
     # WAIT FOR MMA TO FINISH AND STORE RESULT
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -708,7 +791,7 @@ def multi_stage_store_C[
         transpose_c=transpose_c,
         scale_c_coord=scale_c_coord,
     ](
-        c_smem_base,
+        c_smem_base.as_unsafe_any_origin(),
         c_tma_op,
         c,
         mma_output_pipeline,
@@ -733,6 +816,22 @@ struct B200BlockScaledMatmulSmem[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
 ]:
+    """Holds the shared memory buffers and barriers for one block-scaled matmul tile.
+
+    Allocates double-buffered shared memory for A, B, C, and their scale factors,
+    plus the TMA-MMA and accumulator pipeline barriers and the TMEM deallocation
+    barrier used by the warp-specialized grouped matmul kernel on SM100.
+
+    Parameters:
+        a_type: The data type of input tensor A.
+        b_type: The data type of input tensor B.
+        c_type: The data type of the output tensor C.
+        sfa_dtype: The data type of the A scale factors.
+        sfb_dtype: The data type of the B scale factors.
+        transpose_b: Whether B is stored transposed (K-major).
+        config: The block-scaled matmul configuration.
+    """
+
     comptime BM = Self.config.block_tile_shape[0]
     comptime BN = Self.config.block_tile_shape[1]
     comptime BK = Self.config.block_tile_shape[2]
@@ -834,16 +933,16 @@ def load_AB[
         sfb_dtype, sfb_tile_rank, sfb_tile_shape, sfb_desc_shape
     ],
     a_smem_base: UnsafePointer[
-        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_type], _, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
     ],
     sfa_smem_base: UnsafePointer[
-        Scalar[sfa_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfa_dtype], _, address_space=AddressSpace.SHARED
     ],
     sfb_smem_base: UnsafePointer[
-        Scalar[sfb_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfb_dtype], _, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -858,6 +957,65 @@ def load_AB[
         DType.uint32, group_scale_offsets_layout, MutAnyOrigin
     ],
 ):
+    """Issues multicast TMA loads for A, B, and their scale factors into shared memory.
+
+    Waits for the consumer (MMA) to release the current pipeline stage buffer,
+    then launches asynchronous multicast TMA copies of the A and B tiles along
+    with their corresponding block scale factors into shared memory for one
+    pipeline stage, accounting for expert offsets and group scale offsets.
+
+    Parameters:
+        a_type: The data type of input tensor A.
+        b_type: The data type of input tensor B.
+        c_type: The data type of the output tensor C.
+        sfa_dtype: The data type of the A scale factors.
+        sfb_dtype: The data type of the B scale factors.
+        a_tile_rank: The rank of the A TMA tile.
+        a_tile_shape: The shape of the A TMA tile.
+        a_desc_shape: The descriptor shape of the A TMA tile.
+        b_tile_rank: The rank of the B TMA tile.
+        b_tile_shape: The shape of the B TMA tile.
+        b_desc_shape: The descriptor shape of the B TMA tile.
+        sfa_tile_rank: The rank of the A scale factor TMA tile.
+        sfa_tile_shape: The shape of the A scale factor TMA tile.
+        sfa_desc_shape: The descriptor shape of the A scale factor TMA tile.
+        sfb_tile_rank: The rank of the B scale factor TMA tile.
+        sfb_tile_shape: The shape of the B scale factor TMA tile.
+        sfb_desc_shape: The descriptor shape of the B scale factor TMA tile.
+        num_pipeline_stages: The number of load/MMA pipeline stages.
+        group_scale_offsets_layout: The layout of the group scale offsets tensor.
+        transpose_b: Whether B is stored transposed (K-major).
+        a_smem_layout: The shared memory layout for A.
+        b_smem_layout: The shared memory layout for B.
+        sfa_smem_layout: The shared memory layout for A scale factors.
+        sfb_smem_layout: The shared memory layout for B scale factors.
+        config: The block-scaled matmul configuration.
+        block_tile_shape: The (BM, BN, BK) block tile shape.
+        mma_shape: The (MMA_M, MMA_N, MMA_K) MMA shape.
+        num_sf_k_tiles: The number of scale factor tiles along K.
+        cta_group: The number of CTAs cooperating per output tile (1 or 2).
+        k_group_size: The number of K iterations loaded per pipeline stage.
+
+    Args:
+        a_tma_op: The TMA tensor tile descriptor for A.
+        b_tma_op: The TMA tensor tile descriptor for B.
+        sfa_tma_op: The TMA tensor tile descriptor for A scale factors.
+        sfb_tma_op: The TMA tensor tile descriptor for B scale factors.
+        a_smem_base: Base pointer to the A shared memory buffer.
+        b_smem_base: Base pointer to the B shared memory buffer.
+        sfa_smem_base: Base pointer to the A scale factor shared memory buffer.
+        sfb_smem_base: Base pointer to the B scale factor shared memory buffer.
+        load_mma_pipeline: The producer/consumer pipeline for TMA loads.
+        peer_cta_coord: The (peer_id, m_coord, n_coord) of the peer CTA.
+        work_tile_coord: The (m, n) coordinate of the work tile.
+        a_multicast_mask: The multicast mask for A TMA loads.
+        b_multicast_mask: The multicast mask for B TMA loads.
+        iter_idx: The K iteration index for this load.
+        elect_one_cta: Whether this CTA is the elected leader CTA.
+        scheduler: The tile scheduler tracking group and expert state.
+        expert_id: The expert ID for the current work tile.
+        group_scale_offsets: The per-group scale factor offsets tensor.
+    """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -915,28 +1073,24 @@ def load_AB[
             var a_smem_tile = LayoutTensor[
                 a_type,
                 a_smem_layout,
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
                 alignment=128,
             ](a_smem_base + offset * a_smem_tile_size)
             var b_smem_tile = LayoutTensor[
                 b_type,
                 b_smem_layout,
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
                 alignment=128,
             ](b_smem_base + offset * b_smem_tile_size)
             var sfa_smem_tile = LayoutTensor[
                 sfa_dtype,
                 sfa_smem_layout,
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
                 alignment=128,
             ](sfa_smem_base + offset * sfa_smem_tile_size)
             var sfb_smem_tile = LayoutTensor[
                 sfb_dtype,
                 sfb_smem_layout,
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
                 alignment=128,
             ](sfb_smem_base + offset * sfb_smem_tile_size)
@@ -1041,16 +1195,16 @@ def consumer_main_loop[
     sfa_tmem: UInt32,
     sfb_tmem: UInt32,
     a_smem_base: UnsafePointer[
-        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_type], _, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
     ],
     sfa_smem_base: UnsafePointer[
-        Scalar[sfa_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfa_dtype], _, address_space=AddressSpace.SHARED
     ],
     sfb_smem_base: UnsafePointer[
-        Scalar[sfb_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfb_dtype], _, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     mma_op: MmaOpSM100_BlockScaled_SS[
@@ -1074,6 +1228,52 @@ def consumer_main_loop[
     k_start: UInt32,
     work_tile_coord: Tuple[Int, Int],
 ):
+    """Consumes one pipeline stage and issues the block-scaled MMA into TMEM.
+
+    Waits for the producer (TMA load) to fill the current stage, then reads A, B,
+    and their scale factors from shared memory and launches the block-scaled
+    `MmaOpSM100_BlockScaled_SS` into tensor memory, accumulating across K-group
+    iterations and committing the result to the accumulator pipeline barrier.
+
+    Parameters:
+        accum_type: The accumulator data type held in TMEM.
+        c_type: The data type of the output tensor C.
+        a_type: The data type of input tensor A.
+        b_type: The data type of input tensor B.
+        sfa_dtype: The data type of the A scale factors.
+        sfb_dtype: The data type of the B scale factors.
+        a_swizzle: The TMA swizzle mode for A.
+        b_swizzle: The TMA swizzle mode for B.
+        transpose_b: Whether B is stored transposed (K-major).
+        pipeline_stages: The number of load/MMA pipeline stages.
+        scaling_kind: The UMMA scaling kind for block-scaled MMA.
+        a_smem_layout: The shared memory layout for A.
+        b_smem_layout: The shared memory layout for B.
+        sfa_smem_layout: The shared memory layout for A scale factors.
+        sfb_smem_layout: The shared memory layout for B scale factors.
+        block_tile_shape: The (BM, BN, BK) block tile shape.
+        mma_shape: The (MMA_M, MMA_N, MMA_K) MMA shape.
+        SFA_NUM_COLS: The number of TMEM columns for A scale factors.
+        SFB_NUM_COLS: The number of TMEM columns for B scale factors.
+        cta_group: The number of CTAs cooperating per output tile (1 or 2).
+        cluster_shape: The cluster shape for multicast MMA.
+        k_group_size: The number of K iterations per pipeline stage.
+
+    Args:
+        tmem_addr: The base TMEM address for the accumulator.
+        sfa_tmem: The base TMEM address for A scale factors.
+        sfb_tmem: The base TMEM address for B scale factors.
+        a_smem_base: Base pointer to the A shared memory buffer.
+        b_smem_base: Base pointer to the B shared memory buffer.
+        sfa_smem_base: Base pointer to the A scale factor shared memory buffer.
+        sfb_smem_base: Base pointer to the B scale factor shared memory buffer.
+        load_mma_pipeline: The producer/consumer pipeline for TMA loads.
+        mma_op: The block-scaled SM100 MMA operation object.
+        elect_one_warp: Whether the calling warp is the elected leader warp.
+        iter_idx: The K iteration index for this MMA.
+        k_start: The K iteration at which to initialize the accumulator.
+        work_tile_coord: The (m, n) coordinate of the work tile.
+    """
     comptime BM = block_tile_shape[0]
     comptime MMA_N = mma_shape[1]
 
@@ -1095,30 +1295,26 @@ def consumer_main_loop[
     if elect_one_sync():
         for j in range(UInt32(k_group_size)):
             var offset = Int(stage * UInt32(k_group_size) + j)
-            var a_smem_tile = LayoutTensor[
-                a_type,
-                a_smem_layout,
-                MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ](a_smem_base + offset * a_smem_tile_size)
-            var b_smem_tile = LayoutTensor[
-                b_type,
-                b_smem_layout,
-                MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ](b_smem_base + offset * b_smem_tile_size)
+            var a_smem_tile = TileTensor(
+                a_smem_base + offset * a_smem_tile_size,
+                LTToTTLayout[a_smem_layout](),
+            )
+            var b_smem_tile = TileTensor(
+                b_smem_base + offset * b_smem_tile_size,
+                LTToTTLayout[b_smem_layout](),
+            )
             var sfa_smem_tile = SMemTile[
                 sfa_dtype, internal_sf_k_major[sfa_d0, sfa_d1]
             ](
-                sfa_smem_base + offset * sfa_smem_tile_size,
+                sfa_smem_base.as_unsafe_any_origin()
+                + offset * sfa_smem_tile_size,
                 internal_sf_k_major[sfa_d0, sfa_d1],
             )
             var sfb_smem_tile = SMemTile[
                 sfb_dtype, internal_sf_k_major[sfb_d0, sfb_d1]
             ](
-                sfb_smem_base + offset * sfb_smem_tile_size,
+                sfb_smem_base.as_unsafe_any_origin()
+                + offset * sfb_smem_tile_size,
                 internal_sf_k_major[sfb_d0, sfb_d1],
             )
 
@@ -1139,8 +1335,8 @@ def consumer_main_loop[
                 sfb_tmem_adj = UInt32(0)
 
             mma_op.mma(
-                lt_to_tt(a_smem_tile),
-                lt_to_tt(b_smem_tile),
+                a_smem_tile,
+                b_smem_tile,
                 sfa_smem_tile,
                 sfb_smem_tile,
                 tmem_addr,
@@ -1201,6 +1397,27 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     performance when M is small.
 
     Accepts TileTensors and converts to LayoutTensors internally.
+
+    Parameters:
+        transpose_b: Whether B is stored transposed (K-major).
+        config: The block-scaled matmul configuration.
+        elementwise_compute_lambda_fn: Optional fused elementwise epilogue.
+        pdl_level: The program-dependent launch level for the kernel grid.
+        max_profiled_tiles_per_SM: The maximum number of tiles profiled per SM,
+            or None to disable profiling.
+
+    Args:
+        c_device: The output C tensor in device memory.
+        a_device: The input A tensor in device memory.
+        group_offsets: The starting token index for each expert group.
+        group_scale_offsets: The starting scale index for each expert group.
+        b_device: The input B tensor in device memory.
+        expert_ids: The expert ID for each group.
+        a_scales: The A scale factors tensor in device memory.
+        b_scales: The B scale factors tensor in device memory.
+        expert_scales: The per-expert scaling factors applied in the epilogue.
+        num_active_experts: The number of active experts in this batch.
+        ctx: The device context used to launch the kernel.
     """
     comptime c_type = config.c_type
     comptime a_type = config.a_type
@@ -1292,7 +1509,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         b_type,
         flat_b_layout,
         address_space=AddressSpace.GENERIC,
-    ](b_device.ptr.as_any_origin())
+    ](b_device.ptr.as_unsafe_any_origin())
 
     comptime assert (
         sfb_layout.shape[0].value() == num_experts
@@ -1411,12 +1628,12 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
-    a_device: LayoutTensor[a_type, a_layout, ...],
+    a_device: LayoutTensor[mut=False, a_type, a_layout, ...],
     group_offsets: LayoutTensor[DType.uint32, group_offsets_layout, ...],
     group_scale_offsets: LayoutTensor[
         DType.uint32, group_scale_offsets_layout, ...
     ],
-    b_device: LayoutTensor[b_type, b_layout, ...],
+    b_device: LayoutTensor[mut=False, b_type, b_layout, ...],
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ...],
     a_scales: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
     b_scales: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
@@ -1797,6 +2014,69 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
 ):
+    """Runs the warp-specialized block-scaled grouped matmul kernel on SM100.
+
+    Splits work across three warp roles (load, MMA, and epilogue) that
+    communicate through producer/consumer pipelines. The load warp issues
+    multicast TMA loads of A, B, and their scale factors into shared memory;
+    the MMA warp issues block-scaled UMMA instructions accumulating into
+    TMEM; and the epilogue warps drain the accumulator from TMEM, apply the
+    per-expert scale and optional fused elementwise epilogue, and store the
+    result to global memory via TMA. A tile scheduler distributes expert
+    group work tiles across the grid.
+
+    Parameters:
+        a_type: The data type of input tensor A.
+        b_type: The data type of input tensor B.
+        c_type: The data type of the output tensor C.
+        sfa_dtype: The data type of the A scale factors.
+        sfb_dtype: The data type of the B scale factors.
+        a_tile_rank: The rank of the A TMA tile.
+        a_tile_shape: The shape of the A TMA tile.
+        a_desc_shape: The descriptor shape of the A TMA tile.
+        b_tile_rank: The rank of the B TMA tile.
+        b_tile_shape: The shape of the B TMA tile.
+        b_desc_shape: The descriptor shape of the B TMA tile.
+        c_tile_rank: The rank of the C TMA tile.
+        c_tile_shape_param: The shape of the C TMA tile.
+        c_tensor_layout: The layout of the output LayoutTensor.
+        c_desc_shape: The descriptor shape of the C TMA tile.
+        sfa_tile_rank: The rank of the A scale factor TMA tile.
+        sfa_tile_shape: The shape of the A scale factor TMA tile.
+        sfa_desc_shape: The descriptor shape of the A scale factor TMA tile.
+        sfb_tile_rank: The rank of the B scale factor TMA tile.
+        sfb_tile_shape: The shape of the B scale factor TMA tile.
+        sfb_desc_shape: The descriptor shape of the B scale factor TMA tile.
+        group_offsets_layout: The layout of the group offsets tensor.
+        group_scale_offsets_layout: The layout of the group scale offsets
+            tensor.
+        expert_ids_layout: The layout of the expert IDs tensor.
+        expert_scales_layout: The layout of the expert scales tensor.
+        transpose_b: Whether B is stored transposed (K-major).
+        config: The block-scaled matmul configuration.
+        expert_n: The N (column) dimension of the output tensor.
+        cluster_shape: The cluster dimensions for the kernel launch grid.
+        elementwise_compute_lambda_fn: Optional fused elementwise epilogue.
+        pdl_level: The program-dependent launch level for the kernel grid.
+        max_profiled_tiles_per_SM: The maximum number of tiles profiled per
+            SM (0 disables profiling).
+
+    Args:
+        num_active_experts: The number of active experts in this batch.
+        a_tma_op: The TMA tensor tile descriptor for A.
+        b_tma_op: The TMA tensor tile descriptor for B.
+        c_tma_op: The TMA tensor tile descriptor for C.
+        c: The output LayoutTensor in global memory.
+        sfa_tma_op: The TMA tensor tile descriptor for A scale factors.
+        sfb_tma_op: The TMA tensor tile descriptor for B scale factors.
+        group_offsets: The starting token index for each expert group.
+        group_scale_offsets: The starting scale index for each expert group.
+        expert_ids: The expert ID for each group.
+        expert_scales: The per-expert scaling factors applied in the epilogue.
+        cluster_dim: The cluster dimensions for the launch grid.
+        mnk: The (M, N, K) problem dimensions.
+        workspace: The profiling workspace span (empty when profiling is off).
+    """
     comptime register_based_epilogue = config.register_based_epilogue
     comptime assert c_type != DType.float32, "c_type cannot be float32"
     comptime assert transpose_b, "only support k-major B"
@@ -1892,15 +2172,36 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ref tmem_addr_storage = smem_storage.tmem_addr
     ref tmem_dealloc_mbar_storage = smem_storage.tmem_dealloc_mbar
 
-    var a_smem_base = a_smem_storage.unsafe_ptr().bitcast[Scalar[a_type]]()
-    var b_smem_base = b_smem_storage.unsafe_ptr().bitcast[Scalar[b_type]]()
-    var c_smem_base = c_smem_storage.unsafe_ptr().bitcast[Scalar[c_type]]()
-    var sfa_smem_base = sfa_smem_storage.unsafe_ptr().bitcast[
-        Scalar[sfa_dtype]
-    ]()
-    var sfb_smem_base = sfb_smem_storage.unsafe_ptr().bitcast[
-        Scalar[sfb_dtype]
-    ]()
+    var a_smem_ptr: UnsafePointer[
+        Scalar[a_type],
+        origin_of(a_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = a_smem_storage.unsafe_ptr()
+    var a_smem_base = a_smem_ptr.bitcast[Scalar[a_type]]()
+    var b_smem_ptr: UnsafePointer[
+        Scalar[b_type],
+        origin_of(b_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = b_smem_storage.unsafe_ptr()
+    var b_smem_base = b_smem_ptr.bitcast[Scalar[b_type]]()
+    var c_smem_ptr: UnsafePointer[
+        Scalar[c_type],
+        origin_of(c_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = c_smem_storage.unsafe_ptr()
+    var c_smem_base = c_smem_ptr.bitcast[Scalar[c_type]]()
+    var sfa_smem_ptr: UnsafePointer[
+        Scalar[sfa_dtype],
+        origin_of(sfa_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = sfa_smem_storage.unsafe_ptr()
+    var sfa_smem_base = sfa_smem_ptr.bitcast[Scalar[sfa_dtype]]()
+    var sfb_smem_ptr: UnsafePointer[
+        Scalar[sfb_dtype],
+        origin_of(sfb_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = sfb_smem_storage.unsafe_ptr()
+    var sfb_smem_base = sfb_smem_ptr.bitcast[Scalar[sfb_dtype]]()
 
     # Load warp as producer and mma warp as consumer
     # Dependence on MMA input in SMEM.
@@ -1909,7 +2210,9 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     var load_mma_pipeline = ProducerConsumerPipeline[
         config.num_pipeline_stages // config.k_group_size
     ](
-        tma_mma_mbars_storage.unsafe_ptr(),
+        tma_mma_mbars_storage.unsafe_ptr().unsafe_origin_cast[
+            MutUntrackedOrigin
+        ](),
     )
 
     # MMA warp as producer and Output warp as consumer.
@@ -1917,10 +2220,16 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     var mma_output_pipeline = ProducerConsumerPipeline[
         config.num_accum_pipeline_stages
     ](
-        accum_mbars_storage.unsafe_ptr(),
+        accum_mbars_storage.unsafe_ptr().unsafe_origin_cast[
+            MutUntrackedOrigin
+        ](),
     )
 
-    var ptr_tmem_addr = tmem_addr_storage.unsafe_ptr()
+    var ptr_tmem_addr: UnsafePointer[
+        UInt32,
+        origin_of(tmem_addr_storage),
+        address_space=AddressSpace.SHARED,
+    ] = tmem_addr_storage.unsafe_ptr()
 
     tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
 

@@ -27,7 +27,9 @@ from max.pipelines.architectures.llama3.model_config import (
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 

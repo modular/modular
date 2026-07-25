@@ -15,35 +15,14 @@
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorType, TensorValue, ops
-from max.nn.kernels import topk_fused_sampling
+from max.nn.kernels import apply_packed_bitmask, topk_fused_sampling
 from max.nn.layer import Module
 
 # Constant for masking invalid tokens in logits.
 # Using -10000 to match the existing sampling code pattern.
 _MASKED_LOGIT_VALUE = -10000.0
 
-
-def apply_grammar_mask(
-    logits: TensorValue,
-    bitmask: TensorValue,
-) -> TensorValue:
-    """Apply a grammar constraint bitmask to logits.
-
-    Masks invalid tokens to a large negative value so they have
-    ~zero probability after softmax.
-
-    Args:
-        logits: Logits tensor of shape [batch, num_positions, vocab_size].
-        bitmask: Boolean mask of shape [batch, num_positions, vocab_size].
-            True means the token is valid, False means it should be masked.
-
-    Returns:
-        Masked logits with invalid positions set to _MASKED_LOGIT_VALUE.
-    """
-    mask_value = ops.constant(
-        _MASKED_LOGIT_VALUE, dtype=logits.dtype, device=logits.device
-    )
-    return ops.where(bitmask, logits, mask_value)
+_GREEDY_TEMPERATURE_EPS = 1e-5
 
 
 def _multinomial(
@@ -426,8 +405,8 @@ class AcceptanceSampler:
                 ``relaxed_topk`` / ``relaxed_delta``; rows where this is
                 True use the relaxed acceptance rule, others use the
                 strict stochastic rule.
-            token_bitmasks: Optional grammar constraint bitmask
-                ``[batch, num_steps+1, vocab_size]``. Only used in
+            token_bitmasks: Optional packed int32 grammar constraint bitmask
+                ``[batch, num_steps+1, ceil(vocab_size/32)]``. Only used in
                 stochastic mode (not in synthetic and greedy modes).
         """
         if self._base_rate is not None:
@@ -506,6 +485,12 @@ def stochastic_acceptance_sampler(
 
     device = draft_tokens.device
 
+    is_greedy_row = temperature < ops.constant(
+        _GREEDY_TEMPERATURE_EPS,
+        dtype=temperature.dtype,
+        device=temperature.device,
+    )
+
     temperature = ops.max(
         temperature,
         ops.constant(1e-6, dtype=temperature.dtype, device=temperature.device),
@@ -515,12 +500,20 @@ def stochastic_acceptance_sampler(
 
     # Apply grammar mask if provided
     if token_bitmasks is not None:
-        # Rebind bitmask to match logits shape (num_steps + 1)
+        # ``token_bitmasks`` is a packed int32 bitmask
+        # ``[batch, num_steps+1, ceil(vocab/32)]``. Unpack and mask the logits
+        # in one fused GPU pass instead of CPU-unpacking to a bool tensor.
         bitmask_rebound = ops.rebind(
             token_bitmasks,
-            shape=[Dim("batch_size"), Dim("num_steps") + 1, Dim("vocab_size")],
+            shape=[
+                Dim("batch_size"),
+                Dim("num_steps") + 1,
+                Dim("packed_vocab_size"),
+            ],
         )
-        target_logits_3d = apply_grammar_mask(target_logits_3d, bitmask_rebound)
+        target_logits_3d = apply_packed_bitmask(
+            target_logits_3d, bitmask_rebound, fill_val=_MASKED_LOGIT_VALUE
+        )
 
     draft_verification_logits = target_logits_3d[:, :-1]
     bonus_logits = ops.rebind(
@@ -579,6 +572,18 @@ def stochastic_acceptance_sampler(
     coins = ops.random.uniform(p_target.type)
     rejected_strict = coins >= p_target
     recovered_strict = _multinomial(target_probs)
+
+    all_target_argmax = ops.squeeze(
+        ops.argmax(target_logits_3d, axis=-1), axis=-1
+    )
+    target_argmax_draft = ops.rebind(
+        all_target_argmax[:, :-1], [Dim("batch_size"), Dim("num_steps")]
+    )
+    bonus_argmax = all_target_argmax[:, -1:]
+    rejected_greedy = ops.not_equal(
+        token_indices, target_argmax_draft.cast(token_indices.dtype)
+    )
+    recovered_greedy = target_argmax_draft.cast(recovered_strict.dtype)
 
     use_relaxed = (
         in_thinking_phase is not None
@@ -665,10 +670,20 @@ def stochastic_acceptance_sampler(
         rejected = rejected_strict
         recovered_token_ids = recovered_strict
 
+    is_greedy_bk = ops.broadcast_to(
+        ops.unsqueeze(is_greedy_row, axis=-1),
+        shape=[Dim("batch_size"), Dim("num_steps")],
+    )
+    rejected = ops.where(is_greedy_bk, rejected_greedy, rejected)
+    recovered_token_ids = ops.where(
+        is_greedy_bk, recovered_greedy, recovered_token_ids
+    )
+
     first_rejected_idx = ops.squeeze(
         _find_first_rejected(rejected, device), axis=-1
     )
 
+    seed_per_batch = ops.broadcast_to(seed, [batch_size])
     bonus_token_ids = topk_fused_sampling(
         logits=bonus_logits,
         top_k=top_k,
@@ -676,9 +691,21 @@ def stochastic_acceptance_sampler(
         temperature=temperature,
         top_p=top_p,
         min_top_p=min_top_p,
+        seed=seed_per_batch,
+    )
+    bonus_token_tensor = bonus_token_ids.tensor
+    is_greedy_b = ops.broadcast_to(
+        ops.unsqueeze(is_greedy_row, axis=-1), shape=[Dim("batch_size"), 1]
+    )
+    bonus_token_tensor = ops.where(
+        is_greedy_b,
+        ops.rebind(bonus_argmax, [Dim("batch_size"), 1]).cast(
+            bonus_token_tensor.dtype
+        ),
+        bonus_token_tensor,
     )
 
-    return first_rejected_idx, recovered_token_ids, bonus_token_ids.tensor
+    return first_rejected_idx, recovered_token_ids, bonus_token_tensor
 
 
 class RejectionSamplerWithResiduals(Module):

@@ -18,20 +18,13 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.pipelines.core import TextContext
-from max.pipelines.lib.config.lora_config import LoRAConfig
-from max.pipelines.lib.lora import LoRAManager
-from max.pipelines.modeling.types import (
-    LoRAOperation,
-    LoRARequest,
-    LoRAResponse,
-    LoRAStatus,
-)
+from max.pipelines.context import TextContext
+from max.pipelines.lora import LoRAConfig, LoRAManager, LoRAStatus
 
 
 @pytest.fixture
 def mock_lora_model() -> Generator[MagicMock, None, None]:
-    with patch("max.pipelines.lib.lora.LoRAModel") as MockLoRAModel:
+    with patch("max.pipelines.lora.lora.LoRAModel") as MockLoRAModel:
         yield MockLoRAModel
 
 
@@ -61,53 +54,12 @@ def configured_mock_lora(mock_lora_model: MagicMock) -> MagicMock:
     return mock_lora_model
 
 
-class MockLoRARequestProcessor:
-    """Mock LoRARequestProcessor that doesn't create ZMQ sockets or threads."""
-
-    def __init__(
-        self,
-        manager: LoRAManager,
-        zmq_endpoint_base: str,
-    ) -> None:
-        self.manager = manager
-
-    def _handle_lora_request(self, request: LoRARequest) -> LoRAResponse:
-        """Mock request handler for testing."""
-
-        if request.operation == LoRAOperation.LOAD:
-            status = self.manager.load_adapter(
-                f"{request.lora_name}={request.lora_path}"
-            )
-            return LoRAResponse(
-                status=status,
-                message=f"LoRA '{request.lora_name}' loaded successfully"
-                if status == LoRAStatus.SUCCESS
-                else "Failed to load",
-            )
-        elif request.operation == LoRAOperation.UNLOAD:
-            status = self.manager.unload_adapter(request.lora_name)
-            return LoRAResponse(
-                status=status,
-                message=f"LoRA '{request.lora_name}' unloaded successfully"
-                if status == LoRAStatus.SUCCESS
-                else "Failed to unload",
-            )
-        else:
-            return LoRAResponse(
-                status=LoRAStatus.LOAD_ERROR, message="Unknown operation"
-            )
-
-
 @pytest.fixture
 def lora_manager(monkeypatch: pytest.MonkeyPatch) -> Iterator[LoRAManager]:
-    """Create a LoRAManager instance with mocked ZMQ handler and locks disabled."""
-    monkeypatch.setattr(
-        "max.pipelines.lib.lora.LoRARequestProcessor", MockLoRARequestProcessor
-    )
-
+    """Create a LoRAManager instance with mocked weight loading."""
     mock_load_weights = MagicMock()
     monkeypatch.setattr(
-        "max.pipelines.lib.lora.load_weights", mock_load_weights
+        "max.pipelines.lora.lora.load_weights", mock_load_weights
     )
 
     config = LoRAConfig(
@@ -121,7 +73,7 @@ def lora_manager(monkeypatch: pytest.MonkeyPatch) -> Iterator[LoRAManager]:
         n_heads=32,
         n_kv_heads=8,
         head_dim=128,
-        zmq_endpoint_base="fake",
+        max_lora_seq_len=128,
     )
 
     manager._validate_lora_path = lambda path: LoRAStatus.SUCCESS  # type: ignore
@@ -179,15 +131,13 @@ def test_get_lora_graph_inputs(
     device = CPU()
     input_row_offsets = np.array([0, 8, 16])
 
-    lora_ids, _, _, num_active_loras, _, _, _, _ = (
-        lora_manager.get_lora_graph_inputs(
-            [
-                MagicMock(model_name="loaded_lora"),
-                MagicMock(model_name=lora_manager.base_model_path),
-            ],
-            input_row_offsets,
-            device,
-        )
+    lora_ids, _, _, num_active_loras, _, _ = lora_manager.get_lora_graph_inputs(
+        [
+            MagicMock(model_name="loaded_lora"),
+            MagicMock(model_name=lora_manager.base_model_path),
+        ],
+        input_row_offsets,
+        device,
     )
 
     lora_ids_np = lora_ids.to_numpy()
@@ -249,12 +199,10 @@ def test_model_name_base_model_mapping(
         context_base,
     ]
 
-    lora_ids, _, _, num_active_loras, _, _, _, _ = (
-        lora_manager.get_lora_graph_inputs(
-            contexts,
-            input_row_offsets,
-            device,
-        )
+    lora_ids, _, _, num_active_loras, _, _ = lora_manager.get_lora_graph_inputs(
+        contexts,
+        input_row_offsets,
+        device,
     )
 
     lora_ids_np = lora_ids.to_numpy()
@@ -297,12 +245,10 @@ def test_served_model_name_base_model_mapping(
 
     contexts = [context_lora, context_served]
 
-    lora_ids, _, _, num_active_loras, _, _, _, _ = (
-        lora_manager.get_lora_graph_inputs(
-            contexts,
-            input_row_offsets,
-            device,
-        )
+    lora_ids, _, _, num_active_loras, _, _ = lora_manager.get_lora_graph_inputs(
+        contexts,
+        input_row_offsets,
+        device,
     )
 
     lora_ids_np = lora_ids.to_numpy()
@@ -355,24 +301,24 @@ def test_update_alias_buffers_copies_lora_a_weight(
     assert np.allclose(result_np[1, :, :], 0.0)
 
 
-def test_update_alias_buffers_copies_lora_b_kv_weight(
+def test_update_alias_buffers_copies_lora_b_weight(
     lora_manager: LoRAManager,
 ) -> None:
-    """Test that _update_alias_buffers_for_lora correctly splits and copies B_KV weights."""
+    """Test that _update_alias_buffers_for_lora copies the fused B weight."""
     max_num_loras = lora_manager.max_num_loras
     max_rank = lora_manager.max_lora_rank
+    q_features = 64
     kv_features = 32
+    b_features = q_features + 2 * kv_features
 
-    buffer_key = "layers.0.self_attn.qkv_lora.lora_B_kv.weight"
+    buffer_key = "layers.0.self_attn.qkv_lora.lora_B.weight"
     buffer = Buffer.zeros(
-        (2 * max_num_loras, kv_features, max_rank), dtype=DType.float32
+        (max_num_loras, b_features, max_rank), dtype=DType.float32
     )
     lora_manager._alias_buffers[buffer_key] = buffer
 
     mock_lora = MagicMock()
-    k_weight = np.random.randn(kv_features, max_rank).astype(np.float32)
-    v_weight = np.random.randn(kv_features, max_rank).astype(np.float32)
-    weight_data = np.stack([k_weight, v_weight])
+    weight_data = np.random.randn(b_features, max_rank).astype(np.float32)
     weight_tensor = Buffer.from_numpy(weight_data)
 
     mock_weight = NonCallableMock(spec=WeightData)
@@ -387,8 +333,7 @@ def test_update_alias_buffers_copies_lora_b_kv_weight(
     result = Buffer.from_dlpack(lora_manager._alias_buffers[buffer_key])
     result_np = result.to_numpy()
 
-    assert np.allclose(result_np[slot, :, :], k_weight)
-    assert np.allclose(result_np[slot + max_num_loras, :, :], v_weight)
+    assert np.allclose(result_np[slot, :, :], weight_data)
     assert np.allclose(result_np[0, :, :], 0.0)
 
 
@@ -421,17 +366,19 @@ def test_update_alias_buffers_zeros_missing_weight(
     assert np.allclose(result_np[1, :, :], 1.0)
 
 
-def test_update_alias_buffers_zeros_missing_b_kv_weight(
+def test_update_alias_buffers_zeros_missing_b_weight(
     lora_manager: LoRAManager,
 ) -> None:
-    """Test that _update_alias_buffers_for_lora zeros both K and V slots for missing B_KV."""
+    """Test that _update_alias_buffers_for_lora zeros the slot for a missing fused B."""
     max_num_loras = lora_manager.max_num_loras
     max_rank = lora_manager.max_lora_rank
+    q_features = 64
     kv_features = 32
+    b_features = q_features + 2 * kv_features
 
-    buffer_key = "layers.0.self_attn.qkv_lora.lora_B_kv.weight"
+    buffer_key = "layers.0.self_attn.qkv_lora.lora_B.weight"
     initial_data = np.ones(
-        (2 * max_num_loras, kv_features, max_rank), dtype=np.float32
+        (max_num_loras, b_features, max_rank), dtype=np.float32
     )
     buffer = Buffer.from_numpy(initial_data.copy())
     lora_manager._alias_buffers[buffer_key] = buffer
@@ -446,7 +393,6 @@ def test_update_alias_buffers_zeros_missing_b_kv_weight(
     result_np = result.to_numpy()
 
     assert np.allclose(result_np[slot, :, :], 0.0)
-    assert np.allclose(result_np[slot + max_num_loras, :, :], 0.0)
     assert np.allclose(result_np[0, :, :], 1.0)
 
 
@@ -460,30 +406,24 @@ def test_update_alias_buffers_full_qkv_combination(
     q_features = 64
     kv_features = 32
 
+    b_features = q_features + 2 * kv_features
+
     lora_a_key = "layers.0.self_attn.qkv_lora.lora_A.weight"
-    lora_b_q_key = "layers.0.self_attn.qkv_lora.lora_B_q.weight"
-    lora_b_kv_key = "layers.0.self_attn.qkv_lora.lora_B_kv.weight"
+    lora_b_key = "layers.0.self_attn.qkv_lora.lora_B.weight"
 
     lora_a_buffer = Buffer.zeros(
         (max_num_loras, 3 * max_rank, in_features), dtype=DType.float32
     )
-    lora_b_q_buffer = Buffer.zeros(
-        (max_num_loras, q_features, max_rank), dtype=DType.float32
-    )
-    lora_b_kv_buffer = Buffer.zeros(
-        (2 * max_num_loras, kv_features, max_rank), dtype=DType.float32
+    lora_b_buffer = Buffer.zeros(
+        (max_num_loras, b_features, max_rank), dtype=DType.float32
     )
 
     lora_manager._alias_buffers[lora_a_key] = lora_a_buffer
-    lora_manager._alias_buffers[lora_b_q_key] = lora_b_q_buffer
-    lora_manager._alias_buffers[lora_b_kv_key] = lora_b_kv_buffer
+    lora_manager._alias_buffers[lora_b_key] = lora_b_buffer
 
     np.random.seed(42)
     lora_a_data = np.random.randn(3 * max_rank, in_features).astype(np.float32)
-    lora_b_q_data = np.random.randn(q_features, max_rank).astype(np.float32)
-    k_data = np.random.randn(kv_features, max_rank).astype(np.float32)
-    v_data = np.random.randn(kv_features, max_rank).astype(np.float32)
-    lora_b_kv_data = np.stack([k_data, v_data])
+    lora_b_data = np.random.randn(b_features, max_rank).astype(np.float32)
 
     mock_lora = MagicMock()
 
@@ -492,13 +432,9 @@ def test_update_alias_buffers_full_qkv_combination(
             mock_weight = NonCallableMock(spec=WeightData)
             mock_weight.data = Buffer.from_numpy(lora_a_data)
             return mock_weight
-        elif key == lora_b_q_key:
+        elif key == lora_b_key:
             mock_weight = NonCallableMock(spec=WeightData)
-            mock_weight.data = Buffer.from_numpy(lora_b_q_data)
-            return mock_weight
-        elif key == lora_b_kv_key:
-            mock_weight = NonCallableMock(spec=WeightData)
-            mock_weight.data = Buffer.from_numpy(lora_b_kv_data)
+            mock_weight.data = Buffer.from_numpy(lora_b_data)
             return mock_weight
         return None
 
@@ -510,35 +446,23 @@ def test_update_alias_buffers_full_qkv_combination(
     result_a = Buffer.from_dlpack(lora_manager._alias_buffers[lora_a_key])
     assert np.allclose(result_a.to_numpy()[slot, :, :], lora_a_data)
 
-    result_b_q = Buffer.from_dlpack(lora_manager._alias_buffers[lora_b_q_key])
-    assert np.allclose(result_b_q.to_numpy()[slot, :, :], lora_b_q_data)
-
-    result_b_kv = Buffer.from_dlpack(lora_manager._alias_buffers[lora_b_kv_key])
-    result_b_kv_np = result_b_kv.to_numpy()
-    assert np.allclose(result_b_kv_np[slot, :, :], k_data)
-    assert np.allclose(result_b_kv_np[slot + max_num_loras, :, :], v_data)
+    result_b = Buffer.from_dlpack(lora_manager._alias_buffers[lora_b_key])
+    assert np.allclose(result_b.to_numpy()[slot, :, :], lora_b_data)
 
     np.random.seed(123)
     lora_a_data_2 = np.random.randn(3 * max_rank, in_features).astype(
         np.float32
     )
-    lora_b_q_data_2 = np.random.randn(q_features, max_rank).astype(np.float32)
-    k_data_2 = np.random.randn(kv_features, max_rank).astype(np.float32)
-    v_data_2 = np.random.randn(kv_features, max_rank).astype(np.float32)
-    lora_b_kv_data_2 = np.stack([k_data_2, v_data_2])
+    lora_b_data_2 = np.random.randn(b_features, max_rank).astype(np.float32)
 
     def get_weight_2(key: str) -> NonCallableMock | None:
         if key == lora_a_key:
             mock_weight = NonCallableMock(spec=WeightData)
             mock_weight.data = Buffer.from_numpy(lora_a_data_2)
             return mock_weight
-        elif key == lora_b_q_key:
+        elif key == lora_b_key:
             mock_weight = NonCallableMock(spec=WeightData)
-            mock_weight.data = Buffer.from_numpy(lora_b_q_data_2)
-            return mock_weight
-        elif key == lora_b_kv_key:
-            mock_weight = NonCallableMock(spec=WeightData)
-            mock_weight.data = Buffer.from_numpy(lora_b_kv_data_2)
+            mock_weight.data = Buffer.from_numpy(lora_b_data_2)
             return mock_weight
         return None
 
@@ -553,10 +477,9 @@ def test_update_alias_buffers_full_qkv_combination(
     assert np.allclose(result_a.to_numpy()[slot_2, :, :], lora_a_data_2)
     assert np.allclose(result_a.to_numpy()[1, :, :], 0.0)
 
-    result_b_kv = Buffer.from_dlpack(lora_manager._alias_buffers[lora_b_kv_key])
-    result_b_kv_np = result_b_kv.to_numpy()
+    result_b = Buffer.from_dlpack(lora_manager._alias_buffers[lora_b_key])
+    result_b_np = result_b.to_numpy()
 
-    assert np.allclose(result_b_kv_np[slot, :, :], k_data)
-    assert np.allclose(result_b_kv_np[slot + max_num_loras, :, :], v_data)
-    assert np.allclose(result_b_kv_np[slot_2, :, :], k_data_2)
-    assert np.allclose(result_b_kv_np[slot_2 + max_num_loras, :, :], v_data_2)
+    assert np.allclose(result_b_np[slot, :, :], lora_b_data)
+    assert np.allclose(result_b_np[slot_2, :, :], lora_b_data_2)
+    assert np.allclose(result_b_np[1, :, :], 0.0)

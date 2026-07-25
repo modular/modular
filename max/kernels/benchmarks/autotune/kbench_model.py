@@ -95,7 +95,7 @@ from std.builtin._startup import _ensure_runtime_init
 
 
 @export
-def benchmark_entry() -> Int32:
+def benchmark_entry() abi("C") -> Int32:
     # Shared libraries don't get the __wrap_and_execute_main
     # startup that executables do, so the Mojo async runtime is
     # never registered.  Benchmarks that use CPU parallelism
@@ -610,7 +610,7 @@ class Spec:
         Loads the spec from a YAML file
 
         Args:
-            file (Path): the yaml file Path
+            file: the yaml file Path
 
         Returns:
             Spec: the spec
@@ -641,7 +641,7 @@ class Spec:
         - `PARAM_NAME:[PARAM_VALUE0, PARAM_VALUE1]` (Pythonic list of values)
 
         Args:
-            param_list (List): a list of param-value's as strings/
+            param_list: a list of param-value's as strings/
 
         Returns:
             Spec: Dictionary of with extra param names as keys and param values.
@@ -736,7 +736,7 @@ class Spec:
         Deserializes a Spec object from the given yaml string.
 
         Args:
-            yaml_str (str): the yaml string representation of the model manifest
+            yaml_str: the yaml string representation of the model manifest
 
         Returns:
             Spec: a Spec loaded from the given yaml string
@@ -864,14 +864,34 @@ class Spec:
                 filters[name] = []
             filters[name].append(val)
 
+        # Skip filter keys that don't appear in any shape's params. An
+        # unknown key (e.g. a function argument embedded in a benchmark name
+        # that isn't a YAML parameter) would otherwise require num_filters
+        # matches per instance, silently eliminating every shape.
+        all_param_names: set[str] = {
+            p.name for s in self.mesh for p in s.params
+        }
+        known_filters = {
+            k: v
+            for k, v in filters.items()
+            if any(self._param_names_match(pn, k) for pn in all_param_names)
+        }
+        unknown_keys = sorted(set(filters) - set(known_filters))
+        if unknown_keys:
+            print(
+                f"kbench --filter: ignoring unknown parameter(s) {unknown_keys}"
+                " (not present in any YAML shape)",
+                file=sys.stderr,
+            )
+
         filtered_insts: list[SpecInstance] = []
-        num_filters = len(filter_list)
+        num_filters = len(known_filters)
 
         # Count the number of valid filters in each instance.
         # If the count==num_filters then add the instance to the result.
         valid_cnt = np.zeros(len(self.mesh), dtype=np.int32)
 
-        for k_filter, v_filter in filters.items():
+        for k_filter, v_filter in known_filters.items():
             for i, s in enumerate(self.mesh):
                 for p in s.params:
                     if (
@@ -1927,6 +1947,11 @@ class Scheduler:
             if not df.empty:
                 df.insert(0, "mesh_idx", mesh_idx)
                 df.insert(len(df.columns), "spec", str(current_spec))
+                kbench_filter = " ".join(
+                    f"{p.name.lstrip('$')}={p.value}"
+                    for p in current_spec.params
+                )
+                df.insert(len(df.columns), "kbench_filter", kbench_filter)
                 # If there are more than one entries in CSV then bencher
                 # has added an extra column at the end of name with input_id.
                 # TODO: This will create multiple rows with same mesh_idx.

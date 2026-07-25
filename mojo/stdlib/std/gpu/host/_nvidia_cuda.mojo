@@ -39,10 +39,10 @@ struct _CUevent_st:
     pass
 
 
-comptime CUcontext = _CPointer[_CUctx_st, ExternalOrigin[mut=True]]
-comptime CUstream = _CPointer[_CUstream_st, ExternalOrigin[mut=True]]
-comptime CUmodule = _CPointer[_CUmod_st, ExternalOrigin[mut=True]]
-comptime CUevent = _CPointer[_CUevent_st, ExternalOrigin[mut=True]]
+comptime CUcontext = _CPointer[_CUctx_st, UntrackedOrigin[mut=True]]
+comptime CUstream = _CPointer[_CUstream_st, UntrackedOrigin[mut=True]]
+comptime CUmodule = _CPointer[_CUmod_st, UntrackedOrigin[mut=True]]
+comptime CUevent = _CPointer[_CUevent_st, UntrackedOrigin[mut=True]]
 
 
 # Accessor function to get access to the underlying CUcontext from a abstract DeviceContext.
@@ -56,7 +56,7 @@ def CUDA(ctx: DeviceContext) raises -> CUcontext:
             "AsyncRT_DeviceContext_cuda_context",
             _CString[],
         ](
-            UnsafePointer(to=result),
+            Pointer(to=result),
             ctx._handle,
         )
     )
@@ -74,7 +74,7 @@ def CUDA(stream: DeviceStream) raises -> CUstream:
             "AsyncRT_DeviceStream_cuda_stream",
             _CString[],
         ](
-            UnsafePointer(to=result),
+            Pointer(to=result),
             stream._handle,
         )
     )
@@ -91,7 +91,7 @@ def CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
             "AsyncRT_DeviceFunction_cuda_module",
             _CString[],
         ](
-            UnsafePointer(to=result),
+            Pointer(to=result),
             func._handle,
         )
     )
@@ -103,7 +103,7 @@ def CUDA_get_current_context() raises -> CUcontext:
     # const char *AsyncRT_DeviceContext_cuda_current_context(CUcontext *result)
     _checked(
         external_call["AsyncRT_DeviceContext_cuda_current_context", _CString[]](
-            UnsafePointer(to=result),
+            Pointer(to=result),
         )
     )
     return result

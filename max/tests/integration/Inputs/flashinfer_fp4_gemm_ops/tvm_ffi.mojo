@@ -19,6 +19,9 @@ All implementations are based on that reference material.
 
 import std.format
 
+from std.ffi import OwnedDLHandle
+from std.os import abort
+
 from .dlpack import DLTensor
 
 
@@ -98,8 +101,13 @@ struct TVMFFIErrorCell(
 ):
     comptime type_index: Int32 = Types.ERROR
 
+    @__allow_legacy_any_origin_fields
     var kind: TVMFFIByteArray
+
+    @__allow_legacy_any_origin_fields
     var message: TVMFFIByteArray
+
+    @__allow_legacy_any_origin_fields
     var backtrace: TVMFFIByteArray
     # Unused fields omitted (update_backtrace, cause_chain, extra_context)
 
@@ -121,12 +129,7 @@ def _tvm_ffi_error_move_from_raised(
     # Expects that `libtvm_ffi.so` is available, for instance loaded by python
     # importing `tvm_ffi`.
     lib = OwnedDLHandle(path="libtvm_ffi.so")
-    comptime FnType = def(
-        UnsafePointer[
-            Optional[UnsafePointer[TVMFFIObject, MutAnyOrigin]], MutAnyOrigin
-        ]
-    ) thin abi("C") -> None
-    fn_ptr = lib.get_function[FnType]("TVMFFIErrorMoveFromRaised")
+    fn_ptr = lib.get_function[NoneType]("TVMFFIErrorMoveFromRaised")
     fn_ptr(UnsafePointer(to=result))
 
 

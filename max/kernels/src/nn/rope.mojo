@@ -26,6 +26,7 @@ from layout import (
     TensorLayout,
     TileTensor,
     coord,
+    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -36,7 +37,7 @@ from std.utils import IndexList
 def _rope[
     dtype: DType,
     freq_dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
 ](val: SIMD[dtype, width], freq: SIMD[freq_dtype, width]) -> SIMD[dtype, width]:
     x_re, x_im = val.cast[freq_dtype]().deinterleave()
     f_re, f_im = freq.deinterleave()
@@ -65,20 +66,23 @@ def get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
 def apply_rope[
     dtype: DType,
     freq_dtype: DType,
-    rank: Int,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     *,
     interleaved: Bool,
     alignment: Int,
-    output_fn: def[width: SIMDSize, alignment: Int](
-        idx: IndexList[rank], val: SIMD[dtype, width]
-    ) capturing -> None,
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: SIMDLength, alignment: Int](
+        idx: IndexList[3], val: SIMD[dtype, width]
+    ) -> None,
 ](
     x: TileTensor[dtype, ...],
-    idx: IndexList[rank],
+    idx: IndexList[3],
     freq_val: SIMD[freq_dtype, width],
+    output_fn: OutputFn,
 ):
+    comptime rank = 3
     comptime assert rank - 1 >= 0
     var indices = get_safetensors_idx(idx[rank - 1], x.static_shape[rank - 1])
     var pos_re = idx
@@ -118,9 +122,11 @@ def rope_ragged[
     *,
     interleaved: Bool,
     target: StaticString,
-    output_fn: def[width: SIMDSize, alignment: Int](
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: SIMDLength, alignment: Int](
         idx: IndexList[3], val: SIMD[dtype, width]
-    ) capturing -> None,
+    ) -> None,
     mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
         Trait=CoordLike
     ](),
@@ -134,6 +140,7 @@ def rope_ragged[
     start_pos: TileTensor[DType.uint32, ...],
     freqs_cis: TileTensor[freq_dtype, ...],
     context: DeviceContext,
+    output_fn: OutputFn,
     position_ids: OptionalReg[
         TileTensor[DType.uint32, PositionIdsLayoutType, ImmutAnyOrigin]
     ] = None,
@@ -150,13 +157,34 @@ def rope_ragged[
     comptime unroped_dim = head_size - rope_dim
     comptime has_nope = unroped_dim > 0
 
+    # Extract the position_ids raw pointer + row stride into primitive locals so
+    # they can be `@__copy_capture`'d into the device kernel closure. Capturing
+    # the `OptionalReg[TileTensor]` directly does not marshal its device pointer
+    # into the Metal kernel arg struct -- the closure then reads a null/stale
+    # pointer, so every token reads freqs row 0 and RoPE collapses to identity
+    # (producing incoherent FLUX latents -> noise). Mirrors the validated
+    # `rope_split_store` path. When position_ids is absent, capture a dummy
+    # pointer (never dereferenced; guarded by `has_position_ids`) reusing
+    # start_pos' (uint32) storage so the captured value has the same type in
+    # both branches.
+    var has_position_ids: Bool = Bool(position_ids)
+    comptime PtrType = type_of(position_ids.value().ptr.as_imm())
+    var pos_ids_ptr: PtrType
+    var pos_ids_stride: Int
+    if has_position_ids:
+        pos_ids_ptr = rebind[PtrType](position_ids.value().ptr.as_imm())
+        # Row stride from the layout, not `dim[1]()`: the kernel steps whole
+        # position_ids rows (`section_idx * pos_ids_stride`), so use the actual
+        # dim-0 stride rather than assuming a row-major-contiguous layout where
+        # it happens to equal `dim[1]`.
+        pos_ids_stride = Int(position_ids.value().layout.stride[0]().value())
+    else:
+        pos_ids_ptr = rebind[PtrType](start_pos.ptr.as_imm())
+        pos_ids_stride = 0
+
     @always_inline
-    @parameter
-    @__copy_capture(x, input_row_offsets, start_pos, freqs_cis)
-    def rope_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
-        comptime assert rank == 3, "Invalid rank passed to rope kernel"
+    def rope_fn[width: Int, alignment: Int = 1](idx_arg: Coord) {var}:
+        comptime assert idx_arg.rank == 3, "Invalid rank passed to rope kernel"
         comptime assert freqs_cis.flat_rank >= 2
 
         comptime if width == 1:
@@ -168,7 +196,7 @@ def rope_ragged[
             )
             return
         else:
-            var idx = rebind[IndexList[3]](idx_arg)
+            var idx = rebind[IndexList[3]](coord_to_index_list(idx_arg))
 
             var global_token_idx = idx[0]
 
@@ -184,9 +212,7 @@ def rope_ragged[
             var post_seq_idx = start_pos[batch_idx] + UInt32(token_idx)
 
             var position_ids_idx = Int(post_seq_idx)
-            if position_ids:
-                comptime PIdTensor = type_of(position_ids.value())
-                comptime assert PIdTensor.flat_rank == 2
+            if has_position_ids:
                 comptime if mrope_section:
                     var section_idx = 0
 
@@ -196,12 +222,12 @@ def rope_ragged[
                             section_idx = i
                             break
                     position_ids_idx = Int(
-                        position_ids.value()[section_idx, global_token_idx]
+                        pos_ids_ptr[
+                            section_idx * pos_ids_stride + global_token_idx
+                        ]
                     )
                 else:
-                    position_ids_idx = Int(
-                        position_ids.value()[0, global_token_idx]
-                    )
+                    position_ids_idx = Int(pos_ids_ptr[global_token_idx])
 
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
@@ -214,26 +240,24 @@ def rope_ragged[
                     f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
                     f_c_temp = freqs_cis.load[width=width, alignment=1](
-                        coord[freqs_cis.linear_idx_type](
-                            (position_ids_idx, head_dim_idx - unroped_dim)
+                        (
+                            Scalar[freqs_cis.linear_idx_type](position_ids_idx),
+                            Scalar[freqs_cis.linear_idx_type](
+                                head_dim_idx - unroped_dim
+                            ),
                         )
                     )
             else:
                 f_c_temp = freqs_cis.load[width=width, alignment=1](
-                    coord[freqs_cis.linear_idx_type](
-                        (position_ids_idx, head_dim_idx)
+                    (
+                        Scalar[freqs_cis.linear_idx_type](position_ids_idx),
+                        Scalar[freqs_cis.linear_idx_type](head_dim_idx),
                     )
                 )
             apply_rope[
                 interleaved=interleaved,
                 alignment=alignment,
-                output_fn=output_fn,
-            ](x, idx, f_c_temp)
-
-    var launch_shape_index_list = IndexList[x.rank]()
-
-    comptime for i in range(x.rank):
-        launch_shape_index_list[i] = Int(x.dim(i))
+            ](x, idx, f_c_temp, output_fn)
 
     comptime compile_target = _current_target() if is_cpu[
         target
@@ -256,13 +280,12 @@ def rope_ragged[
     )
 
     comptime if is_cpu[target]():
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape_index_list, context
+        elementwise[simd_width=kernel_simd_width, target=target](
+            rope_fn, x.layout.shape_coord(), context
         )
     else:
         elementwise[
-            func=rope_fn,
             simd_width=kernel_simd_width,
             target=target,
             _trace_description="rope",
-        ](launch_shape_index_list, context)
+        ](rope_fn, x.layout.shape_coord(), context)

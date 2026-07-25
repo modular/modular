@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
@@ -227,6 +228,8 @@ class Step3p5Config(Llama3Config):
             per_layer_rope_theta = [float(t) for t in rope_theta_raw]
             scalar_theta = rope_theta_raw[0] if rope_theta_raw else 10000.0
             huggingface_config.rope_theta = scalar_theta
+            # Save the list so a second init recovers it after the collapse.
+            huggingface_config.per_layer_rope_theta = per_layer_rope_theta
             # Transformers v5 copies rope_theta into rope_parameters; patch
             # there too so get_rope_theta() returns the scalar.
             rope_params = getattr(huggingface_config, "rope_parameters", None)
@@ -262,7 +265,10 @@ class Step3p5Config(Llama3Config):
         )
 
         kv_cache_config = pipeline_config.model.kv_cache
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            pipeline_config.model.quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
         n_devices = len(pipeline_config.model.device_specs)
 
         device_refs = [

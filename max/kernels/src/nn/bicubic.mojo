@@ -30,6 +30,7 @@ from layout import (
     coord_to_index_list,
 )
 from std.itertools import product
+from std.utils.coord import dyn_coord
 
 
 @always_inline
@@ -124,7 +125,7 @@ def cpu_bicubic_kernel(
         output_host.flat_rank == 4 and input_host.flat_rank == 4
     ), "bicubic resize only supports rank 4 tensors"
     comptime assert output_host.dtype == input_host.dtype
-    # Provide evidence that flat_rank >= 4 for the coord[DType.int64](...) loads/stores below.
+    # Provide evidence that flat_rank >= 4 for the dyn_coord[DType.int64](...) loads/stores below.
     comptime assert input_host.flat_rank >= 4
     comptime assert output_host.flat_rank >= 4
 
@@ -177,7 +178,7 @@ def cpu_bicubic_kernel(
             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
             var pixel_value = Float32(
                 input_host.load[width=1](
-                    coord[DType.int64]((b, c, y_pos, x_pos))
+                    dyn_coord[DType.int64]((b, c, y_pos, x_pos))
                 )
             )
             sum_value += pixel_value * weight
@@ -185,7 +186,7 @@ def cpu_bicubic_kernel(
 
         # store the result in the output tensor
         output_host.store[width=1](
-            coord[DType.int64]((b, c, y_out, x_out)),
+            dyn_coord[DType.int64]((b, c, y_out, x_out)),
             sum_value.cast[output_host.dtype](),
         )
 
@@ -196,12 +197,19 @@ def gpu_bicubic_kernel[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     InputLayoutType: TensorLayout,
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
 ](
     output: TileTensor[dtype, OutputLayoutType, output_origin],
     input: TileTensor[dtype, InputLayoutType, input_origin],
 ) -> None:
     """Perform bicubic interpolation using GPU.
+
+    Parameters:
+        dtype: Element type of the input and output tensors.
+        OutputLayoutType: `TensorLayout` of the output tensor.
+        output_origin: Mutable `Origin` of the output tensor.
+        InputLayoutType: `TensorLayout` of the input tensor.
+        input_origin: Immutable `Origin` of the input tensor.
 
     Args:
         output: Output tensor with desired dimensions on the device.
@@ -290,6 +298,11 @@ def resize_bicubic[
 ) raises:
     """Perform bicubic interpolation.
 
+    Parameters:
+        dtype: Element type of the input and output tensors (inferred).
+        target: `StaticString` identifying the execution platform, used to
+            select between the GPU and CPU code paths.
+
     Args:
         output: Output tensor with desired dimensions on host or device.
         input: Input tensor of shape [B, C, H, W] on host or device.
@@ -310,7 +323,7 @@ def resize_bicubic[
             output.dtype,
             output_origin=output.origin,
             OutputLayoutType=output.LayoutType,
-            input_origin=ImmutOrigin(input.origin),
+            input_origin=ImmOrigin(input.origin),
             InputLayoutType=input.LayoutType,
         ]
         ctx.enqueue_function[kernel](

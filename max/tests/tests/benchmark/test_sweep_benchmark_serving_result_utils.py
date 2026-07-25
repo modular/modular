@@ -15,18 +15,21 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkResult,
     PixelGenAggregates,
+    PrefillDecodeStats,
     RatePercentileMetrics,
-    ServingBenchmarkMetrics,
     StandardPercentileMetrics,
     TextGenAggregates,
     ThroughputMetrics,
 )
+from max.benchmark.benchmark_shared.server_metrics import HistogramData
 from max.benchmark.sweep_benchmark_serving_result_utils import (
     SUPPORTED_SWEEP_SERVING_PERCENTILES,
     LLMBenchmarkResult,
@@ -121,12 +124,12 @@ def test_t2i_result_default_total_generated_outputs() -> None:
     assert r.total_generated_outputs == 0
 
 
-def _make_llm_metrics() -> ServingBenchmarkMetrics:
+def _make_llm_metrics() -> BenchmarkResult:
     ttfts = [0.048, 0.050, 0.060, 0.080]
     itls = [0.0095, 0.010, 0.012, 0.018]
     latencies = [0.390, 0.400, 0.450, 0.550]
     per_turn_cache_rates = [0.30, 0.35, 0.40, 0.45]
-    return ServingBenchmarkMetrics(
+    return BenchmarkResult(
         task_type="text",
         max_concurrency=4,
         peak_gpu_memory_mib=[8000.0],
@@ -176,6 +179,9 @@ def test_llm_from_metrics_basic() -> None:
     m = _make_llm_metrics()
     assert m.text_data is not None
     t = m.text_data
+    assert t.ttft_ms is not None
+    assert t.itl_ms is not None
+    assert t.latency_ms is not None
     r = LLMBenchmarkResult.from_metrics(m, [50])
     assert r.duration == 12.0
     assert r.throughput == 3.5
@@ -192,6 +198,9 @@ def test_llm_from_metrics_multiple_percentiles() -> None:
     m = _make_llm_metrics()
     assert m.text_data is not None
     t = m.text_data
+    assert t.ttft_ms is not None
+    assert t.itl_ms is not None
+    assert t.latency_ms is not None
     r = LLMBenchmarkResult.from_metrics(m, [50, 90, 99])
     assert r.ttft_percentiles[50] == t.ttft_ms.p50
     assert r.ttft_percentiles[90] == t.ttft_ms.p90
@@ -219,9 +228,9 @@ def test_llm_zeros_all_fields_zero() -> None:
     assert r.req_latency_percentiles == {50: 0.0, 99: 0.0}
 
 
-def _make_t2i_metrics() -> ServingBenchmarkMetrics:
+def _make_t2i_metrics() -> BenchmarkResult:
     latencies = [1.4, 1.5, 1.7, 1.9]
-    return ServingBenchmarkMetrics(
+    return BenchmarkResult(
         task_type="pixel",
         max_concurrency=2,
         peak_gpu_memory_mib=[8000.0],
@@ -251,6 +260,7 @@ def test_t2i_from_metrics() -> None:
     m = _make_t2i_metrics()
     assert m.pixel_data is not None
     p = m.pixel_data
+    assert p.latency_ms is not None
     r = TextToImageBenchmarkResult.from_metrics(m, [50, 90])
     assert r.duration == 20.0
     assert r.throughput == 0.8
@@ -345,6 +355,32 @@ def test_format_row_values_llm() -> None:
         itl_mean=20.0,
         ttft_percentiles={50: 99.0},
         itl_percentiles={50: 19.0},
+        prefill_stats=PrefillDecodeStats(
+            context_tokens=HistogramData(count=10, sum=1000.0, buckets=[]),
+            creation_time_milliseconds=HistogramData(
+                count=10, sum=1000.0, buckets=[]
+            ),
+            generation_throughput_tokens_per_second=HistogramData(
+                count=10, sum=1000.0, buckets=[]
+            ),
+            input_tokens=HistogramData(count=10, sum=1000.0, buckets=[]),
+            prompt_throughput_tokens_per_second=HistogramData(
+                count=10, sum=1000.0, buckets=[]
+            ),
+        ),
+        decode_stats=PrefillDecodeStats(
+            context_tokens=HistogramData(count=10, sum=1000.0, buckets=[]),
+            creation_time_milliseconds=HistogramData(
+                count=10, sum=1000.0, buckets=[]
+            ),
+            generation_throughput_tokens_per_second=HistogramData(
+                count=10, sum=1000.0, buckets=[]
+            ),
+            input_tokens=HistogramData(count=10, sum=1000.0, buckets=[]),
+            prompt_throughput_tokens_per_second=HistogramData(
+                count=10, sum=1000.0, buckets=[]
+            ),
+        ),
     )
     row = w._format_row_values(
         max_concurrency=4,
@@ -352,6 +388,10 @@ def test_format_row_values_llm() -> None:
         num_prompts=1000,
         result=result,
     )
+    assert result.prefill_stats is not None
+    assert result.decode_stats is not None
+    prefill_cell = json.dumps(result.prefill_stats.to_result_dict())
+    decode_cell = json.dumps(result.decode_stats.to_result_dict())
     assert row == [
         "4",
         "inf",
@@ -361,6 +401,8 @@ def test_format_row_values_llm() -> None:
         "100.0",
         "20.0",
         "500.0",
+        prefill_cell,
+        decode_cell,
         "99.0",
         "19.0",
         "490.0",

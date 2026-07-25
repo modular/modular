@@ -38,14 +38,14 @@ captured, the compiler can enforce correct usage:
 def main():
     var multiplier = 3
 
-    def scale(x: Int) {read multiplier} -> Int:
+    def scale(x: Int) {imm multiplier} -> Int:
         return x * multiplier
 
     print(scale(5))  # 15
 ```
 
 `scale` is a closure. It captures `multiplier` from the enclosing
-scope using its capture list (`{read multiplier}`). When you call
+scope using its capture list (`{imm multiplier}`). When you call
 `scale(5)`, the closure multiplies `5` by the captured value of
 `multiplier` and returns `15`.
 
@@ -84,7 +84,7 @@ something else decides when and where it runs.
 
 ## The capture list
 
-A capture list such as `{read x, mut y}` tells the compiler how the
+A capture list such as `{imm x, mut y}` tells the compiler how the
 closure captures and uses values from the surrounding scope.
 
 For this list, `x` is captured as an immutable reference. The closure
@@ -96,15 +96,15 @@ Mojo requires captures to be explicit. In a systems language, knowing
 exactly which values a closure holds, and whether it reads, copies, or
 takes ownership of them, matters for both performance and correctness.
 
-## Capture by immutable reference: `read`
+## Capture by immutable reference: `imm`
 
-Use `read` when the closure needs to see a value but not change it:
+Use `imm` when the closure needs to see a value but not change it:
 
 ```mojo
 def main():
     var threshold = 100
 
-    def is_over(x: Int) {read threshold} -> Bool:
+    def is_over(x: Int) {imm threshold} -> Bool:
         return x > threshold
 
     print(is_over(50))   # False
@@ -119,7 +119,7 @@ closure was created:
 def main():
     var limit = 10
 
-    def check(x: Int) {read limit} -> Bool:
+    def check(x: Int) {imm limit} -> Bool:
         return x < limit
 
     print(check(5))   # True
@@ -127,18 +127,18 @@ def main():
     print(check(5))   # False  (sees updated limit)
 ```
 
-Because `read` captures a reference, the closure reflects the
+Because `imm` captures a reference, the closure reflects the
 live state of the original value.
 
 To capture every used outer value by immutable reference without
-naming each one, use `{read}`:
+naming each one, use `{imm}`:
 
 ```mojo
 def main():
     var a = 1
     var b = 2
 
-    def sum_ab() {read} -> Int:
+    def sum_ab() {imm} -> Int:
         return a + b
 
     print(sum_ab())  # 3
@@ -221,7 +221,7 @@ def main():
 :::note
 Copy captures call the value's copy constructor at the point
 where the closure is defined. For types with expensive copies
-(large lists, strings with allocations), prefer `read` or `mut`
+(large lists, strings with allocations), prefer `imm` or `mut`
 when you don't need an independent copy.
 :::
 
@@ -249,7 +249,7 @@ copy or for transferring unique ownership.
 
 :::note
 The `^` transfer operator only works with `var` or a bare name in
-capture lists. `{mut name^}`, `{ref name^}`, and `{read name^}` are
+capture lists. `{mut name^}`, `{ref name^}`, and `{imm name^}` are
 compiler errors.
 :::
 
@@ -302,8 +302,8 @@ def show_mutability(ref items: List[Int]):
             print("immut")
     report()
 
-# Show immutability: `xs` uses the default `read` argument convention
-def from_read(xs: List[Int]):
+# Show immutability: `xs` uses the default `imm` argument convention
+def from_imm(xs: List[Int]):
     show_mutability(xs)  # xs is an immutable reference here
 
 # Show mutability: `xs` uses the `mut` argument convention
@@ -312,7 +312,7 @@ def from_mut(mut xs: List[Int]):
 
 def main():
     var nums: List[Int] = [10, 20, 30]
-    from_read(nums)   # immut
+    from_imm(nums)    # immut
     from_mut(nums)    # mut
 ```
 
@@ -323,7 +323,7 @@ parameter, ultimately resolved at the call site.
 
 :::note
 `ref` captures are an advanced feature for writing generic code
-that works across mutability contexts. For most closures, `read`
+that works across mutability contexts. For most closures, `imm`
 or `mut` is the right choice.
 :::
 
@@ -366,7 +366,7 @@ def main():
     var count = 0
     var label = "run-1"
 
-    def process() {read config, mut count, var label}:
+    def process() {imm config, mut count, var label}:
         count += 1
         print(config, count, label)
 
@@ -375,15 +375,15 @@ def main():
     process()  # prod 2 run-1  (label was copied at definition time)
 ```
 
-Each entry is self-contained: `read config` is a read-only reference,
+Each entry is self-contained: `imm config` is a read-only reference,
 `mut count` is a mutable reference, and `var label` is a copy. A bare name
-without a convention keyword defaults to `read`:
+without a convention keyword defaults to `imm`:
 
 ```mojo
 def main():
     var x = 10
 
-    def show() {x}:  # same as {read x}
+    def show() {x}:  # same as {imm x}
         print(x)
 
     show()  # 10
@@ -392,10 +392,10 @@ def main():
 ### Setting a default convention
 
 A convention list can mix implicit and explicit entries, such as
-`{read, mut count, var label}`. You may use at most one implicit
+`{imm, mut count, var label}`. You may use at most one implicit
 entry per capture list, and you can place the entries in any order.
-`{mut count, var label, read}` is equivalent to
-`{var label, read, mut count}`.
+`{mut count, var label, imm}` is equivalent to
+`{var label, imm, mut count}`.
 
 For example:
 
@@ -435,7 +435,7 @@ def main():
     var names: List[String] = ["Alice", "Bob"]
     var greeting = "Hello"
 
-    def greeter(name: String) {read greeting}:
+    def greeter(name: String) {imm greeting}:
         print(greeting + ", " + name + "!")
 
     greet_all(names, greeter)

@@ -15,7 +15,7 @@ from std.sys import size_of
 from std.sys.info import CompilationTarget, is_64bit
 
 from std.bit import count_leading_zeros
-from std.memory import alloc, free, Layout
+from std.memory import alloc, dealloc, ThinAllocation, Layout
 from std.memory.unsafe import bitcast
 from std.builtin.simd import _modf
 from std.itertools import product
@@ -74,7 +74,7 @@ def test_cast() raises:
 
     # Test with a number right on the boundary of 32 bit and 64 bit, to make
     # sure the compiler can cast between the platform dependent types.
-    comptime u1 = Scalar[DType.uint](4294967296)
+    comptime u1 = UInt(4294967296)
     comptime i1 = Scalar[DType.int](4294967296)
     comptime uc1 = i1.cast[DType.uint]()
     comptime ic1 = u1.cast[DType.int]()
@@ -83,11 +83,11 @@ def test_cast() raises:
 
     comptime if is_64bit():
         assert_equal(
-            Scalar[DType.uint](18446744073709551615).cast[DType.int](),
+            UInt(18446744073709551615).cast[DType.int](),
             Scalar[DType.int](-1),
         )
 
-        comptime u2 = Scalar[DType.uint](18446744073709551615)
+        comptime u2 = UInt(18446744073709551615)
         comptime i2 = Scalar[DType.int](-1)
         comptime uc2 = i2.cast[DType.uint]()
         comptime ic2 = u2.cast[DType.int]()
@@ -95,11 +95,11 @@ def test_cast() raises:
         assert_equal(ic2, i2)
     else:
         assert_equal(
-            Scalar[DType.uint](4294967295).cast[DType.int](),
+            UInt(4294967295).cast[DType.int](),
             Scalar[DType.int](-1),
         )
 
-        comptime u3 = Scalar[DType.uint](4294967295)
+        comptime u3 = UInt(4294967295)
         comptime i3 = Scalar[DType.int](-1)
         comptime uc3 = i3.cast[DType.uint]()
         comptime ic3 = u3.cast[DType.int]()
@@ -335,22 +335,29 @@ def test_simd_repr_and_write_repr_to() raises:
         "SIMD[DType.int32, 4](-1, 2, -3, 4)",
     )
 
-    # Size boundary: scalar (size=1)
-    _test_repr(Int32(4), "SIMD[DType.int32, 1](4)")
-    _test_repr(Int32(0), "SIMD[DType.int32, 1](0)")
-    _test_repr(Int32(-42), "SIMD[DType.int32, 1](-42)")
+    # Size boundary: scalars (size=1) print using their type alias.
+    _test_repr(Int32(4), "Int32(4)")
+    _test_repr(Int32(0), "Int32(0)")
+    _test_repr(Int32(-42), "Int32(-42)")
+    _test_repr(Int(7), "Int(7)")
+    _test_repr(UInt(7), "UInt(7)")
 
     # Integer boundary values (min/max for different sizes)
-    _test_repr(Int8.MIN, "SIMD[DType.int8, 1](-128)")
-    _test_repr(Int8.MAX, "SIMD[DType.int8, 1](127)")
-    _test_repr(UInt8.MAX, "SIMD[DType.uint8, 1](255)")
-    _test_repr(
-        Int64.MIN,
-        "SIMD[DType.int64, 1](-9223372036854775808)",
-    )
+    _test_repr(Int8.MIN, "Int8(-128)")
+    _test_repr(Int8.MAX, "Int8(127)")
+    _test_repr(UInt8.MAX, "UInt8(255)")
+    _test_repr(Int64.MIN, "Int64(-9223372036854775808)")
+
+    # size > 1 keeps the verbose `SIMD[...]` form.
     _test_repr(
         SIMD[DType.uint32, 2](0, UInt32.MAX),
         "SIMD[DType.uint32, 2](0, 4294967295)",
+    )
+
+    # Boolean scalars have no scalar alias, so they keep the `SIMD[...]` form.
+    _test_repr(
+        SIMD[DType.bool, 1](True),
+        "SIMD[DType.bool, 1](True)",
     )
 
     # Boolean vectors - all patterns
@@ -368,12 +375,14 @@ def test_simd_repr_and_write_repr_to() raises:
     )
 
     # Float types - different precisions
-    _test_repr(Float16(324), "SIMD[DType.float16, 1](324.0)")
-    _test_repr(Float32(2897239), "SIMD[DType.float32, 1](2897239.0)")
-    _test_repr(
-        Float64(235234523.3452),
-        "SIMD[DType.float64, 1](235234523.3452)",
-    )
+    _test_repr(BFloat16(2.0), "BFloat16(2.0)")
+    _test_repr(Float16(324), "Float16(324.0)")
+    _test_repr(Float32(2897239), "Float32(2897239.0)")
+    _test_repr(Float64(235234523.3452), "Float64(235234523.3452)")
+
+    # Low-precision float scalars also use their type alias.
+    _test_repr(Float8_e4m3fn(2.0), "Float8_e4m3fn(2.0)")
+    _test_repr(Float8_e5m2(2.0), "Float8_e5m2(2.0)")
 
     # Float special values (inf, -inf, nan, -0.0)
     _test_repr(
@@ -391,7 +400,7 @@ def test_issue_1625() raises:
     for i in range(size):
         data[i] = Int64(i)
 
-    var x = data.unsafe_ptr().load[width=2 * simd_width](0)
+    var x = data.unsafe_ptr().unsafe_load[width=2 * simd_width](0)
     var evens_and_odds = x.deinterleave()
 
     # FIXME (40568) should directly use the SIMD assert_equal
@@ -407,15 +416,21 @@ def test_issue_1625() raises:
 
 def test_issue_20421() raises:
     var a_layout = Layout[UInt8](count=16 * 64, alignment=64)
-    var a = alloc(a_layout)
+    var ptr = alloc(a_layout).unsafe_leak()
     for i in range(16 * 64):
-        a[i] = UInt8(i & 255)
-    var av16 = (a + 128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
+        ptr[unsafe_offset=i] = UInt8(i & 255)
+    var av16 = (
+        ptr.unsafe_offset(128 + 64 + 4)
+        .unsafe_bitcast[Int32]()
+        .unsafe_load[width=4, alignment=1]()
+    )
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(a_layout)
+    )
     assert_equal(
         av16,
         SIMD[DType.int32, 4](-943274556, -875902520, -808530484, -741158448),
     )
-    free(a, a_layout)
 
 
 def test_issue_30237() raises:
@@ -1122,17 +1137,22 @@ def test_shuffle() raises:
     )
 
     assert_equal(
-        vec._shuffle_list[width, StaticTuple[SIMDSize, width](3, 2, 1, 0)](vec),
+        vec._shuffle_list[width, StaticTuple[SIMDLength, width](3, 2, 1, 0)](
+            vec
+        ),
         SIMD[dtype, width](103, 102, 101, 100),
     )
     assert_equal(
-        vec._shuffle_list[width, StaticTuple[SIMDSize, width](0, 2, 4, 6)](vec),
+        vec._shuffle_list[width, StaticTuple[SIMDLength, width](0, 2, 4, 6)](
+            vec
+        ),
         SIMD[dtype, width](100, 102, 100, 102),
     )
 
     assert_equal(
         vec._shuffle_list[
-            2 * width, StaticTuple[SIMDSize, 2 * width](7, 6, 5, 4, 3, 2, 1, 0)
+            2 * width,
+            StaticTuple[SIMDLength, 2 * width](7, 6, 5, 4, 3, 2, 1, 0),
         ](vec),
         SIMD[dtype, 2 * width](103, 102, 101, 100, 103, 102, 101, 100),
     )
@@ -2587,7 +2607,7 @@ def test_int_literal_init() raises:
     assert_equal(Int64(-9223372036854775809), Int64(9223372036854775807))
 
     comptime Index = Scalar[DType.int]
-    comptime UIndex = Scalar[DType.uint]
+    comptime UIndex = UInt
 
     comptime if is_64bit():
         assert_equal(Index(-9223372036854775808), Index(9223372036854775808))
@@ -2702,6 +2722,7 @@ def test_float8_e8m0fnu_cast_from_float32() raises:
 
 
 def test_convertible_to_python() raises:
+    check_convertible_to_python(42, "42")
     check_convertible_to_python(1.5, "1.5")
     check_convertible_to_python(Float32(1.5), "1.5")
     check_convertible_to_python(Int32(42), "42")
@@ -2710,6 +2731,7 @@ def test_convertible_to_python() raises:
     )
 
     # test implicit conversions
+    check_python_object(42, "42")
     check_python_object(1.5, "1.5")
     check_python_object(Float32(1.5), "1.5")
     check_python_object(Int32(42), "42")

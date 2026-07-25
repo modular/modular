@@ -153,9 +153,11 @@
   ],
   "referenceSidebar": [
     "docs/reference/index",
+    "docs/reference/cheat-sheets",
     "docs/reference/keywords",
     "docs/reference/literals",
     "docs/reference/numeric-types",
+    "docs/reference/types",
     "docs/reference/operators",
     "docs/reference/expressions",
     "docs/reference/simple-statements",
@@ -174,7 +176,7 @@
       "items": [
         "docs/reference/decorators/align",
         "docs/reference/decorators/always-inline",
-        "docs/reference/decorators/compiler-register",
+        "docs/reference/decorators/extensibility-register",
         "docs/reference/decorators/copy-capture",
         "docs/reference/decorators/deprecated",
         "docs/reference/decorators/doc-hidden",

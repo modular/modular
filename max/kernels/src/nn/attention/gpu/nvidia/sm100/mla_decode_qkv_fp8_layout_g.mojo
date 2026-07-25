@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Native FP8 MLA decode kernel for SM100 (B200) — Layout G fold path.
+"""Native FP8 MLA decode kernel for SM100 (B200): Layout G fold path.
 
 qkv=fp8 / BM=32 / MMA_M=32 / 1x4 datapath
 specialisations (softmax, correction, output store, TMA/MMA descriptor
@@ -72,7 +72,7 @@ from layout import (
     stack_allocation as tt_stack_allocation,
 )
 from layout.tile_layout import row_major as tt_row_major
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
     KVTMATile,
 )
@@ -129,7 +129,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
     # Layout G handles BOTH fold (fold_q==True, q_len_fold > 1) and non-fold
-    # (fold_q==False, q_len_fold==1, num_heads <= 32) cases.  The kernel body
+    # (fold_q==False, q_len_fold==1, num_heads <= 32) cases. The kernel body
     # has full `comptime if Self.fold_q ... else ...` branching for both.
     # The dispatcher is responsible for picking a (fold_q, q_len_fold) pair
     # that satisfies `num_heads * q_len_fold <= BM_G(32)`.
@@ -137,6 +137,40 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     # Number of q_tokens folded into the BM=32 M tile under fold_q==True.
     q_len_fold: Int = 1,
 ](TrivialRegisterPassable):
+    """Implements the native FP8 MLA decode kernel for SM100 (B200) using the Layout G fold path.
+
+    Uses a BM=32, MMA_M=32, 1x4 datapath with five KV pipeline stages where all
+    of Q, K, V, and P reside in shared memory as FP8. Handles both the
+    query-fold (`fold_q==True`, `q_len_fold > 1`) and non-fold (`fold_q==False`,
+    `q_len_fold==1`, `num_heads <= 32`) cases, with the dispatcher selecting a
+    `(fold_q, q_len_fold)` pair satisfying `num_heads * q_len_fold <= 32`.
+
+    Parameters:
+        q_type: Element dtype of the query operand; also selects the MMA
+            accumulator type via `get_accum_type`.
+        KVLUTType: `MHAOperand` describing the KV cache lookup table; its
+            `dtype` is `float8_e4m3fn` for this FP8 kernel.
+        output_type: Element dtype of the output tensor; must be `bfloat16`.
+        SplitAccumType: `OptionalPointer` type for the split-K LSE
+            accumulation buffer written under `decoding_warp_split_k`.
+        MaskType: `MHAMask` variant selecting the attention mask; supports
+            `NullMask`, `CausalMask`, and `SlidingWindowCausalMask`.
+        config: `MLA_SM100_Decode_Config` holding tile sizes, pipeline
+            stage counts, head counts, and TMEM/SMEM layout.
+        ValidLengthType: `OptionalPointer` type for the per-sequence valid
+            length buffer consumed under ragged batching.
+        _is_cache_length_accurate: Whether the supplied cache length is
+            exact rather than `cache_length + seq_len` (defaults to `False`).
+        ragged: Whether the batch contains variable-length sequences,
+            enabling early exit for blocks past the sequence length
+            (defaults to `False`).
+        fold_q: Whether to fold multiple query tokens into the BM=32 M
+            tile (defaults to `False`).
+        q_len_fold: Number of query tokens packed into the BM=32 M tile
+            when `fold_q` is `True`; must satisfy
+            `num_q_heads * q_len_fold <= 32` (defaults to 1).
+    """
+
     comptime kv_type = Self.KVLUTType.dtype  # float8_e4m3fn
     comptime fp8_type = DType.float8_e4m3fn
     comptime AccumType = get_accum_type[Self.q_type]()
@@ -224,11 +258,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             Self.config.decoding_warp_split_k,
         ],
     ) -> Int:
-        comptime _W: Int = Int(
-            Self.MaskType.mask_strategies[Self.BM, Self.BN_QK]()[
-                0
-            ]._upper_triangular_window_size
-        )
+        comptime _W: Int = Self.MaskType.sliding_window_size()
         var global_lo = max(offset_position.cache_len() + 1 - _W, 0)
         var local_lo = max(global_lo - offset_position.kv_start_row, 0)
         return local_lo // Self.BN_QK
@@ -313,11 +343,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         comptime SlidingWindowMask: Bool = (
             MaskTypeName == "SlidingWindowCausalMask"
         )
-        comptime _sliding_window_size: Int = Int(
-            Self.MaskType.mask_strategies[Self.BM, Self.BN_QK]()[
-                0
-            ]._upper_triangular_window_size
-        )
+        comptime _sliding_window_size: Int = Self.MaskType.sliding_window_size()
 
         # S TMEM base / stride (matches mma()).
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
@@ -404,7 +430,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 pack=False,
             ](s_tmem_slot)
 
-            comptime for _i in range(type_of(s_row_val).size):
+            comptime for _i in range(type_of(s_row_val).length):
                 s_row.raw_store(_i, s_row_val[_i])
             tcgen05_load_wait()
 
@@ -501,9 +527,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             comptime for i in range(0, half_load // 2):
                 var element = float2_register[i]
                 float2_register[i] = exp2(element.fma(log2e_f32, -new_max))
-                float2_current_sum += rebind[SIMD[Self.AccumType, 2]](
-                    float2_register[i]
-                )
+                float2_current_sum += float2_register[i]
 
             # Correction-scale write to TMEM (skip on the first processed
             # tile — no prior O accumulator to correct).
@@ -895,11 +919,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
         )
         comptime if _sliding_window_mask_corr:
-            comptime _W_corr: Int = Int(
-                Self.MaskType.mask_strategies[Self.BM, Self.BN_QK]()[
-                    0
-                ]._upper_triangular_window_size
-            )
+            comptime _W_corr: Int = Self.MaskType.sliding_window_size()
             var _global_lo_corr = max(
                 offset_position.cache_len() + 1 - _W_corr, 0
             )
@@ -957,12 +977,10 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                     var float2_register = o_row_subtile.vectorize[2]()
 
                     comptime for j in range(0, correction_inner_count):
-                        var element = rebind[SIMD[Self.AccumType, 2]](
-                            float2_register[j]
+                        var element = float2_register[j]
+                        float2_register[j] = element * SIMD[Self.AccumType, 2](
+                            scale_value
                         )
-                        float2_register[j] = rebind[
-                            type_of(float2_register[j])
-                        ](element * SIMD[Self.AccumType, 2](scale_value))
                     var _o_st_corr = InlineArray[
                         Scalar[Self.AccumType], per_warp_corr_elems
                     ](uninitialized=True)
@@ -1059,7 +1077,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         # Extract scalar launch args from the stable device buffer.
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))
-        var num_partitions = Int(scalar_args.raw_load(2))
+        var num_partitions = mla_decode_pack.num_partitions
 
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
@@ -1206,9 +1224,11 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
 
         # Barrier layout (6N+11 fixed, N=num_kv_stages):
         # bar_q(1) + kv(2N) + s(2N) + p(2N) + o(4) + c(2) + corr_done(4)
-        var mbar_base: MBarType = (li_smem + WARPGROUP_SIZE).bitcast[
-            SharedMemBarrier
-        ]()
+        var mbar_base: MBarType = (
+            (li_smem + WARPGROUP_SIZE)
+            .bitcast[SharedMemBarrier]()
+            .as_unsafe_any_origin()
+        )
 
         var mbar_q: MBarType = mbar_base
         var mbar_kv_base: MBarType = mbar_base + 1
@@ -1299,10 +1319,10 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 ptr_tmem_addr[0],
                 s_bars,
                 p_bars,
-                p_smem,
-                max_smem,
-                li_smem,
-                out_smem,
+                p_smem.as_unsafe_any_origin(),
+                max_smem.as_unsafe_any_origin(),
+                li_smem.as_unsafe_any_origin(),
+                out_smem.as_unsafe_any_origin(),
                 c_bars,
                 corr_done_bars,
                 out_pipeline,
@@ -1329,8 +1349,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                     q_tma,
                     k_tma,
                     kv_lut,
-                    q_smem,
-                    kv_smem,
+                    q_smem.as_unsafe_any_origin(),
+                    kv_smem.as_unsafe_any_origin(),
                     mbar_q,
                     kv_pipeline,
                     offset_position,
@@ -1338,8 +1358,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             elif warp_idx == 9:
                 Self.mmaQK(
                     ptr_tmem_addr[0],
-                    q_smem,
-                    kv_smem,
+                    q_smem.as_unsafe_any_origin(),
+                    kv_smem.as_unsafe_any_origin(),
                     mbar_q,
                     s_bars,
                     kv_pipeline,
@@ -1348,8 +1368,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             elif warp_idx == 10:
                 Self.mmaPV(
                     ptr_tmem_addr[0],
-                    kv_smem,
-                    p_smem,
+                    kv_smem.as_unsafe_any_origin(),
+                    p_smem.as_unsafe_any_origin(),
                     p_bars,
                     o_bars,
                     kv_pipeline,
@@ -1357,7 +1377,10 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 )
             elif warp_idx == 11:
                 Self.Output_Store_Layout_G(
-                    out_pipeline, out_smem, o_tma, offset_position
+                    out_pipeline,
+                    out_smem.as_unsafe_any_origin(),
+                    o_tma,
+                    offset_position,
                 )
         barrier()
 

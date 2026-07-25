@@ -33,7 +33,10 @@ from std.sys._amdgpu import (
 from std.sys._build import is_debug_build
 from std.sys.intrinsics import assume
 from std.sys.defines import get_defined_string
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_slice import (
+    _get_kgen_string,
+    get_static_string,
+)
 from std.reflection import call_location, SourceLocation
 
 comptime ASSERT_MODE = get_defined_string["ASSERT", "safe"]()
@@ -52,7 +55,7 @@ def _string_free_comptime_assert[
     """
 
     __mlir_op.`kgen.param.assert`[
-        cond=cond.__mlir_i1__(),
+        cond=cond.__mlir_bool__(),
         message=_get_kgen_string[msg, *extra](),
     ]()
 
@@ -197,12 +200,11 @@ def debug_assert[
         comptime for i in range(messages.__len__()):
             messages[i].write_to(message)
 
-        _ = message.nul_terminate()
-
-        var slice = message.as_string_slice()
+        var cstr = message.nul_terminate()
+        var bytes_with_nul = cstr.as_bytes_with_nul()
         _debug_assert_msg(
-            slice.unsafe_ptr(),
-            slice.byte_length(),
+            bytes_with_nul.unsafe_ptr(),
+            len(bytes_with_nul),
             location.value() if location else call_location(),
         )
 
@@ -321,13 +323,12 @@ def debug_assert[
         comptime for i in range(messages.__len__()):
             messages[i].write_to(message)
 
-        _ = message.nul_terminate()
-
-        var slice = message.as_string_slice()
+        var cstr = message.nul_terminate()
+        var bytes_with_nul = cstr.as_bytes_with_nul()
 
         _debug_assert_msg(
-            slice.unsafe_ptr(),
-            slice.byte_length(),
+            bytes_with_nul.unsafe_ptr(),
+            len(bytes_with_nul),
             location.value() if location else call_location(),
         )
 
@@ -451,7 +452,7 @@ def debug_assert[
 
 @no_inline
 def _debug_assert_msg(
-    message: UnsafePointer[mut=False, Byte, _], length: Int, loc: SourceLocation
+    message: Pointer[mut=False, Byte, _], length: Int, loc: SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
 
@@ -505,9 +506,33 @@ def _debug_assert_msg(
             from std.gpu.primitives.id import block_idx, thread_idx
 
             var fd = printf_begin()
-            _ = printf_append_string_n(fd, fmt.as_bytes(), False)
-            # Runtime %s types must be passed as separate append_string calls
-            _ = printf_append_string_n(fd, loc.file_name().as_bytes(), False)
+            # Each appended string must carry its own nul terminator so the AMD
+            # fprintf service can delimit it; `as_bytes()` omits the nul, which
+            # corrupts output when a string's length is a multiple of 8.
+            # `get_static_string` guarantees a trailing nul in static memory
+            # just past the returned range.
+            var fmt_str = get_static_string[fmt]()
+            _ = printf_append_string_n(
+                fd,
+                Span(
+                    unsafe_ptr=fmt_str.unsafe_ptr(),
+                    length=fmt_str.byte_length() + 1,
+                ),
+                False,
+            )
+            # Runtime %s types must be passed as separate append_string calls.
+            # `file_name()` is a string literal, so its trailing nul lives in
+            # static memory just past the range (same guarantee the NVIDIA `%s`
+            # path relies on).
+            var file_name = loc.file_name()
+            _ = printf_append_string_n(
+                fd,
+                Span(
+                    unsafe_ptr=file_name.unsafe_ptr(),
+                    length=file_name.byte_length() + 1,
+                ),
+                False,
+            )
             # Can only pass 7 args at a time
             _ = printf_append_args(
                 fd,
@@ -527,7 +552,7 @@ def _debug_assert_msg(
             )
             # Append message and finalize
             _ = printf_append_string_n(
-                fd, Span(ptr=message, length=length), True
+                fd, Span(unsafe_ptr=message, length=length), True
             )
         else:
             _printf["At: %s:%llu:%llu: Assert Error: %s\n"](

@@ -26,19 +26,88 @@
 * `DelRecorder`
 * `AbortOnDel`
 * `AbortOnCopy`
+* `ExplicitDestroy`
 """
 
+from std.hashlib import Hasher
 from std.memory import UnsafeMaybeUninit
 from std.os import abort
 from std.reflection import call_location
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
 # ===----------------------------------------------------------------------=== #
+# ExplicitDestroy
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy("Use .destroy() to consume `ExplicitDestroy`")
+@fieldwise_init
+struct ExplicitDestroy(ImplicitlyDeletable where False, Movable):
+    """Test type that is explicitly-destroyed."""
+
+    var value: Int
+    """Int data."""
+
+    def destroy(deinit self):
+        """Destroys self."""
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
+# ExplicitDestroyKey
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy("Use .destroy() to consume `ExplicitDestroyKey`")
+@fieldwise_init
+struct ExplicitDestroyKey(
+    Equatable, Hashable, ImplicitlyDeletable where False, Movable
+):
+    """Linear key type for testing linear-keyed containers: `Movable`,
+    `Hashable`, and `Equatable`, but explicitly-destroyed (not
+    `ImplicitlyDeletable`)."""
+
+    var value: Int
+    """Int data."""
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compare two keys on their payload.
+
+        Args:
+            other: The other key to compare against.
+
+        Returns:
+            `True` if the payloads are equal, `False` otherwise.
+        """
+        return self.value == other.value
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        """Hash the payload using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        self.value.__hash__(hasher)
+
+    def destroy(deinit self):
+        """Destroys self."""
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
 # MoveOnly
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveOnly[T: Movable & ImplicitlyDestructible](Movable):
+struct MoveOnly[T: Movable & ImplicitlyDeletable](
+    Equatable where conforms_to(T, Equatable),
+    Hashable where conforms_to(T, Hashable),
+    Movable,
+    Writable where conforms_to(T, Writable),
+):
     """Utility for testing MoveOnly types.
 
     Parameters:
@@ -57,20 +126,54 @@ struct MoveOnly[T: Movable & ImplicitlyDestructible](Movable):
         """
         self.data = i^
 
+    def __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
+        """Compare two `MoveOnly` instances for equality on their payload.
+
+        Args:
+            other: The other instance to compare against.
+
+        Returns:
+            `True` if the payloads are equal, `False` otherwise.
+        """
+        return self.data == other.data
+
+    def __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
+        """Hash the payload using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        self.data.__hash__(hasher)
+
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
+        """Write the payload to a `Writer`.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(self.data)
+
 
 # ===----------------------------------------------------------------------=== #
 # ObservableMoveOnly
 # ===----------------------------------------------------------------------=== #
 
 
-struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
+struct ObservableMoveOnly[actions_origin: ImmOrigin](Movable):
     """Type for observing move and destruction operations during testing.
 
     Parameters:
         actions_origin: Origin of the actions list for tracking operations.
     """
 
-    comptime _U = UnsafePointer[List[String], Self.actions_origin]
+    comptime _U = Pointer[List[String], Self.actions_origin]
     var actions: Self._U
     """Pointer to list tracking lifecycle operations."""
     var value: Int
@@ -85,21 +188,21 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         """
         self.actions = actions
         self.value = value
-        self.actions.unsafe_mut_cast[True]()[0].append("__init__")
+        self.actions.unsafe_mut_cast[True]()[].append("__init__")
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Moves from an existing instance and records the operation.
 
         Args:
-            take: The instance being moved from.
+            move: The instance being moved from.
         """
-        self.actions = take.actions
-        self.value = take.value
-        self.actions.unsafe_mut_cast[True]()[0].append("move ctor")
+        self.actions = move.actions
+        self.value = move.value
+        self.actions.unsafe_mut_cast[True]()[].append("move ctor")
 
     def __del__(deinit self):
         """Destroys the instance and records the operation."""
-        self.actions.unsafe_mut_cast[True]()[0].append("__del__")
+        self.actions.unsafe_mut_cast[True]()[].append("__del__")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -174,10 +277,13 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
 
 
 struct CopyCounter[
-    T: ImplicitlyCopyable & Writable & Defaultable = NoneType,
+    T: ImplicitlyCopyable
+    & ImplicitlyDeletable
+    & Writable
+    & Defaultable = NoneType,
     *,
     trivial_copy: Bool = False,
-](ImplicitlyCopyable, Writable):
+](ImplicitlyCopyable, ImplicitlyDeletable, Writable):
     """Counts the number of copies performed on a value.
 
     Parameters:
@@ -237,7 +343,7 @@ struct CopyCounter[
 # TODO: This type should not be Copyable, but has to be to satisfy
 #       Copyable at the moment.
 struct MoveCounter[
-    T: Copyable & ImplicitlyDestructible, *, trivial_move: Bool = False
+    T: Copyable & ImplicitlyDeletable, *, trivial_move: Bool = False
 ](Copyable):
     """Counts the number of moves performed on a value.
 
@@ -269,14 +375,14 @@ struct MoveCounter[
         self.value = value^
         self.move_count = 0
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Moves from an existing instance and increments the count.
 
         Args:
-            take: The instance being moved from.
+            move: The instance being moved from.
         """
-        self.value = take.value^
-        self.move_count = take.move_count + 1
+        self.value = move.value^
+        self.move_count = move.move_count + 1
 
 
 # ===----------------------------------------------------------------------=== #
@@ -306,14 +412,14 @@ struct MoveCopyCounter(ImplicitlyCopyable):
         self.copied = copy.copied + 1
         self.moved = copy.moved
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Moves from an existing instance and increments the move count.
 
         Args:
-            take: The instance being moved from.
+            move: The instance being moved from.
         """
-        self.copied = take.copied
-        self.moved = take.moved + 1
+        self.copied = move.copied
+        self.moved = move.moved + 1
 
 
 # ===----------------------------------------------------------------------=== #
@@ -336,13 +442,13 @@ struct TriviallyCopyableMoveCounter(Copyable):
     # Copying this type is trivial, it doesn't care to track copies.
     comptime __copy_ctor_is_trivial = True
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Moves from an existing instance and increments the count.
 
         Args:
-            take: The instance being moved from.
+            move: The instance being moved from.
         """
-        self.move_count = take.move_count + 1
+        self.move_count = move.move_count + 1
 
 
 # ===----------------------------------------------------------------------=== #
@@ -351,7 +457,7 @@ struct TriviallyCopyableMoveCounter(Copyable):
 
 
 @fieldwise_init
-struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable):
+struct DelRecorder[recorder_origin: ImmOrigin](ImplicitlyCopyable):
     """Records destructor calls for testing.
 
     Parameters:
@@ -360,7 +466,7 @@ struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable):
 
     var value: Int
     """Value to record when destroyed."""
-    var destructor_recorder: UnsafePointer[List[Int], Self.recorder_origin]
+    var destructor_recorder: Pointer[List[Int], Self.recorder_origin]
     """Pointer to list for recording destructor calls."""
 
     def __del__(deinit self):
@@ -381,12 +487,12 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
         origin: Origin of the target pointer.
     """
 
-    var target: UnsafePointer[Bool, Self.origin]
+    var target: Pointer[Bool, Self.origin]
     """Pointer to boolean flag set on destruction."""
 
     def __del__(deinit self):
         """Sets the target flag to True when destroyed."""
-        self.target.init_pointee_move(True)
+        self.target.unsafe_write(True)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -394,9 +500,8 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy
 @fieldwise_init
-struct ExplicitDelOnly(Movable):
+struct ExplicitDelOnly(ImplicitlyDeletable where False, Movable):
     """Utility for testing container support for linear types."""
 
     var data: Int
@@ -414,7 +519,7 @@ struct ExplicitDelOnly(Movable):
 
 
 @fieldwise_init
-struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
+struct DelCounter[counter_origin: ImmOrigin, *, trivial_del: Bool = False](
     ImplicitlyCopyable, Writable
 ):
     """Counts the number of times instances are destroyed.
@@ -426,7 +531,7 @@ struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
 
     comptime __del__is_trivial = Self.trivial_del
 
-    var counter: UnsafePointer[Int, Self.counter_origin]
+    var counter: Pointer[Int, Self.counter_origin]
     """Pointer to counter incremented on destruction."""
 
     def __del__(deinit self):
@@ -519,9 +624,9 @@ struct AbortOnCopy(ImplicitlyCopyable):
 
 struct Observable[
     *,
-    CopyOrigin: MutOrigin = MutExternalOrigin,
-    MoveOrigin: MutOrigin = MutExternalOrigin,
-    DelOrigin: MutOrigin = MutExternalOrigin,
+    CopyOrigin: MutOrigin = MutUntrackedOrigin,
+    MoveOrigin: MutOrigin = MutUntrackedOrigin,
+    DelOrigin: MutOrigin = MutUntrackedOrigin,
     opt_into_unsafe_niche: Bool = False,
 ](Copyable, UnsafeNicheable where opt_into_unsafe_niche):
     """A type that tracks the number of times it has been copied, moved, and destroyed.
@@ -570,16 +675,16 @@ struct Observable[
         if self._copies:
             self._copies.value()[] += 1
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Move initialize the Observable and increment the move count.
 
         Args:
-            take: The instance being moved from.
+            move: The instance being moved from.
         """
         self._always_zero = 0
-        self._copies = take._copies^
-        self._moves = take._moves^
-        self._dels = take._dels^
+        self._copies = move._copies^
+        self._moves = move._moves^
+        self._dels = move._dels^
         if self._moves:
             self._moves.value()[] += 1
 
@@ -604,7 +709,7 @@ struct Observable[
     def write_niche[
         index: Int
     ](
-        memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
+        memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]
     ) where Self.opt_into_unsafe_niche:
         """Writes niche bit pattern `index` into storage.
 
@@ -617,11 +722,13 @@ struct Observable[
         comptime niche_offset = reflect[Self].field_offset[
             name="_always_zero"
         ]()
-        (memory.bitcast[Byte]() + niche_offset).store(Byte(index + 1))
+        memory.unsafe_bitcast[Byte]().unsafe_offset(niche_offset).unsafe_store(
+            Byte(index + 1)
+        )
 
     @staticmethod
     def classify_niche(
-        memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
+        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> NicheIndex where Self.opt_into_unsafe_niche:
         """Classifies the bit pattern at `memory` as a niche or a live value.
 
@@ -635,7 +742,11 @@ struct Observable[
         comptime niche_offset = reflect[Self].field_offset[
             name="_always_zero"
         ]()
-        var value = (memory.bitcast[Byte]() + niche_offset).load()
+        var value = (
+            memory.unsafe_bitcast[Byte]()
+            .unsafe_offset(niche_offset)
+            .unsafe_load()
+        )
         if value == 0:
             return NicheIndex.NotANiche
         else:

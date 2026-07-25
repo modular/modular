@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
+from std.math import ceildiv
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext
@@ -102,7 +103,11 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         transpose_b,
     )
 
-    assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
+    # K and N do not have to be multiples of BLOCK_SCALE_K — the scale grid
+    # is sized with ceildiv, and the kernel covers the partial last tile via
+    # TMA OOB zero-padding.
+    comptime K_SCALES = ceildiv(KType.static_value, BLOCK_SCALE_K)
+    comptime N_SCALES = ceildiv(NType.static_value, BLOCK_SCALE_K)
 
     var a_shape = row_major(Coord(batch_size, m, k))
     var b_shape = row_major(
@@ -113,15 +118,9 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         )
     )
     var c_shape = row_major(Coord(batch_size, m, n))
-    var a_scales_shape = row_major(
-        Coord(batch_size, Idx[KType.static_value // BLOCK_SCALE_K], m)
-    )
+    var a_scales_shape = row_major(Coord(batch_size, Idx[K_SCALES], m))
     var b_scales_shape = row_major(
-        Coord(
-            batch_size,
-            Idx[NType.static_value // BLOCK_SCALE_K],
-            Idx[KType.static_value // BLOCK_SCALE_K],
-        )
+        Coord(batch_size, Idx[N_SCALES], Idx[K_SCALES])
     )
 
     var a_shape_2D = row_major(Coord(m, k))
@@ -132,21 +131,14 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         )
     )
     var c_shape_2D = row_major(Coord(m, n))
-    var a_scales_shape_2D = row_major(
-        Coord(Idx[KType.static_value // BLOCK_SCALE_K], m)
-    )
-    var b_scales_shape_2d = row_major(
-        Coord(
-            Idx[NType.static_value // BLOCK_SCALE_K],
-            Idx[KType.static_value // BLOCK_SCALE_K],
-        )
-    )
+    var a_scales_shape_2D = row_major(Coord(Idx[K_SCALES], m))
+    var b_scales_shape_2d = row_major(Coord(Idx[N_SCALES], Idx[K_SCALES]))
 
     var a_size = bs * M * K
     var b_size = bs * N * K if transpose_b else bs * K * N
     var c_size = bs * M * N
-    var a_scales_size = bs * (K // BLOCK_SCALE_K) * M
-    var b_scales_size = bs * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
+    var a_scales_size = bs * K_SCALES * M
+    var b_scales_size = bs * N_SCALES * K_SCALES
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -199,7 +191,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     @__copy_capture(c_tensor, M, N)
     def epilogue_fn[
         dtype: DType,
-        width: Int,
+        width: SIMDLength,
         rank: Int,
         *,
         alignment: Int = 1,
@@ -210,18 +202,18 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
             rebind[SIMD[c_type, width]](val),
         )
 
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
     _ = c_host.fill(0)
     _ = c_host_ref.fill(0)
 
-    rand(a_scales_host.ptr, a_scales_host.num_elements())
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(a_scales_host._storage, a_scales_host.num_elements())
+    rand(b_scales_host._storage, b_scales_host.num_elements())
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device, c_host.ptr)
+    ctx.enqueue_copy(c_device, c_host._storage)
 
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
@@ -260,17 +252,20 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host.ptr, c_device)
-    ctx.enqueue_copy(c_host_ref.ptr, c_device_ref)
+    ctx.enqueue_copy(c_host._storage, c_device)
+    ctx.enqueue_copy(c_host_ref._storage, c_device_ref)
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.ptr, c_host_ref.ptr, c_host.num_elements(), threshold=0.001
+        c_host._storage,
+        c_host_ref._storage,
+        c_host.num_elements(),
+        threshold=0.001,
     )
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -399,17 +394,17 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     )
     var b_scales_device_nd = TileTensor(b_scales_device, b_scales_shape)
 
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
     _ = c_host.fill(0)
     _ = c_host_ref.fill(0)
 
-    rand(a_scales_host.ptr, a_scales_host.num_elements())
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(a_scales_host._storage, a_scales_host.num_elements())
+    rand(b_scales_host._storage, b_scales_host.num_elements())
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
-    ctx.enqueue_copy(c_device, c_host.ptr)
+    ctx.enqueue_copy(c_device, c_host._storage)
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
@@ -419,8 +414,8 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
         Coord(Idx[B], M, Idx[N]),
         Coord(Idx[N], Idx[B * N], Idx[1]),
     )
-    var c = TileTensor(c_device_nd.ptr, c_non_rm_layout)
-    var c_ref = TileTensor(c_device_ref_nd.ptr, c_non_rm_layout)
+    var c = TileTensor(c_device_nd._storage, c_non_rm_layout)
+    var c_ref = TileTensor(c_device_ref_nd._storage, c_non_rm_layout)
 
     bmm_sm100_blockwise_scaled_fp8[
         transpose_b=transpose_b,
@@ -453,17 +448,20 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host.ptr, c_device)
-    ctx.enqueue_copy(c_host_ref.ptr, c_device_ref)
+    ctx.enqueue_copy(c_host._storage, c_device)
+    ctx.enqueue_copy(c_host_ref._storage, c_device_ref)
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.ptr, c_host_ref.ptr, c_host.num_elements(), threshold=0.001
+        c_host._storage,
+        c_host_ref._storage,
+        c_host.num_elements(),
+        threshold=0.001,
     )
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -604,6 +602,35 @@ def main() raises:
             Idx[128],
             Idx[512],
             Int(128),
+        )
+
+        test_batched_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape=Index(64, 128, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](
+            ctx,
+            Int(120),
+            Idx[8192],
+            Idx[192],
+            Int(3),
+        )
+        test_batched_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape=Index(64, 128, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](
+            ctx,
+            Int(1000),
+            Idx[3072],
+            Idx[576],
+            Int(3),
         )
 
         # test non-row-major layout for C only

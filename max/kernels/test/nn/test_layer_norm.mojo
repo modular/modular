@@ -47,7 +47,7 @@ def run_layer_norm_cpu[
     var output_buf = TileTensor(output_ptr, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_ptr, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_ptr, row_major(Coord(param_shape)))
-    var epsilon = Scalar[dtype](0.0001)
+    var epsilon = Float32(0.0001)
 
     @__copy_capture(input_buf)
     @always_inline
@@ -73,7 +73,7 @@ def run_layer_norm_cpu[
     @always_inline
     @parameter
     def output_fn[
-        width: Int, _rank: Int, alignment: Int
+        width: SIMDLength, _rank: Int, alignment: Int
     ](coords: IndexList[_rank], val: SIMD[dtype, width]):
         var idx = output_buf.layout(Coord(coords))
         output_buf.raw_store[width=width, alignment=alignment](
@@ -82,14 +82,17 @@ def run_layer_norm_cpu[
 
     layer_norm_cpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon)
 
+    var input_ptr_ptr: UnsafePointer[
+        input_ptr.T, origin_of(input_ptr)
+    ] = input_ptr.unsafe_ptr()
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
-            input_ptr.unsafe_ptr() + r * cols,
+            input_ptr_ptr + r * cols,
             row_major(cols),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = rsqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon.cast[dtype]())
         var idx = r * cols + c
         var val = ((input_ptr[idx] - mean_ref) * norm_factor_ref) * gamma_ptr[
             c
@@ -118,3 +121,13 @@ def main() raises:
     run_layer_norm_cpu[DType.float32](Index(3, 4, 10, 20, 8))
     print("8")
     run_layer_norm_cpu[DType.float32](Index(1, 5, 6, 10, 128))
+
+    # float64 regression for KERN-3270: simd_width is 4 on AVX2, so
+    # num_cols=5 hits the vector loop plus a scalar tail, the shape that
+    # segfaulted.
+    print("9")
+    run_layer_norm_cpu[DType.float64](Index(4, 5))
+    print("10")
+    run_layer_norm_cpu[DType.float64](Index(3, 5))
+    print("11")
+    run_layer_norm_cpu[DType.float64](Index(7, 33))

@@ -14,14 +14,24 @@ context. This page covers resources available on docs.modular.com:
 - **Documentation files** (`llms.txt`): Raw text files that AI tools use for
 website navigation hints and direct access to up-to-date API documentation.
 
+- **Docs MCP server**: A hosted [Model Context
+  Protocol](https://modelcontextprotocol.io) server that gives your assistant
+  live, queryable access to the docs: search, API symbol lookup, code
+  examples, and import validation.
+
 - **Project context files** (`CLAUDE.md` and `AGENTS.md`): Markdown files in
   your
 project that provide AI assistants with build commands, coding conventions,
 and project structure.
 
 - **Cursor project rules** (`.cursor/rules/`): Modular-specific rules that
-activate based on the files you're editing, providing consistent guidance for
-MAX development (and Mojo when using rules from the Modular repository).
+  activate based on the files you're editing, providing consistent guidance for
+  MAX development (and Mojo when using rules from the Modular repository).
+
+- **Modular skills**: Reusable AI agent skills that follow the Agent Skills
+  Standard, equipping coding agents with standard workflows to build Mojo
+  projects, write optimized GPU kernels, profile model performance, and [bring
+  new model architectures to MAX](/max/develop/model-bringup-skills/).
 
 ## Giving our docs to your AI assistant
 
@@ -72,6 +82,45 @@ Read https://docs.modular.com/llms-python.txt for MAX Python API documentation
 
 For more details, see the section below about [our `llms.txt`
 files](#modular-llmstxt-files).
+
+## Connect to the docs MCP server
+
+Connect the docs MCP server to give your AI assistant live access to MAX's
+documentation. Your assistant can search all of MAX's tutorials, API
+references, and code examples while it plans, writes, and debugs your code, so
+its answers stay grounded in the current documentation instead of its
+training data.
+
+Your assistant can usually set up the MCP server itself with a prompt like
+this:
+
+```text
+Add the MAX docs MCP server at https://mcp.modular.com/mcp/ and verify it
+by searching the docs.
+```
+
+Or configure it manually in your tool's settings.
+
+With Claude Code, add the server from the command line:
+
+```sh
+claude mcp add --transport http max-docs https://mcp.modular.com/mcp/
+```
+
+With Cursor, add the server to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "max-docs": {
+      "url": "https://mcp.modular.com/mcp/"
+    }
+  }
+}
+```
+
+Any other client that supports MCP's streamable HTTP transport connects with
+the same URL. The server indexes both the nightly and stable documentation.
 
 ## Working in the Modular repository
 
@@ -171,3 +220,24 @@ To ensure compatibility with other tools, we provide both `CLAUDE.md` and
 [`AGENTS.md`](https://github.com/modular/modular/blob/main/AGENTS.md) file is
 just a symlink to the
 [`CLAUDE.md`](https://github.com/modular/modular/blob/main/CLAUDE.md) file.
+
+### Skills
+
+Modular skills are official AI agent skills that encapsulate modern
+best-practices for working with the Modular Platform, including MAX and Mojo.
+They allow AI coding agents to become fluent in developing new Mojo projects,
+writing correct Mojo syntax, programming GPUs, profiling model performance,
+evaluating model accuracy, and
+[importing new model architectures into MAX](/max/develop/model-bringup-skills/).
+
+To get started, install the skills:
+
+```sh
+npx skills add modular/skills
+```
+
+The skills are structured to follow the
+[Agent Skills Standard](https://agentskills.io/specification).
+
+For details on available skills, installation, and usage examples, see the
+[Modular Skills repository](https://github.com/modular/skills).

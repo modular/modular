@@ -261,7 +261,7 @@ def test_tma_block_reduce[
 
         # Timed runs
         var total_time = ctx.execution_time[kernel_launch](num_iters)
-        var avg_time_ms = Float64(total_time) / (num_iters * 1e6)
+        var avg_time_ms = Float64(total_time) / Float64(num_iters) * 1e6
 
         print(
             "  Average kernel time for:",
@@ -277,6 +277,7 @@ def test_tma_block_reduce[
         kernel_launch(ctx)
 
     ctx.enqueue_copy(result_host, d_out)
+    ctx.synchronize()
 
     var total_sum = Scalar[accum_type](0)
     for i in range(grid_dim):

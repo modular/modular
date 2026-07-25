@@ -27,14 +27,21 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
-from max.pipelines.lib.tokenizer import run_with_default_executor
-from max.pipelines.modeling.types import (
+from max.pipelines.context import (
+    GrammarEnforcementState,
     ImageMetadata,
+    TokenBuffer,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
+from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib.tokenizer import (
+    resolve_single_special_token,
+    run_with_default_executor,
+)
+from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TokenBuffer,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from transformers import AutoTokenizer
@@ -129,6 +136,12 @@ def _sanitize_kimi_schema_node(node: Any) -> Any:
 # EOS set so generation stops.
 _IM_END_TOKEN = "<|im_end|>"
 
+# Reasoning span delimiters. Both are special tokens in the Kimi K2.5
+# tokenizer vocab; resolving them at init lets us implement the
+# ``ReasoningPipelineTokenizer`` protocol.
+_THINK_START_TOKEN = "<think>"
+_THINK_END_TOKEN = "</think>"
+
 
 class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
     """Kimi K2.5 tokenizer for multimodal (text + vision) inputs.
@@ -160,16 +173,19 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
         config = pipeline_config.model.huggingface_config
 
-        self._default_eos_token_ids = set([self.eos])
+        eos_token_id = self.delegate.eos_token_id
+        self._eos_token_ids = (
+            {eos_token_id} if eos_token_id is not None else set()
+        )
         if eos_token_id := getattr(config, "eos_token_id", None):
             if isinstance(eos_token_id, int):
-                self._default_eos_token_ids.add(eos_token_id)
+                self._eos_token_ids.add(eos_token_id)
             elif isinstance(eos_token_id, list):
-                self._default_eos_token_ids.update(eos_token_id)
+                self._eos_token_ids.update(eos_token_id)
 
         im_end_id = self.delegate.convert_tokens_to_ids(_IM_END_TOKEN)
         if isinstance(im_end_id, int):
-            self._default_eos_token_ids.add(im_end_id)
+            self._eos_token_ids.add(im_end_id)
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
@@ -189,6 +205,13 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         self.media_pad_token_id: int = media_pad_id
         self.vision_token_ids = [self.media_pad_token_id]
 
+        self._reasoning_start_token_id: int = resolve_single_special_token(
+            self.delegate, _THINK_START_TOKEN
+        )
+        self._reasoning_end_token_id: int = resolve_single_special_token(
+            self.delegate, _THINK_END_TOKEN
+        )
+
         # Build the custom vision processor from HF config.
         media_proc_cfg = getattr(config, "media_proc_cfg", None)
         self.vision_processor = KimiK2_5VisionProcessor(
@@ -200,6 +223,16 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         self.rope_max_width: int = int(
             getattr(vision_cfg, "rope_max_width", 512)
         )
+
+    @property
+    def reasoning_start_token_id(self) -> int:
+        """Token id of ``<think>`` (opens a Kimi K2.5 reasoning span)."""
+        return self._reasoning_start_token_id
+
+    @property
+    def reasoning_end_token_id(self) -> int:
+        """Token id of ``</think>`` (closes a Kimi K2.5 reasoning span)."""
+        return self._reasoning_end_token_id
 
     async def encode(
         self, prompt: str | Sequence[int], add_special_tokens: bool = True
@@ -236,10 +269,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
             max_length = self.max_length or self.delegate.model_max_length
             if max_length and len(encoded_prompt) > max_length:
-                raise ValueError(
-                    f"Input string is larger than tokenizer's max length"
-                    f" ({len(encoded_prompt)} > {max_length})."
-                )
+                raise PromptTooLongError(len(encoded_prompt), max_length)
         else:
             encoded_prompt = np.array(list(prompt))
 
@@ -300,7 +330,10 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         if not request.images:
             return {}
 
-        pil_images = [_to_pil(img_bytes) for img_bytes in request.images]
+        # _to_pil accepts both a PIL.Image and raw bytes.
+        pil_images = [
+            _to_pil(image) for image in request.images_for_processing()
+        ]
         medias = [{"type": "image", "image": img} for img in pil_images]
         return self.vision_processor.preprocess(medias)
 
@@ -403,7 +436,8 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
         json_schema = (
             json.dumps(request.response_format.json_schema)
-            if request.response_format and request.response_format.json_schema
+            if request.response_format
+            and request.response_format.json_schema is not None
             else None
         )
 
@@ -411,10 +445,15 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             request.response_format.grammar if request.response_format else None
         )
 
+        # Carry grammar enforcement state (grammar_enforced, tools_forced,
+        # has_json_schema) from the response format.
+        # Mirrors TextTokenizer / TextAndVisionTokenizer.
+        grammar_state = GrammarEnforcementState.from_response_format(
+            request.response_format
+        )
+
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
-            raise ValueError(
-                f"encoded_prompt length {encoded_prompt.shape[0]} is greater than the max_length of the tokenizer {self.max_length}"
-            )
+            raise PromptTooLongError(encoded_prompt.shape[0], self.max_length)
 
         start_and_end_idxs = find_contiguous_ranges(
             encoded_prompt, self.vision_token_ids
@@ -424,15 +463,29 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             array=encoded_prompt.astype(np.int64, copy=False),
         )
 
+        # Key each image on its raw encoded bytes (+ the resolution size
+        # class), not on hash_image(pixels): the raw-byte key is byte-identical
+        # across torch/BLAS/device so a separate encoder can reproduce it for
+        # cache-aware routing, whereas the post-resize float hash cannot. The
+        # vision processor resizes deterministically from the encoded bytes +
+        # fixed config, so the process-wide total-patch budget is the size
+        # tier. request.images is 1:1 with pixel_values and start_and_end_idxs
+        # (one processed chunk + one contiguous media-pad run per image).
+        image_size_tier = self.vision_processor.cfg.in_patch_limit
+
         context = KimiK2_5TextAndVisionContext(
             request_id=request.request_id,
             eos_tracker=await self.create_eos_tracker(request),
             tokens=token_buffer,
+            vocab_size=self.tokenizer_vocab_size,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
             grammar=grammar,
+            grammar_state=grammar_state,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             grid_thws=grid_thws,
@@ -445,12 +498,15 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixels,
-                    image_hash=hash_image(pixels)
+                    image_hash=hash_image(raw_bytes, image_size_tier)
                     if self.enable_prefix_caching or self.enable_vision_caching
                     else None,
                 )
-                for (start_idx, end_idx), pixels in zip(
-                    start_and_end_idxs, pixel_values, strict=True
+                for (start_idx, end_idx), pixels, raw_bytes in zip(
+                    start_and_end_idxs,
+                    pixel_values,
+                    request.images,
+                    strict=True,
                 )
             ],
             vision_token_ids=self.vision_token_ids,

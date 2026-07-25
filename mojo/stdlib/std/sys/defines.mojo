@@ -215,7 +215,9 @@ def get_defined_dtype[name: StaticString, default: DType]() -> DType:
     """
 
     comptime if is_defined[name]():
-        return DType._from_str(get_defined_string[name]())
+        comptime parsed = DType._from_str(get_defined_string[name]())
+        comptime assert parsed, "invalid DType define for '" + name + "'"
+        return parsed.value()
     else:
         return default
 
@@ -234,9 +236,9 @@ struct MojoVersion(ImplicitlyCopyable, TrivialRegisterPassable):
     def __init__(out self):
         """Initializes the version by reading it from the compiler at compile time.
         """
-        self.major = Int(value=__mlir_op.`lit.mojo.version.major`())
-        self.minor = Int(value=__mlir_op.`lit.mojo.version.minor`())
-        self.patch = Int(value=__mlir_op.`lit.mojo.version.patch`())
+        self.major = Int(mlir_value=__mlir_op.`lit.mojo.version.major`())
+        self.minor = Int(mlir_value=__mlir_op.`lit.mojo.version.minor`())
+        self.patch = Int(mlir_value=__mlir_op.`lit.mojo.version.patch`())
 
 
 comptime MOJO_VERSION = MojoVersion()

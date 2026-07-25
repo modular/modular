@@ -19,12 +19,14 @@ from std.python import ConvertibleToPython
 ```
 """
 
+from . import PythonObject
 
-trait ConvertibleToPython(ImplicitlyDestructible):
+
+trait ConvertibleToPython(ImplicitlyDeletable):
     """A trait that indicates a type can be converted to a PythonObject, and
     that specifies the behavior with a `to_python_object` method."""
 
-    comptime ConversionToPythonErrorType: Movable & ImplicitlyDestructible = Never
+    comptime ConversionToPythonErrorType: Movable & ImplicitlyDeletable = Never
     """The error type raised if conversion to a PythonObject fails."""
 
     def to_python_object(
@@ -41,7 +43,7 @@ trait ConvertibleToPython(ImplicitlyDestructible):
         ...
 
 
-trait ConvertibleFromPython(Copyable, ImplicitlyDestructible):
+trait ConvertibleFromPython(Copyable, ImplicitlyDeletable):
     """Denotes a type that can attempt construction from a read-only Python
     object.
     """

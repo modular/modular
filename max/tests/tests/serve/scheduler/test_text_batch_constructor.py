@@ -11,19 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import time
 from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from max.pipelines.core import TextContext
-from max.pipelines.kv_cache import InsufficientBlocksError
-from max.pipelines.modeling.types import (
+from max.pipelines.context import (
     GenerationStatus,
+    TextContext,
+    TextGenerationOutput,
+    TokenBuffer,
+)
+from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    TransferDirection,
+)
+from max.pipelines.kv_cache.paged_kv_cache import PrefixCacheHits
+from max.pipelines.modeling.types import (
     Pipeline,
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
-    TokenBuffer,
 )
 from max.serve.scheduler.batch_constructor.text_batch_constructor import (
     TextBatchConstructor,
@@ -79,11 +87,12 @@ def create_mock_kv_cache() -> Mock:
     cache.get_total_num_pages = Mock(return_value=128)
     cache.get_free_blocks_pct = Mock(return_value=0.5)
 
-    cache.alloc = Mock(return_value=0)
+    cache.alloc = Mock(return_value=CompletedTransfer(TransferDirection.LOAD))
     cache.claim = Mock()
     cache.release = Mock()
     cache.contains = Mock(return_value=False)
     cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.94)
+    cache.pending_transfers_exist = Mock(return_value=False)
 
     return cache
 
@@ -145,7 +154,6 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
@@ -153,7 +161,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
 
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = 0
+    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -182,7 +190,6 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
     # 9 * 4 = 36 tokens, since no max_batch_total_tokens is set, we should have 4 requests in the batch
     assert len(inputs.batches[0]) == 4
     # since this is CE, we should have 1 step
-    assert inputs.num_steps == 1
 
     # test that we have 2 requests remaining in the queue
     assert len(batch_constructor.replicas[0].ce_reqs) == 2
@@ -227,7 +234,6 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
 
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 2
-    assert inputs.num_steps == 1
 
     for batch in inputs.batches:
         for context in batch:
@@ -243,7 +249,6 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
     assert batch_constructor._identify_priority(0) == RequestType.TG
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
-    assert inputs.num_steps == 10
 
 
 def test_text_batch_constructor__batch_construction_no_requests(
@@ -252,7 +257,6 @@ def test_text_batch_constructor__batch_construction_no_requests(
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
@@ -260,7 +264,7 @@ def test_text_batch_constructor__batch_construction_no_requests(
 
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = 0
+    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -274,7 +278,6 @@ def test_text_batch_constructor__batch_construction_no_requests(
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches) == 1
     assert len(inputs.batches[0]) == 0
-    assert inputs.num_steps == 0
 
 
 def test_text_batch_constructor__batch_construction_no_room_in_cache(
@@ -283,7 +286,6 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
@@ -293,6 +295,7 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.0)
+    kv_cache.pending_transfers_exist = Mock(return_value=False)
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
@@ -327,14 +330,19 @@ def test_text_batch_constructor__insufficient_blocks_defers_then_retries(
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
     )
     kv_cache = Mock()
     # First alloc call fails; subsequent calls succeed (blocks freed).
-    kv_cache.alloc = Mock(side_effect=[InsufficientBlocksError, 0, 0])
+    kv_cache.alloc = Mock(
+        side_effect=[
+            InsufficientBlocksError,
+            CompletedTransfer(TransferDirection.LOAD),
+            CompletedTransfer(TransferDirection.LOAD),
+        ]
+    )
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.0)
@@ -375,7 +383,6 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=True,
         target_tokens_per_batch_ce=30,
@@ -383,7 +390,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = 0
+    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -471,11 +478,11 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     # then succeeding and returning 0 (no prefix cache skip) for the remaining calls.
     kv_cache.alloc.side_effect = [
         InsufficientBlocksError(),
-        0,
-        0,
-        0,
-        0,
-        0,
+        CompletedTransfer(TransferDirection.LOAD),
+        CompletedTransfer(TransferDirection.LOAD),
+        CompletedTransfer(TransferDirection.LOAD),
+        CompletedTransfer(TransferDirection.LOAD),
+        CompletedTransfer(TransferDirection.LOAD),
     ]
 
     last_request_id = list(batch_constructor.replicas[0].tg_reqs.keys())[-1]
@@ -506,7 +513,6 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=True,
         enable_chunked_prefill=True,
         target_tokens_per_batch_ce=30,
@@ -514,7 +520,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = 0
+    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -573,14 +579,13 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
         max_batch_total_tokens=None,
-        max_forward_steps_tg=10,
         enable_in_flight_batching=True,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = 0
+    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -643,7 +648,6 @@ def test_single_lora_scheduling() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=100,
     )
 
@@ -672,7 +676,6 @@ def test_multi_lora_within_budget() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=200,
     )
 
@@ -706,7 +709,6 @@ def test_lora_preemption_over_budget() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=200,
     )
 
@@ -745,7 +747,6 @@ def test_age_based_scheduling_with_lora() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=40,
     )
 
@@ -780,7 +781,6 @@ def test_tg_batch_with_active_loras() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=100,
     )
 
@@ -817,7 +817,6 @@ def test_ce_lora_activation_within_budget() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=100,
     )
 
@@ -850,12 +849,15 @@ def test_tg_pure_age_based_preemption() -> None:
     kv_cache = create_mock_kv_cache()
 
     kv_cache.alloc = Mock(
-        side_effect=[0, InsufficientBlocksError, InsufficientBlocksError]
+        side_effect=[
+            CompletedTransfer(TransferDirection.LOAD),
+            InsufficientBlocksError,
+            InsufficientBlocksError,
+        ]
     )
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=100,
     )
 
@@ -891,7 +893,6 @@ def test_lora_swapping_ce_to_tg() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=100,
     )
 
@@ -933,7 +934,6 @@ def test_mixed_requests_scheduling() -> None:
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=100,
     )
 
@@ -985,7 +985,6 @@ def test_text_batch_constructor__load_based_replica_assignment_with_kv_cache() -
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=1000,
         data_parallel_degree=data_parallel_degree,
     )
@@ -1040,7 +1039,6 @@ def test_text_batch_constructor__data_parallel_explicit_replica_assignment() -> 
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=1000,
         data_parallel_degree=data_parallel_degree,
     )
@@ -1090,7 +1088,6 @@ def test_text_batch_constructor__load_based_handles_imbalance() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=1000,
         data_parallel_degree=data_parallel_degree,
     )
@@ -1158,7 +1155,6 @@ def test_batch_scheduling_strategy__per_replica_default() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
         enable_in_flight_batching=False,
@@ -1244,7 +1240,6 @@ def test_batch_scheduling_strategy__prefill_first() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
         enable_in_flight_batching=False,
@@ -1322,7 +1317,6 @@ def test_batch_scheduling_strategy__decode_first() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
         enable_in_flight_batching=True,
@@ -1400,7 +1394,6 @@ def test_batch_scheduling_strategy__balanced_majority_ce() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
         enable_in_flight_batching=False,
@@ -1468,7 +1461,6 @@ def test_batch_scheduling_strategy__balanced_majority_tg() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
         enable_in_flight_batching=True,
@@ -1536,7 +1528,6 @@ def test_batch_scheduling_strategy__balanced_tie_defaults_to_tg() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
         enable_in_flight_batching=True,
@@ -1606,7 +1597,6 @@ def test_batch_scheduling_strategy__all_replicas_empty() -> None:
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=100,
         data_parallel_degree=data_parallel_degree,
     )
@@ -1629,4 +1619,389 @@ def test_batch_scheduling_strategy__all_replicas_empty() -> None:
         # All batches should be empty
         assert len(inputs.batches) == data_parallel_degree
         assert all(len(batch) == 0 for batch in inputs.batches)
-        assert inputs.num_steps == 0
+
+
+# ---------------------------------------------------------------------------
+# DP-balanced CE scheduling (_plan_ce_step) tests
+# ---------------------------------------------------------------------------
+
+
+def create_dp_balance_constructor(
+    dp: int = 2,
+    timeout_ms: float = 10_000.0,
+    threshold: float = 0.8,
+    enable_dynamic_chunk_size: bool = True,
+    hit_counts: list[PrefixCacheHits] | None = None,
+) -> TextBatchConstructor:
+    """A DP constructor with the CE balancer on and a stubbed cache probe."""
+    pipeline = Mock(spec=["release"])
+    pipeline.release = Mock()
+    kv_cache = create_mock_kv_cache()
+    kv_cache.params.page_size = 16
+    kv_cache.get_prefix_cache_hit_counts = Mock(
+        return_value=(
+            hit_counts if hit_counts is not None else [PrefixCacheHits()] * dp
+        )
+    )
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=10,
+        target_tokens_per_batch_ce=100,
+        data_parallel_degree=dp,
+        dp_ce_balance_timeout_ms=timeout_ms,
+        dp_ce_balance_threshold=threshold,
+        dp_ce_balance_enable_dynamic_chunk_size=enable_dynamic_chunk_size,
+    )
+    return TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+
+
+def test_dp_ce_balance__disabled_binds_on_arrival() -> None:
+    """timeout_ms=-1 (default) disables pooling: arrival binds immediately."""
+    batch_constructor = create_dp_balance_constructor(timeout_ms=-1.0)
+    ctx = create_lora_context()
+    batch_constructor.enqueue_new_request(ctx)
+    assert not batch_constructor._ce_pending
+    assert any(
+        ctx.request_id in replica.ce_reqs
+        for replica in batch_constructor.replicas
+    )
+
+
+def test_dp_ce_balance__pools_new_requests_and_binds_when_fleet_idle() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    ctx = create_lora_context()
+    batch_constructor.enqueue_new_request(ctx)
+
+    # Pooled: tracked by the constructor but bound to no replica queue.
+    assert batch_constructor.contains(ctx.request_id)
+    assert ctx.request_id in batch_constructor._ce_pending
+    assert all(not replica.ce_reqs for replica in batch_constructor.replicas)
+
+    # The fleet has nothing else to run, so the planner must not defer: the
+    # request binds and is scheduled this very step.
+    inputs = batch_constructor.construct_batch()
+    assert has_request(inputs.batches[0] + inputs.batches[1], ctx.request_id)
+    assert not batch_constructor._ce_pending
+
+
+def test_dp_ce_balance__pooled_request_prefers_replica_with_cached_prefix() -> (
+    None
+):
+    hit_counts = [PrefixCacheHits(), PrefixCacheHits(device_blocks=4)]
+    batch_constructor = create_dp_balance_constructor(hit_counts=hit_counts)
+    ctx = create_lora_context(seq_len=96)
+    batch_constructor.enqueue_new_request(ctx)
+
+    # Weighted at post-prefix-cache length: 96 tokens raw, minus 4 blocks
+    # (x 16-token pages) resident on replica 1.
+    assert batch_constructor._ce_pending[ctx.request_id].weights == [96, 32]
+
+    inputs = batch_constructor.construct_batch()
+    assert has_request(inputs.batches[1], ctx.request_id)
+
+
+def test_dp_ce_balance__defers_lone_unexpired_ce_when_tg_available() -> None:
+    batch_constructor = create_dp_balance_constructor(threshold=0.8)
+    tg_ctx = create_lora_context(is_tg=True)
+    batch_constructor.enqueue_new_request(tg_ctx, replica_idx=0)
+    ce_ctx = create_lora_context(seq_len=50)
+    batch_constructor.enqueue_new_request(ce_ctx, replica_idx=0)
+    # Deadline budget left, as if the request had been pooled on arrival.
+    batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic()
+
+    # Occupancy would be 50/(2*50) = 0.5 < 0.8 with no partner CE anywhere,
+    # so replica 0's CE work is held and it runs TG instead.
+    inputs = batch_constructor.construct_batch()
+    assert batch_constructor._ce_deferred_replicas == {0}
+    assert has_request(inputs.batches[0], tg_ctx.request_id)
+    assert not has_request(inputs.batches[0], ce_ctx.request_id)
+
+
+def test_dp_ce_balance__expired_ce_runs_despite_imbalance() -> None:
+    batch_constructor = create_dp_balance_constructor(timeout_ms=10_000.0)
+    tg_ctx = create_lora_context(is_tg=True)
+    batch_constructor.enqueue_new_request(tg_ctx, replica_idx=0)
+    ce_ctx = create_lora_context(seq_len=50)
+    batch_constructor.enqueue_new_request(ce_ctx, replica_idx=0)
+    batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic() - 60.0
+
+    # Same imbalance as the deferral test, but the deadline is blown: the CE
+    # work joins the floor and runs.
+    inputs = batch_constructor.construct_batch()
+    assert batch_constructor._ce_deferred_replicas == set()
+    assert has_request(inputs.batches[0], ce_ctx.request_id)
+
+
+def test_dp_ce_balance__no_deferral_without_tg_work() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    ce_ctx = create_lora_context(seq_len=50)
+    batch_constructor.enqueue_new_request(ce_ctx, replica_idx=0)
+    batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic()
+
+    # Replica 0 has no TG to run instead; deferring would idle it, so its CE
+    # work is not deferrable even with deadline budget left.
+    inputs = batch_constructor.construct_batch()
+    assert batch_constructor._ce_deferred_replicas == set()
+    assert has_request(inputs.batches[0], ce_ctx.request_id)
+
+
+def test_dp_ce_balance__balanced_ce_across_replicas_schedules() -> None:
+    batch_constructor = create_dp_balance_constructor(threshold=0.8)
+    ce_ctxs = []
+    for replica_idx in range(2):
+        tg_ctx = create_lora_context(is_tg=True)
+        batch_constructor.enqueue_new_request(tg_ctx, replica_idx=replica_idx)
+        ce_ctx = create_lora_context(seq_len=50)
+        batch_constructor.enqueue_new_request(ce_ctx, replica_idx=replica_idx)
+        batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic()
+        ce_ctxs.append(ce_ctx)
+
+    # 50 tokens on each rank is a perfectly balanced step: occupancy 1.0
+    # meets the threshold and everything runs, nothing is deferred.
+    inputs = batch_constructor.construct_batch()
+    assert batch_constructor._ce_deferred_replicas == set()
+    assert has_request(inputs.batches[0], ce_ctxs[0].request_id)
+    assert has_request(inputs.batches[1], ce_ctxs[1].request_id)
+
+
+def test_dp_ce_balance__release_pooled_request() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    ctx = create_lora_context()
+    batch_constructor.enqueue_new_request(ctx)
+    assert batch_constructor.contains(ctx.request_id)
+
+    # Releasing a pooled request (e.g. client cancellation) must work even
+    # though it was never bound to a replica or claimed in the KV cache.
+    batch_constructor.release_request(ctx.request_id)
+    assert not batch_constructor.contains(ctx.request_id)
+    assert isinstance(batch_constructor.pipeline, Mock)
+    batch_constructor.pipeline.release.assert_called_once_with(ctx.request_id)
+
+    inputs = batch_constructor.construct_batch()
+    assert all(len(batch) == 0 for batch in inputs.batches)
+
+
+def _add_deferrable_ce(
+    batch_constructor: TextBatchConstructor, replica_idx: int, seq_len: int
+) -> TextContext:
+    """A TG request plus an unexpired mid-CE request pinned to a replica."""
+    tg_ctx = create_lora_context(is_tg=True)
+    batch_constructor.enqueue_new_request(tg_ctx, replica_idx=replica_idx)
+    ce_ctx = create_lora_context(seq_len=seq_len)
+    batch_constructor.enqueue_new_request(ce_ctx, replica_idx=replica_idx)
+    batch_constructor._ce_arrival[ce_ctx.request_id] = time.monotonic()
+    return ce_ctx
+
+
+def test_dp_ce_balance__reduces_chunk_size_to_balance_level() -> None:
+    batch_constructor = create_dp_balance_constructor(threshold=0.9)
+    heavy_ce = _add_deferrable_ce(batch_constructor, replica_idx=0, seq_len=96)
+    light_ce = _add_deferrable_ce(batch_constructor, replica_idx=1, seq_len=60)
+
+    # Occupancy (96+60)/(2*96) = 0.81 misses the 0.9 threshold, but both
+    # replicas have CE work and the balance level (60) is at least half the
+    # 100-token chunk target, so the step runs with a 60-token chunk size
+    # per replica: the heavy request is chunked at the quota and only its
+    # excess defers.
+    inputs = batch_constructor.construct_batch()
+    assert batch_constructor._ce_step_quota == [60, 60]
+    assert batch_constructor._ce_deferred_replicas == set()
+    assert has_request(inputs.batches[0], heavy_ce.request_id)
+    assert heavy_ce.tokens.active_length == 60
+    assert has_request(inputs.batches[1], light_ce.request_id)
+
+
+def test_dp_ce_balance__dynamic_chunk_size_disabled_holds_step() -> None:
+    batch_constructor = create_dp_balance_constructor(
+        threshold=0.9, enable_dynamic_chunk_size=False
+    )
+    heavy_ce = _add_deferrable_ce(batch_constructor, replica_idx=0, seq_len=96)
+    light_ce = _add_deferrable_ce(batch_constructor, replica_idx=1, seq_len=60)
+
+    # Same step as above, but with dynamic chunk sizing off it is held whole.
+    inputs = batch_constructor.construct_batch()
+    assert batch_constructor._ce_step_quota is None
+    assert batch_constructor._ce_deferred_replicas == {0, 1}
+    assert not has_request(inputs.batches[0], heavy_ce.request_id)
+    assert not has_request(inputs.batches[1], light_ce.request_id)
+
+
+def test_dp_ce_balance__no_chunk_size_reduction_below_half_target() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    _add_deferrable_ce(batch_constructor, replica_idx=0, seq_len=96)
+    _add_deferrable_ce(batch_constructor, replica_idx=1, seq_len=30)
+
+    # The balance level (30) is under half the 100-token chunk target:
+    # chunks that small cost more in extra steps than the imbalance they
+    # avoid, so the work is held instead.
+    batch_constructor.construct_batch()
+    assert batch_constructor._ce_step_quota is None
+    assert batch_constructor._ce_deferred_replicas == {0, 1}
+
+
+def test_dp_ce_balance__quota_never_below_floor() -> None:
+    batch_constructor = create_dp_balance_constructor(threshold=0.9)
+    # Replica 0's CE deadline is blown: it is floor work that runs to the
+    # full chunk budget, and the balance level cannot drop below it.
+    tg_ctx = create_lora_context(is_tg=True)
+    batch_constructor.enqueue_new_request(tg_ctx, replica_idx=0)
+    expired_ce = create_lora_context(seq_len=96)
+    batch_constructor.enqueue_new_request(expired_ce, replica_idx=0)
+    batch_constructor._ce_arrival[expired_ce.request_id] = (
+        time.monotonic() - 60.0
+    )
+    _add_deferrable_ce(batch_constructor, replica_idx=1, seq_len=60)
+
+    batch_constructor.construct_batch()
+    assert batch_constructor._ce_step_quota == [96, 60]
+    assert batch_constructor._ce_deferred_replicas == set()
+
+
+# ---------------------------------------------------------------------------
+# Async KV onload cordon / re-admit (SERVOPT-1036) tests
+# ---------------------------------------------------------------------------
+
+
+class _IncompleteOnload:
+    """A ``KVConnectorTransfer`` whose onload has not yet landed.
+
+    Models the ``rust_tiered`` connector's async handle: ``is_complete`` stays
+    ``False`` until the test flips it (via ``synchronize``), so the batch
+    constructor cordons the request instead of scheduling it.
+    """
+
+    def __init__(self) -> None:
+        self.complete = False
+
+    @property
+    def direction(self) -> TransferDirection:
+        return TransferDirection.LOAD
+
+    @property
+    def g0_blocks(self) -> list[int]:
+        return []
+
+    def is_complete(self) -> bool:
+        return self.complete
+
+    def synchronize(self) -> None:
+        self.complete = True
+
+
+def _make_cordon_kv_cache(alloc: Mock) -> Mock:
+    """A minimal KV cache mock for the cordon path with a custom ``alloc``."""
+    kv_cache = Mock()
+    kv_cache.alloc = alloc
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock(return_value=False)
+    kv_cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.0)
+    kv_cache.pending_transfers_exist = Mock(return_value=False)
+    return kv_cache
+
+
+def _ce_ctx() -> TextContext:
+    return TextContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.ones(9, dtype=np.int64)),
+        max_length=100,
+    )
+
+
+def _cordon_config() -> TokenGenerationSchedulerConfig:
+    return TokenGenerationSchedulerConfig(
+        max_batch_size=5,
+        max_batch_total_tokens=None,
+        enable_in_flight_batching=False,
+        enable_chunked_prefill=False,
+        target_tokens_per_batch_ce=30,
+    )
+
+
+def test_text_batch_constructor__cordons_request_with_incomplete_onload(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """A CE request whose KV onload is still in flight is held out of the batch.
+
+    The request is allocated (its blocks pinned) but cordoned: it must not be
+    scheduled until the H2D lands, so the GPU can run other ready work meanwhile.
+    """
+    onload = _IncompleteOnload()
+    kv_cache = _make_cordon_kv_cache(Mock(return_value=onload))
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=_cordon_config(),
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert len(inputs.batches[0]) == 0
+    assert ctx.request_id in batch_constructor._onloading_reqs
+    assert ctx.request_id not in batch_constructor.replicas[0].ce_reqs
+
+
+def test_text_batch_constructor__readmits_request_when_onload_completes(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """A cordoned request is re-admitted and scheduled once its onload lands."""
+    onload = _IncompleteOnload()
+    # First alloc cordons (incomplete); the re-admit pass re-allocs and the
+    # prefix is now device-resident, so the second alloc completes immediately.
+    kv_cache = _make_cordon_kv_cache(
+        Mock(side_effect=[onload, CompletedTransfer(TransferDirection.LOAD)])
+    )
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=_cordon_config(),
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+
+    # Iteration 1: cordoned, empty batch.
+    inputs = batch_constructor.construct_batch()
+    assert len(inputs.batches[0]) == 0
+    assert ctx.request_id in batch_constructor._onloading_reqs
+
+    # The onload lands; the next iteration re-admits and schedules it.
+    onload.synchronize()
+    inputs = batch_constructor.construct_batch()
+    assert has_request(inputs.batches[0], ctx.request_id)
+    assert ctx.request_id not in batch_constructor._onloading_reqs
+
+
+def test_text_batch_constructor__oom_deferred_while_onload_in_flight(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """OOM does not crash the server while a cordoned onload is in flight.
+
+    The first request is cordoned (onload in flight); the second hits
+    ``InsufficientBlocksError`` but is deferred rather than raised, because the
+    in-flight transfer will free blocks once it lands (its blocks are pinned now
+    but released by ``poll_transfers`` on completion).
+    """
+    onload = _IncompleteOnload()
+    kv_cache = _make_cordon_kv_cache(
+        Mock(side_effect=[onload, InsufficientBlocksError])
+    )
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=_cordon_config(),
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    ctx_a = _ce_ctx()
+    ctx_b = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx_a)
+    batch_constructor.enqueue_new_request(ctx_b)
+
+    # Must not raise: A cordons, B's OOM is deferred (an onload is in flight).
+    inputs = batch_constructor.construct_batch()
+
+    assert len(inputs.batches[0]) == 0
+    assert ctx_a.request_id in batch_constructor._onloading_reqs
+    assert ctx_b.request_id in batch_constructor.replicas[0].ce_reqs

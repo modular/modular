@@ -34,12 +34,12 @@ Per-Token FP8 Scaling (SnapMLA Approach):
 
   sigma_Q is per-query-token: each Q position has its own float32 scale.
   All BM=64 heads in a CTA share the same Q token, so sigma_Q is constant
-  per CTA.  It is folded into scale_log2e inside the Softmax function:
+  per CTA. It is folded into scale_log2e inside the Softmax function:
     scale_log2e = (1/sqrt(d_qk)) * sigma_Q[q_token_idx]
 
   QK scoring:  After reading combined scores S = content_raw + rope_raw from
                TMEM, each column t is multiplied by sigma_KV[t] BEFORE the
-               log2e softmax scaling.  This is mathematically exact under
+               log2e softmax scaling. This is mathematically exact under
                Scale Domain Alignment (Eq. 6): Q_rope and K_rope are
                pre-divided by their respective content scales before entering
                the kernel, so the uniform sigma application is correct.
@@ -91,7 +91,7 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import row_major as tt_row_major
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
     KVTMATile,
 )
@@ -144,13 +144,50 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     ragged: Bool = False,
     has_per_token_scales: Bool = False,
 ](TrivialRegisterPassable):
+    """SnapMLA FP8 decode kernel for SM100 with per-token FP8 scaling.
+
+    Splits the MLA decode into content (FP8 e4m3, 512 dims) and rope (BF16, 64
+    dims) stages, using native FP8 WGMMA for content QK and PV and BF16 WGMMA
+    for rope QK. Per-token FP8 scales are folded into the softmax scale for Q
+    and applied per KV token column before softmax and PV dequantization. The
+    kernel runs a 3-warpgroup structure (softmax, correction, MMA+load+store)
+    and supports only `NullMask` and `CausalMask`.
+
+    Parameters:
+        q_type: The precision used for the softmax accumulator and
+            P-stage shared memory (`bfloat16`), even though
+            content Q/K/V and P are FP8 and rope Q/K are BF16 in
+            shared memory.
+        KVLUTType: The paged KV cache operand type, providing the KV
+            dtype and page size used for TMA loads.
+        output_type: The data type of the output tensor written via
+            TMA store.
+        SplitAccumType: The optional pointer type for the split-K LSE
+            accumulation buffer used when decoding is partitioned
+            across CTAs.
+        MaskType: The attention mask type; one of `NullMask` or
+            `CausalMask`.
+        config: The decode configuration providing tile sizes, stage
+            counts, head counts, and TMEM layout for the kernel.
+        ValidLengthType: The optional pointer type for the
+            per-request valid sequence length buffer.
+        _is_cache_length_accurate: Whether the cache length used for
+            offset computation is accurate (defaults to `False`).
+        ragged: Whether ragged (variable-length) sequences are used,
+            skipping blocks beyond the actual sequence length
+            (defaults to `False`).
+        has_per_token_scales: Whether per-token FP8 scales are loaded
+            via TMA and applied to QK scoring and PV dequantization
+            (defaults to `False`).
+    """
+
     comptime kv_type = Self.KVLUTType.dtype  # float8_e4m3fn
     comptime fp8_type = DType.float8_e4m3fn
     comptime bf16_type = DType.bfloat16
     comptime AccumType = get_accum_type[Self.q_type]()
 
     # Number of producer arrivals for KV pipeline mbarrier:
-    # Always 1 (TMA via expect_bytes only).  Per-token scales are also
+    # Always 1 (TMA via expect_bytes only). Per-token scales are also
     # loaded via TMA on the same mbarrier, so no extra thread arrivals.
     comptime num_kv_producer = 1
 
@@ -321,7 +358,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         ],
     ):
         # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
-        # (MLA_SM100_Decode_QKV_FP8).  Reject it here at comptime.
+        # (MLA_SM100_Decode_QKV_FP8). Reject it here at comptime.
         comptime _mask_type_name: String = Self.MaskType.get_type_name()
         comptime assert (
             _mask_type_name == "NullMask" or _mask_type_name == "CausalMask"
@@ -334,13 +371,13 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Extract scalar launch args from the stable device buffer.
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))
-        var num_partitions = Int(scalar_args.raw_load(2))
+        var num_partitions = mla_decode_pack.num_partitions
 
         # Register allocation for 3 WGs (Softmax, Correction, MMA+Load+Store).
         #
         # Per-token FP8 scaling caches 32 float32 sigma_KV values in registers
         # inside Softmax (_sigma_kv_regs), requiring +32 regs vs the baseline
-        # (192).  We give Softmax 224 regs by having both Correction and
+        # (192). We give Softmax 224 regs by having both Correction and
         # MMA+Load+Store donate registers via warpgroup_reg_dealloc.
         #
         # Assuming compiler initial X=168 regs/thread:
@@ -478,8 +515,10 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # ---- Barrier layout (6N+11 fixed for N-stage pipelines) ----
         # bar_q(1) + kv(2N) + s(2N) + p(2N) + o(4) + c(2) + corr_done(4)
         var mbar_base: MBarType = (
-            scale_smem_base + per_token_scales_total_elems
-        ).bitcast[SharedMemBarrier]()
+            (scale_smem_base + per_token_scales_total_elems)
+            .bitcast[SharedMemBarrier]()
+            .as_unsafe_any_origin()
+        )
 
         var mbar_q: MBarType = mbar_base
         var mbar_kv_base: MBarType = mbar_base + 1
@@ -569,10 +608,12 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 ptr_tmem_addr[0],
                 s_bars,
                 p_bars,
-                p_smem.bitcast[Scalar[Self.Common_MLA_Op.q_type]](),
-                max_smem,
-                li_smem,
-                out_smem,
+                p_smem.bitcast[
+                    Scalar[Self.Common_MLA_Op.q_type]
+                ]().as_unsafe_any_origin(),
+                max_smem.as_unsafe_any_origin(),
+                li_smem.as_unsafe_any_origin(),
+                out_smem.as_unsafe_any_origin(),
                 c_bars,
                 corr_done_bars,
                 out_pipeline,
@@ -582,7 +623,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 prompt_idx=UInt32(offset_position.batch_idx),
                 lse_accum_split_ptr=lse_accum_split_ptr,
                 batch_size=batch_size,
-                scale_k_smem=scale_smem_base,
+                scale_k_smem=scale_smem_base.unsafe_origin_cast[MutAnyOrigin](),
                 q_scale_ptr=q_scale_ptr,
             )
         elif warp_idx >= 4 and warp_idx < 8:  # correction warpgroup
@@ -604,22 +645,22 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     k_rope_tma,
                     scale_tma,
                     kv_lut,
-                    q_nope_smem,
-                    q_rope_smem,
-                    kv_content_smem,
-                    kv_rope_smem,
+                    q_nope_smem.as_unsafe_any_origin(),
+                    q_rope_smem.as_unsafe_any_origin(),
+                    kv_content_smem.as_unsafe_any_origin(),
+                    kv_rope_smem.as_unsafe_any_origin(),
                     mbar_q,
                     kv_pipeline,
                     offset_position,
-                    scale_smem_base,
+                    scale_smem_base.as_unsafe_any_origin(),
                 )
             elif warp_idx == 9:
                 Self.mmaQK(
                     ptr_tmem_addr[0],
-                    q_nope_smem,
-                    q_rope_smem,
-                    kv_content_smem,
-                    kv_rope_smem,
+                    q_nope_smem.as_unsafe_any_origin(),
+                    q_rope_smem.as_unsafe_any_origin(),
+                    kv_content_smem.as_unsafe_any_origin(),
+                    kv_rope_smem.as_unsafe_any_origin(),
                     mbar_q,
                     s_bars,
                     kv_pipeline,
@@ -628,8 +669,8 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             elif warp_idx == 10:
                 Self.mmaPV(
                     ptr_tmem_addr[0],
-                    kv_content_smem,
-                    p_smem,
+                    kv_content_smem.as_unsafe_any_origin(),
+                    p_smem.as_unsafe_any_origin(),
                     p_bars,
                     o_bars,
                     kv_pipeline,
@@ -637,7 +678,10 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 )
             elif warp_idx == 11:
                 Self.Common_MLA_Op.store(
-                    out_pipeline, out_smem, o_tma, offset_position
+                    out_pipeline,
+                    out_smem.as_unsafe_any_origin(),
+                    o_tma,
+                    offset_position,
                 )
         barrier()
 
@@ -802,7 +846,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 content_stage_ptr,
                 k0_bar[],
                 kv_head_idx=UInt32(0),
-                elect=Int32(1),
+                elect=elect_mask,
             )
             # K_rope TMA: load BF16 rope into kv_rope_smem
             var rope_stage_ptr = kv_rope_smem + stage0_idx * UInt32(
@@ -813,7 +857,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 rope_stage_ptr,
                 k0_bar[],
                 kv_head_idx=UInt32(0),
-                elect=Int32(1),
+                elect=elect_mask,
             )
             # Scale TMA: load BN_QK float32 per-token scales into scale SMEM.
             # The scale TMA treats scales as a flat [1, total_elements] 2D
@@ -865,7 +909,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     content_stage_ptr,
                     k_mbar[],
                     kv_head_idx=UInt32(0),
-                    elect=Int32(1),
+                    elect=elect_mask,
                 )
                 # K_rope TMA
                 var rope_stage_ptr = kv_rope_smem + stage_idx * UInt32(
@@ -876,7 +920,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     rope_stage_ptr,
                     k_mbar[],
                     kv_head_idx=UInt32(0),
-                    elect=Int32(1),
+                    elect=elect_mask,
                 )
                 # Scale TMA
                 comptime if Self.has_per_token_scales:

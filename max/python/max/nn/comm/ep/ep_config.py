@@ -15,9 +15,11 @@
 
 import os
 from dataclasses import dataclass
+from typing import Any
 
 from max.dtype import DType
 from max.nn.quant_config import QuantConfig
+from max.support.math import ceildiv
 
 # We always use two groups of SHMEM shared memory buffers to avoid race
 # conditions between the dispatch and combine phases of Expert Parallelism
@@ -46,7 +48,16 @@ NUM_GROUPS = 2
 
 @dataclass
 class EPConfig:
-    """Configuration for Expert Parallelism (EP) communication."""
+    """Configuration for Expert Parallelism (EP) communication.
+
+    .. note::
+
+       The EP kernel requires ``n_gpus_per_node * n_nodes >= 2``.
+       Single-GPU MoE configs pass Python construction but fail at
+       Mojo kernel compile (``constraint failed``) after 2-3 minutes.
+       For single-GPU MoE, instantiate the MoE block without an EP
+       manager and use ``ShardingStrategy.tensor_parallel(1)``.
+    """
 
     dispatch_dtype: DType
     """Data type used for dispatching tokens to experts."""
@@ -83,6 +94,44 @@ class EPConfig:
 
     use_allreduce: bool = False
     """Whether to use allreduce for the cross-device communication."""
+
+    max_batch_size: int = 0
+    """Decode concurrency cap sizing the AMD MXFP4 preb direct grid.y on the
+    decode bands. 0 disables (full-stride fallback)."""
+
+    # EPLB parameters (used only when eplb_enabled is True)
+    eplb_enabled: bool = False
+    """When true, EPBatchManager exposes log2phy / logcnt input buffer. """
+
+    num_moe_layers: int = 0
+    """Number of MoE layers; sizes the per layer EPLB buffer. """
+
+    max_replicas: int = 1
+    """Largest replica count across all (layer, logical) cells. Also the trailing dim of log2phy."""
+
+    eplb_phy2log_plan: Any = None
+    """Optional pre-computed EPLB plan (phy2log numpy array, shape
+    [num_moe_layers, num_phy]). When non-None, EPBatchManager picks it
+    up at construction time so that MoE.shard sees the plan during the
+    model's first __init__ pass (no re-shard needed).
+    """
+
+    mxfp4_a_scales_preshuffled: bool = False
+    """When True (KS224 up-proj fusion, MXFP4 preshuffled-B path on
+    AMD), the dispatch-wait kernel writes the per-token E8M0 activation scale
+    directly into the up-proj grouped-matmul's per-expert fixed-stride
+    ``scale_4d`` slot layout, so the standalone preshuffle kernel is dropped from
+    the decode critical path. The dispatch scales output is then slot-sized
+    (``n_local_experts * align_up(max_recv_tokens_per_expert, 32)`` rows)
+    instead of ``max_recv_tokens`` rows. Set by ``MoEQuantized`` when the MXFP4
+    strategy uses preshuffled B. Only valid for MXFP4 dispatch."""
+    # In EPConfig, alongside n_experts / num_moe_layers / max_replicas:
+
+    num_logical_experts: int = 0
+    """Number of logical experts per layer. When EPLB is disabled this equals
+    ``n_experts``. When EPLB is enabled, ``n_experts`` is inflated to the
+    physical slot count and this preserves the original logical count, which
+    is the leading dim of ``log2phy`` / ``logcnt``."""
 
     def estimate_memory_usage(self) -> int:
         """Estimate the EP communication memory usage per device per buffer group.
@@ -122,6 +171,9 @@ class EPConfig:
             )
 
     def __post_init__(self):
+        if self.num_logical_experts == 0:
+            self.num_logical_experts = self.n_experts
+
         if self.dispatch_dtype != DType.bfloat16:
             if self.dispatch_quant_config is None:
                 raise ValueError(
@@ -273,4 +325,10 @@ def calculate_ep_max_tokens_per_rank(
     if use_allreduce:
         return max_batch_input_tokens
     tp_size = ep_size // data_parallel_degree
-    return max_batch_input_tokens // tp_size
+    # Match the ceiling-biased ragged binning in ops.reducescatter.sum: when
+    # max_batch_input_tokens is not divisible by tp_size, the first
+    # (max_batch_input_tokens % tp_size) ranks receive
+    # ceil(max_batch_input_tokens / tp_size) tokens, so the EP per-rank cap
+    # must be ceil, not floor — otherwise the dispatch kernel rejects the
+    # largest shard (see ep.mojo dispatch assertion).
+    return ceildiv(max_batch_input_tokens, tp_size)

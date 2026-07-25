@@ -174,11 +174,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 comptime assert b_host.flat_rank == 2
                 b_host[n, k] = UInt8(n).cast[b_type]()
     else:
-        rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
-        rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
+        rand(a_host._storage, a_host.num_elements(), min=0, max=255)
+        rand(b_host._storage, b_host.num_elements(), min=0, max=255)
 
-    rand(a_scales_host.ptr, a_scales_host.num_elements())
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(a_scales_host._storage, a_scales_host.num_elements())
+    rand(b_scales_host._storage, b_scales_host.num_elements())
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
     for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
         for idx1 in range(
@@ -238,11 +238,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt.as_any_origin(),
+        c_ref_tensor_lt.as_unsafe_any_origin(),
         a_lt,
         b_lt,
-        a_scales=a_scales_lt.get_immutable().as_any_origin(),
-        b_scales=b_scales_lt.get_immutable().as_any_origin(),
+        a_scales=a_scales_lt.as_imm().as_unsafe_any_origin(),
+        b_scales=b_scales_lt.as_imm().as_unsafe_any_origin(),
         transpose_b=transpose_b,
         c_row_major=True,
         alpha=alpha,
@@ -255,8 +255,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,

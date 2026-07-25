@@ -11,6 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""
+Implements single-query (decode) multi-head attention for NVIDIA SM100 (Blackwell) GPUs using warp-specialized UMMA and tensor-memory (TMEM) accumulators.
+"""
+
 from std.math import ceildiv, exp2, recip, align_up
 from std.math.uutils import umod
 from std.math.constants import log2e
@@ -18,6 +22,12 @@ from std.math.constants import log2e
 from std.sys import align_of, simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
+from std.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from std.collections import OptionalReg
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -69,6 +79,9 @@ from nn.attention.gpu.nvidia.sm90.attention import (
     _apply_mask,
     _get_position,
     get_q_head_idx,
+    produce,
+)
+from nn.attention.gpu.nvidia.common import (
     ImmutTileTensor1D,
     KVTMATile,
     MHAPosition,
@@ -76,7 +89,6 @@ from nn.attention.gpu.nvidia.sm90.attention import (
     NullPointer,
     OptionalPointer,
     Pack,
-    produce,
     q_tma,
     QTMATile,
 )
@@ -91,6 +103,7 @@ from nn.attention.gpu.nvidia.mha_tile_scheduler import (
 )
 from nn.attention.mha_utils import (
     FlashAttentionAlgorithm,
+    MHA_PDL_LEVEL,
     MHAConfig,
     MHAPartitionScheme,
     OptionallyStaticInt,
@@ -110,6 +123,10 @@ comptime logger = Logger()
 
 
 struct RegisterAccumulatorDescription:
+    """
+    Holds the number of MMA fragments and the per-thread fragment size for a register-resident accumulator tile.
+    """
+
     var num_mmas: Int
     var frag_size: Int
 
@@ -131,6 +148,18 @@ struct RegisterAccumulatorLayout[
     *,
     frag_simdwidth: Int = 2,
 ](TrivialRegisterPassable):
+    """
+    Describes how UMMA accumulator fragments are distributed across the threads of a consumer warp group.
+
+    Parameters:
+        MMA_M: The M dimension of a single UMMA instruction tile.
+        MMA_N: The N dimension of a single UMMA instruction tile.
+        num_m_mmas: Number of UMMA tiles along the M dimension.
+        num_n_mmas: Number of UMMA tiles along the N dimension.
+        consumer_group_size: Number of threads in the consumer warp group.
+        frag_simdwidth: SIMD width of each accumulator fragment (defaults to 2).
+    """
+
     comptime frag_size: Int = Self.MMA_M * Self.MMA_N // Self.consumer_group_size
     comptime num_row_blocks_per_mma = 2
     comptime element_layout: Layout = Layout.row_major(1, Self.frag_simdwidth)
@@ -176,6 +205,19 @@ struct MMAOperandOffsetFn[
     WMMA_MN: Int,
     WMMA_K: Int,
 ](TrivialRegisterPassable):
+    """
+    Computes the shared-memory layout and byte offsets for MMA operand tiles, bridging typed tile layouts to legacy MMA descriptors.
+
+    Parameters:
+        dtype: The element type of the operand tile.
+        BMN: The non-K dimension of the operand tile in elements.
+        BK: The K dimension of the operand tile in elements.
+        swizzle: The shared-memory swizzle mode applied to the operand layout.
+        is_k_major: Whether the operand is stored K-major versus M/N-major.
+        WMMA_MN: The M or N dimension of a single warp-level MMA tile.
+        WMMA_K: The K dimension of a single warp-level MMA tile.
+    """
+
     # Use typed layouts as source of truth; bridge to legacy Layout for
     # LayoutTensor and MMA descriptor pipeline.
     comptime layout = tile_layout_k_major_typed[
@@ -202,6 +244,10 @@ struct MMAOperandOffsetFn[
 
 
 trait DescriptorPair(TrivialRegisterPassable):
+    """
+    Provides access to the A and B operand descriptors for a shared-shared (SS) UMMA operation.
+    """
+
     comptime a_t: MMAOperandDescriptor
     comptime b_t: MMAOperandDescriptor
 
@@ -215,6 +261,10 @@ trait DescriptorPair(TrivialRegisterPassable):
 
 
 trait WriteableMMAOperandDescriptor(TrivialRegisterPassable):
+    """
+    Describes an MMA operand whose source data can be written from a local LayoutTensor into the operand's backing store (e.g. tensor memory).
+    """
+
     @always_inline
     def copy_from[
         src_type: DType, src_layout: Layout, src_element_layout: Layout, //
@@ -232,6 +282,10 @@ trait WriteableMMAOperandDescriptor(TrivialRegisterPassable):
 
 
 trait DescriptorPairTS(TrivialRegisterPassable):
+    """
+    Provides access to the A (tensor-memory) and B (shared-memory) operand descriptors for a tensor-shared (TS) UMMA operation.
+    """
+
     comptime a_t: WriteableMMAOperandDescriptor
     comptime b_t: MMAOperandDescriptor
 
@@ -255,10 +309,22 @@ def local_tensor_type[
         element_layout=element_layout,
     ]
 ):
+    """
+    Returns an uninitialized local-address-space LayoutTensor used for compile-time type inference of register tiles.
+
+    Parameters:
+        dtype: The element type of the inferred `LayoutTensor`.
+        layout: The outer layout of the inferred `LayoutTensor`.
+        element_layout: The element layout of the inferred `LayoutTensor`.
+    """
     dummy_arg = {None}
 
 
 trait AccumulatorTile(TrivialRegisterPassable):
+    """
+    Describes a UMMA accumulator tile that can be allocated, copied to and from, and viewed as rows of fragments.
+    """
+
     comptime dtype: DType
     comptime element_layout: Layout
     comptime vec_output_layout: Layout
@@ -313,6 +379,13 @@ trait AccumulatorTile(TrivialRegisterPassable):
 struct UMMADescriptorSS[operand_type: DType](
     DescriptorPair, TrivialRegisterPassable
 ):
+    """
+    Holds two shared-memory descriptors for the A and B operands of a shared-shared (SS) UMMA.
+
+    Parameters:
+        operand_type: The element type of the A and B operands.
+    """
+
     comptime operand_t = Self.operand_type
     comptime a_t = MMASmemDescriptor
     comptime b_t = MMASmemDescriptor
@@ -357,6 +430,18 @@ struct TMemAccumulator[
     num_n_mmas: Int,
     num_softmax_threads: Int,
 ](AccumulatorTile, TrivialRegisterPassable):
+    """
+    Implements an `AccumulatorTile` backed by tensor memory (TMEM), storing UMMA results at a given TMEM address.
+
+    Parameters:
+        dtype_: The element type of the accumulator tile.
+        MMA_M: The M dimension of a single UMMA instruction tile.
+        MMA_N: The N dimension of a single UMMA instruction tile.
+        num_m_mmas: Number of UMMA tiles along the M dimension.
+        num_n_mmas: Number of UMMA tiles along the N dimension.
+        num_softmax_threads: Number of threads in the consumer warp group.
+    """
+
     comptime dtype: DType = Self.dtype_
     comptime layout_t = RegisterAccumulatorLayout[
         Self.MMA_M,
@@ -613,6 +698,19 @@ struct TMemOperand[
     MMA_K: Int,
     num_softmax_threads: Int,
 ](TrivialRegisterPassable, WriteableMMAOperandDescriptor):
+    """
+    Implements a `WriteableMMAOperandDescriptor` backed by tensor memory (TMEM), used as the A operand of a tensor-shared (TS) UMMA.
+
+    Parameters:
+        dtype: The element type of the operand tile.
+        num_m_mmas: Number of UMMA tiles along the M dimension.
+        num_n_mmas: Number of UMMA tiles along the N dimension.
+        MMA_M: The M dimension of a single UMMA instruction tile.
+        MMA_N: The N dimension of a single UMMA instruction tile.
+        MMA_K: The K dimension of a single UMMA instruction tile.
+        num_softmax_threads: Number of threads in the consumer warp group.
+    """
+
     var tmem_addr: UInt32
 
     comptime reg_layout = RegisterAccumulatorLayout[
@@ -643,7 +741,7 @@ struct TMemOperand[
             return self.tmem_addr
         else:
             comptime linear = _tmem_offset[
-                DType.bfloat16, MMA_N=Self.MMA_K, m_mma=m_mma, n_mma=k_mma
+                Self.dtype, MMA_N=Self.MMA_K, m_mma=m_mma, n_mma=k_mma
             ]()
             return self.tmem_addr + UInt32(linear)
 
@@ -680,7 +778,11 @@ struct TMemOperand[
         # 16 x 256b results in repeated 8x4<1xN> pattern, where
         comptime N = 32 // (4 * src_size)
         comptime bytes = 4 * dst_size * N
-        comptime bits = 8 * bytes
+        # For fp8, the tcgen05.mma.kind::f8f6f4 reader expects K laid
+        # out in 8-col groups (MMA_K=32 fp8 = 8 32-bit cols = 256 bits),
+        # so use bits=256 with repeat=4 for frag_size_b32=16. bf16 keeps
+        # the natural bits=128 (2 cols/repeat, 16 repeats).
+        comptime bits = 256 if Self.dtype.is_float8() else 8 * bytes
         # e.g., N = 2 for fp32
         #
         # each repetition thus loads 8 columns
@@ -719,8 +821,85 @@ struct TMemOperand[
                 uninitialized=True
             )
 
-            comptime for _i in range(frag_size_b32):
-                frag_st2[_i] = frag[_i]
+            comptime if Self.dtype.is_float8():
+                # The SS-D fragment per thread (output of Q@K^T MMA) puts
+                # each 4-lane group at a 2x2 (M, N) block. For fp8 with
+                # 1 u32 = 4 fp8, the TS MMA (kind::f8f6f4) reader expects
+                # 4 K-consecutive fp8 in ONE M-row per u32. The two layouts
+                # disagree at thread-granularity: the data we need also
+                # lives in OTHER threads' registers. Redistribute via
+                # warp shuffles.
+                # 1. Each thread iterates s_dst over its 16 destination u32 slots.
+                # 2. For each slot, identifies which (M, K) quartet it owns in TS A layout via mma_n_tile, k_lo_half, m_local_src.
+                # 3. Uses warp.shuffle_idx to pull u32 values from two peer lanes in the same lane_row (the SS-D layout puts the K-cells we want on different lane_cols of the same row).
+                # 4. Picks the m_local_src-th u16 half of each of the two received u32s and concatenates them as the destination u32 (the SIMD half-word concat we just refactored to).
+
+                # Warp grid is 8 lane_rows x 4 lane_cols (32 lanes total).
+                comptime lane_cols_per_row = 4
+                # SS-D M-pair: each thread owns 2 M positions
+                # {lane_row, lane_row + 8} in its own registers.
+                comptime m_per_pair = 2
+                # TS A packs a K-quartet (4 fp8) per u32. We assemble it
+                # from a low half (K, K+1) and a high half (K+2, K+3),
+                # each sourced from a distinct peer lane.
+                comptime k_halves_per_n_tile = 2
+                comptime lane_cols_per_k_half = (
+                    lane_cols_per_row // k_halves_per_n_tile  # = 2
+                )
+                # 4 destination u32 slots per N-tile = the (M, K-half)
+                # outer product across the M-pair and the two K-halves.
+                comptime dst_slots_per_n_tile = (
+                    m_per_pair * k_halves_per_n_tile
+                )
+                # Source SS-D layout also packs 4 u32 slots per N-tile:
+                # the 4 lane_cols of one lane_row each contribute one slot.
+                comptime src_slots_per_n_tile = lane_cols_per_row
+
+                var lane_row_ui = UInt32(lane_id()) // lane_cols_per_row
+                var lane_col_ui = UInt32(lane_id()) % lane_cols_per_row
+
+                comptime for s_dst in range(frag_size_b32):
+                    comptime mma_n_tile = s_dst // dst_slots_per_n_tile
+                    comptime k_lo_half = s_dst % k_halves_per_n_tile
+                    comptime m_local_src = (
+                        s_dst // k_halves_per_n_tile
+                    ) % m_per_pair
+
+                    var l_src = lane_row_ui
+                    var src_lane_a = l_src * lane_cols_per_row + UInt32(
+                        k_lo_half * lane_cols_per_k_half
+                    )
+                    var src_lane_b = src_lane_a + 1
+                    var received_a: Scalar[DType.uint32] = 0
+                    var received_b: Scalar[DType.uint32] = 0
+                    # Each lane_col publishes a different slot of a_frag;
+                    # only the iteration matching this thread's lane_col
+                    # contributes to its output u32.
+                    comptime for c_val in range(src_slots_per_n_tile):
+                        comptime publisher_slot = (
+                            mma_n_tile * src_slots_per_n_tile + c_val
+                        )
+                        var val: Scalar[DType.uint32] = frag[publisher_slot]
+                        var ra = warp.shuffle_idx(val, src_lane_a)
+                        var rb = warp.shuffle_idx(val, src_lane_b)
+                        if lane_col_ui == UInt32(c_val):
+                            received_a = ra
+                            received_b = rb
+
+                    comptime which_half = Int(m_local_src)
+                    var ab_halves = bitcast[DType.uint16, 4](
+                        SIMD[DType.uint32, 2](received_a, received_b)
+                    )
+                    # ab_halves = [a_lo, a_hi, b_lo, b_hi]
+                    var packed = SIMD[DType.uint16, 2](
+                        ab_halves[which_half],
+                        ab_halves[which_half + 2],
+                    )
+                    frag_st2[s_dst] = bitcast[DType.uint32, 1](packed)
+            else:
+                comptime for _i in range(frag_size_b32):
+                    frag_st2[_i] = frag[_i]
+
             tcgen05_st[
                 datapaths=16,  # first dimension of the shape
                 bits=bits,  # second dimension of the shape
@@ -805,6 +984,19 @@ struct UMMADescriptorTS[
     MMA_K: Int,
     consumer_group_size: Int,
 ](DescriptorPairTS, TrivialRegisterPassable):
+    """
+    Pairs a TMEM A-operand descriptor with a shared-memory B-operand descriptor for a tensor-shared (TS) UMMA.
+
+    Parameters:
+        operand_type: The element type of the A and B operands.
+        num_m_mmas: Number of UMMA tiles along the M dimension.
+        num_n_mmas: Number of UMMA tiles along the N dimension.
+        MMA_M: The M dimension of a single UMMA instruction tile.
+        MMA_N: The N dimension of a single UMMA instruction tile.
+        MMA_K: The K dimension of a single UMMA instruction tile.
+        consumer_group_size: Number of threads in the consumer warp group.
+    """
+
     comptime operand_t = Self.operand_type
     comptime a_t = TMemOperand[
         Self.operand_type,
@@ -851,10 +1043,37 @@ struct SM100TensorAccumulatorSS[
     cta_group: Int = 1,
     pipeline_stages: Int = 1,
 ](TrivialRegisterPassable):
+    """
+    Manages a shared-shared (SS) UMMA accumulator pipeline for SM100, coordinating MMA, TMEM, and barrier synchronization between producer and consumer warps.
+
+    Parameters:
+        operand_type: The element type of the A and B operands.
+        accum_type: The element type of the accumulator.
+        MMA_M: The M dimension of a single UMMA instruction tile.
+        MMA_N: The N dimension of a single UMMA instruction tile.
+        BM: The M dimension of the accumulator block tile in elements.
+        BN: The N dimension of the accumulator block tile in elements.
+        BK: The K dimension of the operand block tile in elements.
+        compute_BK: The K dimension used for the compute loop in elements.
+        num_softmax_threads: Number of threads in the softmax consumer warp group.
+        swizzle_a: The shared-memory swizzle mode for the A operand
+            (defaults to `SWIZZLE_128B`).
+        swizzle_b: The shared-memory swizzle mode for the B operand
+            (defaults to `SWIZZLE_128B`).
+        transpose_b: Whether the B operand is stored transposed
+            (defaults to `True`).
+        cta_group: The CTA group index used to dispatch the MMA (defaults to 1).
+        pipeline_stages: Number of double-buffered pipeline stages
+            (defaults to 1).
+    """
+
     comptime operand_t: DType = Self.operand_type
     comptime accum_t: DType = Self.accum_type
 
-    comptime MMA_K = 16
+    comptime MMA_K = 16 if Self.operand_t.is_half_float() else 32
+    comptime mma_kind = (
+        UMMAKind.KIND_F8F6F4 if Self.operand_t.is_float8() else UMMAKind.KIND_F16
+    )
 
     comptime num_m_mmas = Self.BM // Self.MMA_M
     comptime num_n_mmas = Self.BN // Self.MMA_N
@@ -887,7 +1106,7 @@ struct SM100TensorAccumulatorSS[
         Self.MMA_K,
     ]()
 
-    comptime idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    comptime idesc = UMMAInsDescriptor[Self.mma_kind].create[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
@@ -907,6 +1126,7 @@ struct SM100TensorAccumulatorSS[
         Self.num_softmax_threads,
     ]
 
+    @__allow_legacy_any_origin_fields
     var mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
@@ -1055,6 +1275,9 @@ struct SM100TensorAccumulatorSS[
     def wait_for_mma(self, c_base: Self.c_t) -> Self.c_t:
         """
         Wait for the accumulator tmem to finish being read.
+
+        Args:
+            c_base: The accumulator tile base indexed by pipeline stage.
         """
         var idx: UInt32 = self.pipeline.index()
         self.mbar[idx].wait(self.pipeline.phase())
@@ -1089,10 +1312,34 @@ struct SM100TensorAccumulatorTS[
     transpose_b: Bool = True,
     cta_group: Int = 1,
 ](TrivialRegisterPassable):
+    """
+    Manages a tensor-shared (TS) UMMA accumulator pipeline for SM100, coordinating MMA between a TMEM A-operand and a shared-memory B-operand.
+
+    Parameters:
+        operand_type: The element type of the A and B operands.
+        accum_type: The element type of the accumulator.
+        MMA_M: The M dimension of a single UMMA instruction tile.
+        MMA_N: The N dimension of a single UMMA instruction tile.
+        BM: The M dimension of the accumulator block tile in elements.
+        BN: The N dimension of the accumulator block tile in elements.
+        BK: The K dimension of the operand block tile in elements.
+        num_softmax_threads: Number of threads in the softmax consumer warp
+            group.
+        swizzle_b: The shared-memory swizzle mode for the B operand
+            (defaults to `SWIZZLE_128B`).
+        transpose_b: Whether the B operand is stored transposed
+            (defaults to `True`).
+        cta_group: The CTA group index used to dispatch the MMA
+            (defaults to 1).
+    """
+
     comptime operand_t: DType = Self.operand_type
     comptime accum_t: DType = Self.accum_type
 
-    comptime MMA_K = 16
+    comptime MMA_K = 16 if Self.operand_t.is_half_float() else 32
+    comptime mma_kind = (
+        UMMAKind.KIND_F8F6F4 if Self.operand_t.is_float8() else UMMAKind.KIND_F16
+    )
     comptime smem_ptr_t = UnsafePointer[
         Scalar[Self.operand_t],
         MutAnyOrigin,
@@ -1135,7 +1382,7 @@ struct SM100TensorAccumulatorTS[
         Self.num_softmax_threads,
     ]
 
-    comptime idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    comptime idesc = UMMAInsDescriptor[Self.mma_kind].create[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
@@ -1143,6 +1390,7 @@ struct SM100TensorAccumulatorTS[
         transpose_b=Self.transpose_b,
     ]()
 
+    @__allow_legacy_any_origin_fields
     var mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
@@ -1312,6 +1560,46 @@ def mha_sm100_dispatch[
     ctx: DeviceContext,
     sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
 ) raises:
+    """
+    Dispatches single-query (decode) multi-head attention to the SM100 kernel, selecting TMA tiles, scheduler, and partition configuration.
+
+    Parameters:
+        q_type: The element type of the query tensor.
+        KVType: The operand type describing the key and value memory
+            layout (for example, paged or ragged).
+        MaskType: The mask type applied to the attention scores.
+        output_type: The element type of the output tensor.
+        MaxPromptLenType: The type representing the maximum prompt
+            length, which may be statically or dynamically known.
+        PartitionType: The scheme for partitioning work across CTAs.
+        config: The MHA configuration holding tile sizes, depth, and head
+            count.
+        group: The group-query attention group size, equal to the number
+            of query heads sharing each KV head.
+        ragged: Whether the input sequences have variable lengths.
+        sink: Whether attention sink weights are applied.
+        _is_cache_length_accurate: Whether the reported cache length is
+            exact, affecting position computation.
+
+    Args:
+        output: The output buffer for the attention results.
+        q_arg: The query tensor buffer.
+        k: The key operand, with layout described by `KVType`.
+        v: The value operand, with layout described by `KVType`.
+        num_rows_q: Number of query rows in the batch.
+        mask: The attention mask instance.
+        valid_length: The per-sequence valid length buffer.
+        max_prompt_len_arg: The maximum prompt length across the batch.
+        max_cache_valid_length_arg: The maximum valid cache length.
+        scale: The scaling factor applied to the query-key dot product.
+        kv_input_row_offsets: Optional row offsets into the KV input.
+            for ragged layouts.
+        batch_size_arg: The number of sequences in the batch.
+        partition: The partition descriptor for splitting work across
+            CTAs.
+        ctx: The device context used to launch the kernel.
+        sink_weights: Optional sink weights for attention sinks.
+    """
     comptime assert _is_decoding[MaxPromptLenType](), "mha_1q is decode-only"
     comptime new_config = MHAConfig[config.dtype](
         config.num_heads,
@@ -1352,7 +1640,9 @@ def mha_sm100_dispatch[
 
     comptime num_scheduler_heads = config.num_heads // group
     comptime scheduler_tile_shape = 1
-    comptime swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
+    comptime swizzle_mode = (
+        TensorMapSwizzle.SWIZZLE_64B if config.dtype.is_float8() else TensorMapSwizzle.SWIZZLE_128B
+    )
     q_tma_op = rebind[
         QTMATile[
             KVType.dtype,
@@ -1799,7 +2089,10 @@ def _mha_sm100_enqueue[
         partition,
     }
 
-    var block_x: UInt32 = partition.num_partitions()
+    # Launch the num_keys-independent upper bound so the grid shape is stable
+    # across num_keys (one CUDA graph per batch size). CTAs with partition
+    # index >= partition.num_partitions() early-return in the kernel.
+    var block_x: UInt32 = partition.max_num_partitions()
 
     comptime max_tmem_cols = 512
     comptime BN = config.block_n()
@@ -1818,9 +2111,23 @@ def _mha_sm100_enqueue[
     comptime p_smem_bytes = BM_enq * BN * size_of[
         config.dtype
     ]() if use_p_smem else 0
+    # The q_smem region is repurposed as the output tile in `write_output`
+    # (bitcast to output_type), so it must hold the wider of the two roles.
+    # We require output_type to be at least as wide as the KV/Q element
+    # type so the byte delta below is non-negative; matched widths give 0.
+    # The kernel-side `q_smem_size` mirrors this allocation.
+    comptime assert size_of[output_type]() >= size_of[config.dtype](), (
+        "q_smem is bitcast to output_type in write_output; output_type"
+        " must be at least as wide as the KV/Q element type"
+    )
+    comptime q_extra_for_output_bytes = BM_enq * config.padded_depth * (
+        size_of[output_type]() - size_of[config.dtype]()
+    )
     # we add smem use for SharedMemBarrier synchronization
     # 2*8 for mma mbars
-    comptime extra_B200_smem = (2 * num_s + 3) * 8 + p_smem_bytes
+    comptime extra_B200_smem = (
+        (2 * num_s + 3) * 8 + p_smem_bytes + q_extra_for_output_bytes
+    )
     comptime smem_use = config.shared_mem_bytes[
         True, sm_90=True
     ]() + extra_B200_smem
@@ -1856,6 +2163,7 @@ def _mha_sm100_enqueue[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
         ),
+        attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
     )
 
 
@@ -1867,7 +2175,7 @@ def _mha_sm100_enqueue[
         Int32(config.num_threads[True]())
     )
 )
-@__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+@__llvm_metadata(`nvvm.minctasm`=SIMDLength(1))
 @__name(
     t"sm100_mha_1q_depth{config.depth}_{KVLUTType.dtype}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
 )
@@ -1925,7 +2233,7 @@ def _mha_sm100[
 
     The general data layout and steps conform to flash attention. Two exceptions:
 
-    1 Partition across B, H, and num_keys (TODO).  The last one is split-K and
+    1 Partition across B, H, and num_keys (TODO). The last one is split-K and
       will need a separate reduction kernel at the end.
 
     2 First bmm becomes gemv and second bmm becomes gevm.
@@ -1954,7 +2262,7 @@ def _mha_sm100[
     comptime MMA_M: Int = 128 if (BM % 128) == 0 else 64
     comptime MMA_N0: Int = BN
     comptime MMA_N1: Int = config.padded_depth
-    comptime MMA_K: Int = 16
+    comptime MMA_K: Int = 16 if kv_type.is_half_float() else 32
     # comptime WM = BM // num_softmax_warps
     # comptime WN = BN
     # comptime num_m_mmas = BM // MMA_M  # WM // MMA_M
@@ -2012,6 +2320,22 @@ def _mha_sm100[
     comptime assert (
         accum_type.is_floating_point()
     ), "accum_type must be floating point"
+
+    # Fixed P scale of 256 (= 2^8) for FP8-QKV only. The
+    # un-normalized softmax probabilities P sit in the e4m3 subnormal floor;
+    # lifting them by 256 before the fp8 cast that feeds the P@V MMA reduces
+    # PV-GEMM quantization error. P is produced by the SHARED
+    # `_rowmax_online_softmax`/`_rowsum` helpers (also used by bf16/MLA), so
+    # rather than bias those we scale `p_reg_tile` by 256 in-place right after
+    # each rowmax-exp (fp8-guarded). `_rowsum` then reads the scaled P, and the
+    # sink_contribution is scaled to match, so numerator (stored P, P@V) and
+    # denominator (row_sum + sink) stay in the same 256x scale and cancel
+    # through the final 1/row_sum normalize. Overflow-safe: max P after
+    # row-max subtraction = exp2(0)*256 = 256 < 448 (e4m3 max). The scale is
+    # applied ONLY inside `comptime if kv_type.is_float8()` branches below, so
+    # the bf16 codegen is byte-identical (a `* 1.0` would otherwise survive as
+    # a real fmul).
+    comptime p_fp8_scale: Scalar[accum_type] = 256.0
     comptime max_tmem_cols = 512
     # When P can't fit alongside O in one TMEM bank, store P in SMEM
     # and use SS MMA for UMMA1 (P@V). S and O go in separate TMEM banks.
@@ -2029,7 +2353,7 @@ def _mha_sm100[
         BM=BM,  # 128
         BN=BN,  # BN
         BK=BK,  # depth
-        compute_BK=align_up(depth, 16),
+        compute_BK=align_up(depth, MMA_K),
         num_softmax_threads=num_softmax_threads,
         swizzle_a=swizzle_mode,
         swizzle_b=swizzle_mode,
@@ -2063,7 +2387,7 @@ def _mha_sm100[
         BM=BM,
         BN=MMA_N1,  # depth (total output width)
         BK=BN,  # BN (inner dim = num keys per block)
-        compute_BK=align_up(BN, 16),
+        compute_BK=align_up(BN, MMA_K),
         num_softmax_threads=num_softmax_threads,
         swizzle_a=swizzle_mode,
         swizzle_b=swizzle_mode,
@@ -2082,7 +2406,17 @@ def _mha_sm100[
 
     # first umma is BM x BK @ BK x BN
     # The entire query block (BM x depth) is tiled in shared memory.
-    comptime q_smem_size = BM * padded_depth
+    # The same region is later reused as the output tile (write_output)
+    # via `q_smem.bitcast[output_type]`, so it must hold the wider of the
+    # two roles. We require output_type to be at least as wide as the KV/Q
+    # element type so the ratio below is >= 1; a future config violating
+    # this must extend the allocation (or stop bitcasting).
+    comptime assert size_of[output_type]() >= size_of[kv_type](), (
+        "q_smem is bitcast to output_type in write_output; output_type"
+        " must be at least as wide as the KV/Q element type"
+    )
+    comptime q_or_out_kv_elems = size_of[output_type]() // size_of[kv_type]()
+    comptime q_smem_size = BM * padded_depth * q_or_out_kv_elems
     q_smem = external_memory[
         Scalar[kv_type],
         address_space=AddressSpace.SHARED,
@@ -2222,10 +2556,10 @@ def _mha_sm100[
     produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
     producer_mbar_kv = produced_mbar_kv + pipeline_stages  # 16
     mma_mbar = producer_mbar_kv + pipeline_stages  # 16
-    umma_0 = UMMA0Type(mma_mbar)  # needs num_s
+    umma_0 = UMMA0Type(mma_mbar.as_unsafe_any_origin())  # needs num_s
     # umma_1: TS for non-use_p_smem, SS for use_p_smem (both use same barrier layout)
-    umma_1_ts = UMMA1Type(mma_mbar + 2 * num_s)
-    umma_1_ss = UMMA1TypeSS(mma_mbar + 2 * num_s)
+    umma_1_ts = UMMA1Type((mma_mbar + 2 * num_s).as_unsafe_any_origin())
+    umma_1_ss = UMMA1TypeSS((mma_mbar + 2 * num_s).as_unsafe_any_origin())
     # P SMEM consumption barrier: warp 1 arrives after SS MMA finishes
     # reading P from SMEM, softmax waits before overwriting P SMEM.
     ptr_tmem_addr = (mma_mbar + 2 * num_s + 2).bitcast[UInt32]()  # 8
@@ -2242,15 +2576,18 @@ def _mha_sm100[
     comptime num_softmax_regs = 224
 
     # constructing calls barrier() if static
+    # Use the launched (max) partition count so block_idx decodes into
+    # [0, max_num_partitions()); CTAs with index >= num_partitions() are
+    # over-launched and early-return below.
     var tile_summary = MHATileSummary[ValidLengthType](
         batch_size,
         ceildiv(max_seq_len.as_uint32(), UInt32(BM))
-        * partition.num_partitions(),
+        * partition.max_num_partitions(),
         valid_length,
         max_seq_len.as_uint32(),
     )
     var state: MHATileState = scheduler.initial_state(
-        ptr_tmem_addr + 2, tile_summary
+        (ptr_tmem_addr + 2).as_unsafe_any_origin(), tile_summary
     )
 
     # The persistent kernels limit the grid size.
@@ -2309,6 +2646,31 @@ def _mha_sm100[
     comptime assert num_s > 0
 
     barrier()
+
+    # Programmatic Dependent Launch. This barrier is the last point every CTA
+    # reaches before the warp-specialized `do_partition` early-returns below,
+    # so it is the divergence-free place to honor the launch-dependents
+    # contract for every CTA (a producer CTA that skipped it would hang a
+    # waiting consumer such as `mha_splitk_reduce`). `wait` overlaps this
+    # grid's prologue with its predecessor's tail; `launch` lets the dependent
+    # reduce grid be admitted early. No-op on non-SM90+ / when MHA_PDL=off.
+    comptime if MHA_PDL_LEVEL > PDLLevel.OFF:
+        wait_on_dependent_grids()
+        launch_dependent_grids()
+
+    # The grid is launched with `max_num_partitions()` CTAs per (head, batch) so
+    # its shape is independent of num_keys (one CUDA graph per batch size). The
+    # tail CTAs with index >= `num_partitions()` carry no keys: exit now — after
+    # honoring the PDL contract above, and before any TMEM allocation or
+    # exp_sum/qk_max/output write (so buffers need only `num_partitions()` slots).
+    # `prompt_offset` is decoded from block_idx, hence uniform across the CTA, so
+    # the whole CTA returns together and no warp is left waiting on a later
+    # `named_barrier`. Partitions below this bound that are empty due to BN
+    # alignment still take the writeback path below so the reducer sees them.
+    comptime if PartitionType.do_partition:
+        if position.prompt_offset >= partition.num_partitions():
+            return
+
     # For intra-warp overlap, we initiate ummas as
     # Q @ K_0, Q @ K_1, P_0 @ V_0, Q @ K_2, P_1 @ V_1, ...
     # ..., Q @ K_{N-1}, P_{N-2} @ V_{N-2}, P_{N-1} @ V_{N-1}
@@ -2365,7 +2727,9 @@ def _mha_sm100[
                 comptime assert tmem_cols <= max_tmem_cols
             tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
 
-            qk_desc = UMMA0Type.mma_descriptors(q_smem, kv_smem)
+            qk_desc = UMMA0Type.mma_descriptors(
+                q_smem.as_unsafe_any_origin(), kv_smem.as_unsafe_any_origin()
+            )
 
             named_barrier[Int32(num_softmax_threads + 2 * WARP_SIZE)]()
             if tid != 0:
@@ -2374,13 +2738,13 @@ def _mha_sm100[
             k_desc = qk_desc.get_b()
             var tmem_addr: UInt32 = ptr_tmem_addr[0]
             var s_tmem: UInt32
-            var o_tmem: UInt32
+            # var o_tmem: UInt32
             comptime if use_p_smem:
-                o_tmem = tmem_addr  # bank 0
+                # o_tmem = tmem_addr  # bank 0
                 s_tmem = tmem_addr + UInt32(1 << 20)  # bank 1
             else:
                 s_tmem = tmem_addr
-                o_tmem = tmem_addr + UInt32(MMA_N0 * num_s)
+                # o_tmem = tmem_addr + UInt32(MMA_N0 * num_s)
             s_accumulator = UMMA0Type.c_t(s_tmem)
 
             @parameter
@@ -2409,7 +2773,7 @@ def _mha_sm100[
                 kv_tile_start_row += UInt32(BN)
 
             kv_pipeline_states = PipelineState[pipeline_stages]()
-            s_pipeline_states = PipelineState[pipeline_stages]()
+            # s_pipeline_states = PipelineState[pipeline_stages]()
             q_mul_k(
                 kv_pipeline_states.index(),
                 kv_pipeline_states.phase(),
@@ -2452,9 +2816,9 @@ def _mha_sm100[
             named_barrier[Int32(num_softmax_threads + 2 * WARP_SIZE)]()
             var tmem_addr: UInt32 = ptr_tmem_addr[0]
             if tid == 32:
-                var s_tmem: UInt32
-                var o_tmem: UInt32
-                var p_tmem: UInt32
+                var s_tmem: UInt32 = 0
+                var o_tmem: UInt32 = 0
+                var p_tmem: UInt32 = 0
 
                 @parameter
                 @always_inline("nodebug")
@@ -2474,7 +2838,10 @@ def _mha_sm100[
                         output_accumulator = UMMA1Type.c_t(o_tmem)
                         s_tmem = tmem_addr + UInt32(1 << 20)  # bank 1
                         # SS MMA: both P and V from SMEM
-                        pv_descs = UMMA1TypeSS.mma_descriptors(p_smem, kv_smem)
+                        pv_descs = UMMA1TypeSS.mma_descriptors(
+                            p_smem.as_unsafe_any_origin(),
+                            kv_smem.as_unsafe_any_origin(),
+                        )
                         p_desc_a = pv_descs.get_a()
                         v_desc = pv_descs.get_b()
                         v = v_desc + Int(UInt32(offset_bytes_per) * read_idx)
@@ -2497,7 +2864,9 @@ def _mha_sm100[
                             tmem_addr + UInt32(MMA_N0 * num_s) + UInt32(MMA_N1)
                         )
                         p_desc = UMMA1Type.a_mma_descriptor(p_tmem)
-                        v_desc = UMMA1Type.b_mma_descriptor(kv_smem)
+                        v_desc = UMMA1Type.b_mma_descriptor(
+                            kv_smem.as_unsafe_any_origin()
+                        )
                         v = v_desc + Int(UInt32(offset_bytes_per) * read_idx)
                         umma_1_ts.wait_for_tmem()
                         produced_mbar_kv[read_idx].wait(read_phase)
@@ -2641,6 +3010,20 @@ def _mha_sm100[
 
         @parameter
         @always_inline
+        def scale_p_for_fp8():
+            # Apply the cuDNN-style 256x P scale in-place on p_reg_tile (fp8
+            # only; comptime-dead for bf16 where p_fp8_scale == 1.0). Called
+            # right after `_rowmax_online_softmax` exponentiates P and BEFORE
+            # `_rowsum`, so the row-sum sees the same 256x as the stored P.
+            comptime if kv_type.is_float8():
+                var vp = vectorize_p_reg_tile()
+                var s = SIMD[accum_type, element_layout.size()](p_fp8_scale)
+                comptime for row in range(num_rows_per_warp):
+                    comptime for col in range(num_cols_p):
+                        vp[row, col] = vp[row, col] * s
+
+        @parameter
+        @always_inline
         def apply_mask(
             position: PositionType,
             mask_status: TileMaskStatus,
@@ -2716,12 +3099,11 @@ def _mha_sm100[
             comptime assert (
                 output_type.is_half_float()
             ), "we don't support Float32 output"
-            comptime assert size_of[kv_type]() == size_of[output_type]()
+            comptime assert size_of[kv_type]() <= size_of[output_type]()
             comptime swizzle = make_swizzle[
                 num_rows=WM // 2, row_size=BN, access_size=8
             ]()
             # Reuse a_smem for c tile in smem
-            comptime q_tile_size: UInt32 = q_smem_size // 2
             accum_smem_tile = LayoutTensor[
                 output_type,
                 Layout.row_major(BM, config.padded_depth),
@@ -2748,15 +3130,16 @@ def _mha_sm100[
             # Vectorized copy from shared to global memory, during which every 2 FP32
             # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
             # vector and stored using 16B store instruction.
+            comptime out_simd_size = simd_width_of[output_type]()
             copy_sram_to_dram[
                 thread_layout=Layout.row_major(
-                    num_softmax_threads * simd_size // depth,
-                    depth // simd_size,
+                    num_softmax_threads * out_simd_size // depth,
+                    depth // out_simd_size,
                 ),
                 swizzle=swizzle,
             ](
-                output_gmem_tile.vectorize[1, simd_size](),
-                accum_smem_tile.vectorize[1, simd_size](),
+                output_gmem_tile.vectorize[1, out_simd_size](),
+                accum_smem_tile.vectorize[1, out_simd_size](),
             )
 
         comptime if PartitionType.do_partition:  # we may have an empty partition
@@ -2858,6 +3241,10 @@ def _mha_sm100[
 
         rowmax.copy_from(attention_rowmax)
 
+        # Lift P out of the e4m3 subnormal floor (fp8 only) before rowsum and
+        # the fp8 cast feeding P@V. See p_fp8_scale comment above.
+        scale_p_for_fp8()
+
         comptime assert p_vec_output_layout.size() > 0, "layout: " + String(
             p_vec_output_layout
         )
@@ -2876,7 +3263,16 @@ def _mha_sm100[
                 var sink_weight = (
                     sink_weights_ptr[head_idx].cast[accum_type]() * log2e
                 )
-                var sink_contribution = exp2(sink_weight - rowmax[i])
+                # Scale the sink mass to match the 256x-lifted P so it cancels
+                # through 1/row_sum. The `comptime if kv_type.is_float8()`
+                # keeps the bf16 sink expression byte-identical (no `* 1.0`).
+                var sink_contribution: type_of(exp2(sink_weight - rowmax[i]))
+                comptime if kv_type.is_float8():
+                    sink_contribution = (
+                        exp2(sink_weight - rowmax[i]) * p_fp8_scale
+                    )
+                else:
+                    sink_contribution = exp2(sink_weight - rowmax[i])
                 attention_rowsum[i] += sink_contribution[0]
 
         rowsum.copy_from(attention_rowsum)
@@ -2902,10 +3298,13 @@ def _mha_sm100[
             comptime if use_p_smem:
                 # Wait for warp 1's SS MMA to finish reading P from SMEM
                 # before we overwrite it.
-                # Write P from FP32 registers to BF16 SMEM for SS MMA
-                comptime p_swizzle = make_swizzle[
-                    num_rows=WM // 2, row_size=MMA_N0, access_size=8
-                ]()
+                comptime p_swizzle = (
+                    make_swizzle[
+                        kv_type, TensorMapSwizzle.SWIZZLE_64B
+                    ]() if kv_type.is_float8() else make_swizzle[
+                        num_rows=WM // 2, row_size=MMA_N0, access_size=8
+                    ]()
+                )
                 p_smem_tile = LayoutTensor[
                     kv_type,
                     Layout.row_major(BM, MMA_N0),
@@ -2948,6 +3347,12 @@ def _mha_sm100[
                 1, mma_thread_layout, use_exp2=True
             ](vectorize_p_reg_tile(), rowmax, False)
 
+            # Lift this iteration's P by 256x (fp8 only) before its rowsum and
+            # the fp8 cast feeding P@V, matching the initial tile. The running
+            # `rowsum` accumulates these 256x-scaled per-tile sums, and the
+            # 256x P@V output is normalized by 1/rowsum -> exact cancel.
+            scale_p_for_fp8()
+
             score_frag_rowmax = current_rowmax
             score_frag_rowsum = rebind[type_of(rowsum)](
                 _rowsum[mma_thread_layout](vectorize_p_reg_tile())
@@ -2969,10 +3374,13 @@ def _mha_sm100[
         # Final P write
         comptime if use_p_smem:
             # Wait for warp 1's SS MMA to finish reading P from SMEM
-            # before we overwrite it.
-            comptime p_swizzle = make_swizzle[
-                num_rows=WM // 2, row_size=MMA_N0, access_size=8
-            ]()
+            comptime p_swizzle = (
+                make_swizzle[
+                    kv_type, TensorMapSwizzle.SWIZZLE_64B
+                ]() if kv_type.is_float8() else make_swizzle[
+                    num_rows=WM // 2, row_size=MMA_N0, access_size=8
+                ]()
+            )
             p_smem_tile = LayoutTensor[
                 kv_type,
                 Layout.row_major(BM, MMA_N0),

@@ -34,8 +34,11 @@ The state is consumed at iteration boundaries:
     pinned memory and drop the flag to ``1`` so the first replay's wait
     node passes immediately.
 
-The pinned/device bitmask buffers carry ``bool`` data (not packed
-int32) -- the in-graph unpack step from the prior design is removed.
+The pinned/device bitmask buffers carry packed ``int32`` data (1 bit per
+token, 32 tokens per word). The host callback never unpacks; the GPU
+acceptance sampler unpacks and applies the mask to logits in one fused pass
+(``apply_packed_bitmask``), so no bool tensor is ever materialized and the
+in-graph H2D moves 8x less data than a bool representation.
 """
 
 from __future__ import annotations
@@ -52,6 +55,7 @@ from max.driver import (
     DevicePinnedBuffer,
 )
 from max.dtype import DType
+from max.support.math import ceildiv
 
 
 class StructuredOutputOverlapState:
@@ -64,33 +68,6 @@ class StructuredOutputOverlapState:
 
     The class is intentionally decoupled from :class:`SpecDecodeState`
     and the architecture graph builders.
-
-    Attributes:
-        device: The accelerator the model graph runs on.
-        cpu: The host CPU device whose AsyncRT worker pool will
-            execute callbacks dispatched via
-            :meth:`enqueue_async_callback`.
-        bitmask_flag: The 64-bit device-mapped pinned flag the
-            callback signals. Single process-lifetime flag.
-        wait_payload: A CPU-resident ``int64[2]`` buffer holding
-            ``[bitmask_flag._unsafe_ptr, 1]``. This is the payload
-            consumed by the in-graph ``mo.wait_host_value_with_dep``
-            op. Allocated once; contents written once at construction.
-        pinned_bitmask: Single persistent ``bool[max_batch_size,
-            num_positions, vocab_size]`` pinned buffer. The AsyncRT
-            worker writes into this buffer's pinned host backing
-            store and the in-graph wait gates the captured H2D on the
-            worker's release-store of the flag, so writer and reader
-            cannot race even though they share storage.
-        device_bitmask_scratch: A device-resident bool buffer with
-            the same shape as :attr:`pinned_bitmask`. Destination of
-            the in-graph H2D; consumed by the acceptance sampler. A
-            single scratch is safe because the model stream is FIFO:
-            sampler reads serialise with the next-iter H2D write.
-        max_batch_size: Configured batch capacity.
-        num_positions: Per-batch positions written per iteration
-            (typically ``num_speculative_tokens + 1`` for spec-decode).
-        vocab_size: Tokenizer vocabulary width.
     """
 
     def __init__(
@@ -126,12 +103,24 @@ class StructuredOutputOverlapState:
             )
 
         self.device: Device = device
+        """The accelerator the model graph runs on."""
         self.cpu: CPU = cpu
+        """The host CPU device whose AsyncRT worker pool will execute callbacks dispatched via :meth:`enqueue_async_callback`."""
         self.max_batch_size: int = max_batch_size
+        """Configured batch capacity."""
         self.num_positions: int = num_positions
+        """Per-batch positions written per iteration (typically ``num_speculative_tokens + 1`` for spec-decode)."""
         self.vocab_size: int = vocab_size
+        """Tokenizer vocabulary width."""
+        # The bitmask is stored packed: 1 bit per token, 32 tokens per int32
+        # word. The GPU acceptance sampler unpacks and applies it in one fused
+        # pass (apply_packed_bitmask), so the host callback never unpacks and
+        # the in-graph H2D moves 8x less data than a bool representation.
+        self.packed_vocab_size: int = ceildiv(vocab_size, 32)
+        """Packed bitmask width: ``ceil(vocab_size / 32)`` int32 words."""
 
         self.bitmask_flag: CompletionFlag = CompletionFlag(device)
+        """The 64-bit device-mapped pinned flag the callback signals. Single process-lifetime flag."""
 
         # Payload consumed by the in-graph `mo.wait_host_value_with_dep`
         # op. Contract: CPU int64[2] = [flag._unsafe_ptr,
@@ -145,21 +134,24 @@ class StructuredOutputOverlapState:
             shape=(2,),
             device=device,
         )
+        """A CPU-resident ``int64[2]`` buffer holding ``[bitmask_flag._unsafe_ptr, 1]``. This is the payload consumed by the in-graph ``mo.wait_host_value_with_dep`` op. Allocated once; contents written once at construction."""
         payload_np = self.wait_payload.to_numpy()
         payload_np[0] = self.bitmask_flag._unsafe_ptr
         payload_np[1] = 1
 
-        shape = (max_batch_size, num_positions, vocab_size)
+        shape = (max_batch_size, num_positions, self.packed_vocab_size)
         self.pinned_bitmask: DevicePinnedBuffer = DevicePinnedBuffer(
-            dtype=DType.bool,
+            dtype=DType.int32,
             shape=shape,
             device=device,
         )
+        """Single persistent packed ``int32[max_batch_size, num_positions, packed_vocab_size]`` pinned buffer (1 bit per token, 32 tokens per word). The AsyncRT worker writes into this buffer's pinned host backing store and the in-graph wait gates the captured H2D on the worker's release-store of the flag, so writer and reader cannot race even though they share storage."""
         self.device_bitmask_scratch: Buffer = Buffer(
-            dtype=DType.bool,
+            dtype=DType.int32,
             shape=shape,
             device=device,
         )
+        """A device-resident packed ``int32`` buffer with the same shape as :attr:`pinned_bitmask`. Destination of the in-graph H2D; the acceptance sampler unpacks and applies it in one fused pass (``apply_packed_bitmask``), so no bool tensor is ever materialized. A single scratch is safe because the model stream is FIFO: sampler reads serialise with the next-iter H2D write."""
 
         # Cache of (batch_size, num_positions) -> view of pinned_bitmask
         # / device_bitmask_scratch. Populated lazily by
@@ -183,12 +175,16 @@ class StructuredOutputOverlapState:
     def max_bitmask_shape(self) -> tuple[int, int, int]:
         """Returns the persistent buffer's max shape.
 
-        ``(max_batch_size, num_positions, vocab_size)``. Per-iteration
+        ``(max_batch_size, num_positions, packed_vocab_size)``. Per-iteration
         writes only fill the leading ``(batch_size, num_positions,
-        vocab_size)`` rectangle; this property is the storage
+        packed_vocab_size)`` rectangle; this property is the storage
         capacity, not the runtime shape.
         """
-        return (self.max_batch_size, self.num_positions, self.vocab_size)
+        return (
+            self.max_batch_size,
+            self.num_positions,
+            self.packed_vocab_size,
+        )
 
     def get_input_views(
         self, batch_size: int, num_positions: int
@@ -238,13 +234,13 @@ class StructuredOutputOverlapState:
         cached = self._input_view_cache.get(key)
         if cached is not None:
             return cached
-        num_elements = batch_size * num_positions * self.vocab_size
+        num_elements = batch_size * num_positions * self.packed_vocab_size
         pinned_flat = self.pinned_bitmask.view(
             self.pinned_bitmask.dtype, (self.pinned_bitmask.num_elements,)
         )
         pinned_view = pinned_flat[:num_elements].view(
             self.pinned_bitmask.dtype,
-            (batch_size, num_positions, self.vocab_size),
+            (batch_size, num_positions, self.packed_vocab_size),
         )
         scratch_flat = self.device_bitmask_scratch.view(
             self.device_bitmask_scratch.dtype,
@@ -252,7 +248,7 @@ class StructuredOutputOverlapState:
         )
         scratch_view = scratch_flat[:num_elements].view(
             self.device_bitmask_scratch.dtype,
-            (batch_size, num_positions, self.vocab_size),
+            (batch_size, num_positions, self.packed_vocab_size),
         )
         self._input_view_cache[key] = (pinned_view, scratch_view)
         return pinned_view, scratch_view
@@ -275,10 +271,10 @@ class StructuredOutputOverlapState:
             row layout.
 
         Args:
-            bitmask: A boolean numpy array shaped
-                ``(batch, self.num_positions, self.vocab_size)`` with
+            bitmask: A packed ``int32`` numpy array shaped
+                ``(batch, self.num_positions, self.packed_vocab_size)`` with
                 ``1 <= batch <= max_batch_size``. The trailing
-                ``num_positions`` and ``vocab_size`` axes must match
+                ``num_positions`` and ``packed_vocab_size`` axes must match
                 state exactly so the in-graph wait reads consistent
                 rows regardless of which slot was used at warmup
                 capture. The graph only reads the leading ``batch``
@@ -288,17 +284,17 @@ class StructuredOutputOverlapState:
         Raises:
             ValueError: If ``bitmask`` has the wrong rank, an
                 out-of-bounds batch dim, a mismatched ``num_positions``
-                or ``vocab_size`` dim, or a non-bool dtype.
+                or ``packed_vocab_size`` dim, or a non-int32 dtype.
         """
-        if bitmask.dtype != np.bool_:
+        if bitmask.dtype != np.int32:
             raise ValueError(
-                f"prime() bitmask dtype {bitmask.dtype} is not bool"
+                f"prime() bitmask dtype {bitmask.dtype} is not int32"
             )
         if bitmask.ndim != 3:
             raise ValueError(
                 f"prime() expects a 3D bitmask, got shape {bitmask.shape}"
             )
-        batch, num_positions, vocab = bitmask.shape
+        batch, num_positions, packed_vocab = bitmask.shape
         if not (1 <= batch <= self.max_batch_size):
             raise ValueError(
                 f"prime() batch dim {batch} out of bounds "
@@ -314,10 +310,10 @@ class StructuredOutputOverlapState:
                 f"prime() num_positions {num_positions} must equal "
                 f"state.num_positions={self.num_positions}"
             )
-        if vocab != self.vocab_size:
+        if packed_vocab != self.packed_vocab_size:
             raise ValueError(
-                f"prime() vocab dim {vocab} does not match state "
-                f"vocab_size {self.vocab_size}"
+                f"prime() packed vocab dim {packed_vocab} does not match "
+                f"state packed_vocab_size {self.packed_vocab_size}"
             )
 
         pinned_view = self.pinned_bitmask.to_numpy()
