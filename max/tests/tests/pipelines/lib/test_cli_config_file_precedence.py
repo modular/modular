@@ -27,6 +27,7 @@ from max._entrypoints.cli.config import config_to_flag, pipeline_config_options
 from max.config import ConfigFileModel
 from max.config.config_file_model import _resolve_config_file
 from max.driver import DeviceSpec
+from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib import PipelineConfig
 from pydantic import Field
 from pytest import MonkeyPatch
@@ -255,6 +256,80 @@ def test_model_path_override_preserves_yaml_recipe_fields(
     assert len(main.device_specs) == 8
     assert main.data_parallel_degree == 2
     assert config.runtime.ep_size == 8
+
+
+def test_kv_cache_flag_preserves_yaml_recipe_kv_cache_fields(
+    tmp_path: Path,
+) -> None:
+    """A KV-cache CLI flag must merge into (not replace) a YAML-loaded
+    ``kv_cache``, preserving other recipe-set fields such as
+    ``device_memory_utilization``."""
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(
+        "model:\n"
+        "  model_path: fake/model\n"
+        "  kv_cache:\n"
+        "    device_memory_utilization: 0.8\n"
+        "    enable_dp_cross_replica_prefix_copy: false\n"
+        "    kv_connector: tiered\n",
+        encoding="utf-8",
+    )
+
+    config = PipelineConfig.from_flat_kwargs(
+        config_file=str(config_path),
+        kv_connector="local",
+        kv_connector_config={"host_kvcache_swap_space_gb": 1200},
+    )
+
+    kv = config.models["main"].kv_cache
+    # The CLI flags override the connector fields they name...
+    assert kv.kv_connector == KVConnectorType.local
+    assert kv.kv_connector_config is not None
+    assert kv.kv_connector_config.host_kvcache_swap_space_gb == 1200
+    # ...but the recipe's other kv_cache fields survive the override.
+    assert kv.device_memory_utilization == 0.8
+
+
+def test_kv_cache_flag_via_cli_preserves_config_file_fields(
+    tmp_path: Path,
+) -> None:
+    """Same as above, but through Click so the default-stripping step the
+    flat-kwargs path skips is exercised for the exact reported invocation."""
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(
+        "model:\n"
+        "  model_path: fake/model\n"
+        "  kv_cache:\n"
+        "    device_memory_utilization: 0.8\n"
+        "    enable_dp_cross_replica_prefix_copy: false\n"
+        "    kv_connector: tiered\n",
+        encoding="utf-8",
+    )
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs: Any) -> None:
+        kv = PipelineConfig.from_flat_kwargs(**kwargs).models["main"].kv_cache
+        assert kv.kv_connector is not None
+        click.echo(
+            f"{kv.kv_connector.value}|{kv.device_memory_utilization}"
+            f"|{kv.enable_dp_cross_replica_prefix_copy}"
+        )
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "--config-file",
+            str(config_path),
+            "--kv-connector",
+            "local",
+            "--kv-connector-config",
+            '{"host_kvcache_swap_space_gb": 1200}',
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # CLI overrides the connector; the recipe's other kv_cache fields survive.
+    assert result.output.strip() == "local|0.8|False"
 
 
 def test_model_path_override_warns_about_mismatched_recipe(

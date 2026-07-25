@@ -634,11 +634,16 @@ class PipelineConfig(ConfigFileModel):
                         **non_default_kwargs,
                     )
 
-        # Apply KV cache config to main model
+        # Merge CLI kv-cache flags onto the model's existing kv_cache (which
+        # may hold --config-file values) rather than replacing it: a fresh
+        # KVCacheConfig would reset unset fields to defaults, silently dropping
+        # the recipe's device_memory_utilization.
         if kv_cache_kwargs and "main" in self.models:
-            self.models = self.models.with_override(
-                "main", kv_cache=KVCacheConfig(**kv_cache_kwargs)
+            existing_kv = self.models["main"].kv_cache
+            merged_kv = KVCacheConfig(
+                **{**existing_kv.model_dump(), **kv_cache_kwargs}
             )
+            self.models = self.models.with_override("main", kv_cache=merged_kv)
 
         # Extract draft model kwargs and add via with_override
         draft_kwargs = PipelineConfig._extract_kwargs_for_config(
