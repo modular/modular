@@ -149,7 +149,7 @@ def sgemm_double_buffer[
 
     # Double buffer in registers (fragments in nvidia terms).
     comptime layout_a = Layout.row_major(TM)
-    var a_reg: InlineArray[
+    var a_reg: Array[
         LayoutTensor[
             a_type,
             layout_a,
@@ -172,7 +172,7 @@ def sgemm_double_buffer[
         ].stack_allocation(),
     ]
     comptime layout_b = Layout.row_major(TN)
-    var b_reg: InlineArray[
+    var b_reg: Array[
         LayoutTensor[
             b_type,
             layout_b,

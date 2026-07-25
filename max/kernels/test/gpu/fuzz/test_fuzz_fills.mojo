@@ -65,7 +65,7 @@ def test_boundary_int_hits_boundaries() raises:
 
 def test_fill_uniform_in_range() raises:
     seed(3)
-    var buf = InlineArray[Float32, 512](uninitialized=True)
+    var buf = Array[Float32, 512](uninitialized=True)
     var span = Span(buf)
     fill_uniform(span, -2.0, 3.0)
     for i in range(len(span)):
@@ -75,7 +75,7 @@ def test_fill_uniform_in_range() raises:
 
 
 def test_fill_all_equal() raises:
-    var buf = InlineArray[Float32, 64](uninitialized=True)
+    var buf = Array[Float32, 64](uninitialized=True)
     var span = Span(buf)
     fill_all_equal(span, 3.5)
     for i in range(len(span)):
@@ -84,7 +84,7 @@ def test_fill_all_equal() raises:
 
 def test_fill_sparse_mostly_zero() raises:
     seed(4)
-    var buf = InlineArray[Float32, 4096](uninitialized=True)
+    var buf = Array[Float32, 4096](uninitialized=True)
     var span = Span(buf)
     fill_sparse(span, density=0.05)
     var nonzero = 0
@@ -98,7 +98,7 @@ def test_fill_sparse_mostly_zero() raises:
 
 def test_fill_specials_injects_nan_and_inf() raises:
     seed(5)
-    var buf = InlineArray[Float32, 4096](uninitialized=True)
+    var buf = Array[Float32, 4096](uninitialized=True)
     var span = Span(buf)
     fill_with_specials(span, density=0.5)
     var has_nan = False
@@ -115,7 +115,7 @@ def test_fill_specials_injects_nan_and_inf() raises:
 def test_fill_by_dist_all_compile_and_run() raises:
     seed(6)
     for dist in range(NUM_VALUE_DISTS):
-        var buf = InlineArray[Float32, 128](uninitialized=True)
+        var buf = Array[Float32, 128](uninitialized=True)
         var span = Span(buf)
         fill_by_dist(span, dist)
         # Just exercising every dispatch arm; name lookup must not be empty.

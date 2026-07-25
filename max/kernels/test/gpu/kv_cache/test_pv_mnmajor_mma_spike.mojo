@@ -232,7 +232,7 @@ def pv_mma_kernel[
 
     comptime accum_type = get_accum_type[ab_type]()
     comptime c_frag_size = MMA_M * MMA_N // num_threads
-    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
+    var c_frag: Array[Scalar[accum_type], c_frag_size]
 
     comptime p_expected_bytes = p_size * size_of[ab_type]()
     comptime v_expected_bytes = v_size * size_of[ab_type]()

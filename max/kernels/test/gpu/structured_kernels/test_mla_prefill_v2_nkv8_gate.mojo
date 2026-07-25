@@ -507,9 +507,9 @@ def test_mla_vs_fp32_ref[
     )
 
     # ---- Per-head cosine similarity (MlaPrefillV2 vs FP32 ref) --------
-    var dot = InlineArray[Float64, NUM_HEADS](fill=Float64(0))
-    var a_sq = InlineArray[Float64, NUM_HEADS](fill=Float64(0))
-    var r_sq = InlineArray[Float64, NUM_HEADS](fill=Float64(0))
+    var dot = Array[Float64, NUM_HEADS](fill=Float64(0))
+    var a_sq = Array[Float64, NUM_HEADS](fill=Float64(0))
+    var r_sq = Array[Float64, NUM_HEADS](fill=Float64(0))
     var num_nonfinite = 0
     var max_diff: Float32 = 0
 

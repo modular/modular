@@ -242,7 +242,7 @@ def test_grouped_tensormap_update[
     comptime tile_layout = Layout.row_major(M, N)
     comptime num_blocks = 1  # Single block for this test
 
-    # Create per-group source tensors using InlineArray for non-copyable types
+    # Create per-group source tensors using Array for non-copyable types
     # Use tensor[update=False]() to avoid overwriting with uninitialized device memory
     # Use float32 to avoid bfloat16 precision issues during testing
 

@@ -68,7 +68,7 @@ def call_int4tobf16[
 
 
 def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext) raises:
-    var stack = InlineArray[BFloat16, 8](uninitialized=True)
+    var stack = Array[BFloat16, 8](uninitialized=True)
     var out_host = TileTensor(stack, row_major[8]())
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 

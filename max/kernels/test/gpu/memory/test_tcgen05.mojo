@@ -43,7 +43,7 @@ def tcgen05_st_ld_roundtrip_kernel[
 
     tmem_addr = ptr_tmem_addr[0]
 
-    var data_st = InlineArray[Scalar[DType.float32], width](uninitialized=True)
+    var data_st = Array[Scalar[DType.float32], width](uninitialized=True)
     for n in range(N):
         data_st[n] = Float32(thread_idx.x * N + n)
 

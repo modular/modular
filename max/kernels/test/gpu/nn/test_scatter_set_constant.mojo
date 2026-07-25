@@ -17,15 +17,15 @@ from nn.gather_scatter import scatter_set_constant
 
 
 def test_scatter_set_constant(ctx: DeviceContext) raises:
-    # TODO not sure why this doesn't work with InlineArray?
-    var data_stack = InlineArray[Float32, 9](uninitialized=True)
+    # TODO not sure why this doesn't work with Array?
+    var data_stack = Array[Float32, 9](uninitialized=True)
     var data = TileTensor(data_stack, row_major[3, 3]()).fill(0.0)
     var data_ptr_gpu = ctx.enqueue_create_buffer[DType.float32](3 * 3)
     ctx.enqueue_copy(data_ptr_gpu, Span(data_stack))
 
     var data_gpu = TileTensor(data_ptr_gpu, row_major[3, 3]())
 
-    var array = InlineArray[Int32, 4 * 2](uninitialized=True)
+    var array = Array[Int32, 4 * 2](uninitialized=True)
     var indices = TileTensor(array, row_major[4, 2]())
 
     indices[0, 0] = 0
@@ -42,7 +42,7 @@ def test_scatter_set_constant(ctx: DeviceContext) raises:
     var indices_gpu = TileTensor(indices_ptr_gpu, row_major[4, 2]())
 
     var fill_value: Float32 = 5.0
-    var expected_stack = InlineArray[Float32, 9](uninitialized=True)
+    var expected_stack = Array[Float32, 9](uninitialized=True)
     var expected_output = TileTensor(expected_stack, row_major[3, 3]()).fill(
         0.0
     )

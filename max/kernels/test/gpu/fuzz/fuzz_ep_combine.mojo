@@ -268,19 +268,19 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
 
     var format_handler = token_fmt_type(out_t)
 
-    var recv_bufs = InlineArray[UnsafePointer[UInt8, MutAnyOrigin], n_ranks](
+    var recv_bufs = Array[UnsafePointer[UInt8, MutAnyOrigin], n_ranks](
         uninitialized=True
     )
     recv_bufs[0] = dispatch_recv.unsafe_ptr().as_unsafe_any_origin()
-    var recv_count_bufs = InlineArray[
-        UnsafePointer[UInt64, MutAnyOrigin], n_ranks
-    ](uninitialized=True)
+    var recv_count_bufs = Array[UnsafePointer[UInt64, MutAnyOrigin], n_ranks](
+        uninitialized=True
+    )
     recv_count_bufs[0] = dispatch_recv_count.unsafe_ptr().as_unsafe_any_origin()
-    var combine_recv_bufs = InlineArray[
-        UnsafePointer[UInt8, MutAnyOrigin], n_ranks
-    ](uninitialized=True)
+    var combine_recv_bufs = Array[UnsafePointer[UInt8, MutAnyOrigin], n_ranks](
+        uninitialized=True
+    )
     combine_recv_bufs[0] = combine_recv.unsafe_ptr().as_unsafe_any_origin()
-    var combine_recv_count_bufs = InlineArray[
+    var combine_recv_count_bufs = Array[
         UnsafePointer[UInt64, MutAnyOrigin], n_ranks
     ](uninitialized=True)
     combine_recv_count_bufs[

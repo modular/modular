@@ -158,7 +158,7 @@ def test_advanced_indexing_getitem_gpu(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # ===== Reference output (identical to CPU test) =====
-    var ref_stack = InlineArray[
+    var ref_stack = Array[
         Scalar[input_type],
         align_up(output_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -344,7 +344,7 @@ def test_advanced_indexing_setitem_inplace_gpu(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # ===== Reference output (identical to CPU test) =====
-    var ref_stack = InlineArray[
+    var ref_stack = Array[
         Scalar[input_type],
         align_up(input_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
