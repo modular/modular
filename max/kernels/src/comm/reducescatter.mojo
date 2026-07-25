@@ -13,7 +13,7 @@
 """Multi-GPU reducescatter implementation for distributed tensor reduction across GPUs.
 """
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.collections.optional import Optional
 
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
@@ -76,7 +76,7 @@ def _load_reduce[
     use_multimem: Bool = False,
 ](
     elem_idx: Int,
-    in_tiles: InlineArray[
+    in_tiles: Array[
         TileTensor[dtype, in_tile_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
@@ -220,7 +220,7 @@ def _reduce_scatter_impl[
     accum_type: DType = get_accum_type[dtype](),
     use_multimem: Bool = False,
 ](
-    in_tiles: InlineArray[
+    in_tiles: Array[
         TileTensor[dtype, in_tile_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
@@ -273,12 +273,12 @@ def _reducescatter_kernel[
     use_multimem: Bool = False,
     domain_id: Int = 0,
 ](
-    in_bufs: InlineArray[
+    in_bufs: Array[
         TileTensor[dtype, in_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
     out_buf: TileTensor[dtype, out_layout, MutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     axis_size: Int,
     unit_numel: Int,
     my_rank: Int,
@@ -305,7 +305,7 @@ def _reducescatter_kernel[
         )
 
         # Round-robin access pattern to balance NVLink traffic across GPUs.
-        var reordered = InlineArray[
+        var reordered = Array[
             TileTensor[dtype, in_layout, ImmutAnyOrigin], num_buffers
         ](uninitialized=True)
 
@@ -320,9 +320,7 @@ def _reducescatter_kernel[
             # Flat: construct sliced 1D tiles from input TileTensors (any rank).
             comptime FlatLayout = type_of(row_major(n_elements))
             comptime FlatTile = TileTensor[dtype, FlatLayout, ImmutAnyOrigin]
-            var flat_tiles = InlineArray[FlatTile, num_buffers](
-                uninitialized=True
-            )
+            var flat_tiles = Array[FlatTile, num_buffers](uninitialized=True)
             var elem_start = u_start * config.unit_numel
 
             comptime for i in range(num_buffers):
@@ -347,7 +345,7 @@ def _reducescatter_kernel[
             comptime SlicedRevTile = TileTensor[
                 dtype, RevLayout, ImmutAnyOrigin
             ]
-            var sliced_tiles = InlineArray[SlicedRevTile, num_buffers](
+            var sliced_tiles = Array[SlicedRevTile, num_buffers](
                 uninitialized=True
             )
 
@@ -398,12 +396,12 @@ def _reducescatter_p2p[
     use_multimem: Bool = False,
     domain_id: Int = 0,
 ](
-    list_of_in_bufs: InlineArray[
+    list_of_in_bufs: Array[
         TileTensor[dtype, in_layout, in_origin],
         1 if use_multimem else ngpus,
     ],
     output_buffer: TileTensor[mut=True, dtype, ...],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
     ctx: DeviceContext,
     my_rank: Int,
@@ -453,9 +451,7 @@ def _reducescatter_p2p[
     # Erase origin to ImmutAnyOrigin for the kernel.
     # TODO(KERN-2526): is this necessary?
     comptime KernelInputType = TileTensor[dtype, in_layout, ImmutAnyOrigin]
-    var kernel_in_bufs = InlineArray[KernelInputType, num_buffers](
-        uninitialized=True
-    )
+    var kernel_in_bufs = Array[KernelInputType, num_buffers](uninitialized=True)
     comptime for i in range(num_buffers):
         kernel_in_bufs[i] = KernelInputType(
             list_of_in_bufs[i]._storage.as_imm().as_unsafe_any_origin(),
@@ -501,12 +497,12 @@ def reducescatter[
     use_multimem: Bool = False,
     domain_id: Int = 0,
 ](
-    input_buffers: InlineArray[
+    input_buffers: Array[
         TileTensor[dtype, in_layout, in_origin],
         1 if use_multimem else ngpus,
     ],
     output_buffer: TileTensor[mut=True, dtype, ...],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
     local_rank: Optional[Int] = None,
