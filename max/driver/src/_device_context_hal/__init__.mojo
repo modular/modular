@@ -2387,8 +2387,11 @@ struct DeviceFunction[
         var snap_capture_sizes = alloc(
             Layout[UInt64](count=max(snap_num_captures, 1))
         ).unsafe_leak()
+        var info_capture_sizes: UnsafePointer[
+            UInt64, ImmUntrackedOrigin
+        ] = info.capture_sizes
         for i in range(snap_num_captures):
-            snap_capture_sizes[i] = info.capture_sizes[i]
+            snap_capture_sizes[i] = info_capture_sizes[i]
         var attr_code = OptionalReg[Int32](None)
         var attr_value = Int32(0)
         if func_attribute:

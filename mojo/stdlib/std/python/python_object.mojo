@@ -1422,7 +1422,7 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return UnsafePointer[Scalar[dtype], MutAnyOrigin](
+        return Pointer[Scalar[dtype], MutAnyOrigin](
             unsafe_from_address=Int(py=self)
         )
 
@@ -1530,9 +1530,9 @@ struct PythonObject(
         ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]().value()[]
         # TODO(MSTDL-950): Should use something like `addr_of!`
         # Safety: The mutability matches that of `self`.
-        return UnsafePointer[mut=mut](
-            to=mojo_obj.mojo_value
-        ).unsafe_origin_cast[origin]()
+        return Pointer[mut=mut](to=mojo_obj.mojo_value).unsafe_origin_cast[
+            origin
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
