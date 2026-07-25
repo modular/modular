@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.atomic import Atomic, Ordering
 from std.sys.intrinsics import (
     ballot,
@@ -52,7 +52,7 @@ struct amd_signal_t(Copyable):
     var start_ts: UInt64
     var end_ts: UInt64
     var reserved2: UInt64
-    var reserved3: InlineArray[UInt32, 2]
+    var reserved3: Array[UInt32, 2]
 
 
 @always_inline
@@ -634,7 +634,7 @@ struct Payload(TrivialRegisterPassable):
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L99
 @fieldwise_init
 struct payload_t(Copyable):
-    var slots: InlineArray[InlineArray[UInt64, 8], 64]
+    var slots: Array[Array[UInt64, 8], 64]
 
 
 @fieldwise_init

@@ -31,7 +31,7 @@ def global_constant[
 
     Constraints:
         The type `T` must have trivial copy and destroy semantics. Self-contained
-        types like `Int`, `SIMD`, and `InlineArray` (with trivial element types)
+        types like `Int`, `SIMD`, and `Array` (with trivial element types)
         work. Types with heap allocations like `Dict`, `List`, or `String` do not
         work because their internal pointers would be invalid at runtime and they
         have non-trivial copy/destroy operations.
@@ -50,7 +50,7 @@ def global_constant[
     from std.builtin.globals import global_constant
 
     # Create a reference to a constant array and access elements
-    comptime lookup_table: InlineArray[Int, 4] = [1, 2, 3, 4]
+    comptime lookup_table: Array[Int, 4] = [1, 2, 3, 4]
     var element = global_constant[lookup_table]()[2]  # Access without materializing entire array
     print(element)  # Prints: 3
 
@@ -58,7 +58,7 @@ def global_constant[
     def compute(x: Int) -> Int:
         return x * 2 + 1
 
-    comptime data: InlineArray[Int, 3] = [1, compute(5), 100]
+    comptime data: Array[Int, 3] = [1, compute(5), 100]
     ref data_ref = global_constant[data]()
     print(data_ref[0], data_ref[1], data_ref[2])  # Prints: 1 11 100
     ```

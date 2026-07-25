@@ -487,12 +487,12 @@ struct _WriteBufferStack[
     //,
     stack_buffer_bytes: Int = STACK_BUFFER_BYTES,
 ](Writer):
-    var data: InlineArray[UInt8, Int(Self.stack_buffer_bytes)]
+    var data: Array[UInt8, Int(Self.stack_buffer_bytes)]
     var pos: Int
     var writer: Pointer[Self.W, Self.origin]
 
     def __init__(out self, ref[Self.origin] writer: Self.W):
-        self.data = InlineArray[UInt8, Int(Self.stack_buffer_bytes)](
+        self.data = Array[UInt8, Int(Self.stack_buffer_bytes)](
             uninitialized=True
         )
         self.pos = 0
@@ -647,21 +647,21 @@ def _write_hex[
 
     comptime if amnt_hex_bytes == 2:
         var chars = _hex_digits_to_hex_chars(UInt8(decimal))
-        var buf = InlineArray[Byte, 4](uninitialized=True)
+        var buf = Array[Byte, 4](uninitialized=True)
         buf[0] = `\\`
         buf[1] = `x`
         buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
         writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
     elif amnt_hex_bytes == 4:
         var chars = _hex_digits_to_hex_chars(UInt16(decimal))
-        var buf = InlineArray[Byte, 6](uninitialized=True)
+        var buf = Array[Byte, 6](uninitialized=True)
         buf[0] = `\\`
         buf[1] = `u`
         buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
         writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
     else:
         var chars = _hex_digits_to_hex_chars(UInt32(decimal))
-        var buf = InlineArray[Byte, 10](uninitialized=True)
+        var buf = Array[Byte, 10](uninitialized=True)
         buf[0] = `\\`
         buf[1] = `U`
         buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)

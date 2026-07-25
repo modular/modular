@@ -291,7 +291,7 @@ def _printf[
             comptime bound = min(group + k_args_per_group, args_len)
             comptime num_args = bound - group
 
-            var arguments = InlineArray[UInt64, k_args_per_group](fill=0)
+            var arguments = Array[UInt64, k_args_per_group](fill=0)
 
             comptime for i in range(num_args):
                 arguments[i] = _to_uint64(args[group + i])
