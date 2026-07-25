@@ -129,7 +129,7 @@ def missing_arg_type_or_default(
     # expected-error @+1 {{argument type must be specified}}
     e,
     # expected-error @+1 {{argument type must be specified}}
-    **kwargs,
+    var **kwargs,
 ):
     pass
 
@@ -166,10 +166,10 @@ def test_contextual_default2[i: Int](x: HasIntParam[i] = {}):
 def byref_default(mut x: Int = 2): pass
 
 # expected-error @below {{'**' marker must be at end of argument list}}
-def starStarLast(**a: Int, b: Int): pass
+def starStarLast(var **a: Int, b: Int): pass
 
 # expected-error @below {{'**' marker must be at end of argument list}}
-def twoStarStar(**a: Int, **b: Int): pass
+def twoStarStar(var **a: Int, var **b: Int): pass
 
 # expected-error @+1 {{expected argument name}}
 def starSpaceStar(* *a: Int): pass

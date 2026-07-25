@@ -15,22 +15,22 @@
 # CHECK-LABEL: lit.fn @"variadic_kwargs
 # CHECK-SAME: %a: !Int, %b: !Int, %args: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg, *, %c: !Int, %d: !Int,
 # CHECK-SAME: %kwargs: !lit.ref<!lit.struct<#StringDict <:!AnyType_Copyable_ImplicitlyCopyable_Movable !Int>>, mut {{.*}}> owned_in_mem|kw_vararg)
-def variadic_kwargs(a: Int, b: Int, *args: Int, c: Int, d: Int, **kwargs: Int):
+def variadic_kwargs(a: Int, b: Int, *args: Int, c: Int, d: Int, var **kwargs: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"variadic_kwargs_def_with_type
-def variadic_kwargs_def_with_type(**kwargs: Int) raises:
+def variadic_kwargs_def_with_type(var **kwargs: Int) raises:
     pass
 
 
 # CHECK-SAME: (*, %kwargs: !lit.ref<!lit.struct<#StringDict <:!AnyType_Copyable_ImplicitlyCopyable_Movable !Int>>, mut {{.*}}> owned_in_mem|kw_vararg,
-def takes_int_variadic_kwargs(**kwargs: Int):
+def takes_int_variadic_kwargs(var **kwargs: Int):
     pass
 
 
 def takes_int_variadic_kwargs_multiline(
-    **kwargs: Int,
+    var **kwargs: Int,
 ):
     pass
 
@@ -58,7 +58,7 @@ def test_variadic_kwargs():
 
 # MOCO-2199 - Forwarding of kwargs
 # CHECK-LABEL: lit.fn @"pass_kwargs
-def pass_kwargs(**kwargs: Int):
+def pass_kwargs(var **kwargs: Int):
     # CHECK-NEXT: lit.ownership.use %kwargs
     # CHECK-NEXT: lit.call {{.*}}@"takes_int_variadic_kwargs_multiline{{.*}}(%kwargs)
     takes_int_variadic_kwargs_multiline(**kwargs^)
@@ -66,7 +66,7 @@ def pass_kwargs(**kwargs: Int):
 
 # `*` and `**` unpacks combine with ordinary positional and keyword operands.
 # CHECK-LABEL: lit.fn @"pass_both
-def pass_both(*args: Int, **kwargs: Int):
+def pass_both(*args: Int, var **kwargs: Int):
     # CHECK: lit.call {{.*}}@"variadic_kwargs{{.*}}, %args, %{{.*}}, %{{.*}}, %kwargs)
     variadic_kwargs(1, 2, *args, c=3, d=4, **kwargs^)
 
@@ -74,62 +74,62 @@ def pass_both(*args: Int, **kwargs: Int):
 # A literal keyword binding its own named parameter combines with a `**`
 # splat, with no `*` unpack involved.
 # CHECK-LABEL: lit.fn @"pass_named_and_kwargs
-def pass_named_and_kwargs(**kwargs: Int):
+def pass_named_and_kwargs(var **kwargs: Int):
     # CHECK: lit.call {{.*}}@"named_and_kwargs{{.*}}(%{{[0-9]+}}, %{{[0-9]+}}, %kwargs)
     named_and_kwargs(1, named=2, **kwargs^)
 
 
-def named_and_kwargs(x: Int, *, named: Int, **kwargs: Int):
+def named_and_kwargs(x: Int, *, named: Int, var **kwargs: Int):
     pass
 
 
 # A literal keyword after the `**` splat still binds its own named parameter.
 # CHECK-LABEL: lit.fn @"pass_kw_after_splat
-def pass_kw_after_splat(**kwargs: Int):
+def pass_kw_after_splat(var **kwargs: Int):
     # CHECK: lit.call {{.*}}@"named_and_kwargs{{.*}}(%{{[0-9]+}}, %{{[0-9]+}}, %kwargs)
     named_and_kwargs(1, **kwargs^, named=2)
 
 
 # A `**` splat combines with a variadic pack, whether the pack is forwarded
 # whole or built element-wise.
-def takes_pack_and_kwargs[*Ts: Intable](*pack: *Ts, **kwargs: Int):
+def takes_pack_and_kwargs[*Ts: Intable](*pack: *Ts, var **kwargs: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"pass_pack_and_kwargs
-def pass_pack_and_kwargs[*Ts: Intable](*pack: *Ts, **kwargs: Int):
+def pass_pack_and_kwargs[*Ts: Intable](*pack: *Ts, var **kwargs: Int):
     # CHECK: %[[PACK:.*]] = kgen.rebind %pack
     # CHECK: lit.call {{.*}}@"takes_pack_and_kwargs{{.*}}(%[[PACK]], %kwargs)
     takes_pack_and_kwargs(*pack, **kwargs^)
 
 
 # CHECK-LABEL: lit.fn @"pass_elements_and_kwargs
-def pass_elements_and_kwargs(**kwargs: Int):
+def pass_elements_and_kwargs(var **kwargs: Int):
     # CHECK: lit.call {{.*}}@VariadicPack::@"__init__
     # CHECK: lit.call {{.*}}@"takes_pack_and_kwargs{{.*}}(%{{.*}}, %kwargs)
     takes_pack_and_kwargs(1, 2, **kwargs^)
 
 
 struct Forwarder:
-    def m(self, *args: Int, **kwargs: Int):
+    def m(self, *args: Int, var **kwargs: Int):
         pass
 
 
 # A method call forwards both packed variadics, with `self` prepended.
 # CHECK-LABEL: lit.fn @"method_forward
-def method_forward(s: Forwarder, *args: Int, **kwargs: Int):
+def method_forward(s: Forwarder, *args: Int, var **kwargs: Int):
     # CHECK: lit.call {{.*}}@Forwarder::@"m{{.*}}(%s, %args, %kwargs)
     s.m(*args, **kwargs^)
 
 
-def defaulted_named(*, named: Int = 5, **kwargs: Int):
+def defaulted_named(*, named: Int = 5, var **kwargs: Int):
     pass
 
 
 # A lone `**` splat against a defaulted keyword-only parameter: the default
 # is materialized and the dict forwards whole.
 # CHECK-LABEL: lit.fn @"lone_splat_defaulted
-def lone_splat_defaulted(**kwargs: Int):
+def lone_splat_defaulted(var **kwargs: Int):
     # CHECK: %[[DEF:.*]] = kgen.param.constant: !Int = <{:scalar<index> 5}>
     # CHECK: lit.call {{.*}}@"defaulted_named{{.*}}(%[[DEF]], %kwargs)
     defaulted_named(**kwargs^)
@@ -139,7 +139,7 @@ trait SomeTrait(ImplicitlyCopyable):
     pass
 
 
-def infers_param_from_kwargs[T: SomeTrait](**kwargs: T):
+def infers_param_from_kwargs[T: SomeTrait](var **kwargs: T):
     pass
 
 
@@ -173,7 +173,7 @@ def test_variadic_kwargs_param_inference():
 # COM: test that the inferred type of variables is correct when the initializer
 # COM: expression has variadic keyword arguments.
 # COM: Issue https://github.com/modularml/modular/issues/35215
-def takes_kw(**kwargs: MemOnly) -> Int:
+def takes_kw(var **kwargs: MemOnly) -> Int:
     return 0
 
 

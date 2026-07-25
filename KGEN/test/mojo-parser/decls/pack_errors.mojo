@@ -29,20 +29,20 @@ def test_unpack_twice(d: Int):
 
 
 # `f(*args, **kwargs)` is valid; the reverse order is not, matching Python.
-def test_unpack_order(*args: Int, **kwargs: Int):
+def test_unpack_order(*args: Int, var **kwargs: Int):
     # expected-error @+1 {{positional unpack must not follow keyword unpacking; move it before the '**' unpack}}
     test_unpack_order(**kwargs, *args)
 
 
 # expected-note @+1 {{function declared here}}
-def test_merge_kwargs(**kwargs: Int):
+def test_merge_kwargs(var **kwargs: Int):
     # expected-error @+2 {{combining a '**' unpack with other keyword arguments for '**kwargs' is not supported}}
     # expected-note @+1 {{other keyword argument specified here}}
     test_merge_kwargs(a=1, **kwargs^)
 
 
 # expected-note @+1 {{function declared here}}
-def test_two_kwargs_unpacks(**kwargs: Int):
+def test_two_kwargs_unpacks(var **kwargs: Int):
     # expected-error @+2 {{combining a '**' unpack with other keyword arguments for '**kwargs' is not supported}}
     # expected-note @+1 {{other keyword argument specified here}}
     test_two_kwargs_unpacks(**kwargs^, **kwargs^)
@@ -132,11 +132,11 @@ def test_unpack_varargs(*args: Int):
 
 
 # Double-star unpacking a real **kwargs pack.
-def takes_kwargs(**kwargs: Int):
+def takes_kwargs(var **kwargs: Int):
     pass
 
 
-def test_unpack_kwargs_pack(**kwargs: Int):
+def test_unpack_kwargs_pack(var **kwargs: Int):
     # expected-error @below {{value of type 'StringDict[Int]' cannot be implicitly copied}}
     # expected-note @below {{consider transferring the value with '^'}}
     takes_kwargs(**kwargs)

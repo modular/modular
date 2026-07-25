@@ -97,6 +97,23 @@ def foo(x: def[a: Int] () thin -> None):
 def borrowed_kwargs(imm **kwargs: Int):
     pass
 
+# expected-error @below {{variadic keyword arguments only support the 'var' convention; add 'var' before '**'}}
+def bare_kwargs(**kwargs: Int):
+    pass
+
+def bare_kwargs_fn_type(
+    # expected-error @below {{variadic keyword arguments only support the 'var' convention; add 'var' before '**'}}
+    f: def(**kwargs: Int) -> None,
+):
+    pass
+
+# The parser recovers from a missing 'var' as if it were written, so later
+# arguments are still checked.
+# expected-error @below {{variadic keyword arguments only support the 'var' convention; add 'var' before '**'}}
+# expected-error @below {{'**' marker must be at end of argument list}}
+def bare_kwargs_not_last(**kwargs: Int, b: Int):
+    pass
+
 # expected-error @below {{'//' marker cannot be used at the start of the parameter list}}
 def invalid_inferred[//, x: Int]():
     pass

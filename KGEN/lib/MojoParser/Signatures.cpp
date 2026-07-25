@@ -639,6 +639,16 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
             arg.loc,
             "non-owned variadic keyword arguments are not supported yet");
       }
+      if (arg.convention == ParsedArgument::kConventionUnspec) {
+        // With no convention written, the argument starts at its '**' token,
+        // so the cursor captured at argument start points at it.
+        SMLoc starStarLoc = arg.cursor.getToken().getLoc();
+        p.emitError(starStarLoc,
+                    "variadic keyword arguments only support the 'var' "
+                    "convention; add 'var' before '**'")
+            << FixIt::insertBeforeToken(starStarLoc, "var ");
+        arg.convention = ParsedArgument::kConventionVar;
+      }
     }
 
     // If this argument is an "out" argument, process it as a result.
@@ -1993,10 +2003,11 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
 
   // If no convention was explicitly specified, default to 'imm'.
   if (arg.convention == ParsedArgument::kConventionUnspec) {
-    // TODO: enable other conventions for **kwargs.
-    arg.convention = arg.variadicKind == VariadicKind::KwVarArg
-                         ? ParsedArgument::kConventionVar
-                         : ParsedArgument::kConventionImm;
+    // This invariant comes from the parser; other paths, such as a future user
+    // IR-rewrite, could violate it, so hard-fail rather than assume it holds.
+    if (arg.variadicKind == VariadicKind::KwVarArg)
+      llvm::report_fatal_error("kwargs argument has no convention");
+    arg.convention = ParsedArgument::kConventionImm;
   }
 
   // Emit default argument values if present. An error would have been emitted
