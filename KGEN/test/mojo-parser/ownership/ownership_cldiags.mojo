@@ -746,8 +746,8 @@ def test_subtree_invalidation_on_mutation():
     ref elt = list[0]
     ref elt_erased = get_subtree_ref[origin_of(list)](elt)
     use(elt_erased)
-    list.append(42)  # FIXME: xpected-note {{origin was invalidated here}}
-    # FIXME: xpected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    list.append(42)  # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'origin_of(list).subtree'}}
     use(elt_erased)
 
 
@@ -765,8 +765,8 @@ def test_subtree_field_scoped_invalidation():
     var pair = ListPair()
     ref left_elt = get_subtree_ref[origin_of(pair.left)](pair.left[0])
     ref right_elt = get_subtree_ref[origin_of(pair.right)](pair.right[0])
-    pair.left.append(1)  # FIXME: xpected-note {{origin was invalidated here}}
-    # FIXME: xpected-error @+1 {{use of invalidated interior reference 'pair.left["element"]'}}
+    pair.left.append(1)  # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'origin_of(pair.left).subtree'}}
     use(left_elt)
     # This is ok.
     use(right_elt)

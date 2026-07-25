@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -408,8 +409,14 @@ void OperationEffects::analyzeCallOp(Operation &op) {
     for (TypedAttr origin : originFinder.findOriginsIn({userResultType})) {
       // Given a def of something with an "a.list["x"].second.field["y"].z"
       // origin, we need to mark the "x" and "y" interior origins live.
-      origin.walk([&](InteriorOriginAttr into) {
-        interiorOriginsDefined.push_back(into);
+      // Subtree origins (~a) are modeled as a synthetic interior origin for
+      // the same analysis.
+      origin.walk([&](Attribute nested) {
+        if (auto into = dyn_cast<InteriorOriginAttr>(nested)) {
+          interiorOriginsDefined.push_back(into);
+        } else if (auto subtree = dyn_cast<OriginSubtreeAttr>(nested))
+          interiorOriginsDefined.push_back(
+              getInteriorForSubtreeOrigin(subtree));
       });
     }
   }

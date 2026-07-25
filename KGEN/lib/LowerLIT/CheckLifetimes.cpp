@@ -1411,6 +1411,15 @@ std::pair<ValueRef, Type> ValueSet::getValueRefAndTypeForOrigin(
     return {valueRef, {}};
   }
 
+  // If this is an subtree origin like `a.field~`, then we treat this like a
+  // synthetic access to an interior origin, as well as an access to the base.
+  if (auto subtree = sugarDynCast<OriginSubtreeAttr>(origin)) {
+    auto [valueRef, _] =
+        getValueRefAndTypeForOrigin(subtree.getOrigin(), interiorOrigins);
+    // Don't pass the type up; the indirected type may be something erased.
+    return {valueRef, Type()};
+  }
+
   // Otherwise look up the base origin value.
   auto it = originToValueIndex.find(origin);
   if (it == originToValueIndex.end())
@@ -1840,6 +1849,11 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
         else
           break;
       }
+
+      // If we find a subtree origin, process it as an interior origin.
+      if (auto subtree = dyn_cast<OriginSubtreeAttr>(raw))
+        raw = getInteriorForSubtreeOrigin(subtree);
+
       // If we find an interior origin inside, process it.
       if (auto interior = sugarDynCast<InteriorOriginAttr>(raw)) {
         addInteriorOrigin(interior);
@@ -2207,7 +2221,19 @@ UninitializedValueScan::findInteriorOriginsInType(Type type) {
 
       // Given a def of something with an "a.list["x"].second.field["y"].z"
       // origin, we need to mark the "x" and "y" interior origins live.
-      origin.walk([&](InteriorOriginAttr origin) { result.push_back(origin); });
+      // Subtree origins (~a) also need the same handling.
+      origin.walk([&](Attribute nested) {
+        if (auto interior = dyn_cast<InteriorOriginAttr>(nested)) {
+          result.push_back(interior);
+          return;
+        }
+        // Subtree origins may have erased an interior origin.  Add a
+        // placeholder for it.
+        if (auto subtree = dyn_cast<OriginSubtreeAttr>(nested)) {
+          result.push_back(getInteriorForSubtreeOrigin(subtree));
+          return;
+        }
+      });
     }
   }
   return result;
