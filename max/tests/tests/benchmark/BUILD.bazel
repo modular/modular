@@ -25,6 +25,7 @@ modular_py_test(
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/profiler",
         requirement("aiohttp"),
+        requirement("huggingface-hub"),
         requirement("msgspec"),
         requirement("numpy"),
         requirement("pillow"),

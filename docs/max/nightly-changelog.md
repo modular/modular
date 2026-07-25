@@ -832,6 +832,10 @@ This version is still a work in progress.
   with a bfloat16 latent cache. Also enabled the sparse prefill kernel for
   GLM 5.2's tensor-parallel head shards (8/16/32 heads per device) over a
   bfloat16 latent cache; FP8 latent caches keep the decode-kernel routing.
+- Hugging Face weight and benchmark-dataset downloads now retry past a racy
+  `.incomplete` cache entry (a concurrent download or evicted cache deleting
+  the temp blob before `hf_hub_download` renames it), so a transient race no
+  longer fails with a `FileNotFoundError`.
 - Fixed MiniMax-M3 tool-call grammar enforcement silently disabling itself
   when the model emits more than one tool-call section in a single response.
   Enforcement used to switch off once the first section closed, so a second
