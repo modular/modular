@@ -134,7 +134,7 @@ def reducescatter_test[
     var host_in = List[HostBuffer[dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -190,7 +190,7 @@ def reducescatter_test[
         )
     )
     comptime num_input_bufs = 1 if use_multimem else ngpus
-    var in_bufs = InlineArray[InputTileType, num_input_bufs](uninitialized=True)
+    var in_bufs = Array[InputTileType, num_input_bufs](uninitialized=True)
 
     comptime if use_multimem:
         var multicast_buf = DeviceMulticastBuffer[dtype](
@@ -419,7 +419,7 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
     var host_in = List[HostBuffer[dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -505,10 +505,8 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
 
     comptime for group_idx in range(ngpus // group_size):
         comptime group_start = group_idx * group_size
-        var group_in_bufs = InlineArray[InputTileType, group_size](
-            uninitialized=True
-        )
-        var group_rank_sigs = InlineArray[
+        var group_in_bufs = Array[InputTileType, group_size](uninitialized=True)
+        var group_rank_sigs = Array[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](uninitialized=True)
 

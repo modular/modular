@@ -107,7 +107,7 @@ def lamport_allreduce_test[
     # (3 generations * ngpus slots * max-small-message).
     var scratch_bytes = 3 * ngpus * Lamport.MAX_SMALL_MESSAGE_BYTES
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -151,7 +151,7 @@ def lamport_allreduce_test[
     comptime InTensorType = TileTensor[
         dtype, type_of(row_major(length)), ImmutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
+    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tensors[i] = TileTensor(
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -163,7 +163,7 @@ def lamport_allreduce_test[
     comptime OutTensorType = TileTensor[
         dtype, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         out_tensors[i] = TileTensor(out_dev[i], row_major(length))
 
@@ -314,7 +314,7 @@ def lamport_mixed_size_test[
 
     var scratch_bytes = 3 * ngpus * Lamport.MAX_SMALL_MESSAGE_BYTES
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -394,8 +394,8 @@ def lamport_mixed_size_test[
             comptime OutType = TileTensor[
                 dtype, type_of(row_major(length)), MutAnyOrigin
             ]
-            var in_tensors = InlineArray[InType, ngpus](uninitialized=True)
-            var out_tensors = InlineArray[OutType, ngpus](uninitialized=True)
+            var in_tensors = Array[InType, ngpus](uninitialized=True)
+            var out_tensors = Array[OutType, ngpus](uninitialized=True)
             for i in range(ngpus):
                 in_tensors[i] = TileTensor(
                     rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -502,7 +502,7 @@ def lamport_coexist_test[
     # scratch (ngpus * large message), which trails the struct.
     var scratch_bytes = ngpus * large_len * size_of[dtype]()
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -535,8 +535,8 @@ def lamport_coexist_test[
     comptime LOutType = TileTensor[
         dtype, type_of(row_major(large_len)), MutAnyOrigin
     ]
-    var lin_tensors = InlineArray[LType, ngpus](uninitialized=True)
-    var lout_tensors = InlineArray[LOutType, ngpus](uninitialized=True)
+    var lin_tensors = Array[LType, ngpus](uninitialized=True)
+    var lout_tensors = Array[LOutType, ngpus](uninitialized=True)
     for i in range(ngpus):
         lin_tensors[i] = LType(
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -552,8 +552,8 @@ def lamport_coexist_test[
     comptime SOutType = TileTensor[
         dtype, type_of(row_major(small_len)), MutAnyOrigin
     ]
-    var sin_tensors = InlineArray[SInType, ngpus](uninitialized=True)
-    var sout_tensors = InlineArray[SOutType, ngpus](uninitialized=True)
+    var sin_tensors = Array[SInType, ngpus](uninitialized=True)
+    var sout_tensors = Array[SOutType, ngpus](uninitialized=True)
     for i in range(ngpus):
         sin_tensors[i] = SInType(
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -701,7 +701,7 @@ def lamport_unsynced_skew_test[
 
     var scratch_bytes = 3 * ngpus * Lamport.MAX_SMALL_MESSAGE_BYTES
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -749,7 +749,7 @@ def lamport_unsynced_skew_test[
         comptime OutType = TileTensor[
             dtype, type_of(row_major(length)), MutAnyOrigin
         ]
-        var in_tensors = InlineArray[InType, ngpus](uninitialized=True)
+        var in_tensors = Array[InType, ngpus](uninitialized=True)
         var out_capture = StaticTuple[OutType, ngpus]()
         for i in range(ngpus):
             in_tensors[i] = InType(

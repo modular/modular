@@ -308,7 +308,7 @@ def stsm_helper[
     vec_dtype: DType,
     vec_size: Int,
 ](
-    vec: InlineArray[Scalar[vec_dtype], vec_size],
+    vec: Array[Scalar[vec_dtype], vec_size],
     dst: LayoutTensor[mut=True, _, _, address_space=AddressSpace.SHARED, ...],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
@@ -436,11 +436,11 @@ def multi_stage_store_C[
         # Pack the upper frag to shared memory
         comptime frag_width = rep * data_paths * (bits // 32) // WARP_SIZE
         stsm_helper[swizzle](
-            rebind[InlineArray[Scalar[accum_type], frag_width]](upper_frag),
+            rebind[Array[Scalar[accum_type], frag_width]](upper_frag),
             c_smem_warp_tile.tile[16, stageN](0, 0),
         )
         stsm_helper[swizzle](
-            rebind[InlineArray[Scalar[accum_type], frag_width]](lower_frag),
+            rebind[Array[Scalar[accum_type], frag_width]](lower_frag),
             c_smem_warp_tile.tile[16, stageN](1, 0),
         )
 

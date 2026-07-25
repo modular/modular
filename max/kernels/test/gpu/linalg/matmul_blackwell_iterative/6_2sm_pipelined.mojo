@@ -397,16 +397,16 @@ def store_C[
         1, remainder_repetitions * num_regs_per_thread
     )
 
-    var c_upper_pow_2_main: InlineArray[Scalar[accum_type], main_frag_size]
+    var c_upper_pow_2_main: Array[Scalar[accum_type], main_frag_size]
 
-    var c_lower_pow_2_main: InlineArray[Scalar[accum_type], main_frag_size]
+    var c_lower_pow_2_main: Array[Scalar[accum_type], main_frag_size]
 
-    var c_upper_pow_2_rem = InlineArray[
-        Scalar[accum_type], remainder_frag_size
-    ](uninitialized=True)
-    var c_lower_pow_2_rem = InlineArray[
-        Scalar[accum_type], remainder_frag_size
-    ](uninitialized=True)
+    var c_upper_pow_2_rem = Array[Scalar[accum_type], remainder_frag_size](
+        uninitialized=True
+    )
+    var c_lower_pow_2_rem = Array[Scalar[accum_type], remainder_frag_size](
+        uninitialized=True
+    )
 
     # Primary Load
     c_upper_pow_2_main = tcgen05_ld[

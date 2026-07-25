@@ -908,8 +908,8 @@ def test_dispatch_common[
     var recv_count_bufs_list = List[DeviceBuffer[DType.uint64]](capacity=n_ranks)
     var atomic_counters_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
 
-    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutUntrackedOrigin], n_ranks](uninitialized=True)
-    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutUntrackedOrigin], n_ranks](uninitialized=True)
+    var host_topk_ids_list = Array[UnsafePointer[Int32, MutUntrackedOrigin], n_ranks](uninitialized=True)
+    var host_input_tokens_list = Array[UnsafePointer[Scalar[input_type], MutUntrackedOrigin], n_ranks](uninitialized=True)
 
     var device_topk_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
     var device_input_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)
@@ -1113,7 +1113,7 @@ def test_dispatch_common[
         clean_up(dev_i)
         list_of_ctx[dev_i].synchronize()
 
-    # Necessary to fill this InlineArray w/ default BenchmarkInfo
+    # Necessary to fill this Array w/ default BenchmarkInfo
     # otherwise each thread attempts to free uninitialized BenchmarkInfo
     # when copying below
     var default_info = BenchmarkInfo(
@@ -1121,7 +1121,7 @@ def test_dispatch_common[
         result=Report(),
         measures=List[ThroughputMeasure](),
     )
-    var results_b = InlineArray[BenchmarkInfo, n_ranks](fill=default_info)
+    var results_b = Array[BenchmarkInfo, n_ranks](fill=default_info)
 
     # First, bench the dispatch kernel overhead
 

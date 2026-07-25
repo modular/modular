@@ -108,7 +108,7 @@ def _run_case[
     var sum_shard = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var rs_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -178,7 +178,7 @@ def _run_case[
     comptime GammaType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ]
-    var in_bufs = InlineArray[InTensorType, ngpus](uninitialized=True)
+    var in_bufs = Array[InTensorType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         in_bufs[i] = InTensorType(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -550,7 +550,7 @@ def _run_prod_oracle_case[
     var rs_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var prod = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -613,7 +613,7 @@ def _run_prod_oracle_case[
     comptime GammaType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ]
-    var in_bufs = InlineArray[InTensorType, ngpus](uninitialized=True)
+    var in_bufs = Array[InTensorType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         in_bufs[i] = InTensorType(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](

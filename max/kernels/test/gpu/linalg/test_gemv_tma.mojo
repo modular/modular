@@ -136,7 +136,7 @@ def gemv_tma_kernel[
     ]()
 
     # Initialize dot products for all rows before column processing.
-    var dot_products = InlineArray[Scalar[accum_type], ROWS_PER_WARP](fill=0)
+    var dot_products = Array[Scalar[accum_type], ROWS_PER_WARP](fill=0)
 
     if thread_idx.x == 0:
         comptime for i in range(NUM_PIPELINE_STAGES):

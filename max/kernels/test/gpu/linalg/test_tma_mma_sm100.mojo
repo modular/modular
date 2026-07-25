@@ -193,7 +193,7 @@ def tma_umma_kernel_ss[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime c_frag_size = MMA_M * MMA_N // num_threads
-    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
+    var c_frag: Array[Scalar[accum_type], c_frag_size]
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
@@ -441,7 +441,7 @@ def tma_umma_kernel_ts[
     var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 
     comptime c_frag_size = MMA_M * MMA_N // num_threads
-    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
+    var c_frag: Array[Scalar[accum_type], c_frag_size]
 
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = b_expected_bytes
@@ -505,9 +505,7 @@ def tma_umma_kernel_ts[
         warp_id = 2 * warp_id_r + warp_id_q
 
     comptime a_frag_size = BM * BK * size_of[a_type]() // 4 // num_threads
-    var a_frag = InlineArray[Scalar[DType.uint32], a_frag_size](
-        uninitialized=True
-    )
+    var a_frag = Array[Scalar[DType.uint32], a_frag_size](uninitialized=True)
 
     for i in range(num_iters):
         # Load A from global memory to registers.

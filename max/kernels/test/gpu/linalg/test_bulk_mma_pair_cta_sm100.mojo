@@ -610,7 +610,7 @@ def bulk_mma_pair_cta_ts_kernel[
         # Compute the M-part of the offset once (invariant across K).
         var m_offset = (a_row % 8) * sw_K + (a_row // 8) * (8 * sw_K)
 
-        var a_data = InlineArray[Scalar[DType.float32], BK](uninitialized=True)
+        var a_data = Array[Scalar[DType.float32], BK](uninitialized=True)
         comptime for j in range(BK):
             var base = m_offset + (j % sw_K) + (j // sw_K) * outer_k_stride
             a_data[j] = a_smem[sw(base)].cast[DType.float32]()

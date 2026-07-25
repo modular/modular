@@ -104,11 +104,11 @@ def broadcast_test[
     comptime OutputTileType = TileTensor[
         dtype, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
+    var out_tiles = Array[OutputTileType, ngpus](uninitialized=True)
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     for i in range(ngpus):
