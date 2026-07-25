@@ -2316,7 +2316,7 @@ def rms_norm_kv_cache_ragged_paged[
         @parameter
         @always_inline
         def key_cache_input_fn_coord[
-            width: Int
+            width: Int, alignment: Int
         ](coords: Coord) -> SIMD[dtype, width]:
             return key_cache_input_fn[width, rank](
                 rebind[IndexList[rank]](coord_to_index_list(coords))
@@ -2486,7 +2486,7 @@ def rms_norm_value_cache_ragged_paged[
         @parameter
         @always_inline
         def value_cache_input_fn_coord[
-            width: Int
+            width: Int, alignment: Int
         ](coords: Coord) -> SIMD[dtype, width]:
             return value_cache_input_fn[width, rank](
                 rebind[IndexList[rank]](coord_to_index_list(coords))

@@ -1028,8 +1028,10 @@ struct ReduceRMSNorm:
         # keeps its n-D `IndexList` form to match `rms_norm`'s `output_0_fn`.
         @parameter
         @always_inline
-        def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=width](
+        def input_fn[
+            width: Int, alignment: Int
+        ](coords: Coord) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 coords
             )
 
@@ -1500,9 +1502,9 @@ struct ReduceRMSNormFusedResidualAdd:
         @parameter
         @always_inline
         def input_fn[
-            width: Int, _rank: Int
+            width: Int, _rank: Int, alignment: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=width](
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
