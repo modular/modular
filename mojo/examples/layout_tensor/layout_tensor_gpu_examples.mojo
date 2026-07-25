@@ -174,7 +174,7 @@ def layout_tensor_vectorized_example() raises:
     comptime rows = 64
     comptime columns = 64
     comptime layout = Layout.row_major(rows, columns)
-    var storage = InlineArray[Scalar[dtype], rows * columns](uninitialized=True)
+    var storage = Array[Scalar[dtype], rows * columns](uninitialized=True)
     for i in range(rows * columns):
         storage[i] = Int32(i)
     var tensor = LayoutTensor[dtype, layout](storage)

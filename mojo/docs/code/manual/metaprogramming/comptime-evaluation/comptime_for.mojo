@@ -25,12 +25,12 @@ def main() raises:
     v2 = simd_type(0, 92, 11, 4)
     assert_equal(elementwise_max(v1, v2), simd_type(12, 92, 99, 77))
 
-    a: InlineArray[Float64, 5] = [2, 4, 5, 7, 8]
-    b = InlineArray[Float64, 4](fill=0)
+    a: Array[Float64, 5] = [2, 4, 5, 7, 8]
+    b = Array[Float64, 4](fill=0)
 
     comptime for i in range(1, 5):
         b[i - 1] = a[i] + a[i - 1]
 
-    expected: InlineArray[Float64, 4] = [6.0, 9.0, 12.0, 15.0]
+    expected: Array[Float64, 4] = [6.0, 9.0, 12.0, 15.0]
     for i in range(expected.length):
         assert_equal(b[i], expected[i])

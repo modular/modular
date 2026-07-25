@@ -14,7 +14,7 @@ description: >-
      (NoneType is a struct), builtin/builtin_slice.mojo (Slice fields),
      collections/string/string_slice.mojo (StaticString, StringSlice),
      memory/span.mojo (non-owning view), collections/optional.mojo
-     (value() aborts on empty), collections/inline_array.mojo,
+     (value() aborts on empty), collections/array.mojo,
      utils/variant.mojo, os/os.mojo (abort -> Never). Set and Variant are
      NOT in the prelude. -->
 
@@ -105,7 +105,7 @@ Mojo includes a flexible set of collection types.
 | [`Set`](/docs/std/collections/set/Set/)                          | Unordered collection of unique values. Requires an import.  |
 | [`Optional`](/docs/std/collections/optional/Optional/)           | A value that may or may not be present.                     |
 | [`Tuple`](/docs/std/builtin/tuple/Tuple/)                        | Fixed-size, heterogeneous group of values.                  |
-| [`InlineArray`](/docs/std/collections/inline_array/InlineArray/) | Fixed-size array stored inline, with no heap allocation.    |
+| [`Array`](/docs/std/collections/array/Array/)                    | Fixed-size array stored inline, with no heap allocation.    |
 | [`Variant`](/docs/std/utils/variant/Variant/)                    | Holds one value from a fixed set of types. Requires import. |
 
 <!-- markdownlint-enable MD013 -->
