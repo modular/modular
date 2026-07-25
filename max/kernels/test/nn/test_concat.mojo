@@ -47,15 +47,15 @@ def test_concat() raises:
     comptime l1 = row_major[2, 2, 1, 2]()
     comptime l2 = row_major[2, 2, 2, 2]()
     comptime l3 = row_major[2, 2, 3, 2]()
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var x3_stack = InlineArray[Scalar[dtype], l3.product()](uninitialized=True)
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var x3_stack = Array[Scalar[dtype], l3.product()](uninitialized=True)
     var x1 = TileTensor(x1_stack, l1).fill(0)
     var x2 = TileTensor(x2_stack, l2).fill(1)
     var x3 = TileTensor(x3_stack, l3).fill(2)
 
     comptime out_layout = row_major[2, 2, 6, 2]()
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
     var output = TileTensor(out_stack, out_layout).fill(-1)
@@ -117,9 +117,9 @@ def test_concat_parallel() raises:
     comptime l1 = row_major[2, 2, 1, 2]()
     comptime l2 = row_major[2, 2, 2, 2]()
     comptime l3 = row_major[2, 2, 3, 2]()
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var x3_stack = InlineArray[Scalar[dtype], l3.product()](uninitialized=True)
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var x3_stack = Array[Scalar[dtype], l3.product()](uninitialized=True)
     var x1 = TileTensor(x1_stack, l1).fill(0)
     var x2 = TileTensor(x2_stack, l2).fill(1)
     var x3 = TileTensor(x3_stack, l3).fill(2)
@@ -129,7 +129,7 @@ def test_concat_parallel() raises:
     var x3_dyn = x3.make_dynamic[DType.int64]()
 
     comptime out_layout = row_major[2, 2, 6, 2]()
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
     var output = TileTensor(out_stack, out_layout).fill(-1)
@@ -189,9 +189,9 @@ def test_concat_inner() raises:
     comptime l1 = row_major[1, 1, 1, 2, 2]()
     comptime l2 = row_major[1, 1, 2, 2, 2]()
     comptime l3 = row_major[1, 1, 3, 2, 2]()
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var x3_stack = InlineArray[Scalar[dtype], l3.product()](uninitialized=True)
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var x3_stack = Array[Scalar[dtype], l3.product()](uninitialized=True)
     var x1 = TileTensor(x1_stack, l1).fill(0)
     var x2 = TileTensor(x2_stack, l2).fill(1)
     var x3 = TileTensor(x3_stack, l3).fill(2)
@@ -201,7 +201,7 @@ def test_concat_inner() raises:
     var x3_dyn = x3.make_dynamic[DType.int64]()
 
     comptime out_layout = row_major[1, 1, 6, 2, 2]()
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
     var output = TileTensor(out_stack, out_layout).fill(-1)

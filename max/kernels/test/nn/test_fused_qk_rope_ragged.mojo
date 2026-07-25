@@ -153,9 +153,9 @@ def test_fused_qk_rope[
     var q = TileTensor(q_buffer, q_layout)
 
     # Create input_row_offsets tensor using TileTensor.
-    var input_row_offsets_stack = InlineArray[
-        Scalar[DType.uint32], batch_size + 1
-    ](uninitialized=True)
+    var input_row_offsets_stack = Array[Scalar[DType.uint32], batch_size + 1](
+        uninitialized=True
+    )
     for i in range(batch_size):
         input_row_offsets_stack[i] = UInt32(i * seq_len)
     input_row_offsets_stack[batch_size] = batch_size * seq_len

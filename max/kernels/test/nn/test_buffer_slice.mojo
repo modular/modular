@@ -49,9 +49,9 @@ def test_slice[
     use_copy: Bool,
 ) raises:
     # Isn't always used but is used for the output buffer if we copy.
-    var output_mem = InlineArray[Scalar[dtype], numelems](uninitialized=True)
+    var output_mem = Array[Scalar[dtype], numelems](uninitialized=True)
 
-    var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
+    var memory1 = Array[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = TileTensor(
         memory1,
         row_major(Coord(dims)),
@@ -62,7 +62,7 @@ def test_slice[
     print("In shape:", shape)
     print("In strides:", stride)
 
-    var start_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
+    var start_tensor_mem = Array[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
     var start_tensor = TileTensor(
@@ -70,7 +70,7 @@ def test_slice[
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
-    var end_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
+    var end_tensor_mem = Array[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
     var end_tensor = TileTensor(
@@ -78,7 +78,7 @@ def test_slice[
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
-    var step_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
+    var step_tensor_mem = Array[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
     var step_tensor = TileTensor(
