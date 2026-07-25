@@ -702,10 +702,10 @@ def test_trait_bound_field():
 
 
 # ===----------------------------------------------------------------------=== #
-# Origin subtree views (sketch — not expected to pass yet)
+# Origin subtree views
 # ===----------------------------------------------------------------------=== #
 #
-# Subtree origins (~x) abstract over "some reference rooted within this owner"
+# Subtree origins (x~) abstract over "some reference rooted within this owner"
 # without pinning the exact interior path.
 
 struct ListPair:
@@ -739,7 +739,6 @@ def test_subtree_return_borrow():
     ref elt = list[0]
     use(get_subtree_ref[origin_of(list)](elt))
 
-
 # Mutating the owner should invalidate live refs passed through subtree views.
 def test_subtree_invalidation_on_mutation():
     var list = List[Int]()
@@ -750,14 +749,12 @@ def test_subtree_invalidation_on_mutation():
     # expected-error @+1 {{use of invalidated interior reference 'origin_of(list).subtree'}}
     use(elt_erased)
 
-
 # Read-only use of the owner should not invalidate interior refs.
 def test_subtree_survives_readonly_access():
     var list = List[Int]()
     ref erased_elt = get_subtree_ref[origin_of(list)](list[0])
     _ = list.__len__()
     use(erased_elt)
-
 
 # Field-sensitive: mutating one field should not invalidate refs rooted under
 # a sibling field, even when passed to a ~pair.left API.
@@ -770,3 +767,32 @@ def test_subtree_field_scoped_invalidation():
     use(left_elt)
     # This is ok.
     use(right_elt)
+
+def test_simple_subtree_mut_invalidation(var collection: List[Int]):
+    ref x = get_subtree_ref[origin_of(collection).subtree](collection[4])
+    x += 1 # expected-note {{origin was invalidated here}}
+    x += 1  # expected-error {{use of invalidated interior reference 'origin_of(collection).subtree'}}
+
+struct ListAndInt:
+    var list: List[Int]
+    var anotherInt: Int
+
+    # This can return a reference into list and also a reference to anotherInt.
+    def get_someint(ref self, cond: Bool) -> ref[origin_of(self).subtree] Int:
+        if cond:
+            return self.list[4]
+        else:
+            return self.anotherInt
+
+def test_complex_subtree_mut_invalidation(var list_and_int: ListAndInt):
+    ref r1 = list_and_int.get_someint(True)
+    r1 += 1  # Can mutate this.
+
+    ref r2 = list_and_int.get_someint(True)
+    list_and_int.list.append(1) # expected-note {{origin was invalidated here}}
+    use(r2) # expected-error {{use of invalidated interior reference 'origin_of(list_and_int).subtree'}}
+
+def test_complex_subtree_mut_invalidation_2(var list_and_int: ListAndInt):
+    ref r1 = list_and_int.get_someint(False)
+    list_and_int.anotherInt += 1 # expected-note {{origin was invalidated here}}
+    use(r1) # expected-error {{use of invalidated interior reference 'origin_of(list_and_int).subtree'}}
