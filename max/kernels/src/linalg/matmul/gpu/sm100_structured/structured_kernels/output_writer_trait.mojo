@@ -117,7 +117,7 @@ trait OutputWriter:
         register_based_epilogue: Bool,
     ](
         c_tma_ops: Pointer[
-            InlineArray[
+            Array[
                 TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
                 Self.num_peers,
             ],

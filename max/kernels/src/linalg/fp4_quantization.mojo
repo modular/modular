@@ -2901,14 +2901,14 @@ def _mxfp4_dotprod[
 
     for ko in range(k_groups):
         var a_scale = a_scales_ptr[ko].cast[DType.float32]()
-        var b_scale = InlineArray[Float32, BLOCK_N](uninitialized=True)
+        var b_scale = Array[Float32, BLOCK_N](uninitialized=True)
 
         comptime for bn in range(BLOCK_N):
             b_scale[bn] = b_scales_ptr[bn * k_groups + ko].cast[DType.float32]()
 
         comptime for ki in range(0, MXFP4_SF_VECTOR_SIZE // 2, 4):
             var a_data = bitcast[DType.int32, 1](a_local_ptr.load[width=4](ki))
-            var b_data = InlineArray[Int32, BLOCK_N](uninitialized=True)
+            var b_data = Array[Int32, BLOCK_N](uninitialized=True)
 
             comptime for bn in range(BLOCK_N):
                 b_data[bn] = bitcast[DType.int32, 1](

@@ -791,7 +791,7 @@ struct BlackwellMatmulSM100Kernel[
         tma_origin: ImmOrigin
     ](
         c_tma_ops: Pointer[
-            InlineArray[Self.CTmaOp, Self.num_c_tma_descriptors], tma_origin
+            Array[Self.CTmaOp, Self.num_c_tma_descriptors], tma_origin
         ],
         c_tiles: Self.SmemType.CTileArray,
         stage: Self.OutputPipeline.Stage,
@@ -1689,14 +1689,14 @@ struct BlackwellMatmulSM100Kernel[
     def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
-        c_tma_ops: InlineArray[Self.CTmaOp, Self.num_c_tma_descriptors],
+        c_tma_ops: Array[Self.CTmaOp, Self.num_c_tma_descriptors],
         epilogue_load_tma_op: Self.EpilogueLoadTmaOp,
         bias_1d_tile: Self.Bias1DTile,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
         rank_sigs: Optional[
-            InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
+            Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
         ] = None,
         my_rank: Int = 0,
     ):
@@ -2588,7 +2588,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         # Shared memory pointer to hold tensor memory address
         var ptr_tmem_addr = (b_smem + Self.b_size).bitcast[UInt32]()
 
-        var c_frag: InlineArray[Scalar[Self.accum_type], Self.c_frag_size]
+        var c_frag: Array[Scalar[Self.accum_type], Self.c_frag_size]
 
         comptime a_expected_bytes = Self.a_size * size_of[Self.a_type]()
         comptime b_expected_bytes = Self.b_size * size_of[Self.b_type]()

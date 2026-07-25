@@ -348,10 +348,10 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     else:
         workspace = {}
 
-    # This is wrapped in an InlineArray to match reduce-scatter friendly kernel interface
-    var c_tma_ops: InlineArray[type_of(c_tma_op), 1] = [c_tma_op]
+    # This is wrapped in an Array to match reduce-scatter friendly kernel interface
+    var c_tma_ops: Array[type_of(c_tma_op), 1] = [c_tma_op]
     var rank_sigs: Optional[
-        InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
+        Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
     ] = None
 
     ctx.enqueue_function[kernel](
