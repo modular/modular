@@ -20,6 +20,7 @@ from huggingface_hub import errors as hf_hub_errors
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import HuggingFaceRepo
 from max.pipelines.weights.hf_utils import (
+    _hf_hub_download_with_retry,
     generate_local_model_path,
     validate_hf_repo_access,
 )
@@ -482,3 +483,28 @@ class TestConfigRepoId:
         assert repo._hub_repo_id == "org/model"
         assert repo.config_repo_id == "org/model"
         assert repo.config_repo_id != repo.repo_id
+
+
+def test_hf_hub_download_retries_on_racy_cache_entry() -> None:
+    """A racy `.incomplete` FileNotFoundError triggers one force_download retry."""
+    with patch(
+        "max.pipelines.weights.hf_utils.huggingface_hub.hf_hub_download",
+        side_effect=[FileNotFoundError("dangling .incomplete"), "/cache/w.st"],
+    ) as mock_download:
+        result = _hf_hub_download_with_retry(
+            repo_id="org/model", filename="w.st", force_download=False
+        )
+    assert result == "/cache/w.st"
+    assert mock_download.call_args_list[0].kwargs["force_download"] is False
+    assert mock_download.call_args_list[1].kwargs["force_download"] is True
+
+
+def test_hf_hub_download_does_not_retry_offline_miss() -> None:
+    """An offline/uncached miss (LocalEntryNotFoundError) is surfaced at once."""
+    with patch(
+        "max.pipelines.weights.hf_utils.huggingface_hub.hf_hub_download",
+        side_effect=hf_hub_errors.LocalEntryNotFoundError("offline"),
+    ) as mock_download:
+        with pytest.raises(hf_hub_errors.LocalEntryNotFoundError):
+            _hf_hub_download_with_retry(repo_id="org/model", filename="w.st")
+    assert mock_download.call_count == 1
