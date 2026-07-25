@@ -340,3 +340,50 @@ def test_max_get_server_cmd_recipe_alias_resolves_yaml(
     cfg_idx = cmd.index("--config-file")
     assert cmd[cfg_idx + 1] == recipe_path
     assert "--trust-remote-code" not in cmd
+
+
+def test_merge_serve_extra_args_appends_when_absent() -> None:
+    args = ["prog", "model", "--framework", "max-ci"]
+    merged = smoke_test.merge_serve_extra_args(args, "--kv-connector=tiered")
+    assert merged == args + ["--serve-extra-args", "--kv-connector=tiered"]
+
+
+def test_merge_serve_extra_args_splices_into_two_token_form() -> None:
+    merged = smoke_test.merge_serve_extra_args(
+        ["prog", "--serve-extra-args", "--max-batch-size=16"],
+        "--kv-connector=tiered",
+    )
+    assert merged == [
+        "prog",
+        "--serve-extra-args",
+        "--kv-connector=tiered --max-batch-size=16",
+    ]
+
+
+def test_merge_serve_extra_args_splices_into_equals_form() -> None:
+    merged = smoke_test.merge_serve_extra_args(
+        ["prog", "--serve-extra-args=--max-batch-size=16"],
+        "--kv-connector=tiered",
+    )
+    assert merged == [
+        "prog",
+        "--serve-extra-args=--kv-connector=tiered --max-batch-size=16",
+    ]
+
+
+def test_merge_serve_extra_args_caller_value_goes_last_so_it_wins() -> None:
+    """The caller's value lands after the merged-in one, so the serve CLI's
+    last-wins parsing gives an explicit caller override of the same flag
+    precedence."""
+    merged = smoke_test.merge_serve_extra_args(
+        ["prog", "--serve-extra-args", "--kv-connector=null"],
+        "--kv-connector=tiered",
+    )
+    assert merged[2] == "--kv-connector=tiered --kv-connector=null"
+
+
+def test_merge_serve_extra_args_does_not_mutate_input() -> None:
+    args = ["prog", "--serve-extra-args", "--max-batch-size=16"]
+    snapshot = list(args)
+    smoke_test.merge_serve_extra_args(args, "--kv-connector=tiered")
+    assert args == snapshot

@@ -389,6 +389,26 @@ def _revision_args(
     return args
 
 
+def merge_serve_extra_args(args: list[str], extra: str) -> list[str]:
+    """Returns a copy of *args* with *extra* folded into ``--serve-extra-args``.
+
+    ``--serve-extra-args`` is a single-value option, so appending a second
+    occurrence would silently drop one of the two values. *extra* is instead
+    spliced in front of any caller-supplied value (later serve flags win, so
+    an explicit caller override of the same flag takes precedence); when the
+    caller passed no ``--serve-extra-args``, the flag is appended.
+    """
+    merged = list(args)
+    for i, arg in enumerate(merged):
+        if arg == "--serve-extra-args" and i + 1 < len(merged):
+            merged[i + 1] = f"{extra} {merged[i + 1]}"
+            return merged
+        if arg.startswith("--serve-extra-args="):
+            merged[i] = f"--serve-extra-args={extra} {arg.split('=', 1)[1]}"
+            return merged
+    return merged + ["--serve-extra-args", extra]
+
+
 def get_server_cmd(
     framework: str,
     model: str,

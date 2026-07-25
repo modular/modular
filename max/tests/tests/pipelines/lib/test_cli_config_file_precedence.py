@@ -377,6 +377,101 @@ def test_model_path_matching_recipe_does_not_warn(
     assert caplog.records == []
 
 
+_KV_CACHE_RECIPE = (
+    "model:\n"
+    "  model_path: fake/model\n"
+    "  kv_cache:\n"
+    "    device_memory_utilization: 0.8\n"
+    "    kv_connector: tiered\n"
+    "    kv_connector_config:\n"
+    "      host_kvcache_swap_space_gb: 1500\n"
+    "      disk_offload_max_gb: 8192\n"
+    "      disk_offload_dir: /kv-offload\n"
+)
+
+
+def _write_kv_recipe(tmp_path: Path) -> Path:
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(_KV_CACHE_RECIPE, encoding="utf-8")
+    return config_path
+
+
+def test_kv_cache_dict_flag_replaces_only_named_field(tmp_path: Path) -> None:
+    """Regression: a KV-cache CLI flag must override only the field it names,
+    not rebuild the whole kv_cache section from defaults. Here the dict-valued
+    ``--kv-connector-config`` replaces the recipe's connector sizing while the
+    recipe's sibling fields (``kv_connector``, ``device_memory_utilization``)
+    survive -- previously the override silently reset ``kv_connector`` to
+    ``None``, disabling the tiered connector."""
+    config = PipelineConfig.from_flat_kwargs(
+        config_file=str(_write_kv_recipe(tmp_path)),
+        kv_connector_config={
+            "host_kvcache_swap_space_gb": 50,
+            "disk_offload_max_gb": 50,
+        },
+    )
+
+    kv = config.models["main"].kv_cache
+    assert kv.kv_connector is KVConnectorType.tiered
+    assert kv.device_memory_utilization == 0.8
+    assert kv.kv_connector_config is not None
+    assert kv.kv_connector_config.host_kvcache_swap_space_gb == 50
+    assert kv.kv_connector_config.disk_offload_max_gb == 50
+    # The named field is replaced wholesale: the recipe's disk_offload_dir
+    # does not leak into the CLI-provided connector config.
+    assert kv.kv_connector_config.disk_offload_dir is None
+
+
+def test_kv_cache_scalar_flag_preserves_recipe_dict_field(
+    tmp_path: Path,
+) -> None:
+    """A scalar KV-cache CLI flag leaves the recipe's dict-valued
+    ``kv_connector_config`` (and other unnamed fields) untouched."""
+    config = PipelineConfig.from_flat_kwargs(
+        config_file=str(_write_kv_recipe(tmp_path)),
+        device_memory_utilization=0.5,
+    )
+
+    kv = config.models["main"].kv_cache
+    assert kv.device_memory_utilization == 0.5
+    assert kv.kv_connector is KVConnectorType.tiered
+    assert kv.kv_connector_config is not None
+    assert kv.kv_connector_config.host_kvcache_swap_space_gb == 1500
+    assert kv.kv_connector_config.disk_offload_max_gb == 8192
+    assert kv.kv_connector_config.disk_offload_dir == "/kv-offload"
+
+
+def test_kv_cache_flags_without_recipe_apply_to_defaults() -> None:
+    """Without a recipe, KV-cache CLI flags land on top of KVCacheConfig
+    defaults (the pre-existing behavior the merge must not change)."""
+    config = PipelineConfig.from_flat_kwargs(
+        model={"model_path": "fake/model"},
+        kv_connector_config={"host_kvcache_swap_space_gb": 50},
+    )
+
+    kv = config.models["main"].kv_cache
+    assert kv.kv_connector_config is not None
+    assert kv.kv_connector_config.host_kvcache_swap_space_gb == 50
+    assert kv.kv_connector is None
+    assert kv.device_memory_utilization == 0.9
+
+
+def test_recipe_kv_cache_intact_without_kv_flags(tmp_path: Path) -> None:
+    """With no KV-cache CLI flags, the recipe's kv_cache section is loaded
+    verbatim."""
+    config = PipelineConfig.from_flat_kwargs(
+        config_file=str(_write_kv_recipe(tmp_path)),
+    )
+
+    kv = config.models["main"].kv_cache
+    assert kv.kv_connector is KVConnectorType.tiered
+    assert kv.device_memory_utilization == 0.8
+    assert kv.kv_connector_config is not None
+    assert kv.kv_connector_config.host_kvcache_swap_space_gb == 1500
+    assert kv.kv_connector_config.disk_offload_max_gb == 8192
+    assert kv.kv_connector_config.disk_offload_dir == "/kv-offload"
+
+
 def test_config_file_with_builtin_recipe_prefix() -> None:
     """ConfigFileModel resolves and opens a built-in recipe via the prefix path."""
     import yaml
