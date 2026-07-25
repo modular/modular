@@ -17,6 +17,7 @@ from std.collections import Optional, OptionalReg
 from std.gpu import block_dim, lane_id, thread_idx
 from std.gpu.memory import AddressSpace, CacheEviction, async_copy
 from std.math.uutils import umod
+from std.os import abort
 from std.sys import align_of, size_of
 
 from layout import Idx
@@ -734,19 +735,36 @@ struct GenericToSharedAsyncTileCopier[
         # `Scalar[src.dtype]` so `async_copy`'s `dtype` parameter infers
         # cleanly; without it the inferred dtype is a comptime expression
         # that fails to unify across the two pointer arguments.
+        # `TensorStorage.unsafe_ptr` is a raising trait method (it aborts for
+        # storage that cannot expose a raw pointer); this copier runs in a
+        # non-raising context, so mirror the old `TileTensor.ptr` accessor by
+        # trapping any failure here.
         comptime dtype = src.dtype
-        var src_global_ptr = (
-            src_fragments.ptr.address_space_cast[AddressSpace.GLOBAL]()
-            .mut_cast[False]()
-            .unsafe_origin_cast[ImmutAnyOrigin]()
-            .bitcast[Scalar[dtype]]()
-        )
-        var dst_shared_ptr = (
-            dst_fragments.ptr.mut_cast[True]()
-            .address_space_cast[AddressSpace.SHARED]()
-            .unsafe_origin_cast[MutAnyOrigin]()
-            .bitcast[Scalar[dtype]]()
-        )
+        var src_global_ptr: UnsafePointer[
+            Scalar[dtype], ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
+        ]
+        var dst_shared_ptr: UnsafePointer[
+            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        ]
+        try:
+            src_global_ptr = (
+                type_of(src_fragments)
+                .Storage.unsafe_ptr(src_fragments._storage)
+                .address_space_cast[AddressSpace.GLOBAL]()
+                .mut_cast[False]()
+                .unsafe_origin_cast[ImmutAnyOrigin]()
+                .bitcast[Scalar[dtype]]()
+            )
+            dst_shared_ptr = (
+                type_of(dst_fragments)
+                .Storage.unsafe_ptr(dst_fragments._storage)
+                .mut_cast[True]()
+                .address_space_cast[AddressSpace.SHARED]()
+                .unsafe_origin_cast[MutAnyOrigin]()
+                .bitcast[Scalar[dtype]]()
+            )
+        except e:
+            abort(t"tile_io async copy storage pointer access failed: {e}")
 
         # Per-thread fragments are sized in logical (post-vectorize) elements,
         # so `static_product` already counts cp.async issues, not scalars: each
