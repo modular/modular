@@ -1450,7 +1450,7 @@ struct TileLoaderLDS[
             m_offset: Row offset (M dim) within the block.
             k_offset: Column (K dim) offset within the block.
         """
-        comptime SmemPtr = UnsafePointer[
+        comptime SmemPtr = Pointer[
             Scalar[Self.dtype],
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,

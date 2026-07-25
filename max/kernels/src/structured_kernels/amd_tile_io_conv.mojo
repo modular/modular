@@ -855,7 +855,7 @@ struct TileLoaderLDSIm2col[
                 flat (kh, kw, c) index ∈ [0, R*S*C)). Must be a
                 multiple of `tile_cols`.
         """
-        comptime SmemPtr = UnsafePointer[
+        comptime SmemPtr = Pointer[
             Scalar[Self.dtype],
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
