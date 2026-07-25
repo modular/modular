@@ -49,7 +49,7 @@ shmem package — use bmojo / bazel):
 
 from std.gpu.host import DeviceContext, HostBuffer
 from std.gpu.host.info import MI355X
-from std.math import align_up, exp
+from std.math import align_up, exp, isfinite
 from std.random import random_float64, seed
 
 from layout import Coord, Idx, TileTensor, row_major
@@ -369,6 +369,9 @@ def _run_activation_probe[
     ctx.synchronize()
     # > limit so both clamps fire.
     _fill_random_bf16(input_h, num_tokens * input_dim, -12.0, 12.0)
+    for h in range(MXFP4_SF_VECTOR_SIZE):
+        input_h[h] = BFloat16(-3.0e38)
+        input_h[h + hidden_size] = BFloat16(7.0)
     a_off_h[0] = UInt32(0)
     a_off_h[1] = UInt32(num_tokens)
 
@@ -457,7 +460,7 @@ def _run_activation_probe[
             var g_c = min(gate, limit)
             var u_c = min(max(up, -limit), limit)
             var sig = 1.0 / (1.0 + exp(-(g_c * alpha)))
-            var expected = (u_c + 1.0) * g_c * sig
+            var expected = g_c * sig * (u_c + 1.0)
 
             # Dequant: low nibble=even elem, high=odd; E2M1 value * block scale
             # (E8M0->f32 = 2^(byte-127), the scale fed to cvt.scalef32.pk.fp4).
@@ -470,6 +473,8 @@ def _run_activation_probe[
             var dequant = fp4 * s
 
             var err = abs(dequant - expected)
+            if not isfinite(dequant):
+                violations += 1
             # ~1 quant step (= block scale). 1.10x covers the 4->6 midpoint
             # (err==1.0*S) + transcendental jitter, still fails a wrong clamp.
             var tol = 1.10 * s

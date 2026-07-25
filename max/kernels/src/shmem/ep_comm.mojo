@@ -4911,7 +4911,7 @@ def fused_silu_mxfp4_kernel[
             comptime if clamp_activation:
                 var g_c = min(gate_proj, limit)
                 var u_c = up_proj.clamp(-limit, limit)
-                output_val = (u_c + 1.0) * g_c * _sigmoid(g_c * alpha)
+                output_val = (g_c * _sigmoid(g_c * alpha)) * (u_c + 1.0)
             else:
                 gate_proj = gate_proj / (1.0 + exp(-gate_proj))
                 output_val = gate_proj * up_proj
