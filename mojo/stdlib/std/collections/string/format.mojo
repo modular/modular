@@ -134,8 +134,8 @@ def _comptime_list_to_span[
 ]() -> Span[T, ImmStaticOrigin]:
     """Convert a comptime list to a runtime span of static constant origin."""
 
-    def list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
-        var array = InlineArray[T, len(list)](uninitialized=True)
+    def list_to_array[list: List[T]]() -> Array[T, len(list)]:
+        var array = Array[T, len(list)](uninitialized=True)
 
         comptime for i in range(len(list)):
             Pointer(to=array[i]).unsafe_write(materialize[list[i].copy()]())

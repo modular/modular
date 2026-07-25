@@ -297,14 +297,14 @@ struct Span[
         //,
     ](
         out self: Span[U, array_origin],
-        ref[array_origin] array: InlineArray[U, size],
+        ref[array_origin] array: Array[U, size],
     ):
-        """Construct a `Span` from an `InlineArray`.
+        """Construct a `Span` from an `Array`.
 
         Parameters:
             array_origin: The origin of the array.
-            U: The type of the elements in the `InlineArray`.
-            size: The size of the `InlineArray`.
+            U: The type of the elements in the `Array`.
+            size: The size of the `Array`.
 
         Args:
             array: The array to which the span refers.
@@ -442,7 +442,7 @@ struct Span[
             True if the value is contained in the list, False otherwise.
         """
 
-        comptime widths: InlineArray[Int, 6] = [256, 128, 64, 32, 16, 8]
+        comptime widths: Array[Int, 6] = [256, 128, 64, 32, 16, 8]
         var ptr = self.unsafe_ptr()
         var length = len(self)
         var processed = 0

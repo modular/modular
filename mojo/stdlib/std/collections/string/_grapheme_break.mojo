@@ -93,8 +93,8 @@ comptime INCB_LINKER: UInt8 = 3
 
 @always_inline
 def _range_lookup[
-    starts_table: InlineArray[UInt32, _],
-    values_table: InlineArray[UInt8, _],
+    starts_table: Array[UInt32, _],
+    values_table: Array[UInt8, _],
     default: UInt8,
 ](cp: UInt32) -> UInt8:
     """Look up a property value for a codepoint using binary search over a
