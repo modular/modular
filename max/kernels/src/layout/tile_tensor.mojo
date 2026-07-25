@@ -2698,7 +2698,7 @@ struct TileTensor[
         comptime assert (
             self.element_size == rhs.element_size
         ), "in-place binary ops require operands with the same element size"
-        Self.Storage.add(
+        Self.Storage.iadd(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
         )
@@ -2719,7 +2719,7 @@ struct TileTensor[
         comptime assert (
             self.element_size == rhs.element_size
         ), "in-place binary ops require operands with the same element size"
-        Self.Storage.mul(
+        Self.Storage.imul(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
         )
@@ -2739,7 +2739,7 @@ struct TileTensor[
         comptime assert (
             self.element_size == rhs.element_size
         ), "in-place binary ops require operands with the same element size"
-        Self.Storage.sub(
+        Self.Storage.isub(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
         )
@@ -2760,7 +2760,7 @@ struct TileTensor[
         comptime assert (
             self.element_size == rhs.element_size
         ), "in-place binary ops require operands with the same element size"
-        Self.Storage.floordiv(
+        Self.Storage.ifloordiv(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
         )
@@ -2781,7 +2781,7 @@ struct TileTensor[
         comptime assert (
             self.element_size == rhs.element_size
         ), "in-place binary ops require operands with the same element size"
-        Self.Storage.truediv(
+        Self.Storage.itruediv(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
         )
@@ -2802,7 +2802,7 @@ struct TileTensor[
         comptime assert (
             self.element_size == rhs.element_size
         ), "in-place binary ops require operands with the same element size"
-        Self.Storage.min(
+        Self.Storage.imin(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
         )
@@ -2823,7 +2823,7 @@ struct TileTensor[
         comptime assert (
             self.element_size == rhs.element_size
         ), "in-place binary ops require operands with the same element size"
-        Self.Storage.max(
+        Self.Storage.imax(
             (self._unsafe_storage_cast[to_mut=True](), self.layout),
             (rhs._storage, rhs.layout),
         )
@@ -2834,7 +2834,7 @@ struct TileTensor[
 
         For unsigned dtypes this is the identity.
         """
-        Self.Storage.abs(self._unsafe_storage_cast[to_mut=True](), self.layout)
+        Self.Storage.iabs(self._unsafe_storage_cast[to_mut=True](), self.layout)
 
     @always_inline
     def recip(self) where Self.mut and conforms_to(Self.Storage, TensorOps):
@@ -2846,13 +2846,13 @@ struct TileTensor[
         Constraints:
             The tensor's dtype must be a floating-point type.
         """
-        Self.Storage.recip(
+        Self.Storage.irecip(
             self._unsafe_storage_cast[to_mut=True](), self.layout
         )
 
     @always_inline
     def exp[
-        scale: Scalar[Self.dtype] = 1
+        scale_dtype: DType = Self.dtype, //, scale: Scalar[scale_dtype] = 1
     ](self) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """Replaces each element `x` of this tensor with `exp(scale * x)`,
         in place.
@@ -2863,13 +2863,16 @@ struct TileTensor[
         exponential.
 
         Parameters:
+            scale_dtype: The data type of the scale factor. Defaults to the
+                tensor's dtype; the scale is cast to the tensor's dtype
+                before the multiplication.
             scale: The compile-time factor each element is multiplied by
                 before exponentiation.
 
         Constraints:
             The tensor's dtype must be a floating-point type.
         """
-        Self.Storage.exp[scale](
+        Self.Storage.iexp[scale](
             self._unsafe_storage_cast[to_mut=True](), self.layout
         )
 
