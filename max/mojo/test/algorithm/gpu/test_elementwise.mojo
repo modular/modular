@@ -50,9 +50,9 @@ def _strided_index[
 def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
-    var in_host_stack = InlineArray[Scalar[dtype], 16](fill=0)
+    var in_host_stack = Array[Scalar[dtype], 16](fill=0)
     var in_host = Span(in_host_stack)
-    var out_host_stack = InlineArray[Scalar[dtype], 16](fill=0)
+    var out_host_stack = Array[Scalar[dtype], 16](fill=0)
     var out_host = Span(out_host_stack)
 
     var flattened_length = len(in_host)
@@ -127,9 +127,9 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 
 def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
-    var in_host_stack = InlineArray[Scalar[dtype], 9](fill=0)
+    var in_host_stack = Array[Scalar[dtype], 9](fill=0)
     var in_host = Span(in_host_stack)
-    var out_host_stack = InlineArray[Scalar[dtype], 9](fill=0)
+    var out_host_stack = Array[Scalar[dtype], 9](fill=0)
     var out_host = Span(out_host_stack)
 
     var flattened_length = len(in_host)
@@ -201,7 +201,7 @@ def run_elementwise_exact_boundary_uses_simd[
         return
 
     comptime flattened_length = pack_size * (pack_size + 1)
-    var out_host_stack = InlineArray[Scalar[dtype], flattened_length](fill=0)
+    var out_host_stack = Array[Scalar[dtype], flattened_length](fill=0)
     var out_host = Span(out_host_stack)
 
     var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
@@ -239,9 +239,9 @@ def run_elementwise_exact_boundary_uses_simd[
 
 def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
-    var in_host_stack = InlineArray[Scalar[dtype], 2 * 4 * 5](fill=0)
+    var in_host_stack = Array[Scalar[dtype], 2 * 4 * 5](fill=0)
     var in_host = Span(in_host_stack)
-    var out_host_stack = InlineArray[Scalar[dtype], 2 * 4 * 5](fill=0)
+    var out_host_stack = Array[Scalar[dtype], 2 * 4 * 5](fill=0)
     var out_host = Span(out_host_stack)
 
     var flattened_length = len(in_host)

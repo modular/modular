@@ -55,7 +55,7 @@ struct Module:
         # `DLTensor.__copyinit__` (used at the call site) already fixed
         # up self-referential pointers + nulled strides for contiguous
         # tensors.  So we can take their addresses directly.
-        args: InlineArray[TVMFFIAny, 8] = [
+        args: Array[TVMFFIAny, 8] = [
             TVMFFIAny(UnsafePointer(to=mat1)),
             TVMFFIAny(UnsafePointer(to=mat2)),
             TVMFFIAny(UnsafePointer(to=mat1_scale)),

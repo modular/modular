@@ -130,7 +130,7 @@ def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     comptime n = 1024
     comptime F32 = DType.float32
 
-    var stack = InlineArray[Float32, n](fill=0)
+    var stack = Array[Float32, n](fill=0)
     var vec_host = Span(stack)
 
     if fill_strategy == FillStrategy.LINSPACE:
@@ -225,7 +225,7 @@ def run_reduce_via_cas(ctx: DeviceContext) raises:
     comptime n = 1024
     comptime F32 = DType.float32
 
-    var vec_host = InlineArray[Float32, n](fill=0)
+    var vec_host = Array[Float32, n](fill=0)
     for i in range(n):
         vec_host[i] = Float32(i)
 

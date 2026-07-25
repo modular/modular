@@ -34,7 +34,7 @@ def test_reductions() raises:
     comptime size = 100
 
     # Create a mem of size size
-    var vector = InlineArray[Float32, size](fill=0)
+    var vector = Array[Float32, size](fill=0)
 
     for i in range(size):
         vector[i] = Float32(i + 1)
@@ -53,7 +53,7 @@ def test_reductions_zero_size() raises:
     print("== test_reductions_zero_size")
 
     comptime size = 0
-    var vector = InlineArray[Float32, size](fill=0)
+    var vector = Array[Float32, size](fill=0)
 
     print(min(vector))
     print(max(vector))
@@ -67,7 +67,7 @@ def test_fused_reductions_inner() raises:
     comptime size = 100
     comptime test_type = DType.float32
     comptime num_reductions = 3
-    var vector_stack = InlineArray[Float32, size](fill=0)
+    var vector_stack = Array[Float32, size](fill=0)
     var vector = Span(vector_stack)
 
     for i in range(size):
@@ -147,7 +147,7 @@ def test_fused_reductions_outer() raises:
     comptime size = 100
     comptime test_type = DType.float32
     comptime num_reductions = 3
-    var vector_stack = InlineArray[Float32, size](fill=0)
+    var vector_stack = Array[Float32, size](fill=0)
     var vector = Span(vector_stack)
 
     # COM: For the purposes of this test, we reinterpret this as a tensor
@@ -229,7 +229,7 @@ def test_product() raises:
     comptime size = 10
 
     # Create a mem of size size
-    var vector = InlineArray[Float32, size](uninitialized=True)
+    var vector = Array[Float32, size](uninitialized=True)
 
     for i in range(size):
         vector[i] = Float32(i + 1)
@@ -246,7 +246,7 @@ def test_mean_variance() raises:
     comptime size = 100
 
     # Create a mem of size size
-    var vector = InlineArray[Float32, size](fill=0)
+    var vector = Array[Float32, size](fill=0)
 
     for i in range(size):
         vector[i] = Float32(i + 1)
@@ -262,10 +262,10 @@ def test_mean_variance() raises:
 def test_cumsum() raises:
     print("== test_cumsum")
 
-    var vector = InlineArray[Float32, 150](fill=0)
+    var vector = Array[Float32, 150](fill=0)
     for i in range(len(vector)):
         vector[i] = Float32(i + 1)
-    var cumsum_out1 = InlineArray[Float32, vector.length](fill=0)
+    var cumsum_out1 = Array[Float32, vector.length](fill=0)
     # cumsum[150, DType.float32](cumsum_out1, vector)
     # cumsum(cumsum_out1, vector)
     cumsum(cumsum_out1, vector)
@@ -292,10 +292,10 @@ def test_cumsum() raises:
 
     print()
 
-    var vector2 = InlineArray[Int64, 128](fill=0)
+    var vector2 = Array[Int64, 128](fill=0)
     for i in range(vector2.__len__()):
         vector2[i] = Int64(i + 1)
-    var cumsum_out2 = InlineArray[Int64, 128](fill=0)
+    var cumsum_out2 = Array[Int64, 128](fill=0)
     # cumsum[128, DType.int64](cumsum_out2, vector2)
     # cumsum(cumsum_out2, vector2)
     cumsum(cumsum_out2, vector2)

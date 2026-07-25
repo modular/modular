@@ -2434,7 +2434,7 @@ struct DeviceFunction[
     def _validate_arguments[
         *Ts: DevicePassable,
         num_args: Int,
-    ]() -> Tuple[Int, InlineArray[Int, num_args]]:
+    ]() -> Tuple[Int, Array[Int, num_args]]:
         comptime declared_num_args = Self.declared_arg_types.size
 
         comptime assert (
@@ -2445,9 +2445,7 @@ struct DeviceFunction[
         # calculate the offset into a contiguous memory area which will
         # be used to remap the passed arguments into the device dtypes.
         var tmp_arg_offset = 0
-        var translated_arg_offsets = InlineArray[Int, num_args](
-            uninitialized=True
-        )
+        var translated_arg_offsets = Array[Int, num_args](uninitialized=True)
         var num_translated_args = 0
 
         comptime for i in range(num_args):
@@ -2598,7 +2596,7 @@ struct DeviceFunction[
 
         comptime args_size = calculate_args_size()
 
-        var translated_args = InlineArray[Byte, args_size](uninitialized=True)
+        var translated_args = Array[Byte, args_size](uninitialized=True)
         var start_addr = Int(translated_args.unsafe_ptr())
         var extra_align = align_up(start_addr, 8) - start_addr
 
@@ -5425,14 +5423,12 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
     """The number of `DeviceContext` values in the collection. Deprecated
     alias for `length`."""
 
-    var device_contexts: InlineArray[DeviceContext, Self.length]
+    var device_contexts: Array[DeviceContext, Self.length]
     """The underlying storage for the per-device contexts."""
 
     @always_inline
-    def __init__(
-        out self, device_contexts: InlineArray[DeviceContext, Self.length]
-    ):
-        """Initialize from an `InlineArray` of `DeviceContext` values.
+    def __init__(out self, device_contexts: Array[DeviceContext, Self.length]):
+        """Initialize from an `Array` of `DeviceContext` values.
 
         Args:
             device_contexts: The per-device contexts to store.
@@ -5462,7 +5458,7 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
         assert (
             len(device_contexts) == Self.length
         ), "mismatch in the number of elements"
-        self.device_contexts = InlineArray[
+        self.device_contexts = Array[
             DeviceContext, __literal_size__
         ]._from_variadic(*device_contexts^)
 
@@ -5501,20 +5497,20 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
 
     def filter_gpu_contexts[
         num_gpu_devices: Int
-    ](self) raises -> InlineArray[DeviceContext, num_gpu_devices]:
+    ](self) raises -> Array[DeviceContext, num_gpu_devices]:
         """Filters CPU contexts out and returns the GPU contexts in order.
 
         Some kernels receive a `DeviceContextArray` that mixes GPU contexts
         with CPU contexts carrying host-side pointers. Most kernels only
         want the GPU contexts in launch order, packed into a fixed-size
-        `InlineArray`.
+        `Array`.
 
         Parameters:
             num_gpu_devices: The expected number of GPU contexts. Used as
-                the size of the returned `InlineArray`.
+                the size of the returned `Array`.
 
         Returns:
-            An `InlineArray` of size `num_gpu_devices` containing the GPU
+            An `Array` of size `num_gpu_devices` containing the GPU
             contexts in their original order.
 
         Raises:
@@ -5523,7 +5519,7 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
         """
         # Validate the count up front. Passing a partially-filled staging
         # array to `unsafe_assume_initialized=` would still be UB at the
-        # eventual destruction of the returned `InlineArray`.
+        # eventual destruction of the returned `Array`.
         var gpu_count = 0
         for i in range(Self.length):
             if self[i].api() != "cpu":
@@ -5535,16 +5531,16 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
         # `__del__` is a no-op, so the staging array is safe to drop even
         # with uninitialized slots in scope (e.g. on an early raise). The
         # `unsafe_assume_initialized=` constructor then moves every slot
-        # into a fully-initialized `InlineArray[DeviceContext]`.
-        var staging = InlineArray[
-            UnsafeMaybeUninit[DeviceContext], num_gpu_devices
-        ](uninitialized=True)
+        # into a fully-initialized `Array[DeviceContext]`.
+        var staging = Array[UnsafeMaybeUninit[DeviceContext], num_gpu_devices](
+            uninitialized=True
+        )
         var dev_idx = 0
         for i in range(Self.length):
             if self[i].api() != "cpu":
                 staging[dev_idx].init_from(DeviceContext(copy=self[i]))
                 dev_idx += 1
-        return InlineArray[DeviceContext, num_gpu_devices](
+        return Array[DeviceContext, num_gpu_devices](
             unsafe_assume_initialized=staging^
         )
 

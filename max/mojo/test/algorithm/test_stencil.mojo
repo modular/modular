@@ -72,12 +72,12 @@ def test_stencil_avg_pool() raises:
 
     comptime output_shape_dims = IndexList[4](1, output_height, output_width, 1)
 
-    var input_stack = InlineArray[
+    var input_stack = Array[
         Scalar[dtype], Int(input_shape_dims.flattened_length())
     ](uninitialized=True)
     var input = Span(input_stack)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
-    var output_stack = InlineArray[
+    var output_stack = Array[
         Scalar[dtype], Int(output_shape_dims.flattened_length())
     ](uninitialized=True)
     var output = Span(output_stack)
@@ -200,12 +200,12 @@ def test_stencil_avg_pool_padded() raises:
 
     comptime output_shape_dims = IndexList[4](1, output_height, output_width, 1)
 
-    var input_stack = InlineArray[
-        Scalar[dtype], input_shape_dims.flattened_length()
-    ](uninitialized=True)
+    var input_stack = Array[Scalar[dtype], input_shape_dims.flattened_length()](
+        uninitialized=True
+    )
     var input = Span(input_stack)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
-    var output_stack = InlineArray[
+    var output_stack = Array[
         Scalar[dtype], output_shape_dims.flattened_length()
     ](uninitialized=True)
     var output = Span(output_stack)
@@ -326,12 +326,12 @@ def test_stencil_avg_pool_stride_2() raises:
 
     comptime output_shape_dims = IndexList[4](1, output_height, output_width, 1)
 
-    var input_stack = InlineArray[
+    var input_stack = Array[
         Scalar[dtype], Int(input_shape_dims.flattened_length())
     ](uninitialized=True)
     var input = Span(input_stack)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
-    var output_stack = InlineArray[
+    var output_stack = Array[
         Scalar[dtype], Int(output_shape_dims.flattened_length())
     ](uninitialized=True)
     var output = Span(output_stack)
@@ -455,12 +455,12 @@ def test_stencil_max_pool_dilation_2() raises:
 
     comptime output_shape_dims = IndexList[4](1, output_height, output_width, 1)
 
-    var input_stack = InlineArray[
+    var input_stack = Array[
         Scalar[dtype], Int(input_shape_dims.flattened_length())
     ](uninitialized=True)
     var input = Span(input_stack)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
-    var output_stack = InlineArray[
+    var output_stack = Array[
         Scalar[dtype], Int(output_shape_dims.flattened_length())
     ](uninitialized=True)
     var output = Span(output_stack)
