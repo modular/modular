@@ -163,10 +163,14 @@ def rms_norm_op[
                 @always_inline
                 @parameter
                 @__copy_capture(in_ptr, feature_dim)
-                def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+                def input_fn[
+                    width: Int, alignment: Int
+                ](coords: Coord) -> SIMD[dtype, width]:
                     var c = rebind[IndexList[2]](coord_to_index_list(coords))
                     var flat_idx = c[0] * feature_dim + c[1]
-                    return in_ptr.load[width=width](flat_idx)
+                    return in_ptr.load[width=width, alignment=alignment](
+                        flat_idx
+                    )
 
                 @always_inline
                 @parameter
