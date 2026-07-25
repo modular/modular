@@ -20,14 +20,14 @@ comptime _OFFSET = 3
 
 
 def main():
-    var dst_data = InlineArray[Float32, 8](fill=0)
+    var dst_data = Array[Float32, 8](fill=0)
     var dst = TileTensor(dst_data, row_major[2, 4]())
     for i in range(2):
         for j in range(4):
             dst[i, j] = Float32(i * 4 + j)
 
     # A header of sentinels followed by the payload the offset exposes.
-    var rhs_data = InlineArray[Float32, _OFFSET + 8](fill=-1000)
+    var rhs_data = Array[Float32, _OFFSET + 8](fill=-1000)
     for i in range(8):
         rhs_data[_OFFSET + i] = Float32(10 * (i + 1))
 
@@ -49,7 +49,7 @@ def main():
 
     # Rank-1 broadcast through the offset policy: bias[0] applies to row 0,
     # bias[1] to row 1.
-    var bias_data = InlineArray[Float32, _OFFSET + 2](fill=-1000)
+    var bias_data = Array[Float32, _OFFSET + 2](fill=-1000)
     bias_data[_OFFSET] = 100.0
     bias_data[_OFFSET + 1] = 200.0
 

@@ -492,7 +492,7 @@ struct Moco4296Iter[T: Movable & ImplicitlyDeletable](Movable where False):
 # Like MOCO-4296, but the `downcast` is not on a direct parameter binding of
 # the declared return type.
 @fieldwise_init
-struct InlineArray[ElementType: Movable, size: Int](Movable where False):
+struct Array[ElementType: Movable, size: Int](Movable where False):
     pass
 
 
@@ -503,14 +503,14 @@ struct MyPtr[type: AnyType](Copyable, Movable):
 
 @fieldwise_init
 struct MyIter[T: Copyable, size: Int](Movable where False):
-    var ptr: MyPtr[InlineArray[Self.T, Self.size]]
+    var ptr: MyPtr[Array[Self.T, Self.size]]
 
 
 # CHECK-LABEL: lit.fn @"make_iter
 # CHECK-SAME: %__result__: !lit.ref<!lit.struct<#MyIter <{{.*}}downcast(:!AnyType_Movable ElementType){{.*}}>>,{{.*}}> byref_result
-# CHECK: kgen.rebind {{.*}}InlineArray<:!AnyType_Movable upcast(:!AnyType_Copyable_Movable downcast(:!AnyType_Movable ElementType))
+# CHECK: kgen.rebind {{.*}}Array<:!AnyType_Movable upcast(:!AnyType_Copyable_Movable downcast(:!AnyType_Movable ElementType))
 # CHECK: lit.call {{.*}}@struct_conditional_trait_conformance::@MyIter::@"__init__
 def make_iter[
     ElementType: Movable, size: Int
 ]() -> MyIter[downcast[ElementType, Copyable], size]:
-    return {MyPtr[InlineArray[ElementType, size]]()}
+    return {MyPtr[Array[ElementType, size]]()}

@@ -16,7 +16,7 @@
 
 # RUN: %mojo %s | FileCheck %s
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.reflection import reflect
 
 
@@ -32,7 +32,7 @@ struct KernelFunction[
 
 # A wrapped void** argument.
 struct KernelArgPack[kernel: KernelFunction[_]]:
-    var pointers: InlineArray[
+    var pointers: Array[
         MutOpaquePointer[MutUntrackedOrigin],
         Self.kernel.declared_arg_types.size,
     ]
