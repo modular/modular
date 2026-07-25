@@ -12,12 +12,19 @@ load(":py_imports.bzl", "compute_py_imports")
 load(":py_repl.bzl", "py_repl")
 
 def _get_manual_srcs(tags, per_test_tags, srcs):
+    # Srcs that default builds skip, so mypy has to see them via a separate
+    # library. A no-mypy suppression opts out, at either granularity.
+    if "no-mypy" in tags:
+        return []
+
     if "manual" in tags or "postsubmit" in tags:
         return srcs
 
     result = []
     for src in srcs:
         src_tags = per_test_tags.get(src, [])
+        if "no-mypy" in src_tags:
+            continue
         if "manual" in src_tags or "postsubmit" in src_tags:
             result.append(src)
 
