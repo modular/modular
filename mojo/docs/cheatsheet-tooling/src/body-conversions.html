@@ -110,7 +110,7 @@ s.as_bytes(), s.codepoints(), s.graphemes() # iterators</pre>
   <h2>UnsafePointer[T] <span class="sum">to backing buffer</span></h2>
   <div class="body">
     <p class="note">Use <b>unsafe_ptr()</b> to access: <b>List</b>, <b>String</b>,
-      <b>StringSlice</b>, <b>InlineArray</b>, and <b>Span</b>.</p>
+      <b>StringSlice</b>, <b>Array</b>, and <b>Span</b>.</p>
     <p class="dir">access through a pointer</p>
 <pre class="code">buf.unsafe_ptr() # -> UnsafePointer[T]
 p[i] # deref one element

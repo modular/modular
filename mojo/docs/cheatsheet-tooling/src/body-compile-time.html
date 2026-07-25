@@ -29,7 +29,7 @@
 <section class="panel">
   <h2>Parameters: types and values <span class="sum">[ ] compile-time parameters, ( ) runtime arguments</span></h2>
   <div class="body">
-<pre class="code">def repeat[T: Copyable, n: Int](x: T) -> InlineArray[T, n]:
+<pre class="code">def repeat[T: Copyable, n: Int](x: T) -> Array[T, n]:
     ... # T is a type, n is a value
 struct Matrix[dtype: DType, rows: Int, cols: Int]: ...</pre>
     <p class="note">Use parameters to write generic algorithms and structs. The compiler

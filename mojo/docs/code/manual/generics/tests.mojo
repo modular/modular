@@ -288,7 +288,7 @@ def test_make_filled() raises:
 
 
 def fixed[size: Int]():
-    var buf = InlineArray[Int, size](fill=0)
+    var buf = Array[Int, size](fill=0)
     _ = buf
 
 

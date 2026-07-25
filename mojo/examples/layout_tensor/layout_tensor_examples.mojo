@@ -23,7 +23,7 @@ from layout import (
     RuntimeTuple,
 )
 from std.math import ceildiv
-from std.collections import Set, InlineArray
+from std.collections import Set, Array
 
 from layout.layout_tensor import LayoutTensorIter, _compute_distribute_layout
 from layout.layout import (
@@ -43,7 +43,7 @@ def accessing_tensor_elements_example() raises:
     comptime rows = 4
     comptime columns = 8
     comptime layout = Layout.row_major(rows, columns)
-    var storage = InlineArray[Float32, rows * columns](uninitialized=True)
+    var storage = Array[Float32, rows * columns](uninitialized=True)
     for i in range(rows * columns):
         storage[i] = Float32(i)
     var tensor = LayoutTensor[DType.float32, layout](storage)
@@ -73,7 +73,7 @@ def accessing_nested_tensor_elements_example() raises:
     comptime columns = 6
     comptime tiler = Layout.row_major(2, 3)
     comptime layout = blocked_product(Layout.col_major(2, 2), tiler)
-    var storage = InlineArray[Float32, rows * columns](uninitialized=True)
+    var storage = Array[Float32, rows * columns](uninitialized=True)
     for i in range(rows * columns):
         storage[i] = Float32(i)
     var tensor = LayoutTensor[DType.float32, layout](storage)
@@ -90,7 +90,7 @@ def layout_tensor_on_cpu_example() raises:
     comptime rows = 8
     comptime columns = 16
     comptime layout = Layout.row_major(rows, columns)
-    var storage = InlineArray[Float32, rows * columns](uninitialized=True)
+    var storage = Array[Float32, rows * columns](uninitialized=True)
     var tensor = LayoutTensor[DType.float32, layout](storage)
     # end-layout-tensor-on-cpu-example
     assert_equal(tensor.size(), rows * columns)
@@ -119,7 +119,7 @@ def layout_tensor_tile_example() raises:
     comptime tile_layout = Layout.row_major(tile_size, tile_size)
     comptime tiler_layout = Layout.row_major(rows, columns)
     comptime tiled_layout = blocked_product(tile_layout, tiler_layout)
-    var storage = InlineArray[Float32, tiled_layout.size()](uninitialized=True)
+    var storage = Array[Float32, tiled_layout.size()](uninitialized=True)
     for i in range(comptime (tiled_layout.size())):
         storage[i] = Float32(i)
     var tensor = LayoutTensor[DType.float32, tiled_layout](storage)
@@ -142,7 +142,7 @@ def layout_tensor_tile_example() raises:
 def layout_tensor_iterator_example() raises:
     # start-layout-tensor-iterator-example-1
     comptime buf_size = 128
-    var storage = InlineArray[Int16, buf_size](uninitialized=True)
+    var storage = Array[Int16, buf_size](uninitialized=True)
     for i in range(buf_size):
         storage[i] = Int16(i)
     comptime tile_layout = Layout.row_major(4, 4)
@@ -166,7 +166,7 @@ def layout_tensor_iterator_example2() raises:
     comptime cols = 8
     comptime size = rows * cols
     comptime tile_size = 2
-    var storage = InlineArray[Int32, size](uninitialized=True)
+    var storage = Array[Int32, size](uninitialized=True)
     for i in range(size):
         storage[i] = Int32(i)
 

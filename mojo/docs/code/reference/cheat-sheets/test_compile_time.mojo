@@ -168,7 +168,7 @@ def test_reflect() raises:
 
 
 # --- materialization: comptime value -> runtime ---
-comptime POWERS: InlineArray[Int, 4] = [1, 2, 4, 8]
+comptime POWERS: Array[Int, 4] = [1, 2, 4, 8]
 
 
 def test_materialization() raises:
