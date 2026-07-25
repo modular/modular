@@ -55,9 +55,9 @@ struct IndexSmemStorage[
         BN: Number of key rows staged in shared memory per block tile.
     """
 
-    var q_smem: InlineArray[Scalar[Self.dtype], Self.num_heads * Self.depth]
-    var k_smem: InlineArray[Scalar[Self.dtype], Self.BN * Self.depth]
-    var scratch: InlineArray[Scalar[DType.float32], Self.BN * 8]
+    var q_smem: Array[Scalar[Self.dtype], Self.num_heads * Self.depth]
+    var k_smem: Array[Scalar[Self.dtype], Self.BN * Self.depth]
+    var scratch: Array[Scalar[DType.float32], Self.BN * 8]
 
 
 @__name(t"fp8_index_{dtype}")
@@ -68,7 +68,7 @@ def fp8_index_kernel[
     QSLT: TensorLayout,
     k_operand_type: MHAOperand,
     ks_operand_type: MHAOperand,
-    block_tile_shape: InlineArray[Int, 2],
+    block_tile_shape: Array[Int, 2],
     VLLT: TensorLayout,
     num_heads: Int,
     depth: Int,
@@ -440,7 +440,7 @@ def fp8_index[
             " is unvalidated below 16 heads; num_heads in {4, 8} requires the"
             " SM100 tensor-core path"
         )
-        comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
+        comptime block_tile_shape: Array[Int, 2] = [512, 128]
         comptime BM = block_tile_shape[0]
         comptime BN = block_tile_shape[1]
         comptime smem_use = size_of[

@@ -199,9 +199,9 @@ struct MLASparseSharedMemoryQKVFP8[config: MLASparseConfig]:
     # FP8 operands. Q is persistent; KV/P are double-buffered for the QK(k) /
     # PV(k-1) one-block software-pipeline overlap. O (bf16) reuses the KV
     # region at the epilogue (all MMAs done -> KV free).
-    var q: InlineArray[Scalar[FP8_TYPE], Self.Q_SIZE]
-    var kv: InlineArray[Scalar[FP8_TYPE], Self.num_mbars * Self.KV_STAGE_SIZE]
-    var p: InlineArray[Scalar[FP8_TYPE], Self.num_mbars * Self.P_STAGE_SIZE]
+    var q: Array[Scalar[FP8_TYPE], Self.Q_SIZE]
+    var kv: Array[Scalar[FP8_TYPE], Self.num_mbars * Self.KV_STAGE_SIZE]
+    var p: Array[Scalar[FP8_TYPE], Self.num_mbars * Self.P_STAGE_SIZE]
     # Separate V (cg2).  Placed right after `p` so (a) q/kv/p keep their exact
     # HEAD byte offsets -- the SW64 MMA operands q/kv/p require 1024B
     # (swizzle-atom) base alignment, so they must NOT shift (a +384B shift of `p`
@@ -209,45 +209,45 @@ struct MLASparseSharedMemoryQKVFP8[config: MLASparseConfig]:
     # (q/kv/p are all 1024B-multiple sized).  At cg1 it is a 128B-multiple dummy;
     # it only shifts the scalar/barrier arrays after it, which are field-pointer
     # addressed and alignment-insensitive.  O (bf16) reuses the `kv` region.
-    var v: InlineArray[Scalar[FP8_TYPE], Self.num_mbars * Self.V_STAGE_SIZE]
+    var v: Array[Scalar[FP8_TYPE], Self.num_mbars * Self.V_STAGE_SIZE]
 
     # Physical gather rows for each in-flight KV block (K producer).
-    var d_indices: InlineArray[Int32, Self.num_mbars * Self.B_TOPK]
+    var d_indices: Array[Int32, Self.num_mbars * Self.B_TOPK]
     # Separate V-producer gather rows (cg2: all B_TOPK keys; size 1 at cg1).
-    var d_indices_v: InlineArray[
+    var d_indices_v: Array[
         Int32, Self.num_mbars * (Self.B_TOPK if Self.is_cg2 else 1)
     ]
 
-    var rowwise_max: InlineArray[Float32, WARPGROUP_SIZE]
-    var rowwise_sum: InlineArray[Float32, WARPGROUP_SIZE]
-    var is_k_valid: InlineArray[UInt8, Self.num_mbars * Self.MASK_BYTES_PER_BUF]
-    var tmem_addr: InlineArray[UInt32, 1]
+    var rowwise_max: Array[Float32, WARPGROUP_SIZE]
+    var rowwise_sum: Array[Float32, WARPGROUP_SIZE]
+    var is_k_valid: Array[UInt8, Self.num_mbars * Self.MASK_BYTES_PER_BUF]
+    var tmem_addr: Array[UInt32, 1]
 
-    var prologue_q: InlineArray[SharedMemBarrier, 1]
+    var prologue_q: Array[SharedMemBarrier, 1]
     # QK^T MMA done (S slot in TMEM ready for WG0).  Sized to the S-TMEM
     # ring depth (NUM_S_SLOTS), NOT num_mbars -- decoupled from the KV SMEM
     # staging depth so the MMA warp can advance independently of it.
-    var qk_done: InlineArray[SharedMemBarrier, Self.NUM_S_SLOTS]
+    var qk_done: Array[SharedMemBarrier, Self.NUM_S_SLOTS]
     # PV MMA done (O accumulated for the block).
-    var sv_done: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var sv_done: Array[SharedMemBarrier, Self.num_mbars]
     # K gather landed (local TMA transaction barrier).  At cg1 the MMA waits
     # this directly; at cg2 WG1 waits it, then arrives the cross-CTA k_ready.
-    var kv_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var kv_ready: Array[SharedMemBarrier, Self.num_mbars]
     # WG0 released an S-TMEM ring slot (see NUM_S_SLOTS above).
-    var p_free: InlineArray[SharedMemBarrier, Self.NUM_S_SLOTS]
+    var p_free: Array[SharedMemBarrier, Self.NUM_S_SLOTS]
     # WG0 wrote FP8 P + rescaled O (SV may proceed).
-    var so_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
-    var k_valid_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
-    var k_valid_free: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var so_ready: Array[SharedMemBarrier, Self.num_mbars]
+    var k_valid_ready: Array[SharedMemBarrier, Self.num_mbars]
+    var k_valid_free: Array[SharedMemBarrier, Self.num_mbars]
 
     # cg2-only cluster handshake barriers (size 1 at cg1, unused there).  The
     # 2SM MMA on the leader (CTA0) reads BOTH CTAs' K/V/Q SMEM, so each CTA's
     # producer arrives the leader's cross-CTA barrier (init cta_group) after its
     # own local TMA lands.
     comptime CG2_MBARS = Self.num_mbars if Self.is_cg2 else 1
-    var k_ready: InlineArray[SharedMemBarrier, Self.CG2_MBARS]
-    var v_ready: InlineArray[SharedMemBarrier, Self.CG2_MBARS]
-    var v_tma_done: InlineArray[SharedMemBarrier, Self.CG2_MBARS]
+    var k_ready: Array[SharedMemBarrier, Self.CG2_MBARS]
+    var v_ready: Array[SharedMemBarrier, Self.CG2_MBARS]
+    var v_tma_done: Array[SharedMemBarrier, Self.CG2_MBARS]
 
 
 struct MLAPrefillSparseQKVFP8[
@@ -384,7 +384,7 @@ struct MLAPrefillSparseQKVFP8[
             address_space=AddressSpace.SHARED,
             ...,
         ],
-        nums: InlineArray[Scalar[DType.float32], n],
+        nums: Array[Scalar[DType.float32], n],
         query: UInt32,
         key_base: UInt32,
     ):
@@ -1310,7 +1310,7 @@ struct MLAPrefillSparseQKVFP8[
             mi = new_max
             li = mul_ftz(li, scale_for_old)
 
-            var nums = InlineArray[Scalar[DType.float32], P_PER_THREAD](
+            var nums = Array[Scalar[DType.float32], P_PER_THREAD](
                 uninitialized=True
             )
             # +P_FP8_BIAS lifts P out of the e4m3 subnormal floor; it scales
@@ -1331,7 +1331,7 @@ struct MLAPrefillSparseQKVFP8[
                 var prev_phase = ((k - 1) / UInt32(Self.config.num_mbars)) & 1
                 sv_done_ptr[prev_buf].wait(prev_phase)
 
-            var o_chunk_prefetch = InlineArray[
+            var o_chunk_prefetch = Array[
                 Scalar[DType.float32], O_RESCALE_CHUNK
             ](uninitialized=True)
             if k > 0 and should_scale_o:
@@ -1356,9 +1356,9 @@ struct MLAPrefillSparseQKVFP8[
 
             if k > 0 and should_scale_o:
                 tcgen05_load_wait()
-                var o_scaled_0 = InlineArray[
-                    Scalar[DType.float32], O_RESCALE_CHUNK
-                ](uninitialized=True)
+                var o_scaled_0 = Array[Scalar[DType.float32], O_RESCALE_CHUNK](
+                    uninitialized=True
+                )
                 comptime for j in range(O_RESCALE_CHUNK):
                     o_scaled_0[j] = mul_ftz(o_chunk_prefetch[j], scale_for_old)
                 tcgen05_st[
@@ -1377,7 +1377,7 @@ struct MLAPrefillSparseQKVFP8[
                         + UInt32(chunk_idx * O_RESCALE_CHUNK)
                     )
                     tcgen05_load_wait()
-                    var o_scaled = InlineArray[
+                    var o_scaled = Array[
                         Scalar[DType.float32], O_RESCALE_CHUNK
                     ](uninitialized=True)
                     comptime for j in range(O_RESCALE_CHUNK):
