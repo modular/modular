@@ -553,16 +553,18 @@ struct BlockwiseFP8TileWriter[
                     var dst_offset = c_tensor.layout(
                         Coord(Int(global_i), Int(global_j))
                     )
-                    var dst_ptr = c_tensor.ptr + Int(dst_offset)
+                    var dst_ptr = c_tensor._storage + Int(dst_offset)
 
                     comptime if size_of[Self.c_type]() == 2:
-                        var src_ptr = c_smem_split.ptr + swizzle(linear_idx)
+                        var src_ptr = c_smem_split._storage + swizzle(
+                            linear_idx
+                        )
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
                         dst_ptr.store[width=simd_size, alignment=alignment](src)
                     else:
-                        var src_ptr = c_smem_split.ptr + linear_idx
+                        var src_ptr = c_smem_split._storage + linear_idx
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()

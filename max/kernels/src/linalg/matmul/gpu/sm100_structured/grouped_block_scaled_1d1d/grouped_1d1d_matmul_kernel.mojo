@@ -2270,7 +2270,8 @@ struct Grouped1D1DMatmulKernel[
                                                 AddressSpace.GLOBAL
                                             ](),
                                             (
-                                                sfb_smem_tile.ptr + smem_offset
+                                                sfb_smem_tile._storage
+                                                + smem_offset
                                             ).address_space_cast[
                                                 AddressSpace.SHARED
                                             ](),
@@ -2315,7 +2316,8 @@ struct Grouped1D1DMatmulKernel[
                                         )
 
                                         var atom_dst = TileTensor(
-                                            sfb_smem_tile.ptr + smem_offset,
+                                            sfb_smem_tile._storage
+                                            + smem_offset,
                                             row_major[
                                                 Self.SFB_TMA_ROWS, ROW_STRIDE
                                             ](),
@@ -2344,7 +2346,7 @@ struct Grouped1D1DMatmulKernel[
                                                     MutAnyOrigin,
                                                     address_space=AddressSpace.SHARED,
                                                 ]
-                                            ](atom_dst.ptr),
+                                            ](atom_dst._storage),
                                             atom_dst.layout,
                                         )
                                         sfb_tma_op.async_copy_4d[
@@ -2819,11 +2821,11 @@ struct Grouped1D1DMatmulKernel[
 
                 # Peer CTA slice using TileTensor pattern (ptr + layout)
                 var a_peer_tt = type_of(a_tt)(
-                    a_tt.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tt._storage + peer_m_rank * Self.a_tma_load_size,
                     a_tt.layout,
                 )
                 var b_peer_tt = type_of(b_tt)(
-                    b_tt.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tt._storage + peer_rank_m * Self.b_tma_load_size,
                     b_tt.layout,
                 )
 
@@ -2880,7 +2882,7 @@ struct Grouped1D1DMatmulKernel[
                                 MutAnyOrigin,
                                 address_space=AddressSpace.SHARED,
                             ]
-                        ](sfa_tt.ptr),
+                        ](sfa_tt._storage),
                         sfa_tt.layout,
                     )
                     sfa_tma_op.async_copy_4d[Self.cta_group](
@@ -2912,7 +2914,7 @@ struct Grouped1D1DMatmulKernel[
                                     MutAnyOrigin,
                                     address_space=AddressSpace.SHARED,
                                 ]
-                            ](sfb_tt.ptr),
+                            ](sfb_tt._storage),
                             sfb_tt.layout,
                         )
                         sfb_tma_op.async_copy_4d[Self.cta_group](
@@ -3233,7 +3235,7 @@ struct Grouped1D1DMatmulKernel[
             # MXFP8 cross-warp amax staging: 32 fp32 slots indexed
             # warp * 8 + token. Reuses the c_tiles SMEM, idle in this
             # path (no bf16 scatter).
-            var amax_smem = c_tiles[0].ptr.bitcast[Float32]()
+            var amax_smem = c_tiles[0]._storage.bitcast[Float32]()
 
             comptime PartialType = InlineArray[
                 Scalar[Self.accum_type], rep_frag_size
@@ -3577,7 +3579,7 @@ struct Grouped1D1DMatmulKernel[
         # GMEM); the GMEM round trip is replaced by a SMEM round trip. bf16
         # SMEM matches the unfused kernel's BF16-from-GMEM read pattern
         # exactly, so swiglu_match_bf16 precision is automatic.
-        var smem_bf16_ptr = c_tiles[0].ptr.bitcast[BFloat16]()
+        var smem_bf16_ptr = c_tiles[0]._storage.bitcast[BFloat16]()
 
         comptime PartialType = InlineArray[
             Scalar[Self.accum_type], rep_frag_size

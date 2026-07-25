@@ -1095,7 +1095,7 @@ struct TileWriter[
                 comptime if Self.transpose_c:
                     # CUDA core fallback for unaligned group boundaries
                     Self._store_with_bounds_check_transpose[c_tensor_layout](
-                        c_smem_tile.ptr,
+                        c_smem_tile._storage,
                         c_tensor,
                         m_abs + UInt32(loop_stage * Self.stageN),
                         n_abs,
@@ -1272,11 +1272,13 @@ struct TileWriter[
                     )
                 if in_bounds:
                     comptime if size_of[Self.c_type]() == 2:
-                        var src_ptr = c_smem_split.ptr + swizzle(linear_idx)
+                        var src_ptr = c_smem_split._storage + swizzle(
+                            linear_idx
+                        )
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        var dst_ptr = c_tensor.ptr + c_tensor.layout(
+                        var dst_ptr = c_tensor._storage + c_tensor.layout(
                             Coord(
                                 Int(global_i),
                                 Int(global_j),
@@ -1284,11 +1286,11 @@ struct TileWriter[
                         )
                         dst_ptr.store[width=simd_size, alignment=alignment](src)
                     else:
-                        var src_ptr = c_smem_split.ptr + linear_idx
+                        var src_ptr = c_smem_split._storage + linear_idx
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        var dst_ptr = c_tensor.ptr + c_tensor.layout(
+                        var dst_ptr = c_tensor._storage + c_tensor.layout(
                             Coord(
                                 Int(global_i),
                                 Int(global_j),
@@ -1366,7 +1368,9 @@ struct TileWriter[
             ) * UInt32(simd_size)
             if global_token < m_end and global_weight < UInt32(cN):
                 (
-                    c_tensor.ptr + global_token * UInt32(cN) + global_weight
+                    c_tensor._storage
+                    + global_token * UInt32(cN)
+                    + global_weight
                 ).store[alignment=smem_alignment](val_vec)
 
     # ========== Residual Add Support ==========
@@ -1616,7 +1620,7 @@ struct TileWriter[
                     upper_frag_casted,
                     lower_frag_casted,
                     UInt32(0),
-                    src_smem_tile.ptr,
+                    src_smem_tile._storage,
                     beta.cast[Self.epilogue_dtype](),
                 )
             )
@@ -1854,7 +1858,7 @@ struct TileWriter[
                         ldm_m_row * UInt32(sub_tile_n) + ldm_nloc
                     )
                     var epi_vals = ld_matrix[simd_width=4, transpose=True](
-                        epilogue_tile.ptr + Int(ldm_off)
+                        epilogue_tile._storage + Int(ldm_off)
                     )
 
                     upper_frag_casted[frag_offset] += epi_vals[0].cast[
@@ -1882,7 +1886,7 @@ struct TileWriter[
                         ldm_row * UInt32(sub_tile_n) + ldm_nloc
                     )
                     var epi_vals = ld_matrix[simd_width=4](
-                        epilogue_tile.ptr + Int(ldm_off)
+                        epilogue_tile._storage + Int(ldm_off)
                     )
 
                     upper_frag_casted[frag_offset] += epi_vals[0].cast[
@@ -1922,7 +1926,7 @@ struct TileWriter[
                         )
                         var epi_vals_l = ld_matrix[
                             simd_width=4, transpose=True
-                        ](epilogue_tile.ptr + Int(ldm_off_l))
+                        ](epilogue_tile._storage + Int(ldm_off_l))
 
                         lower_frag_casted[frag_offset] += epi_vals_l[0].cast[
                             Self.epilogue_dtype
@@ -1950,7 +1954,7 @@ struct TileWriter[
                             ldm_row_l * UInt32(sub_tile_n) + ldm_nloc_l
                         )
                         var epi_vals_l = ld_matrix[simd_width=4](
-                            epilogue_tile.ptr + Int(ldm_off_l)
+                            epilogue_tile._storage + Int(ldm_off_l)
                         )
 
                         lower_frag_casted[frag_offset] += epi_vals_l[0].cast[
@@ -2118,12 +2122,12 @@ struct TileWriter[
                 comptime if Self.transpose_c:
                     var n_top = local_row + top_u[0]
                     var n_bot = local_row + bot_u[0]
-                    var b_top = epilogue_tile.ptr[Int(n_top)].cast[
+                    var b_top = epilogue_tile._storage[Int(n_top)].cast[
                         Self.epilogue_dtype
                     ]()
                     upper_frag_casted[frag_offset] += b_top
                     upper_frag_casted[frag_offset + 1] += b_top
-                    var b_bot = epilogue_tile.ptr[Int(n_bot)].cast[
+                    var b_bot = epilogue_tile._storage[Int(n_bot)].cast[
                         Self.epilogue_dtype
                     ]()
                     upper_frag_casted[frag_offset + 2] += b_bot
@@ -2131,7 +2135,7 @@ struct TileWriter[
                 else:
                     var n_col = local_col + top_u[1] + UInt32(inc)
                     var bias = (
-                        (epilogue_tile.ptr + Int(n_col))
+                        (epilogue_tile._storage + Int(n_col))
                         .load[width=2]()
                         .cast[Self.epilogue_dtype]()
                     )
@@ -2151,12 +2155,12 @@ struct TileWriter[
                     comptime if Self.transpose_c:
                         var n_top_l = local_row + top_l[0]
                         var n_bot_l = local_row + bot_l[0]
-                        var b_top_l = epilogue_tile.ptr[Int(n_top_l)].cast[
+                        var b_top_l = epilogue_tile._storage[Int(n_top_l)].cast[
                             Self.epilogue_dtype
                         ]()
                         lower_frag_casted[frag_offset] += b_top_l
                         lower_frag_casted[frag_offset + 1] += b_top_l
-                        var b_bot_l = epilogue_tile.ptr[Int(n_bot_l)].cast[
+                        var b_bot_l = epilogue_tile._storage[Int(n_bot_l)].cast[
                             Self.epilogue_dtype
                         ]()
                         lower_frag_casted[frag_offset + 2] += b_bot_l
@@ -2164,7 +2168,7 @@ struct TileWriter[
                     else:
                         var n_col_l = local_col + top_l[1] + UInt32(inc)
                         var bias = (
-                            (epilogue_tile.ptr + Int(n_col_l))
+                            (epilogue_tile._storage + Int(n_col_l))
                             .load[width=2]()
                             .cast[Self.epilogue_dtype]()
                         )
