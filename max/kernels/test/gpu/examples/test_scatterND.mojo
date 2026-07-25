@@ -196,7 +196,7 @@ def scatter_nd[
     # input_strides
     # e.g., for a shape of 2, 3, 4, 5
     #       input_strides --> [3*4*5, 4*5, 5, 1]
-    var input_strides = InlineArray[Int64, data_rank](uninitialized=True)
+    var input_strides = Array[Int64, data_rank](uninitialized=True)
     for i in range(data_rank):
         var total_stride = 1
         for j in range(i + 1, data_rank):
