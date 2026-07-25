@@ -37,7 +37,7 @@ def test_convtranspose_pads():
     comptime type = DType.float32
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
-    var input_stack = InlineArray[Scalar[type], input_layout.product()](
+    var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
     # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
@@ -49,7 +49,7 @@ def test_convtranspose_pads():
         input.raw_store(i, Float32(i))
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
-    var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
+    var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
     # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
@@ -60,7 +60,7 @@ def test_convtranspose_pads():
     _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 7, 3, 2]()
-    var output_stack = InlineArray[Scalar[type], output_layout.product()](
+    var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
     # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
@@ -121,7 +121,7 @@ def test_convtranspose():
     comptime type = DType.float32
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
-    var input_stack = InlineArray[Scalar[type], input_layout.product()](
+    var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
     # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
@@ -133,7 +133,7 @@ def test_convtranspose():
         input.raw_store(i, Float32(i))
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
-    var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
+    var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
     # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
@@ -144,7 +144,7 @@ def test_convtranspose():
     _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 5, 5, 2]()
-    var output_stack = InlineArray[Scalar[type], output_layout.product()](
+    var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
     # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
@@ -200,7 +200,7 @@ def test_convtranspose_dilation():
     comptime type = DType.float32
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
-    var input_stack = InlineArray[Scalar[type], input_layout.product()](
+    var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
     # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
@@ -219,7 +219,7 @@ def test_convtranspose_dilation():
     input.raw_store(8, 6)
 
     comptime filter_layout = row_major[1, 2, 2, 1, 1]()
-    var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
+    var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
     # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
@@ -233,7 +233,7 @@ def test_convtranspose_dilation():
     filter.raw_store(3, 9)
 
     comptime output_layout = row_major[1, 1, 5, 5, 1]()
-    var output_stack = InlineArray[Scalar[type], output_layout.product()](
+    var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
     # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
@@ -303,7 +303,7 @@ def test_convtranspose_attributes():
     comptime type = DType.float32
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
-    var input_stack = InlineArray[Scalar[type], input_layout.product()](
+    var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
     # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
@@ -315,7 +315,7 @@ def test_convtranspose_attributes():
         input.raw_store(i, Float32(i))
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
-    var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
+    var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
     # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
@@ -326,7 +326,7 @@ def test_convtranspose_attributes():
     _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 10, 8, 2]()
-    var output_stack = InlineArray[Scalar[type], output_layout.product()](
+    var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
     # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
