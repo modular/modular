@@ -150,11 +150,12 @@ def execute_kv_cache_ragged_flash_attention[
                 cache_lengths_host[i] = curr_cache_length
                 total_seq_len += curr_seq_length
 
-                flop_count += Int(
-                    UInt32(4 * num_q_heads)
-                    * (curr_cache_length + curr_seq_length)
-                    * curr_seq_length
-                    * UInt32(head_dim)
+                flop_count += (
+                    4
+                    * num_q_heads
+                    * Int(curr_cache_length + curr_seq_length)
+                    * Int(curr_seq_length)
+                    * head_dim
                 )
 
             row_offsets_host[batch_size] = total_seq_len

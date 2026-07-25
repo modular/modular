@@ -80,28 +80,68 @@ def fa4_mma[
     comptime num_pv_stages = config.num_pv_stages
     comptime cta_group: Int = config.cta_group()
 
-    # Mb: WS packed P@V depth-tiling (comptime-dead until Md elaborates a BM=32
-    # config). For the `.ws` packed datapath (MMA_M=32, m_pack=4) the P@V op packs
+    # Mb: WS packed P@V (comptime-dead until Md/Layout-E elaborates a BM=32/64
+    # config). Layout-G (MMA_M=32, m_pack=4) DEPTH-SCATTERS: the P@V op packs
     # `m_pack` key-quarters x `depth_tile` output cols into one MMA_N=256 tile
     # (F16 caps N at 256), so the full `padded_ov_depth` is covered by
-    # `num_d_tiles` depth-tiled MMAs at C stride `depth_tile`. Every value folds to
-    # today's literal for non-WS (m_pack==1) -> the non-WS issue stream is
-    # byte-identical. Mirrors the consumer's derivation (softmax_warp.mojo:507-508).
+    # `num_d_tiles` depth-tiled MMAs at C stride `depth_tile`, each writing a
+    # DISJOINT output column range. Layout-E (MMA_M=64, m_pack=2) instead
+    # REDUCTION-SPLITS: V is split along the KEY axis (not depth) into
+    # `num_qk_stages` chunks of `pv_bk_chunk` keys each, packing the FULL
+    # `m_pack*padded_ov_depth` per stack into one MMA_N tile; `num_d_tiles` is
+    # repurposed as the reduction-chunk loop trip count and every chunk MMAs
+    # into the SAME (un-offset) `o_tmem` (accumulating, not scattering) -- see
+    # docs/plans/sm100-fa4-layout-e-mma64.md "the reduction-split geometry".
+    # Every value folds to today's literal for non-WS (m_pack==1) -> the
+    # non-WS issue stream is byte-identical. `depth_tile`/non-reduction-split
+    # mirrors the consumer's derivation (softmax_warp.mojo:507-508).
+    comptime is_reduction_split = config.use_ws and config.m_pack == 2
     comptime depth_tile = (
         256 // config.m_pack
     ) if config.use_ws else config.padded_ov_depth
     comptime num_d_tiles = (
-        config.padded_ov_depth // depth_tile
-    ) if config.use_ws else 1
+        config.num_qk_stages if is_reduction_split else (
+            config.padded_ov_depth // depth_tile
+        ) if config.use_ws else 1
+    )
     comptime pv_mma_n = (
-        config.m_pack * depth_tile
-    ) if config.use_ws else config.padded_ov_depth
-    comptime pv_bk = (BN // config.m_pack) if config.use_ws else BN
+        config.m_pack
+        * config.padded_ov_depth if is_reduction_split else (
+            config.m_pack * depth_tile
+        ) if config.use_ws else config.padded_ov_depth
+    )
+    # Layout-E's reduction-chunk width: a partition's `BN // m_pack` owned
+    # keys split `num_qk_stages` ways (=64 @depth128, matching Layout-G's own
+    # `BN // m_pack` @ m_pack=4 -- a coincidence of today's depth-128 numbers,
+    # not an identity that holds generally). This is exactly the V TMA box's
+    # KEY-row count, so it reads from that one definition.
+    comptime pv_bk_chunk = config.v_e_box_rows()
+    comptime pv_bk = (
+        pv_bk_chunk if is_reduction_split else (
+            BN // config.m_pack
+        ) if config.use_ws else BN
+    )
+    # Layout-E ONLY: P/S physically occupies `score_cols == BN//m_pack`
+    # columns (one partition's FULL key range), but `UMMA1Type`'s BK ==
+    # `pv_bk_chunk` covers only ONE reduction chunk's worth -- `stage_idx`
+    # (p_stage) only offsets the A (P) operand WITHIN a `pv_bk_chunk`-wide
+    # window at a manually-passed-in base (`attention_utils.mojo`'s
+    # `a_tmem_offset = (k_offset*operand_size)//4`, relative to `a`, not to
+    # any reduction-chunk notion). Without also advancing the BASE per `r`,
+    # every reduction chunk would silently re-read chunk 0's P columns.
+    # `s_tmem_chunk_words`: `pv_bk_chunk` KEYS worth of TMEM columns (4-byte
+    # units, mirrors the accumulator's own `a_tmem_offset` conversion) = 32
+    # @depth128 (64 keys * 2-byte bf16 // 4). Dead (unused) for Layout-G,
+    # where `s_tmem` never advances per `v_stage` (a depth axis there).
+    comptime s_tmem_chunk_words = (
+        pv_bk_chunk * size_of[config.qkv_dtype]()
+    ) // 4
     # Byte stride between adjacent V depth-tile regions in SMEM (one packed
-    # `[pv_mma_n, pv_bk]` mn-major region). Only referenced in the `v_stage > 0`
-    # branch, so it is dead for non-WS (num_d_tiles == 1). = 32768 @depth128.
+    # `[pv_mma_n, pv_bk]` mn-major region). Only referenced in `_pv_full`'s
+    # `v_stage > 0` branch; `_pv_full` is used only where `num_d_tiles == 1`
+    # (non-WS), so this stays dead there. = 32768 @depth128.
     comptime v_region_bytes = pv_mma_n * pv_bk * size_of[config.qkv_dtype]()
-    comptime if config.use_ws:
+    comptime if config.use_ws and not is_reduction_split:
         comptime assert (
             config.padded_ov_depth % depth_tile == 0
         ), "Mb: padded_ov_depth must be a multiple of depth_tile"
@@ -140,6 +180,10 @@ def fa4_mma[
         num_stages=num_pv_stages,
         mma_kind=mma_kind,
         b_page_dense=config.v_row_major(),
+        # Layout-E's reduction-split P@V wants an EVEN 2-then-2 split of each
+        # reduction chunk's own BK (so the P sub-stage chunks align with the
+        # V reduction chunks); Layout-G keeps the default 3-then-1 (unchanged).
+        allow_3_then_1_split=not is_reduction_split,
     ]
 
     # Runtime-k partial-page gate. Only the last KV tile can be partially
@@ -320,12 +364,32 @@ def fa4_mma[
                 * (config.shared_kv_cols() // config.num_qk_stages)
                 * size_of[config.qkv_dtype]()
             ), "WS kv_stage_bytes must equal one 256x64 sub-tile"
-            comptime assert (
-                num_d_tiles == config.num_qk_stages
-            ), "WS uniform sub-tile: num_d_tiles == num_qk_stages"
-            comptime assert (
-                256 // config.m_pack
-            ) == config.BK0, "WS uniform sub-tile: depth_tile == BK0"
+            # Uniform shared-ring sub-tile premise (mirrors the m_pack-selected
+            # invariant already enforced at `attention.mojo`'s `supported()`):
+            # Layout-G (m_pack==4) keeps its depth-scatter checks; Layout-E
+            # (m_pack==2) asserts its reduction-split V sub-tile divides the
+            # partition's keys evenly AND is byte-equal to one K/V ring slot.
+            comptime if is_reduction_split:
+                comptime assert (
+                    config.BN // config.m_pack
+                ) % config.num_qk_stages == 0, (
+                    "WS Layout-E: (BN // m_pack) must divide evenly by"
+                    " num_qk_stages"
+                )
+                comptime assert (
+                    pv_mma_n * pv_bk_chunk * size_of[config.qkv_dtype]()
+                    == kv_stage_bytes
+                ), (
+                    "WS Layout-E: reduction sub-tile bytes must equal one"
+                    " K/V ring slot"
+                )
+            else:
+                comptime assert (
+                    num_d_tiles == config.num_qk_stages
+                ), "WS uniform sub-tile: num_d_tiles == num_qk_stages"
+                comptime assert (
+                    256 // config.m_pack
+                ) == config.BK0, "WS uniform sub-tile: depth_tile == BK0"
 
         # K descriptor: k_major for Q@K' (BK0=64 -> one depth-half sub-tile).
         kv_desc_k = smem_descriptor[
@@ -335,9 +399,11 @@ def fa4_mma[
             is_k_major=True,
             page_dense=config.k_row_major(),
         ](kv_smem)
-        # V descriptor: mn_major for P@V. WS uses the proven packed
-        # [pv_mma_n=256, pv_bk=64] one-depth-tile box; non-WS keeps the full
-        # [v_cols_per_cta, BN] tile (byte-identical).
+        # V descriptor: mn_major for P@V. WS uses the packed [pv_mma_n, pv_bk]
+        # box -- Layout-G's proven one-depth-tile box (256x64) or Layout-E's
+        # reduction-chunk box (256x64, same numbers @depth128, different
+        # meaning); non-WS keeps the full [v_cols_per_cta, BN] tile
+        # (byte-identical).
         comptime v_desc_bmn = (
             pv_mma_n if config.use_ws else config.v_cols_per_cta()
         )
@@ -448,13 +514,23 @@ def fa4_mma[
                     )
                 )
 
-        # `_pv_ws`: P@V across num_d_tiles depth-tile ring slots (WS only).
-        # `v_idx0` is the first slot's ring index; the rest are ring-adjacent.
-        # V-slot outer, P-stage inner (mirrors `_pv_full`); wait each P sub-stage
-        # once on the first depth-tile only (P stays live in TMEM across tiles).
-        # Each depth-tile MMAs into `o_tmem + d*depth_tile` from its own slot
+        # `_pv_ws`: P@V across num_d_tiles ring slots (WS only). `v_idx0` is
+        # the first slot's ring index; the rest are ring-adjacent. V-slot
+        # outer, P-stage inner (mirrors `_pv_full`); wait each P sub-stage
+        # once on the first slot only (P stays live in TMEM across slots).
+        #
+        # Layout-G (m_pack==4, depth-scatter): `v_stage` selects a DISJOINT
+        # output depth-tile (`o_tmem + v_stage*depth_tile`) from its own slot
         # base (NOT the `+d*v_region_bytes` intra-slot offset the non-WS path
-        # uses for its contiguous V buffer).
+        # uses for its contiguous V buffer); the caller's `c_scale` applies to
+        # every v_stage unchanged (each writes independent columns).
+        #
+        # Layout-E (m_pack==2, reduction-accumulate): `v_stage` is instead a
+        # reduction (key) chunk `r` -- every chunk MMAs into the SAME
+        # (un-offset) `o_tmem`, so only `v_stage==0` uses the caller's
+        # `c_scale`; later chunks always accumulate (scale=1), composing with
+        # `UMMA1Type`'s own per-`p_stage` internal `stage_idx==0 -> c_scale
+        # else 1` handling.
         @parameter
         @always_inline
         def _pv_ws[
@@ -477,25 +553,46 @@ def fa4_mma[
                         config.num_kv_stages
                     )
                 var v_slot = kv_desc_v + UInt32(kv_stage_bytes) * v_idx_d
+                # Per-`v_stage` O / P-column offsets, exactly one nonzero per
+                # layout. Layout-G scatters O by depth-tile and never advances
+                # the P columns. Layout-E accumulates into un-offset O but must
+                # advance the P base by `v_stage` reduction chunks
+                # (`s_tmem_chunk_words` TMEM columns each): `UMMA1Type.mma`'s
+                # OWN internal offset only covers ONE `pv_bk_chunk`-wide window
+                # relative to the base passed in, so without this advance every
+                # chunk silently re-reads chunk 0's P columns against a
+                # DIFFERENT V key range. `v_stage` is a comptime loop var, so
+                # both offsets fold to constants.
+                comptime o_col_offset = (
+                    0 if is_reduction_split else v_stage * depth_tile
+                )
+                comptime s_col_offset = (
+                    v_stage * s_tmem_chunk_words if is_reduction_split else 0
+                )
+                var stage_o_tmem = o_tmem + UInt32(o_col_offset)
+                var stage_s_tmem = s_tmem + UInt32(s_col_offset)
+                var stage_c_scale: UInt32 = c_scale
+                comptime if is_reduction_split and v_stage != 0:
+                    stage_c_scale = 1
                 comptime for p_stage in range(num_pv_stages):
                     comptime if v_stage == 0:
                         _ = consumer_s[p_stage].wait(wait_phase)
                     comptime if partial:
                         UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
-                            s_tmem,
+                            stage_s_tmem,
                             v_slot,
-                            o_tmem + UInt32(v_stage * depth_tile),
-                            c_scale=c_scale,
+                            stage_o_tmem,
+                            c_scale=stage_c_scale,
                             elect=e,
                             valid_k_mmas=valid_k_mmas,
                         )
                     else:
                         UMMA1Type.mma[stage_idx=p_stage](
-                            s_tmem,
+                            stage_s_tmem,
                             v_slot,
-                            o_tmem + UInt32(v_stage * depth_tile),
+                            stage_o_tmem,
                             elect=e,
-                            c_scale=c_scale,
+                            c_scale=stage_c_scale,
                         )
 
         # ---- Peeled iteration ----
