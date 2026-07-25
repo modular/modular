@@ -32,7 +32,7 @@ import json
 import logging
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from functools import wraps
 from typing import Any, Protocol, TypeVar, cast
 
@@ -431,23 +431,25 @@ class XgrammarBackend(GrammarBackend[Any]):
         vocab_size: int,
         # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
         reject_unsupported: bool = False,
+        stop_token_ids: Collection[int] | None = None,
     ) -> XgrammarBackend:
         """Build the xgrammar tokenizer info and compiler from a delegate."""
+        stop_token_ids = (
+            list(stop_token_ids) if stop_token_ids is not None else None
+        )
         if isinstance(tokenizer_delegate, PreTrainedTokenizerFast):
             tokenizer_info = xgrammar.TokenizerInfo.from_huggingface(
                 tokenizer_delegate,
                 vocab_size=vocab_size,
+                stop_token_ids=stop_token_ids,
                 special_token_ids=_content_stripped_special_token_ids(
                     tokenizer_delegate
                 ),
             )
         else:
             adapter = _TikTokenAdapter(tokenizer_delegate)
-            stop_token_ids = (
-                [adapter.eos_token_id]
-                if adapter.eos_token_id is not None
-                else None
-            )
+            if stop_token_ids is None and adapter.eos_token_id is not None:
+                stop_token_ids = [adapter.eos_token_id]
             tokenizer_info = xgrammar.TokenizerInfo(
                 adapter.tokens,
                 vocab_type=xgrammar.VocabType.RAW,
@@ -580,6 +582,7 @@ def make_grammar_backend(
     vocab_size: int,
     # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
     reject_unsupported: bool = False,
+    stop_token_ids: Collection[int] | None = None,
 ) -> GrammarBackend[Any]:
     """Construct the structured-output backend selected by ``name``.
 
@@ -589,6 +592,7 @@ def make_grammar_backend(
         vocab_size: Vocabulary size from the tokenizer.
         reject_unsupported: Whether the xgrammar backend rejects unenforceable
             schema keywords instead of falling back to unconstrained decoding.
+        stop_token_ids: The full set of stop token IDs.
 
     Returns:
         A configured :class:`GrammarBackend`.
@@ -605,6 +609,7 @@ def make_grammar_backend(
             tokenizer_delegate,
             vocab_size,
             reject_unsupported=reject_unsupported,
+            stop_token_ids=stop_token_ids,
         )
     raise ValueError(
         f"unknown structured output backend: {name!r} "
