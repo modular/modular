@@ -512,6 +512,9 @@ This version is still a work in progress.
   instead of an `UnsafePointer`. The two share the same layout and convert
   implicitly, so most code is unaffected; dereferencing and passing the result
   to pointer parameters continue to work unchanged.
+- The AMD `sys.intrinsics.implicitarg_ptr()` intrinsic now returns a safe
+  `Pointer` instead of an `UnsafePointer`. The two share the same layout and
+  convert implicitly, so most code is unaffected.
 
 - The `as_immutable()` method on `UnsafePointer` and the
   `get_immutable()` method on `Span`, `StringSlice`, and `UnsafePointer`

@@ -569,7 +569,13 @@ def _free(ptr: Pointer[mut=True, ...]):
 @always_inline
 def _free(ptr: OptionalPointer[mut=True, ...]):
     comptime if is_gpu():
-        libc.free(unsafe_cast[Type=NoneType, origin=MutUntrackedOrigin](ptr))
+        # SAFETY: `Optional[Pointer]`'s niche layout is identical regardless of
+        # pointee type, so reinterpret to the erased type `libc.free` expects.
+        libc.free(
+            Pointer(to=ptr).unsafe_bitcast[
+                OptionalPointer[mut=True, NoneType, MutAnyOrigin]
+            ]()[]
+        )
     else:
         comptime KgenPointerType = type_of(ptr).T._mlir_type
         # SAFETY: Due to the niche optimization, `Optional[Pointer]` is

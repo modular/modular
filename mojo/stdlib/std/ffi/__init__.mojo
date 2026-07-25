@@ -600,7 +600,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             If `dlopen(nullptr, flags)` fails.
         """
         self = Self._dlopen(
-            Optional[UnsafePointer[c_char, UntrackedOrigin[mut=False]]](), flags
+            OptionalPointer[c_char, ImmUntrackedOrigin](), flags
         )
 
     def __init__[
@@ -621,11 +621,22 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         """
 
         var fspath = path.__fspath__()
-        self = Self._dlopen(fspath.as_c_string_slice().unsafe_ptr(), flags)
+        var file = (
+            fspath.as_c_string_slice()
+            .unsafe_ptr()
+            .as_imm()
+            .unsafe_origin_cast[ImmUntrackedOrigin]()
+        )
+        var handle = Self._dlopen(file, flags)
+        # `file` carries an untracked origin, so nothing ties it back to
+        # `fspath`. Without this, the compiler could destroy `fspath` before
+        # `dlopen` copies the filename, freeing the buffer out from under it.
+        _ = fspath^
+        self = handle
 
     @staticmethod
     def _dlopen(
-        file: OptionalUnsafePointer[c_char, _], flags: Int
+        file: OptionalPointer[mut=False, c_char, ImmUntrackedOrigin], flags: Int
     ) raises -> _DLHandle:
         var handle = dlopen(file, Int32(flags))
         if not handle:

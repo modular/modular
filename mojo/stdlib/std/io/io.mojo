@@ -159,7 +159,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         # raise an error in this case because otherwise, String() will crash mojo
         # if the user sends EOF with no input.
         if bytes_read == -1:
-            libc.free(unsafe_cast[Type=NoneType](buffer))
+            libc.free(unsafe_cast[Type=NoneType, origin=MutAnyOrigin](buffer))
             # TODO: check errno to ensure we haven't encountered EINVAL or ENOMEM instead
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
@@ -171,7 +171,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
             )
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
-        libc.free(unsafe_cast[Type=NoneType](buffer))
+        libc.free(unsafe_cast[Type=NoneType, origin=MutAnyOrigin](buffer))
         return s^
 
 

@@ -861,7 +861,7 @@ def assume(val: Bool):
 
 @always_inline
 def implicitarg_ptr(
-    out result: UnsafePointer[
+    out result: Pointer[
         UInt8, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]
 ):

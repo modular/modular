@@ -47,10 +47,10 @@ def free(ptr: Pointer[mut=True, NoneType, ...]):
 
 
 @always_inline
-def free(ptr: OptionalUnsafePointer[mut=True, NoneType, ...]):
+def free(ptr: OptionalPointer[mut=True, NoneType, MutAnyOrigin]):
     """Frees memory previously allocated by `malloc`, `calloc`, or `realloc`.
 
-    This overload accepts an `Optional[UnsafePointer]` because it is valid in
+    This overload accepts an `Optional[Pointer]` because it is valid in
     C to call `free` on a null pointer (it is a no-op).
 
     Args:
@@ -145,10 +145,10 @@ def posix_spawnp[
     — function creates a new process (child process) from the specified process image.
 
     Args:
-        pid: UnsafePointer[c_pid_t], dest. for process id if spawned successfully.
-        file: NULL terminated UnsafePointer[c_char] (C string), containing path to executable.
-        argv: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
-        envp: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
+        pid: `Pointer` destination for the process id if spawned successfully.
+        file: NUL-terminated C string (`CStringSlice`) with the path to the executable.
+        argv: The argument array; must be terminated with a NULL (`None`) entry.
+        envp: The environment array; must be terminated with a NULL (`None`) entry.
     """
     # TODO: Implement `const posix_spawn_file_actions_t`, `*file_actions, const posix_spawnattr_t *restrict attrp,`
     # to allow full control of how process is spawned
@@ -215,8 +215,8 @@ def execvp[
     — execute a file.
 
     Args:
-        file: NULL terminated UnsafePointer[c_char] (C string), containing path to executable.
-        argv: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
+        file: NUL-terminated C string (`Pointer` to `c_char`) with the path to the executable.
+        argv: The argument array; must be terminated with a NULL pointer.
     """
     return external_call["execvp", c_int](file, argv)
 
@@ -328,7 +328,8 @@ def dlerror(out result: _CPointer[c_char, MutUntrackedOrigin]):
 
 @always_inline
 def dlopen(
-    filename: OptionalUnsafePointer[c_char, _], flags: c_int
+    filename: OptionalPointer[mut=False, c_char, ImmUntrackedOrigin],
+    flags: c_int,
 ) -> _CPointer[NoneType, MutUntrackedOrigin]:
     return external_call["dlopen", _CPointer[NoneType, MutUntrackedOrigin]](
         filename, flags
