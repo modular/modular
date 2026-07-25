@@ -701,6 +701,13 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- `PipelineTokenizer.eos` (a single scalar token id) is replaced by
+  `PipelineTokenizer.eos_token_ids` (a set): the tokenizer's declared EOS
+  plus any additional terminators from the model config's `eos_token_id`
+  entries. The runtime previously assembled that full set privately while
+  the protocol exposed only the scalar, so consumers that needed every
+  terminator (for example, grammar backends for constrained decoding) had
+  no public way to get it.
 - MAX Serve now fails at startup when the device KV cache cannot hold a
   single request at the configured max sequence length. Previously this
   condition only logged a warning, and a request approaching the max

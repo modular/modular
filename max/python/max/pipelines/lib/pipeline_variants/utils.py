@@ -340,37 +340,6 @@ def get_rope_theta(config: AutoConfig) -> float:
     return config.rope_theta
 
 
-def get_eos_tokens(hf_config: AutoConfig, eos_token_id: int) -> set[int]:
-    """Returns the set of end-of-sequence token IDs from config or fallback.
-
-    Args:
-        hf_config: HuggingFace model configuration.
-        eos_token_id: Default EOS token id when not present in config.
-
-    Returns:
-        Set of EOS token ids to use for generation.
-    """
-    # Expand eos tokens if more are provided in pipeline_config
-    if "eos_token_id" not in hf_config:
-        return set([eos_token_id])
-
-    hf_eos_tokens = hf_config.eos_token_id
-    if isinstance(hf_eos_tokens, int):
-        if hf_eos_tokens != eos_token_id:
-            msg = f"eos_token_id provided in huggingface config ({hf_eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"
-            logger.warning(msg)
-        return set([hf_eos_tokens])
-    elif isinstance(hf_eos_tokens, list):
-        if eos_token_id in hf_eos_tokens:
-            return set(hf_eos_tokens)
-        else:
-            return set([eos_token_id])
-    else:
-        msg = f"eos_token_id in huggingface_config is neither int or list: {hf_eos_tokens}"
-        logger.warning(msg)
-        return set([eos_token_id])
-
-
 @dataclass
 class StructuredOutputHelper:
     """Helper for structured output (constrained decoding) in text generation pipelines.

@@ -157,7 +157,6 @@ from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .utils import (
     StructuredOutputHelper,
-    get_eos_tokens,
     update_context_and_prepare_responses,
     update_spec_decode_context_and_prepare_responses,
 )
@@ -1515,8 +1514,6 @@ class OverlapTextGenerationPipeline(
         self,
         pipeline_config: PipelineConfig,
         pipeline_model: type[PipelineModel[Any]],
-        # TODO: This should be removed.
-        eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
         tokenizer: PipelineTokenizer[
             TextGenerationContextType,
@@ -1534,8 +1531,6 @@ class OverlapTextGenerationPipeline(
         Args:
             pipeline_config: Configuration for the pipeline and runtime behavior.
             pipeline_model: Concrete model implementation to use for execution.
-            eos_token_id: Default EOS token id used when HF config does not supply
-                one or to seed the EOS set.
             weight_adapters: Mapping from weights format to adapter implementation.
             tokenizer: Tokenizer implementation used to build contexts and decode.
             memory_plan: Memory plan from the registry containing max_batch_size
@@ -1568,8 +1563,6 @@ class OverlapTextGenerationPipeline(
                 "OverlapTextGenerationPipeline does not support CPU models."
             )
         self._tokenizer = tokenizer
-
-        self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
         # -1 sentinel disables in_reasoning_phase tracking.
         self._think_start_token_id: int = -1

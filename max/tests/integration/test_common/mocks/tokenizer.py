@@ -60,8 +60,8 @@ class MockTextTokenizer(
         return False
 
     @property
-    def eos(self) -> int:
-        return self.vocab_size - 10
+    def eos_token_ids(self) -> set[int]:
+        return {self.vocab_size - 10}
 
     async def new_context(self, request: TextGenerationRequest) -> TextContext:
         self.i += 1

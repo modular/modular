@@ -89,7 +89,7 @@ async def test_build_pipeline_uses_arch_factory(
         all_pipelines.PIPELINE_REGISTRY,
         "retrieve_factory",
         lambda config: (
-            SimpleNamespace(_default_eos_token_ids=()),
+            SimpleNamespace(eos_token_ids=set()),
             lambda: None,
         ),
     )

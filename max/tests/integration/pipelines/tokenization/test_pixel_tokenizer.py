@@ -413,8 +413,10 @@ class TestPixelGenerationTokenizer:
             max_length=2048,
         )
 
-        # Test eos property
-        assert isinstance(tokenizer.eos, int)
+        # Test eos_token_ids property
+        assert tokenizer.eos_token_ids and all(
+            isinstance(t, int) for t in tokenizer.eos_token_ids
+        )
 
         # Test expects_content_wrapping property
         assert tokenizer.expects_content_wrapping is False

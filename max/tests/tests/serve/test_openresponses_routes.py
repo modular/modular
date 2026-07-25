@@ -55,9 +55,9 @@ class MockOpenResponsesTokenizer(
     """Mock tokenizer for OpenResponses requests."""
 
     @property
-    def eos(self) -> int:
-        """Return a dummy EOS token ID."""
-        return 0
+    def eos_token_ids(self) -> set[int]:
+        """Mock tokenizer has no EOS tokens."""
+        return set()
 
     @property
     def expects_content_wrapping(self) -> bool:

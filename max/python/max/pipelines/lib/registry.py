@@ -1386,7 +1386,6 @@ class PipelineRegistry:
         factory_kwargs: dict[str, Any] = {
             "pipeline_config": pipeline_config,
             "pipeline_model": arch.pipeline_model,
-            "eos_token_id": tokenizer.eos,
             "weight_adapters": arch.weight_adapters,
             "tokenizer": typed_tokenizer,
             "memory_plan": memory_plan,
@@ -1397,9 +1396,9 @@ class PipelineRegistry:
             functools.partial(pipeline_class, **factory_kwargs),
         )
 
-        if tokenizer.eos is None:
-            raise ValueError(
-                "tokenizer.eos value is None, tokenizer configuration is incomplete."
+        if not tokenizer.eos_token_ids:
+            logger.warning(
+                "tokenizer.eos_token_ids is empty, tokenizer configuration is incomplete."
             )
 
         return tokenizer, pipeline_factory

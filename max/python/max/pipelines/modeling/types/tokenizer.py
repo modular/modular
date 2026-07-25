@@ -33,8 +33,13 @@ class PipelineTokenizer(
     """Interface for LLM tokenizers."""
 
     @property
-    def eos(self) -> int:
-        """The end of sequence token for this tokenizer."""
+    def eos_token_ids(self) -> set[int]:
+        """The full set of token ids that end generation for this model.
+
+        The tokenizer's declared EOS plus any additional terminators the
+        model ends its turn with (for example, chat turn-end tokens from the
+        model's generation config).
+        """
         ...
 
     @property
