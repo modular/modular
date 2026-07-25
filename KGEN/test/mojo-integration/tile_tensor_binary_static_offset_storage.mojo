@@ -37,7 +37,7 @@ def main():
     var rhs_ptr: UnsafePointer[
         Float32, origin_of(rhs_data)
     ] = rhs_data.unsafe_ptr()
-    PointerStorage[element_width=1].add[
+    PointerStorage[element_width=1].iadd[
         dtype=DType.float32,
         OtherStorage=StaticOffsetStorage[static_offset=_OFFSET],
     ](
@@ -56,7 +56,7 @@ def main():
     var bias_ptr: UnsafePointer[
         Float32, origin_of(bias_data)
     ] = bias_data.unsafe_ptr()
-    PointerStorage[element_width=1].add[
+    PointerStorage[element_width=1].iadd[
         dtype=DType.float32,
         OtherStorage=StaticOffsetStorage[static_offset=_OFFSET],
     ](
