@@ -5437,12 +5437,18 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
         self.device_contexts = device_contexts
 
     @always_inline
-    def __init__(
-        out self,
+    def __init__[
+        *, __literal_size__: Int
+    ](
+        out self: DeviceContextArray[__literal_size__],
         var *device_contexts: DeviceContext,
         __list_literal__: NoneType = None,
     ):
         """Initialize from a variadic sequence of `DeviceContext` values.
+
+        Parameters:
+            __literal_size__: The number of contexts in the literal, inferred
+                from the number of elements given.
 
         Args:
             device_contexts: One `DeviceContext` per device, exactly `length`
@@ -5453,9 +5459,9 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
         assert (
             len(device_contexts) == Self.length
         ), "mismatch in the number of elements"
-        self.device_contexts = InlineArray[DeviceContext, Self.length](
-            *device_contexts^, __list_literal__=None
-        )
+        self.device_contexts = InlineArray[
+            DeviceContext, __literal_size__
+        ]._from_variadic(*device_contexts^)
 
     def __getitem_param__[index: Int](self) -> DeviceContext:
         """Access a `DeviceContext` at a compile-time known index.
