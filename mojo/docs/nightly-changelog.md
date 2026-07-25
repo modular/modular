@@ -76,8 +76,8 @@ This version is still a work in progress.
   keyword variadics, using Python style `**` syntax:
 
   ```mojo
-  def takes_them(**kwargs: Int): ...
-  def pass_them(**kwargs: Int):
+  def takes_them(var **kwargs: Int): ...
+  def pass_them(var **kwargs: Int):
     takes_them(**kwargs^)
   ```
 
@@ -215,6 +215,17 @@ This version is still a work in progress.
   itself, silently shadowing any same-named package on the search path, so it
   is now an error. Modules inside packages are unaffected: importing the
   enclosing package's name still resolves to the package.
+
+- A bare `**kwargs` is now an error; write `var **kwargs` (a fixit inserts it),
+  in function declarations and function types alike. `var` was already the only
+  supported convention — the sole exception to arguments defaulting to `imm`,
+  applied silently before — so semantics are unchanged.
+
+  ```mojo
+  def print_nicely(var **kwargs: Int):  # previously: `**kwargs: Int`
+      for item in kwargs.items():
+          print(item.key, "=", item.value)
+  ```
 
 - User-written structs must now explicitly declare closure-trait conformance
   in their inheritance list to satisfy a `def(...) -> ...` closure trait.

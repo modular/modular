@@ -216,7 +216,7 @@ def takes_three(list_obj: PythonObject, obj: PythonObject, obj2: PythonObject):
 # ===----------------------------------------------------------------------=== #
 
 
-def sum_kwargs_ints(**kwargs: PythonObject) raises -> PythonObject:
+def sum_kwargs_ints(var **kwargs: PythonObject) raises -> PythonObject:
     """Test function that takes kwargs, converts them to Ints, adds them together and returns the sum.
     """
     var total = 0
@@ -228,7 +228,7 @@ def sum_kwargs_ints(**kwargs: PythonObject) raises -> PythonObject:
 
 
 def sum_pos_arg_and_kwargs(
-    arg1: PythonObject, **kwargs: PythonObject
+    arg1: PythonObject, var **kwargs: PythonObject
 ) raises -> PythonObject:
     return PythonObject(Int(py=arg1) + Int(py=sum_kwargs_ints(**kwargs^)))
 

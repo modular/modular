@@ -1257,7 +1257,7 @@ struct PythonObject(
     # see https://github.com/python/cpython/blob/main/Objects/call.c
     # for decrement rules
     def __call__(
-        self, *args: PythonObject, **kwargs: PythonObject
+        self, *args: PythonObject, var **kwargs: PythonObject
     ) raises -> PythonObject:
         """Call the underlying object as if it were a function.
 
