@@ -759,6 +759,13 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed KV-cache CLI flags replacing the entire `kv_cache` section of a
+  `--config-file` recipe instead of overriding just the named setting. For
+  example, passing `--kv-connector-config` alongside a recipe that sets
+  `kv_connector: tiered` used to silently reset `kv_connector` (and every
+  other unnamed `kv_cache` field) to its default, disabling the connector.
+  KV-cache flags now merge onto the recipe's values, so a partial override
+  changes only what it names.
 - Fixed MAX Serve container pods ignoring `SIGTERM` during the model
   cold-start window. The serving image ran Python directly as PID 1, and the
   Linux kernel silently discards a default-disposition signal sent to a
