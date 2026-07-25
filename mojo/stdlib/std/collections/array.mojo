@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Provides a fixed-size array implementation with compile-time size checking.
 
-The `InlineArray` type represents a fixed-size sequence of homogeneous elements
+The `Array` type represents a fixed-size sequence of homogeneous elements
 where the size is determined at compile time. It provides efficient memory
-layout and bounds checking while maintaining type safety.  The `InlineArray`
+layout and bounds checking while maintaining type safety.  The `Array`
 type is part of the `prelude` module and therefore does not need to be imported
 in order to use it.
 
@@ -22,13 +22,13 @@ Examples:
 
 ```mojo
 # Create an array of 3 integers
-var arr: InlineArray[Int, 3] = [1, 2, 3]
+var arr: Array[Int, 3] = [1, 2, 3]
 
 # Access elements
 print(arr[0])  # Prints 1
 
 # Fill with a value
-var filled = InlineArray[Int, 5](fill=42)
+var filled = Array[Int, 5](fill=42)
 ```
 """
 

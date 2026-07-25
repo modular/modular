@@ -62,16 +62,16 @@ def _to_index[lookup: List[UInt32]](rune: Codepoint) -> Int:
 
 # TODO:
 #   Refactor this to return a Span[Codepoint, ImmStaticOrigin], so that the
-#   return `Int` count and fixed-size `InlineArray` are not necessary.
+#   return `Int` count and fixed-size `Array` are not necessary.
 def _get_uppercase_mapping(
     char: Codepoint,
-) -> Optional[Tuple[Int, InlineArray[Codepoint, 3]]]:
+) -> Optional[Tuple[Int, Array[Codepoint, 3]]]:
     """Returns the 1, 2, or 3 character sequence that is the uppercase form of
     `char`.
 
     Returns None if `char` does not have an uppercase equivalent.
     """
-    var array = InlineArray[Codepoint, 3](fill=Codepoint(0))
+    var array = Array[Codepoint, 3](fill=Codepoint(0))
 
     var index1 = _uppercase_mapping_index(char)
     if index1 != -1:
