@@ -168,7 +168,7 @@ def _mojo_block_hasher_sha256(
     var parent_bytes = parent_hash_ptr[].data
     var out_bytes = out_ptr[].data
 
-    var pair = InlineArray[UInt8, 64](fill=UInt8(0))
+    var pair = Array[UInt8, 64](fill=UInt8(0))
     var pair_ptr: UnsafePointer[UInt8, origin_of(pair)] = pair.unsafe_ptr()
 
     # Initialise prev with the caller-provided parent hash

@@ -148,7 +148,7 @@ def argnonzero_fill_op[
     in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     numel: Int,
     rank: Int,
-    shape: InlineArray[Int, MAX_RANK],
+    shape: Array[Int, MAX_RANK],
 ):
     """Fill the [nnz, rank] coordinate buffer for all nonzero elements.
 
@@ -170,7 +170,7 @@ def argnonzero_fill_op[
         if in_ptr[i] != 0:
             # Decode flat index i into row-major multi-dim coordinates.
             var remaining = i
-            var coords = InlineArray[Int, MAX_RANK](fill=0)
+            var coords = Array[Int, MAX_RANK](fill=0)
             var k = rank - 1
             while k >= 0:
                 coords[k] = remaining % shape[k]
@@ -191,7 +191,7 @@ struct _ArgNonZeroFillBody(Dispatchable):
     var in_addr: Int
     var numel: Int
     var rank: Int
-    var shape: InlineArray[Int, MAX_RANK]
+    var shape: Array[Int, MAX_RANK]
 
     def call[t: DType](self) raises -> None:
         argnonzero_fill_op(
