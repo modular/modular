@@ -23,6 +23,7 @@ import numpy as np
 import numpy.typing as npt
 from max._core.engine import Model
 from max.driver import Buffer
+from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.buffer_utils import cast_tensor_to
@@ -116,7 +117,37 @@ class KimiK2_5BatchProcessor(DeepseekV3BatchProcessor):
             return_n_logits=base.return_n_logits,
             data_parallel_splits=base.data_parallel_splits,
             ep_inputs=base.ep_inputs,
+            # Graph-capture warmup and replay consume ``.buffers`` straight
+            # from prep without going through ``execute()``, so the ABI tuple
+            # must be complete here; ``execute()`` replaces these on vision
+            # steps.
+            language_image_embeddings=self._empty_language_image_embeddings,
+            language_image_token_indices=(
+                self._empty_language_image_token_indices
+            ),
         )
+
+    @property
+    def _empty_language_image_embeddings(self) -> list[Buffer]:
+        """Cached per-device ``[0, hidden]`` embeddings for text-only prep."""
+        if not hasattr(self, "_cached_empty_language_image_embeddings"):
+            assert self._model_config is not None
+            hidden_size = self._model_config.llm_config.hidden_size
+            self._cached_empty_language_image_embeddings = Buffer.zeros(
+                shape=[0, hidden_size],
+                dtype=DType.bfloat16,
+            ).to(self.runtime.devices)
+        return self._cached_empty_language_image_embeddings
+
+    @property
+    def _empty_language_image_token_indices(self) -> list[Buffer]:
+        """Cached per-device empty scatter indices for text-only prep."""
+        if not hasattr(self, "_cached_empty_language_image_token_indices"):
+            host = Buffer.from_numpy(np.empty(0, dtype=np.int32))
+            self._cached_empty_language_image_token_indices = host.to(
+                self.runtime.devices
+            )
+        return self._cached_empty_language_image_token_indices
 
     def _collect_uncached_image_inputs(
         self,
