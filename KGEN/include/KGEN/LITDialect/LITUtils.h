@@ -119,6 +119,16 @@ public:
   void print(raw_ostream &os, TypedAttr param, bool elideOriginOf) const;
 };
 
+// This magic name is used to convert a subtree origin (a~) into an interior
+// origin within CheckLifetimes.  OriginPrinter prints it as a subtree origin.
+static constexpr StringRef subtreeInteriorOriginAttrName =
+    ".mojo.subtree.interior.origin";
+
+/// Given a subtree origin (a~), return an interior origin (a["magicname"]) that
+/// we can use for analysis of an interior origin that might be contained within
+/// it.  This is used by CheckLifetimes to model subtree origins.
+InteriorOriginAttr getInteriorForSubtreeOrigin(OriginSubtreeAttr subtree);
+
 /// Pretty print a nested symbol reference to a name.
 void printNestedSymbolReference(raw_ostream &os, SymbolRefAttr symbol);
 

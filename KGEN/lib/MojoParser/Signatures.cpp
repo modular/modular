@@ -2285,8 +2285,9 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
     // answer, because parametric types can be substituted in that contain
     // indirect origins, but should be sufficient for now.
     for (TypedAttr origin : resultOrigins)
-      origin.walk([&](InteriorOriginAttr) {
-        tcSignature.definesInteriorOrigins = true;
+      origin.walk([&](Attribute nested) {
+        if (isa<InteriorOriginAttr, OriginSubtreeAttr>(nested))
+          tcSignature.definesInteriorOrigins = true;
       });
 
     // Check to see if the result type has any embedded origins that refer to

@@ -257,6 +257,16 @@ void OriginPrinter::print(raw_ostream &os, TypedAttr param,
   }
 
   if (auto interior = dyn_cast<InteriorOriginAttr>(param)) {
+    // Special case the interior origins that CheckLifetimes uses to model
+    // subtree origins.
+    if (auto name = dyn_cast<StringAttr>(interior.getUserName())) {
+      if (name.strref() == subtreeInteriorOriginAttrName) {
+        print(os, interior.getBase(), /*elideOriginOf=*/false);
+        os << ".subtree";
+        return;
+      }
+    }
+
     print(os, interior.getBase(), /*elideOriginOf=*/true);
     os << "[";
     printParam(os, interior.getUserName());
@@ -285,6 +295,19 @@ void OriginPrinter::print(raw_ostream &os, TypedAttr param,
 
   param.dump();
   llvm_unreachable("unknown origin parameter");
+}
+
+/// Given a subtree origin (a~), return an interior origin (a["magicname"]) that
+/// we can use for analysis of an interior origin that might be contained within
+/// it.  This is used by CheckLifetimes to model subtree origins.
+InteriorOriginAttr LIT::getInteriorForSubtreeOrigin(OriginSubtreeAttr subtree) {
+  auto result = InteriorOriginAttr::get(subtree.getOrigin(),
+                                        subtreeInteriorOriginAttrName);
+  // In general x["foo"] might not return an InteriorOrigin, because when x is a
+  // union or mutcast, things get folded and rearranged. However, we know that
+  // the input here is to something that already had been folded when forming
+  // the subtree.
+  return cast<InteriorOriginAttr>(result);
 }
 
 ParseResult LIT::parseOriginParamValue(AsmParser &p, TypedAttr &result) {
