@@ -68,7 +68,7 @@ def _verify_results[
     signal_buffers: List[DeviceBuffer[DType.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -101,8 +101,8 @@ def _verify_results[
     comptime OutTensorType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
-    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
+    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     comptime for _i in range(ngpus):
         in_tensors[_i] = TileTensor(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -300,7 +300,7 @@ def _verify_add_results[
     signal_buffers: List[DeviceBuffer[DType.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -335,8 +335,8 @@ def _verify_add_results[
     comptime OutTensorType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
-    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
+    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     comptime for _i in range(ngpus):
         in_tensors[_i] = TileTensor(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -577,7 +577,7 @@ def bench_allreduce_rmsnorm_fp8[
 
     # Signal buffers.
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
@@ -621,8 +621,8 @@ def bench_allreduce_rmsnorm_fp8[
     comptime OutTensorType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
-    var ar_out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
+    var ar_out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tensors[i] = TileTensor(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -720,25 +720,25 @@ def bench_allreduce_rmsnorm_fp8[
 
     # Capture per-GPU pointers for closures.
     var residual_ptr_base = cb_residual.unsafe_ptr()
-    var fused_fp8_out_ptrs = InlineArray[
+    var fused_fp8_out_ptrs = Array[
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fused_scales_ptrs = InlineArray[
+    var fused_scales_ptrs = Array[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fully_fused_fp8_out_ptrs = InlineArray[
+    var fully_fused_fp8_out_ptrs = Array[
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fully_fused_scales_ptrs = InlineArray[
+    var fully_fused_scales_ptrs = Array[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fused_add_fp8_out_ptrs = InlineArray[
+    var fused_add_fp8_out_ptrs = Array[
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fused_add_scales_ptrs = InlineArray[
+    var fused_add_scales_ptrs = Array[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var residual_output_ptrs = InlineArray[
+    var residual_output_ptrs = Array[
         UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
     for i in range(ngpus):

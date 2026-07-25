@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.sys.defines import (
     get_defined_bool,
     get_defined_dtype,
@@ -46,7 +46,7 @@ def _per_gpu_value[dtype: DType](gpu_rank: Int, j: Int) -> Scalar[dtype]:
 
 def _compute_lengths[
     ngpus: Int, length_mode: StaticString
-](num_bytes: Int, elem_size: Int) -> InlineArray[Int, ngpus]:
+](num_bytes: Int, elem_size: Int) -> Array[Int, ngpus]:
     """Compute per-GPU element counts based on the length distribution mode.
 
     Modes:
@@ -58,7 +58,7 @@ def _compute_lengths[
                       (mimics off-by-one splits like 37919/37918).
     """
     var base_length = num_bytes // elem_size
-    var lengths = InlineArray[Int, ngpus](fill=base_length)
+    var lengths = Array[Int, ngpus](fill=base_length)
 
     comptime if length_mode == "uniform":
         pass
@@ -112,7 +112,7 @@ def bench_allgather[
 ](
     mut b: Bench,
     list_of_ctx: List[DeviceContext],
-    lengths: InlineArray[Int, ngpus],
+    lengths: Array[Int, ngpus],
     max_num_blocks: Optional[Int],
 ) raises:
     comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
@@ -137,7 +137,7 @@ def bench_allgather[
 
     # Create signal buffers for synchronization.
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -203,12 +203,12 @@ def bench_allgather[
     comptime InTileType = TileTensor[
         dtype, type_of(row_major(lengths[0])), ImmutAnyOrigin
     ]
-    var tt_in = InlineArray[InTileType, ngpus](uninitialized=True)
+    var tt_in = Array[InTileType, ngpus](uninitialized=True)
 
     comptime OutTileType = TileTensor[
         dtype, type_of(row_major(lengths[0])), MutAnyOrigin
     ]
-    var tt_out = InlineArray[OutTileType, ngpus * ngpus](uninitialized=True)
+    var tt_out = Array[OutTileType, ngpus * ngpus](uninitialized=True)
 
     for gpu_idx in range(ngpus):
         comptime for src_idx in range(ngpus):
@@ -234,7 +234,7 @@ def bench_allgather[
                     row_major(lengths[i]),
                 ).as_immut()
 
-            var device_out = InlineArray[OutTileType, ngpus](uninitialized=True)
+            var device_out = Array[OutTileType, ngpus](uninitialized=True)
             comptime for src_idx in range(ngpus):
                 device_out[src_idx] = tt_out[ctx_idx * ngpus + src_idx]
 

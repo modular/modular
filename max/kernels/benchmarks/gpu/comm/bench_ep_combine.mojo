@@ -271,10 +271,10 @@ def bench_dispatch[
         @parameter
         def run_dispatch_async(ctx: DeviceContext) raises:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-            var recv_buf_ptrs: InlineArray[
-                UnsafePointer[UInt8, MutAnyOrigin], 1
-            ] = [recv_buf.as_unsafe_any_origin()]
-            var recv_count_ptrs: InlineArray[
+            var recv_buf_ptrs: Array[UnsafePointer[UInt8, MutAnyOrigin], 1] = [
+                recv_buf.as_unsafe_any_origin()
+            ]
+            var recv_count_ptrs: Array[
                 UnsafePointer[UInt64, MutAnyOrigin], 1
             ] = [recv_count.as_unsafe_any_origin()]
 
@@ -318,10 +318,10 @@ def bench_dispatch[
         @parameter
         def run_combine_async(ctx: DeviceContext) raises:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-            var combine_recv_buf_ptrs: InlineArray[
+            var combine_recv_buf_ptrs: Array[
                 UnsafePointer[UInt8, MutAnyOrigin], 1
             ] = [send_buf.as_unsafe_any_origin()]
-            var combine_recv_count_ptrs: InlineArray[
+            var combine_recv_count_ptrs: Array[
                 UnsafePointer[UInt64, MutAnyOrigin], 1
             ] = [recv_count.as_unsafe_any_origin()]
 
