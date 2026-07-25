@@ -790,16 +790,19 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             writer.write(val)
 
         var size = len(self)
+        var serialize_ptr = OptionalPointer[Scalar[Self.dtype], ImmutAnyOrigin](
+            self.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin]()
+        )
 
         if size < 1000:
             writer.write("[")
             _serialize_elements[serialize_fn=serialize](
-                self.unsafe_ptr(), len(self)
+                serialize_ptr, len(self)
             )
             writer.write("]")
         else:
             _serialize_elements[serialize_fn=serialize, compact=True](
-                self.unsafe_ptr(), size
+                serialize_ptr, size
             )
         writer.write(")")
 
@@ -2038,16 +2041,23 @@ struct DeviceBuffer[dtype: DType](
                     writer.write(val)
 
                 var size = len(self)
+                var serialize_ptr = OptionalPointer[
+                    Scalar[Self.dtype], ImmutAnyOrigin
+                ](
+                    host_buffer.unsafe_ptr()
+                    .as_imm()
+                    .unsafe_origin_cast[ImmutAnyOrigin]()
+                )
 
                 if size < 1000:
                     writer.write("[")
                     _serialize_elements[serialize_fn=serialize](
-                        host_buffer.unsafe_ptr(), len(self)
+                        serialize_ptr, len(self)
                     )
                     writer.write("]")
                 else:
                     _serialize_elements[serialize_fn=serialize, compact=True](
-                        host_buffer.unsafe_ptr(), size
+                        serialize_ptr, size
                     )
                 writer.write(")")
         except e:
