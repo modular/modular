@@ -173,6 +173,11 @@ def modular_py_test(
 
     manual_srcs = _get_manual_srcs(tags, per_test_tags, srcs)
     if manual_srcs:
+        # Non-test srcs are sibling helper modules the manual tests import, so
+        # mypy needs them here too (they're already in manual_srcs when the
+        # whole target is manual).
+        mypy_srcs = manual_srcs + [src for src in non_test_srcs if src not in manual_srcs]
+
         # TODO: Remove once we run mypy-style lints in a separate test target.
         # Raw py_library, not modular_py_library: the latter loads
         # modular_py_test, so depending back on it would cycle.
@@ -185,7 +190,7 @@ def modular_py_test(
                 "@rules_python//python/runfiles",
             ],
             testonly = True,
-            srcs = manual_srcs + ["//bazel/internal:pytest_runner"],
+            srcs = mypy_srcs + ["//bazel/internal:pytest_runner"],
             visibility = ["//visibility:private"],
             imports = compute_py_imports(native.package_name(), imports),
         )
