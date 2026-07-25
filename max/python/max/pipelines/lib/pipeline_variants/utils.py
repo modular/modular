@@ -465,6 +465,7 @@ class StructuredOutputHelper:
             vocab_size,
             # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
             reject_unsupported=(tool_parser_name == "gemma4"),
+            stop_token_ids=tokenizer.eos_token_ids,
         )
 
         # Extract structural tags from tool parser if available

@@ -13,6 +13,7 @@ modular_py_test(
         exclude = [
             "test_bounded_cache.py",
             "test_reasoning.py",
+            "test_structured_output_backend.py",
         ],
     ),
     ignore_extra_deps = [
@@ -49,6 +50,23 @@ modular_py_test(
         requirement("pydantic"),
         requirement("pytest-mock"),
         requirement("pyyaml"),
+    ],
+)
+
+modular_py_test(
+    name = "test_structured_output_backend",
+    srcs = ["test_structured_output_backend.py"],
+    # tokenizers is a transitive dependency of transformers but doesn't have
+    # an unversioned bazel alias, so we need to ignore its unresolved imports
+    ignore_unresolved_imports = [
+        "tokenizers.Tokenizer",
+        "tokenizers.models.WordLevel",
+    ],
+    deps = [
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+        requirement("transformers"),
     ],
 )
 
