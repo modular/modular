@@ -490,31 +490,24 @@ This version is still a work in progress.
 - `InlineArray` has been renamed to `Array`. A temporary comptime alias exists
   for adoption.
 
-- `List.unsafe_ptr()` now returns a safe `Pointer` instead of an
-  `UnsafePointer`. The two share the same layout and convert implicitly, so
-  most code is unaffected. Code that called an unsafe-only pointer operation
+- Many raw-pointer accessors across the standard library now return a safe
+  `Pointer` instead of an `UnsafePointer`:
+
+  - `List.unsafe_ptr()`, `InlineArray.unsafe_ptr()`, and
+    `UnsafeUnion.unsafe_ptr()`.
+  - The `unsafe_ptr()` accessors of `Span`, `StringSlice`, `String` (plus
+    `String.unsafe_ptr_mut()`), `StringLiteral`, and `CStringSlice`.
+  - `Allocation.unsafe_ptr()` and `OwnedPointer.unsafe_ptr()`.
+  - `PythonObject.unsafe_get_as_pointer()`,
+    `PythonObject.downcast_value_ptr()`, and
+    `PythonObject.unchecked_downcast_value_ptr()`.
+  - The AMD `sys.intrinsics.implicitarg_ptr()` intrinsic.
+
+  The two pointer types share the same layout and convert implicitly, so most
+  code is unaffected. Code that called an unsafe-only pointer operation
   directly on the result should switch to the ungated `unsafe_*` spelling, for
-  example `list.unsafe_ptr() + i` becomes `list.unsafe_ptr().unsafe_offset(i)`
-  and `list.unsafe_ptr()[i]` becomes `list.unsafe_ptr()[unsafe_offset=i]`.
-- `CStringSlice.unsafe_ptr()` now returns a safe `Pointer` instead of an
-  `UnsafePointer`. The two share the same layout and convert implicitly, so most
-  code is unaffected. Code that called an unsafe-only pointer operation directly
-  on the result should switch to the ungated `unsafe_*` spelling, for example
-  `ptr + i` becomes `ptr.unsafe_offset(i)`.
-- `Allocation.unsafe_ptr()` and `OwnedPointer.unsafe_ptr()` now return a safe
-  `Pointer` instead of an `UnsafePointer`. The two share the same layout and
-  convert implicitly, so most code is unaffected. Code that called an
-  unsafe-only pointer operation directly on the result should switch to the
-  ungated `unsafe_*` spelling, for example `ptr + i` becomes
-  `ptr.unsafe_offset(i)`.
-- `PythonObject.unsafe_get_as_pointer()`, `PythonObject.downcast_value_ptr()`,
-  and `PythonObject.unchecked_downcast_value_ptr()` now return a safe `Pointer`
-  instead of an `UnsafePointer`. The two share the same layout and convert
-  implicitly, so most code is unaffected; dereferencing and passing the result
-  to pointer parameters continue to work unchanged.
-- The AMD `sys.intrinsics.implicitarg_ptr()` intrinsic now returns a safe
-  `Pointer` instead of an `UnsafePointer`. The two share the same layout and
-  convert implicitly, so most code is unaffected.
+  example `ptr + i` becomes `ptr.unsafe_offset(i)` and `ptr[i]` becomes
+  `ptr[unsafe_offset=i]`.
 - The `capture_sizes` field of `CompiledFunctionInfo` (`std.compile`) is now a
   safe `Pointer[UInt64]` instead of an `UnsafePointer`. The two share the same
   layout and convert implicitly, so most code is unaffected. Code that indexes
@@ -543,28 +536,6 @@ This version is still a work in progress.
 - Add `List.try_index` to allow getting the index of a value in a list
   (if present), without raising. This is a comptime-compatible version of
   the functionality.
-
-- `InlineArray.unsafe_ptr()` now returns a safe `Pointer` instead of an
-  `UnsafePointer`. The two share the same layout and convert implicitly, so
-  most code is unaffected. Code that called an unsafe-only pointer operation
-  directly on the result should switch to the ungated `unsafe_*` spelling, for
-  example `arr.unsafe_ptr() + i` becomes `arr.unsafe_ptr().unsafe_offset(i)`
-  and `arr.unsafe_ptr()[i]` becomes `arr.unsafe_ptr()[unsafe_offset=i]`.
-
-- The `unsafe_ptr()` accessors of `Span`, `StringSlice`, and `String` (and
-  `String.unsafe_ptr_mut()`) now return a safe `Pointer` instead of an
-  `UnsafePointer`. They share the same layout and convert implicitly, so most
-  code is unaffected. Code that called an unsafe-only pointer operation directly
-  on the result should switch to the ungated `unsafe_*` spelling, for example
-  `ptr + i` becomes `ptr.unsafe_offset(i)` and `ptr[i]` becomes
-  `ptr[unsafe_offset=i]`.
-
-- `StringLiteral.unsafe_ptr()` now returns a safe `Pointer` instead of an
-  `UnsafePointer`. The two share the same layout and convert implicitly, so
-  most code is unaffected. Code that called an unsafe-only pointer operation
-  directly on the result should switch to the ungated `unsafe_*` spelling, for
-  example `ptr + i` becomes `ptr.unsafe_offset(i)` and `ptr[i]` becomes
-  `ptr[unsafe_offset=i]`.
 
 - When an unhandled error propagates out of `main` and no stack trace was
   collected, Mojo now prints a hint to set

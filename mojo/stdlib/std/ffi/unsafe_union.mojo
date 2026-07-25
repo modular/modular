@@ -28,7 +28,6 @@ type-checked sum types.
 from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.memory import (
-    UnsafePointer,
     is_trivially_copyable,
     is_trivially_deletable,
     is_trivially_movable,
@@ -261,7 +260,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     @always_inline("nodebug")
     def _get_ptr[
         origin: Origin, address_space: AddressSpace, //, T: AnyType
-    ](ref[origin, address_space] self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> Pointer[
         T, origin, address_space=address_space
     ]:
         """Get a pointer to the storage interpreted as type T."""
@@ -270,9 +269,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         ](), "type is not a union element type"
         var ptr = Pointer(to=self._storage)._get_kgen_pointer()
         var typed_ptr = __mlir_op.`pop.union.bitcast`[
-            _type=UnsafePointer[
-                T, origin, address_space=address_space
-            ]._mlir_type,
+            _type=Pointer[T, origin, address_space=address_space]._mlir_type,
         ](ptr)
         return {_mlir_value = typed_ptr}
 
@@ -378,7 +375,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         comptime assert Self._is_element[
             T
         ](), "type is not a union element type"
-        return self._get_ptr[T]().take_pointee()
+        return self._get_ptr[T]().unsafe_take_pointee()
 
     @always_inline("nodebug")
     def unsafe_set[T: Movable](mut self, var value: T):
@@ -411,7 +408,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     @always_inline("nodebug")
     def unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //, T: AnyType
-    ](ref[origin, address_space] self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> Pointer[
         T, origin, address_space=address_space
     ]:
         """Get a pointer to the storage interpreted as type T.
