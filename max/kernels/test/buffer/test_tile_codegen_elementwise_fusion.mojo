@@ -41,8 +41,8 @@ comptime _4x4 = RowMajorLayout[ComptimeInt[4], ComptimeInt[4]]
 
 def test_tile_add_elementwise() raises:
     """`Add.elementwise` sums two tiles in place and returns the result."""
-    var lhs_arr = InlineArray[Float32, 16](uninitialized=True)
-    var rhs_arr = InlineArray[Float32, 16](uninitialized=True)
+    var lhs_arr = Array[Float32, 16](uninitialized=True)
+    var rhs_arr = Array[Float32, 16](uninitialized=True)
 
     var lhs = TileTensor(lhs_arr, row_major[4, 4]())
     var rhs = TileTensor(rhs_arr, row_major[4, 4]())
@@ -66,8 +66,8 @@ def test_tile_add_elementwise() raises:
 def test_tile_mul_elementwise() raises:
     """`Mul.elementwise` multiplies two tiles in place and returns the result.
     """
-    var lhs_arr = InlineArray[Float32, 16](uninitialized=True)
-    var rhs_arr = InlineArray[Float32, 16](uninitialized=True)
+    var lhs_arr = Array[Float32, 16](uninitialized=True)
+    var rhs_arr = Array[Float32, 16](uninitialized=True)
 
     var lhs = TileTensor(lhs_arr, row_major[4, 4]())
     var rhs = TileTensor(rhs_arr, row_major[4, 4]())

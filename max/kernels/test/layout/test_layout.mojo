@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import InlineArray
+from std.collections import Array
 from layout.layout_tensor import LayoutTensorIter
 from layout import *
 from layout._fillers import arange
@@ -947,7 +947,7 @@ def test_layout_tensor_iterator_print() raises:
     """Test case for MSTDL-1984: Tensors generated from LayoutTensorIter won't print.
     """
     comptime buf_size = 16
-    var storage = InlineArray[Int16, buf_size](uninitialized=True)
+    var storage = Array[Int16, buf_size](uninitialized=True)
     for i in range(buf_size):
         storage[i] = Int16(i)
     comptime tile_layout = Layout.row_major(2, 2)

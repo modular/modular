@@ -21,10 +21,10 @@ def test_partial_load_store() raises:
     # The total amount of data to allocate
     comptime total_buffer_size: Int = 32
 
-    var read_data = InlineArray[Scalar[DType.int], total_buffer_size](
+    var read_data = Array[Scalar[DType.int], total_buffer_size](
         uninitialized=True
     )
-    var write_data = InlineArray[Scalar[DType.int], total_buffer_size](
+    var write_data = Array[Scalar[DType.int], total_buffer_size](
         uninitialized=True
     )
 

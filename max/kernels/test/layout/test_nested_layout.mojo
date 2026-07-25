@@ -242,7 +242,7 @@ def test_tile_tensor_dim_on_nested_returns_product() raises:
     var L = row_major_nested(
         Coord(Coord(Idx[4], Idx[16]), Coord(Idx[1], Idx[1]))
     )
-    var storage = InlineArray[Float32, 64](fill=0.0)
+    var storage = Array[Float32, 64](fill=0.0)
     var t = TileTensor(storage, L)
     assert_equal(Int(t.dim[0]()), 64)
     assert_equal(Int(t.dim[1]()), 1)
@@ -253,7 +253,7 @@ def test_tile_tensor_load_store_via_nested_coord() raises:
     var L = row_major_nested(
         Coord(Coord(Idx[4], Idx[16]), Coord(Idx[1], Idx[1]))
     )
-    var storage = InlineArray[Float32, 64](fill=0.0)
+    var storage = Array[Float32, 64](fill=0.0)
     var t = TileTensor(storage, L)
     # Hierarchical write at ((2,5),(0,0)) -> offset 37.
     t[Coord(Coord(Idx[2], Idx[5]), Coord(Idx[0], Idx[0]))] = 42.0
@@ -277,7 +277,7 @@ def test_tile_tensor_tile_outer_mode_basic() raises:
             Coord(Idx[OUTER_H], Idx[FRAG_H]), Coord(Idx[OUTER_W], Idx[FRAG_W])
         )
     )
-    var storage = InlineArray[Float32, 64](fill=0.0)
+    var storage = Array[Float32, 64](fill=0.0)
     var t = TileTensor(storage, L)
     # Mark a single element via a flat write so we can verify the tile.
     # Outer (i=2, j=0), inner (frag_h=5, frag_w=0): flat (2,5,0,0) -> offset 37.
@@ -301,7 +301,7 @@ def test_tile_tensor_tile_outer_mode_asymmetric() raises:
     var L = row_major_nested(
         Coord(Coord(Idx[B0], Idx[T0]), Coord(Idx[B1], Idx[T1]))
     )
-    var storage = InlineArray[Float32, B0 * B1 * T0 * T1](fill=0.0)
+    var storage = Array[Float32, B0 * B1 * T0 * T1](fill=0.0)
     var t = TileTensor(storage, L)
     # Mark one element: outer (1, 2), inner (3, 1).
     t[Coord(Coord(Idx[1], Idx[3]), Coord(Idx[2], Idx[1]))] = 77.0
@@ -320,7 +320,7 @@ def test_tile_tensor_tile_coord_form() raises:
     var L = row_major_nested(
         Coord(Coord(Idx[B0], Idx[T0]), Coord(Idx[B1], Idx[T1]))
     )
-    var storage = InlineArray[Float32, B0 * B1 * T0 * T1](fill=0.0)
+    var storage = Array[Float32, B0 * B1 * T0 * T1](fill=0.0)
     var t = TileTensor(storage, L)
     t[Coord(Coord(Idx[1], Idx[3]), Coord(Idx[2], Idx[1]))] = 77.0
     var sub = t.tile[T0, T1](Coord(Idx[1], Idx[2]))
@@ -340,7 +340,7 @@ def test_tile_tensor_tile_on_col_major() raises:
     var L = col_major_nested(
         Coord(Coord(Idx[B0], Idx[T0]), Coord(Idx[B1], Idx[T1]))
     )
-    var storage = InlineArray[Float32, B0 * B1 * T0 * T1](fill=0.0)
+    var storage = Array[Float32, B0 * B1 * T0 * T1](fill=0.0)
     var t = TileTensor(storage, L)
     # Mark via hierarchical coord at outer (1, 2), inner (3, 1).
     # Offset = 1*1 + 3*B0 + 2*(B0*T0) + 1*(B0*T0*B1) = 1+6+16+24 = 47.
@@ -358,7 +358,7 @@ def test_tile_tensor_tile_on_flat_parent() raises:
     offset = 1*2*8 + 0*4*1 = 16. Sub-tile starts at row 2, col 0.
     """
     var L = row_major[4, 8]()
-    var storage = InlineArray[Float32, 32](fill=0.0)
+    var storage = Array[Float32, 32](fill=0.0)
     var t = TileTensor(storage, L)
     # Mark row 2, col 3 = offset 2*8 + 3 = 19.
     t[2, 3] = 55.0
@@ -444,7 +444,7 @@ def test_mha_mma_op_att_layout_nested_tile_semantics() raises:
             Coord(Idx[W], Idx[FRAG_W_COL_L]),
         )
     )
-    var storage = InlineArray[Float32, 64](fill=0.0)
+    var storage = Array[Float32, 64](fill=0.0)
     var att = TileTensor(storage, L)
 
     # Walk the (H=4, W=1) outer grid via `.tile[FRAG_H, FRAG_W](i, j)`

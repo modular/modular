@@ -30,7 +30,7 @@ from std.testing import assert_equal
 def test_lt_to_tt_2d_static() raises:
     """Test lt_to_tt with a fully static 2D layout."""
     comptime static_2d = Layout.row_major(4, 8)
-    var arr = InlineArray[Float32, 32](fill=1.0)
+    var arr = Array[Float32, 32](fill=1.0)
     var lt = LayoutTensor[DType.float32, static_2d](arr.unsafe_ptr())
     var tt = lt_to_tt(lt)
     assert_equal(tt.rank, 2)
@@ -42,7 +42,7 @@ def test_lt_to_tt_2d_dynamic() raises:
     """Test lt_to_tt with a partially dynamic 2D layout."""
     comptime shape = IntTuple(UNKNOWN_VALUE, 8)
     comptime dynamic_2d = Layout.row_major(shape)
-    var arr = InlineArray[Float32, 24](fill=2.0)
+    var arr = Array[Float32, 24](fill=2.0)
     var lt = LayoutTensor[DType.float32, dynamic_2d](
         arr.unsafe_ptr(),
         RuntimeLayout[dynamic_2d].row_major(Index(3, 8)),
@@ -56,7 +56,7 @@ def test_lt_to_tt_2d_dynamic() raises:
 def test_lt_to_tt_1d_dynamic() raises:
     """Test lt_to_tt with a fully dynamic 1D layout."""
     comptime dynamic_1d = Layout(UNKNOWN_VALUE)
-    var arr = InlineArray[UInt32, 5](fill=42)
+    var arr = Array[UInt32, 5](fill=42)
     var lt = LayoutTensor[DType.uint32, dynamic_1d](
         arr.unsafe_ptr(),
         RuntimeLayout[dynamic_1d](Index(5), Index(1)),
@@ -99,7 +99,7 @@ def test_lt_to_tt_4d_mixed() raises:
     comptime num_blocks = 2
     comptime max_seq_len = 16
     comptime num_elements = num_blocks * max_seq_len * 8 * 128
-    var arr = InlineArray[Float32, num_elements](fill=3.0)
+    var arr = Array[Float32, num_elements](fill=3.0)
     var lt = LayoutTensor[DType.float32, layout_4d](
         arr.unsafe_ptr(),
         RuntimeLayout[layout_4d](
