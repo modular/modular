@@ -366,7 +366,7 @@ def mla_indexer_ragged_float8_paged[
             " is unvalidated below 16 heads; num_heads in {4, 8} requires the"
             " SM100 tensor-core path"
         )
-        comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
+        comptime block_tile_shape: Array[Int, 2] = [512, 128]
         comptime BM = block_tile_shape[0]
         comptime BN = block_tile_shape[1]
         comptime smem_use = size_of[

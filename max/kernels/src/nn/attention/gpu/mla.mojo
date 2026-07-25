@@ -19,7 +19,7 @@ their platform-specific dispatch and kernel implementations targeting NVIDIA
 prediction (MTP) query folding, per-token scale, and sparse-attention support.
 """
 
-from std.collections import InlineArray, OptionalReg
+from std.collections import Array, OptionalReg
 from std.math import align_up, ceildiv, recip
 from std.math.uutils import umod, ufloordiv, udivmod
 from nn.attention.mha_utils import DynamicInt, MHA_PDL_LEVEL
@@ -1673,10 +1673,10 @@ def mla_splitk_reduce[
 
     if part_start_warp < num_partitions:
         var np_last_s2 = num_partitions - 1
-        var xs = InlineArray[SIMD[accum_type, elems_per_lane], parts_per_warp](
+        var xs = Array[SIMD[accum_type, elems_per_lane], parts_per_warp](
             fill=SIMD[accum_type, elems_per_lane](0)
         )
-        var scales_local = InlineArray[Scalar[accum_type], parts_per_warp](
+        var scales_local = Array[Scalar[accum_type], parts_per_warp](
             fill=Scalar[accum_type](0)
         )
         comptime for k in range(parts_per_warp):

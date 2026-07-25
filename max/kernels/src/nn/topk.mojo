@@ -706,16 +706,16 @@ struct TopKHeap[T: DType, largest: Bool, M: Int]:
     pressure for large block sizes.
     """
 
-    var vals: InlineArray[Scalar[Self.T], Self.M]
-    var idxs: InlineArray[Int32, Self.M]
+    var vals: Array[Scalar[Self.T], Self.M]
+    var idxs: Array[Int32, Self.M]
     var threshold: Scalar[Self.T]
 
     @always_inline
     def __init__(out self):
-        self.vals = InlineArray[Scalar[Self.T], Self.M](
+        self.vals = Array[Scalar[Self.T], Self.M](
             fill=_topk_dead_val[Self.T, Self.largest]()
         )
-        self.idxs = InlineArray[Int32, Self.M](fill=Int32(-1))
+        self.idxs = Array[Int32, Self.M](fill=Int32(-1))
         self.threshold = _topk_dead_val[Self.T, Self.largest]()
 
     @always_inline

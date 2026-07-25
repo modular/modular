@@ -432,7 +432,7 @@ def depth512_softmax[
 
     # ---- S register buffer -----------------------------------------------
     # Holds effective_bn f32 values per thread (128 for both d256 and d512).
-    var s = InlineArray[Scalar[accum_dtype], effective_bn](uninitialized=True)
+    var s = Array[Scalar[accum_dtype], effective_bn](uninitialized=True)
 
     # ---- Iteration bounds (must match MMA and load warps) ----------------
     var kv_row: UInt32 = mask.start_column[PairBM_mask, BN, page_size](
@@ -472,7 +472,7 @@ def depth512_softmax[
     @always_inline
     def mask_batch[
         N: Int, //, mask_strategy: MaskStrategy
-    ](mut batch: InlineArray[Scalar[accum_dtype], N], kv_col: UInt32):
+    ](mut batch: Array[Scalar[accum_dtype], N], kv_col: UInt32):
         """Apply mask to a batch of score elements."""
         apply_mask[
             mask_strategy=mask_strategy,

@@ -58,7 +58,7 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
 
     var cur: Self.Element
 
-    comptime LoopBoundSpec = InlineArray[IndexList[2], Self.n_loops]
+    comptime LoopBoundSpec = Array[IndexList[2], Self.n_loops]
     var loop_bounds: Self.LoopBoundSpec
     var early_stop: Bool
 
@@ -335,13 +335,13 @@ def _do_pad[
     paddings: UnsafePointer[Scalar[paddings_type], _],
     pad_impl_fn: PadImplFn,
 ):
-    var input_strides_stack = InlineArray[Scalar[DType.int], output.rank](
+    var input_strides_stack = Array[Scalar[DType.int], output.rank](
         uninitialized=True
     )
     var input_strides_buf = TileTensor(
         input_strides_stack, row_major[input.rank]()
     )
-    var output_strides_stack = InlineArray[Scalar[DType.int], output.rank](
+    var output_strides_stack = Array[Scalar[DType.int], output.rank](
         uninitialized=True
     )
     var output_strides_buf = TileTensor(

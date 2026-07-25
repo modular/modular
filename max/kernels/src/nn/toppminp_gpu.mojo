@@ -348,7 +348,7 @@ def radix_sort_pairs_kernel[
     ]()
 
     # Initialize counts[NUM_BUCKETS]
-    var counts_stack = InlineArray[Int32, NUM_BUCKETS](uninitialized=True)
+    var counts_stack = Array[Int32, NUM_BUCKETS](uninitialized=True)
     var counts_buf = TileTensor(counts_stack, row_major[NUM_BUCKETS]()).fill(0)
     var counts = counts_buf.ptr
 
@@ -434,9 +434,7 @@ def radix_sort_pairs_kernel[
         barrier()
 
     # Each thread initializes local_offsets[NUM_BUCKETS] = 0
-    var local_offsets_stack = InlineArray[Int32, NUM_BUCKETS](
-        uninitialized=True
-    )
+    var local_offsets_stack = Array[Int32, NUM_BUCKETS](uninitialized=True)
     var local_offsets_buf = TileTensor(
         local_offsets_stack, row_major[NUM_BUCKETS]()
     ).fill(0)
@@ -489,7 +487,7 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
     between them.
     """
 
-    var _d_buffers: InlineArray[
+    var _d_buffers: Array[
         Optional[UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]], 2
     ]
     var _selection: Int32

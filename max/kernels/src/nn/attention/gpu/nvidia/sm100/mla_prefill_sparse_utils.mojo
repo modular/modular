@@ -214,68 +214,68 @@ struct MLASparseSharedMemory[config: MLASparseConfig]:
     comptime S_SIZE = Self.BH * Self.config.B_TOPK
     comptime O_SIZE = Self.BH * Self.config.v_depth
 
-    comptime FULL_Q_TYPE = InlineArray[Scalar[Self.qkv_dtype], Self.FULL_Q_SIZE]
-    comptime SHARED_QKV_TYPE = InlineArray[
+    comptime FULL_Q_TYPE = Array[Scalar[Self.qkv_dtype], Self.FULL_Q_SIZE]
+    comptime SHARED_QKV_TYPE = Array[
         Scalar[Self.qkv_dtype], Self.SHARED_QKV_SIZE
     ]
-    comptime O_TYPE = InlineArray[Scalar[Self.qkv_dtype], Self.O_SIZE]
+    comptime O_TYPE = Array[Scalar[Self.qkv_dtype], Self.O_SIZE]
 
     var qkvo_union: UnsafeUnion[
         Self.FULL_Q_TYPE, Self.SHARED_QKV_TYPE, Self.O_TYPE
     ]
-    var scores: InlineArray[Scalar[Self.qkv_dtype], Self.S_SIZE]
-    var p: InlineArray[Float32, Self.S_SIZE]
+    var scores: Array[Scalar[Self.qkv_dtype], Self.S_SIZE]
+    var p: Array[Float32, Self.S_SIZE]
 
-    var prologue_q: InlineArray[SharedMemBarrier, 1]
-    var prologue_q_cp: InlineArray[SharedMemBarrier, 1]
+    var prologue_q: Array[SharedMemBarrier, 1]
+    var prologue_q_cp: Array[SharedMemBarrier, 1]
 
     # use for qk ss_mma completion (used by qk_ss_mma)
-    var qk_ss_done: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var qk_ss_done: Array[SharedMemBarrier, Self.num_mbars]
     # use for qk ts_mma completion (used by qk_ts_mma)
-    var qk_ts_done: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var qk_ts_done: Array[SharedMemBarrier, Self.num_mbars]
 
     # use for sv_p0 completion
-    var sv_p0_done: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var sv_p0_done: Array[SharedMemBarrier, Self.num_mbars]
     # use for sv_p1 completion
-    var sv_p1_done: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var sv_p1_done: Array[SharedMemBarrier, Self.num_mbars]
 
     # use for k_p0 ready TMA load completion (used by k_p0)
-    var k_p0_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var k_p0_ready: Array[SharedMemBarrier, Self.num_mbars]
     # use for k_p1 ready TMA load completion (used by k_p1)
-    var k_p1_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var k_p1_ready: Array[SharedMemBarrier, Self.num_mbars]
 
     # use for v_p0 ready TMA load completion (used by v_p0)
-    var v_p0_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var v_p0_ready: Array[SharedMemBarrier, Self.num_mbars]
     # use for v_p1 ready TMA load completion (used by v_p1)
-    var v_p1_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var v_p1_ready: Array[SharedMemBarrier, Self.num_mbars]
 
-    var p_free: InlineArray[SharedMemBarrier, Self.num_mbars]
-    var so_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var p_free: Array[SharedMemBarrier, Self.num_mbars]
+    var so_ready: Array[SharedMemBarrier, Self.num_mbars]
 
     # k_valid_ready / k_valid_free coordinate the WG3 warp-13 producer
     # that writes the per-position validity bitmask (`is_k_valid` below)
     # consumed by WG0's mask step.  Mirrors phase1.cuh's `bar_k_valid_*`
     # + `is_k_valid` slot.
-    var k_valid_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
-    var k_valid_free: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var k_valid_ready: Array[SharedMemBarrier, Self.num_mbars]
+    var k_valid_free: Array[SharedMemBarrier, Self.num_mbars]
     # Validity bitmask: 1 bit per topk position.  Packed as
     # MASK_BYTES_PER_BUF = B_TOPK / 8 bytes per buffer; byte `j` of buffer
     # `b` carries bits for positions [j*8 .. j*8+8).  Bit set = "this index
     # is in range AND its absolute position is < topk_lengths[seq]".
-    # Stored flat (no nested InlineArray) so the byte-offset math at
+    # Stored flat (no nested Array) so the byte-offset math at
     # producer/consumer relies on simple array layout, not on the
-    # absence of inter-element padding in nested InlineArray.
+    # absence of inter-element padding in nested Array.
     comptime MASK_BYTES_PER_BUF = Self.config.B_TOPK // 8
     # Producer parallelism: one lane per output mask byte; each lane
     # packs INDICES_PER_LANE = 8 bits.  Coupled by definition.
     comptime NUM_KV_VALID_LANES = Self.MASK_BYTES_PER_BUF
     comptime INDICES_PER_LANE = 8
-    var is_k_valid: InlineArray[UInt8, Self.num_mbars * Self.MASK_BYTES_PER_BUF]
-    var tmem_addr: InlineArray[UInt32, 1]
+    var is_k_valid: Array[UInt8, Self.num_mbars * Self.MASK_BYTES_PER_BUF]
+    var tmem_addr: Array[UInt32, 1]
 
     # store rowwise max and sum for each threads in a warp group
-    var rowwise_max: InlineArray[Float32, WARPGROUP_SIZE]
-    var rowwise_sum: InlineArray[Float32, WARPGROUP_SIZE]
+    var rowwise_max: Array[Float32, WARPGROUP_SIZE]
+    var rowwise_sum: Array[Float32, WARPGROUP_SIZE]
 
 
 struct QKMMAOp[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:

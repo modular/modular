@@ -138,7 +138,7 @@ comptime MMA_DIM = 16
 # The M5 16x16 simdgroup fragment owns TWO rows per lane (`rb` and `rb+8`), so
 # every per-row quantity is width-2 and the cross-lane reduction is an XOR
 # butterfly over the row-sharing lanes. The `(m, l)` state lives in kernel-local
-# `InlineArray[Float32, _SOFTMAX_FRAG_ROWS]`s that the `_softmax_*` free functions
+# `Array[Float32, _SOFTMAX_FRAG_ROWS]`s that the `_softmax_*` free functions
 # take and mutate.
 
 comptime _SOFTMAX_FRAG_ROWS = 2  # M5 lane owns rows {rb, rb+8} of each 16x16 subtile
@@ -146,8 +146,8 @@ comptime _SOFTMAX_FRAG_ROWS = 2  # M5 lane owns rows {rb, rb+8} of each 16x16 su
 
 @always_inline
 def _softmax_seed_sink(
-    mut sm_m: InlineArray[Float32, _SOFTMAX_FRAG_ROWS],
-    mut sm_l: InlineArray[Float32, _SOFTMAX_FRAG_ROWS],
+    mut sm_m: Array[Float32, _SOFTMAX_FRAG_ROWS],
+    mut sm_l: Array[Float32, _SOFTMAX_FRAG_ROWS],
     sink_weight: Float32,
 ):
     """Pre-seed `(m, l)` with a sink token's contribution (init-state trick).
@@ -169,14 +169,14 @@ def _softmax_row_max[
     num_n_mmas: Int
 ](
     scores: MmaOpApple[DType.float32, DType.float32, 1, num_n_mmas].AccumType,
-) -> InlineArray[Float32, _SOFTMAX_FRAG_ROWS]:
+) -> Array[Float32, _SOFTMAX_FRAG_ROWS]:
     """Full-row max over the single score row-block (across all `ni` cols).
 
     Returns `[rb_max, rb8_max]` for the two rows this lane owns. The per-fragment
     max is combined across the `num_n_mmas` column fragments in registers before a
     single XOR butterfly reduces the row-sharing lanes.
     """
-    var r = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](fill=NEG_INF)
+    var r = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=NEG_INF)
     comptime for ni in range(num_n_mmas):
         var frag = scores[ni]
         var r0 = max(max(frag[0], frag[1]), max(frag[2], frag[3]))
@@ -195,8 +195,8 @@ def _softmax_row_max[
 def _softmax_update[
     num_n_mmas: Int, out_num_n_mmas: Int
 ](
-    mut sm_m: InlineArray[Float32, _SOFTMAX_FRAG_ROWS],
-    mut sm_l: InlineArray[Float32, _SOFTMAX_FRAG_ROWS],
+    mut sm_m: Array[Float32, _SOFTMAX_FRAG_ROWS],
+    mut sm_l: Array[Float32, _SOFTMAX_FRAG_ROWS],
     mut scores: MmaOpApple[
         DType.float32, DType.float32, 1, num_n_mmas
     ].AccumType,
@@ -220,20 +220,20 @@ def _softmax_update[
       5. `output *= alpha`
     """
     var m_tile = _softmax_row_max[num_n_mmas](scores)
-    var m_new = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
+    var m_new = Array[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
     m_new[0] = max(sm_m[0], m_tile[0])
     m_new[1] = max(sm_m[1], m_tile[1])
     # A still-fully-masked row keeps its running max at the finite NEG_INF floor
     # (finite, so the subtraction never NaNs), and resolves once its first real
     # key arrives in a later tile.
-    var alpha = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
+    var alpha = Array[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
     alpha[0] = exp2(sm_m[0] - m_new[0])
     alpha[1] = exp2(sm_m[1] - m_new[1])
 
     # Accumulate `l` from each P fragment while it is still register-live (vs a
     # second pass re-reading the written-back scores), shortening the softmax
     # dependency chain. One butterfly after the loop does the cross-lane reduction.
-    var l_acc = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(0))
+    var l_acc = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(0))
     comptime for ni in range(num_n_mmas):
         var p = scores[ni]
         var p_lo = exp2(
@@ -265,7 +265,7 @@ def _softmax_update[
 def _softmax_normalize[
     out_num_n_mmas: Int
 ](
-    sm_l: InlineArray[Float32, _SOFTMAX_FRAG_ROWS],
+    sm_l: Array[Float32, _SOFTMAX_FRAG_ROWS],
     mut output: MmaOpApple[
         DType.float32, DType.float32, 1, out_num_n_mmas
     ].AccumType,
@@ -280,7 +280,7 @@ def _softmax_normalize[
     window and the key range; causal always attends its own position and the sink
     seed keeps `l >= 1`, so the guard is a no-op there.
     """
-    var inv = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
+    var inv = Array[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
     inv[0] = Float32(1) / sm_l[0] if sm_l[0] > Float32(0) else Float32(0)
     inv[1] = Float32(1) / sm_l[1] if sm_l[1] > Float32(0) else Float32(0)
     comptime for ni in range(out_num_n_mmas):
@@ -532,8 +532,8 @@ def fa_prefill_apple_core[
     var out_mma = OutMma()
     var output_accum = OutMma.zero_accum()
     # Online-softmax state, seeded m = NEG_INF, l = 0 (see `_softmax_*`).
-    var sm_m = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](fill=NEG_INF)
-    var sm_l = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(0))
+    var sm_m = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=NEG_INF)
+    var sm_l = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(0))
 
     comptime if sink:
         # Pre-seed (m, l) from the per-head sink weight (indexed by head_id). The
@@ -772,9 +772,7 @@ def fa_prefill_apple_core[
             # fragment loads before the MMAs consume them so the strided reads
             # overlap (~2x read BW) and the PV MMAs run back-to-back. Batching
             # wider than DEPTH_MMAS regressed (over-reserved registers).
-            var v_frags = InlineArray[SIMD[q_type, 8], DEPTH_MMAS](
-                uninitialized=True
-            )
+            var v_frags = Array[SIMD[q_type, 8], DEPTH_MMAS](uninitialized=True)
             if sk_tile_full:
                 comptime for ni in range(DEPTH_MMAS):
                     v_frags[ni] = out_mma.load_fragment[v_t.dtype](

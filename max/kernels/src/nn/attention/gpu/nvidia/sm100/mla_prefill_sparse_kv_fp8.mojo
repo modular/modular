@@ -165,10 +165,10 @@ struct MLASparseSharedMemoryFP8[config: MLASparseConfig, scale_block_size: Int]:
     comptime V_SCALES_SIZE = Self.config.B_TOPK * Self.V_scales_per_token
 
     var base: MLASparseSharedMemory[Self.config]
-    var k_scales: InlineArray[Float32, Self.K_SCALES_SIZE]
-    var v_scales: InlineArray[Float32, Self.V_SCALES_SIZE]
-    var k_fp8_tma_done: InlineArray[SharedMemBarrier, Self.num_mbars]
-    var v_fp8_tma_done: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var k_scales: Array[Float32, Self.K_SCALES_SIZE]
+    var v_scales: Array[Float32, Self.V_SCALES_SIZE]
+    var k_fp8_tma_done: Array[SharedMemBarrier, Self.num_mbars]
+    var v_fp8_tma_done: Array[SharedMemBarrier, Self.num_mbars]
 
 
 struct MLAPrefillSparseFP8[
@@ -1281,7 +1281,7 @@ struct MLAPrefillSparseFP8[
                 mi = new_max
                 li = mul_ftz(li, scale_for_old)
 
-                var s_bf16 = InlineArray[Scalar[Self.qkv_dtype], P_PER_THREAD](
+                var s_bf16 = Array[Scalar[Self.qkv_dtype], P_PER_THREAD](
                     uninitialized=True
                 )
                 comptime for i in range(P_PER_THREAD):
@@ -1297,7 +1297,7 @@ struct MLAPrefillSparseFP8[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
-                var o_chunk_prefetch = InlineArray[
+                var o_chunk_prefetch = Array[
                     Scalar[DType.float32], O_RESCALE_CHUNK
                 ](uninitialized=True)
                 if k > 0 and should_scale_o:
@@ -1337,7 +1337,7 @@ struct MLAPrefillSparseFP8[
                 # was prefetched above, chunks 1..N-1 load sequentially.
                 if k > 0 and should_scale_o:
                     tcgen05_load_wait()
-                    var o_scaled_0 = InlineArray[
+                    var o_scaled_0 = Array[
                         Scalar[DType.float32], O_RESCALE_CHUNK
                     ](uninitialized=True)
                     comptime for j in range(O_RESCALE_CHUNK):
@@ -1364,7 +1364,7 @@ struct MLAPrefillSparseFP8[
                             + UInt32(chunk_idx * O_RESCALE_CHUNK)
                         )
                         tcgen05_load_wait()
-                        var o_scaled = InlineArray[
+                        var o_scaled = Array[
                             Scalar[DType.float32], O_RESCALE_CHUNK
                         ](uninitialized=True)
                         comptime for j in range(O_RESCALE_CHUNK):
@@ -1448,7 +1448,7 @@ struct MLAPrefillSparseFP8[
                     var col_group = (
                         Int(depth_col_block) * 2 + atom_idx * 4 + chunk
                     )
-                    var c_chunk: InlineArray[Scalar[DType.float32], CHUNK]
+                    var c_chunk: Array[Scalar[DType.float32], CHUNK]
                     c_chunk = tcgen05_ld[
                         datapaths=32,
                         bits=32,

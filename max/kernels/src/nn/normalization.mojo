@@ -1149,7 +1149,7 @@ def rms_norm_gpu_warp_per_row[
     comptime if single_pass:
         # Register-cached input chunks (accum precision), carried across the warp
         # reduction so the normalize pass needs no re-read.
-        var vec_data = InlineArray[SIMD[accum_type, simd_width], chunks](
+        var vec_data = Array[SIMD[accum_type, simd_width], chunks](
             fill=SIMD[accum_type, simd_width](0)
         )
 
@@ -1321,10 +1321,10 @@ def rms_norm_gpu_warp_tiling[
 
     # Per-chunk register-cached input (in accum precision) and gamma weights,
     # carried across the reduction so the normalize pass needs no re-read.
-    var vec_data = InlineArray[SIMD[accum_type, simd_width], chunks_per_thread](
+    var vec_data = Array[SIMD[accum_type, simd_width], chunks_per_thread](
         fill=SIMD[accum_type, simd_width](0)
     )
-    var gamma_val = InlineArray[SIMD[dtype, simd_width], chunks_per_thread](
+    var gamma_val = Array[SIMD[dtype, simd_width], chunks_per_thread](
         fill=SIMD[dtype, simd_width](0)
     )
 

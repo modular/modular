@@ -135,13 +135,13 @@ struct MLASmemStorage[
 
     comptime correction_smem_size = Self.config.correction_smem_elements()
 
-    var q_smem: InlineArray[Scalar[DType.uint8], Self.q_bytes]
-    var kv_smem: InlineArray[Scalar[DType.uint8], Self.kv_bytes]
-    var q_scale_smem: InlineArray[Scalar[DType.uint8], Self.q_scale_bytes]
-    var k_scale_smem: InlineArray[Scalar[DType.uint8], Self.k_scale_bytes]
-    var correction_smem: InlineArray[Float32, Self.correction_smem_size]
-    var mbar_base: InlineArray[SharedMemBarrier, Self.num_mbars]
-    var tmem_addr: InlineArray[UInt32, 1]
+    var q_smem: Array[Scalar[DType.uint8], Self.q_bytes]
+    var kv_smem: Array[Scalar[DType.uint8], Self.kv_bytes]
+    var q_scale_smem: Array[Scalar[DType.uint8], Self.q_scale_bytes]
+    var k_scale_smem: Array[Scalar[DType.uint8], Self.k_scale_bytes]
+    var correction_smem: Array[Float32, Self.correction_smem_size]
+    var mbar_base: Array[SharedMemBarrier, Self.num_mbars]
+    var tmem_addr: Array[UInt32, 1]
 
 
 __extension SM100MLA:

@@ -650,7 +650,7 @@ struct MLAPrefillSparse[
                 # `ex2`: the SM100 softmax warpgroup is MUFU-bound on the
                 # critical path, so this is ~14% faster here. Don't replace
                 # with `exp2(d)`.
-                var s_bf16 = InlineArray[Scalar[Self.qkv_dtype], P_PER_THREAD](
+                var s_bf16 = Array[Scalar[Self.qkv_dtype], P_PER_THREAD](
                     uninitialized=True
                 )
                 var vscale = SIMD[DType.float32, 2](scale_log2e)
@@ -676,7 +676,7 @@ struct MLAPrefillSparse[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
-                var o_chunk_prefetch = InlineArray[
+                var o_chunk_prefetch = Array[
                     Scalar[DType.float32], O_RESCALE_CHUNK
                 ](uninitialized=True)
                 if k > 0 and should_scale_o:
@@ -716,7 +716,7 @@ struct MLAPrefillSparse[
                 # was prefetched above, chunks 1..N-1 load sequentially.
                 if k > 0 and should_scale_o:
                     tcgen05_load_wait()
-                    var o_scaled_0 = InlineArray[
+                    var o_scaled_0 = Array[
                         Scalar[DType.float32], O_RESCALE_CHUNK
                     ](uninitialized=True)
                     comptime for j in range(O_RESCALE_CHUNK):
@@ -743,7 +743,7 @@ struct MLAPrefillSparse[
                             + UInt32(chunk_idx * O_RESCALE_CHUNK)
                         )
                         tcgen05_load_wait()
-                        var o_scaled = InlineArray[
+                        var o_scaled = Array[
                             Scalar[DType.float32], O_RESCALE_CHUNK
                         ](uninitialized=True)
                         comptime for j in range(O_RESCALE_CHUNK):
@@ -867,7 +867,7 @@ struct MLAPrefillSparse[
                     var col_group = (
                         Int(depth_col_block) * 2 + atom_idx * 4 + chunk
                     )
-                    var c_chunk: InlineArray[Scalar[DType.float32], CHUNK]
+                    var c_chunk: Array[Scalar[DType.float32], CHUNK]
                     c_chunk = tcgen05_ld[
                         datapaths=32,
                         bits=32,
@@ -1075,7 +1075,7 @@ struct MLAPrefillSparse[
             address_space=AddressSpace.SHARED,
             ...,
         ],
-        local_indices: InlineArray[SIMD[DType.int32, 4], num_rows],
+        local_indices: Array[SIMD[DType.int32, 4], num_rows],
         warp_idx: UInt32,
     ):
         # layout for complying to 128B swizzle atom
@@ -1244,9 +1244,9 @@ struct MLAPrefillSparse[
             Self.config.B_TOPK // Self.config.cta_group
         ) // 4 // num_warps
 
-        var local_indices = InlineArray[
-            SIMD[DType.int32, 4], num_rows_per_warp
-        ](uninitialized=True)
+        var local_indices = Array[SIMD[DType.int32, 4], num_rows_per_warp](
+            uninitialized=True
+        )
         var max_idx: Int32 = -1
         var min_idx: Int32 = num_kv_rows
 
