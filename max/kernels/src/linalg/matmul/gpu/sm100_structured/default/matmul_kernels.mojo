@@ -1098,11 +1098,11 @@ struct BlackwellMatmulSM100Kernel[
 
                 # Peer CTA slice using pointer arithmetic
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 
@@ -1179,7 +1179,7 @@ struct BlackwellMatmulSM100Kernel[
                 ](tiles.stage(), j)
 
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
 
@@ -1236,7 +1236,7 @@ struct BlackwellMatmulSM100Kernel[
                 )
 
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 
@@ -1309,7 +1309,7 @@ struct BlackwellMatmulSM100Kernel[
                 ](tiles.stage(), j)
 
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 
@@ -1363,7 +1363,7 @@ struct BlackwellMatmulSM100Kernel[
                 )
 
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
 
@@ -1468,11 +1468,11 @@ struct BlackwellMatmulSM100Kernel[
                 # TMA descriptor layout. Pointer arithmetic with a_tma_load_size
                 # preserves the original working behavior.
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 
@@ -1586,9 +1586,9 @@ struct BlackwellMatmulSM100Kernel[
                         0
                     )
                     var src_ptr = (
-                        bias_1d_tile.ptr + gmem_offset + lane_start
+                        bias_1d_tile._storage + gmem_offset + lane_start
                     ).address_space_cast[AddressSpace.GLOBAL]()
-                    var dst_ptr = smem_tile.ptr + lane_start
+                    var dst_ptr = smem_tile._storage + lane_start
                     comptime for chunk in range(num_copies):
                         async_copy[
                             copy_bytes,

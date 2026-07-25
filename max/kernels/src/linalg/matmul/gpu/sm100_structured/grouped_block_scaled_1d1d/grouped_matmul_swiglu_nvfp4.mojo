@@ -183,12 +183,14 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     # SF tile shape (n_blocks, sf_dim1, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K).
     # The static dim1 is ceildiv(D, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K).
     comptime sf_dim1 = type_of(c_swiglu_scales).static_shape[1]
-    var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](c_packed.ptr)
+    var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](
+        c_packed._storage
+    )
     var c_swiglu_scales_ptr = rebind[
         UnsafePointer[Scalar[NVFP4_SF_DTYPE], MutAnyOrigin]
-    ](c_swiglu_scales.ptr)
+    ](c_swiglu_scales._storage)
     var c_input_scales_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
-        c_input_scales.ptr
+        c_input_scales._storage
     )
     var swiglu_out = RealSwiGLUOutput[
         c_packed_row_stride,

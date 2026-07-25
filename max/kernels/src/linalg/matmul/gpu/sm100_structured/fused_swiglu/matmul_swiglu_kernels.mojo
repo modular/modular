@@ -300,11 +300,11 @@ def load_AB[
             var b_smem_tile = b_smem_tiles[offset]
 
             var a_smem_slice = type_of(a_smem_tile)(
-                a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size,
+                a_smem_tile._storage + peer_cta_coord[2] * a_tma_load_size,
                 a_smem_tile.layout,
             )
             var b_smem_slice = type_of(b_smem_tile)(
-                b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size,
+                b_smem_tile._storage + peer_cta_coord[1] * b_tma_load_size,
                 b_smem_tile.layout,
             )
 
@@ -1887,7 +1887,7 @@ def blackwell_swiglu_warp_specialized_kernel[
                         0
                     )
                     var src_ptr = (
-                        bias_1d_tile.ptr + gmem_offset + lane_start
+                        bias_1d_tile._storage + gmem_offset + lane_start
                     ).address_space_cast[AddressSpace.GLOBAL]()
                     var bias_smem_base: UnsafePointer[
                         Scalar[c_type],

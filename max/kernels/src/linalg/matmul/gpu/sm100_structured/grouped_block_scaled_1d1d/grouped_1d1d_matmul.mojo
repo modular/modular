@@ -332,7 +332,7 @@ def grouped_matmul_block_scaled[
     )
     var sfa_4d_layout = row_major(sfa_4d_shape)
     var sfa_4d = TileTensor[DType.uint16, type_of(sfa_4d_layout), MutAnyOrigin](
-        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](a_scales.ptr),
+        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](a_scales._storage),
         sfa_4d_layout,
     )
 
@@ -349,7 +349,7 @@ def grouped_matmul_block_scaled[
     )
     var sfb_4d_layout = row_major(sfb_4d_shape)
     var sfb_4d = TileTensor[DType.uint16, type_of(sfb_4d_layout), MutAnyOrigin](
-        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](_b_scales.ptr),
+        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](_b_scales._storage),
         sfb_4d_layout,
     )
 
@@ -385,7 +385,7 @@ def grouped_matmul_block_scaled[
         var stride = Coord(Idx[1])
         return TileTensor[target_type, GMEMLayout1D, MutAnyOrigin](
             ptr=Ptr[Scalar[target_type], MutAnyOrigin](
-                unsafe_from_address=Int(t.ptr)
+                unsafe_from_address=Int(t.ptr_at_offset(Coord(0)))
             ),
             layout=GMEMLayout1D(shape, stride),
         )
@@ -456,7 +456,7 @@ def grouped_matmul_block_scaled[
             UInt32(K),
             # AB_swapped: SFB data comes from a_scales.
             rebind[UnsafePointer[Scalar[sfa_dtype], ImmutAnyOrigin]](
-                a_scales.ptr
+                a_scales._storage
             ),
             Int(a_scales.layout.shape[1]().value()) * _sfb_K_TILE_ELEMS,
             Int(a_scales.layout.shape[1]().value()),
@@ -529,7 +529,7 @@ def grouped_matmul_block_scaled[
             UInt32(K),
             # Non-swapped: SFB data comes from _b_scales.
             rebind[UnsafePointer[Scalar[sfb_dtype], ImmutAnyOrigin]](
-                _b_scales.ptr
+                _b_scales._storage
             ),
             Int(_b_scales.layout.shape[2]().value()) * _sfb_K_TILE_ELEMS,
             Int(_b_scales.layout.shape[2]().value()),
