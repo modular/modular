@@ -1379,8 +1379,6 @@ std::pair<ValueRef, Type> ValueSet::getValueRefAndTypeForOrigin(
     assert(valueRef.isIndirect && "Cannot field refine SSA value access");
     auto fieldName = field.getField();
 
-    // TODO(field erasure): When we allow field accesses to be compressed due to
-    // subtyping/erasure we'll need to be more careful here.
     auto containerType = sugarDynCast<LIT::StructType>(type);
     if (!containerType)
       return {valueRef, Type()};
@@ -1411,12 +1409,12 @@ std::pair<ValueRef, Type> ValueSet::getValueRefAndTypeForOrigin(
     return {valueRef, {}};
   }
 
-  // If this is an subtree origin like `a.field~`, then we treat this like a
-  // synthetic access to an interior origin, as well as an access to the base.
+  // If this is an subtree origin like `a.field~`, then we treat this like an
+  // access to the base `a.field`.
   if (auto subtree = sugarDynCast<OriginSubtreeAttr>(origin)) {
     auto [valueRef, _] =
         getValueRefAndTypeForOrigin(subtree.getOrigin(), interiorOrigins);
-    // Don't pass the type up; the indirected type may be something erased.
+    // Don't pass the type up; the base type will have fields erased.
     return {valueRef, Type()};
   }
 
@@ -1661,19 +1659,31 @@ void TrackedAndInteriorLiveness::mergeWith(
 // For example consider:
 //    ref r1 = a.list[].first[].y
 //    ref r2 = a.list[].second.field[].z
+//    ref r3 = a.list~
 //
 // The "r1" reference must be invalided when any of "a", "a.list", or
 // "a.list[].first" are mutated. The "r2" reference must be invalidated when any
 // of "a", "a.list", "a.list[].second", or "a.list[].second.field" are mutated.
 //
+// Subtree origins are defined as a synthetic interior origin (a.list[<magic>])
+// but mutations to them need to be treated like mutations to the base origin,
+// because "a.list" converts to "a.list~". Furthermore, they need to be
+// invalidated when any interior origins derived from the base are mutated,
+// because it may alias them as well. This means the "r3" reference must be
+// invalidated when any of these origins are mutated.
+//
 // In order to make this efficient, we keep invert the origin representation to
 // hold an 'interiorOriginInvalidationMap' indicating what to invalidate when
 // an origin is mutated that has derived interior origins. In this case, it has:
 //
-//    a.list[].first => { a.list[].first[] }
-//    a.list[].second => { a.list[].second.field[] }
-//    a.list[].second.field => { a.list[].second.field[] }
-//    a.list => { a.list[], a.list[].first[], a.list[].second.field[] }
+//    a.list[].first => { a.list[].first[], a.list~ }
+//    a.list[].second => { a.list[].second.field[], a.list~ }
+//    a.list[].second.field => { a.list[].second.field[], a.list~ }
+//    a.list[] => { a.list[].first[], a.list[].second.field[] }
+//    a.list~ => { same as a.list[] + a.list~ itself }
+//    a.list.otherfield => { a.list~ }
+//    a.list => { a.list[], a.list[].first[], a.list[].second.field[], a.list~ }
+//    a => { all the interiors + a.list~ }
 //
 // Note that the trailing field sensitivity information is not tracked since 'y'
 // and 'z' aren't special - all subfields of the final interior origin are
@@ -1771,9 +1781,14 @@ private:
   /// This is the counter for the next assigned ID.
   size_t nextInteriorOriginID = 0;
 
+  /// If there is a subtree origin x.field~ used in this function, this map
+  /// notices it and keeps track of the synthetic interior origin for it.  Most
+  /// origins won't have a subtree origin: they won't have an entry.
+  DenseMap<Attribute, InteriorOriginAttr> subtreeForOriginMap;
+
   /// This contains entries for origins that have derived interior origins,
   /// indicating what to invalidate when that origin is mutated.
-  DenseMap<TypedAttr, BitVector> interiorOriginInvalidationMap;
+  DenseMap<Attribute, BitVector> interiorOriginInvalidationMap;
 
   /// This contains entries for origins that have interior origins somewhere
   /// inside of them. This allows us to filter out the majority of origins
@@ -1783,6 +1798,10 @@ private:
   /// Tracks whether we've already emitted a diagnostic for each interior
   /// origin ID, to avoid redundant errors for the same origin.
   BitVector interiorOriginErrorEmitted;
+
+  void noticeInvalidatedSubtreeOrigins(
+      Attribute origin, SmallVector<InteriorOriginAttr, 16> &subTreeInvalidated,
+      SmallPtrSet<Attribute, 16> &hasNoSubtreeOrigin);
 };
 } // namespace
 
@@ -1832,6 +1851,7 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
   // Given a set of origins used in the function, scan their structure for any
   // interior origins (including ones nested in fields) and build the
   // invalidation map.
+  SmallPtrSet<Attribute, 16> allDerivedOrigins;
   for (TypedAttr origin : perThreadCache.originFinder.findOriginsIn(
            collectedTypes, func.getFuncTypeGenerator().getCaptureOrigins())) {
     // processRawOrigin looks through SugarAttr and UnionAttr.
@@ -1840,19 +1860,26 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
       // Strip off things that might be outside an interior origin, since they
       // won't matter for our analysis.
       while (1) {
+        allDerivedOrigins.insert(raw);
         if (auto mutCast = dyn_cast<OriginMutCastAttr>(raw))
           raw = mutCast.getOperand();
-        else if (auto field = dyn_cast<OriginFieldAttr>(raw))
+        else if (auto field = dyn_cast<OriginFieldAttr>(raw)) {
           raw = field.getBase();
-        else if (auto sugar = dyn_cast<SugarAttr>(origin))
-          origin = sugar.getCanonical();
+        } else if (auto sugar = dyn_cast<SugarAttr>(raw))
+          raw = sugar.getCanonical();
         else
           break;
       }
 
-      // If we find a subtree origin, process it as an interior origin.
-      if (auto subtree = dyn_cast<OriginSubtreeAttr>(raw))
-        raw = getInteriorForSubtreeOrigin(subtree);
+      // If we find a subtree origin, we will need to generally handle it like
+      // and interior origin (e.g. it gets invalidated when the base is
+      // mutated, defined as valid when returned from a function), so enumerate
+      // it as a synthetic interior origin.
+      if (auto subtree = dyn_cast<OriginSubtreeAttr>(raw)) {
+        auto synthetic = getInteriorForSubtreeOrigin(subtree);
+        subtreeForOriginMap[subtree.getOrigin()] = synthetic;
+        raw = synthetic; // Process this like any other below.
+      }
 
       // If we find an interior origin inside, process it.
       if (auto interior = sugarDynCast<InteriorOriginAttr>(raw)) {
@@ -1866,6 +1893,34 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
       originWithInteriorOrigins.insert(origin);
   }
 
+  // Now that we found all the subtree origins, make sure they get invalidated
+  // when any origins descendent from their bases are mutated. For example:
+  //    'a.list~' aill already be listed as being invalidated when 'a' or
+  //    'a.list' is mutated, but we need to add 'a.list[other]' and
+  //    a.list.field as well.
+  if (!subtreeForOriginMap.empty()) {
+    SmallPtrSet<Attribute, 16> hasNoSubtreeOrigin;
+    SmallVector<InteriorOriginAttr, 16> subTreeInvalidated;
+    for (Attribute origin : allDerivedOrigins) {
+      noticeInvalidatedSubtreeOrigins(origin, subTreeInvalidated,
+                                      hasNoSubtreeOrigin);
+
+      // If there are any subtree origins invalidated by this origin, add them
+      // to its invalidation map.
+      if (subTreeInvalidated.empty())
+        continue;
+
+      auto &bitvector = interiorOriginInvalidationMap[origin];
+      for (auto interior : subTreeInvalidated) {
+        size_t id = getInteriorOriginID(interior);
+        if (id >= bitvector.size())
+          bitvector.resize(id + 1);
+        bitvector.set(id);
+      }
+      subTreeInvalidated.clear();
+    }
+  }
+
   // Now that we found all the interior origins, make sure all the bitvectors
   // are the same length.
   if (size_t numInteriorOrigins = getNumInteriorOrigins()) {
@@ -1873,6 +1928,44 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
       bitVector.second.resize(numInteriorOrigins);
     interiorOriginErrorEmitted.resize(numInteriorOrigins);
   }
+}
+
+/// This method is called whenever we discover a derived origin "X", like
+/// "a.list[].first[]" or "a.list.otherfield". It checks to see if there is a
+/// subtree origin "X~"
+/// invalidated when any of the origins derived from its base are mutated, like
+/// "a", "a.list", or "a.list[].first".
+void InteriorOriginTracker::noticeInvalidatedSubtreeOrigins(
+    Attribute origin, SmallVector<InteriorOriginAttr, 16> &subTreeInvalidated,
+    SmallPtrSet<Attribute, 16> &hasNoSubtreeOrigin) {
+
+  // If we've already seen this origin and it has no subtrees, exit early.
+  if (hasNoSubtreeOrigin.count(origin))
+    return;
+
+  // If this locally has a subtree origin, add it.
+  if (auto it = subtreeForOriginMap.find(origin);
+      it != subtreeForOriginMap.end())
+    subTreeInvalidated.push_back(it->second);
+
+  // If this is a derived origin, recurse.
+  TypedAttr base;
+  if (auto mutCast = dyn_cast<OriginMutCastAttr>(origin))
+    base = mutCast.getOperand();
+  else if (auto field = dyn_cast<OriginFieldAttr>(origin))
+    base = field.getBase();
+  else if (auto sugar = dyn_cast<SugarAttr>(origin))
+    base = sugar.getCanonical();
+  else if (auto subtree = dyn_cast<OriginSubtreeAttr>(origin))
+    base = subtree.getOrigin();
+
+  if (base)
+    noticeInvalidatedSubtreeOrigins(base, subTreeInvalidated,
+                                    hasNoSubtreeOrigin);
+
+  // If we didn't find anything, then don't process this again.
+  if (subTreeInvalidated.empty())
+    hasNoSubtreeOrigin.insert(origin);
 }
 
 /// This method is called whenever we discover an interior origin.  This may
@@ -1958,10 +2051,11 @@ void InteriorOriginTracker::dump() const {
   }
 
   if (!interiorOriginInvalidationMap.empty()) {
-    os << "Invalidation map:\n";
+    os << "Invalidation map (note: dumped order is unstable):\n";
     for (auto &entry : interiorOriginInvalidationMap) {
       os << "  ";
-      originPrinter.print(os, entry.first, /*elideOriginOf=*/true);
+      originPrinter.print(os, cast<TypedAttr>(entry.first),
+                          /*elideOriginOf=*/true);
       os << " => ";
       printBV(entry.second, os);
       os << "\n";
@@ -2098,23 +2192,24 @@ private:
   valueSet.printFuncName(os);
   os << "\n  live = ";
   liveness.print(valueSet, os);
-  os << "\n  mutated = ";
+  os << "\n";
 
-  RaiseSetEntry<TrackedAndInteriorLiveness> *curr = raiseEntryInfo;
-  os << " raise: {";
-  while (curr) {
-    os << curr->label << " : ";
-    curr->raiseSet->print(valueSet, os) << "\n";
-    curr = curr->prev;
+  if (RaiseSetEntry<TrackedAndInteriorLiveness> *curr = raiseEntryInfo) {
+    os << "  raise: {";
+    while (curr) {
+      os << curr->label << " : ";
+      curr->raiseSet->print(valueSet, os) << "\n";
+      curr = curr->prev;
+    }
+    os << " }\n";
   }
-  os << " }";
 
   if (breakSet) {
-    os << " break: ";
+    os << "  break: ";
     breakSet->print(valueSet, os) << "\n";
   }
   if (continueSet) {
-    os << " continue: ";
+    os << "  continue: ";
     continueSet->print(valueSet, os) << "\n";
   }
   os.flush();
