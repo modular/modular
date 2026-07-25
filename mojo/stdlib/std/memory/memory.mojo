@@ -381,12 +381,7 @@ def unsafe_memmove[
 @deprecated(use=unsafe_memmove)
 def memmove[
     T: AnyType
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=False, T, _],
-    count: Int,
-):
+](*, dest: Pointer[mut=True, T, _], src: Pointer[mut=False, T, _], count: Int,):
     """Copy `count * size_of[T]()` bytes from src to dest.
 
     Unlike `memcpy`, the memory regions are allowed to overlap.
@@ -716,12 +711,7 @@ def uninit_move_n[
     //,
     *,
     overlapping: Bool,
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=True, T, _],
-    count: Int,
-):
+](*, dest: Pointer[mut=True, T, _], src: Pointer[mut=True, T, _], count: Int,):
     """Move `count` values from `src` into memory at `dest`.
 
     This function transfers ownership of `count` values from the source memory
@@ -833,12 +823,7 @@ def uninit_copy_n[
     //,
     *,
     overlapping: Bool,
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=False, T, _],
-    count: Int,
-):
+](*, dest: Pointer[mut=True, T, _], src: Pointer[mut=False, T, _], count: Int,):
     """Copy `count` values from `src` into memory at `dest`.
 
     This function creates copies of `count` values from the source memory in the
