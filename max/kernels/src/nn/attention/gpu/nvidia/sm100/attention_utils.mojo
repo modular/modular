@@ -942,6 +942,13 @@ struct SM100TensorAccumulator[
     cta_group: Int = 1,
     num_stages: Int = 1,
     b_page_dense: Bool = False,
+    # ANDed into `use_3_then_1_split` below (default True: byte-identical for
+    # every existing caller). Layout-E's P@V reduction-split accumulator
+    # (`mma_warp.mojo`) sets this False so its `num_stages==2` P sub-stage
+    # split stays an EVEN 2-then-2 of each reduction chunk's own `BK`, instead
+    # of the 3-then-1 split calibrated for Layout-G's (non-reduction-split)
+    # P write cadence -- see docs/plans/sm100-fa4-layout-e-mma64.md.
+    allow_3_then_1_split: Bool = True,
 ](TrivialRegisterPassable):
     """Performs the `C = A @ B` tensor contraction on SM100 using `tcgen05.mma` instructions.
 
@@ -969,6 +976,12 @@ struct SM100TensorAccumulator[
             hiding (defaults to 1).
         b_page_dense: Whether B uses the row-major page-fold layout
             (defaults to `False`).
+        allow_3_then_1_split: Whether a `num_stages == 2` A-in-TMEM
+            contraction with `num_k_blocks % 4 == 0` may use the 3-then-1
+            K sub-stage split (defaults to `True`, the historical behavior).
+            Set `False` by Layout-E's P@V reduction-split accumulator so the
+            P sub-stage chunks stay an even 2-then-2 aligned with the V
+            reduction chunks.
     """
 
     # This performs C = A @ B
@@ -1018,7 +1031,7 @@ struct SM100TensorAccumulator[
         Self.BK, Self.swizzle_granularity
     )
     comptime num_k_blocks = Self.padded_BK // Self.MMA_K
-    comptime use_3_then_1_split: Bool = Self.a_tmem and Self.num_stages == 2 and Self.num_k_blocks % 4 == 0
+    comptime use_3_then_1_split: Bool = Self.allow_3_then_1_split and Self.a_tmem and Self.num_stages == 2 and Self.num_k_blocks % 4 == 0
     comptime num_k_blocks_per_stage = Self.num_k_blocks // (
         4 if Self.use_3_then_1_split else Self.num_stages
     )
