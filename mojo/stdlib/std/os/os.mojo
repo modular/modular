@@ -21,7 +21,7 @@ from std.os import listdir
 """
 
 from std._plugin import CurrentPlugin
-from std.collections import InlineArray, List
+from std.collections import Array, List
 from std.collections.string.string_slice import _unsafe_strlen
 from std.format.tstring import TString
 from std.io import FileDescriptor
@@ -66,7 +66,7 @@ struct _dirent_linux(Copyable):
     """Length of the record."""
     var d_type: Int8
     """Type of file."""
-    var name: InlineArray[c_char, Self.MAX_NAME_SIZE]
+    var name: Array[c_char, Self.MAX_NAME_SIZE]
     """Name of entry."""
 
 
@@ -82,7 +82,7 @@ struct _dirent_macos(Copyable):
     """Length of the name."""
     var d_type: Int8
     """Type of file."""
-    var name: InlineArray[c_char, Self.MAX_NAME_SIZE]
+    var name: Array[c_char, Self.MAX_NAME_SIZE]
     """Name of entry."""
 
 

@@ -19,7 +19,7 @@ Documentation for these functions can be found online at:
 
 from .python import Python
 from .python_object import PythonObject
-from std.collections import InlineArray
+from std.collections import Array
 from std.memory import OpaquePointer
 from std.memory.alloc import alloc, Layout
 from std.memory.unsafe_pointer import unsafe_cast
@@ -276,7 +276,7 @@ struct PythonVersion(ImplicitlyCopyable, RegisterPassable):
         The version string is parsed to extract major, minor, and patch numbers.
         If parsing fails for any component, it defaults to -1.
         """
-        var components = InlineArray[Int, 3](fill=-1)
+        var components = Array[Int, 3](fill=-1)
         var start = 0
         var next_idx = 0
         var i = 0
