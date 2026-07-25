@@ -149,13 +149,13 @@ def initialize_runtime():
 
     @export("fill_squares")
     def fill_squares(
-        data: UnsafePointer[Int64, MutUntrackedOrigin], len: Int
+        data: Pointer[Int64, MutUntrackedOrigin], len: Int
     ) abi("C"):
         initialize_runtime()
 
         @parameter
         def fill(i: Int):
-            data[i] = Int64(i * i)
+            data.unsafe_store(i, Int64(i * i))
 
         parallelize[fill](len)
     ```

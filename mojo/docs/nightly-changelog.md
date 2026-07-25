@@ -515,6 +515,11 @@ This version is still a work in progress.
 - The AMD `sys.intrinsics.implicitarg_ptr()` intrinsic now returns a safe
   `Pointer` instead of an `UnsafePointer`. The two share the same layout and
   convert implicitly, so most code is unaffected.
+- The `capture_sizes` field of `CompiledFunctionInfo` (`std.compile`) is now a
+  safe `Pointer[UInt64]` instead of an `UnsafePointer`. The two share the same
+  layout and convert implicitly, so most code is unaffected. Code that indexes
+  the field directly should bind it to an `UnsafePointer` variable first or use
+  the ungated `unsafe_*` spellings.
 
 - The `as_immutable()` method on `UnsafePointer` and the
   `get_immutable()` method on `Span`, `StringSlice`, and `UnsafePointer`
