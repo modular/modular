@@ -1150,10 +1150,10 @@ index da8b516..f40c519 100644
 +          // guaranteed to be an object.
 +          return ResultOk(false);
 +        } else if constexpr (std::is_same_v<T, ConstSpec>) {
-+          return ResultOk(s.parsed_json_value.is<picojson::object>());
++          return ResultOk(s.parsed_json_value.template is<picojson::object>());
 +        } else if constexpr (std::is_same_v<T, EnumSpec>) {
 +          for (const auto& v : s.parsed_json_values) {
-+            if (!v.is<picojson::object>()) return ResultOk(false);
++            if (!v.template is<picojson::object>()) return ResultOk(false);
 +          }
 +          return ResultOk(!s.parsed_json_values.empty());
 +        } else if constexpr (std::is_same_v<T, TypeArraySpec>) {
