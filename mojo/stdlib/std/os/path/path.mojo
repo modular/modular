@@ -679,7 +679,7 @@ def _is_shell_special_variable(byte: Byte) -> Bool:
     Returns:
         True if the byte is a special shell variable and False otherwise.
     """
-    comptime shell_variables: InlineArray[Int, 17] = [
+    comptime shell_variables: Array[Int, 17] = [
         ord("*"),
         ord("#"),
         ord("$"),
