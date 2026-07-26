@@ -317,3 +317,13 @@ import ..test_package.test_nested_package
 
 # expected-error @+1 {{relative imports must use 'from'; did you mean 'from ... import test_package'?}}
 import ...test_package
+
+# // -----
+
+# expected-error @+1 {{unable to locate module 'package_with'}}
+import package_with
+
+# // -----
+
+# expected-error @+1 {{unable to locate module 'nested_package_with'}}
+import package_without_dots.nested_package_with

@@ -1047,22 +1047,33 @@ void SharedState::materializePrecompiledStdlibOp(Operation *op) {
 }
 
 std::optional<SharedState::ModuleSpec>
-SharedState::ModuleSpec::classify(const std::filesystem::path &path) {
-  if (Filesystem::isMojoSourcePackagePath(path))
-    return ModuleSpec{path, ModuleSpec::Kind::SourcePackage};
+SharedState::ModuleSpec::classify(const std::filesystem::path &path,
+                                  llvm::StringRef moduleName) {
+  // For directory-based module filtering, we must have an exact match.
+  if (auto name = path.filename().string();
+      moduleName.empty() || name == moduleName) {
+    if (Filesystem::isMojoSourcePackagePath(path))
+      return ModuleSpec{name, path, ModuleSpec::Kind::SourcePackage};
 
-  std::error_code ec;
-  if (std::filesystem::is_directory(path, ec) && !ec)
-    return ModuleSpec{path, ModuleSpec::Kind::SourceDir};
-
-  if (Filesystem::isMojoBinaryPackagePath(path)) {
-    auto ext = path.filename().extension();
-    return ModuleSpec{path, ext == ".mojopkg" ? ModuleSpec::Kind::LegacyPkg
-                                              : ModuleSpec::Kind::Precompiled};
+    std::error_code ec;
+    if (std::filesystem::is_directory(path, ec) && !ec)
+      return ModuleSpec{name, path, ModuleSpec::Kind::SourceDir};
   }
 
-  if (Filesystem::isMojoSourceFile(path))
-    return ModuleSpec{path, ModuleSpec::Kind::SourceModule};
+  // For file-based module filtering, the name must match the filename's stem
+  // (i.e., without the final extension).
+  if (auto stem = path.filename().stem().string();
+      moduleName.empty() || stem == moduleName) {
+    if (Filesystem::isMojoBinaryPackagePath(path)) {
+      auto ext = path.filename().extension();
+      return ModuleSpec{stem, path,
+                        ext == ".mojopkg" ? ModuleSpec::Kind::LegacyPkg
+                                          : ModuleSpec::Kind::Precompiled};
+    }
+
+    if (Filesystem::isMojoSourceFile(path))
+      return ModuleSpec{stem, path, ModuleSpec::Kind::SourceModule};
+  }
 
   return std::nullopt;
 }
@@ -1085,10 +1096,7 @@ SharedState::resolveModulePath(StringRef moduleName, StringRef includeDir,
   // constructed path will not adhere to case sensitivity.
   std::optional<SharedState::ModuleSpec> bestMatch;
   for (const auto &entry : iter) {
-    if (entry.path().filename().stem().string() != moduleName)
-      continue;
-
-    if (auto moduleSpec = ModuleSpec::classify(entry.path())) {
+    if (auto moduleSpec = ModuleSpec::classify(entry.path(), moduleName)) {
       // A package can't legitimately nest a precompiled copy of itself or its
       // own submodules, so this ignores every `.mojoc` candidate when
       // resolving from within a package's own directory, unlike the
@@ -1171,12 +1179,10 @@ void SharedState::registerSourcePackageChildren(ASTDecl &packageDecl) {
     // Precompiled children aren't supported in source packages.
     if (!moduleSpec || moduleSpec->isPrecompiled())
       continue;
-    std::string name =
-        entry.path().filename().replace_extension().generic_string();
-    if (auto it = packageChildren.find(name);
+    if (auto it = packageChildren.find(moduleSpec->name);
         it == packageChildren.end() ||
         moduleSpec->takesImportPrecedence(it->second)) {
-      packageChildren[name] = *moduleSpec;
+      packageChildren[moduleSpec->name] = *moduleSpec;
     }
   }
 
@@ -1184,19 +1190,17 @@ void SharedState::registerSourcePackageChildren(ASTDecl &packageDecl) {
     // The package's own __init__ is resolved separately by resolveBody.
     if (name == "__init__")
       continue;
-    StringAttr nameAttr = StringAttr::get(getContext(), name);
     // Skip names already registered (e.g. a sibling imported while resolving
     // __init__, or __init__ itself).
-    if (parentState->nestedModules.count(nameAttr))
+    auto declNameAttr = StringAttr::get(getContext(), value.name);
+    if (parentState->nestedModules.count(declNameAttr))
       continue;
     if (value.isSourcePackageLike()) {
       // Registered by the directory scan so it gets no import location here.
       // We'll resolve that location if/when it's actually resolved.
-      createPackageState(nameAttr, *parentState, value, /*importLoc=*/{});
+      createPackageState(value, *parentState, /*importLoc=*/{});
     } else {
-      auto loc = createLocation(value.path.string(), /*line=*/1, /*column=*/1);
-      createDeferredModuleState(nameAttr, value.path.string(), *parentState,
-                                loc);
+      createDeferredModuleState(value, *parentState);
     }
   }
 }
@@ -1421,7 +1425,7 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
   // If the path was a source package, record the import location so the
   // package's __init__ is opened "included from" here.
   if (modulePath->isSourcePackageLike()) {
-    return &createPackageState(declNameAttr, *parentState, *modulePath,
+    return &createPackageState(*modulePath, *parentState,
                                /*importLoc=*/loc);
   }
 
@@ -1756,9 +1760,8 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
 ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
   // Note the importLoc here is empty as this is a top-level package and so
   // isn't imported from anywhere.
-  ModuleSpec spec{path.str(), ModuleSpec::Kind::SourcePackage};
-  ModuleState &state = createPackageState(StringAttr::get(getContext(), name),
-                                          *impl->topLevelModuleState, spec,
+  ModuleSpec spec{name.str(), path.str(), ModuleSpec::Kind::SourcePackage};
+  ModuleState &state = createPackageState(spec, *impl->topLevelModuleState,
                                           /*importLoc=*/{});
   return *state.decl;
 }
@@ -1814,16 +1817,20 @@ SharedState::createModuleState(StringAttr declName,
 }
 
 SharedState::ModuleState &
-SharedState::createDeferredModuleState(StringAttr declName, StringRef filePath,
-                                       ModuleState &parentState,
-                                       FileLineColLoc loc) {
+SharedState::createDeferredModuleState(ModuleSpec moduleSpec,
+                                       ModuleState &parentState) {
   // A deferred module: the FileModuleOp + decl exist but its file is NOT
   // opened. The decl carries an invalid cursor; it is opened + lexed on first
   // body resolution, at which point materializeDeferredModule sets its real
   // location.
-  return createFileModuleState(declName, parentState, loc, /*declLoc=*/SMLoc(),
+  auto declNameAttr = StringAttr::get(getContext(), moduleSpec.name);
+  FileLineColLoc loc =
+      createLocation(moduleSpec.path.string(), /*line=*/1, /*column=*/1);
+  return createFileModuleState(declNameAttr, parentState, loc,
+                               /*declLoc=*/SMLoc(),
                                /*cursor=*/LexerCursor(),
-                               /*endCursor=*/LexerCursor(), filePath);
+                               /*endCursor=*/LexerCursor(),
+                               moduleSpec.path.string());
 }
 
 LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
@@ -1857,8 +1864,9 @@ LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
 }
 
 SharedState::ModuleState &
-SharedState::createPackageState(StringAttr declName, ModuleState &parentState,
-                                ModuleSpec moduleSpec, SMLoc importLoc) {
+SharedState::createPackageState(ModuleSpec moduleSpec, ModuleState &parentState,
+                                SMLoc importLoc) {
+  StringAttr declName = StringAttr::get(getContext(), moduleSpec.name);
   // Create a new decl for this module. We use createUnlistedDecl instead of
   // addDecl so the package is NOT added to parentState.decl->declsInScope.
   // This prevents "leaky imports" where importing a sub-module makes the

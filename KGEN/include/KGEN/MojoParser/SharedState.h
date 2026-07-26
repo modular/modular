@@ -380,11 +380,15 @@ public:
       SourceDir,
     };
 
+    /// Importable name: whole filename for directories, stem for files
+    std::string name;
     std::filesystem::path path;
     Kind kind;
 
-    static std::optional<ModuleSpec>
-    classify(const std::filesystem::path &path);
+    /// Return the module classification of a given path, optionally matching a
+    /// specific name. Returns std::nullopt if not a (matching) ModuleSpec.
+    static std::optional<ModuleSpec> classify(const std::filesystem::path &path,
+                                              llvm::StringRef moduleName = "");
 
     /// Return true if the import candidate (kind, path) takes precedence over
     /// the other. Higher-priority kinds win; between candidates of
@@ -720,17 +724,15 @@ private:
                                  ModuleState &parentState, FileLineColLoc loc);
 
   /// Create a module state for a source module whose file has not been opened.
-  ModuleState &createDeferredModuleState(StringAttr declName,
-                                         StringRef filePath,
-                                         ModuleState &parentState,
-                                         FileLineColLoc loc);
+  ModuleState &createDeferredModuleState(ModuleSpec moduleSpec,
+                                         ModuleState &parentState);
 
-  /// Create a new module state for a package with the given name, location,
+  /// Create a new module state for a package with the given spec, location,
   /// and body. The importLoc, if valid, is the location of the `import` that
-  /// pulled the package in. The moduleSpec's kind must be a SourcePackage or
+  /// pulled the package in. The spec's kind must be a SourcePackage or
   /// SourceDir.
-  ModuleState &createPackageState(StringAttr declName, ModuleState &parentState,
-                                  ModuleSpec moduleSpec, SMLoc importLoc);
+  ModuleState &createPackageState(ModuleSpec moduleSpec,
+                                  ModuleState &parentState, SMLoc importLoc);
 
   /// Create a new module state for a binary package with the given name.
   ModuleState &createBinaryPackageState(SMLoc loc, StringAttr declName,
