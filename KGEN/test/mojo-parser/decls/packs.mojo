@@ -76,8 +76,8 @@ def test_owned_trait():
     # CHECK-NEXT: lit.memcpy %value2, [[ANONSLOT]]
 
     # Coerce to common origin
-    # CHECK-NEXT: [[V1C:%.*]] = kgen.rebind %value1 : !lit.ref<!SomeMem, mut *"value1`"> to !lit.ref<!SomeMem, mut {*"anonymous*`2", *"value1`"}>
-    # CHECK-NEXT: [[V2C:%.*]] = kgen.rebind [[ANONSLOT]] : !lit.ref<!SomeMem, mut *"{{.*}}> to !lit.ref<!SomeMem, mut {*"anonymous*`2", *"value1`"}>
+    # CHECK-NEXT: [[V1C:%.*]] = lit.ref.upcast %value1 : <!SomeMem, mut *"value1`"> -> <!SomeMem, mut {*"anonymous*`2", *"value1`"}>
+    # CHECK-NEXT: [[V2C:%.*]] = lit.ref.upcast [[ANONSLOT]] : <!SomeMem, mut *"{{.*}}> -> <!SomeMem, mut {*"anonymous*`2", *"value1`"}>
 
     # Form pack and call
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V1C]], [[V2C]])
@@ -101,8 +101,8 @@ def test_owned_trait():
     # CHECK-NEXT: lit.ref.store [[RES]], [[ANONSLOT]]
 
     # Coerce to common origin
-    # CHECK-NEXT: [[V3C:%.*]] = kgen.rebind %value3
-    # CHECK-NEXT: [[V4C:%.*]] = kgen.rebind [[ANONSLOT]]
+    # CHECK-NEXT: [[V3C:%.*]] = lit.ref.upcast %value3
+    # CHECK-NEXT: [[V4C:%.*]] = lit.ref.upcast [[ANONSLOT]]
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V3C]], [[V4C]])
 
     # Create the VariadicPack
@@ -129,8 +129,8 @@ def test_inout():
     var value2: SomeMem
 
     # Coerce to common origin
-    # CHECK-NEXT: [[V1C:%.*]] = kgen.rebind %value1 : !lit.ref<!SomeMem, mut *"value1`"> to !lit.ref<!SomeMem, mut {*"value1`", *"value2`1"}>
-    # CHECK-NEXT: [[V2C:%.*]] = kgen.rebind %value2 : !lit.ref<!SomeMem, mut *"value2`1"> to !lit.ref<!SomeMem, mut {*"value1`", *"value2`1"}>
+    # CHECK-NEXT: [[V1C:%.*]] = lit.ref.upcast %value1 : <!SomeMem, mut *"value1`"> -> <!SomeMem, mut {*"value1`", *"value2`1"}>
+    # CHECK-NEXT: [[V2C:%.*]] = lit.ref.upcast %value2 : <!SomeMem, mut *"value2`1"> -> <!SomeMem, mut {*"value1`", *"value2`1"}>
 
     # Form pack and call
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V1C]], [[V2C]])

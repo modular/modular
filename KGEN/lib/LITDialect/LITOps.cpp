@@ -1909,9 +1909,48 @@ Value RefImmutOp::stripRebinds(Value value) {
       value = rebind.getInput();
     else if (auto cast = value.getDefiningOp<RefImmutOp>())
       value = cast.getOperand();
+    else if (auto upcast = value.getDefiningOp<RefUpcastOp>())
+      value = upcast.getOperand();
     else
       return value;
   }
+}
+
+//===----------------------------------------------------------------------===//
+// RefUpcastOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult RefUpcastOp::verify() {
+  auto srcType = getRef().getType();
+  auto dstType = getResult().getType();
+
+  // Element type and address space must be unchanged.
+  if (!isEqualCanon(srcType.getElementType(), dstType.getElementType()))
+    return emitOpError("element type mismatch: source has ")
+           << srcType.getElementType() << " but result has "
+           << dstType.getElementType();
+
+  if (srcType.getAddressSpace() != dstType.getAddressSpace())
+    return emitOpError("address space mismatch: source has ")
+           << srcType.getAddressSpace() << " but result has "
+           << dstType.getAddressSpace();
+
+  // The destination origin must be an upcast of the source, which happens with
+  // subtree origins, conversions to unions with other origins, and upcast
+  // symbolic mutabilities, e.g. "x" -> "x&y" is less mutable than "x".  We can
+  // check this by forming union(dst, src): it will collapse to dst when src is
+  // already covered by dst.
+  auto srcOrigin = getCanonicalAttr(srcType.getOrigin());
+  auto dstOrigin = getCanonicalAttr(dstType.getOrigin());
+  auto dstOriginType = cast<OriginType>(dstOrigin.getType());
+  auto originUnion = OriginUnionAttr::get(
+      {dstOrigin, OriginMutCastAttr::get(srcOrigin, dstOriginType)},
+      dstOriginType);
+  if (dstOrigin != originUnion)
+    return emitOpError("result origin is not an upcast of the source origin: ")
+           << srcOrigin << " is not covered by " << dstOrigin;
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

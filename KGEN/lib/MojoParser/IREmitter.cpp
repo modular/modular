@@ -665,6 +665,15 @@ Value IREmitter::emitRebindOpIfNeeded(Value value, Type destType, SMLoc loc) {
         value = RefImmutOp::create(*builder, translateLocation(loc), value);
         return emitRebindOpIfNeeded(value, destType, loc);
       }
+
+      // Origin-only widening (subtree, union, etc.): use RefUpcastOp.  Don't
+      // use it for bitcasts that remove sugar from the element type though.
+      if (!isEqualCanon(srcRefType.getOrigin(), dstRefType.getOrigin())) {
+        value = RefUpcastOp::create(
+            *builder, translateLocation(loc),
+            srcRefType.getWithOrigin(dstRefType.getOrigin()), value);
+        return emitRebindOpIfNeeded(value, destType, loc);
+      }
     }
 
   return RebindOp::create(*builder, translateLocation(loc), destType, value);

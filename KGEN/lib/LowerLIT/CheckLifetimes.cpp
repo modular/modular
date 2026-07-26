@@ -1446,6 +1446,9 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
   if (!isDeref && isa<RefType>(value.getType()))
     return {};
 
+  // If this is a RebindOp get the underlying ref.
+  value = RefImmutOp::stripRebinds(value);
+
   // If this is a value we're tracking, return it.
   auto it = valueInfoIndex.find(value);
   if (it != valueInfoIndex.end())
@@ -1485,12 +1488,6 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
         return valueRef;
       }
     }
-
-  // If this is a RebindOp get the underlying ref.
-  if (auto rebind = value.getDefiningOp<RebindOp>())
-    return getDirectValueRef(rebind.getOperand(), /*isDeref=*/isDeref);
-  if (auto immut = value.getDefiningOp<RefImmutOp>())
-    return getDirectValueRef(immut.getOperand(), /*isDeref=*/isDeref);
 
   // Otherwise, we don't know what this is.
   return ValueRef();
@@ -2552,6 +2549,8 @@ static Operation *getProgramPointThatDefinedInteriorOrigin(Value v) {
       v = rebind.getOperand();
     else if (auto immut = v.getDefiningOp<RefImmutOp>())
       v = immut.getOperand();
+    else if (auto upcast = v.getDefiningOp<RefUpcastOp>())
+      v = upcast.getOperand();
     else if (auto load = v.getDefiningOp<RefLoadOp>()) {
       // Looking through ref loads will give us the vardecl for local values,
       // which is strictly more conservative than looking at the load itself:
@@ -3275,9 +3274,7 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
 static Value stripToVarDeclLookThrough(Value value) {
   if (auto load = value.getDefiningOp<RefLoadOp>())
     value = load.getOperand();
-  if (auto rebind = value.getDefiningOp<RebindOp>())
-    value = rebind.getOperand();
-  return value;
+  return RefImmutOp::stripRebinds(value);
 }
 
 /// Emit a origin end marker for a value that is being consumed.
@@ -3906,7 +3903,7 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
 
       // If we see a lit.ref.immut or rebind of the origin, check all its uses
       // as well.
-      if (isa<RefImmutOp, RebindOp>(user)) {
+      if (isa<RefImmutOp, RebindOp, RefUpcastOp>(user)) {
         valuesToCheck.push_back(user->getResult(0));
         continue;
       }
@@ -5447,8 +5444,8 @@ LogicalResult CheckLifetimes::processFunction(FunctionLikeOp func,
     // Check to see if there are any uses other than lifetime markers.
     bool hasInterestingUse = false;
     for (Operation *user : varDecl->getUsers()) {
-      if (isa<VarLifetimeStartOp, VarLifetimeEndOp, RebindOp, RefImmutOp>(
-              user) &&
+      if (isa<VarLifetimeStartOp, VarLifetimeEndOp, RebindOp, RefImmutOp,
+              RefUpcastOp>(user) &&
           user->use_empty())
         continue;
 
