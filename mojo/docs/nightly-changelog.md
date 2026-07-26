@@ -1341,6 +1341,13 @@ This version is still a work in progress.
 
 ## Fixed
 
+- Code completion now reports the correct completion kind for names bound by a
+  `from module import name` statement that hasn't been resolved yet. Structs,
+  traits, and functions imported this way previously completed with no kind at
+  all. Additionally, a renamed binding (`from module import name as
+  other_name`) no longer disappears from the completion list when another
+  binding to the same declaration is in scope.
+
 - Code folding in VSCode now works for Mojo files. `mojo-lsp-server` no longer
   advertises folding-range support, which only produced docstring ranges and
   caused VSCode to disable its built-in indentation-based folding — leaving
