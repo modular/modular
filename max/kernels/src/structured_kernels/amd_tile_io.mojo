@@ -244,11 +244,11 @@ struct TiledMmaLoader[
             address_space=AddressSpace.SHARED,
             ...,
         ],
-    ) -> InlineArray[SIMD[Self.in_type, simd_width], num_mmas]:
+    ) -> Array[SIMD[Self.in_type, simd_width], num_mmas]:
         """Full B operand load from a SMEM warp tile.
 
         Loads all MMA tiles from a WN x BK SMEM warp tile and returns
-        them as an InlineArray of SIMD fragments (one per MMA tile).
+        them as an Array of SIMD fragments (one per MMA tile).
 
         Parameters:
             num_mmas: Number of MMA tiles to load.
@@ -263,7 +263,7 @@ struct TiledMmaLoader[
             src: A WN x BK TileTensor in shared memory.
 
         Returns:
-            An InlineArray of SIMD fragments, one per MMA tile.
+            An Array of SIMD fragments, one per MMA tile.
         """
         comptime MMA_M = Self.mma_shape[0]
         comptime MMA_K = Self.mma_shape[2]
@@ -275,7 +275,7 @@ struct TiledMmaLoader[
         comptime num_packs = mma_frag_width // load_width
         comptime assert num_packs == 1 or num_packs == 2
 
-        var result = InlineArray[SIMD[Self.in_type, simd_width], num_mmas](
+        var result = Array[SIMD[Self.in_type, simd_width], num_mmas](
             uninitialized=True
         )
         comptime for i in range(M):

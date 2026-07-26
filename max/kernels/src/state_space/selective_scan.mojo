@@ -262,12 +262,8 @@ def selective_scan_fwd_gpu[
 
         # PRE-LOAD B/C TILES: Load B[n, t:t+TILE] and C[n, t:t+TILE] for all n
         # This avoids redundant address calculations inside the inner loop
-        var B_tiles = InlineArray[SIMD[DType.float32, TILE_SIZE], DSTATE](
-            fill=0
-        )
-        var C_tiles = InlineArray[SIMD[DType.float32, TILE_SIZE], DSTATE](
-            fill=0
-        )
+        var B_tiles = Array[SIMD[DType.float32, TILE_SIZE], DSTATE](fill=0)
+        var C_tiles = Array[SIMD[DType.float32, TILE_SIZE], DSTATE](fill=0)
 
         # Load B tiles - always use scalar loads to handle different layouts from slicing/reshaping
         for i in range(TILE_SIZE):

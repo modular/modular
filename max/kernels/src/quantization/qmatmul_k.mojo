@@ -59,19 +59,17 @@ struct _block_Q4_K:
 
     var base_scale: Float16
     var base_min: Float16
-    var q_scales_and_mins: InlineArray[
-        UInt8, (2 * _block_Q4_K.group_count * 6) // 8
-    ]
-    var q_bits: InlineArray[UInt8, _block_QK_K.quantized_k // 2]
+    var q_scales_and_mins: Array[UInt8, (2 * _block_Q4_K.group_count * 6) // 8]
+    var q_bits: Array[UInt8, _block_QK_K.quantized_k // 2]
 
 
 struct _block_Q6_K:
     comptime group_size = 16
     comptime group_count = _block_QK_K.calc_group_count[Self.group_size]()
 
-    var q_bits_lo: InlineArray[UInt8, _block_QK_K.quantized_k // 2]
-    var q_bits_hi: InlineArray[UInt8, _block_QK_K.quantized_k // 4]
-    var q_scales: InlineArray[Int8, _block_Q6_K.group_size]
+    var q_bits_lo: Array[UInt8, _block_QK_K.quantized_k // 2]
+    var q_bits_hi: Array[UInt8, _block_QK_K.quantized_k // 4]
+    var q_scales: Array[Int8, _block_Q6_K.group_size]
     var base_scale: Float16
 
 
@@ -92,7 +90,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     comptime _packed_stride = Self.block_n * Self._tuple_width
     comptime _tile_n = Self._packed_stride // Self._simd_width
 
-    var bits: InlineArray[UInt8, Self._size * Self.bit_width // 8]
+    var bits: Array[UInt8, Self._size * Self.bit_width // 8]
 
     """
     For the 4-bit encoding, the following encoding is used (one lane of the
@@ -250,8 +248,8 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
 
 struct _block_Q4_K_packed[block_n: Int = 1]:
-    var base_scales: InlineArray[Float16, Self.block_n]
-    var base_mins: InlineArray[Float16, Self.block_n]
+    var base_scales: Array[Float16, Self.block_n]
+    var base_mins: Array[Float16, Self.block_n]
     var q_scales_and_mins: _packed_bit_array[
         6, 2 * _block_Q4_K.group_count, Self.block_n
     ]
@@ -259,17 +257,17 @@ struct _block_Q4_K_packed[block_n: Int = 1]:
 
 
 struct _block_Q6_K_packed[block_n: Int = 1]:
-    var base_scales: InlineArray[Float16, Self.block_n]
-    var q_scales: InlineArray[Int8, _block_Q6_K.group_count * Self.block_n]
+    var base_scales: Array[Float16, Self.block_n]
+    var q_scales: Array[Int8, _block_Q6_K.group_count * Self.block_n]
     var q_bits: _packed_bit_array[6, _block_QK_K.quantized_k, Self.block_n]
 
 
 struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
     comptime group_count = _block_QK_K.calc_group_count[Self.group_size]()
 
-    var q_bits: InlineArray[Int8, _block_QK_K.quantized_k * Self.tile_m]
-    var scales: InlineArray[Float32, Self.tile_m]
-    var group_sums: InlineArray[Int16, Self.group_count * Self.tile_m]
+    var q_bits: Array[Int8, _block_QK_K.quantized_k * Self.tile_m]
+    var scales: Array[Float32, Self.tile_m]
+    var group_sums: Array[Int16, Self.group_count * Self.tile_m]
 
 
 def _quantize_a_Q8_K[
@@ -422,18 +420,14 @@ def _pack_block_Q4_K[
         == size_of[_block_Q4_K_packed[block_n]]()
     ), "packed block size should be multiple of the unpacked block size"
 
-    var q_scales_buf = InlineArray[UInt8, group_count * block_n](
-        uninitialized=True
-    )
-    var q_mins_buf = InlineArray[UInt8, group_count * block_n](
-        uninitialized=True
-    )
+    var q_scales_buf = Array[UInt8, group_count * block_n](uninitialized=True)
+    var q_mins_buf = Array[UInt8, group_count * block_n](uninitialized=True)
     var q_mins_ptr: UnsafePointer[
         UInt8, origin_of(q_mins_buf)
     ] = q_mins_buf.unsafe_ptr()
-    var q_bits_block_buf = InlineArray[
-        UInt8, _block_QK_K.quantized_k * block_n
-    ](uninitialized=True)
+    var q_bits_block_buf = Array[UInt8, _block_QK_K.quantized_k * block_n](
+        uninitialized=True
+    )
     var q_bits_block_ptr: UnsafePointer[
         UInt8, origin_of(q_bits_block_buf)
     ] = q_bits_block_buf.unsafe_ptr()
@@ -459,7 +453,7 @@ def _pack_block_Q4_K[
             q_scales_buf[g * block_n + n] = q_scale
             q_mins_buf[g * block_n + n] = q_min
 
-        var q_bits_column_buf = InlineArray[UInt8, _block_QK_K.quantized_k](
+        var q_bits_column_buf = Array[UInt8, _block_QK_K.quantized_k](
             uninitialized=True
         )
 
@@ -476,7 +470,7 @@ def _pack_block_Q4_K[
     # Allocate a staging buffer to pack the scales and minimums as a single
     # blob and to do processor specific reordering of the values for the
     # compute kernel.
-    var q_scales_and_mins_buf = InlineArray[UInt8, 2 * group_count * block_n](
+    var q_scales_and_mins_buf = Array[UInt8, 2 * group_count * block_n](
         uninitialized=True
     )
     var q_scales_and_mins_ptr: UnsafePointer[
@@ -662,7 +656,7 @@ def _matmul_group_stream_x86[
     //,
     group_size: Int,
     stream_b_vals_fn: def(
-        mut b_vals: InlineArray[
+        mut b_vals: Array[
             SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
         ]
     ) capturing[_] -> None,
@@ -670,7 +664,7 @@ def _matmul_group_stream_x86[
     a_q_bits_ptr: UnsafePointer[Int8, _],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
-    var b_vals = InlineArray[
+    var b_vals = Array[
         SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
     ](fill=0)
 
@@ -705,7 +699,7 @@ def _matmul_group_stream_neon_dotprod[
     //,
     group_size: Int,
     stream_b_vals_fn: def(
-        mut b_vals: InlineArray[
+        mut b_vals: Array[
             SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
         ]
     ) capturing[_] -> None,
@@ -713,14 +707,12 @@ def _matmul_group_stream_neon_dotprod[
     a_q_bits_ptr: UnsafePointer[Int8, ...],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
-    var b_vals = InlineArray[
+    var b_vals = Array[
         SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
     ](fill=0)
 
     comptime for k in range(0, group_size, 16):
-        var a_tile = InlineArray[SIMD[DType.int8, 16], tile_m](
-            uninitialized=True
-        )
+        var a_tile = Array[SIMD[DType.int8, 16], tile_m](uninitialized=True)
 
         comptime for row in range(tile_m):
             a_tile[row] = (a_q_bits_ptr + row * group_size + k).load[width=16]()
@@ -748,7 +740,7 @@ def _matmul_group_stream[
     //,
     group_size: Int,
     stream_b_vals_fn: def(
-        mut b_vals: InlineArray[
+        mut b_vals: Array[
             SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
         ]
     ) capturing[origins] -> None,
@@ -788,7 +780,7 @@ def _matmul_group_unpacked[
 
     @parameter
     def stream_b_vals(
-        mut b_vals: InlineArray[
+        mut b_vals: Array[
             SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * 1
         ]
     ):
@@ -1013,7 +1005,7 @@ def _matmul_group_packed_Q4_K[
 
     @parameter
     def stream_b_vals(
-        mut b_vals: InlineArray[
+        mut b_vals: Array[
             SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
         ]
     ):
@@ -1245,7 +1237,7 @@ def _matmul_group_packed_Q6_K[
 
     @parameter
     def stream_b_vals(
-        mut b_vals: InlineArray[
+        mut b_vals: Array[
             SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
         ]
     ):

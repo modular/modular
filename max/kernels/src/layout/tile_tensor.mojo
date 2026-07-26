@@ -120,7 +120,7 @@ struct TileTensor[
     from layout import Idx
 
     # Create a 4x4 tensor with row-major layout
-    var storage = InlineArray[Float32, 16](uninitialized=True)
+    var storage = Array[Float32, 16](uninitialized=True)
     var tensor = TileTensor(storage, row_major[4, 4]()).fill(0.0)
 
     # Access elements using flat indices
@@ -695,7 +695,7 @@ struct TileTensor[
         from layout.tile_layout import row_major
 
         # 4D tensor: (batch=2, N=8, heads=4, head_dim=16)
-        var storage = InlineArray[Float32, 2 * 8 * 4 * 16](fill=0)
+        var storage = Array[Float32, 2 * 8 * 4 * 16](fill=0)
         var t = TileTensor(storage, row_major[2, 8, 4, 16]())
 
         # Fix batch=1 and heads=2, keep N and head_dim → 2D (8, 16)
@@ -1198,11 +1198,11 @@ struct TileTensor[
         from layout.tile_layout import row_major
 
         def main():
-            var storage = InlineArray[Float32, 4](uninitialized=True)
+            var storage = Array[Float32, 4](uninitialized=True)
             var vec = TileTensor(storage, row_major[4]()).fill(1.0)
             print(vec)   # [1.0, 1.0, 1.0, 1.0]
 
-            var storage2 = InlineArray[Float32, 6](uninitialized=True)
+            var storage2 = Array[Float32, 6](uninitialized=True)
             var mat = TileTensor(storage2, row_major[2, 3]()).fill(1.0)
             print(mat)   # [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]
         ```
@@ -1325,7 +1325,7 @@ struct TileTensor[
         from layout import TileTensor
         from layout.coord import coord
 
-        var storage = InlineArray[Float32, 16](uninitialized=True)
+        var storage = Array[Float32, 16](uninitialized=True)
         var tensor = TileTensor(storage, row_major[4, 4]()).fill(1.0)
 
         # Extract the tile at position (1, 0) with tile size 2x2
@@ -1522,7 +1522,7 @@ struct TileTensor[
         from layout.tile_layout import row_major
         from layout import TileTensor
 
-        var storage = InlineArray[Float32, 16](uninitialized=True)
+        var storage = Array[Float32, 16](uninitialized=True)
         var tensor = TileTensor(storage, row_major[4, 4]()).fill(1.0)
 
         # Extract the tile at position (1, 0) with tile size 2x2
@@ -1666,7 +1666,7 @@ struct TileTensor[
         from layout import TileTensor
 
         def main() raises:
-            var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
+            var storage = Array[Float32, 3 * 4](uninitialized=True)
             var tensor = TileTensor(storage, row_major[3,4]()).fill(0.0)
             print(tensor)
         ```
@@ -1679,7 +1679,7 @@ struct TileTensor[
         from layout.tile_layout import row_major
         from layout import TileTensor
 
-        var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
+        var storage = Array[Float32, 3 * 4](uninitialized=True)
         var tensor = TileTensor(storage, row_major[3,4]()).fill(0.0)
         tensor = tensor.fill(0.0)
         # or
@@ -2047,7 +2047,7 @@ struct TileTensor[
         from layout.tile_layout import row_major
         from layout import TileTensor
         comptime layout_3d = row_major[16, 16, 16]()
-        var stack = InlineArray[UInt8, layout_3d.static_product](fill=0)
+        var stack = Array[UInt8, layout_3d.static_product](fill=0)
         var tensor_3d = TileTensor(stack, layout_3d)
         var slice = tensor_3d.slice[0:2, 1:3, 0:4]()
         ```
@@ -2341,7 +2341,7 @@ struct TileTensor[
         from layout.tile_layout import row_major
         from layout import TileTensor
 
-        var storage = InlineArray[Float32, 12](uninitialized=True)
+        var storage = Array[Float32, 12](uninitialized=True)
         var tensor = TileTensor(storage, row_major[3, 4]()).fill(1.0)
         # tensor has shape (3, 4)
 
@@ -2404,7 +2404,7 @@ struct TileTensor[
         from layout import TileTensor
         from layout import Idx, Coord
 
-        var storage = InlineArray[Float32, 12](uninitialized=True)
+        var storage = Array[Float32, 12](uninitialized=True)
         var tensor = TileTensor(storage, row_major[3, 4]()).fill(1.0)
 
         # Reshape with runtime-determined dimensions
@@ -2499,7 +2499,7 @@ struct TileTensor[
             ```mojo
             from layout import TileTensor
             from layout.tile_layout import row_major
-            var storage = InlineArray[Float32, 12](uninitialized=True)
+            var storage = Array[Float32, 12](uninitialized=True)
             var tensor = TileTensor(Span(storage), row_major[3, 4]())
             var dynamic = tensor.make_dynamic[DType.int64]()
             # dynamic has Int64 for all shape/stride dimensions

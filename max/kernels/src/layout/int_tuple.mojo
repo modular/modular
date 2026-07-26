@@ -419,7 +419,7 @@ struct IntTuple(
     @always_inline("nodebug")
     def elements_size[
         _origin: ImmOrigin, n: Int
-    ](elements: InlineArray[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
+    ](elements: Array[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
         """Calculate the total storage size needed for IntTuples at a specific index.
 
         Computes the sum of sizes for all elements at the given index in an array
