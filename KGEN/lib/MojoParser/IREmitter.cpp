@@ -655,10 +655,18 @@ Value IREmitter::emitRebindOpIfNeeded(Value value, Type destType, SMLoc loc) {
       assert(!(srcRefType.isMutableKnown(false) &&
                dstRefType.isMutableKnown(true)) &&
              "Rebind is introducing mutability");
-      assert(getCanonicalAttr(srcRefType.getAddressSpace()) ==
-                 getCanonicalAttr(dstRefType.getAddressSpace()) &&
+      assert(isEqualCanon(srcRefType.getAddressSpace(),
+                          dstRefType.getAddressSpace()) &&
              "rebind cannot change address space");
+
+      // If we are casting away mutability, use RefImmutOp.
+      if (!srcRefType.isMutableKnown(false) &&
+          dstRefType.isMutableKnown(false)) {
+        value = RefImmutOp::create(*builder, translateLocation(loc), value);
+        return emitRebindOpIfNeeded(value, destType, loc);
+      }
     }
+
   return RebindOp::create(*builder, translateLocation(loc), destType, value);
 }
 

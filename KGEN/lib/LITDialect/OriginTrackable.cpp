@@ -621,8 +621,8 @@ static Value findSingleStoreToVarDecl(VarDeclOp varDecl) {
 /// This is guaranteed to succeed immediately during/after the parser, not
 /// later.
 static Value findArgPassedToVariadicConstructor(Value val) {
-  // Strip off sugar casts.
-  val = RebindOp::strip(val);
+  // Strip off sugar casts, mutability casts etc.
+  val = RefImmutOp::stripRebinds(val);
 
   // This code grovels through the IR, looking for the standard pattern of:
   //
@@ -640,9 +640,7 @@ static Value findArgPassedToVariadicConstructor(Value val) {
   // If the operand is already a reference to a pack, then use it.  Otherwise
   // we must have a register pack.  Figure out how it is formed.
   if (::isa<RefType>(getCanonicalType(val.getType()))) {
-    loadOperand = val;
-    if (auto immOp = val.getDefiningOp<RefImmutOp>())
-      loadOperand = immOp.getOperand();
+    loadOperand = RefImmutOp::stripRebinds(val);
   } else {
     if (auto load = val.getDefiningOp<RefLoadOp>())
       loadOperand = load.getOperand();
@@ -651,7 +649,7 @@ static Value findArgPassedToVariadicConstructor(Value val) {
     else
       return {};
   }
-  loadOperand = RebindOp::strip(loadOperand);
+  loadOperand = RefImmutOp::stripRebinds(loadOperand);
 
   // This is a forwarded variadic pack argument.
   if (isa<BlockArgument>(loadOperand))
@@ -665,7 +663,7 @@ static Value findArgPassedToVariadicConstructor(Value val) {
   // Make sure any change to the API forces this code to get updated.
   assert(call && call.getNumOperands() == 1 &&
          "VariadicList/VariadicPack ctor take a single argument");
-  return RebindOp::strip(call.getOperand(0));
+  return RefImmutOp::stripRebinds(call.getOperand(0));
 }
 
 /// Given the argument passed to a variadic argument, dig out the trackable
@@ -691,7 +689,7 @@ OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal,
     // common origin union type.  Strip the rebind off so each operand reference
     // has its original origin, not the union.
     for (auto elt : pack.getOperands())
-      result.push_back(RebindOp::strip(elt));
+      result.push_back(RefImmutOp::stripRebinds(elt));
   } else if (auto fromPointerPackOp =
                  ctorArg.getDefiningOp<RefPackFromPointerPackOp>()) {
     // This is either a RefPackFromPointerPackOp directly.

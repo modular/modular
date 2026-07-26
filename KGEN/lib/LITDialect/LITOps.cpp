@@ -1902,6 +1902,18 @@ OpFoldResult RefImmutOp::fold(RefImmutOp::FoldAdaptor adaptor) {
   return {};
 }
 
+/// If 'value' is defined by one or more rebind-like ops, look through them.
+Value RefImmutOp::stripRebinds(Value value) {
+  while (1) {
+    if (auto rebind = value.getDefiningOp<RebindOp>())
+      value = rebind.getInput();
+    else if (auto cast = value.getDefiningOp<RefImmutOp>())
+      value = cast.getOperand();
+    else
+      return value;
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // RefFromPointerOp
 //===----------------------------------------------------------------------===//

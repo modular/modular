@@ -1573,26 +1573,33 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
   auto checkArg = [&](Value argVal) {
     // We sometimes get rebinds for downcasts of origins or for sugar alignment.
     // Ignore those so we can see the actual incoming value's origin.
-    argVal = RebindOp::strip(argVal);
+    argVal = RefImmutOp::stripRebinds(argVal);
 
-    // When @__unsafe_nested_origins_read_only is used, we strip
-    // mutability of nested origins and 'ref' arguments, but do not strip from
-    // 'mut', 'deinit', or result arguments.
-    auto shouldStripMutability = [&](TypedAttr origin) -> bool {
-      // Always strip nested origins.
-      if (!hasAddress(convention) ||
-          !isEqualCanon(cast<RefType>(argVal.getType()).getOrigin(), origin))
-        return true;
-      // Only strip the mutability of an arg convention origin if 'ref'.
-      return convention == ArgConvention::Ref;
+    // Return true if this is the origin for the argument itself.
+    auto isArgOrigin = [&](TypedAttr origin) -> bool {
+      return hasAddress(convention) &&
+             isEqualCanon(cast<RefType>(argVal.getType()).getOrigin(), origin);
     };
 
     // Find all the of the origins that are buried in the specified type.
     for (TypedAttr origin :
          shared.cachedOriginFinder.findOriginsIn(argVal.getType())) {
+      // We may have looked through a rebind and got to a mutable origin. If
+      // we are only reading, force the origin back to immutable so we don't
+      // get confused.
+      bool forceToImmutOrigin = false;
+      if (convention == ArgConvention::ReadMem && isArgOrigin(origin))
+        forceToImmutOrigin = true;
+
       // Callees marked `@__unsafe_nested_origins_read_only` promise
-      // not to mutate origins.
-      if (originsAccessesAreReadOnly && shouldStripMutability(origin))
+      // not to mutate origins of 'ref' arguments or nested arguments, but still
+      // affect 'mut' and result slots.
+      if (originsAccessesAreReadOnly) {
+        if (!isArgOrigin(origin) || convention == ArgConvention::Ref)
+          forceToImmutOrigin = true;
+      }
+
+      if (forceToImmutOrigin)
         origin = OriginMutCastAttr::get(origin, false);
       checkOriginAccess(argVal, argIdx, origin);
     }
