@@ -1765,7 +1765,7 @@ static void printCompileOffloadOp(OpAsmPrinter &p, Operation *op,
 
 /// If 'value' is defined by one or more rebinds, look through them.
 Value RebindOp::strip(Value value) {
-  while (RebindOp rebind = dyn_cast_or_null<RebindOp>(value.getDefiningOp()))
+  while (auto rebind = value.getDefiningOp<RebindOp>())
     value = rebind.getInput();
   return value;
 }

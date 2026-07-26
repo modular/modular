@@ -1597,7 +1597,7 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark_destroyed"> {
 //===----------------------------------------------------------------------===//
 
 class RefImmutType<string lhs, string rhs> : TypesMatchWith<
-    "reference as pointer type", lhs, rhs,
+    "reference with mutability removed", lhs, rhs,
     "llvm::cast<RefType>($_self).getWithMutability(false)">;
 
 def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
@@ -1625,6 +1625,9 @@ def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
         return cast.getOperand();
       return value;
     }
+
+    /// If 'value' is defined by one or more rebind-like ops, look through them.
+    static Value stripRebinds(Value value);
   }];
 }
 
