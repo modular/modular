@@ -30,7 +30,7 @@ from extensibility import (
     OutputFusionTile,
     get_kernel_tile_shape,
 )
-from std.collections import InlineArray
+from std.collections import Array
 from std.gpu import block_idx
 from std.gpu.host import (
     DeviceBuffer,
@@ -322,7 +322,7 @@ def create_tensor_spec_async[
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
     # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
     # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
-    var storage = InlineArray[Int, spec_rank](uninitialized=True)
+    var storage = Array[Int, spec_rank](uninitialized=True)
 
     comptime for i in range(spec_rank):
         storage[i] = spec[i]
@@ -418,7 +418,7 @@ def unpack_tensor[
 def unpack_tensor_spec[
     spec_rank: Int
 ](async_ptr: OpaquePointer[MutAnyOrigin]) -> IndexList[spec_rank]:
-    var storage = InlineArray[Int, spec_rank](uninitialized=True)
+    var storage = Array[Int, spec_rank](uninitialized=True)
     external_call[
         "MGP_RT_GetTensorShapeFromAsync",
         NoneType,
@@ -679,9 +679,9 @@ def mgp_buffer_bulk_slice[
     //,
 ](
     base: OwnedByteBuffer,
-    offsets: InlineArray[Int, N],
-    sizes: InlineArray[Int, N],
-) -> InlineArray[OwnedByteBuffer, N]:
+    offsets: Array[Int, N],
+    sizes: Array[Int, N],
+) -> Array[OwnedByteBuffer, N]:
     """Bulk slice: produce N non-overlapping sub-buffers from a pool buffer.
 
     Parameters:
@@ -693,10 +693,10 @@ def mgp_buffer_bulk_slice[
         sizes: Byte size of each slice.
 
     Returns:
-        An InlineArray of N OwnedByteBuffer slices into the pool, each retaining
+        An Array of N OwnedByteBuffer slices into the pool, each retaining
         the pool's backing storage.
     """
-    var result = InlineArray[UnsafeMaybeUninit[OwnedByteBuffer], N](
+    var result = Array[UnsafeMaybeUninit[OwnedByteBuffer], N](
         uninitialized=True
     )
 
@@ -714,15 +714,15 @@ def mgp_buffer_plan[
     num_static_sizes: Int,
     num_runtime_sizes: Int,
     //,
-    alignments: InlineArray[Int, num_static_sizes + num_runtime_sizes],
-    can_share: InlineArray[
+    alignments: Array[Int, num_static_sizes + num_runtime_sizes],
+    can_share: Array[
         Int,
         (num_static_sizes + num_runtime_sizes)
         * (num_static_sizes + num_runtime_sizes),
     ],
-    static_sizes: InlineArray[Int, num_static_sizes],
-](runtime_sizes: InlineArray[Int, num_runtime_sizes]) -> Tuple[
-    Int, InlineArray[Int, num_static_sizes + num_runtime_sizes]
+    static_sizes: Array[Int, num_static_sizes],
+](runtime_sizes: Array[Int, num_runtime_sizes]) -> Tuple[
+    Int, Array[Int, num_static_sizes + num_runtime_sizes]
 ]:
     """Runtime memory planning for buffers.
 
@@ -788,7 +788,7 @@ def mgp_buffer_concat[
     bDevice: StaticString
 ](
     output: OwnedByteBuffer,
-    inputs: InlineArray[OwnedByteBuffer, ...],
+    inputs: Array[OwnedByteBuffer, ...],
     call_ctx: DeviceContext,
 ) raises:
     var output_lt = TileTensor(
@@ -1460,7 +1460,7 @@ struct MoggAsyncPackHelper:
         """
         Packs an OwnedByteBuffer into a real TensorBufferRef. The storage handle
         is copied (retained) rather than moved out, so the composite may be
-        borrowed -- including from an `InlineArray` element (e.g. bulk_slice),
+        borrowed -- including from an `Array` element (e.g. bulk_slice),
         which cannot be moved out of. The runtime adopts the copied reference
         net-zero; the borrowed composite releases its own reference at scope end.
         """

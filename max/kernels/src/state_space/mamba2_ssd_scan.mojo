@@ -979,7 +979,7 @@ struct DStateVecLoader[
     @always_inline
     def load_state(
         self,
-        mut state: InlineArray[SIMD[DType.float32, Self.VEC], Self.NCHUNK],
+        mut state: Array[SIMD[DType.float32, Self.VEC], Self.NCHUNK],
         pool_base: UInt32,
     ):
         """Fill fp32 ``state`` from ``ssm_pool[.., pool_base + n]`` (widening).
@@ -1044,7 +1044,7 @@ struct DStateVecLoader[
     @always_inline
     def store_state(
         self,
-        state: InlineArray[SIMD[DType.float32, Self.VEC], Self.NCHUNK],
+        state: Array[SIMD[DType.float32, Self.VEC], Self.NCHUNK],
         pool_wb: UInt32,
     ):
         """Round fp32 ``state`` to ``state_dtype`` and write back to ``ssm_pool``.
@@ -1158,7 +1158,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
     occupancy is already full, so the split's bs=1 occupancy benefit does not
     apply here).
 
-    Per-thread state is carried as ``InlineArray[SIMD[fp32, VEC], NCHUNK]`` --
+    Per-thread state is carried as ``Array[SIMD[fp32, VEC], NCHUNK]`` --
     native ``float4`` chunks rather than v1's monolithic ``SIMD[fp32,
     MAX_DSTATE=256]`` (whose upper ``MAX_DSTATE - DSTATE`` lanes were always
     zero and only inflated register pressure). The recurrence
@@ -1264,7 +1264,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
     ](ssm_pool, B, C, ssm_pool_strides[3], B_strides[2], C_strides[2])
 
     # Per-thread dstate state as native VEC-wide fp32 chunks (see docstring).
-    var state = InlineArray[SIMD[DType.float32, VEC], NCHUNK](
+    var state = Array[SIMD[DType.float32, VEC], NCHUNK](
         fill=SIMD[DType.float32, VEC](0.0)
     )
 

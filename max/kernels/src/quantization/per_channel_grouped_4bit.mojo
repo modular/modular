@@ -456,12 +456,10 @@ struct block_Q4_K:
     """The super-block scale factor."""
     var base_min: Float16
     """The super-block minimum value."""
-    var q_scales_and_mins: InlineArray[
-        UInt8, (2 * block_Q4_K.group_count * 6) // 8
-    ]
+    var q_scales_and_mins: Array[UInt8, (2 * block_Q4_K.group_count * 6) // 8]
     """The 6-bit quantized per-group scales and mins, packed into bytes."""
     # 256 total elements / 8 groups => 32 elements per group.
-    var q_bits: InlineArray[UInt8, block_QK_K.quantized_k // 2]
+    var q_bits: Array[UInt8, block_QK_K.quantized_k // 2]
     """The 4-bit quantized values, two per byte."""
 
 
@@ -581,13 +579,13 @@ struct block_Q6_K:
     """The number of groups within a block."""
 
     # Low 4 bits.
-    var q_bits_lo: InlineArray[UInt8, block_QK_K.quantized_k // 2]
+    var q_bits_lo: Array[UInt8, block_QK_K.quantized_k // 2]
     """The low 4 bits of the 6-bit quantized values, two per byte."""
     # High 2 bits.
-    var q_bits_hi: InlineArray[UInt8, block_QK_K.quantized_k // 4]
+    var q_bits_hi: Array[UInt8, block_QK_K.quantized_k // 4]
     """The high 2 bits of the 6-bit quantized values, four per byte."""
     # int8 scales.
-    var q_scales: InlineArray[Int8, block_Q6_K.group_size]
+    var q_scales: Array[Int8, block_Q6_K.group_size]
     """The int8 per-group scale factors."""
     # Superblock scale.
     var base_scale: Float16

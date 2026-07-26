@@ -39,10 +39,10 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
     comptime num_elements = 2**Self.levels - 1
     """Maximum number of entries the heap can hold."""
 
-    var k_array: InlineArray[Scalar[Self.k_dtype], Self.num_elements]
+    var k_array: Array[Scalar[Self.k_dtype], Self.num_elements]
     """Inline array of heap keys, storing token ids."""
 
-    var v_array: InlineArray[Scalar[Self.v_dtype], Self.num_elements]
+    var v_array: Array[Scalar[Self.v_dtype], Self.num_elements]
     """Inline array of heap values, storing logits."""
 
     def __init__(
@@ -54,8 +54,8 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
             fill_k: Key value to fill every heap slot with.
             fill_v: Value to fill every heap slot with.
         """
-        self.k_array = InlineArray[length=Self.num_elements](fill=fill_k)
-        self.v_array = InlineArray[length=Self.num_elements](fill=fill_v)
+        self.k_array = Array[length=Self.num_elements](fill=fill_k)
+        self.v_array = Array[length=Self.num_elements](fill=fill_v)
 
     @always_inline
     def swap(mut self, a: Int, b: Int) -> None:

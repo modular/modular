@@ -397,11 +397,11 @@ struct PagedRowIndices[
     comptime num_pages: Int = Self.BN // Self.eff_page
     comptime cta_group = 2 if Self.pair_cta else 1
 
-    var rows: InlineArray[UInt32, Self.num_pages]
+    var rows: Array[UInt32, Self.num_pages]
 
     @always_inline
     def __init__(out self):
-        self.rows = InlineArray[UInt32, Self.num_pages](uninitialized=True)
+        self.rows = Array[UInt32, Self.num_pages](uninitialized=True)
 
     @always_inline
     def get_row(self, offset: UInt32) -> UInt32:

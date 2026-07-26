@@ -24,7 +24,7 @@ Contains:
   - mma_block_interleave, mma_block_interleave_list, double_buffer_reorder
 """
 
-from std.collections import InlineArray, List
+from std.collections import Array, List
 
 from .config import PipelineConfig, ScheduleConfig, SchedulingStrategy
 from .dependency_graph import LoopBody, OpNode
@@ -1374,10 +1374,10 @@ def mma_block_interleave[
     var pos = 0
 
     # Classify ops by type.
-    var globals = InlineArray[OpDesc, N](uninitialized=True)
-    var frag_a = InlineArray[OpDesc, N](uninitialized=True)
-    var frag_b = InlineArray[OpDesc, N](uninitialized=True)
-    var mmas = InlineArray[OpDesc, N](uninitialized=True)
+    var globals = Array[OpDesc, N](uninitialized=True)
+    var frag_a = Array[OpDesc, N](uninitialized=True)
+    var frag_b = Array[OpDesc, N](uninitialized=True)
+    var mmas = Array[OpDesc, N](uninitialized=True)
     var n_g = 0
     var n_fa = 0
     var n_fb = 0
@@ -1399,8 +1399,8 @@ def mma_block_interleave[
             n_m += 1
 
     # Track which M-tile rows and N-tile cols have been seen.
-    var seen_m = InlineArray[Int, N](fill=0)
-    var seen_n = InlineArray[Int, N](fill=0)
+    var seen_m = Array[Int, N](fill=0)
+    var seen_n = Array[Int, N](fill=0)
 
     var g_idx = 0  # next global load to place
 

@@ -125,7 +125,7 @@ def arange[
         from layout import Layout, LayoutTensor
         from layout._fillers import arange
 
-        var storage = InlineArray[Float32, 16](uninitialized=True)
+        var storage = Array[Float32, 16](uninitialized=True)
         var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
         arange(tensor, 0, 0.5, 10)  # Fills with [0, 0.5, 1, 1.5, ...]
         ```
@@ -189,7 +189,7 @@ def random[
         from layout import Layout, LayoutTensor
         from layout._fillers import random
 
-        var storage = InlineArray[Float32, 16](uninitialized=True)
+        var storage = Array[Float32, 16](uninitialized=True)
         var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```
@@ -297,7 +297,7 @@ def arange[
         from layout import Layout, LayoutTensor
         from layout._fillers import arange
 
-        var storage = InlineArray[Float32, 16](uninitialized=True)
+        var storage = Array[Float32, 16](uninitialized=True)
         var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
         arange(tensor, 0, 0.5, 10)  # Fills with [0, 0.5, 1, 1.5, ...]
         ```
@@ -364,7 +364,7 @@ def random[
         from layout import Layout, LayoutTensor
         from layout._fillers import random
 
-        var storage = InlineArray[Float32, 16](uninitialized=True)
+        var storage = Array[Float32, 16](uninitialized=True)
         var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```
