@@ -27,6 +27,7 @@ from layout import (
 )
 from layout.tile_layout import Layout as TileLayout
 from layout.swizzle import Swizzle
+from layout.tensor_storage import TensorOps
 from std.math import exp
 from std.testing import (
     TestSuite,
@@ -34,6 +35,46 @@ from std.testing import (
     assert_equal,
     assert_true,
 )
+
+
+def _storage_add(
+    dst: TileTensor,
+    lhs: TileTensor[dst.dtype, ...],
+    rhs: TileTensor[dst.dtype, ...],
+) where dst.mut and conforms_to(dst.Storage, TensorOps):
+    """Storage-level out-of-place `TensorOps.add`.
+
+    `LhsStorage`/`RhsStorage` are only inferable from symbolic operand
+    storages, so calls go through this generic helper rather than a direct
+    call with concrete handles.
+    """
+    type_of(dst).Storage.add(
+        dst=(dst._unsafe_storage_cast[to_mut=True](), dst.layout),
+        lhs=(lhs._storage, lhs.layout),
+        rhs=(rhs._storage, rhs.layout),
+    )
+
+
+def _storage_abs(
+    dst: TileTensor, src: TileTensor[dst.dtype, ...]
+) where dst.mut and conforms_to(dst.Storage, TensorOps):
+    """Storage-level out-of-place `TensorOps.abs`."""
+    type_of(dst).Storage.abs(
+        dst=(dst._unsafe_storage_cast[to_mut=True](), dst.layout),
+        src=(src._storage, src.layout),
+    )
+
+
+def _storage_exp[
+    scale_dtype: DType, //, scale: Scalar[scale_dtype] = 1
+](
+    dst: TileTensor, src: TileTensor[dst.dtype, ...]
+) where dst.mut and conforms_to(dst.Storage, TensorOps):
+    """Storage-level out-of-place `TensorOps.exp`."""
+    type_of(dst).Storage.exp[scale](
+        dst=(dst._unsafe_storage_cast[to_mut=True](), dst.layout),
+        src=(src._storage, src.layout),
+    )
 
 
 def main() raises:
@@ -1773,6 +1814,101 @@ def test_exp_scale() raises:
     assert_almost_equal(a[0, 1], exp(Float32(2.0)))
     assert_almost_equal(a[1, 0], exp(Float32(-2.0)))
     assert_almost_equal(a[1, 1], exp(Float32(1.0)))
+
+
+def test_storage_add_out_of_place() raises:
+    """Out-of-place `TensorOps.add` writes `lhs + rhs` into `dst`."""
+    var a_data = Array[Int32, 4](fill=0)
+    var b_data = Array[Int32, 4](fill=0)
+    var out_data = Array[Int32, 4](fill=-1)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+    var out = TileTensor(out_data, row_major[2, 2]())
+
+    a[0, 0] = 1
+    a[0, 1] = 2
+    a[1, 0] = 3
+    a[1, 1] = 4
+    b[0, 0] = 10
+    b[0, 1] = 20
+    b[1, 0] = 30
+    b[1, 1] = 40
+
+    _storage_add(out, a, b)
+
+    assert_equal(out[0, 0], 11)
+    assert_equal(out[0, 1], 22)
+    assert_equal(out[1, 0], 33)
+    assert_equal(out[1, 1], 44)
+    # Inputs are unchanged.
+    assert_equal(a[0, 0], 1)
+    assert_equal(b[1, 1], 40)
+
+
+def test_storage_add_out_of_place_broadcast() raises:
+    """Out-of-place `TensorOps.add` broadcasts a rank-1 rhs into `dst`."""
+    var a_data = Array[Int32, 4](fill=0)
+    var bias_data = Array[Int32, 2](fill=0)
+    var out_data = Array[Int32, 4](fill=-1)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var bias = TileTensor(bias_data, row_major[2]())
+    var out = TileTensor(out_data, row_major[2, 2]())
+
+    a[0, 0] = 1
+    a[0, 1] = 2
+    a[1, 0] = 3
+    a[1, 1] = 4
+    bias[0] = 100
+    bias[1] = 200
+
+    _storage_add(out, a, bias)
+
+    assert_equal(out[0, 0], 101)
+    assert_equal(out[0, 1], 102)
+    assert_equal(out[1, 0], 203)
+    assert_equal(out[1, 1], 204)
+
+
+def test_storage_exp_out_of_place() raises:
+    """Out-of-place `TensorOps.exp` writes `exp(scale * src)` into `dst`."""
+    var src_data = Array[Float32, 4](fill=0)
+    var out_data = Array[Float32, 4](fill=-1)
+    var src = TileTensor(src_data, row_major[2, 2]())
+    var out = TileTensor(out_data, row_major[2, 2]())
+
+    src[0, 0] = 0.0
+    src[0, 1] = 1.0
+    src[1, 0] = -1.0
+    src[1, 1] = 0.5
+
+    _storage_exp[scale=Float32(2.0)](out, src)
+
+    assert_almost_equal(out[0, 0], 1.0)
+    assert_almost_equal(out[0, 1], exp(Float32(2.0)))
+    assert_almost_equal(out[1, 0], exp(Float32(-2.0)))
+    assert_almost_equal(out[1, 1], exp(Float32(1.0)))
+    assert_equal(src[0, 1], 1.0)
+
+
+def test_storage_abs_out_of_place() raises:
+    """Out-of-place `TensorOps.abs` writes `|src|` into `dst`."""
+    var src_data = Array[Int32, 4](fill=0)
+    var out_data = Array[Int32, 4](fill=-1)
+    var src = TileTensor(src_data, row_major[2, 2]())
+    var out = TileTensor(out_data, row_major[2, 2]())
+
+    src[0, 0] = -1
+    src[0, 1] = 2
+    src[1, 0] = -3
+    src[1, 1] = 0
+
+    _storage_abs(out, src)
+
+    assert_equal(out[0, 0], 1)
+    assert_equal(out[0, 1], 2)
+    assert_equal(out[1, 0], 3)
+    assert_equal(out[1, 1], 0)
+    assert_equal(src[0, 0], -1)
 
 
 def test_tuple_getter() raises:
