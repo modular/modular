@@ -286,7 +286,7 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
     }
 
     if (auto subtree = sugarDynCast<OriginSubtreeAttr>(operand))
-      subtreeOrigins.insert(subtree.getOrigin());
+      subtreeOrigins.insert(subtree.getBase());
   }
 
   // If we have subtree origins, absorb operands that are already covered by a
@@ -615,12 +615,12 @@ OriginSubtreeAttr OriginSubtreeAttr::getFromBytecode(TypedAttr origin,
 }
 
 bool OriginSubtreeAttr::isConstant() const {
-  return ParameterAttr::isSimpleConstant(getOrigin());
+  return ParameterAttr::isSimpleConstant(getBase());
 }
 
 bool OriginSubtreeAttr::isLessThan(Attribute rhs) const {
   auto rhsSubtree = ::cast<OriginSubtreeAttr>(rhs);
-  return ParameterAttr::compare(getOrigin(), rhsSubtree.getOrigin());
+  return ParameterAttr::compare(getBase(), rhsSubtree.getBase());
 }
 
 //===----------------------------------------------------------------------===//

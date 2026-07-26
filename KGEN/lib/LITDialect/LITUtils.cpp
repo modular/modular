@@ -288,7 +288,7 @@ void OriginPrinter::print(raw_ostream &os, TypedAttr param,
   }
 
   if (auto subtree = dyn_cast<OriginSubtreeAttr>(param)) {
-    print(os, subtree.getOrigin(), /*elideOriginOf=*/false);
+    print(os, subtree.getBase(), /*elideOriginOf=*/false);
     os << ".subtree";
     return;
   }
@@ -301,8 +301,8 @@ void OriginPrinter::print(raw_ostream &os, TypedAttr param,
 /// we can use for analysis of an interior origin that might be contained within
 /// it.  This is used by CheckLifetimes to model subtree origins.
 InteriorOriginAttr LIT::getInteriorForSubtreeOrigin(OriginSubtreeAttr subtree) {
-  auto result = InteriorOriginAttr::get(subtree.getOrigin(),
-                                        subtreeInteriorOriginAttrName);
+  auto result =
+      InteriorOriginAttr::get(subtree.getBase(), subtreeInteriorOriginAttrName);
   // In general x["foo"] might not return an InteriorOrigin, because when x is a
   // union or mutcast, things get folded and rearranged. However, we know that
   // the input here is to something that already had been folded when forming

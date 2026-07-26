@@ -222,7 +222,7 @@ def WrappedInteriorOriginAttr : DialectAttribute<(attr
 )>;
 
 def WrappedOriginSubtreeAttr : DialectAttribute<(attr
-  TypedAttr:$origin,
+  TypedAttr:$base,
   ConcreteType<"OriginType">:$type
 )>;
 

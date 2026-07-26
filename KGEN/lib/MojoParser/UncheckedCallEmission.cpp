@@ -1533,6 +1533,15 @@ void ExclusivityChecker::checkOriginAccess(Value val,
       continue;
     }
 
+    // If this is derived from an subtree origin, process the base as an
+    // immutable access.
+    if (auto subtree = dyn_cast<OriginSubtreeAttr>(origin)) {
+      origin = subtree.getBase();
+      // Don't set isImmut; this could mutate the base if it's a mutable origin.
+      isLeaf = true;
+      continue;
+    }
+
     // We're done.
     break;
   }

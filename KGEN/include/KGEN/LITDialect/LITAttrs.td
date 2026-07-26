@@ -705,23 +705,23 @@ def OriginSubtreeAttr : LITTypedAttr<"OriginSubtree", "origin.subtree", [
     origin projections beneath `x`.
   }];
 
-  let parameters = (ins "TypedAttr":$origin,
+  let parameters = (ins "TypedAttr":$base,
                         AttributeSelfTypeParameter<"", "OriginType">:$type);
 
-  let assemblyFormat = "`<` $origin `>`";
+  let assemblyFormat = "`<` $base `>`";
 
   let skipDefaultBuilders = 1;
   let builders = [
-    AttrBuilderWithInferredContext<(ins "TypedAttr":$origin), "", "TypedAttr">,
-    AttrBuilder<(ins "TypedAttr":$origin, "OriginType":$type), [{
-      return get(origin);
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$base), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$base, "OriginType":$type), [{
+      return get(base);
     }], "TypedAttr">,
   ];
 
   let extraClassDeclaration = [{
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
-    static OriginSubtreeAttr getFromBytecode(TypedAttr origin, OriginType type);
+    static OriginSubtreeAttr getFromBytecode(TypedAttr base, OriginType type);
   }];
 }
 

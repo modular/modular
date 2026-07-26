@@ -598,3 +598,51 @@ def test_nested_mutability_disabled():
     # expected-error @below {{aliasing values passed mutably to 'a' argument and passed immutably to 'b' argument in 'nested_mutability_disabled2' call}}
     # expected-note @below {{'origin_of(s)' value is passed through aliasing 'imm' argument}}
     nested_mutability_disabled2(s, s)
+
+# Subtree origin exclusivity.
+#
+# A subtree origin (x~) may refer to x or any field/interior under x, so it
+# conflicts with those accesses whenever either side is mutable. Distinct
+# sibling roots remain fine (field sensitivity of the subtree root).
+
+# Coerce a ref to a subtree view rooted at `subtree_root`.
+@__unsafe_nested_origins_read_only
+def get_subtree_ref[T: AnyType, //, subtree_root: Origin](
+    ref [subtree_root.subtree] x: T
+) -> ref[subtree_root.subtree] T:
+    return x
+
+
+def test_subtree_origin_exclusivity(mut s: MyStruct, mut a: Int, mut b: Int):
+    # Sibling fields: still fine.
+    mutate_two(s.a, s.b)
+
+    # Independent locals through subtree views: fine.
+    mutate_two(
+        get_subtree_ref[origin_of(a)](a), get_subtree_ref[origin_of(b)](b)
+    )
+
+    # Subtree of one field vs a sibling field: fine (roots do not overlap).
+    mutate_two(get_subtree_ref[origin_of(s.a)](s.a), s.b)
+
+    # Whole-object subtree vs a field under it: conflict (s~ may be s.b).
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed mutably to 'b' argument in 'mutate_two' call}}
+    # expected-note @below {{'origin_of(s.b)' value is passed through aliasing 'mut' argument 'b'}}
+    mutate_two(get_subtree_ref[origin_of(s)](s.a), s.b)
+
+    # Two subtree views of the same owner: conflict.
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed mutably to 'b' argument in 'mutate_two' call}}
+    # expected-note @below {{'origin_of(origin_of(s).subtree)' value is passed through aliasing 'mut' argument 'b'}}
+    mutate_two(
+        get_subtree_ref[origin_of(s)](s.a), get_subtree_ref[origin_of(s)](s.b)
+    )
+
+    # Subtree of a field vs that same field: conflict.
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed mutably to 'b' argument in 'mutate_two' call}}
+    # expected-note @below {{'origin_of(s.a)' value is passed through aliasing 'mut' argument 'b'}}
+    mutate_two(get_subtree_ref[origin_of(s.a)](s.a), s.a)
+
+    # Mutable subtree view + immutable overlapping access: conflict.
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed immutably to 'b' argument in 'mutate_one_read_one' call}}
+    # expected-note @below {{'origin_of(s.a)' value is passed through aliasing 'imm' argument 'b'}}
+    mutate_one_read_one(get_subtree_ref[origin_of(s)](s.a), s.a)
