@@ -1413,7 +1413,7 @@ std::pair<ValueRef, Type> ValueSet::getValueRefAndTypeForOrigin(
   // access to the base `a.field`.
   if (auto subtree = sugarDynCast<OriginSubtreeAttr>(origin)) {
     auto [valueRef, _] =
-        getValueRefAndTypeForOrigin(subtree.getOrigin(), interiorOrigins);
+        getValueRefAndTypeForOrigin(subtree.getBase(), interiorOrigins);
     // Don't pass the type up; the base type will have fields erased.
     return {valueRef, Type()};
   }
@@ -1877,7 +1877,7 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
       // it as a synthetic interior origin.
       if (auto subtree = dyn_cast<OriginSubtreeAttr>(raw)) {
         auto synthetic = getInteriorForSubtreeOrigin(subtree);
-        subtreeForOriginMap[subtree.getOrigin()] = synthetic;
+        subtreeForOriginMap[subtree.getBase()] = synthetic;
         raw = synthetic; // Process this like any other below.
       }
 
@@ -1957,7 +1957,7 @@ void InteriorOriginTracker::noticeInvalidatedSubtreeOrigins(
   else if (auto sugar = dyn_cast<SugarAttr>(origin))
     base = sugar.getCanonical();
   else if (auto subtree = dyn_cast<OriginSubtreeAttr>(origin))
-    base = subtree.getOrigin();
+    base = subtree.getBase();
 
   if (base)
     noticeInvalidatedSubtreeOrigins(base, subTreeInvalidated,

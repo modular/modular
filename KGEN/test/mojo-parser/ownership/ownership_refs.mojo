@@ -559,3 +559,25 @@ def test_interior0():
     # CHECK: lit.call {{.*}}SIMD::@"__iadd__
     elt += 4
     # CHECK: lit.call {{.*}}MyListInterior::@"__del__
+
+# ===----------------------------------------------------------------------=== #
+# Subtree origins
+# ===----------------------------------------------------------------------=== #
+
+trait MyIndexable:
+    def __getitem__(ref self, idx: Int) -> ref[origin_of(self).subtree] Int:
+        ...
+
+struct MyList(MyIndexable):
+    var elements: List[Int]
+
+    # More concrete origin so concrete clients get a tighter origin bound.
+    def __getitem__(ref self, idx: Int) -> ref[self.elements[idx]] Int:
+        return self.elements[idx]
+
+def test_MyIndexable(mut idxable: Some[MyIndexable]):
+    _ = idxable[0]
+    idxable[0] += 1
+
+def test_subtree(mut mylist: MyList):
+    test_MyIndexable(mylist)
