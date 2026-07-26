@@ -434,6 +434,8 @@ This version is still a work in progress.
   shared prefixes warm in an external tier such as dKV. Set
   `MODULAR_DKV_DISABLE_G0_TOUCH=1` to disable the refresh.
 
+### Server metrics
+
 ### `max` CLI
 
 - The entrypoint for the CLI, formerly `max.entrypoints`, has been marked as
@@ -943,3 +945,6 @@ This version is still a work in progress.
   filter when `groups > 1`, since the kernel cannot run without one.
 
 ## Mojo language
+
+For all the updates to the Mojo language, standard library, and tools,
+see the [Mojo release notes](https://mojolang.org/releases/).
