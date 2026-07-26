@@ -209,6 +209,8 @@ Value OriginTrackable::findUnderlyingValueFromField(Value value) {
       value = rebindOp.getOperand();
     } else if (auto immut = value.getDefiningOp<RefImmutOp>()) {
       value = immut.getOperand();
+    } else if (auto upcast = value.getDefiningOp<RefUpcastOp>()) {
+      value = upcast.getOperand();
     } else {
       break;
     }
@@ -433,7 +435,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
 
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
-  if (isa<RefStructGEROp, RebindOp, RefImmutOp>(op) ||
+  if (isa<RefStructGEROp, RebindOp, RefImmutOp, RefUpcastOp>(op) ||
       llvm::isa_and_nonnull<DebugInfo::DebugInfoDialect>(op.getDialect())) {
     if (op.getNumResults() == 1)
       results.push_back(ResultEffect::ignore);

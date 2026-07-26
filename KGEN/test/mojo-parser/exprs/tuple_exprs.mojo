@@ -28,8 +28,8 @@ def tuples_rv(a: Int, b: FloatDyn):
     # CHECK-NEXT: lit.ref.store %b, [[BREF]]
     # CHECK-NEXT: [[AIMM:%.*]] = lit.ref.immut [[AREF]] : <!Int, mut [[ALT:.*]]>
     # CHECK-NEXT: [[BIMM:%.*]] = lit.ref.immut [[BREF]] : <!FloatDyn, mut [[BLT:.*]]>
-    # CHECK-NEXT: [[AREBOUND:%.*]] = kgen.rebind [[AIMM]] : !lit.ref<!Int, muttoimm [[ALT]]> to !lit.ref<!Int, imm {(mutcast mut [[ALT]]), (mutcast mut [[BLT]])}>
-    # CHECK-NEXT: [[BREBOUND:%.*]] = kgen.rebind [[BIMM]] : !lit.ref<!FloatDyn, muttoimm [[BLT]]> to !lit.ref<!FloatDyn, imm {(mutcast mut [[ALT]]), (mutcast mut [[BLT]])}>
+    # CHECK-NEXT: [[AREBOUND:%.*]] = lit.ref.upcast [[AIMM]] : <!Int, muttoimm [[ALT]]> -> <!Int, imm {(mutcast mut [[ALT]]), (mutcast mut [[BLT]])}>
+    # CHECK-NEXT: [[BREBOUND:%.*]] = lit.ref.upcast [[BIMM]] : <!FloatDyn, muttoimm [[BLT]]> -> <!FloatDyn, imm {(mutcast mut [[ALT]]), (mutcast mut [[BLT]])}>
     # CHECK-NEXT: = lit.ref.pack.create([[AREBOUND]], [[BREBOUND]])
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}Tuple
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}({{.*}}, [[TMPVAR]])

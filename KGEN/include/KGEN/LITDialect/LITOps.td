@@ -1632,6 +1632,34 @@ def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
 }
 
 //===----------------------------------------------------------------------===//
+// RefUpcastOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefUpcastOp : LITOp<"ref.upcast", [Pure]> {
+  let summary = "Widen a reference's origin";
+  let description = [{
+    This op upcasts a reference's origin to a wider origin that covers the
+    original, such as a subtree origin (`#lit.origin.subtree`) or an origin
+    union that includes the source origin. The element type and address space
+    are unchanged; the result origin must be specified explicitly because it
+    is not uniquely determined by the operand.
+
+    ```mlir
+    %1 = lit.ref.upcast %0
+      : !lit.ref<!lit.struct<@Foo>, mut o>
+      -> !lit.ref<!lit.struct<@Foo>, mut #lit.origin.subtree<o>>
+    ```
+  }];
+
+  let hasVerifier = 1;
+  let arguments = (ins LIT_RefType:$ref);
+  let results = (outs LIT_RefType:$result);
+  let assemblyFormat = [{
+    $ref attr-dict `:` type($ref) `->` type($result)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // RefToPointerOp
 //===----------------------------------------------------------------------===//
 

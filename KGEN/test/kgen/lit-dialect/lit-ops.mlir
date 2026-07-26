@@ -121,6 +121,18 @@ lit.fn @ref_immut<life: origin<true>>(%ref1: !lit.ref<@MyStruct, mut life>)
   kgen.return %ref2: !lit.ref<!lit.struct<@MyStruct>, muttoimm life>
 }
 
+lit.fn @ref_upcast<life: origin<true>>(
+    %ref1: !lit.ref<@MyStruct, mut life>)
+ -> !lit.ref<@MyStruct, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>> {
+  // CHECK: %0 = lit.ref.upcast %ref1 : <!lit.struct<@MyStruct>, mut life> -> <!lit.struct<@MyStruct>, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
+  %ref2 = lit.ref.upcast %ref1
+    : !lit.ref<!lit.struct<@MyStruct>, mut life>
+    -> !lit.ref<!lit.struct<@MyStruct>, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
+  // CHECK: kgen.return %0 : !lit.ref<!lit.struct<@MyStruct>, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
+  kgen.return %ref2
+    : !lit.ref<!lit.struct<@MyStruct>, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
+}
+
 lit.fn @ref_pointer<life: origin<true>, ilife: origin<false>>
      (%ref1: !lit.ref<@MyStruct, mut life>) {
   // CHECK: %0 = lit.ref.to_pointer %ref1 : <!lit.struct<@MyStruct>, mut life>

@@ -954,6 +954,11 @@ static Value lowerOp(RefImmutOp op, RefImmutOpAdaptor adaptor,
   return adaptor.getRef();
 }
 
+static Value lowerOp(RefUpcastOp op, RefUpcastOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  return adaptor.getRef();
+}
+
 static Value lowerOp(RefToPointerOp op, RefToPointerOpAdaptor adaptor,
                      LITTypeLowerer &b) {
   return adaptor.getRef();
@@ -1211,12 +1216,12 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
   WalkResult result = module.walk([&](Operation *op) -> WalkResult {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<MaterializeIntoOp, StructInsertOp, StructExtractOp, RefImmutOp,
-              RefToPointerOp, RefFromPointerOp, RefFromPointerREPLOp,
-              RefToKgenPtrOp, RefFromKgenPtrOp, RefStructGEROp, RefLoadOp,
-              RefStoreOp, MemcpyOp, RebindOp, RefPackCreateOp, RefPackExtractOp,
-              RefPackFromPointerPackOp, VarDeclOp, VarLifetimeStartOp,
-              VarLifetimeEndOp, MojoVersionMajorOp, MojoVersionMinorOp,
-              MojoVersionPatchOp>(
+              RefUpcastOp, RefToPointerOp, RefFromPointerOp,
+              RefFromPointerREPLOp, RefToKgenPtrOp, RefFromKgenPtrOp,
+              RefStructGEROp, RefLoadOp, RefStoreOp, MemcpyOp, RebindOp,
+              RefPackCreateOp, RefPackExtractOp, RefPackFromPointerPackOp,
+              VarDeclOp, VarLifetimeStartOp, VarLifetimeEndOp,
+              MojoVersionMajorOp, MojoVersionMinorOp, MojoVersionPatchOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });
   });

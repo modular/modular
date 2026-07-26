@@ -300,3 +300,14 @@ lit.fn @invalid_memcpy<out: origin<true>, in: origin<false>>(%dst: !lit.ref<f32,
   lit.memcpy %src, %dst : !lit.ref<index, imm in>-> !lit.ref<f32, mut out>
   lit.end_fn
 }
+
+// -----
+
+lit.fn @ref_upcast_not_wider<a: origin<true>, b: origin<true>>(
+    %ref1: !lit.ref<index, mut a>) {
+  // expected-error @below {{result origin is not an upcast of the source origin}}
+  %ref2 = lit.ref.upcast %ref1
+    : !lit.ref<index, mut a>
+    -> !lit.ref<index, mut b>
+  lit.end_fn
+}
