@@ -230,7 +230,7 @@ def test_destroy_n_runs_pointee_destructors_before_dealloc() raises:
 
 
 def test_alloc_free_single_zst() raises:
-    comptime ZST = InlineArray[Int, 0]
+    comptime ZST = Array[Int, 0]
     comptime assert (
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."
@@ -249,7 +249,7 @@ def test_alloc_free_single_zst() raises:
 
 
 def test_single_zst_lifecycle() raises:
-    comptime ZST = InlineArray[Int, 0]
+    comptime ZST = Array[Int, 0]
     comptime assert (
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."
@@ -267,7 +267,7 @@ def test_single_zst_lifecycle() raises:
 
 
 def test_alloc_free_many_zst() raises:
-    comptime ZST = InlineArray[Int, 0]
+    comptime ZST = Array[Int, 0]
     comptime assert (
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."
@@ -285,7 +285,7 @@ def test_alloc_free_many_zst() raises:
 
 
 def test_many_zst_lifecycle() raises:
-    comptime ZST = InlineArray[Int, 0]
+    comptime ZST = Array[Int, 0]
     comptime assert (
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."
@@ -293,14 +293,12 @@ def test_many_zst_lifecycle() raises:
     var layout = Layout[ZST](count=Int.MAX)
     var ptr = alloc(layout).unsafe_leak()
 
-    ptr.unsafe_bitcast[InlineArray[ZST, Int.MAX]]().unsafe_write(
-        {fill = ZST(fill=0)}
-    )
+    ptr.unsafe_bitcast[Array[ZST, Int.MAX]]().unsafe_write({fill = ZST(fill=0)})
 
     assert_equal(0, len(ptr[]))
     assert_equal(0, len(ptr[unsafe_offset=Int.MAX]))
 
-    ptr.unsafe_bitcast[InlineArray[ZST, Int.MAX]]().unsafe_deinit_pointee()
+    ptr.unsafe_bitcast[Array[ZST, Int.MAX]]().unsafe_deinit_pointee()
 
     dealloc(
         ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)

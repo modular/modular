@@ -324,11 +324,11 @@ def test_product4_copies() raises:
 
 @fieldwise_init
 struct _CopyableOwnedIter[size: Int](Copyable, IterableOwned, Iterator):
-    """A `Copyable` owned iterator backed by an `InlineArray` for testing."""
+    """A `Copyable` owned iterator backed by an `Array` for testing."""
 
     comptime Element = Int
     comptime IteratorOwnedType: Iterator = Self
-    var _data: InlineArray[Int, Self.size]
+    var _data: Array[Int, Self.size]
     var _index: Int
 
     def __iter__(var self) -> Self.IteratorOwnedType:
@@ -351,19 +351,19 @@ struct _CopyableOwned[size: Int](IterableOwned):
     """An `IterableOwned` whose owned iterator is `Copyable` for testing."""
 
     comptime IteratorOwnedType: Iterator = _CopyableOwnedIter[Self.size]
-    var _data: InlineArray[Int, Self.size]
+    var _data: Array[Int, Self.size]
 
     def __iter__(var self) -> Self.IteratorOwnedType:
         return _CopyableOwnedIter(self._data, 0)
 
 
 def _owned2(a: Int, b: Int) -> _CopyableOwned[2]:
-    var data: InlineArray[Int, 2] = [a, b]
+    var data: Array[Int, 2] = [a, b]
     return _CopyableOwned(data)
 
 
 def _owned3(a: Int, b: Int, c: Int) -> _CopyableOwned[3]:
-    var data: InlineArray[Int, 3] = [a, b, c]
+    var data: Array[Int, 3] = [a, b, c]
     return _CopyableOwned(data)
 
 

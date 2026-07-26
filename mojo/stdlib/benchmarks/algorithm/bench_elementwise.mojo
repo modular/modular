@@ -26,7 +26,7 @@ from std.utils.index import IndexList
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_elementwise[n: Int](mut b: Bencher) raises:
-    var vector = InlineArray[Scalar[DType.int], n](fill=-1)
+    var vector = Array[Scalar[DType.int], n](fill=-1)
 
     @always_inline
     @parameter

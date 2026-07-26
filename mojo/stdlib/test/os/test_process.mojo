@@ -26,7 +26,7 @@ from std.testing import (
 
 def test_pipe() raises:
     var p = Pipe()
-    var s = InlineArray[UInt8, 5](fill=0)
+    var s = Array[UInt8, 5](fill=0)
     p.write_bytes("hello".as_bytes())
     assert_equal(p.read_bytes(Span(s)), 5)
     assert_true(Span(s) == "hello".as_bytes())

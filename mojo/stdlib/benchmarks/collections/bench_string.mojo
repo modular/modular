@@ -305,7 +305,7 @@ def bench_write_utf8[
 
     @always_inline
     def call_fn() {imm}:
-        var data = InlineArray[Byte, 4](uninitialized=True)
+        var data = Array[Byte, 4](uninitialized=True)
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
             for i in range(len(codepoints)):

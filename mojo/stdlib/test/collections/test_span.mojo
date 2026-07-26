@@ -67,7 +67,7 @@ def test_span_list_str() raises:
 
 
 def test_span_array_int() raises:
-    var l: InlineArray[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
+    var l: Array[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
     var s = Span(array=l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
@@ -90,7 +90,7 @@ def test_span_array_int() raises:
 
 
 def test_span_array_str() raises:
-    var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
+    var l: Array[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
     var s = Span(array=l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
@@ -113,7 +113,7 @@ def test_span_array_str() raises:
 
 
 def test_indexing() raises:
-    var l: InlineArray[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
+    var l: Array[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
     var s = Span(array=l)
     assert_equal(s[Int(0)], 1)
     assert_equal(s[3], 4)
@@ -150,7 +150,7 @@ def test_copy_from() raises:
 
 
 def test_bool() raises:
-    var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
+    var l: Array[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
     var s = Span(l)
     assert_true(s)
     assert_true(not s[0:0])
@@ -175,7 +175,7 @@ def test_contains_non_scalar() raises:
 
 
 def test_equality() raises:
-    var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
+    var l: Array[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
     var l2 = [String("a"), "b", "c", "d", "e", "f", "g"]
     var sp = Span(l)
     var sp2 = Span(l)
@@ -202,14 +202,14 @@ def test_fill() raises:
 
 
 def test_ref() raises:
-    var l: InlineArray[Int, 3] = [1, 2, 3]
+    var l: Array[Int, 3] = [1, 2, 3]
     var s = Span(array=l)
     assert_true(s.as_ref() == Pointer(to=l.unsafe_ptr()[]))
 
 
 def test_reversed() raises:
-    var forward: InlineArray[Int, 3] = [1, 2, 3]
-    var backward: InlineArray[Int, 3] = [3, 2, 1]
+    var forward: Array[Int, 3] = [1, 2, 3]
+    var backward: Array[Int, 3] = [3, 2, 1]
     var s = Span(forward)
     var i = 0
     for num in reversed(s):
@@ -221,7 +221,7 @@ def test_reversed() raises:
 # but we want to make sure it compiles
 def test_span_coerce() raises:
     var l = [1, 2, 3]
-    var a: InlineArray[Int, 3] = [1, 2, 3]
+    var a: Array[Int, 3] = [1, 2, 3]
 
     def takes_span(s: Span[Int, ...]):
         pass
@@ -265,7 +265,7 @@ def test_merge() raises:
 
 def test_reverse() raises:
     def _test_dtype[D: DType]() raises:
-        var forward: InlineArray[Scalar[D], 11] = [
+        var forward: Array[Scalar[D], 11] = [
             1,
             2,
             3,
@@ -278,7 +278,7 @@ def test_reverse() raises:
             10,
             11,
         ]
-        var backward: InlineArray[Scalar[D], 11] = [
+        var backward: Array[Scalar[D], 11] = [
             11,
             10,
             9,

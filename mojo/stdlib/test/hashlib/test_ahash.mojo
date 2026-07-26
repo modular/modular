@@ -59,7 +59,7 @@ def test_hash_byte_array() raises:
 def test_avalanche() raises:
     # test that values which differ just in one bit,
     # produce significatly different hash values
-    var data = InlineArray[UInt8, 256](uninitialized=True)
+    var data = Array[UInt8, 256](uninitialized=True)
     unsafe_memset_zero(data.unsafe_ptr(), 256)
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
@@ -89,7 +89,7 @@ def test_avalanche() raises:
 def test_trailing_zeros() raises:
     # checks that a value with different amount of trailing zeros,
     # results in significantly different hash values
-    var data = InlineArray[UInt8, 8](uninitialized=True)
+    var data = Array[UInt8, 8](uninitialized=True)
     unsafe_memset_zero(data.unsafe_ptr(), 8)
     data[0] = 23
     var hashes0 = List[UInt64]()
