@@ -65,22 +65,6 @@ struct RaiseSetEntry {
 };
 } // namespace
 
-namespace {
-/// FunctionLikeOp abstracts a function. It defines the interface necessary for
-/// an op to undergo a checklifetimes pass.
-struct FunctionLikeOp {
-  FunctionLikeOp(FnOp fn) : op(fn) {}
-  unsigned getNumArguments() const;
-  Location getLoc() const { return op->getLoc(); }
-  DebugInfo::DISubprogramAttr getSubprogramScope() const;
-  Region &getBodyRegion() const;
-  FnTypeGeneratorType getFuncTypeGenerator() const;
-  ArrayRef<ParamDeclAttr> getInputParams() const;
-  /// The underlying function like op.
-  Operation *op;
-};
-} // namespace
-
 /// Create DebugInfo::DILocalVariableAttr if this VarDecl needs it.
 /// `funcSpAttr` is the DISubprogramAttr of the surrounding function.
 static DebugInfo::DILocalVariableAttr
@@ -122,8 +106,8 @@ createDebugVariableForVarDecl(VarDeclOp op,
 /// `funcSpAttr` is the DISubprogramAttr of the surrounding function `func`.
 /// Returns the VarInfo of the inserted ValueOp.
 static DebugInfo::DILocalVariableAttr
-insertDebugVariableForArg(OpBuilder &builder, FunctionLikeOp func,
-                          BlockArgument arg, ArrayRef<PogMetadataAttr> pogList,
+insertDebugVariableForArg(OpBuilder &builder, FnOp func, BlockArgument arg,
+                          ArrayRef<PogMetadataAttr> pogList,
                           DebugInfo::DISubprogramAttr funcSpAttr) {
   // Skip synthesized args.
   if (arg.getArgNumber() >= pogList.size())
@@ -186,7 +170,7 @@ struct StructInfo {
 /// uses atomic operations so no external lock is needed.
 namespace {
 struct WholeProgramState {
-  WholeProgramState(Operation *module, std::vector<FunctionLikeOp> &funcList);
+  WholeProgramState(Operation *module, std::vector<FnOp> &funcList);
 
   /// Immutable declaration maps, populated once before threading begins.
   DenseMap<SymbolRefAttr, StructInfo> structMap;
@@ -200,7 +184,7 @@ struct WholeProgramState {
 
 /// Find all the functions and types in the module.
 WholeProgramState::WholeProgramState(Operation *module,
-                                     std::vector<FunctionLikeOp> &funcList) {
+                                     std::vector<FnOp> &funcList) {
   module->walk([&](Operation *op) {
     // Collect functions and nested functions.
     if (auto funcOp = dyn_cast<FnOp>(op)) {
@@ -330,7 +314,7 @@ struct TypeDeclInfo {
   /// move, or destructor members.
   bool isRegisterPassableTrivial(Type type) const;
 
-  SpecialMemberInfo getDestructorForType(Type type, FunctionLikeOp fnContext,
+  SpecialMemberInfo getDestructorForType(Type type, FnOp fnContext,
                                          Location loc) const;
   TypedAttr getMoveInitForType(Type type, Location loc) const;
 
@@ -423,27 +407,19 @@ appendNamedBodyConstraints(ArrayRef<ParamDeclAttr> params,
 
 /// Given a function context, return the constraints known from the context,
 /// including trailing `where` clauses on enclosing struct/trait declarations.
-static SmallVector<ConstraintAttr>
-getConstraintsFromContext(FunctionLikeOp fnContext) {
+static SmallVector<ConstraintAttr> getConstraintsFromContext(FnOp fnContext) {
   SmallVector<ConstraintAttr> assumptions;
-  if (auto fn = dyn_cast<FnOp>(fnContext.op)) {
-    FnTypeGeneratorType fullSig = fn.getFullSignature();
-    appendNamedBodyConstraints(
-        fn.collectAllParams(/*includeImplOrigins=*/false),
-        fullSig.getParamListAttrs().getBodyConstraints(), assumptions);
-    return assumptions;
-  }
-
-  PogListAttr paramList = fnContext.getFuncTypeGenerator().getParamListAttrs();
-  appendNamedBodyConstraints(fnContext.getInputParams(),
-                             paramList.getBodyConstraints(), assumptions);
+  FnTypeGeneratorType fullSig = fnContext.getFullSignature();
+  appendNamedBodyConstraints(
+      fnContext.collectAllParams(/*includeImplOrigins=*/false),
+      fullSig.getParamListAttrs().getBodyConstraints(), assumptions);
   return assumptions;
 }
 
 /// Refine a generic trait-bound type parameter using where-clause constraints
 /// from the enclosing function signature.
 static TraitType refineWithContextualWhereClauses(
-    ParamType genericOfTraitType, FunctionLikeOp fnContext,
+    ParamType genericOfTraitType, FnOp fnContext,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
   // We know this is a parameter of trait type. If we can't refine it, then that
   // will be the default result:
@@ -483,8 +459,7 @@ static TraitType refineWithContextualWhereClauses(
 
 /// Given the RValue type for a value that needs to be destroyed, return the
 /// destructor the invoke, or null if there is none.
-SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type,
-                                                     FunctionLikeOp fnContext,
+SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
                                                      Location loc) const {
 
   // If all the types in the trait composition are linear, then the trait
@@ -1028,11 +1003,11 @@ struct ValueSet {
   ///
   /// This sentinel is also used by DestructorInsertion as a marker for
   /// "unreachable" code to avoid unnecessary meets.
-  ValueSet(PerThreadCache &perThreadCache, FunctionLikeOp func,
+  ValueSet(PerThreadCache &perThreadCache, FnOp func,
            bool extendTrivialDebugLifetimes = false);
 
   /// Return the function/closure we're analyzing.
-  FunctionLikeOp getFunc() const { return func; }
+  FnOp getFunc() const { return func; }
 
   /// Return the number of values we are tracking.
   MutableArrayRef<ValueInfo> getValueInfos() { return valueInfos; }
@@ -1140,7 +1115,7 @@ struct ValueSet {
 
 private:
   /// This is the function we're analyzing.
-  FunctionLikeOp func;
+  FnOp func;
   /// These are all of the value infos, indexed by ID #.
   SmallVector<ValueInfo> valueInfos;
   /// This is a lookup from SSA values to the thing they are referencing.
@@ -1164,7 +1139,7 @@ private:
 ///
 /// This sentinel is also used by DestructorInsertion as a marker for
 /// "unreachable" code to avoid unnecessary meets.
-ValueSet::ValueSet(PerThreadCache &perThreadCache, FunctionLikeOp func,
+ValueSet::ValueSet(PerThreadCache &perThreadCache, FnOp func,
                    bool extendTrivialDebugLifetimes)
     : perThreadCache(perThreadCache),
       extendTrivialDebugLifetimes(extendTrivialDebugLifetimes), func(func) {
@@ -1290,10 +1265,7 @@ raw_ostream &ValueSet::printBV(const BitVector &bv, raw_ostream &os) const {
 }
 
 void ValueSet::printFuncName(raw_ostream &os) const {
-  if (auto funcOp = dyn_cast<FnOp>(func.op))
-    os << "'" << funcOp.getName() << "'";
-  else
-    os << "(non func)";
+  os << "'" << const_cast<FnOp &>(func).getName() << "'";
 }
 
 void ValueSet::dump() const {
@@ -1688,7 +1660,7 @@ void TrackedAndInteriorLiveness::mergeWith(
 namespace {
 class InteriorOriginTracker {
 public:
-  InteriorOriginTracker(PerThreadCache &perThreadCache, FunctionLikeOp func);
+  InteriorOriginTracker(PerThreadCache &perThreadCache, FnOp func);
   InteriorOriginTracker(const InteriorOriginTracker &existing) = delete;
 
   LLVM_DUMP_METHOD void dump() const;
@@ -1710,7 +1682,7 @@ public:
       llvm::errs() << "\n-----\n";
       dump();
       llvm::errs() << "\n-----\n";
-      theFunc.dumpPretty();
+      theFunc->dumpPretty();
     }
     assert(it != interiorOriginID.end() && it->second < nextInteriorOriginID &&
            "Unknown interior origin");
@@ -1766,7 +1738,7 @@ public:
 
 private:
   /// The function we're analyzing.
-  Operation &theFunc;
+  FnOp theFunc;
 
   /// This method is called whenever we discover an interior origin.
   void addInteriorOrigin(InteriorOriginAttr interior);
@@ -1803,8 +1775,8 @@ private:
 } // namespace
 
 InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
-                                             FunctionLikeOp func)
-    : theFunc(*func.op) {
+                                             FnOp func)
+    : theFunc(func) {
 
   // The same types (eg none) are used over & over again, precache origin scan.
   SmallPtrSet<Type, 32> visitedTypes;
@@ -1825,7 +1797,7 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
   };
 
   // Get any interior origins in function arguments (including the result slot).
-  collectBlockArgs(func.op);
+  collectBlockArgs(func.getOperation());
 
   // Scan the body region to find all the interior origins.
   func.getBodyRegion().walk([&](Operation *op) -> WalkResult {
@@ -2129,7 +2101,7 @@ struct UninitializedValueScan {
                  interiorOriginTracker.getNumInteriorOrigins()) {}
   UninitializedValueScan(const UninitializedValueScan &existing) = delete;
 
-  void scanFunction(FunctionLikeOp func);
+  void scanFunction(FnOp func);
   void scanBlock(Block &body);
 
   LLVM_DUMP_METHOD void dump() const;
@@ -2803,7 +2775,7 @@ void UninitializedValueScan::handleAnyOriginUse(
              mlir::DenseI32ArrayAttr::get(op.getContext(), valueIdsToExtend));
 }
 
-void UninitializedValueScan::scanFunction(FunctionLikeOp func) {
+void UninitializedValueScan::scanFunction(FnOp func) {
   // Initialize the 'liveness' with all the elements that are live-in. The
   // sentinel slot #0 is treated by OriginTrackable as live-in and dead-out
   // which naturally works with our terminators.  The bits are already allocated
@@ -2831,8 +2803,8 @@ void UninitializedValueScan::scanFunction(FunctionLikeOp func) {
 
     // Mark all the capture set origins live on entry.
     for (auto interior : captureOrigins)
-      interiorOriginTracker.markInteriorOriginLive(interior, liveness, *func.op,
-                                                   valueSet.domInfo);
+      interiorOriginTracker.markInteriorOriginLive(
+          interior, liveness, *func.getOperation(), valueSet.domInfo);
   }
 
   // Scan the body of the function.
@@ -2842,7 +2814,7 @@ void UninitializedValueScan::scanFunction(FunctionLikeOp func) {
   for (auto interior : captureOrigins) {
     size_t interiorID = interiorOriginTracker.getInteriorOriginID(interior);
     Operation *invalidatingOp = liveness.interior[interiorID].getPointer();
-    if (invalidatingOp == func.op)
+    if (invalidatingOp == func.getOperation())
       continue;
 
     // If we already emitted a diagnostic for this, don't do it again.
@@ -4239,7 +4211,7 @@ void DestructorInsertion::scanFunction() {
   consumedValues.set(0);
 
   // Scan the body of the function.
-  FunctionLikeOp func = valueSet.getFunc();
+  FnOp func = valueSet.getFunc();
   Block &funcBody = func.getBodyRegion().front();
   scanBlock(funcBody);
 
@@ -5360,7 +5332,7 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
 
   void runOnOperation() override {
     // Build the shared, immutable module-level state.
-    std::vector<FunctionLikeOp> functionVector;
+    std::vector<FnOp> functionVector;
     WholeProgramState sharedState(getOperation(), functionVector);
 
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
@@ -5374,7 +5346,7 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
     PerThreadCache cache(std::move(typeDeclInfo));
     M::parallelForEach(
         &getContext(), functionVector,
-        [&](PerThreadCache &cache, FunctionLikeOp func) {
+        [&](PerThreadCache &cache, FnOp func) {
           if (failed(processFunction(func, cache)))
             hadError = true;
 
@@ -5386,12 +5358,11 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
       signalPassFailure();
   }
 
-  LogicalResult processFunction(FunctionLikeOp func,
-                                PerThreadCache &perThreadCache);
+  LogicalResult processFunction(FnOp func, PerThreadCache &perThreadCache);
 };
 } // namespace
 
-LogicalResult CheckLifetimes::processFunction(FunctionLikeOp func,
+LogicalResult CheckLifetimes::processFunction(FnOp func,
                                               PerThreadCache &perThreadCache) {
 
   // If the function is a trait function or something else unreachable, we don't
@@ -5467,29 +5438,4 @@ LogicalResult CheckLifetimes::processFunction(FunctionLikeOp func,
     return info.hasErrorDiagnosed;
   });
   return failure(hadErrors);
-}
-
-DebugInfo::DISubprogramAttr FunctionLikeOp::getSubprogramScope() const {
-  if (auto debuggable = dyn_cast<DebugInfo::SubprogramScoped>(op))
-    return debuggable.getSubprogramScope();
-  return {};
-}
-
-Region &FunctionLikeOp::getBodyRegion() const { return op->getRegion(0); }
-
-FnTypeGeneratorType FunctionLikeOp::getFuncTypeGenerator() const {
-  if (auto fn = dyn_cast<FnOp>(op))
-    return fn.getFuncTypeGenerator();
-  return {};
-}
-
-ArrayRef<ParamDeclAttr> FunctionLikeOp::getInputParams() const {
-  if (auto fn = dyn_cast<FnOp>(op))
-    return fn.getInputParams();
-  return {};
-}
-
-unsigned FunctionLikeOp::getNumArguments() const {
-  unsigned args = getBodyRegion().getBlocks().front().getNumArguments();
-  return args;
 }
