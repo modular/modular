@@ -28,7 +28,7 @@ from std.testing import (
 
 
 def test_alloc_zst_count_zero_fails() raises:
-    comptime ZST = InlineArray[Int, 0]
+    comptime ZST = Array[Int, 0]
     comptime assert (
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."
@@ -46,7 +46,7 @@ def test_alloc_zst_count_zero_fails() raises:
 
 
 def test_alloc_zst_count_negative_fails() raises:
-    comptime ZST = InlineArray[Int, 0]
+    comptime ZST = Array[Int, 0]
     comptime assert (
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."

@@ -183,7 +183,7 @@ def test_dict_fromkeys_duplicate_keys() raises:
 def test_dict_fromkeys_iterable() raises:
     # `fromkeys` accepts any borrowed `Iterable`, not just `List`. Duplicate
     # keys collapse to a single entry.
-    var keys: InlineArray[String, 4] = ["a", "b", "a", "c"]
+    var keys: Array[String, 4] = ["a", "b", "a", "c"]
     var dict = Dict.fromkeys(keys, 7)
 
     assert_equal(len(dict), 3)

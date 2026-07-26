@@ -89,7 +89,7 @@ def test_zeroed() raises:
     assert_equal(b.unsafe_assume_init_ref(), 0)
 
     var c = UnsafeMaybeUninit[String].zeroed()
-    var arr = InlineArray[Byte, size_of[String]()](fill=0)
+    var arr = Array[Byte, size_of[String]()](fill=0)
     assert_equal(
         unsafe_memcmp(
             c.unsafe_ptr().unsafe_bitcast[Byte](),

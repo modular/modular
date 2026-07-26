@@ -24,7 +24,7 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 @fieldwise_init
 struct NullWriter(Writer):
-    var array: InlineArray[Byte, 1024]
+    var array: Array[Byte, 1024]
 
     @always_inline
     def __init__(out self):

@@ -755,7 +755,7 @@ def test_optional_unsafe_pointer_llvm_lowering() raises:
 
 
 def test_alloc_free_single_zst() raises:
-    comptime ZST = InlineArray[Int, 0]
+    comptime ZST = Array[Int, 0]
     comptime assert (
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."
@@ -773,7 +773,7 @@ def test_alloc_free_single_zst() raises:
 
 
 def test_alloc_free_many_zst() raises:
-    comptime ZST = InlineArray[Int, 0]
+    comptime ZST = Array[Int, 0]
     comptime assert (
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."
