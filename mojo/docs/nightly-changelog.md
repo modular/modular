@@ -1519,3 +1519,14 @@ This version is still a work in progress.
 
   Previously in the above example, the extensions defined by `pkg_a` would be
   imported and callable on the unrelated `Foo` struct imported from `pkg_b`.
+
+- Importing a package whose name is a prefix of another package when split by
+  periods no longer works:
+
+  ```mojo
+  # Used to import e.g., package_with.periods if it presented as a package:
+  #   package_with.periods/
+  #   └── __init__.mojo
+
+  import package_with # now errors
+  ```
