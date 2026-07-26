@@ -199,9 +199,14 @@ struct CodeCompletionListener : public BaseCompletionListener {
     MojoASTDeclRef decl = getDeclFn();
 
     auto collectDeclChildren = [&](MojoASTDeclRef decl) {
-      for (MojoASTDeclRef::ChildEntry child : decl.getChildren()) {
-        StringRef name = child.getName();
-        MojoASTDeclRef childDecl = *child.getDecls().begin();
+      // Snapshot the child list: adding a completion for an import placeholder
+      // resolves decls lazily, which can grow this scope's decl map (e.g. a
+      // module importing from itself) and invalidate a live child iterator.
+      SmallVector<std::pair<StringRef, MojoASTDeclRef>> children;
+      for (MojoASTDeclRef::ChildEntry child : decl.getChildren())
+        children.emplace_back(child.getName(), *child.getDecls().begin());
+
+      for (auto &[name, childDecl] : children) {
         if (!showDeclDuringLookup(decl, name, childDecl))
           continue;
 
@@ -252,27 +257,64 @@ struct CodeCompletionListener : public BaseCompletionListener {
         !llvm::isa_and_present<PackageOp, ModuleOp>(decl.getIfOperation()));
   }
 
+  /// Resolve the decl bound by an unresolved import to the decl it names within
+  /// its defining module, or null if it can't be found. Resolution happens in
+  /// the imported module's scope; the scope containing `importOp` is not
+  /// modified.
+  MojoASTDeclRef resolveImportedDecl(UnresolvedImportOp importOp) {
+    SharedState &shared = parserContext->getSharedState();
+    SMLoc loc = shared.diags.convertLocToSMLoc(importOp->getLoc());
+    ASTDecl &module = shared.importModule(
+        importOp.getModuleName(), importOp->getParentOfType<PackageOp>(), loc);
+    StringAttr declName = importOp.getDeclNameAttr();
+    if (!declName)
+      return MojoASTDeclRef(&module);
+    LookupResult result =
+        shared.lookupAndResolveDecl(declName.getValue(), loc, module,
+                                    /*searchParentScopes=*/false,
+                                    /*resolveTarget=*/false);
+    if (!result.isSuccess()) {
+      // The name may be a submodule of a package rather than a symbol in its
+      // scope.
+      return MojoASTDeclRef(
+          shared.tryImportSubModule(module, declName.getValue(), loc));
+    }
+    return MojoASTDeclRef(result.getIfSuccess().front());
+  }
+
   /// Utility function to add a completion result for the given decl. An
   /// optional filter that returns which operations should be considered.
   void addCompletionForOp(StringRef name, MojoASTDeclRef declRef,
                           function_ref<bool(Operation *)> filter = {}) {
-    if (!addedResults.insert(&*declRef).second)
+    if (!addedResults.insert({&*declRef, name}).second)
       return;
 
     Operation *op = declRef.getIfOperation();
     if (!op || (filter && !filter(op)))
       return;
-    auto kind =
-        TypeSwitch<Operation *, CodeCompletionResult::Kind>(op)
-            .Case([](FileModuleOp) { return CodeCompletionResult::kModule; })
-            .Case([](PackageOp) { return CodeCompletionResult::kPackage; })
-            .Case([](ImportOp) { return CodeCompletionResult::kModule; })
-            .Case([](StructDeclOp) { return CodeCompletionResult::kStruct; })
-            .Case([](TraitDeclOp) { return CodeCompletionResult::kTrait; })
-            .Case([](FnOp) { return CodeCompletionResult::kFunction; })
-            .Case([](StructFieldOp) { return CodeCompletionResult::kField; })
-            .Case([](VarDeclOp op) { return CodeCompletionResult::kVariable; })
-            .Default(CodeCompletionResult::kUnknown);
+
+    auto kindForOp = [](Operation *op) {
+      return TypeSwitch<Operation *, CodeCompletionResult::Kind>(op)
+          .Case([](FileModuleOp) { return CodeCompletionResult::kModule; })
+          .Case([](PackageOp) { return CodeCompletionResult::kPackage; })
+          .Case([](ImportOp) { return CodeCompletionResult::kModule; })
+          .Case([](StructDeclOp) { return CodeCompletionResult::kStruct; })
+          .Case([](TraitDeclOp) { return CodeCompletionResult::kTrait; })
+          .Case([](FnOp) { return CodeCompletionResult::kFunction; })
+          .Case([](StructFieldOp) { return CodeCompletionResult::kField; })
+          .Case([](VarDeclOp) { return CodeCompletionResult::kVariable; })
+          .Default(CodeCompletionResult::kUnknown);
+    };
+    CodeCompletionResult::Kind kind = kindForOp(op);
+
+    // An import binding that hasn't been referenced yet is still an unresolved
+    // placeholder, which would complete as an unknown kind. Peek at the decl it
+    // names in its defining module for the kind.
+    if (auto importOp = dyn_cast<UnresolvedImportOp>(op)) {
+      if (MojoASTDeclRef target = resolveImportedDecl(importOp);
+          target && target.getIfOperation())
+        kind = kindForOp(target.getIfOperation());
+    }
 
     CodeCompletionResult result(name, kind);
     if (auto decl = declRef.getDecl())
@@ -280,8 +322,11 @@ struct CodeCompletionListener : public BaseCompletionListener {
     results.emplace_back(result);
   }
 
-  /// The results that have been collected so far.
-  DenseSet<ASTDecl *> addedResults;
+  /// The (decl, label) pairs that have been collected so far. Keyed by both
+  /// because one decl can be bound under several names, each of which is its
+  /// own completion (e.g. `from module import name as other_name` binds the
+  /// same decl as `from module import name`).
+  DenseSet<std::pair<ASTDecl *, StringRef>> addedResults;
   std::vector<CodeCompletionResult> &results;
 };
 } // namespace

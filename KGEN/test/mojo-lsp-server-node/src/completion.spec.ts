@@ -201,6 +201,41 @@ def function(arg: Foo):
     );
   });
 
+  // MOCO-3124: a name bound by `from module import name` stays an unresolved
+  // placeholder until first referenced, and used to complete with no kind.
+  // Prelude re-exports (e.g. `Optional`) always reach completion as such
+  // placeholders; the explicit imports cover the same path for user-written
+  // imports.
+  it("should resolve kinds for from-import completions", async function () {
+    let doc = new Document(
+      server,
+      "test:///from_import_kinds.mojo",
+      `
+from std.collections import Deque
+from std.collections import Deque as RenamedDeque
+from std.hashlib import Hasher
+from std.math import sqrt
+from std import collections
+
+def function() -> De
+`
+    );
+    await doc.open();
+
+    let completions = await doc.complete(doc.findFirstRange("-> De").end);
+    assert.ok(completions);
+    let kindOf = (label: string) =>
+      completions!.find((i) => i.label === label)?.kind;
+    assert.strictEqual(kindOf("Deque"), CompletionItemKind.Struct);
+    assert.strictEqual(kindOf("RenamedDeque"), CompletionItemKind.Struct);
+    assert.strictEqual(kindOf("Hasher"), CompletionItemKind.Interface);
+    assert.strictEqual(kindOf("sqrt"), CompletionItemKind.Function);
+    assert.strictEqual(kindOf("Optional"), CompletionItemKind.Struct);
+    assert.strictEqual(kindOf("len"), CompletionItemKind.Function);
+    assert.strictEqual(kindOf("Copyable"), CompletionItemKind.Interface);
+    assert.strictEqual(kindOf("collections"), CompletionItemKind.Module);
+  });
+
   it("should complete members", async function () {
     let doc = new Document(
       server,
