@@ -1530,3 +1530,10 @@ This version is still a work in progress.
 
   import package_with # now errors
   ```
+
+- Importing escaped-identifier packages & modules whose names contain dots now
+  works reliably.
+
+  ```mojo
+  from `package.with.dots`.`module.with.dots` import foo
+  ```
