@@ -2455,6 +2455,12 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
       valueInfo.emitErrorIfNotDiagnosed(
           op.getLoc(), "cannot consume indirect references to values");
     }
+
+    // Calls and returns that consuming an RP value can access all the interior
+    // origins inside the RP value. Collect and check them.
+    auto valueType = ValueRef::getDereferencedType(value.getType(), isDeref);
+    for (auto origin : findInteriorOriginsInType(valueType))
+      checkInteriorOriginUsage(origin, value, op);
     return;
   }
 
@@ -2520,14 +2526,14 @@ static Operation *getProgramPointThatDefinedInteriorOrigin(Value v) {
   // "close enough" for now, but should be evaluated as things shape up.
   while (1) {
     // Look through stuff that is generally transparent to CheckLifetimes.
+    // Note that this doesn't look through RefUpcastOp, since it can define
+    // interior origins.
     if (auto structGER = v.getDefiningOp<RefStructGEROp>())
       v = structGER.getOperand();
     else if (auto rebind = v.getDefiningOp<RebindOp>())
       v = rebind.getOperand();
     else if (auto immut = v.getDefiningOp<RefImmutOp>())
       v = immut.getOperand();
-    else if (auto upcast = v.getDefiningOp<RefUpcastOp>())
-      v = upcast.getOperand();
     else if (auto load = v.getDefiningOp<RefLoadOp>()) {
       // Looking through ref loads will give us the vardecl for local values,
       // which is strictly more conservative than looking at the load itself:
@@ -2587,6 +2593,13 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   size_t interiorID = interiorOriginTracker.getInteriorOriginID(interior);
   auto &entry = liveness.interior[interiorID];
   if (!entry.getInt()) {
+    // If this is being defined by a lit.ref.from_pointer, then this is the
+    // internal implementation of _get_ref_with_unsafe_interior_origin. Allow
+    // use of the interior origin.
+    if (isa<KGEN::ReturnOp>(op) &&
+        RefImmutOp::stripRebinds(operand).getDefiningOp<RefFromPointerOp>())
+      return;
+
     // If the interior origin is based on something else uninitialized, then
     // complain about the base of the access, not its internals.
     SmallVector<InteriorOriginAttr> dummy;
@@ -2785,7 +2798,7 @@ void UninitializedValueScan::scanFunction(FnOp func) {
   // sentinel slot #0 is treated by OriginTrackable as live-in and dead-out
   // which naturally works with our terminators.  The bits are already allocated
   // by our constructor.
-  for (const ValueInfo &info : valueSet.getValueInfos())
+  for (const ValueInfo &info : valueSet.getValueInfos()) {
     if (!info.startsUninit) {
       // If the whole value is live on entry, notice that.
       liveness.tracked.set(info.startValueBit, info.endValueBit);
@@ -2793,21 +2806,35 @@ void UninitializedValueScan::scanFunction(FnOp func) {
       // If /just/ the full object bit is live on entry, set it.
       liveness.tracked.set(info.endValueBit - 1);
     }
+  }
 
-  // Closures can access interior origins from their capture set without
-  // defining them in the body. Mark those origins live on entry.
-  SmallVector<InteriorOriginAttr> captureOrigins;
+  // Function arguments can have interior origins defined in them (the caller
+  // will validate that they are live), so make sure to notice them and set them
+  // as live on entry. Similarly, closures can access interior origins from
+  // their capture set without defining them in the body.
+  SmallVector<InteriorOriginAttr> liveInInteriorOrigins;
   if (!liveness.interior.empty()) {
-    // Find all the interior origins in the capture set.
+    SmallVector<Type> argTypes;
+    for (auto [arg, conv] :
+         llvm::zip(func.getArguments(),
+                   func.getFuncTypeGenerator().getArgConventions())) {
+      if (!isResultSlot(conv))
+        argTypes.push_back(arg.getType());
+    }
+
+    // Find all the interior origins in the arguments + capture set.
     for (TypedAttr origin : valueSet.getOriginFinder().findOriginsIn(
-             {}, func.getFuncTypeGenerator().getCaptureOrigins())) {
-      origin.walk([&](InteriorOriginAttr interior) {
-        captureOrigins.push_back(interior);
+             argTypes, func.getFuncTypeGenerator().getCaptureOrigins())) {
+      origin.walk([&](Attribute nested) {
+        if (auto into = dyn_cast<InteriorOriginAttr>(nested)) {
+          liveInInteriorOrigins.push_back(into);
+        } else if (auto subtree = dyn_cast<OriginSubtreeAttr>(nested))
+          liveInInteriorOrigins.push_back(getInteriorForSubtreeOrigin(subtree));
       });
     }
 
     // Mark all the capture set origins live on entry.
-    for (auto interior : captureOrigins)
+    for (auto interior : liveInInteriorOrigins)
       interiorOriginTracker.markInteriorOriginLive(
           interior, liveness, *func.getOperation(), valueSet.domInfo);
   }
@@ -2815,8 +2842,8 @@ void UninitializedValueScan::scanFunction(FnOp func) {
   // Scan the body of the function.
   scanBlock(func.getBodyRegion().front());
 
-  // The function must not have invalidated any interior origins.
-  for (auto interior : captureOrigins) {
+  // The function must not have invalidated any live-in interior origins.
+  for (auto interior : liveInInteriorOrigins) {
     size_t interiorID = interiorOriginTracker.getInteriorOriginID(interior);
     Operation *invalidatingOp = liveness.interior[interiorID].getPointer();
     if (invalidatingOp == func.getOperation())
