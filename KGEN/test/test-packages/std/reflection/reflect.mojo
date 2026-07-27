@@ -50,7 +50,7 @@ struct Reflected[T: AnyType]:
     @staticmethod
     @always_inline("builtin")
     def field_count() -> Int:
-        return _field_types_of[Self.T]().size
+        return _field_types_of[Self.T]().length
 
     @staticmethod
     def field_types() -> _field_types_of[Self.T]:

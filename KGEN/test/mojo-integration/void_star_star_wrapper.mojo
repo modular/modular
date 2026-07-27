@@ -34,7 +34,7 @@ struct KernelFunction[
 struct KernelArgPack[kernel: KernelFunction[_]]:
     var pointers: Array[
         MutOpaquePointer[MutUntrackedOrigin],
-        Self.kernel.declared_arg_types.size,
+        Self.kernel.declared_arg_types.length,
     ]
 
     def __init__(out self):
@@ -70,7 +70,7 @@ def wrapped_entry_point[
         __get_mvalue_as_litref(ptr_tuple)
     )
 
-    comptime for i in range(kernel.declared_arg_types.size):
+    comptime for i in range(kernel.declared_arg_types.length):
         comptime ArgType = kernel.declared_arg_types[i]
         comptime if looks_like_pointer[ArgType]():
             ptr_tuple[i] = rebind[type_of(ptr_tuple[i])](
@@ -102,7 +102,7 @@ def invoke_kernel[
     *args: *kernel.declared_arg_types,
 ) -> kernel.declared_ret_type:
     var pa = KernelArgPack[kernel]()
-    comptime for i in range(kernel.declared_arg_types.size):
+    comptime for i in range(kernel.declared_arg_types.length):
         comptime ArgType = kernel.declared_arg_types[i]
         comptime if looks_like_pointer[ArgType]():
             pa.pointers[i] = rebind[MutOpaquePointer[MutUntrackedOrigin]](

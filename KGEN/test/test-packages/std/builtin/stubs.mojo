@@ -913,7 +913,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
 struct TypeList[
     Trait: type_of(AnyType), //, values: _MLIR.KGENParamListType[Trait]
 ](TrivialRegisterPassable):
-    comptime size: Int = Int(
+    comptime length: Int = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,
             type_of(Self.values),
@@ -1004,7 +1004,7 @@ struct TypeList[
         Mapper: Self._TypeToTypeGenerator[ToTrait],
     ] = TypeList.tabulate[
         Trait=ToTrait,
-        Self.size,
+        Self.length,
         Self._MapTabulator[ToTrait, Mapper, idx=_],
     ]
 
