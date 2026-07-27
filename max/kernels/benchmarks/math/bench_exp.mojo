@@ -60,7 +60,7 @@ def bench_unary[
         dtype, width
     ],
     dtype: DType,
-](mut m: Bench, size_range: _StridedRange, op_name: String) raises:
+](mut m: Bench, size_range: _StridedRange[DType.int], op_name: String) raises:
     for i in size_range:
         bench_unary[func, dtype](m, i, op_name)
 

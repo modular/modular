@@ -27,6 +27,7 @@ _FILECHECK_TESTS = [
     "test_debug_assert_mode_all_error.mojo",
     "test_debug_assert_mode_none.mojo",
     "test_debug_assert_warning.mojo",
+    "test_range_len_overflow_abort.mojo",
 ]
 
 _LIT_TESTS = [
@@ -63,6 +64,7 @@ _EXPECT_CRASH = [
     "test_debug_assert_default_error.mojo",
     "test_debug_assert_mode_all_error.mojo",
     "test_debug_assert_location.mojo",
+    "test_range_len_overflow_abort.mojo",
 ]
 
 [

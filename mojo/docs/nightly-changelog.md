@@ -736,6 +736,14 @@ This version is still a work in progress.
   return type, so every range flavor (including the typed scalar ranges) can
   conform and return its own reversed iterator.
 
+- The `Int`-based and `Scalar`-based `range()` types have been unified into a
+  single `dtype`-parameterized family, now that `Int` is `Scalar[DType.int]`.
+  `range()` with `Int` arguments behaves exactly as before. As part of this,
+  `range(...).__len__()` always returns `Int`. An unsigned range whose element
+  count exceeds `Int.MAX` cannot be represented as an `Int`, so `__len__()`
+  asserts rather than silently clamping or wrapping; use `bounds()`, whose
+  upper bound is `None` in that case, for the size hint.
+
 - Added `copy_to_numpy_array` and `from_numpy_array` to the new `python.numpy`
   module for moving flat numeric data between Mojo `Span`/`List` and NumPy
   arrays without hand-written `ctypes` plumbing:

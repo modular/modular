@@ -144,9 +144,11 @@ def test_range_len() raises:
 
 
 def test_range_len_uint_maxuint() raises:
-    assert_equal(
-        range(UInt(0), UInt.MAX).__len__(), UInt.MAX, "len(range(0, UInt.MAX))"
-    )
+    # `__len__()` returns `Int`. A count that exceeds `Int.MAX` asserts rather
+    # than clamping, so it can't be exercised here under `-D ASSERT=all`; the
+    # clamped size hint for that case is covered by
+    # `test_larger_than_int_max_bounds`. An empty range still reports 0 without
+    # overflowing.
     assert_equal(
         range(UInt.MAX, UInt(0), UInt(1)).__len__(),
         0,

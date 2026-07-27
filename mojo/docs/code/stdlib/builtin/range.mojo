@@ -15,23 +15,17 @@
 #   - Unsigned reverse of the zero-start or sequential form:
 #     reversed(range(UInt8(4))) is a compile-time error ("cannot reverse an
 #     unsigned range"). The strided form does reverse unsigned (tested below).
-#   - Float len(): len() of any float range is a compile-time error. No float
-#     range conforms to Sized, and the strided __len__ also asserts an integral
-#     dtype.
-#   - Strided float indexing: a strided float range[i] is a compile-time error
-#     (strided __getitem__ goes through the integral-only __len__). The
-#     zero-start and sequential float forms DO index (tested below).
-#   - Zero-start and sequential scalar len(): len(range(Int32(4))) doesn't
-#     compile — those two structs don't conform to Sized (only the strided
-#     scalar range does). Indexing and reversed() do work on them (tested below).
+#   - Strided float len() / indexing: len() and range[i] on a strided float
+#     range are a compile-time error (the strided bounds()/__len__ assert an
+#     integral dtype; the strided float form is iteration-only). The zero-start
+#     and sequential forms require an integer dtype (a float end/start without a
+#     step is a compile-time error); they support len() and indexing for every
+#     integer dtype (tested below), and reversed() works for signed but not
+#     unsigned (see above).
 #   - Out-of-bounds index: r[999] traps under -D ASSERT=all.
 #   - Scalar strided zero step: iterating can loop forever (the value never
 #     advances toward end), so it can't be asserted. The Int strided form makes
 #     a zero step an empty range (tested below).
-#   - Strided float reverse: reversed(range(5.0, 0.0, -0.5)) compiles but drops
-#     the boundary element (the __reversed__ shift-by-sign math assumes integer
-#     steps). Filed as a stdlib bug; the strided float form is iteration-only,
-#     so this is left unasserted.
 from std.testing import assert_almost_equal, assert_equal
 
 
@@ -118,24 +112,24 @@ def test_int_strided() raises:
 
 
 def test_scalar_zero_based() raises:
-    # Typed elements
+    # Typed elements. Scalar zero-start ranges support len() for every integer
+    # dtype.
     var u = List[UInt8]()
     for i in range(UInt8(4)):
         u.append(i)
     assert_equal(u, [0, 1, 2, 3])
+    assert_equal(len(range(UInt8(4))), 4)
+    assert_equal(len(range(Int32(4))), 4)
 
-    # Integer scalar: indexing and reversed() (no builtin len() on this form)
+    # Integer scalar: indexing and reversed()
     assert_equal(range(Int32(4))[Int32(2)], 2)
     var rev = List[Int32]()
     for x in reversed(range(Int32(4))):
         rev.append(x)
     assert_equal(rev, [3, 2, 1, 0])
 
-    # A negative end produces an empty range (no len() here, so iterate)
-    var neg = List[Int32]()
-    for x in range(Int32(-5)):
-        neg.append(x)
-    assert_equal(len(neg), 0)
+    # A negative end produces an empty range
+    assert_equal(len(range(Int32(-5))), 0)
 
 
 def test_scalar_sequential() raises:
@@ -143,19 +137,17 @@ def test_scalar_sequential() raises:
     for i in range(Int32(3), Int32(7)):
         got.append(i)
     assert_equal(got, [3, 4, 5, 6])
+    assert_equal(len(range(Int32(3), Int32(7))), 4)
 
-    # Indexing and reversed() (no builtin len() on this form)
+    # Indexing and reversed()
     assert_equal(range(Int32(3), Int32(7))[Int32(1)], 4)
     var rev = List[Int32]()
     for x in reversed(range(Int32(3), Int32(7))):
         rev.append(x)
     assert_equal(rev, [6, 5, 4, 3])
 
-    # end <= start is empty (no len() here, so iterate)
-    var empty = List[Int32]()
-    for x in range(Int32(7), Int32(3)):
-        empty.append(x)
-    assert_equal(len(empty), 0)
+    # end <= start is empty
+    assert_equal(len(range(Int32(7), Int32(3))), 0)
 
 
 def test_scalar_strided_integer() raises:
