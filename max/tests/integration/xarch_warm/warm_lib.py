@@ -86,6 +86,12 @@ def export_slots(
                 continue
             if not is_cpu and not include_accelerators:
                 continue
+            module = family.build_module_for_device(device)
+            if not module.top_level_graph_names():
+                # A device-restricted family (e.g. GPU-only) legitimately has
+                # no graph for some devices; compiling an empty Module is a
+                # hard compiler error, not a no-op, so skip rather than try.
+                continue
             # Same device->slot naming the consumer adopts by (device_class_of).
             device_class = interpreter_ops.gc_compile.device_class_of(device)
             mef_name = (
@@ -93,9 +99,9 @@ def export_slots(
                 if is_cpu
                 else f"{family.name}_slot_{device.id}.mef"
             )
-            InferenceSession(devices=[device]).compile(
-                family.build_module_for_device(device)
-            ).export_mef(os.path.join(derived, mef_name))
+            InferenceSession(devices=[device]).compile(module).export_mef(
+                os.path.join(derived, mef_name)
+            )
             entries.append(
                 {
                     "family": family.name,

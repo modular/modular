@@ -98,6 +98,16 @@ def canonical_shape_rank1(shape: Sequence[int]) -> tuple[int]:
     return (prod(shape),)
 
 
+def canonical_rank2(shape: Sequence[int]) -> tuple[int, int]:
+    """Collapses *shape* to rank 2 ``[rows, features]``.
+
+    The last dim is ``features``; every leading dim is flattened into
+    ``rows``. ``prod(())`` is 1, so a rank-1 input (no leading dims) yields
+    ``rows == 1``, keeping the rank-1 case branchless.
+    """
+    return (prod(shape[:-1]), shape[-1])
+
+
 def canonical_rank3(shape: Sequence[int], axis: int) -> tuple[int, int, int]:
     """Collapses *shape* to rank 3 ``[outer, axis, inner]``.
 
@@ -400,8 +410,13 @@ class GCFamilySpec(Protocol):
     def sweep_devices(self) -> list[Device]:
         """Returns the devices this family sweeps.
 
-        Every family sweeps the same discovered set, so this is a concrete,
-        inherited implementation rather than a per-family override point.
+        Every family sweeps the same discovered set by default, so this is a
+        concrete, inherited implementation rather than a per-family override
+        point -- except for a family whose kernel is restricted to a device
+        subset (e.g. ``group_norm``, GPU-only), which must override this to
+        exclude the devices it never builds for. ``_adopt_from_manifest``
+        requires a manifest entry for every device this returns, so a family
+        that lists a device it never populates fails adoption entirely.
         """
         return list(DISCOVERED_DEVICES)
 

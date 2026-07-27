@@ -620,6 +620,20 @@ This version is still a work in progress.
   is unchanged: it still runs the full float, signed-int, unsigned-int, and
   bool value set on both CPU and accelerators.
 
+- The eager interpreter's `layer_norm` and `rms_norm` ops now run through
+  pre-compiled graph-compiler models instead of hand-written Mojo bindings,
+  matching the matmul, elementwise, reduce, shape-rearrange, pooling, and
+  conv2d migrations. `epsilon`/`weight_offset` stay runtime operands, so one
+  compiled graph per `(device, dtype[, multiply_before_cast])` serves every
+  shape.
+
+- The eager interpreter's `group_norm` op now runs through a pre-compiled
+  graph-compiler model on GPU. CPU support has been removed:
+  `nn.normalization.group_norm`'s graph-compiler kernel is GPU-only (a
+  pre-existing limitation of the kernel itself, not new in this change), so
+  eager `group_norm` on CPU now raises `NotImplementedError` instead of
+  running through the old hand-written Mojo binding.
+
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
   machine's devices and drops a stamp. A later lazy eager process on the same
