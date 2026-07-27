@@ -471,6 +471,9 @@ public:
   resolveModulePath(StringRef moduleName, StringRef includeDir,
                     bool ignorePrebuilt, bool isInsideSourcePackage);
 
+  void registerWrapperBuffer(unsigned bufferId, StringRef wrappedSourcePath);
+  std::optional<StringRef> getWrappedSourcePath(unsigned bufferId) const;
+
   //===--------------------------------------------------------------------===//
   // Debug Info
 

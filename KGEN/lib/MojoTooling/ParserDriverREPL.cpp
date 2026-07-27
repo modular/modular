@@ -871,8 +871,13 @@ MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
           .str();
   auto buffer =
       llvm::MemoryBuffer::getMemBufferCopy(wrappedExprText, replModuleName);
-  const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(
-      sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc()));
+
+  unsigned bufferId =
+      sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
+  impl->sharedState.registerWrapperBuffer(bufferId,
+                                          exprFileBuf->getBufferIdentifier());
+  const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(bufferId);
+
   exprLocMapper.setWrappedExpr(sourceBuf->getBuffer());
 
   // Resolve a module decl for this REPL expression.
