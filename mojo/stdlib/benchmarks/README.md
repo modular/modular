@@ -29,6 +29,15 @@ Every `bench_*.mojo` source produces two Bazel targets:
 There is also a `//mojo/stdlib/benchmarks:all_benchmarks` `test_suite` that
 expands to every `.bench` target.
 
+### Benchmarks that embed CPython
+
+A benchmark that constructs `PythonObject`s starts an interpreter in process, so
+its targets need `python_version` set, which most benchmarks must not request.
+Add such a source to `_PYTHON_SRCS` in `benchmarks/BUILD.bazel`; without that it
+builds but fails at run time with no Python toolchain. Keep it in the top-level
+package rather than declaring a `BUILD.bazel` beside it, so it stays in
+`all_benchmarks` and in the duplicate-source lint's allowlist for this tree.
+
 ### Cross-language benchmarks
 
 Some stdlib surfaces are only reachable from another language — for example,
