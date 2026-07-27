@@ -95,6 +95,7 @@ def fa4_scale_write_output[
     config: FA4Config,
     output_swizzle_mode: TensorMapSwizzle,
     tma_bpo: Int,
+    zero_fill: Bool = False,
 ](
     local_row: UInt32,
     local_warp_idx: UInt32,
@@ -173,24 +174,38 @@ def fa4_scale_write_output[
     @always_inline
     def write_block[blk: Int]():
         comptime col = blk * o_sw_K
-        var o_vals = tcgen05_ld[
-            datapaths=32,
-            bits=32,
-            repeat=o_sw_K,
-            dtype=accum_dtype,
-            pack=False,
-            width=o_sw_K,
-        ](o_tmem_arg.tmem_addr + UInt32(col))
+        comptime if zero_fill:
+            # Empty (all-masked) row: emit zeros without reading the
+            # never-produced O accumulator in TMEM.
+            var o_vals = InlineArray[Scalar[accum_dtype], o_sw_K](
+                fill=Scalar[accum_dtype](0)
+            )
+            var packed = scale_pack_o_row[output_type, w=o_sw_K](
+                o_vals, inv_row_sum
+            )
+            var o_inner = Int(local_row) * o_sw_K
+            (o_smem_arg + blk * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
+                Scalar[DType.uint32]
+            ]().store(packed)
+        else:
+            var o_vals = tcgen05_ld[
+                datapaths=32,
+                bits=32,
+                repeat=o_sw_K,
+                dtype=accum_dtype,
+                pack=False,
+                width=o_sw_K,
+            ](o_tmem_arg.tmem_addr + UInt32(col))
 
-        var packed = scale_pack_o_row[output_type, w=o_sw_K](
-            o_vals, inv_row_sum
-        )
+            var packed = scale_pack_o_row[output_type, w=o_sw_K](
+                o_vals, inv_row_sum
+            )
 
-        # Block `blk` is one k-block [BM, o_sw_K]; col % o_sw_K == 0.
-        var o_inner = Int(local_row) * o_sw_K
-        (o_smem_arg + blk * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
-            Scalar[DType.uint32]
-        ]().store(packed)
+            # Block `blk` is one k-block [BM, o_sw_K]; col % o_sw_K == 0.
+            var o_inner = Int(local_row) * o_sw_K
+            (o_smem_arg + blk * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
+                Scalar[DType.uint32]
+            ]().store(packed)
 
     comptime if batched:
         # Single issuer, 2-phase pipeline: write the first half to smem and kick
@@ -3052,6 +3067,38 @@ def fa4_softmax[
                 # kernel terminal cluster_sync + TMEM dealloc.
                 named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
                 return
+
+    # All-masked row (valid_length 0): no scores produced, so `pipeline_s.wait()`
+    # below would hang. Write a deterministic zero output row (the O accumulator
+    # was never produced, so `zero_fill` skips the TMEM read), then take WG0's
+    # normal terminal exit -- rendezvous on the 2*WG barrier (unless there is no
+    # second WG) and free the TMEM warp 0 owns on the single-CTA path; a bare
+    # return would leak it and wedge the next launch.
+    comptime if config.num_q == 1 and not (config.splitk_partitions > 1):
+        if total_iters_combined == UInt32(0):
+            fa4_scale_write_output[config, zero_fill=True](
+                row,
+                warp_idx & 3,
+                UInt32(0),
+                Float32(0),
+                o_smem,
+                TMemTile[accum_dtype, BM // config.num_q, padded_ov_depth](
+                    tmem_addr + UInt32(config.TMEM_O0)
+                ),
+                ragged_tma_store,
+                num_output_rows,
+                head_idx,
+                gmem_row + cta_q_offset,
+            )
+            comptime if not single_softmax_wg:
+                named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
+            comptime if not config.pair_cta and config.splitk_partitions == 1:
+                if warp_idx == 0:
+                    tcgen05_release_allocation_lock[Int32(cta_group)]()
+                    tcgen05_dealloc[Int32(cta_group)](
+                        tmem_addr, UInt32(config.sm100_tmem_cols)
+                    )
+            return
 
     pipeline_s.wait()
     tcgen05_fence_after()

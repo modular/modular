@@ -357,12 +357,16 @@ def fa4_load[
     var kv_row: UInt32 = mask.start_column[BM_mask, BN, page_size](
         seq_info.prompt_idx, score_row
     )
-    var iter_count: UInt32 = (
-        mask.last_masked_set_end[BM_mask, BN, page_size](
-            seq_info.prompt_idx, score_row, num_keys
-        )
-        - 1
-    )
+    var last_masked_set_end: UInt32 = mask.last_masked_set_end[
+        BM_mask, BN, page_size
+    ](seq_info.prompt_idx, score_row, num_keys)
+    # All-masked row (valid_length 0): last_masked_set_end == 0, so the
+    # `- 1` below underflows and the load warp over-produces, hanging the KV
+    # pipeline. Split-K is guarded below; guard the non-split path here.
+    comptime if not (config.num_q == 1 and config.splitk_partitions > 1):
+        if last_masked_set_end == UInt32(0):
+            return
+    var iter_count: UInt32 = last_masked_set_end - 1
 
     # Split-K (1Q): shift this CTA to its own tile window [cb, ce) of the
     # combined range. Offset kv_row by cb*BN BEFORE the first-tile

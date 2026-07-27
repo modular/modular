@@ -261,6 +261,11 @@ def fa4_correction[
         # softmax stages a neutral identity; terminal `cluster_sync()` still runs.
         if total_iters_runtime == 0:
             return
+    # All-masked row (valid_length 0): total_iters == 0, so `c0_iters` underflows
+    # and this warp waits on a tile the producer never posts. Split-K is guarded
+    # above; guard the non-split path here.
+    if total_iters_runtime == 0:
+        return
     var c0_iters: UInt32
     var c1_iters: UInt32
     comptime if num_q == 1:
