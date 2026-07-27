@@ -1244,15 +1244,11 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        # TODO: replace/optimize with c-python function.
-        # TODO: implement __getitem__ step for cpython membership test operator.
         ref cpy = Python().cpython()
-        if cpy.PyObject_HasAttrString(self._obj_ptr, "__contains__"):
-            return self.__getattr__("__contains__")(rhs^).__bool__()
-        for v in self:
-            if v == rhs:
-                return True
-        return False
+        var res = cpy.PySequence_Contains(self._obj_ptr, rhs._obj_ptr)
+        if res == -1:
+            raise cpy.unsafe_get_error()
+        return res == 1
 
     # see https://github.com/python/cpython/blob/main/Objects/call.c
     # for decrement rules
