@@ -554,7 +554,7 @@ trait Stringable:
         ...
 
 
-struct String(ImplicitlyCopyable, KeyElement):
+struct String(ErrorConversionTrait, ImplicitlyCopyable, KeyElement):
     def __init__(out self):
         pass
 

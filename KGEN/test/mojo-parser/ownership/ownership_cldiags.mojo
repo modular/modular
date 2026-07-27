@@ -796,3 +796,15 @@ def test_complex_subtree_mut_invalidation_2(var list_and_int: ListAndInt):
     ref r1 = list_and_int.get_someint(False)
     list_and_int.anotherInt += 1 # expected-note {{origin was invalidated here}}
     use(r1) # expected-error {{use of invalidated interior reference 'origin_of(list_and_int).subtree'}}
+
+struct MiniDict:
+    @__unsafe_nested_origins_read_only
+    def __getitem__(ref self, idx: String) raises String -> ref[origin_of(self).subtree] String:
+        raise ""
+
+def use_two_strings(a: String, b: String): pass
+
+def test_control_flow_invalidation(var d : MiniDict) raises:
+  var str = ""
+  ref entry = d[str]
+  use_two_strings(d[entry], entry)
