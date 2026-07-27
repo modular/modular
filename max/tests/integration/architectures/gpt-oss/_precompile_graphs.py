@@ -11,29 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from _graph_defs import build_yarn_rotary_embeddings_graph
+from test_common.mef_precompile import precompile_entrypoint
 
-import pytest
-import torch
-from _graph_defs import create_gpu_oss_config
-from transformers.models.gpt_oss.configuration_gpt_oss import (
-    GptOssConfig,
-)
-
-"""
-Fixtures for GPT-OSS tests, including config, generated input tensors, and dummy
-weights.
-"""
-
-WEIGHTS_STDDEV = 0.01
-
-
-@pytest.fixture
-def config() -> GptOssConfig:
-    return create_gpu_oss_config()
-
-
-@pytest.fixture
-def input_tensor(config: GptOssConfig) -> torch.Tensor:
-    """Generate a random input tensor for testing."""
-    torch.manual_seed(42)
-    return torch.randn(1, 76, config.hidden_size)
+if __name__ == "__main__":
+    precompile_entrypoint(build_yarn_rotary_embeddings_graph)
