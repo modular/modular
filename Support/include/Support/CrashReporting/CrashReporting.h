@@ -49,7 +49,10 @@ getCrashDatabasePath(const std::filesystem::path &dataPath);
 /// configuration). The program parameter is used for metadata when posting to
 /// the crashpad API, which allows for clustering crashes server-side for
 /// analysis; this should be simple and fixed (e.g. "mojo" is a good name).
-void initCrashpadForProgram(StringRef program, Config *settings = nullptr);
+/// The machineID and sessionID parameters are attached so crash reports
+/// can be joined with usage events.
+void initCrashpadForProgram(StringRef program, StringRef machineID,
+                            StringRef sessionID, Config *settings = nullptr);
 
 /// Generate a crash dump with the current state of the process, without
 /// actually causing the current process to crash and terminate.

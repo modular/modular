@@ -781,18 +781,12 @@ TEST(Telemetry, DISABLED_ProgramInvocationNoCrashReporting) {
 
 TEST(Telemetry, DISABLED_LocalIDs) {
   auto origIDs = createLocalIDs();
-  EXPECT_EXIT(
-      {
-        auto newIDs = createLocalIDs();
-        // The first ID should be machine invariant.
-        if (origIDs.first != newIDs.first)
-          exit(1);
-        // The second one should be process invariant.
-        if (origIDs.second == newIDs.second)
-          exit(1);
-        exit(0); // Success.
-      },
-      testing::ExitedWithCode(0), "");
+  // The IDs are memoized: every caller in the process must observe identical
+  // values, since the crash reporting and usage telemetry lanes rely on
+  // sharing the same machineid/sessionid.
+  auto newIDs = createLocalIDs();
+  EXPECT_EQ(origIDs.machine, newIDs.machine);
+  EXPECT_EQ(origIDs.session, newIDs.session);
 }
 
 // RAII utility for overriding an environment variable.

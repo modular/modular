@@ -55,8 +55,13 @@ ErrorOr<ContextRef> createContextImpl(StringRef programName,
   if (!isProductionBuild() && !crashReportingEnabled)
     Init::registerDevelopmentSignalHandler(programName);
   else if (!options.forceDisableCrashReportingEnabled() &&
-           crashReportingEnabled)
-    initCrashpadForProgram(programName, &settings);
+           crashReportingEnabled) {
+    // The crash lane must carry the same machine/session IDs as the usage
+    // telemetry lane so crash reports can be joined with usage events.
+    const auto &localIDs = Telemetry::createLocalIDs();
+    initCrashpadForProgram(programName, localIDs.machine, localIDs.session,
+                           &settings);
+  }
 
   // TelemetryContext created and added to the Context here as Config is
   // required.

@@ -326,12 +326,20 @@ private:
 // TODO: Add ways to organize instruments (e.g. Meters/instrumentation scope)
 // later if needed.
 
-/// createLocalIDs creates a machineid (invariant within a given container) and
-/// a sessionid (invariant within a given process).
+/// Local identifiers reported alongside telemetry events.
+struct LocalIDs {
+  /// Invariant within a given container.
+  std::string machine;
+  /// Invariant within a given process.
+  std::string session;
+};
+
+/// createLocalIDs creates the local machineid/sessionid pair.
 ///
-/// This function / should only ever be called once and the result memoized, as
-/// it may be quite expensive.
-std::pair<std::string, std::string> createLocalIDs();
+/// The result is computed once and memoized (it may be quite expensive), so
+/// every caller in the process observes identical values. The crash reporting
+/// and usage telemetry lanes rely on this to carry the same IDs.
+const LocalIDs &createLocalIDs();
 
 /// A TelemetryContext provides access to instruments (e.g. Counter, Histogram)
 /// to instrument the code and generate metrics. These metrics will be exported
