@@ -58,7 +58,7 @@ var total_size = size(shape)  # Results in 120
 
 from std.os import abort
 
-from std.builtin.range import _StridedRange, _StridedScalarRange
+from std.builtin.range import _StridedRange
 from std.memory import dealloc, unsafe_memcpy, ThinAllocation
 from std.memory.alloc import Layout as AllocLayout
 from std.collections import check_bounds
@@ -588,7 +588,7 @@ struct IntTuple(
         self._store = _owned^
 
     @always_inline
-    def __init__(out self, existing: Self, rng: _StridedRange):
+    def __init__(out self, existing: Self, rng: _StridedRange[DType.int]):
         """Initialize an `IntTuple` as a slice of an existing `IntTuple`.
 
         Creates a new `IntTuple` containing only the elements from the existing

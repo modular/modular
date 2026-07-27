@@ -47,470 +47,19 @@ def _sign[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
 # ===----------------------------------------------------------------------=== #
 
 
-struct _ZeroStartingRange(
-    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterPassable
-):
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = Self
-    comptime Element = Int
-    comptime ReversedType = _StridedRange
-    var curr: Int
-    var end: Int
-
-    @always_inline
-    def __init__(out self, end: Int):
-        self.curr = max(end, 0)
-        self.end = self.curr
-
-    @always_inline
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        return self
-
-    @always_inline
-    def __next__(mut self) raises StopIteration -> Int:
-        var curr = self.curr
-        if curr == 0:
-            raise StopIteration()
-        self.curr = curr - 1
-        return self.end - curr
-
-    @always_inline
-    def __len__(self) -> Int:
-        return self.curr
-
-    @always_inline
-    def __getitem__[I: Indexer](self, idx: I) -> Int:
-        var i = index(idx)
-        assert i < self.__len__(), "index out of range"
-        return i
-
-    @always_inline
-    def __reversed__(self) -> _StridedRange:
-        return _StridedRange(self.end - 1, -1, -1)
-
-    @always_inline
-    def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var len = len(self)
-        return (len, {len})
-
-
-struct _SequentialRange(
-    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterPassable
-):
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = Self
-    comptime Element = Int
-    comptime ReversedType = _StridedRange
-    var start: Int
-    var end: Int
-
-    @always_inline
-    def __init__(out self, start: Int, end: Int):
-        self.start = start
-        self.end = max(start, end)
-
-    @always_inline
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        return self
-
-    @always_inline
-    def __next__(mut self) raises StopIteration -> Int:
-        var start = self.start
-        if start == self.end:
-            raise StopIteration()
-        self.start = start + 1
-        return start
-
-    @always_inline
-    def __len__(self) -> Int:
-        return self.end - self.start
-
-    @always_inline
-    def __getitem__[I: Indexer](self, idx: I) -> Int:
-        assert self.__len__() > index(idx), "index out of range"
-        return self.start + index(idx)
-
-    @always_inline
-    def __reversed__(self) -> _StridedRange:
-        return _StridedRange(self.end - 1, self.start - 1, -1)
-
-    @always_inline
-    def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var len = len(self)
-        return (len, {len})
-
-
-@fieldwise_init
-struct _StridedRangeIterator(
-    Iterable, Iterator, Sized, TrivialRegisterPassable
-):
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = Self
-    comptime Element = Int
-    var start: Int
-    var end: Int
-    var step: Int
-
-    @always_inline
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        return self
-
-    @always_inline
-    def __len__(self) -> Int:
-        if self.step > 0 and self.start < self.end:
-            return self.end - self.start
-        elif self.step < 0 and self.start > self.end:
-            return self.start - self.end
-        else:
-            return 0
-
-    @always_inline
-    def __next__(mut self) raises StopIteration -> Int:
-        if self.__len__() <= 0:
-            raise StopIteration()
-        var result = self.start
-        self.start += self.step
-        return result
-
-    @always_inline
-    def __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    @always_inline
-    def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var len = len(self)
-        return (len, {len})
-
-
-struct _StridedRange(
-    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterPassable
-):
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _StridedRangeIterator
-    comptime Element = Int
-    comptime ReversedType = _StridedRange
-    var start: Int
-    var end: Int
-    var step: Int
-
-    @always_inline
-    def __init__(out self, start: Int, end: Int, step: Int = 1):
-        self.start = start
-        self.end = end
-        self.step = step
-
-    @always_inline
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        return _StridedRangeIterator(self.start, self.end, self.step)
-
-    @always_inline
-    def __next__(mut self) raises StopIteration -> Int:
-        if self.__len__() <= 0:
-            raise StopIteration()
-        var result = self.start
-        self.start += self.step
-        return result
-
-    @always_inline
-    def __len__(self) -> Int:
-        # If the step is positive we want to check that the start is smaller
-        # than the end, if the step is negative we want to check the reverse.
-        # We break this into selects to avoid generating branches.
-        var c1 = (self.step > 0) & (self.start > self.end)
-        var c2 = (self.step < 0) & (self.start < self.end)
-        var cnd = c1 | c2
-
-        var numerator = abs(self.start - self.end)
-        var denominator = abs(self.step)
-
-        # If the start is after the end and step is positive then we
-        # are generating an empty range. In this case divide 0/1 to
-        # return 0 without a branch.
-        return ceildiv(select(cnd, 0, numerator), select(cnd, 1, denominator))
-
-    @always_inline
-    def __getitem__[I: Indexer](self, idx: I) -> Int:
-        assert self.__len__() > index(idx), "index out of range"
-        return self.start + index(idx) * self.step
-
-    @always_inline
-    def __reversed__(self) -> _StridedRange:
-        var shifted_end = self.end - _sign(self.step)
-        var start = shifted_end - ((shifted_end - self.start) % self.step)
-        var end = self.start - self.step
-        var step = -self.step
-        return _StridedRange(start, end, step)
-
-    @always_inline
-    def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var len = len(self)
-        return (len, {len})
-
-
-@always_inline
-def range[T: Indexer, //](end: T) -> _ZeroStartingRange:
-    """Returns the integer sequence `[0, end)`.
-
-    Integer ranges are values. They support `len()`, O(1) indexing, and
-    `reversed()` without allocating. `reversed(range(n))` iterates from
-    `n - 1` down to `0`.
-
-    Parameters:
-        T: The type of the end value. Constrained to `Indexer`.
-
-    Args:
-        end: The exclusive upper bound. Negative values produce an empty range.
-
-    Returns:
-        A zero-based integer range over `[0, end)`.
-
-    Performance:
-        O(1) construction. O(1) indexing. No list allocation.
-
-    Examples:
-
-    ```mojo
-    for i in range(5):
-        print(i)  # 0, 1, 2, 3, 4
-
-    var steps = range(1000)
-    print(steps[499])  # 499
-    print(len(steps))  # 1000
-
-    for i in reversed(range(5)):
-        print(i)  # 4, 3, 2, 1, 0
-    ```
-    """
-    return _ZeroStartingRange(index(end))
-
-
-@always_inline
-def range[T: Indexer, //](start: T, end: T) -> _SequentialRange:
-    """Returns the integer sequence `[start, end)`.
-
-    **The two-argument form never counts down.** `range(7, 3)` is empty,
-    not `[7, 6, 5, 4]`. Use the three-argument form with a negative step to
-    count downward. The range supports `len()`, O(1) indexing, and
-    `reversed()`.
-
-    Parameters:
-        T: The type of the start and end values. Constrained to `Indexer`.
-
-    Args:
-        start: The inclusive lower bound.
-        end: The exclusive upper bound. When `end <= start`, the range is empty.
-
-    Returns:
-        A sequential integer range over `[start, end)`.
-
-    Performance:
-        O(1) construction. O(1) indexing. No list allocation.
-
-    Examples:
-
-    ```mojo
-    for i in range(3, 7):
-        print(i)  # 3, 4, 5, 6
-
-    for i in range(-3, 4):
-        print(i)  # -3, -2, -1, 0, 1, 2, 3
-
-    print(len(range(7, 3)))  # 0
-    ```
-    """
-    return _SequentialRange(index(start), index(end))
-
-
-@always_inline
-def range[T: Indexer, //](start: T, end: T, step: T) -> _StridedRange:
-    """Returns the integer sequence `[start, end)` with a given step.
-
-    When you don't know which bound is larger, choose the direction with an
-    inline conditional:
-
-    ```mojo
-    var step = 1 if end > start else -1
-    for i in range(start, end, step):
-        ...
-    ```
-
-    Parameters:
-        T: The type of the start, end, and step values. Constrained to
-            `Indexer`.
-
-    Args:
-        start: The inclusive lower bound when stepping forward, or the
-            inclusive upper bound when stepping backward.
-        end: The exclusive bound in the direction of the step.
-        step: The increment per iteration. A positive step counts up, and a
-            negative step counts down. A zero step produces an empty range.
-
-    Returns:
-        A strided integer range over `[start, end)` by `step`.
-
-    Performance:
-        O(1) construction. O(1) indexing. No list allocation.
-
-    Examples:
-
-    ```mojo
-    for i in range(0, 10, 2):
-        print(i)  # 0, 2, 4, 6, 8
-
-    for i in range(7, 3, -1):
-        print(i)  # 7, 6, 5, 4
-
-    var evens = range(0, 2_000_000, 2)
-    print(evens[999_999])  # 1_999_998
-    print(len(evens))      # 1_000_000
-    ```
-    """
-    return _StridedRange(index(start), index(end), index(step))
-
-
-@always_inline
-def range(end: Int) -> _ZeroStartingRange:
-    """Returns the `Int` sequence `[0, end)`.
-
-    Integer ranges are values. They support `len()`, O(1) indexing, and
-    `reversed()` without allocating. `reversed(range(n))` iterates from
-    `n - 1` down to `0`.
-
-    Args:
-        end: The exclusive upper bound. Negative values produce an empty range.
-
-    Returns:
-        A zero-based integer range over `[0, end)`.
-
-    Performance:
-        O(1) construction. O(1) indexing. No list allocation.
-
-    Examples:
-
-    ```mojo
-    for i in range(5):
-        print(i)  # 0, 1, 2, 3, 4
-
-    var steps = range(1000)
-    print(steps[499])  # 499
-    print(len(steps))  # 1000
-
-    for i in reversed(range(5)):
-        print(i)  # 4, 3, 2, 1, 0
-    ```
-    """
-    return _ZeroStartingRange(end)
-
-
-@always_inline
-def range(start: Int, end: Int) -> _SequentialRange:
-    """Returns the `Int` sequence `[start, end)`.
-
-    **The two-argument form never counts down.** `range(7, 3)` is empty,
-    not `[7, 6, 5, 4]`. Use the three-argument form with a negative step to
-    count downward. The range supports `len()`, O(1) indexing, and
-    `reversed()`.
-
-    Args:
-        start: The inclusive lower bound.
-        end: The exclusive upper bound. When `end <= start`, the range is empty.
-
-    Returns:
-        A sequential integer range over `[start, end)`.
-
-    Performance:
-        O(1) construction. O(1) indexing. No list allocation.
-
-    Examples:
-
-    ```mojo
-    for i in range(3, 7):
-        print(i)  # 3, 4, 5, 6
-
-    for i in range(-3, 4):
-        print(i)  # -3, -2, -1, 0, 1, 2, 3
-
-    print(len(range(7, 3)))  # 0
-    ```
-    """
-    return _SequentialRange(start, end)
-
-
-@always_inline
-def range(start: Int, end: Int, step: Int) -> _StridedRange:
-    """Returns the `Int` sequence `[start, end)` with a given step.
-
-    The range supports `len()`, O(1) indexing, and `reversed()`. When you
-    don't know which bound is larger, choose the direction with an inline
-    conditional:
-
-    ```mojo
-    var step = 1 if end > start else -1
-    for i in range(start, end, step):
-        ...
-    ```
-
-    Args:
-        start: The inclusive lower bound when stepping forward, or the
-            inclusive upper bound when stepping backward.
-        end: The exclusive bound in the direction of the step.
-        step: The increment per iteration. A positive step counts up, and a
-            negative step counts down. A zero step produces an empty range.
-
-    Returns:
-        A strided integer range over `[start, end)` by `step`.
-
-    Performance:
-        O(1) construction. O(1) indexing. No list allocation.
-
-    Examples:
-
-    ```mojo
-    for i in range(0, 10, 2):
-        print(i)  # 0, 2, 4, 6, 8
-
-    for i in range(7, 3, -1):
-        print(i)  # 7, 6, 5, 4
-
-    var evens = range(0, 2_000_000, 2)
-    print(evens[999_999])  # 1_999_998
-    print(len(evens))      # 1_000_000
-    ```
-    """
-    return _StridedRange(start, end, step)
-
-
-# ===----------------------------------------------------------------------=== #
-# Range Scalar
-# ===----------------------------------------------------------------------=== #
-
-
-def _scalar_range_bounds[
-    dtype: DType
-](len: Scalar[dtype]) -> Tuple[Int, Optional[Int]]:
-    comptime if size_of[Scalar[dtype]]() >= size_of[Int]():
-        if unlikely(UInt(len) > UInt(Int.MAX)):
-            return (Int.MAX, None)
-
-    return (Int(len), {Int(len)})
-
-
-struct _ZeroStartingScalarRange[dtype: DType](
+struct _ZeroStartingRange[dtype: DType = DType.int](
     ImplicitlyCopyable,
     Iterable,
     Iterator,
     ReversibleRange,
+    Sized,
     TrivialRegisterPassable,
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Scalar[Self.dtype]
-    comptime ReversedType = _StridedScalarRange[Self.dtype]
+    comptime ReversedType = _StridedRange[Self.dtype]
     var curr: Scalar[Self.dtype]
     var end: Scalar[Self.dtype]
 
@@ -526,9 +75,9 @@ struct _ZeroStartingScalarRange[dtype: DType](
     @always_inline
     def __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
         var curr = self.curr
-        self.curr = curr - 1
         if curr == 0:
             raise StopIteration()
+        self.curr = curr - 1
         return self.end - curr
 
     @always_inline
@@ -536,40 +85,42 @@ struct _ZeroStartingScalarRange[dtype: DType](
         return self.__len__() > 0
 
     @always_inline
-    def __len__(self) -> Scalar[Self.dtype]:
-        return self.curr
+    def __len__(self) -> Int:
+        return _len_as_int(self.curr)
 
     @always_inline
-    def __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
-        assert idx < self.__len__(), "index out of range"
-        return idx
+    def __getitem__[I: Indexer](self, idx: I) -> Scalar[Self.dtype]:
+        var i = index(idx)
+        assert i < self.__len__(), "index out of range"
+        return Scalar[Self.dtype](i)
 
     @always_inline
-    def __reversed__(self) -> _StridedScalarRange[Self.dtype]:
+    def __reversed__(self) -> Self.ReversedType:
         comptime assert (
             not Self.dtype.is_unsigned()
         ), "cannot reverse an unsigned range"
-        return range(
+        return _StridedRange[Self.dtype](
             self.end - 1, Scalar[Self.dtype](-1), Scalar[Self.dtype](-1)
         )
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _scalar_range_bounds(self.__len__())
+        return _scalar_range_bounds(self.curr)
 
 
-struct _SequentialScalarRange[dtype: DType](
+struct _SequentialRange[dtype: DType = DType.int](
     ImplicitlyCopyable,
     Iterable,
     Iterator,
     ReversibleRange,
+    Sized,
     TrivialRegisterPassable,
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Scalar[Self.dtype]
-    comptime ReversedType = _StridedScalarRange[Self.dtype]
+    comptime ReversedType = _StridedRange[Self.dtype]
     var start: Scalar[Self.dtype]
     var end: Scalar[Self.dtype]
 
@@ -591,24 +142,27 @@ struct _SequentialScalarRange[dtype: DType](
         return start
 
     @always_inline
-    def __len__(self) -> Scalar[Self.dtype]:
-        return self.end - self.start
+    def __len__(self) -> Int:
+        return _len_as_int(self.end - self.start)
 
     @always_inline
-    def __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
-        assert idx < self.__len__(), "index out of range"
-        return self.start + idx
+    def __getitem__[I: Indexer](self, idx: I) -> Scalar[Self.dtype]:
+        var i = index(idx)
+        assert i < self.__len__(), "index out of range"
+        return self.start + Scalar[Self.dtype](i)
 
     @always_inline
-    def __reversed__(self) -> _StridedScalarRange[Self.dtype]:
+    def __reversed__(self) -> Self.ReversedType:
         comptime assert (
             not Self.dtype.is_unsigned()
         ), "cannot reverse an unsigned range"
-        return range(self.end - 1, self.start - 1, Scalar[Self.dtype](-1))
+        return _StridedRange[Self.dtype](
+            self.end - 1, self.start - 1, Scalar[Self.dtype](-1)
+        )
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _scalar_range_bounds(self.__len__())
+        return _scalar_range_bounds(self.end - self.start)
 
 
 @always_inline
@@ -628,7 +182,7 @@ def _fp_range_count[
 # Floating-point ranges iterate by index (`fma(k, step, start)`), avoiding
 # drift. Reverse iteration mirrors forward. One extra `Int` cursor carries
 # both position and direction; integer ranges ignore it.
-struct _StridedScalarRange[dtype: DType](
+struct _StridedRange[dtype: DType = DType.int](
     ImplicitlyCopyable,
     Iterable,
     Iterator,
@@ -700,29 +254,27 @@ struct _StridedScalarRange[dtype: DType](
 
     @always_inline
     def __len__(self) -> Int:
-        comptime assert Self.dtype.is_integral(), "dtype must be integral"
-
         comptime if Self.dtype.is_unsigned():
-            return Int(
+            # `bounds()` clamps an unsigned count > `Int.MAX` for the size
+            # hint; `len()` must not hide that, so assert the exact count fits.
+            return _len_as_int(
                 select(
                     self.start < self.end,
                     ceildiv(self.end - self.start, self.step),
                     0,
                 )
             )
-        else:  # is_signed
-            return _StridedRange(
-                Int(self.start), Int(self.end), Int(self.step)
-            ).__len__()
+        else:
+            # Signed integer: the exact count fits in `Int`. (A float `dtype`
+            # makes `bounds()` a compile-time error, as intended.)
+            var lower, _ = self.bounds()
+            return lower
 
     @always_inline
-    def bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _scalar_range_bounds(self.__len__())
-
-    @always_inline
-    def __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
-        assert Int(idx) < self.__len__(), "index out of range"
-        return self.start + idx * self.step
+    def __getitem__[I: Indexer](self, idx: I) -> Scalar[Self.dtype]:
+        var i = index(idx)
+        assert i < self.__len__(), "index out of range"
+        return self.start + Scalar[Self.dtype](i) * self.step
 
     @always_inline
     def __reversed__(self) -> Self.ReversedType:
@@ -737,20 +289,206 @@ struct _StridedScalarRange[dtype: DType](
             # count - 1.
             return Self(self.start, self.end, self.step, -1)
 
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        comptime assert Self.dtype.is_integral(), "dtype must be integral"
+
+        comptime if Self.dtype.is_unsigned():
+            # An unsigned range's element count can exceed `Int.MAX`;
+            # `_scalar_range_bounds` clamps the lower bound and reports an
+            # unknown (`None`) upper bound in that case.
+            return _scalar_range_bounds(
+                select(
+                    self.start < self.end,
+                    ceildiv(self.end - self.start, self.step),
+                    0,
+                )
+            )
+        else:  # is_signed
+            # Compute the length using `Int` so small signed dtypes whose
+            # element count exceeds the dtype's range don't overflow.
+            #
+            # If the step is positive we want to check that the start is
+            # smaller than the end, if the step is negative we want to check
+            # the reverse. We break this into selects to avoid branches.
+            var start = Int(self.start)
+            var end = Int(self.end)
+            var step = Int(self.step)
+            var c1 = (step > 0) & (start > end)
+            var c2 = (step < 0) & (start < end)
+            var cnd = c1 | c2
+            var numerator = abs(start - end)
+            var denominator = abs(step)
+            var length = ceildiv(
+                select(cnd, 0, numerator), select(cnd, 1, denominator)
+            )
+            return (length, {length})
+
+
+@always_inline
+def range[T: Indexer, //](end: T) -> _ZeroStartingRange[DType.int]:
+    """Returns the integer sequence `[0, end)`.
+
+    Integer ranges are values. They support `len()`, O(1) indexing, and
+    `reversed()` without allocating. `reversed(range(n))` iterates from
+    `n - 1` down to `0`.
+
+    Parameters:
+        T: The type of the end value. Constrained to `Indexer`.
+
+    Args:
+        end: The exclusive upper bound. Negative values produce an empty range.
+
+    Returns:
+        A zero-based integer range over `[0, end)`.
+
+    Performance:
+        O(1) construction. O(1) indexing. No list allocation.
+
+    Examples:
+
+    ```mojo
+    for i in range(5):
+        print(i)  # 0, 1, 2, 3, 4
+
+    var steps = range(1000)
+    print(steps[499])  # 499
+    print(len(steps))  # 1000
+
+    for i in reversed(range(5)):
+        print(i)  # 4, 3, 2, 1, 0
+    ```
+    """
+    return _ZeroStartingRange(index(end))
+
+
+@always_inline
+def range[T: Indexer, //](start: T, end: T) -> _SequentialRange[DType.int]:
+    """Returns the integer sequence `[start, end)`.
+
+    **The two-argument form never counts down.** `range(7, 3)` is empty,
+    not `[7, 6, 5, 4]`. Use the three-argument form with a negative step to
+    count downward. The range supports `len()`, O(1) indexing, and
+    `reversed()`.
+
+    Parameters:
+        T: The type of the start and end values. Constrained to `Indexer`.
+
+    Args:
+        start: The inclusive lower bound.
+        end: The exclusive upper bound. When `end <= start`, the range is empty.
+
+    Returns:
+        A sequential integer range over `[start, end)`.
+
+    Performance:
+        O(1) construction. O(1) indexing. No list allocation.
+
+    Examples:
+
+    ```mojo
+    for i in range(3, 7):
+        print(i)  # 3, 4, 5, 6
+
+    for i in range(-3, 4):
+        print(i)  # -3, -2, -1, 0, 1, 2, 3
+
+    print(len(range(7, 3)))  # 0
+    ```
+    """
+    return _SequentialRange(index(start), index(end))
+
 
 @always_inline
 def range[
-    dtype: DType, //
-](end: Scalar[dtype]) -> _ZeroStartingScalarRange[dtype]:
+    T: Indexer, //
+](start: T, end: T, step: T) -> _StridedRange[DType.int]:
+    """Returns the integer sequence `[start, end)` with a given step.
+
+    When you don't know which bound is larger, choose the direction with an
+    inline conditional:
+
+    ```mojo
+    var step = 1 if end > start else -1
+    for i in range(start, end, step):
+        ...
+    ```
+
+    Parameters:
+        T: The type of the start, end, and step values. Constrained to
+            `Indexer`.
+
+    Args:
+        start: The inclusive lower bound when stepping forward, or the
+            inclusive upper bound when stepping backward.
+        end: The exclusive bound in the direction of the step.
+        step: The increment per iteration. A positive step counts up, and a
+            negative step counts down. A zero step produces an empty range.
+
+    Returns:
+        A strided integer range over `[start, end)` by `step`.
+
+    Performance:
+        O(1) construction. O(1) indexing. No list allocation.
+
+    Examples:
+
+    ```mojo
+    for i in range(0, 10, 2):
+        print(i)  # 0, 2, 4, 6, 8
+
+    for i in range(7, 3, -1):
+        print(i)  # 7, 6, 5, 4
+
+    var evens = range(0, 2_000_000, 2)
+    print(evens[999_999])  # 1_999_998
+    print(len(evens))      # 1_000_000
+    ```
+    """
+    return _StridedRange(index(start), index(end), index(step))
+
+
+# ===----------------------------------------------------------------------=== #
+# Range Scalar
+# ===----------------------------------------------------------------------=== #
+
+
+def _len_as_int[dtype: DType](n: Scalar[dtype]) -> Int:
+    """Converts a non-negative range length to `Int`.
+
+    `len()` returns `Int`, but an unsigned range's element count can exceed
+    `Int.MAX`. Silently clamping there would hide the true length and let
+    indexed access read the wrong element, so asking for `len()` in that case
+    is a bug: assert instead. Use `bounds()`, whose upper bound is `None`, for
+    the size hint of such a range.
+    """
+    comptime if size_of[Scalar[dtype]]() >= size_of[Int]():
+        assert UInt(n) <= UInt(Int.MAX), "range length exceeds Int.MAX"
+
+    return Int(n)
+
+
+def _scalar_range_bounds[
+    dtype: DType
+](len: Scalar[dtype]) -> Tuple[Int, Optional[Int]]:
+    comptime if size_of[Scalar[dtype]]() >= size_of[Int]():
+        if unlikely(UInt(len) > UInt(Int.MAX)):
+            return (Int.MAX, None)
+
+    return (Int(len), {Int(len)})
+
+
+@always_inline
+def range[dtype: DType, //](end: Scalar[dtype]) -> _ZeroStartingRange[dtype]:
     """Returns the scalar sequence `[0, end)` with elements of type `dtype`.
 
     Use this overload when you need typed scalar elements.
 
     The `dtype` is inferred from the argument, so `Int32(8)` produces
     `Int32` elements. This form requires an integer `dtype`; floating-point
-    ranges require an explicit step. Signed-integer ranges can be reversed;
-    reversing an unsigned range is a compile-time error. Only the
-    three-argument form supports `len()`.
+    ranges require an explicit step. These integer ranges support `len()`
+    and O(1) indexing. Signed-integer ranges can be reversed; reversing an
+    unsigned range is a compile-time error.
 
     Parameters:
         dtype: The `DType` of the sequence elements. Inferred from `end`.
@@ -776,21 +514,21 @@ def range[
         "a floating-point range requires an explicit step; use range(start,"
         " end, step)"
     )
-    return _ZeroStartingScalarRange(end)
+    return _ZeroStartingRange[dtype](end)
 
 
 @always_inline
 def range[
     dtype: DType, //
-](start: Scalar[dtype], end: Scalar[dtype]) -> _SequentialScalarRange[dtype]:
+](start: Scalar[dtype], end: Scalar[dtype]) -> _SequentialRange[dtype]:
     """Returns the scalar sequence `[start, end)` with elements of type `dtype`.
 
-        **The two-argument form never counts down.** The range is empty
-        when `end <= start`. Use the three-argument form with a negative
-        step to count downward. This form requires an integer `dtype`.
-        Floating-point ranges require an explicit step. Signed-integer
-        ranges can be reversed; reversing an unsigned range is a compile-time
-        error. Only the three-argument form supports `len()`.
+    **The two-argument form never counts down.** The range is empty
+    when `end <= start`. Use the three-argument form with a negative
+    step to count downward. This form requires an integer `dtype`;
+    floating-point ranges require an explicit step. These integer ranges
+    support `len()` and O(1) indexing. Signed-integer ranges can be
+    reversed; reversing an unsigned range is a compile-time error.
 
     Parameters:
         dtype: The `DType` of the sequence elements. Inferred from the arguments.
@@ -817,7 +555,7 @@ def range[
         "a floating-point range requires an explicit step; use range(start,"
         " end, step)"
     )
-    return _SequentialScalarRange(start, end)
+    return _SequentialRange[dtype](start, end)
 
 
 @always_inline
@@ -825,7 +563,7 @@ def range[
     dtype: DType, //
 ](
     start: Scalar[dtype], end: Scalar[dtype], step: Scalar[dtype]
-) -> _StridedScalarRange[dtype]:
+) -> _StridedRange[dtype]:
     """Returns the scalar sequence `[start, end)` with a given step.
 
     Integer scalar ranges support `len()`, O(1) indexing, and `reversed()`,
@@ -883,4 +621,4 @@ def range[
     ```
     """
     comptime assert dtype.is_numeric(), "range requires a numeric dtype"
-    return _StridedScalarRange(start, end, step)
+    return _StridedRange[dtype](start, end, step)
