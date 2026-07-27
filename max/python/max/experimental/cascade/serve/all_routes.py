@@ -14,14 +14,21 @@
 
 from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
+from max.experimental.cascade.core import Runtime
 from max.experimental.cascade.interfaces.imgen import ImageGenInterface
 from max.experimental.cascade.interfaces.pipeline import CascadePipeline
 from max.experimental.cascade.interfaces.textgen import TextGenInterface
 from max.experimental.cascade.serve import chat_completions, open_responses
 
 
-def build_router(pipeline: CascadePipeline) -> APIRouter:
-    """Auto-configure routes based on the pipeline interfaces."""
+async def build_router(
+    pipeline: CascadePipeline, runtime: Runtime
+) -> APIRouter:
+    """Auto-configure routes based on the pipeline interfaces.
+
+    ``runtime`` is the one ``pipeline`` was deployed on; routes that need
+    serving-side workers of their own deploy them there.
+    """
     router = APIRouter()
 
     # The router is only built (and served) after the pipeline's workers are
@@ -33,7 +40,9 @@ def build_router(pipeline: CascadePipeline) -> APIRouter:
         return "OK"
 
     if isinstance(pipeline, TextGenInterface):
-        router.include_router(chat_completions.build_router(pipeline))
+        router.include_router(
+            await chat_completions.build_router(pipeline, runtime)
+        )
 
     if isinstance(pipeline, ImageGenInterface):
         router.include_router(open_responses.build_router(pipeline))

@@ -20,9 +20,8 @@ worker directly.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterable
 
-from max.experimental.cascade.core import pipeline_method
 from max.experimental.cascade.interfaces.pipeline import CascadePipeline
 from max.experimental.cascade.interfaces.textgen import (
     ChatMessages,
@@ -48,22 +47,20 @@ class CommonTextGenPipeline(CascadePipeline, TextGenInterface):
         self.tokenizer = MAXTokenizer(config.model.model_path)
         self.model = MAXModelWorker(config)
 
-    @pipeline_method
-    async def generate_text(
+    async def open_text_stream(
         self,
         req: GenerateRequest,
         prompt: str | ChatMessages,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterable[str]:
         """Tokenize, decode, and detokenize a text or chat prompt end to end.
 
         The orchestrator only *wires stages together*: it hands the model
         worker's token stream straight to the tokenizer worker's
-        ``decode_stream`` and forwards the resulting text stream. The token
+        ``decode_stream`` and returns the resulting text handle. The token
         stream flows worker-to-worker (the ``ResultIter`` carries a runtime
         handle to the model worker), so the orchestrator never sits in the
         middle of every token doing per-chunk detokenization RPCs.
         """
         tokens = await self.tokenizer.encode(prompt)
         gen_tokens = await self.model.decode(req, tokens)
-        async for text in await self.tokenizer.decode_stream(gen_tokens):
-            yield text
+        return await self.tokenizer.decode_stream(gen_tokens)

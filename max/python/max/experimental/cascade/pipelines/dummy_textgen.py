@@ -19,7 +19,6 @@ import numpy as np
 import numpy.typing as npt
 from max.experimental.cascade.core import (
     Worker,
-    pipeline_method,
     worker_method,
 )
 from max.experimental.cascade.interfaces.pipeline import CascadePipeline
@@ -84,17 +83,15 @@ class DummyTextGenPipeline(CascadePipeline, TextGenInterface):
     tokenizer: AsciiTokenizer
     transformer: Transformer
 
-    @pipeline_method
-    async def generate_text(
+    async def open_text_stream(
         self,
         req: GenerateRequest,
         prompt: str | ChatMessages,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterable[str]:
         """Run text generation from text or OpenAI-style chat messages."""
         tokens = await self.tokenizer.encode(prompt)
         gen_tokens = await self.transformer.decode(req, tokens)
-        async for token in await self.tokenizer.decode_streaming(gen_tokens):
-            yield token
+        return await self.tokenizer.decode_streaming(gen_tokens)
 
 
 async def build_dummy_textgen_pipeline() -> DummyTextGenPipeline:

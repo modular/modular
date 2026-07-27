@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator
 
 import pytest
 from fastapi import FastAPI
@@ -43,7 +43,7 @@ async def client(runtime: LocalRuntime) -> AsyncIterator[AsyncClient]:
     await pipeline.deploy(runtime)
 
     app = FastAPI()
-    app.include_router(build_router(pipeline))
+    app.include_router(await build_router(pipeline, runtime))
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -159,12 +159,16 @@ class _SpyPipeline(TextGenInterface):
     def __init__(self) -> None:
         self.last_request: GenerateRequest | None = None
 
-    async def generate_text(
+    async def open_text_stream(
         self, req: GenerateRequest, prompt: str | ChatMessages
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterable[str]:
         self.last_request = req
-        for _ in range(req.num_tokens):
-            yield "A"
+
+        async def _stream() -> AsyncIterator[str]:
+            for _ in range(req.num_tokens):
+                yield "A"
+
+        return _stream()
 
 
 @pytest.fixture()
@@ -173,9 +177,11 @@ async def spy() -> _SpyPipeline:
 
 
 @pytest.fixture()
-async def spy_client(spy: _SpyPipeline) -> AsyncIterator[AsyncClient]:
+async def spy_client(
+    runtime: LocalRuntime, spy: _SpyPipeline
+) -> AsyncIterator[AsyncClient]:
     app = FastAPI()
-    app.include_router(build_router(spy))
+    app.include_router(await build_router(spy, runtime))
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",

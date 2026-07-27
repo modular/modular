@@ -23,11 +23,11 @@ out, so a benchmark against it measures cascade framework overhead in isolation
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator
 
 import numpy as np
 import numpy.typing as npt
-from max.experimental.cascade.core import Worker, pipeline_method, worker_method
+from max.experimental.cascade.core import Worker, worker_method
 from max.experimental.cascade.interfaces.pipeline import CascadePipeline
 from max.experimental.cascade.interfaces.textgen import (
     ChatMessages,
@@ -83,12 +83,11 @@ class EchoTextGenPipeline(CascadePipeline, TextGenInterface):
         self.tokenizer = MAXTokenizer(model_path)
         self.transformer = EchoTransformer()
 
-    @pipeline_method
-    async def generate_text(
+    async def open_text_stream(
         self,
         req: GenerateRequest,
         prompt: str | ChatMessages,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterable[str]:
         """Tokenize, echo, and detokenize a text or chat prompt end to end.
 
         Identical wiring to
@@ -98,5 +97,4 @@ class EchoTextGenPipeline(CascadePipeline, TextGenInterface):
         """
         tokens = await self.tokenizer.encode(prompt)
         gen_tokens = await self.transformer.decode(req, tokens)
-        async for text in await self.tokenizer.decode_stream(gen_tokens):
-            yield text
+        return await self.tokenizer.decode_stream(gen_tokens)
