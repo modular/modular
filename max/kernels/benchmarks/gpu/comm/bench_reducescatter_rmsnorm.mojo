@@ -48,6 +48,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from max.benchmark import bench_multicontext
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.reducescatter import reducescatter, ReduceScatterConfig
 from comm.reducescatter_rmsnorm import reducescatter_rmsnorm, _dispatch_rs_norm
@@ -707,7 +708,8 @@ def bench_reducescatter_rmsnorm[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_rs_iter](
+    bench_multicontext[bench_rs_iter](
+        b,
         list_of_ctx,
         BenchId("reducescatter_only", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -737,7 +739,8 @@ def bench_reducescatter_rmsnorm[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_norm_cold_iter](
+    bench_multicontext[bench_norm_cold_iter](
+        b,
         list_of_ctx,
         BenchId("rms_norm_shard_cold", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -777,7 +780,8 @@ def bench_reducescatter_rmsnorm[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_chained_iter](
+    bench_multicontext[bench_chained_iter](
+        b,
         list_of_ctx,
         BenchId(
             "reducescatter_then_rms_norm_chained", input_id=bench_name_prefix
@@ -814,7 +818,8 @@ def bench_reducescatter_rmsnorm[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_fused_iter](
+    bench_multicontext[bench_fused_iter](
+        b,
         list_of_ctx,
         BenchId("reducescatter_rmsnorm_fused", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -872,7 +877,8 @@ def bench_reducescatter_rmsnorm[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_dispatch_iter](
+    bench_multicontext[bench_dispatch_iter](
+        b,
         list_of_ctx,
         BenchId("reducescatter_rmsnorm_dispatch", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],

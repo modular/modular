@@ -58,6 +58,7 @@ from internal_utils import CacheBustingBuffer, arg_parse
 
 from layout import Coord, TileTensor, row_major
 from nn.normalization import rms_norm_gpu
+from max.benchmark import bench_multicontext
 
 from std.math import rsqrt
 from std.utils.index import Index
@@ -497,7 +498,8 @@ def bench_allgather_rmsnorm[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_ag_iter](
+    bench_multicontext[bench_ag_iter](
+        b,
         list_of_ctx,
         BenchId("allgather_only", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -525,7 +527,8 @@ def bench_allgather_rmsnorm[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_norm_cold_iter](
+    bench_multicontext[bench_norm_cold_iter](
+        b,
         list_of_ctx,
         BenchId("rms_norm_full_cold", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -556,7 +559,8 @@ def bench_allgather_rmsnorm[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_chained_iter](
+    bench_multicontext[bench_chained_iter](
+        b,
         list_of_ctx,
         BenchId("allgather_then_rms_norm_chained", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -585,7 +589,8 @@ def bench_allgather_rmsnorm[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_fused_iter](
+    bench_multicontext[bench_fused_iter](
+        b,
         list_of_ctx,
         BenchId("allgather_rmsnorm_fused", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -643,7 +648,8 @@ def bench_allgather_rmsnorm[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_dispatch_iter](
+    bench_multicontext[bench_dispatch_iter](
+        b,
         list_of_ctx,
         BenchId("allgather_rmsnorm_dispatch", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],

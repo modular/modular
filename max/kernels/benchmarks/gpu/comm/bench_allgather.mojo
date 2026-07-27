@@ -27,6 +27,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from max.benchmark import bench_multicontext
 from layout import Idx, TileTensor, row_major
 from comm.sync import enable_p2p
 from comm.allgather import allgather
@@ -249,7 +250,8 @@ def bench_allgather[
 
         bencher.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_iter](
+    bench_multicontext[bench_iter](
+        b,
         list_of_ctx,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],

@@ -1301,6 +1301,12 @@ This version is still a work in progress.
     can attribute launch errors to their callers, and the closure overload now
     accepts (and honors) a `func_attribute` argument.
 
+- Some standard library APIs related to accelerator programming have moved to
+  a new `max` Mojo package, including:
+
+  - `std.benchmark.Bench.bench_multicontext` ->
+    `max.benchmark.bench_multicontext`
+
 - `AddressSpace` is now target-extensible rather than a fixed, portable enum.
   The built-in GPU spaces (`GENERIC`, `GLOBAL`, `SHARED`, `CONSTANT`, `LOCAL`,
   `SHARED_CLUSTER`, `BUFFER_RESOURCE`) are unchanged, but accessing any other
