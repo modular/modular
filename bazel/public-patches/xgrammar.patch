@@ -185,6 +185,113 @@ index 5cf140d..5d7ef98 100644
    );
  }
  
+diff --git a/cpp/grammar_functor.cc b/cpp/grammar_functor.cc
+index 4424aca..fef3efe 100644
+--- a/cpp/grammar_functor.cc
++++ b/cpp/grammar_functor.cc
+@@ -7,6 +7,7 @@
+ 
+ #include <xgrammar/xgrammar.h>
+ 
++#include <algorithm>
+ #include <bitset>
+ #include <cstdint>
+ #include <map>
+@@ -1114,6 +1115,9 @@ class GrammarFSMBuilderImpl {
+   static std::optional<FSMWithStartEnd> Choices(const GrammarExpr& expr, const Grammar& grammar);
+   static std::optional<FSMWithStartEnd> TagDispatch(const Grammar::Impl::TagDispatch& tag_dispatch);
+   static void AddCharacterRange(FSMWithStartEnd& fsm, int from, int to, uint32_t min, uint32_t max);
++  // Same as AddCharacterRange but takes a Unicode codepoint range, converting
++  // the endpoints to the packed UTF-8 form AddCharacterRange expects.
++  static void AddCodepointRange(FSMWithStartEnd& fsm, int from, int to, uint32_t lo, uint32_t hi);
+   /* Building tool functions.*/
+   static std::optional<FSMWithStartEnd> BuildTagDispatch(
+       const std::vector<std::pair<std::string, int>>& string_trigger_rules,
+@@ -1336,22 +1340,33 @@ void GrammarFSMBuilderImpl::AddCharacterRange(
+   return;
+ }
+ 
++void GrammarFSMBuilderImpl::AddCodepointRange(
++    FSMWithStartEnd& fsm, int from, int to, uint32_t lo, uint32_t hi
++) {
++  AddCharacterRange(fsm, from, to, CodepointToPackedUTF8(lo), CodepointToPackedUTF8(hi));
++}
++
+ FSMWithStartEnd GrammarFSMBuilderImpl::BuildNegativeCharacterClass(const GrammarExpr& expr) {
+   XGRAMMAR_DCHECK(
+       expr.type == ExprType::kCharacterClass || expr.type == ExprType::kCharacterClassStar
+   );
+   XGRAMMAR_DCHECK(expr[0]);  // Negative character class should be true.
+   std::bitset<128> char_set;
++  // Excluded codepoints >= 0x80 are multi-byte in UTF-8; the ASCII bitset only
++  // tracks single-byte exclusions. Multi-byte exclusions are carved out of the
++  // accepted multi-byte range separately below.
++  std::vector<std::pair<uint32_t, uint32_t>> excluded_multibyte;
+   for (int i = 1; i < static_cast<int>(expr.size()); i += 2) {
+-    uint8_t byte_min = static_cast<uint8_t>(expr[i]);
+-    uint8_t byte_max = static_cast<uint8_t>(expr[i + 1]);
+-    if (byte_max > 128) {
+-      XGRAMMAR_LOG(WARNING) << "Negative Character class contains byte greater than 127, "
+-                            << "clamping to 127.";
+-      byte_max = 127;
++    uint32_t cp_min = static_cast<uint32_t>(expr[i]);
++    uint32_t cp_max = static_cast<uint32_t>(expr[i + 1]);
++    if (cp_min <= 0x7F) {
++      for (uint32_t j = cp_min; j <= std::min<uint32_t>(cp_max, 0x7F); ++j) {
++        char_set.set(j);
++      }
+     }
+-    for (uint8_t j = byte_min; j <= byte_max; ++j) {
+-      char_set.set(j);
++    if (cp_max > 0x7F) {
++      excluded_multibyte.emplace_back(std::max<uint32_t>(cp_min, 0x80), cp_max);
+     }
+   }
+ 
+@@ -1384,7 +1399,26 @@ FSMWithStartEnd GrammarFSMBuilderImpl::BuildNegativeCharacterClass(const Grammar
+       i = right_bound;
+     }
+   }
+-  AddCharacterRange(result_fsm, start_state, end_state, kMin2BytesUnicode, kMax4BytesUnicode);
++  if (excluded_multibyte.empty()) {
++    AddCharacterRange(result_fsm, start_state, end_state, kMin2BytesUnicode, kMax4BytesUnicode);
++  } else {
++    // Accept every multi-byte codepoint in [0x80, 0x10FFFF] that is not
++    // excluded, by adding the complement of the excluded ranges.
++    std::sort(excluded_multibyte.begin(), excluded_multibyte.end());
++    uint32_t next = 0x80;
++    for (const auto& [lo, hi] : excluded_multibyte) {
++      if (lo > next) {
++        AddCodepointRange(result_fsm, start_state, end_state, next, lo - 1);
++      }
++      if (hi + 1 > next) {
++        next = hi + 1;
++      }
++    }
++    if (next <= 0x10FFFF) {
++      AddCodepointRange(result_fsm, start_state, end_state, next, 0x10FFFF);
++    }
++  }
+   return result_fsm;
+ }
+ 
+@@ -1406,12 +1440,10 @@ FSMWithStartEnd GrammarFSMBuilderImpl::CharacterClass(const GrammarExpr& expr) {
+   }
+   result_fsm.AddEndState(end_state);
+   for (int i = 1; i < static_cast<int>(expr.size()); i += 2) {
+-    uint32_t codepoint_min = static_cast<uint32_t>(expr[i]);
+-    uint32_t codepoint_max = static_cast<uint32_t>(expr[i + 1]);
+-    // Convert Unicode codepoints to packed UTF-8 format for AddCharacterRange
+-    uint32_t packed_min = CodepointToPackedUTF8(codepoint_min);
+-    uint32_t packed_max = CodepointToPackedUTF8(codepoint_max);
+-    AddCharacterRange(result_fsm, start_state, end_state, packed_min, packed_max);
++    AddCodepointRange(
++        result_fsm, start_state, end_state, static_cast<uint32_t>(expr[i]),
++        static_cast<uint32_t>(expr[i + 1])
++    );
+   }
+   return result_fsm;
+ }
 diff --git a/cpp/grammar_matcher.cc b/cpp/grammar_matcher.cc
 index d68479f..360396f 100644
 --- a/cpp/grammar_matcher.cc
