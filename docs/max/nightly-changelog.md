@@ -645,6 +645,14 @@ This version is still a work in progress.
   deprecated the `max.entrypoints.LLM` API and we'll introduce a new API
   for offline inference in a future release.
 
+- Added `max.graph.ops.allgather_rms_norm`, which fuses an all-gather across
+  devices with the RMSNorm that follows it into a single kernel launch,
+  avoiding the extra HBM round-trip of a standalone norm. It returns both the
+  normed tensor and the raw gathered tensor (the residual stream), which is
+  bit-identical to a plain `allgather`. The op dispatches to the fused kernel
+  or falls back to a standalone all-gather plus `rms_norm` depending on shape,
+  and is not enabled by default in any shipping pipeline.
+
 ### C API
 
 - Fixed `M_borrowTensorInto()` copying instead of borrowing a GPU input. When
