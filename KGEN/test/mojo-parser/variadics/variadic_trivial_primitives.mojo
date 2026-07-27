@@ -11,7 +11,7 @@
 comptime T = Tuple[*TypeList.splat[Trait=Movable, 10, Int]()]
 
 
-comptime VA_SIZE[*Ts: AnyType] = Ts.size
+comptime VA_SIZE[*Ts: AnyType] = Ts.length
 # CHECK: lit.alias.decl *"Folded`{{.*}}": !alias_Int1 = <sugar_member_alias{{.*}}rebind(:!Int {:scalar<index> 3})))>
 comptime Folded = VA_SIZE[Int, Int, Int]
 
