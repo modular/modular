@@ -217,7 +217,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
     Returns `False` for any type that is not `ImplicitlyDeletable` (for example
     `@explicit_destroy` types) or that has a non-trivial destructor.
     """
-    comptime for i in range(Ts.size):
+    comptime for i in range(Ts.length):
         if not is_trivially_deletable[Ts[i]]():
             return False
     return True

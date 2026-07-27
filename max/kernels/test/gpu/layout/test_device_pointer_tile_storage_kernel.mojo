@@ -43,7 +43,7 @@ through that storage. Together those two accesses close the loop on the
   isolation. The two together prove the `layout` field decoded at the right
   device offset and the encoded pointer is the real device address. (We store
   at linear indices via `raw_store` rather than via `tile[r, c]`: the variadic
-  indexer's `IndexTypes.size == flat_rank` constraint can't be proven while
+  indexer's `IndexTypes.length == flat_rank` constraint can't be proven while
   `LayoutType` is an abstract kernel parameter.)
 
 What makes it work — per-field device encoding:

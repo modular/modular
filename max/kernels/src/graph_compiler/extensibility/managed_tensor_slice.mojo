@@ -1141,10 +1141,10 @@ def _index_list_to_static_coord[
     Returns:
         A `Coord` with the given element types.
     """
-    comptime assert values.size == element_types.size, "rank mismatch"
+    comptime assert values.size == element_types.length, "rank mismatch"
     var result = Coord[*element_types]()
 
-    comptime for i in range(element_types.size):
+    comptime for i in range(element_types.length):
         comptime if not result.element_types[i].is_static_value:
             result[i] = rebind[result.element_types[i]](
                 Scalar[result.element_types[i].DTYPE](values[i])

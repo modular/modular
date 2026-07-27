@@ -43,7 +43,7 @@ comptime _InvalidTypeIndex: Int = -1
 
 @always_inline
 def _get_type_index[T: AnyType, *Ts: AnyType]() -> Int:
-    comptime for i in range(Ts.size):
+    comptime for i in range(Ts.length):
         comptime if Ts[i] == T:
             return i
     return _InvalidTypeIndex
@@ -309,7 +309,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         self = Self(unsafe_uninitialized=())
         self.get_discriminant() = copy.get_discriminant()
 
-        comptime for i in range(Self.Ts.size):
+        comptime for i in range(Self.Ts.length):
             comptime T = Self.Ts[i]
             comptime assert conforms_to(T, Copyable)
 
@@ -322,7 +322,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         self = Self(unsafe_uninitialized=())
         self.get_discriminant() = move.get_discriminant()
 
-        comptime for i in range(Self.Ts.size):
+        comptime for i in range(Self.Ts.length):
             comptime T = Self.Ts[i]
             comptime assert conforms_to(T, Movable)
 
@@ -334,7 +334,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
 
     @always_inline
     def __del__(deinit self):
-        comptime for i in range(Self.Ts.size):
+        comptime for i in range(Self.Ts.length):
             comptime T = Self.Ts[i]
             comptime assert conforms_to(T, ImplicitlyDeletable)
 
@@ -381,7 +381,7 @@ comptime _IsNicheablePair[T: AnyType, U: AnyType]: Bool = conforms_to(
 """True if `T` is `UnsafeNicheable` and `U` is an empty type. Called twice with
 swapped args by `_IsNicheEligible` to handle either ordering."""
 
-comptime _IsNicheEligible[*Ts: AnyType]: Bool = (Ts.size == 2) and (
+comptime _IsNicheEligible[*Ts: AnyType]: Bool = (Ts.length == 2) and (
     _IsNicheablePair[Ts[0], Ts[1]] or _IsNicheablePair[Ts[1], Ts[0]]
 )
 """True if `Ts` qualifies for niche-optimized storage: exactly two types
@@ -665,7 +665,7 @@ struct Variant[*Ts: AnyType](
         Returns:
             True if the variants hold the same type and equal values.
         """
-        comptime for i in range(Self.Ts.size):
+        comptime for i in range(Self.Ts.length):
             comptime T = Self.Ts[i]
             comptime assert conforms_to(T, Equatable)
             if self.isa[T]():
@@ -700,7 +700,7 @@ struct Variant[*Ts: AnyType](
         Args:
             hasher: The hasher instance.
         """
-        comptime for i in range(Self.Ts.size):
+        comptime for i in range(Self.Ts.length):
             comptime T = Self.Ts[i]
             comptime assert conforms_to(T, Hashable)
             if self.isa[T]():
@@ -715,7 +715,7 @@ struct Variant[*Ts: AnyType](
     def _write_value_to[
         *, is_repr: Bool
     ](self, mut writer: Some[Writer]) where Self.Ts.all_conforms_to[Writable]():
-        comptime for i in range(Self.Ts.size):
+        comptime for i in range(Self.Ts.length):
             comptime T = Self.Ts[i]
             comptime assert conforms_to(T, Writable)
             if self.isa[T]():
@@ -1028,14 +1028,14 @@ struct Variant[*Ts: AnyType](
 
 
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Ts.size):
+    comptime for i in range(Ts.length):
         if not is_trivially_deletable[Ts[i]]():
             return False
     return True
 
 
 def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Ts.size):
+    comptime for i in range(Ts.length):
         comptime if conforms_to(Ts[i], Copyable):
             if not is_trivially_copyable[Ts[i]]():
                 return False
@@ -1046,7 +1046,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
 
 def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Ts.size):
+    comptime for i in range(Ts.length):
         comptime if conforms_to(Ts[i], Movable):
             if not is_trivially_movable[Ts[i]]():
                 return False

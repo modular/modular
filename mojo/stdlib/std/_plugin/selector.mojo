@@ -16,7 +16,7 @@ from std.sys.info import _current_target
 from ._overlay import PLUGINS
 
 
-# Number of plugins, as a raw kgen `index`. Avoids `TypeList.size`'s `Int`
+# Number of plugins, as a raw kgen `index`. Avoids `TypeList.length`'s `Int`
 # wrapper so the selector never touches `Int`/`SIMDLength` comparison machinery.
 comptime _PLUGIN_COUNT = __mlir_attr[
     `#kgen.param_list.size<:`,

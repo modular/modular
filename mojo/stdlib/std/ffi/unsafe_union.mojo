@@ -46,8 +46,8 @@ def _all_types_unique[*Ts: AnyType]() -> Bool:
     Returns True if no type appears more than once, False otherwise.
     """
 
-    comptime for i in range(Ts.size):
-        comptime for j in range(i + 1, Ts.size):
+    comptime for i in range(Ts.length):
+        comptime for j in range(i + 1, Ts.length):
             if Ts[i] == Ts[j]:
                 return False
     return True
@@ -56,7 +56,7 @@ def _all_types_unique[*Ts: AnyType]() -> Bool:
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial destructors."""
 
-    comptime for i in range(Ts.size):
+    comptime for i in range(Ts.length):
         if not is_trivially_deletable[Ts[i]]():
             return False
     return True
@@ -65,7 +65,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial copy constructors."""
 
-    comptime for i in range(Ts.size):
+    comptime for i in range(Ts.length):
         comptime if conforms_to(Ts[i], Copyable):
             if not is_trivially_copyable[Ts[i]]():
                 return False
@@ -77,7 +77,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial move constructors."""
 
-    comptime for i in range(Ts.size):
+    comptime for i in range(Ts.length):
         comptime if conforms_to(Ts[i], Movable):
             if not is_trivially_movable[Ts[i]]():
                 return False
@@ -95,7 +95,7 @@ def _check_union_types[*Ts: AnyType]():
     - All types must be unique (no duplicates)
     - All types must have trivial copy, move, and destroy operations
     """
-    comptime assert Ts.size > 0, "UnsafeUnion requires at least one type"
+    comptime assert Ts.length > 0, "UnsafeUnion requires at least one type"
     comptime assert _all_types_unique[
         *Ts
     ](), "UnsafeUnion requires all types to be unique"

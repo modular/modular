@@ -203,7 +203,7 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
 
 # Explicit 1D TileTensor layout that lets the compiler prove flat_rank == 1,
 # bypassing the LTToTTLayout comptime alias chain where the compiler can't
-# simplify TypeList[_Flattened[...]].size to 1.
+# simplify TypeList[_Flattened[...]].length to 1.
 comptime _1d_tt_layout = InternalLayout[
     shape_types=Coord[Int64].element_types,
     stride_types=Coord[ComptimeInt[1]].element_types,

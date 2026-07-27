@@ -2968,7 +2968,7 @@ def coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
     """
     var result = IntTuple()
 
-    comptime for i in range(element_types.size):
+    comptime for i in range(element_types.length):
         comptime T = element_types[i]
 
         comptime if T.is_tuple:

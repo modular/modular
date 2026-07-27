@@ -269,7 +269,7 @@ def _printf[
                 return UInt64(rebind[UInt](value))
             return 0
 
-        comptime args_len = types.size
+        comptime args_len = types.length
 
         var message = printf_begin()
         # `get_static_string` guarantees a trailing nul in static memory (just
