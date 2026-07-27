@@ -1521,11 +1521,11 @@ This version is still a work in progress.
   imported and callable on the unrelated `Foo` struct imported from `pkg_b`.
 
 - Importing a package whose name is a prefix of another package when split by
-  periods no longer works:
+  dots no longer works:
 
   ```mojo
-  # Used to import e.g., package_with.periods if it presented as a package:
-  #   package_with.periods/
+  # Used to import e.g., package_with.dots if it presented as a package:
+  #   package_with.dots/
   #   └── __init__.mojo
 
   import package_with # now errors
@@ -1537,3 +1537,6 @@ This version is still a work in progress.
   ```mojo
   from `package.with.dots`.`module.with.dots` import foo
   ```
+
+  `mojo doc` and file-in-package builds also now use the whole dotted name for
+  such packages, rather than truncating it at the first dot.
