@@ -39,6 +39,7 @@ from std.math import ceildiv
 from std.memory import UnsafePointer, alloc
 from std.sys import get_defined_bool, get_defined_int, size_of
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -681,7 +682,7 @@ def main() raises:
         @parameter
         @always_inline
         def bench_func(mut b: Bencher) raises:
-            b.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](b, ctx)
 
         var m = Bench()
         m.bench_function[bench_func](

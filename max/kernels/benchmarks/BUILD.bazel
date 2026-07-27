@@ -265,6 +265,7 @@ mojo_binary(
         "//max:comm",
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "//max:shmem",
         "//max:structured_kernels",
@@ -301,6 +302,7 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "@mojo//:std",
     ],
@@ -322,6 +324,7 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "@mojo//:std",
     ],
@@ -342,6 +345,7 @@ mojo_test(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:layout",
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

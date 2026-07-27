@@ -30,7 +30,6 @@ from std.sys.arg import argv
 from std.gpu.host import DeviceContext
 
 from std.utils.numerics import FlushDenormals
-from std.algorithm import sync_parallelize
 
 from .benchmark import _run_impl, _run_impl_fixed, _RunOptions
 
@@ -1527,120 +1526,6 @@ struct Bencher(RegisterPassable):
         """
 
         self.elapsed = func(self.num_iters)
-
-    def iter_custom[
-        kernel_launch_fn: def(DeviceContext) raises capturing[_] -> None
-    ](mut self, ctx: DeviceContext):
-        """Times a target GPU function with custom number of iterations via DeviceContext ctx.
-
-        Parameters:
-            kernel_launch_fn: The target GPU kernel launch function to benchmark.
-
-        Args:
-            ctx: The GPU DeviceContext for launching kernel.
-        """
-        try:
-            self.elapsed = ctx.execution_time[kernel_launch_fn](self.num_iters)
-        except e:
-            abort(String(e))
-
-    def iter_custom[
-        FuncType: def(DeviceContext) raises -> None,
-    ](mut self, ref func: FuncType, ctx: DeviceContext):
-        """Times a target GPU closure with custom number of iterations via DeviceContext ctx.
-
-        Parameters:
-            FuncType: The target GPU kernel launch closure type.
-
-        Args:
-            func: The closure carrying the captured state of the kernel launch.
-            ctx: The GPU DeviceContext for launching kernel.
-
-        Notes:
-
-        This overload is intentionally separate from the parametric
-        `iter_custom[kernel_launch_fn](ctx)` form. Nested launch closures that
-        capture benchmark-local state are closure values, and the current
-        closure typing rules do not let those values compose with a
-        `def(DeviceContext) raises capturing[_]` compile-time parameter while
-        preserving their capture object. This value-taking overload forwards
-        the closure to `DeviceContext.execution_time()` so `FuncType` carries
-        the captured state.
-        """
-
-        try:
-            self.elapsed = ctx.execution_time(func, self.num_iters)
-        except e:
-            abort(String(e))
-
-    def iter_custom[
-        kernel_launch_fn: def(DeviceContext, Int) raises capturing[_] -> None
-    ](mut self, ctx: DeviceContext):
-        """Times a target GPU function with custom number of iterations via DeviceContext ctx.
-
-        Parameters:
-            kernel_launch_fn: The target GPU kernel launch function to benchmark.
-
-        Args:
-            ctx: The GPU DeviceContext for launching kernel.
-        """
-        try:
-            self.elapsed = ctx.execution_time_iter[kernel_launch_fn](
-                self.num_iters
-            )
-        except e:
-            abort(String(e))
-
-    def iter_custom[
-        FuncType: def(DeviceContext, Int) raises -> None,
-    ](mut self, ref func: FuncType, ctx: DeviceContext):
-        """Times a target GPU closure with custom number of iterations via DeviceContext ctx.
-
-        Parameters:
-            FuncType: The target GPU kernel launch closure type.
-
-        Args:
-            func: The closure carrying the captured state of the kernel launch.
-            ctx: The GPU DeviceContext for launching kernel.
-
-        Notes:
-
-        This overload is intentionally separate from the parametric
-        `iter_custom[kernel_launch_fn](ctx)` form. Nested launch closures that
-        capture benchmark-local state are closure values, and the current
-        closure typing rules do not let those values compose with a
-        `def(DeviceContext, Int) raises capturing[_]` compile-time parameter
-        while preserving their capture object. This value-taking overload
-        forwards the closure to `DeviceContext.execution_time_iter()` so
-        `FuncType` carries the captured state.
-        """
-
-        try:
-            self.elapsed = ctx.execution_time_iter(func, self.num_iters)
-        except e:
-            abort(String(e))
-
-    def iter_custom_multicontext[
-        kernel_launch_fn: def() raises capturing[_] -> None
-    ](mut self, ctxs: List[DeviceContext]):
-        """Times a target GPU function with custom number of iterations via DeviceContext ctx.
-
-        Parameters:
-            kernel_launch_fn: The target GPU kernel launch function to benchmark.
-
-        Args:
-            ctxs: The list of GPU DeviceContext's for launching kernel.
-        """
-        try:
-            # Find the max elapsed time across the list of GPU DeviceContext's.
-            self.elapsed = 0
-            for i in range(len(ctxs)):
-                self.elapsed = max(
-                    self.elapsed,
-                    ctxs[i].execution_time[kernel_launch_fn](self.num_iters),
-                )
-        except e:
-            abort(String(e))
 
     def iter[iter_fn: def() capturing raises -> None](mut self) raises:
         """Returns the total elapsed time by running a target function a particular

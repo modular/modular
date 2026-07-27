@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import Bencher
 from std.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal, assert_true
 
 
 def test_iter_custom_device_context_closure() raises:
-    """Tests `iter_custom(func, ctx)` for `def(DeviceContext) raises` closures.
-    """
+    """Tests the closure overload for `def(DeviceContext) raises`."""
     var bencher = Bencher(3)
     var ctx = DeviceContext(api="cpu")
     var count = 0
@@ -28,15 +28,14 @@ def test_iter_custom_device_context_closure() raises:
         _ = ctx
         count += 1
 
-    bencher.iter_custom(launch, ctx)
+    bencher_iter_custom(bencher, launch, ctx)
 
     assert_equal(count, 3)
     assert_true(bencher.elapsed >= 0)
 
 
 def test_iter_custom_device_context_iteration_closure() raises:
-    """Tests `iter_custom(func, ctx)` for `def(DeviceContext, Int) raises` closures.
-    """
+    """Tests the closure overload for `def(DeviceContext, Int) raises`."""
     var bencher = Bencher(4)
     var ctx = DeviceContext(api="cpu")
     var iteration_sum = 0
@@ -46,7 +45,7 @@ def test_iter_custom_device_context_iteration_closure() raises:
         _ = ctx
         iteration_sum += iteration
 
-    bencher.iter_custom(launch, ctx)
+    bencher_iter_custom(bencher, launch, ctx)
 
     assert_equal(iteration_sum, 6)
     assert_true(bencher.elapsed >= 0)

@@ -31,7 +31,10 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from max.benchmark import bench_multicontext
+from max.benchmark import (
+    bench_multicontext,
+    bencher_iter_custom,
+)
 from comm.sync import enable_p2p
 from comm.scatter import scatter
 from layout import Idx, TileTensor, row_major
@@ -197,7 +200,7 @@ def bench_scatter[
                 ctx_inner,
             )
 
-        bencher.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bencher, ctx)
 
     bench_multicontext[bench_iter](
         b,

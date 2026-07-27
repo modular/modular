@@ -370,7 +370,11 @@ _EXTRA_CONSTRAINTS = {
     }),  # FIXME: MOCO-2411 — segfaults on Apple GPU remote workers
 }
 
-_EXTRA_DEPS = {}
+_EXTRA_DEPS = {
+    "test_topk_gpu.mojo": ["//max:max_mojo"],
+    "test_topk_gpu_fi.mojo": ["//max:max_mojo"],
+    "test_toppminp_gpu.mojo": ["//max:max_mojo"],
+}
 
 _GPU_MEMORY = {
     "test_cudnn_conv.mojo": "7",

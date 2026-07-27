@@ -16,6 +16,7 @@ from std.math import rsqrt
 from std.random import random_ui64, seed
 from std.sys import get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -316,7 +317,7 @@ def execute_kv_cache_ragged_flash_attention[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     m.bench_function[bench_func](
         BenchId(

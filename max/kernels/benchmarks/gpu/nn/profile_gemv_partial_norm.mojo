@@ -33,6 +33,7 @@
 # against a vendor-BLAS + host-side reference to catch numerical drift.
 # ===----------------------------------------------------------------------=== #
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -264,7 +265,7 @@ def main() raises:
         @parameter
         @always_inline
         def bench_func(mut b: Bencher) raises:
-            b.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](b, ctx)
 
         var bw = ThroughputMeasure(BenchMetric.bytes, total_bytes)
 

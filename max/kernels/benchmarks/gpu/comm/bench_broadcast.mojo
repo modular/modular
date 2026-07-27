@@ -28,7 +28,10 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from max.benchmark import bench_multicontext
+from max.benchmark import (
+    bench_multicontext,
+    bencher_iter_custom,
+)
 from comm.sync import enable_p2p
 from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
@@ -256,7 +259,7 @@ def bench_broadcast[
                     max_num_blocks,
                 )
 
-        bencher.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bencher, ctx)
 
     bench_multicontext[bench_iter](
         b,

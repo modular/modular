@@ -16,6 +16,7 @@ from std.math import ceildiv
 from std.math.uutils import udivmod, umod
 from std.sys import has_amd_gpu_accelerator
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -439,7 +440,7 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
                 block_dim=(K10_NUM_THREADS,),
             )
 
-        b.iter_custom[run_func](ctx)
+        bencher_iter_custom[run_func](b, ctx)
 
     m.bench_function[bench_matmul_10](
         BenchId("matmul_sgemm_10"),
@@ -471,7 +472,7 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
                 block_dim=(BLOCK_DIM, BLOCK_DIM),
             )
 
-        b.iter_custom[run_func_naive](ctx)
+        bencher_iter_custom[run_func_naive](b, ctx)
 
     m.bench_function[bench_naive](
         BenchId("matmul_naive"),

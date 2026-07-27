@@ -26,6 +26,7 @@ from std.math import isclose
 from std.random import seed
 from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -252,7 +253,7 @@ def run_mha_prefill_v2[
                         ctx,
                     )
 
-            b.iter_custom[_kernel_launch](ctx)
+            bencher_iter_custom[_kernel_launch](b, ctx)
 
         def compute_flops() {imm} -> Int:
             # Causal-mask: half the tiles. Matches bench_hk_mha_exact's
