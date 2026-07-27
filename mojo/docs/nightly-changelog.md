@@ -487,6 +487,20 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `PythonObject` arithmetic, comparison, and membership operators now dispatch
+  through CPython's abstract number, object, and sequence protocols (for
+  example `PyNumber_Add`, `PyObject_RichCompare`, and `PySequence_Contains`)
+  instead of a Python-level attribute lookup followed by a bound-method call.
+  Together with the non-mutating operators now borrowing their operand rather
+  than taking it by value, this is roughly 12x faster on the interop hot path
+  (a tight `a + b` or `a < b` loop). It also follows standard Python operator
+  semantics more closely, including reflected-operand fallback (`__radd__`,
+  `__rmul__`, and so on) and the standard error messages for unsupported
+  operations. An operation that no operand supports now raises `TypeError`,
+  where previously it could yield the `NotImplemented` object as a value, and
+  comparing mismatched types with `==` now returns `False` rather than a truthy
+  `NotImplemented`.
+
 - `InlineArray` has been renamed to `Array`. A temporary comptime alias exists
   for adoption.
 
