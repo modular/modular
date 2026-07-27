@@ -114,6 +114,8 @@ MojoASTTypeRef MojoParserContext::concretizeType(MojoASTTypeRef base,
 //===----------------------------------------------------------------------===//
 
 /// Return the package name to use for the given Mojo source package directory.
+/// A directory's whole name is the package name: any periods in it belong to
+/// the name itself (importable via an escaped identifier), not an extension.
 static std::string getNameForSourcePackage(const std::filesystem::path &path) {
   // FIXME: This is kind of a huge hack, but works around the fact that the
   // Mojo standard library was open sourced with a different package name than
@@ -121,9 +123,9 @@ static std::string getNameForSourcePackage(const std::filesystem::path &path) {
   // properly support this case, special case the common project layout of
   // having a `src` directory (that contains the package), under a directory
   // with the package name.
-  std::string name = path.stem().string();
+  std::string name = path.filename().string();
   if (name == "src")
-    return path.parent_path().stem().string();
+    return path.parent_path().filename().string();
   return name;
 }
 
@@ -131,9 +133,14 @@ static std::string getNameForSourcePackage(const std::filesystem::path &path) {
 static ASTDecl *buildNestedModuleDecl(std::filesystem::path filepath,
                                       SharedState &sharedState) {
   // Collect all of the sub-package names and find the outer most package.
+  // Only a file strips its extension to form its module name; a directory's
+  // whole name is the name, periods included.
   SmallVector<std::string, 4> packageNames;
+  std::error_code ec;
   while (Filesystem::isMojoSourcePackagePath(filepath.parent_path())) {
-    packageNames.emplace_back(filepath.stem().string());
+    bool isDir = std::filesystem::is_directory(filepath, ec) && !ec;
+    packageNames.emplace_back(isDir ? filepath.filename().string()
+                                    : filepath.stem().string());
     filepath = filepath.parent_path();
   }
 

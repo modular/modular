@@ -7,12 +7,14 @@ lit_tests(
     srcs = glob(
         ["**/*.mojo"],
         exclude = [
+            "dotted.pkg/**/*.mojo",
             "test_std_mock/**/*.mojo",
             "test_package/**/*.mojo",
             "test_dir_package/**/*.mojo",
         ],
     ),
     data = glob([
+        "dotted.pkg/**/*.mojo",
         "test_std_mock/**/*.mojo",
         "test_package/**/*.mojo",
         "test_dir_package/**/*.mojo",
