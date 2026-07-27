@@ -1220,8 +1220,8 @@ SharedState::ModuleState &SharedState::importModuleState(const ImportPath &path,
                                                          ASTDecl *context,
                                                          llvm::SMLoc loc,
                                                          bool isImplicit) {
-  CompilerTimeTraceScope fullTimeScope(
-      ("importModule: " + path.toDottedString()));
+  CompilerTimeTraceScope fullTimeScope("importModule",
+                                       [&] { return path.toDottedString(); });
 
   // TODO: The terms "relative" and "submodule" are being stretched quite far
   // here. We're invoking "sub" on any trivial path ("std") and "relative" on
