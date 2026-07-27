@@ -2435,7 +2435,7 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         num_args: Int,
     ]() -> Tuple[Int, Array[Int, num_args]]:
-        comptime declared_num_args = Self.declared_arg_types.size
+        comptime declared_num_args = Self.declared_arg_types.length
 
         comptime assert (
             declared_num_args == num_args
@@ -2572,7 +2572,7 @@ struct DeviceFunction[
             "shared_mem_bytes must be non-negative",
         )
 
-        comptime num_passed_args = Ts.size
+        comptime num_passed_args = Ts.length
         var validated_args = Self._validate_arguments[
             *Ts, num_args=num_passed_args
         ]()
@@ -2771,7 +2771,7 @@ struct DeviceFunction[
                 " `constant_memory` mappings."
             )
 
-        comptime num_args = Ts.size
+        comptime num_args = Ts.length
         ref func_info = self._func_info
         var num_captures = max(0, func_info.num_captures)
         comptime populate = type_of(func_info).populate
@@ -2925,7 +2925,7 @@ struct DeviceFunction[
     ) raises:
         _check_device_context_hal_only_supported_exec_config(execution_config)
 
-        comptime num_args = Ts.size
+        comptime num_args = Ts.length
         ref func_info = self._func_info
         var num_captures = max(0, func_info.num_captures)
         comptime populate = type_of(func_info).populate
@@ -3152,7 +3152,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
                 " `constant_memory` mappings."
             )
 
-        comptime num_args = Ts.size
+        comptime num_args = Ts.length
         var dense_args_addrs = stack_allocation[
             num_args + 1, OpaquePointer[MutAnyOrigin]
         ]()
@@ -3227,7 +3227,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
     ) raises:
         _check_device_context_hal_only_supported_exec_config(execution_config)
 
-        comptime num_args = Ts.size
+        comptime num_args = Ts.length
         var dense_args_addrs = stack_allocation[
             num_args + 1, OpaquePointer[MutAnyOrigin]
         ]()

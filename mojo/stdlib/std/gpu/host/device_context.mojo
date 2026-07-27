@@ -3106,7 +3106,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = Ts.size
+        comptime num_args = Ts.length
         var num_captures = max(0, self._func_impl.num_captures)
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -3256,7 +3256,7 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         num_args: Int,
     ]() -> Tuple[Int, InlineArray[Int, num_args]]:
-        comptime declared_num_args = Self.declared_arg_types.size
+        comptime declared_num_args = Self.declared_arg_types.length
 
         comptime assert (
             declared_num_args == num_args
@@ -3346,7 +3346,7 @@ struct DeviceFunction[
     ) raises:
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
-        comptime num_passed_args = Ts.size
+        comptime num_passed_args = Ts.length
 
         # Validate that all actual arguments do remap to the declared device
         # dtype in the kernel.
@@ -3819,7 +3819,7 @@ struct DeviceExternalFunction:
         Raises:
             If the function launch fails.
         """
-        comptime num_args = Ts.size
+        comptime num_args = Ts.length
 
         var dense_args_addrs = InlineArray[
             OpaquePointer[MutAnyOrigin], num_args

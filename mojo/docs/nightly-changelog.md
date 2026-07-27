@@ -605,6 +605,9 @@ This version is still a work in progress.
   t^.consume_elements[handler]()
   ```
 
+- `TypeList.size` is renamed to `TypeList.length`. `TypeList.size` remains as a
+  deprecated alias for `TypeList.length`; update `.size` reads to `.length`.
+
 - `InlineArray`'s second parameter is renamed from `size` to `length`.
   `InlineArray.size` remains as a deprecated alias for `InlineArray.length`;
   update any explicit `InlineArray[T, size=N]` to `InlineArray[T, length=N]`,

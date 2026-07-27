@@ -192,7 +192,7 @@ struct Tuple[*element_types: Movable](
         Returns:
             The tuple length.
         """
-        return Self.element_types.size
+        return Self.element_types.length
 
     @always_inline("nodebug")
     def __len__(self) -> Int:
@@ -466,7 +466,7 @@ struct Tuple[*element_types: Movable](
         comptime for i in range(type_of(result).__len__()):
             Pointer(to=result[i]).unsafe_write_move_from(
                 rebind[Pointer[type_of(result[i]), origin_of(self)]](
-                    Pointer(to=self[Self.element_types.size - 1 - i])
+                    Pointer(to=self[Self.element_types.length - 1 - i])
                 )
             )
 

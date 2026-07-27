@@ -272,7 +272,7 @@ struct Reflected[T: AnyType]:
         Returns:
             The number of fields in the struct.
         """
-        return _field_types_of[Self.T]().size
+        return _field_types_of[Self.T]().length
 
     @staticmethod
     def field_types() -> _field_types_of[Self.T]:
@@ -302,7 +302,7 @@ struct Reflected[T: AnyType]:
         return {}
 
     @staticmethod
-    def field_names() -> Array[StaticString, _field_types_of[Self.T]().size]:
+    def field_names() -> Array[StaticString, _field_types_of[Self.T]().length]:
         """Returns the names of all fields in struct `T`.
 
         Constraints:
@@ -311,7 +311,7 @@ struct Reflected[T: AnyType]:
         Returns:
             An `Array` of `StaticString`, one entry per field.
         """
-        comptime count = _field_types_of[Self.T]().size
+        comptime count = _field_types_of[Self.T]().length
         comptime raw = _field_names_of[Self.T]()
 
         # Safety: uninitialized=True is safe because the comptime for loop
