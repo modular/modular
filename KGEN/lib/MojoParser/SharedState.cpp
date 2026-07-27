@@ -414,6 +414,11 @@ struct SharedState::Impl {
   // Cache for looking up information about parameter references in types.
   ParameterCollector::Analysis collectorCache;
   ParameterCollector collector;
+
+  /// Synthetic REPL/LSP wrapper buffers, mapped to the source path of the
+  /// module each one wraps. Code in a wrapper buffer is semantically part of
+  /// the wrapped module (e.g. for self-import detection).
+  DenseMap<unsigned, std::string> wrapperBuffers;
 };
 
 /// Ensure `stripFilePrefix` is an absolute path ending in a separator.
@@ -1314,26 +1319,8 @@ SharedState::lookupModuleCache(StringRef name, ASTDecl *parentDecl,
       return true;
     // Imports written in a REPL/LSP docstring wrapper buffer are still
     // self-imports of the module they wrap.
-    StringRef importerName =
-        getSourceMgr().getMemoryBuffer(importerBufferId)->getBufferIdentifier();
-
-    // REPL and LSP docstring code-block buffers
-    // are created in MojoParserContext::parseREPLExpression
-    // (ParserDriverREPL.cpp).  Their names are formed by appending a " wrapper"
-    // or " wrapper_at(<offset>)" suffix to the source file path, e.g.:
-    //
-    //   "/abs/path/file.mojo wrapper_at(123) "
-    //   "/abs/path/file.mojo wrapper"
-    //
-    // A valid Mojo module path (e.g. "pkg.module") consists solely of
-    // identifiers separated by dots and can never contain a space, so the
-    // presence of " wrapper" unambiguously identifies these synthetic buffers.
-    //
-    // FIXME: This is brittle and the above incorrect - names can legitimately
-    // contain " wrapper" as we support escaped identifiers. We should instead
-    // have the concept of "wrapper buffers" which encode what they wrap.
-    return state->sourcePath && importerName.contains(" wrapper") &&
-           importerName.starts_with(*state->sourcePath);
+    std::optional<StringRef> wrapped = getWrappedSourcePath(importerBufferId);
+    return wrapped && state->sourcePath && *wrapped == *state->sourcePath;
   };
 
   // Reject self-imports with an unregistered erroneous state. The name *is*
@@ -1541,6 +1528,19 @@ SharedState::importRelativeModuleState(const ImportPath &path,
   }
 
   return importSubModuleState(leafModule, parentDecl, loc, identifierLoc);
+}
+
+void SharedState::registerWrapperBuffer(unsigned bufferId,
+                                        StringRef wrappedSourcePath) {
+  impl->wrapperBuffers[bufferId] = wrappedSourcePath;
+}
+
+std::optional<StringRef>
+SharedState::getWrappedSourcePath(unsigned bufferId) const {
+  auto it = impl->wrapperBuffers.find(bufferId);
+  return it == impl->wrapperBuffers.end()
+             ? std::optional<StringRef>(std::nullopt)
+             : it->second;
 }
 
 bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
