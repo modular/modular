@@ -1004,11 +1004,19 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
 
   MojoInflightDiag &diag = emitError(getExprLoc());
 
+  // Candidates that are compiler-synthesized functions with a never-
+  // satisfiable where clause can never actually be called, so they aren't
+  // real candidates for diagnostic purposes.
+  SmallVector<ASTDecl *> realFnDecls;
+  for (ASTDecl *candidate : fnDecls)
+    if (!isNeverCallableSynthesizedCandidate(candidate))
+      realFnDecls.push_back(candidate);
+
   ArrayRef<ASTDecl *> declsToReport;
   if (validCandidates.empty()) {
     diag << "no '" << baseName << "' candidates have type " << functionType
          << getExpr()->getRange();
-    declsToReport = fnDecls;
+    declsToReport = realFnDecls.empty() ? fnDecls : ArrayRef(realFnDecls);
   } else {
     diag << "ambiguous use of '" << baseName << "' as type " << functionType
          << getExpr()->getRange();
