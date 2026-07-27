@@ -2053,6 +2053,7 @@ struct StringDict[V: Movable](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     @always_inline
     def __getitem__(
         ref self, ref key: Self.key_type
