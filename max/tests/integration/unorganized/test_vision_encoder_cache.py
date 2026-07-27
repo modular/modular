@@ -386,6 +386,39 @@ def test_no_eviction_when_all_referenced() -> None:
     assert cache.lookup(0x3) is not None
 
 
+def test_release_evicts_over_capacity_entries() -> None:
+    # A 3-image request over-fills a 2-entry cache (insert never fails when
+    # every resident entry is ref-held). Completing the request must shrink
+    # occupancy back to capacity immediately, not at the next cache miss.
+    cache = _make_cache_sized(2)
+    req = RequestID("r1")
+    for h in (0x1, 0x2, 0x3):
+        cache.insert(h, [_make_buffer(1)], 1)
+        cache.acquire(req, h)
+    cache.release_request(req)
+    assert len(cache._cache) == 2
+    # LRU order respected: the oldest zero-ref entry was the one dropped.
+    assert cache.lookup(0x1) is None
+    assert cache.lookup(0x2) is not None
+    assert cache.lookup(0x3) is not None
+
+
+def test_release_drain_skips_entries_held_by_other_requests() -> None:
+    cache = _make_cache_sized(1)
+    r1 = RequestID("r1")
+    r2 = RequestID("r2")
+    cache.insert(0x1, [_make_buffer(1)], 1)
+    cache.acquire(r1, 0x1)
+    cache.acquire(r2, 0x1)
+    cache.insert(0x2, [_make_buffer(1)], 1)
+    cache.acquire(r1, 0x2)
+    cache.release_request(r1)
+    # 0x1 is still ref-held by r2 and must survive even though it is the
+    # LRU entry; the zero-ref over-capacity entry 0x2 is the one drained.
+    assert cache.lookup(0x1) is not None
+    assert cache.lookup(0x2) is None
+
+
 def test_acquire_increments_ref() -> None:
     cache = _make_cache()
     cache.insert(0x1, [_make_buffer(1)], 1)

@@ -373,11 +373,23 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
     @traced
     def release_request(self, request_id: RequestID) -> None:
-        """Release all cache refs held by a request."""
+        """Release all cache refs held by a request.
+
+        Also reconciles occupancy with capacity. ``insert`` never fails:
+        when every resident entry is ref-held (e.g. one request carrying
+        more images than ``max_entries``), it stores past capacity. Without
+        draining here, that excess would linger until the next cache miss
+        reaches ``insert`` -- indefinitely under cache-hit-only or text-only
+        traffic. Draining on release bounds the overshoot to the lifetime
+        of the requests that caused it.
+        """
         for h in self._request_refs.pop(request_id, set()):
             entry = self._cache.get(h)
             if entry is not None:
                 entry.ref_count = max(0, entry.ref_count - 1)
+        while len(self._cache) > self._max_entries:
+            if not self._evict_lru():
+                break
 
     def _evict_lru(self) -> bool:
         """Evict the least-recently-used entry with ref_count == 0."""
