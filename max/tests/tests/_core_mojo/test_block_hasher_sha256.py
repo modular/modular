@@ -15,6 +15,7 @@ import hashlib
 import numpy as np
 import pytest
 from max._core_mojo import block_hasher_sha256, sha256_oneshot
+from pytest_benchmark.fixture import BenchmarkFixture
 
 
 def _py_reference(
@@ -160,3 +161,16 @@ def test_block_hasher_chained_block_layout() -> None:
     seq1 = hashlib.sha256(local1 + seq0).digest()
 
     assert got == [seq0, seq1]
+
+
+def test_benchmark_mojo_sha256(benchmark: BenchmarkFixture) -> None:
+    block_size = 8
+    tokens = np.arange(30000, dtype=np.int32)
+
+    _ = benchmark.pedantic(
+        block_hasher_sha256,
+        args=(tokens, block_size, b"\x00" * 32),
+        warmup_rounds=1,
+        rounds=3,
+        iterations=10,
+    )

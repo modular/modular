@@ -15,6 +15,8 @@
 
 from std.collections import Array, Span
 from std.bit import rotate_bits_right
+from std.collections.array import Array
+from std.builtin.globals import global_constant
 
 # FIPS 180-4 initial hash values
 
@@ -173,7 +175,9 @@ def _compress(mut h: Array[UInt32, 8], block: Span[Byte, _]):
     var hh = h[7]
     # Compression loop
     for t in range(64):
-        var t1 = hh + _big_sigma1(e) + _ch(e, f, g) + _K[t] + w[t]
+        var t1 = (
+            hh + _big_sigma1(e) + _ch(e, f, g) + global_constant[_K]()[t] + w[t]
+        )
         var t2 = _big_sigma0(a) + _maj(a, b, c)
         hh = g
         g = f
@@ -197,16 +201,7 @@ def _compress(mut h: Array[UInt32, 8], block: Span[Byte, _]):
 
 def sha256(data: Span[Byte, _]) -> Array[UInt8, 32]:
     """Compute the SHA-256 hash of the given data. Returns a 32-byte hash."""
-    var h: Array[UInt32, 8] = [
-        _H0[0],
-        _H0[1],
-        _H0[2],
-        _H0[3],
-        _H0[4],
-        _H0[5],
-        _H0[6],
-        _H0[7],
-    ]
+    var h: Array[UInt32, 8] = materialize[_H0]()
 
     # Process the data in 64-byte blocks
     var n = len(data)
