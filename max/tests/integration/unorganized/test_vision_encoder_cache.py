@@ -133,6 +133,10 @@ class FakeContext:
             return self._next_images_override
         return self.images
 
+    @property
+    def next_images_in_window(self) -> list[ImageMetadata]:
+        return self.next_images
+
     def compute_image_aligned_idx(self, idx: int) -> int:
         return idx
 
@@ -1215,22 +1219,35 @@ def test_pop_metrics_none_for_text_only() -> None:
 
 def test_pop_metrics_counts_hits_and_misses() -> None:
     cache = _make_cache()
-    cache.insert(0xA, [_make_buffer(5)], 5)  # pre-cache image A -> hit
+    cache.insert(0xA, [_make_buffer(2)], 2)  # pre-cache image A -> hit
     ctx = FakeContext(
         request_id=RequestID("r1"),
         images=[
-            _make_image_meta(0, 5, image_hash=0xA),  # cached hit, 5 tokens
-            _make_image_meta(5, 12, image_hash=0xB),  # miss, 7 tokens, 1 patch
+            _make_image_meta(0, 2, image_hash=0xA),  # cached hit, 2 tokens
+            _make_image_meta(2, 5, image_hash=0xB),  # miss, 3 tokens, 1 patch
         ],
+        image_token_indices=np.array([0, 1, 2, 3, 4], dtype=np.int32),
+        processed_length=0,
+        active_length=8,
     )
-    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    batch = _as_vlm_batch([ctx])
+    uncached = cache.get_uncached_contexts(batch)
+    cache.prepare_vision_outputs(
+        context_batch=batch,
+        uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
+        vision_embeds=[_make_buffer(3)],
+        per_image_token_counts=[3],
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0)],
+    )
     m = cache.pop_metrics()
     assert m is not None
     assert m.num_images_total == 2
     assert m.num_images_cached == 1
     assert m.num_images_encoded == 1
     assert m.num_patches_encoded == 1  # only the miss is encoded
-    assert m.num_tokens_encoded == 7  # 12 - 5
+    assert m.num_tokens_encoded == 3  # 5 - 2
     assert m.cache_hit_rate == 0.5
     # pop resets the accumulator.
     assert cache.pop_metrics() is None
@@ -1241,8 +1258,21 @@ def test_pop_metrics_disabled_cache_counts_all_as_encoded() -> None:
     ctx = FakeContext(
         request_id=RequestID("r1"),
         images=[_make_image_meta(0, 5, image_hash=0xA)],
+        image_token_indices=np.array([0, 1, 2, 3, 4], dtype=np.int32),
+        processed_length=0,
+        active_length=8,
     )
-    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    batch = _as_vlm_batch([ctx])
+    uncached = cache.get_uncached_contexts(batch)
+    cache.prepare_vision_outputs(
+        context_batch=batch,
+        uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
+        vision_embeds=[_make_buffer(5)],
+        per_image_token_counts=[5],
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0)],
+    )
     m = cache.pop_metrics()
     assert m is not None
     assert m.num_images_total == 1
@@ -1735,7 +1765,7 @@ def test_assemble_missing_active_image_still_raises() -> None:
         processed_length=0,  # in the active window, not prior
         active_length=3,
     )
-    with pytest.raises(AssertionError, match="Active image"):
+    with pytest.raises(AssertionError, match="Active in-window image"):
         cache.prepare_vision_outputs(
             context_batch=_as_vlm_batch([ctx]),
             uncached_contexts=_as_vlm_batch([ctx]),

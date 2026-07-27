@@ -434,16 +434,12 @@ class VisionEncoderCache(Generic[VLMContextType]):
         """
         uncached_contexts: list[VLMContextType] = []
 
-        metrics = VisionEncoderMetrics()
-
         for ctx in context_batch:
             if not getattr(ctx, "needs_vision_encoding", False):
                 continue
 
             if not self.enabled:
                 uncached_contexts.append(ctx)
-                for img in ctx.images:
-                    self._record_encoded_image(metrics, img)
                 continue
 
             self._ensure_image_hashes(ctx)
@@ -453,47 +449,17 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
             for img in ctx.images:
                 assert img.image_hash is not None
-                metrics.num_images_total += 1
                 if self.lookup(img.image_hash) is not None:
                     cached_in_ctx.append(img.image_hash)
-                    metrics.num_images_cached += 1
                 else:
                     has_uncached = True
-                    self._record_encoded_image(metrics, img, count_total=False)
 
-            if not has_uncached:
-                for h in cached_in_ctx:
-                    self.acquire(ctx.request_id, h)
-            else:
-                for h in cached_in_ctx:
-                    self.acquire(ctx.request_id, h)
+            for h in cached_in_ctx:
+                self.acquire(ctx.request_id, h)
+            if has_uncached:
                 uncached_contexts.append(ctx)
 
-        self._batch_metrics = metrics if metrics.num_images_total > 0 else None
         return uncached_contexts
-
-    @staticmethod
-    def _record_encoded_image(
-        metrics: VisionEncoderMetrics,
-        img: object,
-        count_total: bool = True,
-    ) -> None:
-        """Tally one cache-miss image (encoder runs on it) into ``metrics``.
-
-        ``count_total`` is False when the caller already incremented
-        ``num_images_total`` (the enabled-cache path counts every image up
-        front to distinguish hits from misses).
-        """
-        if count_total:
-            metrics.num_images_total += 1
-        metrics.num_images_encoded += 1
-        pixel_values = getattr(img, "pixel_values", None)
-        if pixel_values is not None and getattr(pixel_values, "shape", None):
-            metrics.num_patches_encoded += int(pixel_values.shape[0])
-        start_idx = getattr(img, "start_idx", None)
-        end_idx = getattr(img, "end_idx", None)
-        if start_idx is not None and end_idx is not None:
-            metrics.num_tokens_encoded += int(end_idx) - int(start_idx)
 
     def pop_metrics(self) -> VisionEncoderMetrics | None:
         """Return the metrics for the most recent batch and reset them.
@@ -578,6 +544,30 @@ class VisionEncoderCache(Generic[VLMContextType]):
             ``(embeddings, indices)`` — per-device buffers and a 1-D
             int32 scatter-index array.
         """
+        metrics = VisionEncoderMetrics()
+        for ctx in context_batch:
+            if not getattr(ctx, "needs_vision_encoding", False):
+                continue
+            for img in ctx.images:
+                metrics.num_images_total += 1
+                if (
+                    self.enabled
+                    and img.image_hash is not None
+                    and self.lookup(img.image_hash) is not None
+                ):
+                    metrics.num_images_cached += 1
+        if metrics.num_images_total > 0:
+            for miss_images in uncached_images:
+                for img in miss_images:
+                    metrics.num_images_encoded += 1
+                    metrics.num_patches_encoded += int(
+                        img.pixel_values.shape[0]
+                    )
+                    metrics.num_tokens_encoded += img.end_idx - img.start_idx
+            self._batch_metrics = metrics
+        else:
+            self._batch_metrics = None
+
         if not self.enabled:
             embeddings = (
                 vision_embeds if uncached_contexts else empty_embeddings
@@ -659,9 +649,10 @@ class VisionEncoderCache(Generic[VLMContextType]):
                 assert img.image_hash is not None
                 entry = self.lookup(img.image_hash)
                 if entry is None:
-                    assert img.end_idx <= ctx.tokens.processed_length, (
-                        f"Active image {img.image_hash} not in cache"
-                    )
+                    assert (
+                        img.end_idx <= ctx.tokens.processed_length
+                        or img.start_idx >= ctx.tokens.current_position
+                    ), f"Active in-window image {img.image_hash} not in cache"
                     count = img.end_idx - img.start_idx
                     for d in range(n_devices):
                         base = empty_embeddings[d]
@@ -692,13 +683,19 @@ class VisionEncoderCache(Generic[VLMContextType]):
     ) -> list[tuple[VLMContextType, list[ImageMetadata]]]:
         """Select contexts to encode, each paired with its cache-miss images.
 
-        Computes the cache-miss set once (over ``ctx.next_images``), acquires
-        refs for already-cached images immediately (so a hit can't be evicted
-        between selection and assembly), and returns each selected context
-        paired with its miss images. Every downstream consumer reads that same
-        returned selection: the model's pack/encode steps, the counts
+        Computes the cache-miss set once (over ``ctx.next_images_in_window``),
+        acquires refs for already-cached images immediately (so a hit can't be
+        evicted between selection and assembly), and returns each selected
+        context paired with its miss images. Every downstream consumer reads
+        that same returned selection: the model's pack/encode steps, the counts
         (:func:`derive_counts_from_spans`), and the store/split
-        (``prepare_vision_outputs``).
+        (``prepare_vision_outputs``, which records the batch metrics).
+
+        Only misses overlapping the active window are selected, so each
+        encoder forward is bounded by the scheduler's chunked-prefill window:
+        an image fully ahead of the window is encoded by the iteration whose
+        chunk covers it; this iteration its rows are zero-filled and its
+        scatter positions OOB-masked.
 
         ``get_uncached_contexts`` scans ``ctx.images`` (all images) rather than
         ``next_images`` to decide which contexts to return. That is consistent
@@ -713,7 +710,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
                 ctx,
                 [
                     img
-                    for img in ctx.next_images
+                    for img in ctx.next_images_in_window
                     if img.image_hash is None
                     or self.lookup(img.image_hash) is None
                 ],

@@ -1612,3 +1612,61 @@ def test_pixel_context_tuple_serializable() -> None:
 
     assert msgpack_decoded[0] == original_tuple[0]
     assert dataclass_equal(msgpack_decoded[1], original_tuple[1])
+
+
+_VISION_TOKEN_ID = 98
+
+
+def _windowed_vision_context(
+    image_spans: list[tuple[int, int]],
+    seq_len: int,
+) -> TextAndVisionContext:
+    """Build a TextAndVisionContext with ``(start, end)`` images."""
+    tokens = np.ones(seq_len, dtype=np.int64)
+    images = []
+    for start, end in image_spans:
+        tokens[start:end] = _VISION_TOKEN_ID
+        images.append(
+            ImageMetadata(
+                start_idx=start,
+                end_idx=end,
+                pixel_values=np.zeros((2, 3), dtype=np.float32),
+            )
+        )
+    return TextAndVisionContext(
+        tokens=TokenBuffer(tokens),
+        max_length=4096,
+        vision_token_ids=[_VISION_TOKEN_ID],
+        images=images,
+    )
+
+
+def test_next_images_in_window_drops_images_ahead_of_window() -> None:
+    context = _windowed_vision_context([(4, 8), (12, 16), (20, 24)], seq_len=30)
+    # Nothing processed yet, full window: all three images unencoded.
+    assert len(context.next_images_in_window) == 3
+
+    # Chunk the active window to [0, 16): the third image (start_idx=20) is
+    # ahead of the window and must be dropped from the tail.
+    context.tokens.chunk(16)
+    windowed = context.next_images_in_window
+    assert [img.start_idx for img in windowed] == [4, 12]
+
+    # next_images_in_window is a prefix of next_images (drops only the tail).
+    assert [img.start_idx for img in windowed] == [
+        img.start_idx for img in context.next_images[: len(windowed)]
+    ]
+
+
+def test_next_images_in_window_includes_bisected_images_whole() -> None:
+    context = _windowed_vision_context([(4, 8), (12, 16), (20, 24)], seq_len=30)
+    # The chunk boundary bisects the second image (12..16): it overlaps the
+    # window, so it is included whole (the encoder cannot split an image).
+    context.tokens.chunk(14)
+    assert [img.start_idx for img in context.next_images_in_window] == [4, 12]
+
+    # A processed prefix that bisects the second image: it still overlaps the
+    # window [14, 30), so it stays; the fully-behind first image is dropped.
+    behind = _windowed_vision_context([(4, 8), (12, 16), (20, 24)], seq_len=30)
+    behind.tokens.skip_processing(14)
+    assert [img.start_idx for img in behind.next_images_in_window] == [12, 20]
