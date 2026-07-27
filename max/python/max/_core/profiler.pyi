@@ -57,18 +57,19 @@ def set_gpu_profiling_state(arg: str, /) -> None:
 
 def kineto_enable() -> None:
     """
-    Enable the libkineto-backed profiler.
+    Enable the profiler.
 
-    Subscribes to CUPTI activity callbacks. On builds without libkineto
-    (it is linked only in ``--config=kineto`` builds on Linux x86_64) or
-    hosts without a live CUDA primary context, this is a safe no-op.
+    Loads the profiler plugin (``libMAXProfilerPlugin.so``) on first use
+    and subscribes to CUPTI activity callbacks. When the plugin is absent
+    or no live CUDA primary context exists, the enable intent is recorded
+    but nothing records — a safe no-op.
     """
 
 def kineto_disable() -> None:
     """
     Disable the profiler.
 
-    Flushes the trace. On builds where libkineto isn't linked, this is
+    Flushes the trace. When the profiler plugin is not loaded, this is
     a no-op.
     """
 
@@ -150,13 +151,14 @@ def kineto_last_trace_error() -> str:
 
 def kineto_have_libkineto() -> bool:
     """
-    Return ``True`` iff the libkineto backend is linked into this process.
+    Return ``True`` iff the profiler plugin is loaded into this process.
 
-    Runtime check on the registered ``:ProfilingKineto`` backend, which is
-    linked into ``max._core`` only in ``--config=kineto`` builds on Linux
-    x86_64 (#91288) — default builds, including the shipped wheels, carry
-    no libkineto and return ``False``, and the recording paths in
-    ``start()`` / ``stop()`` are no-ops there.
+    Attempts to load ``libMAXProfilerPlugin.so`` (``MODULAR_PROFILER_PLUGIN``
+    env var, then next to the host library, then the default ``dlopen``
+    search). The plugin ships only with internal builds:
+    external wheels return ``False`` unless one is deployed alongside, and
+    the recording paths in ``start()`` / ``stop()`` are no-ops there. The
+    name predates the plugin split and does not imply a specific backend.
     """
 
 def kineto_can_record() -> bool:
@@ -171,6 +173,6 @@ def kineto_can_record() -> bool:
 
     Used by ``test_kineto_profiling.py`` to skip end-to-end file-creation
     and ``ProfilingError`` assertions on hosts that cannot record (no
-    libkineto in the build, or no live CUDA context — e.g. CI runners
+    profiler plugin available, or no live CUDA context — e.g. CI runners
     without NVIDIA hardware).
     """

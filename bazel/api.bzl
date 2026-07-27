@@ -138,7 +138,7 @@ def modular_cc_binary(data = [], deps = [], internal_deps = [], defines = [], lo
 # Ignore internal_deps for public builds
 # buildifier: disable=unused-variable
 def modular_cc_library(name, data = [], deps = [], internal_deps = [], defines = [], local_defines = [], **kwargs):
-    if name in ["Profiling", "ProfilingKineto", "ProfilingStatic"]:
+    if name in ["Profiling", "ProfilerCore"]:
         # Provide TimeProfiler for now since that may be what they're actually after
         _modular_cc_library(name = name, deps = ["//Support:TimeProfiler"])
         return
@@ -168,7 +168,7 @@ def modular_cc_test(data = [], deps = [], internal_deps = [], defines = [], loca
 # Ignore internal_deps for public builds
 # buildifier: disable=unused-variable
 def modular_shared_library(name = None, internal_deps = [], defines = [], local_defines = [], **kwargs):
-    if name in ["Profiling", "ProfilingKineto", "ProfilingShared"]:
+    if name in ["MAXProfilerPlugin"]:
         # Provide TimeProfiler for now since that may be what they're actually after
         _modular_cc_library(name = name, deps = ["//Support:TimeProfiler"])
         return
