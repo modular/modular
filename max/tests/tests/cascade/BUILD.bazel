@@ -96,6 +96,17 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_http_framing",
+    size = "small",
+    srcs = ["test_http_framing.py"],
+    deps = [
+        "//max/python/max/experimental/cascade/http_runtime",
+        requirement("aiohttp"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
     name = "test_runtimes",
     # Spins up ~40 parametrized cases, each booting gRPC/HTTP worker
     # subprocesses; ~48s in isolation blows the 60s "small" budget under
