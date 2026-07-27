@@ -1461,6 +1461,95 @@ emitClosureInstance(ArrayRef<Capture> captures, ASTDecl &nestedFnDecl,
   return MLValue(wrapperInstance);
 }
 
+namespace {
+/// The values and parameter references a (nested) function captures from its
+/// enclosing scopes, as computed from its resolved body.
+struct BodyCaptures {
+  SmallVector<Capture> values;
+  SmallVector<ParamDeclRefAttr> paramRefs;
+};
+} // namespace
+
+/// Collect what the resolved body of a (nested) function captures from
+/// enclosing scopes: `values` are the captured runtime values in scope and
+/// `paramRefs` are the parameter references used from above (deduplicated
+/// across the sugared/canonical versions of the same type).
+static BodyCaptures collectBodyCaptures(SharedState &shared, ASTDecl &decl,
+                                        FnOp funcOp) {
+  BodyCaptures result;
+
+  // Find all parameter captures in the function body.
+  // TODO: Use the SharedState cache?
+  ParameterCollector::Analysis collectorCache;
+  ParameterUseDefGraph graph(funcOp.getBodyRegion());
+  graph.calculate(collectorCache);
+
+  // Get captured parameters that cross with captured values.
+  ParameterCollector collector(collectorCache);
+  SmallVector<ParamDeclRefAttr> capturedUses;
+  for (auto &[_, capture] : shared.getCaptureRangeInScope(decl)) {
+    result.values.push_back(capture);
+    bool unusedHasConstExpr = false;
+    size_t unusedRequiredSignatureDepth = 0;
+    collector.collectUsesFromType(capture.getValue().getType(), capturedUses,
+                                  unusedHasConstExpr,
+                                  unusedRequiredSignatureDepth);
+  }
+  for (ParamDeclRefAttr use : capturedUses)
+    graph.usesFromAbove.insert(use);
+
+  result.paramRefs = graph.usesFromAbove.takeVector();
+
+  // Because our IR has type sugar, we can capture the same parameter from
+  // the sugared and canonical version of the same type.  Remove one of the
+  // versions from the captured uses.
+  SmallPtrSet<StringAttr, 8> capturedParamNames;
+  llvm::erase_if(result.paramRefs, [&](ParamDeclRefAttr use) {
+    return !capturedParamNames.insert(use.getName()).second;
+  });
+
+  return result;
+}
+
+/// Construct the runtime value for a fully-resolved non-legacy nested-`def`
+/// closure: promote a stateless closure to a top-level function, or otherwise
+/// materialize a closure instance. Sets the decl's IR value on success.
+static LogicalResult
+constructClosure(SharedState &shared, ASTDecl &decl, FnOp funcOp,
+                 ArrayRef<Capture> captures,
+                 ArrayRef<ParamDeclRefAttr> paramCaptures,
+                 const ParsedCaptureList &captureSignature,
+                 ArrayRef<ConstraintAttr> closureExternalRefConstraints,
+                 FnTypeGeneratorType signature) {
+  // abi("C") functions must be bare function pointers with no captured
+  // state, even in closure form.
+  if (signature.getFnEffects().isCABI() && !captures.empty()) {
+    shared.emitError(funcOp.getLoc())
+        << "a abi(\"C\") function cannot capture variables";
+    return failure();
+  }
+
+  // Check if this is a stateless unified closure. This means it has:
+  // - no captured values
+  // - no explicit dynamic captures
+  // - no default capture convention
+  // Captured parameter references are handled by rebinding the promoted
+  // symbol within the defining scope. There is one constraint per external
+  // ref, so an empty constraint list means there were no external refs.
+  if (closureExternalRefConstraints.empty() &&
+      captureSignature.parsedCaptures.empty() &&
+      !captureSignature.captureAllByConvention) {
+    shared.closureEmitter->promoteClosure(decl, paramCaptures);
+    return success();
+  }
+
+  MLValue instance = emitClosureInstance(captures, decl, shared, paramCaptures);
+  if (!instance)
+    return failure();
+  decl.setIRValue(instance);
+  return success();
+}
+
 /// Make a copy or cast mutability if needed in the parent scope so that the
 /// semantics of the closure body are upheld. For example, consider the
 /// following:
@@ -1545,6 +1634,76 @@ registerClosureParamCaptures(ArrayRef<ParamDeclAttr> params, ASTDecl &decl,
         ConstraintAttr::get(eqConstraint, loc, /*message=*/StringAttr()));
   }
   return constraints;
+}
+
+/// Finalizes a fully type-checked function/closure signature onto `funcOp`:
+/// registers closure-parameter captures (with their `eq(C.T, T)` where
+/// clauses), builds the generator signature, and writes the params /
+/// function-type / generator / mangled-symbol attributes. Returns the
+/// (implicit-origin-indexed) generator signature, or null on failure.
+static FnTypeGeneratorType finalizeResolvedFnOp(
+    SharedState &shared, FnOp funcOp, ASTDecl &decl,
+    TypeCheckedFnSignature &tcSignature, TypeCheckedParamList &paramList,
+    StringAttr baseName,
+    SmallVectorImpl<ConstraintAttr> &closureExternalRefConstraints) {
+  OpBuilder builder = decl.getDeclEndBuilder();
+  NamedAttrList attrs = funcOp->getAttrDictionary();
+
+  // Register closure-parameter captures and their `eq(C.T, T)` where clauses.
+  closureExternalRefConstraints = registerClosureParamCaptures(
+      paramList.paramDeclAttrs, decl, shared, builder);
+  llvm::append_range(tcSignature.paramList.emittedBodyConstraints,
+                     closureExternalRefConstraints);
+
+  FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
+  if (!signature)
+    return {};
+
+  decl.insertKnownAssumptions(closureExternalRefConstraints);
+
+  /// configure FnOp
+
+  // The implicitOriginDecls don't affect the signature, but they do get
+  // prepended onto the paramDecls list.
+  ParamDeclArrayAttr paramsArrayAttr;
+  if (tcSignature.implicitOriginDecls.empty()) {
+    paramsArrayAttr =
+        builder.getAttr<ParamDeclArrayAttr>(paramList.paramDeclAttrs);
+  } else {
+    SmallVector<ParamDeclAttr> mergedParams;
+    llvm::append_range(mergedParams, paramList.paramDeclAttrs);
+    llvm::append_range(mergedParams, tcSignature.implicitOriginDecls);
+    paramsArrayAttr = builder.getAttr<ParamDeclArrayAttr>(mergedParams);
+  }
+
+  attrs.set(funcOp.getParamsAttrName(), paramsArrayAttr);
+  attrs.set(funcOp.getFunctionTypeAttrName(),
+            TypeAttr::get(tcSignature.getFunctionType()));
+
+  // Now that the FunctionType is set to the pretty type that includes implicit
+  // origins, we strip off the named origin decl references and replace them
+  // with indices.
+  signature = signature.replaceImplicitOriginsWithIndexes(
+      tcSignature.implicitOriginDecls);
+  attrs.set(funcOp.getFuncTypeGeneratorAttrName(), TypeAttr::get(signature));
+
+  // Set the symbol to the mangled name and check for redefinition.
+  attrs.set(funcOp.getSymNameAttrName(),
+            shared.declResolver->getMangledName(baseName, *decl.getParentDecl(),
+                                                signature));
+  attrs.set(funcOp.getSourceNameAttrName(), baseName);
+
+  // Set the result name binding if specified.
+  if (StringAttr resultName = tcSignature.argList.resultArg.name)
+    attrs.set(funcOp.getNamedResultAttrName(), resultName);
+
+  // Remove the temporary "sym_namex" attribute set up in
+  // StmtParser::parseDefFnStmt, see that method for an explanation.
+  attrs.erase("sym_namex");
+
+  // Bulk update the attributes.
+  funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
+  return signature;
 }
 
 /// funcdef   ::=  [decorators] "def" identifier [param_signature]
@@ -1805,65 +1964,14 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     return failure();
 
   // Finally now that the full signature has been resolved, build our IR.
-  // Handle argument effects and build the ASTDecls for the arguments.
-  OpBuilder builder = decl.getDeclEndBuilder();
-  NamedAttrList attrs = funcOp->getAttrDictionary();
-
-  // Register closure-parameter captures and their `eq(C.T, T)` where clauses.
-  SmallVector<ConstraintAttr> closureExternalRefConstraints =
-      registerClosureParamCaptures(paramList.paramDeclAttrs, decl, shared,
-                                   builder);
-  llvm::append_range(tcSignature.paramList.emittedBodyConstraints,
-                     closureExternalRefConstraints);
-
-  FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
+  // Handle argument effects, build the ASTDecls for the arguments, and write
+  // the finalized signature attributes onto the FnOp.
+  SmallVector<ConstraintAttr> closureExternalRefConstraints;
+  FnTypeGeneratorType signature =
+      finalizeResolvedFnOp(shared, funcOp, decl, tcSignature, paramList,
+                           baseName, closureExternalRefConstraints);
   if (!signature)
     return failure();
-
-  decl.insertKnownAssumptions(closureExternalRefConstraints);
-
-  /// configure FnOp
-
-  // The implicitOriginDecls don't affect the signature, but they do get
-  // prepended onto the paramDecls list.
-  ParamDeclArrayAttr paramsArrayAttr;
-  if (tcSignature.implicitOriginDecls.empty()) {
-    paramsArrayAttr =
-        builder.getAttr<ParamDeclArrayAttr>(paramList.paramDeclAttrs);
-  } else {
-    SmallVector<ParamDeclAttr> mergedParams;
-    llvm::append_range(mergedParams, paramList.paramDeclAttrs);
-    llvm::append_range(mergedParams, tcSignature.implicitOriginDecls);
-    paramsArrayAttr = builder.getAttr<ParamDeclArrayAttr>(mergedParams);
-  }
-
-  attrs.set(funcOp.getParamsAttrName(), paramsArrayAttr);
-  attrs.set(funcOp.getFunctionTypeAttrName(),
-            TypeAttr::get(tcSignature.getFunctionType()));
-
-  // Now that the FunctionType is set to the pretty type that includes implicit
-  // origins, we strip off the named origin decl references and replace them
-  // with indices.
-  signature = signature.replaceImplicitOriginsWithIndexes(
-      tcSignature.implicitOriginDecls);
-  attrs.set(funcOp.getFuncTypeGeneratorAttrName(), TypeAttr::get(signature));
-
-  // Set the symbol to the mangled name and check for redefinition.
-  attrs.set(funcOp.getSymNameAttrName(),
-            shared.declResolver->getMangledName(baseName, *decl.getParentDecl(),
-                                                signature));
-  attrs.set(funcOp.getSourceNameAttrName(), baseName);
-
-  // Set the result name binding if specified.
-  if (StringAttr resultName = tcSignature.argList.resultArg.name)
-    attrs.set(funcOp.getNamedResultAttrName(), resultName);
-
-  // Remove the temporary "sym_namex" attribute set up in
-  // StmtParser::parseDefFnStmt, see that method for an explanation.
-  attrs.erase("sym_namex");
-
-  // Bulk update the attributes.
-  funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
 
   // Check for API author error: stable function should return stable types.
   checkStableFunctionReturnType(decl, ASTType(signature.getUserResultType()),
@@ -1934,37 +2042,11 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   if (failed(resolveBody(funcOp, lexer, decl)))
     return failure();
 
-  // Find all parameter captures in the function body.
-  // TODO: Use the SharedState cache?
-  ParameterCollector::Analysis collectorCache;
-  ParameterUseDefGraph graph(funcOp.getBodyRegion());
-  graph.calculate(collectorCache);
-
-  // Get captured parameters that cross with captured values.
-  ParameterCollector collector(collectorCache);
-  SmallVector<Capture> captures;
-  SmallVector<ParamDeclRefAttr> capturedUses;
-  for (auto &[_, capture] : shared.getCaptureRangeInScope(decl)) {
-    captures.push_back(capture);
-    bool unusedHasConstExpr = false;
-    size_t unusedRequiredSignatureDepth = 0;
-    collector.collectUsesFromType(capture.getValue().getType(), capturedUses,
-                                  unusedHasConstExpr,
-                                  unusedRequiredSignatureDepth);
-  }
-  for (ParamDeclRefAttr use : capturedUses)
-    graph.usesFromAbove.insert(use);
-
-  SmallVector<ParamDeclRefAttr> paramCaptures =
-      graph.usesFromAbove.takeVector();
-
-  // Because our IR has type sugar, we can capture the same parameter from
-  // the sugared and canonical version of the same type.  Remove one of the
-  // versions from the captured uses.
-  SmallPtrSet<StringAttr, 8> capturedParamNames;
-  llvm::erase_if(paramCaptures, [&](ParamDeclRefAttr use) {
-    return !capturedParamNames.insert(use.getName()).second;
-  });
+  // Collect the captured values and parameter references from the resolved
+  // body.
+  BodyCaptures bodyCaptures = collectBodyCaptures(shared, decl, funcOp);
+  SmallVector<Capture> &captures = bodyCaptures.values;
+  SmallVector<ParamDeclRefAttr> &paramCaptures = bodyCaptures.paramRefs;
 
   // If this is a `@parameter` closure, attach the capture origins.
   if (signature.isCapturing()) {
@@ -1988,34 +2070,10 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     return success();
   }
 
-  if (isNonlegacyClosure) {
-    // abi("C") functions must be bare function pointers with no captured
-    // state, even in closure form.
-    if (signature.getFnEffects().isCABI() && !captures.empty())
-      return emitError(funcOp.getLoc(),
-                       "a abi(\"C\") function cannot capture variables");
-
-    // Check if this is a stateless unified closure. This means it has:
-    // - no captured values
-    // - no explicit dynamic captures
-    // - no default capture convention
-    // Captured parameter references are handled by rebinding the promoted
-    // symbol within the defining scope. There is one constraint per external
-    // ref, so an empty constraint list means there were no external refs.
-    if (closureExternalRefConstraints.empty() &&
-        captureSignature.parsedCaptures.empty() &&
-        !captureSignature.captureAllByConvention) {
-      shared.closureEmitter->promoteClosure(decl, paramCaptures);
-      return success();
-    }
-
-    MLValue instance =
-        emitClosureInstance(captures, decl, shared, paramCaptures);
-    if (!instance)
-      return failure();
-    decl.setIRValue(instance);
-    return success();
-  }
+  if (isNonlegacyClosure)
+    return constructClosure(shared, decl, funcOp, captures, paramCaptures,
+                            captureSignature, closureExternalRefConstraints,
+                            signature);
 
   if (captures.empty() && captureSignature.parsedCaptures.empty() &&
       !captureSignature.captureAllByConvention) {
