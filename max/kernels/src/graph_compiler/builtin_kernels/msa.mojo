@@ -420,10 +420,10 @@ struct Struct_msa_attention_ragged_paged:
         )
 
         # Route purely on the runtime query length.  MAX speculative draft
-        # length is 4; `2/3/4` route to architecture-specific spec decode and
-        # `> 4` to prefill.  A short 2-4 prefill is correctly served by the
+        # length is 8; `2..8` route to architecture-specific spec decode and
+        # `> 8` to prefill.  A short 2-8 prefill is correctly served by the
         # decode-shaped sparse path.
-        comptime MAX_SPEC_DRAFT = 4
+        comptime MAX_SPEC_DRAFT = 8
         var max_q_len = Int(kv_collection.max_seq_length)
 
         # Decode == one query token per sequence (`max_q_len == 1`).
@@ -503,7 +503,7 @@ struct Struct_msa_attention_ragged_paged:
                     ctx,
                 )
         elif 1 < max_q_len <= MAX_SPEC_DRAFT:
-            # ---- Sparse SPECULATIVE decode (`2 <= max_q_len <= 4`) ----
+            # ---- Sparse SPECULATIVE decode (`2 <= max_q_len <= 8`) ----
             # Each draft token runs on its OWN CTA via the per-token decode
             # kernel (`spec_max_seq_len > 1` derives the spec mode in-entry =>
             # per_token_index + causal + the over-launched
