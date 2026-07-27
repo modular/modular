@@ -28,6 +28,24 @@ static bool isTypeObviouslyTrivial(Type type) {
   return isa<KGEN::NoneType, IntegerType, RefType>(type);
 }
 
+/// Collect interior origins defined by `userResultType` into
+/// `interiorOriginsDefined`. Subtree origins (~a) are modeled as a synthetic
+/// interior origin for the same analysis.
+static void collectInteriorOriginsDefinedByType(
+    Type userResultType, CachedOriginFinder &originFinder,
+    SmallVectorImpl<InteriorOriginAttr> &interiorOriginsDefined) {
+  for (TypedAttr origin : originFinder.findOriginsIn({userResultType})) {
+    // Given a def of something with an "a.list["x"].second.field["y"].z"
+    // origin, we need to mark the "x" and "y" interior origins live.
+    origin.walk([&](Attribute nested) {
+      if (auto into = dyn_cast<InteriorOriginAttr>(nested)) {
+        interiorOriginsDefined.push_back(into);
+      } else if (auto subtree = dyn_cast<OriginSubtreeAttr>(nested))
+        interiorOriginsDefined.push_back(getInteriorForSubtreeOrigin(subtree));
+    });
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // OriginTrackable
 //===----------------------------------------------------------------------===//
@@ -407,21 +425,9 @@ void OperationEffects::analyzeCallOp(Operation &op) {
 
   // If the result of this function is defining an interior origin, then we
   // need to mark the interior origins live.
-  if (signature.getDefinesInteriorOrigins()) {
-    for (TypedAttr origin : originFinder.findOriginsIn({userResultType})) {
-      // Given a def of something with an "a.list["x"].second.field["y"].z"
-      // origin, we need to mark the "x" and "y" interior origins live.
-      // Subtree origins (~a) are modeled as a synthetic interior origin for
-      // the same analysis.
-      origin.walk([&](Attribute nested) {
-        if (auto into = dyn_cast<InteriorOriginAttr>(nested)) {
-          interiorOriginsDefined.push_back(into);
-        } else if (auto subtree = dyn_cast<OriginSubtreeAttr>(nested))
-          interiorOriginsDefined.push_back(
-              getInteriorForSubtreeOrigin(subtree));
-      });
-    }
-  }
+  if (signature.getDefinesInteriorOrigins())
+    collectInteriorOriginsDefinedByType(userResultType, originFinder,
+                                        interiorOriginsDefined);
 }
 
 /// This computes the effects that an operation has on any operands and result
@@ -435,7 +441,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
 
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
-  if (isa<RefStructGEROp, RebindOp, RefImmutOp, RefUpcastOp>(op) ||
+  if (isa<RefStructGEROp, RebindOp, RefImmutOp>(op) ||
       llvm::isa_and_nonnull<DebugInfo::DebugInfoDialect>(op.getDialect())) {
     if (op.getNumResults() == 1)
       results.push_back(ResultEffect::ignore);
@@ -556,6 +562,21 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
 
   if (auto mark = dyn_cast<OwnershipMarkConsumedOp>(op)) {
     operands.push_back({mark.getOperand(), OperandEffect::memConsume});
+    return {};
+  }
+
+  // Debuginfo ops may reference values that aren't fully initialized, so we
+  // skip over them.  These indexing operations are handled specially.
+  if (auto upcast = dyn_cast<RefUpcastOp>(op)) {
+    results.push_back(ResultEffect::ignore);
+
+    // RefUpcastOp can define a subtree origin.  If so, notice this and treat it
+    // as a read of the source, which will validate that the source is alive.
+    // Otherwise it is a noop.
+    collectInteriorOriginsDefinedByType(upcast.getType(), originFinder,
+                                        interiorOriginsDefined);
+    if (!interiorOriginsDefined.empty())
+      operands.push_back({upcast.getOperand(), OperandEffect::memLoad});
     return {};
   }
 

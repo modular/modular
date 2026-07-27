@@ -773,6 +773,9 @@ def test_simple_subtree_mut_invalidation(var collection: List[Int]):
     x += 1 # expected-note {{origin was invalidated here}}
     x += 1  # expected-error {{use of invalidated interior reference 'origin_of(collection).subtree'}}
 
+def get_raising(var list: List[Int]) raises -> ref [origin_of(list).subtree] Int:
+    return list[0]
+
 struct ListAndInt:
     var list: List[Int]
     var anotherInt: Int
