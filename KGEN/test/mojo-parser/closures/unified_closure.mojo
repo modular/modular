@@ -32,6 +32,7 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=MIXED_KWARGS < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=MIXED_KWARGS_FN_PTR < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=STAR_ARGS_KWARGS_FN_PTR < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=S20 < %t.mlir
 # COM: Verify generated trait and struct structure.
 # S0-DAG: [[S0_PARENT:!Int_AnyType_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
 # S0-DAG: [[S0_IMPL_PARENT:!Int_AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
@@ -662,3 +663,26 @@ def star_args_kwargs_fn_ptr_takeClosure(f: Some[def(*args: Int, var **kwargs: In
 
 def star_args_kwargs_fn_ptr_useFnWrapper() -> Int:
     return star_args_kwargs_fn_ptr_takeClosure(star_args_kwargs_fn_ptr_top)
+
+
+# COM: Ensure index replacement is asserted on name not attribute identity since replacement operates over uncanonical form
+# S20-DAG: lit.trait.decl @"def[X: Copyable & ImplicitlyDeletable, //](y: X) -> None{{.*}}"
+
+
+# COM: S20_Bound has sugared type
+comptime S20_Bound = Copyable & ImplicitlyDeletable
+
+
+def s20_apply[X: S20_Bound, //, F: def(X)](f: F):
+    pass
+
+
+def s20_bindIt[X: S20_Bound]():
+    # COM: Capture of sugared type
+    def reap(y: X):
+        pass
+    # COM: To inflate reap into a closure type we need to bind the parameters of its wrapper type.
+    #      That means we must match a parameter to a value. We asserted that there is a parameter
+    #      to bind that value to but we assumed that the types were equal when in fact they only
+    #      need to be canonically equal.
+    s20_apply(reap)

@@ -1478,8 +1478,11 @@ selfContainedSymbolAndCaptures(PValue fnPValue,
     // Any index reference must be a *direct* reference to a capture.
     if (auto idxRef = dyn_cast<ParamIndexRefAttr>(replaced);
         idxRef && idxRef.getDepth() == 0) {
-      assert(llvm::find(captures, cast<ParamDeclRefAttr>(binding)) !=
-             captures.end());
+      auto bindingRef = cast<ParamDeclRefAttr>(binding);
+      assert(llvm::any_of(captures, [&](ParamDeclRefAttr capture) {
+        return capture.getName() == bindingRef.getName() &&
+               isEqualCanon(capture.getType(), bindingRef.getType());
+      }));
     }
     params.push_back(replaced);
   };
