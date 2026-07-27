@@ -16,6 +16,13 @@
 
 namespace M::KGEN::LIT {
 
+/// Returns true if `candidate` is a compiler-synthesized function whose own
+/// where clause can never be satisfied (e.g. the move/copy-init synthesized
+/// for a `Movable`/`Copyable` conformance). Such a function is never actually
+/// callable, so it should not be treated as a real candidate when diagnosing a
+/// failed call or a failed trait conformance.
+bool isNeverCallableSynthesizedCandidate(ASTDecl *candidate);
+
 //===----------------------------------------------------------------------===//
 // OverloadSet
 //===----------------------------------------------------------------------===//

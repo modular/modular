@@ -108,13 +108,18 @@ static bool isInheritedFnOp(FnOp fnOp) {
 /// selection. Following overload selection rules, all candidates must be
 /// definitively satisfied or violated - unprovable constraints trigger errors.
 ///
+/// If the result is `no`, `violatedConstraint` (when non-null) is set to the
+/// specific method constraint that contradicts the conformance, so callers can
+/// report it the same way a violated constraint is reported at a call site.
+///
 /// Returns:
 ///   - `yes`: conformance implies all method constraints
 ///   - `no`: method constraints contradict the conformance
 ///   - `unknown`: constraints cannot be proven or disproven (error case)
 static TriState
 canDischargeMethodConstraints(FnOp method, ConstraintAttr conformanceConstraint,
-                              ASTDecl &structDecl) {
+                              ASTDecl &structDecl,
+                              ConstraintAttr *violatedConstraint = nullptr) {
   ArrayRef<ConstraintAttr> methodConstraints =
       method.getFuncTypeGenerator().getParamListAttrs().getBodyConstraints();
   if (methodConstraints.empty())
@@ -132,14 +137,10 @@ canDischargeMethodConstraints(FnOp method, ConstraintAttr conformanceConstraint,
     if (isTriviallyTrueProposition(methodProp))
       continue;
 
-    // Unconditional conformance can't prove a non-trivial constraint.
-    if (isTriviallyTrueProposition(confProp)) {
-      result &= TriState::unknown();
-      continue;
-    }
-
     switch (inferConstraintRelation(confProp, methodProp)) {
     case ConstraintRelation::Contradicts:
+      if (violatedConstraint)
+        *violatedConstraint = methodConstraint;
       return TriState::no();
     case ConstraintRelation::Implies:
       break;
@@ -592,15 +593,18 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     if (traitFn.getInheritedFrom())
       return success();
 
+    auto reportNotImplemented = [&]() -> LogicalResult {
+      diag->attachNote(*traitFnDecl)
+          << "required function '" + name.str() + "' is not implemented";
+      return failure(); // Stop the outer loop.
+    };
+
     // Collect all method declarations from struct and extensions
     llvm::SmallVector<ASTDecl *> decls =
         collectMethodsWithNameFromDecls(structDecl, name, relevantExtensions);
 
-    if (decls.empty()) {
-      diag->attachNote(*traitFnDecl)
-          << "required function '" + name.str() + "' is not implemented";
-      return failure(); // Stop the outer loop.
-    }
+    if (decls.empty())
+      return reportNotImplemented();
 
     // Signature resolve any decls that don't correspond to inherited trait
     // methods first. This helps us avoid any infinite loops as signature
@@ -653,6 +657,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     // trait signature (since we can't definitively select a witness).
     SmallVector<ASTDecl *> provableDecls;
     SmallVector<ASTDecl *> unprovableDecls;
+    SmallVector<std::pair<ASTDecl *, ConstraintAttr>> contradictedUserDecls;
     for (ASTDecl *decl : decls) {
       auto fnOp = dyn_cast_or_null<FnOp>(decl->getIfOperation());
       if (!fnOp) {
@@ -660,17 +665,18 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
         continue;
       }
 
+      ConstraintAttr violatedConstraint;
       TriState status = canDischargeMethodConstraints(
-          fnOp, conformanceConstraint, structDecl);
+          fnOp, conformanceConstraint, structDecl, &violatedConstraint);
       if (status.isTrue()) {
         provableDecls.push_back(decl);
       } else if (status.isUnknown()) {
         // Track unprovable candidates - if any match the trait signature,
         // we must error since we can't definitively select a witness.
         unprovableDecls.push_back(decl);
+      } else if (!isNeverCallableSynthesizedCandidate(decl)) {
+        contradictedUserDecls.emplace_back(decl, violatedConstraint);
       }
-      // Violated: method constraints contradict conformance - not a valid
-      // candidate.
     }
 
     // Check if there are unprovable candidates whose signature matches the
@@ -698,6 +704,24 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
         diag->attachNote(*traitFnDecl) << "required by trait method here";
         return failure();
       }
+    }
+
+    // Every candidate's constraints contradicted the conformance.
+    if (provableDecls.empty()) {
+      // Ignore synthesized, uncallable candidates as usual.
+      if (contradictedUserDecls.empty())
+        return reportNotImplemented();
+
+      for (auto &[decl, violatedConstraint] : contradictedUserDecls) {
+        TypedAttr prop = violatedConstraint.getProposition();
+        MojoInflightDiag &note =
+            diag->attachNote(violatedConstraint.getLoc(), prop)
+            << "constraint declared here evaluated to False, expected " << prop;
+        if (StringAttr message = violatedConstraint.getMessage())
+          note << ": " << message.getValue();
+      }
+      diag->attachNote(*traitFnDecl) << "required by trait method here";
+      return failure();
     }
 
     // Now try to find a match among the provable candidates.

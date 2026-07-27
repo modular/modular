@@ -1051,3 +1051,15 @@ struct FriendlyGreeter(Greeter where False, Movable where False):
 def friendly_greeter_own_overload_is_unaffected():
     var s = FriendlyGreeter(1)
     var msg = s.greet()  # Ok -- resolves to FriendlyGreeter's own `greet`.
+
+
+# MOCO-4429: two traits requiring the identical method shape, one is Movable
+# with `where False` and the other a plain user trait also opted out. Neither
+# needs any method implemented on the struct, so this must conform with no
+# diagnostics.
+trait CustomNeverMove:
+    def __init__(out self, *, deinit move: Self):
+        ...
+
+struct BothOptOut(CustomNeverMove where False, Movable where False):
+    pass
