@@ -718,6 +718,12 @@ This version is still a work in progress.
   already-written and produced non-deterministic results.
 - The `layout` package is now bundled with MAX instead of Mojo.
 
+- Some standard library APIs related to accelerator programming have moved to
+  a new `max` Mojo package, including:
+
+  - `std.benchmark.Bench.bench_multicontext` ->
+    `max.benchmark.bench_multicontext`
+
 ## Breaking changes
 
 - `PipelineTokenizer.eos` (a single scalar token id) is replaced by

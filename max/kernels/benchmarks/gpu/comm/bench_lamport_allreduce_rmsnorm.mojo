@@ -50,6 +50,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from max.benchmark import bench_multicontext
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.allreduce import allreduce
 from comm.allreduce_lamport_rmsnorm import lamport_allreduce_rmsnorm
@@ -425,7 +426,8 @@ def bench_fused_lamport_allreduce_rmsnorm[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_fused_iter](
+    bench_multicontext[bench_fused_iter](
+        b,
         list_of_ctx,
         BenchId("fused_lamport_allreduce_rmsnorm", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -472,7 +474,8 @@ def bench_fused_lamport_allreduce_rmsnorm[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_unfused_iter](
+    bench_multicontext[bench_unfused_iter](
+        b,
         list_of_ctx,
         BenchId(
             "unfused_allreduce_then_rms_norm",

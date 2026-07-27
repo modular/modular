@@ -38,6 +38,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from max.benchmark import bench_multicontext
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.allreduce import allreduce, elementwise_epilogue_type
 from comm.allreduce_residual_rmsnorm import (
@@ -790,7 +791,8 @@ def bench_allreduce_rmsnorm_fp8[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_allreduce_iter](
+    bench_multicontext[bench_allreduce_iter](
+        b,
         list_of_ctx,
         BenchId("allreduce_only", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -860,7 +862,8 @@ def bench_allreduce_rmsnorm_fp8[
 
             bench.iter_custom[call_fn](ctx)
 
-        b.bench_multicontext[bench_ar_fused_iter](
+        bench_multicontext[bench_ar_fused_iter](
+            b,
             list_of_ctx,
             BenchId(
                 "allreduce_then_fused_rmsnorm_fp8",
@@ -907,7 +910,8 @@ def bench_allreduce_rmsnorm_fp8[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_fully_fused_iter](
+    bench_multicontext[bench_fully_fused_iter](
+        b,
         list_of_ctx,
         BenchId(
             "fused_allreduce_rmsnorm_fp8",
@@ -1006,7 +1010,8 @@ def bench_allreduce_rmsnorm_fp8[
 
             bench.iter_custom[call_fn](ctx)
 
-        b.bench_multicontext[bench_ar_add_fused_iter](
+        bench_multicontext[bench_ar_add_fused_iter](
+            b,
             list_of_ctx,
             BenchId(
                 "allreduce_epilogue_add_then_fused_rmsnorm_fp8",
@@ -1061,7 +1066,8 @@ def bench_allreduce_rmsnorm_fp8[
 
         bench.iter_custom[call_fn](ctx)
 
-    b.bench_multicontext[bench_fused_add_iter](
+    bench_multicontext[bench_fused_add_iter](
+        b,
         list_of_ctx,
         BenchId(
             "fused_allreduce_residual_rmsnorm_fp8",
