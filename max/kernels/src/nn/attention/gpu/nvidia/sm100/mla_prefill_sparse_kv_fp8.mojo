@@ -239,8 +239,6 @@ struct MLAPrefillSparseFP8[
     comptime v_tile_shape = Index(Self.v_tile_height, Self.v_gather_box)
     comptime v_desc_shape = Index(1, Self.v_gather_box)
 
-    # desc_shape inner dim 64×2=128B satisfies the ≤256B SWIZZLE_NONE constraint.
-    # SMEM is written in column-group order to match TMA's sub-copy layout.
     comptime o_tile_shape = Index(Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth)
     comptime o_desc_shape = Index(Self.NUM_Q_HEADS_PER_CTA, 64)
 
@@ -1438,6 +1436,10 @@ struct MLAPrefillSparseFP8[
 
             comptime GROUP_STRIDE = Self.NUM_Q_HEADS_PER_CTA * 64
 
+            comptime o_sw = make_swizzle[
+                Self.output_dtype, TensorMapSwizzle.SWIZZLE_128B
+            ]()
+
             comptime for atom_idx in range(Self.NUM_SV_ATOMS):
                 comptime atom_o_tmem_addr = (
                     Self.O_TMEM_ADDR + atom_idx * Self.O_ATOM_PHYS_COLS
@@ -1466,10 +1468,8 @@ struct MLAPrefillSparseFP8[
                             v0_f32.cast[Self.qkv_dtype](),
                             v1_f32.cast[Self.qkv_dtype](),
                         )
-                        var smem_offset = (
-                            col_group * GROUP_STRIDE
-                            + Int(head_local) * 64
-                            + i * 2
+                        var smem_offset = col_group * GROUP_STRIDE + o_sw(
+                            Int(head_local) * 64 + i * 2
                         )
                         # Store only the real head rows; padded rows
                         # [num_q_heads, 64) carry dropped MMA output and would
@@ -1844,7 +1844,7 @@ def mla_prefill_sparse_fp8[
     )
     o_tma_op_fp8 = create_tensor_tile[
         Index(config.num_q_heads // config.cta_group, config.v_depth),
-        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         __desc_shape=Index(config.num_q_heads // config.cta_group, 64),
     ](ctx, output_2d_fp8)
 

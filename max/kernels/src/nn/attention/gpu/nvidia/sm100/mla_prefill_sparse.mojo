@@ -201,8 +201,6 @@ struct MLAPrefillSparse[
     comptime v_tile_shape = Index(Self.v_tile_height, Self.v_gather_box)
     comptime v_desc_shape = Index(1, Self.v_gather_box)
 
-    # desc_shape inner dim 64×2=128B satisfies the ≤256B SWIZZLE_NONE constraint.
-    # SMEM is written in column-group order to match TMA's sub-copy layout.
     comptime o_tile_shape = Index(Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth)
     comptime o_desc_shape = Index(Self.NUM_Q_HEADS_PER_CTA, 64)
 
@@ -516,6 +514,8 @@ struct MLAPrefillSparse[
             var real_mi: Float32 = Float32(min_or_neg_inf[DType.float32]())
 
             var scale_log2e = scale * Float32(log2e)
+
+            comptime USE_EXP2_EMULATION = Self.config.cta_group != 2
             comptime P_PER_THREAD = Self.config.B_TOPK // 2  # 64
             comptime O_RESCALE_CHUNK = 32
             # Same "per-CTA = D_V/2" convention as in phase1.cuh's
@@ -643,13 +643,6 @@ struct MLAPrefillSparse[
                 mi = new_max
                 li = mul_ftz(li, scale_for_old)
 
-                # S = exp2(P * scale_log2e - new_max), accumulate li, and
-                # convert to bf16 ready for the SV MMA.
-                #
-                # Emulate exp2 on the FMA pipe instead of calling hardware
-                # `ex2`: the SM100 softmax warpgroup is MUFU-bound on the
-                # critical path, so this is ~14% faster here. Don't replace
-                # with `exp2(d)`.
                 var s_bf16 = Array[Scalar[Self.qkv_dtype], P_PER_THREAD](
                     uninitialized=True
                 )
@@ -660,7 +653,9 @@ struct MLAPrefillSparse[
                         p[2 * j],
                         p[2 * j + 1],
                     )
-                    var ed2 = exp2_emulation(fma_ftz(pj, vscale, vneg_max))
+                    var ed2 = exp2_emulation[
+                        use_exp2_emulation=USE_EXP2_EMULATION
+                    ](fma_ftz(pj, vscale, vneg_max))
                     li = li + ed2[0] + ed2[1]
                     s_bf16[2 * j] = ed2[0].cast[Self.qkv_dtype]()
                     s_bf16[2 * j + 1] = ed2[1].cast[Self.qkv_dtype]()
@@ -857,6 +852,10 @@ struct MLAPrefillSparse[
             # col_group = depth_col_block*2 + atom_idx*4 + chunk tiles v_depth=512.
             comptime GROUP_STRIDE = Self.NUM_Q_HEADS_PER_CTA * 64
 
+            comptime o_sw = make_swizzle[
+                Self.output_dtype, TensorMapSwizzle.SWIZZLE_128B
+            ]()
+
             comptime for atom_idx in range(Self.NUM_SV_ATOMS):
                 comptime atom_o_tmem_addr = (
                     Self.O_TMEM_ADDR + atom_idx * Self.O_ATOM_PHYS_COLS
@@ -885,10 +884,8 @@ struct MLAPrefillSparse[
                             v0_f32.cast[Self.qkv_dtype](),
                             v1_f32.cast[Self.qkv_dtype](),
                         )
-                        var smem_offset = (
-                            col_group * GROUP_STRIDE
-                            + Int(head_local) * 64
-                            + i * 2
+                        var smem_offset = col_group * GROUP_STRIDE + o_sw(
+                            Int(head_local) * 64 + i * 2
                         )
                         # Store only the real head rows; padded rows
                         # [num_q_heads, 64) carry dropped MMA output and would
@@ -1555,9 +1552,10 @@ def mla_prefill_sparse[
         output.ptr,
         row_major(num_q_rows * config.num_q_heads, config.v_depth),
     )
+
     o_tma_op = create_tensor_tile[
         Index(config.num_q_heads // config.cta_group, config.v_depth),
-        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         __desc_shape=Index(config.num_q_heads // config.cta_group, 64),
     ](ctx, output_2d)
 
