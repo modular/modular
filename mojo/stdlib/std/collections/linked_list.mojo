@@ -944,15 +944,7 @@ struct LinkedList[ElementType: Movable](
         comptime assert conforms_to(
             Self.ElementType, Copyable
         ), "LinkedList iteration requires the element to be `Copyable`."
-        # TODO(MOCO-4326): Remove rebind
-        return _LinkedListIter(
-            rebind[
-                Pointer[
-                    LinkedList[downcast[Self.ElementType, Copyable]],
-                    origin_of(self),
-                ]
-            ](Pointer(to=self))
-        )
+        return _LinkedListIter(Pointer(to=self))
 
     # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
     def __reversed__(
@@ -972,15 +964,7 @@ struct LinkedList[ElementType: Movable](
             - O(1) for iterator construction.
             - O(n) in len(self) for a complete iteration of the list.
         """
-        # TODO(MOCO-4326): Remove rebind
-        return {
-            rebind[
-                Pointer[
-                    LinkedList[downcast[Self.ElementType, Copyable]],
-                    origin_of(self),
-                ]
-            ](Pointer(to=self))
-        }
+        return {Pointer(to=self)}
 
     def __bool__(self) -> Bool:
         """Check if the list is non-empty.
