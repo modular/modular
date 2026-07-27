@@ -13,8 +13,6 @@ Public API:
   calls. Expands to one CPU build action per spec plus a ``filegroup``
   bundling the per-spec ``.mef`` files under a single ``name`` the consumer
   depends on.
-- ``DEFAULT_CPU_TARGET``: a common preset for the host-CPU select so tests
-  don't re-declare it.
 
 The rule reuses the ``interp_cache.bzl`` recipe: a ``py_binary``'s ``env`` block
 carries the ``MODULAR_MOJO_MAX_*`` kernel-import vars only under
@@ -25,17 +23,24 @@ those short_path vars resolve.
 
 load("@cfg_workaround.bzl", "CFG_WORKAROUND")
 
-# Host-CPU codegen target, sourced per build platform the same way the mojo
-# toolchain is. Part of the MEF compile key, so it must match the consuming host.
-DEFAULT_CPU_TARGET = select({
-    "//:linux_x86_64": "triple=x86_64-unknown-linux-gnu;cpu=x86-64-v3",
-    "//:linux_aarch64": "triple=aarch64-unknown-linux-gnu;cpu=neoverse-n1",
-})
-
 def _precompiled_mef_impl(ctx):
     # A single file output (per-target subdir keeps the basename <spec>.mef
     # unique across targets in the same package).
     mef = ctx.actions.declare_file(ctx.attr.name + "/" + ctx.attr.spec + ".mef")
+
+    mojo_toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info
+
+    cpu_target = None
+    target = None
+    for copt in mojo_toolchain.copts:
+        if copt.startswith("--target-accelerator="):
+            target = copt.removeprefix("--target-accelerator=")
+        elif copt.startswith("--target-cpu="):
+            cpu_target = copt.removeprefix("--target-cpu=")
+
+    # not sure what this is about, is there a disconnect between the GC and Mojo?
+    target = target.replace("nvidia", "cuda")
+    target = target.replace("amdgpu", "hip")
 
     binary = ctx.attr.producer[DefaultInfo].files_to_run
     env = dict(ctx.attr.producer[RunEnvironmentInfo].environment)
@@ -44,9 +49,9 @@ def _precompiled_mef_impl(ctx):
     args.add(binary.executable)
     args.add(mef.path)
     args.add("--target")
-    args.add(ctx.attr.target)
+    args.add(target)
     args.add("--cpu-target")
-    args.add(ctx.attr.cpu_target)
+    args.add(cpu_target)
     args.add("--spec")
     args.add(ctx.attr.spec)
 
@@ -68,7 +73,10 @@ cd "${EXE}.runfiles/_main"
         arguments = [args],
         tools = [binary],
         use_default_shell_env = True,
-        env = env,
+        env = env | {
+            # If we import transformers but torch isn't available, we get a warning. Just silence it.
+            "TRANSFORMERS_NO_ADVISORY_WARNINGS": "1",
+        },
         outputs = [mef],
         mnemonic = "PrecompileMef",
         progress_message = "Precompiling MEF %{output}",
@@ -90,24 +98,16 @@ _precompiled_mef = rule(
             mandatory = True,
             doc = "Spec name to compile, passed as --spec.",
         ),
-        "target": attr.string(
-            mandatory = True,
-            doc = "Virtual GPU target 'api:arch' (e.g. 'cuda:sm_100a').",
-        ),
-        "cpu_target": attr.string(
-            mandatory = True,
-            doc = "Host-CPU codegen descriptor, passed as --cpu-target.",
-        ),
     },
+    toolchains = [
+        "@rules_mojo//:toolchain_type",
+    ],
 )
 
 def precompiled_mefs(
         name,
         producer,
         specs,
-        target,
-        cpu_target = DEFAULT_CPU_TARGET,
-        target_compatible_with = None,
         testonly = True,
         **kwargs):
     """Compiles a list of graph specs to MEFs on CPU, bundled under one target.
@@ -122,10 +122,6 @@ def precompiled_mefs(
         name: Target name; the filegroup bundling the per-spec MEF files.
         producer: A modular_py_binary calling precompile_entrypoint() (label).
         specs: List of spec-name strings, one MEF per spec (``<spec>.mef``).
-        target: Virtual GPU target 'api:arch' (e.g. "cuda:sm_100a").
-        cpu_target: Host-CPU codegen descriptor. Defaults to DEFAULT_CPU_TARGET.
-        target_compatible_with: Platform gate for the whole subgraph (e.g.
-            ``["//:b200_gpu"]``). Applied to every generated target.
         testonly: Whether the generated targets are test-only. Defaults to
             ``True`` (MEFs are test fixtures produced by a testonly producer).
         **kwargs: Common attrs (visibility, tags, ...) forwarded to all targets.
@@ -135,16 +131,12 @@ def precompiled_mefs(
             name = name + "_" + spec,
             producer = producer,
             spec = spec,
-            target = target,
-            cpu_target = cpu_target,
-            target_compatible_with = target_compatible_with,
             testonly = testonly,
             **kwargs
         )
     native.filegroup(
         name = name,
         srcs = [name + "_" + spec for spec in specs],
-        target_compatible_with = target_compatible_with,
         testonly = testonly,
         **kwargs
     )
