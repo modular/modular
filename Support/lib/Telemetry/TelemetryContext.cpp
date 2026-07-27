@@ -135,36 +135,38 @@ static void configureInternalLogging(StringRef internalLogConfig) {
 }
 
 /// creates local identifiers; see Telemetry.h.
-std::pair<std::string, std::string> M::Telemetry::createLocalIDs() {
-  // Collect all interfaces.
-  std::vector<std::string> macs = localMACs();
-  std::sort(std::begin(macs), std::end(macs));
+const M::Telemetry::LocalIDs &M::Telemetry::createLocalIDs() {
+  // Memoized so every caller in the process observes identical values: the
+  // crash reporting and usage telemetry lanes must share machineid/sessionid
+  // for their events to be joinable.
+  static const LocalIDs ids = [] {
+    std::vector<std::string> macs = localMACs();
+    std::sort(std::begin(macs), std::end(macs));
 
-  // Hash all addresses together.
-  llvm::BLAKE3 hashState{};
-  for (const auto &mac : macs)
-    hashState.update(StringRef(mac));
+    llvm::BLAKE3 hashState{};
+    for (const auto &mac : macs)
+      hashState.update(StringRef(mac));
 
-  // Construct a machine ID.
-  auto hash = hashState.result();
-  std::string machineID =
-      encodeURLSafeBase64(StringRef((char *)hash.begin(), hash.size()));
+    auto hash = hashState.result();
+    std::string machineID =
+        encodeURLSafeBase64(StringRef((char *)hash.begin(), hash.size()));
 
-  // Mix in some random bytes in order to construct a local session identifier.
-  // This may suffer from a cardinality explosion (and we may choose to rely on
-  // the machineid in the future instead), but we can make that decision in the
-  // backend separately.
-  SecureRandomBytesGenerator rng;
-  std::array<uint8_t, 32> scratchBuf = {};
-  auto err = rng.getRandomBytes(scratchBuf);
-  assert(!err.isError());
-  hashState.update(scratchBuf);
-  hash = hashState.result();
-  std::string sessionID =
-      encodeURLSafeBase64(StringRef((char *)hash.begin(), hash.size()));
+    // Mix in some random bytes in order to construct a local session
+    // identifier. This may suffer from a cardinality explosion (and we may
+    // choose to rely on the machineid in the future instead), but we can make
+    // that decision in the backend separately.
+    SecureRandomBytesGenerator rng;
+    std::array<uint8_t, 32> scratchBuf = {};
+    auto err = rng.getRandomBytes(scratchBuf);
+    assert(!err.isError());
+    hashState.update(scratchBuf);
+    hash = hashState.result();
+    std::string sessionID =
+        encodeURLSafeBase64(StringRef((char *)hash.begin(), hash.size()));
 
-  // Return the pair.
-  return std::make_pair(machineID, sessionID);
+    return LocalIDs{machineID, sessionID};
+  }();
+  return ids;
 }
 
 static size_t getMaxProcessors(const HostMachineInfo &hostInfo) {
@@ -276,11 +278,11 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
   attrs.SetAttribute("modular.version.buildtype", version.buildType);
 
   // Set the local machineid.
-  static std::pair<std::string, std::string> localIDs = createLocalIDs();
+  const auto &localIDs = createLocalIDs();
   // WARNING: Metering & billing depends on machineid. Do not remove!
-  attrs.SetAttribute("machineid", localIDs.first);
-  attrs.SetAttribute("sessionid", localIDs.second);
-  machineId = localIDs.first;
+  attrs.SetAttribute("machineid", localIDs.machine);
+  attrs.SetAttribute("sessionid", localIDs.session);
+  machineId = localIDs.machine;
 
   auto webId = settings.getValue("web.id");
   if (webId.empty()) {
