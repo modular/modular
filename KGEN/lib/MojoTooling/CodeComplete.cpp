@@ -128,7 +128,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
     onImport(
         [&]() {
           return &parserContext->getSharedState().importModule(
-              "std", PackageOp(), SMLoc());
+              {"std"}, PackageOp(), SMLoc());
         },
         importLoc);
     for (CodeCompletionResult &result : results)
@@ -226,9 +226,9 @@ struct CodeCompletionListener : public BaseCompletionListener {
       collectDeclChildren(decl);
       SharedState &shared = parserContext->getSharedState();
       SMLoc importLoc = shared.diags.convertLocToSMLoc(importOp->getLoc());
-      ASTDecl &target =
-          shared.importModule(importOp.getRealModuleName(),
-                              /*currentPackage=*/PackageOp(), importLoc);
+      ASTDecl &target = shared.importModule(
+          SharedState::ImportPath::fromAttr(importOp.getModulePath()),
+          /*currentPackage=*/PackageOp(), importLoc);
       (void)shared.getDeclResolver().resolveBody(target, importLoc);
       decl = MojoASTDeclRef(&target);
     }
@@ -265,7 +265,8 @@ struct CodeCompletionListener : public BaseCompletionListener {
     SharedState &shared = parserContext->getSharedState();
     SMLoc loc = shared.diags.convertLocToSMLoc(importOp->getLoc());
     ASTDecl &module = shared.importModule(
-        importOp.getModuleName(), importOp->getParentOfType<PackageOp>(), loc);
+        SharedState::ImportPath::fromAttr(importOp.getModulePathAttr()),
+        importOp->getParentOfType<PackageOp>(), loc);
     StringAttr declName = importOp.getDeclNameAttr();
     if (!declName)
       return MojoASTDeclRef(&module);

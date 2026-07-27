@@ -187,9 +187,12 @@ private:
       return it->second;
 
     // Resolve the top-level container for the reference. This should be a
-    // package or module.
-    ASTDecl *decl = &shared.importModule(rootAttr, /*currentPackage=*/nullptr,
-                                         resolutionContextLoc);
+    // package or module. Symbol roots are single names, never dotted paths
+    // (nesting is expressed with nested references), so any periods belong to
+    // the name itself: a REPL/LSP wrapper buffer or a dotted module name.
+    ASTDecl *decl =
+        &shared.importModule({rootAttr.getValue()}, /*currentPackage=*/nullptr,
+                             resolutionContextLoc);
     if (decl->isErroneous() ||
         failed(shared.declResolver->resolveBody(*decl, resolutionContextLoc)))
       return {};
@@ -352,7 +355,7 @@ struct SharedState::Impl {
   DenseMap<const ASTDecl *, std::vector<ExprNode *>> bodyDecorators;
 
   /// The implicit builtin imports added to each module.
-  SmallVector<StringAttr> implicitBuiltinImports;
+  SmallVector<ImportPathAttr> implicitBuiltinImports;
 
   /// The decl corresponding to the standard library package.
   ModuleState *stdPackageState = nullptr;
@@ -1137,11 +1140,11 @@ SharedState::resolveModulePath(StringRef moduleName, SMLoc includeLoc) {
   return result;
 }
 
-ASTDecl &SharedState::importModule(StringRef name, PackageOp currentPackage,
-                                   llvm::SMLoc loc) {
+ASTDecl &SharedState::importModule(const ImportPath &path,
+                                   PackageOp currentPackage, llvm::SMLoc loc) {
   ModuleState *moduleState = impl->packageStates[currentPackage];
   assert(moduleState && "unexpected package without a module state");
-  return *importModuleState(name, moduleState->decl, loc).decl;
+  return *importModuleState(path, moduleState->decl, loc).decl;
 }
 
 SmallVector<ASTDecl *>
@@ -1213,41 +1216,20 @@ bool SharedState::hasNestedModule(PackageOp packageOp, StringRef name) const {
              StringAttr::get(getContext(), name)) > 0;
 }
 
-/// Return true if \p name is a REPL or LSP docstring buffer identifier rather
-/// than a Mojo module path.
-///
-/// REPL and LSP docstring code-block buffers are created in
-/// MojoParserContext::parseREPLExpression (ParserDriverREPL.cpp).  Their names
-/// are formed by appending a " wrapper" or " wrapper_at(<offset>)" suffix to
-/// the source file path, e.g.:
-///
-///   "/abs/path/file.mojo wrapper_at(123) "
-///   "/abs/path/file.mojo wrapper"
-///
-/// A valid Mojo module path (e.g. "pkg.module") consists solely of identifiers
-/// separated by dots and can never contain a space, so the presence of
-/// " wrapper" unambiguously identifies these synthetic buffers.
-static bool isReplOrLspBuffer(StringRef name) {
-  return name.contains(" wrapper");
-}
-
-SharedState::ModuleState &SharedState::importModuleState(StringRef name,
+SharedState::ModuleState &SharedState::importModuleState(const ImportPath &path,
                                                          ASTDecl *context,
                                                          llvm::SMLoc loc,
                                                          bool isImplicit) {
-  CompilerTimeTraceScope fullTimeScope(("importModule: " + name).str());
+  CompilerTimeTraceScope fullTimeScope(
+      ("importModule: " + path.toDottedString()));
 
-  // Only treat the name as a dotted module path (e.g. "pkg.module") when it
-  // is not a REPL/LSP buffer identifier.  Buffer names embed the source file
-  // path, which contains ".mojo"; splitting on '.' would produce a phantom
-  // package name (e.g. "/abs/path/file") and a spurious "unable to locate
-  // module" diagnostic.
-  ModuleState &state =
-      (name.contains('.') && !isReplOrLspBuffer(name))
-          ? importRelativeModuleState(name, context, loc)
-          // Otherwise, import an absolute module or package
-          // at the top-level.
-          : importSubModuleState(name, impl->topLevelDecl, loc, loc);
+  // TODO: The terms "relative" and "submodule" are being stretched quite far
+  // here. We're invoking "sub" on any trivial path ("std") and "relative" on
+  // anything else.
+  ModuleState &state = (path.components.size() > 1 || path.relativeLevel)
+                           ? importRelativeModuleState(path, context, loc)
+                           : importSubModuleState(path.components.front(),
+                                                  impl->topLevelDecl, loc, loc);
 
   // An implicit import gets no import location, so its diagnostics aren't
   // threaded through to the user file that triggered the implicit import. Clear
@@ -1334,17 +1316,35 @@ SharedState::lookupModuleCache(StringRef name, ASTDecl *parentDecl,
     // self-imports of the module they wrap.
     StringRef importerName =
         getSourceMgr().getMemoryBuffer(importerBufferId)->getBufferIdentifier();
-    return state->sourcePath && isReplOrLspBuffer(importerName) &&
+
+    // REPL and LSP docstring code-block buffers
+    // are created in MojoParserContext::parseREPLExpression
+    // (ParserDriverREPL.cpp).  Their names are formed by appending a " wrapper"
+    // or " wrapper_at(<offset>)" suffix to the source file path, e.g.:
+    //
+    //   "/abs/path/file.mojo wrapper_at(123) "
+    //   "/abs/path/file.mojo wrapper"
+    //
+    // A valid Mojo module path (e.g. "pkg.module") consists solely of
+    // identifiers separated by dots and can never contain a space, so the
+    // presence of " wrapper" unambiguously identifies these synthetic buffers.
+    //
+    // FIXME: This is brittle and the above incorrect - names can legitimately
+    // contain " wrapper" as we support escaped identifiers. We should instead
+    // have the concept of "wrapper buffers" which encode what they wrap.
+    return state->sourcePath && importerName.contains(" wrapper") &&
            importerName.starts_with(*state->sourcePath);
   };
 
-  // Reject self-imports with an unregistered erroneous state.
+  // Reject self-imports with an unregistered erroneous state. The name *is*
+  // resolvable so it must not be poisoned in the parent's name table; use an
+  // unlisted decl for this.
   if (isSelfImport(state)) {
     if (!emitErrors)
       return state;
     return &createErrorModuleState(
         identifierLoc, declNameAttr, *parentState->decl,
-        "module '" + name + "' cannot import itself");
+        "module '" + name + "' cannot import itself", /*unlisted=*/true);
   }
 
   // Memoize the "imported from" location; the first resolution wins.
@@ -1450,13 +1450,16 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
 }
 
 SharedState::ModuleState &
-SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
-                                       llvm::SMLoc loc) {
+SharedState::importRelativeModuleState(const ImportPath &path,
+                                       ASTDecl *parentDecl, llvm::SMLoc loc) {
+  ASTDecl &importContext = *parentDecl;
   llvm::SMLoc identifierLoc = loc.isValid() ? loc : parentDecl->getLoc();
+  // These are structural path failures, not name-binding failures: the record
+  // exists for per-site diagnostic dedup and to hand back an erroneous state.
   auto emitError = [&](const Twine &message = "") -> ModuleState & {
-    return createErrorModuleState(identifierLoc,
-                                  StringAttr::get(getContext(), name),
-                                  *parentDecl, message);
+    return createErrorModuleState(
+        identifierLoc, StringAttr::get(getContext(), path.toDottedString()),
+        importContext, message, /*unlisted=*/true);
   };
 
   auto adjustIdentifierLoc = [&](unsigned offset) {
@@ -1465,8 +1468,15 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
     return llvm::SMLoc::getFromPointer(identifierLoc.getPointer() + offset);
   };
 
-  // If the name starts with a `.`, it is relative to the current package.
-  if (name.consume_front(".")) {
+  bool isRelative = path.relativeLevel > 0;
+  if (!isRelative) {
+    // We're resolving relative to a top-level package.
+    assert(!path.components.empty() && "Importing empty path?");
+    StringRef parentName = path.components.front();
+    identifierLoc = adjustIdentifierLoc(parentName.size() + 1);
+    parentDecl = importModuleState({parentName}, impl->topLevelDecl, loc).decl;
+  } else {
+    auto relativeLevel = path.relativeLevel;
     // Find the current package.
     identifierLoc = adjustIdentifierLoc(1);
     while (!isa_and_nonnull<PackageOp>(parentDecl->getIfOperation()) &&
@@ -1476,7 +1486,7 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
       return emitError("cannot import relative to a top-level package");
 
     // Otherwise, this is a package relative to the current parent.
-    while (name.consume_front(".")) {
+    while (--relativeLevel) {
       identifierLoc = adjustIdentifierLoc(1);
       if (!parentDecl->parentDecl ||
           !isa_and_nonnull<PackageOp>(
@@ -1487,23 +1497,19 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
       parentDecl = parentDecl->parentDecl;
     }
 
-    // If the name is empty, we're grabbing the parent package.
-    if (name.empty())
+    // If the path itself is empty, we're grabbing the parent package.
+    if (path.components.empty())
       return *impl->moduleStates[parentDecl];
-  } else {
-    // Otherwise, we're resolving relative to a top-level package.
-    StringRef parentName;
-    std::tie(parentName, name) = name.split('.');
-    identifierLoc = adjustIdentifierLoc(parentName.size() + 1);
-    parentDecl = importModuleState(parentName, impl->topLevelDecl, loc).decl;
   }
 
-  // The rest of the name resolves a nested module or package from the current
+  // The rest of the path resolves a nested module or package from the current
   // parent. Use importSubModuleState for each segment, which checks
-  // nestedModules first.
-  SmallVector<StringRef> remainingNames;
-  name.split(remainingNames, '.');
-  name = remainingNames.pop_back_val();
+  // nestedModules first. The non-relative branch above has already consumed
+  // the leading component as the top-level package.
+  unsigned consumedComponents = isRelative ? 0 : 1;
+  SmallVector<StringRef> remainingNames{
+      path.components.begin() + consumedComponents, path.components.end()};
+  StringRef leafModule = remainingNames.pop_back_val();
   for (auto [i, parentName] : enumerate(remainingNames)) {
     ModuleState &nextState =
         importSubModuleState(parentName, parentDecl, loc, identifierLoc);
@@ -1522,7 +1528,8 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
     //   - import package.(module)+(.symbol)?
     //   - from package.(module)+(.symbol)? import other_symbol
     if (isa_and_nonnull<FileModuleOp>(parentDecl->getIfOperation())) {
-      auto child = i + 1 < remainingNames.size() ? remainingNames[i + 1] : name;
+      auto child =
+          i + 1 < remainingNames.size() ? remainingNames[i + 1] : leafModule;
       return emitError(
           "'" + parentName +
           "' is a module, not a package; it has no nested module or package '" +
@@ -1533,7 +1540,7 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
     return emitError("'" + parentName + "' does not refer to a nested package");
   }
 
-  return importSubModuleState(name, parentDecl, loc, identifierLoc);
+  return importSubModuleState(leafModule, parentDecl, loc, identifierLoc);
 }
 
 bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
@@ -1548,7 +1555,7 @@ ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, SMLoc loc) {
 
   LookupResult lookup = lookupAndResolveDecl(
       traitName, loc,
-      importModule("std.prelude", /*currentPackage=*/nullptr, loc), true,
+      importModule({"std", "prelude"}, /*currentPackage=*/nullptr, loc), true,
       false);
   if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
     for (ASTDecl *result : lookup.getIfSuccess()) {
@@ -1616,21 +1623,22 @@ ASTType SharedState::lookupBuiltinType(StringRef name, ASTDecl &context,
                                        llvm::SMLoc loc) {
   if (useBuiltinModule) {
     ASTDecl &preludeModule =
-        importModule("std.prelude", /*currentPackage=*/nullptr, loc);
+        importModule({"std", "prelude"}, /*currentPackage=*/nullptr, loc);
     return lookupNamedType(name, preludeModule, loc);
   }
   return lookupNamedType(name, context, loc);
 }
 
 ASTDecl *SharedState::getBuiltinCoroutineType(llvm::SMLoc loc) {
-  ASTDecl &coroutineModule =
-      importModule("std.builtin.coroutine", /*currentPackage=*/nullptr, loc);
+  ASTDecl &coroutineModule = importModule({"std", "builtin", "coroutine"},
+                                          /*currentPackage=*/nullptr, loc);
   return lookupNamedTypeDecl("Coroutine", coroutineModule, loc);
 }
 
 ASTDecl *SharedState::getBuiltinDevicePassableTrait(llvm::SMLoc loc) {
-  ASTDecl &devicePassableModule = importModule("std.builtin.device_passable",
-                                               /*currentPackage=*/nullptr, loc);
+  ASTDecl &devicePassableModule =
+      importModule({"std", "builtin", "device_passable"},
+                   /*currentPackage=*/nullptr, loc);
   LookupResult result = lookupAndResolveDecl(
       "DevicePassable", loc, devicePassableModule, /*searchParentScopes=*/true);
   if (result.isErroneous())
@@ -1644,35 +1652,34 @@ ASTDecl *SharedState::getBuiltinDevicePassableTrait(llvm::SMLoc loc) {
 }
 
 ASTDecl *SharedState::getBuiltinRaisingCoroutineType(llvm::SMLoc loc) {
-  ASTDecl &coroutineModule =
-      importModule("std.builtin.coroutine", /*currentPackage=*/nullptr, loc);
+  ASTDecl &coroutineModule = importModule({"std", "builtin", "coroutine"},
+                                          /*currentPackage=*/nullptr, loc);
   return lookupNamedTypeDecl("RaisingCoroutine", coroutineModule, loc);
 }
 
 ASTType SharedState::getStandardCollectionType(llvm::SMLoc loc,
                                                StringRef name) {
   ASTDecl &collectionsModule =
-      importModule("std.collections", /*currentPackage=*/nullptr, loc);
+      importModule({"std", "collections"}, /*currentPackage=*/nullptr, loc);
   return lookupNamedType(name, collectionsModule, loc);
 }
 
 ASTType SharedState::getBuiltinSliceType(llvm::SMLoc loc, StringRef name) {
-  ASTDecl &sliceModule = importModule("std.builtin.builtin_slice",
+  ASTDecl &sliceModule = importModule({"std", "builtin", "builtin_slice"},
                                       /*currentPackage=*/nullptr, loc);
   return lookupNamedType(name, sliceModule, loc);
 }
 
 ASTType SharedState::getBuiltinStubsMLIRType(llvm::SMLoc loc) {
-  ASTDecl &stubsModule =
-      importModule("std.builtin._stubs", /*currentPackage=*/nullptr, loc);
+  ASTDecl &stubsModule = importModule({"std", "builtin", "_stubs"},
+                                      /*currentPackage=*/nullptr, loc);
   return lookupNamedType("__MLIRType", stubsModule, loc);
 }
 
-ArrayRef<ASTDecl *> SharedState::getBuiltinFunction(ASTDecl &context,
-                                                    StringRef moduleName,
-                                                    StringRef fnName,
-                                                    llvm::SMLoc loc) {
-  ASTDecl &module = importModule(moduleName, /*currentPackage=*/nullptr, loc);
+ArrayRef<ASTDecl *>
+SharedState::getBuiltinFunction(ASTDecl &context, const ImportPath &modulePath,
+                                StringRef fnName, llvm::SMLoc loc) {
+  ASTDecl &module = importModule(modulePath, /*currentPackage=*/nullptr, loc);
   return getBuiltinFunction(module, fnName, loc);
 }
 
@@ -1699,8 +1706,9 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
   // Check if this is the first attempt at resolving the builtin modules.
   if (impl->implicitBuiltinImports.empty()) {
     // Import the main standard library package.
-    impl->stdPackageState = &importModuleState(
-        "std", impl->topLevelDecl, moduleDecl.getLoc(), /*isImplicit=*/true);
+    impl->stdPackageState =
+        &importModuleState({"std"}, impl->topLevelDecl, moduleDecl.getLoc(),
+                           /*isImplicit=*/true);
     ASTDecl *last = declResolver->getParsedDeclList().back();
     if (last && last->isErroneous()) {
       std::string stdmsg =
@@ -1718,7 +1726,7 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
 
     // Import the prelude package.
     ASTDecl &preludePackageDecl =
-        *importModuleState("std.prelude", impl->topLevelDecl,
+        *importModuleState({"std", "prelude"}, impl->topLevelDecl,
                            moduleDecl.getLoc(), /*isImplicit=*/true)
              .decl;
     if (failed(
@@ -1726,8 +1734,8 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
       return;
 
     // Implicitly wildcard-import the prelude package into every module.
-    impl->implicitBuiltinImports.emplace_back(
-        StringAttr::get(getContext(), "std.prelude"));
+    impl->implicitBuiltinImports.emplace_back(ImportPathAttr::get(
+        getContext(), /*relativeLevel=*/0, {"std", "prelude"}));
   }
 
   // Add an ImportOp for "std" to the module's scope. This makes the bare
@@ -1737,11 +1745,12 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
   StringAttr stdAttr = StringAttr::get(getContext(), "std");
   auto &block = moduleDecl.getIfOperation()->getRegion(0).front();
   OpBuilder builder = OpBuilder::atBlockEnd(&block);
-  declResolver->createImportOp(moduleDecl, builder, stdAttr,
-                               /*realModuleName=*/stdAttr,
-                               translateLocation(moduleDecl.getLoc()));
+  declResolver->createImportOp(
+      moduleDecl, builder, stdAttr,
+      ImportPathAttr::get(getContext(), /*relativeLevel=*/0, {"std"}),
+      translateLocation(moduleDecl.getLoc()));
 
-  for (StringAttr import : impl->implicitBuiltinImports) {
+  for (ImportPathAttr import : impl->implicitBuiltinImports) {
     moduleDecl.addUnresolvedWildcardImport(UnresolvedWildcardImport{
         import, moduleDecl.getLoc(), /*isFullImport=*/false});
   }
@@ -2040,8 +2049,10 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
   return moduleState;
 }
 
-SharedState::ModuleState &SharedState::createErrorModuleState(
-    SMLoc loc, StringAttr name, ASTDecl &errorContext, const Twine &errorMsg) {
+SharedState::ModuleState &
+SharedState::createErrorModuleState(SMLoc loc, StringAttr name,
+                                    ASTDecl &errorContext,
+                                    const Twine &errorMsg, bool unlisted) {
   // Track the failure in the scope whose lookup failed.
   ModuleState *contextState = impl->moduleStates.lookup(&errorContext);
   if (!contextState)
@@ -2053,7 +2064,8 @@ SharedState::ModuleState &SharedState::createErrorModuleState(
   }
   std::unique_ptr<ModuleState> &state = (*contextState->failedImports)[name];
   if (!state) {
-    ASTDecl *decl = &declResolver->addErroneousDecl(name, loc, &errorContext);
+    ASTDecl *decl =
+        &declResolver->addErroneousDecl(name, loc, &errorContext, unlisted);
     state = std::make_unique<ModuleState>(decl);
     impl->moduleStates[decl] = state.get();
   }
@@ -2318,9 +2330,13 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
     // Fully resolve any dependencies of the package.
     if (LinkDependencyArrayAttr deps = declPackage.getDependenciesAttr()) {
+      // Each dependency is a top-level package's symbol name (see
+      // mojo-precompile's buildPackage), so any periods belong to the package
+      // name itself; this is never a dotted path.
       for (FlatSymbolRefAttr dep : deps) {
-        ASTDecl *depDecl = &importModule(
-            dep.getValue(), /*currentPackage=*/nullptr, decl.getLoc());
+        ASTDecl *depDecl =
+            &importModule({dep.getValue()},
+                          /*currentPackage=*/nullptr, decl.getLoc());
         if (failed(declResolver->resolveBody(*depDecl, decl.getLoc())))
           return failure();
       }
@@ -2353,7 +2369,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           })
           .Case([&](UnresolvedWildcardImportOp op) {
             decl.addUnresolvedWildcardImport(UnresolvedWildcardImport{
-                op.getModuleNameAttr(), decl.getLoc(), op.getFullImport()});
+                op.getModulePathAttr(), decl.getLoc(), op.getFullImport()});
           })
           .Case([&](StructDeclOp op) {
             ASTDecl &structDecl = addDeclForOp(op, op.getSymNameAttr());
@@ -2830,33 +2846,32 @@ void SharedState::notifyListenerOnModuleDecl(ASTDecl &decl,
 }
 
 void SharedState::notifyListenerOnModuleImport(ASTDecl &decl,
-                                               StringRef spelling, SMLoc loc) {
+                                               const ImportPath &modulePath,
+                                               SMLoc loc) {
   if (!isListenerInterestedInLoc(parserListener, loc))
     return;
   if (!decl.getIfOperation())
     return;
-  // Grab the names of each of the referenced modules.
-  SmallVector<StringRef> moduleNames;
-  spelling.split(moduleNames, '.', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
 
-  // Skip over relative module markers in the location.
-  const char *locPtr = loc.getPointer();
-  while (*locPtr == '.')
-    ++locPtr;
-  loc = SMLoc::getFromPointer(locPtr);
+  // Skip over relative module markers in the location. Note we're assuming each
+  // "relativeLevel" is a one-char period character.
+  loc = SMLoc::getFromPointer(loc.getPointer() + modulePath.relativeLevel);
 
   // Grab the decls for each of the referenced modules.
   SmallVector<ASTDecl *> decls;
   ASTDecl *declIt = &decl;
-  for (int i = 0, e = moduleNames.size(); i < e; ++i) {
+  for (int i = 0, e = modulePath.components.size(); i < e; ++i) {
     decls.push_back(declIt);
     declIt = declIt->getParentDecl();
   }
 
   // Notify the listener of each module import starting from the parent, so we
   // can skip past the position within the location.
-  for (auto [name, decl] : llvm::zip(moduleNames, llvm::reverse(decls))) {
-    parserListener->onModuleImport(decl, name, loc);
+  for (auto [name, segmentDecl] :
+       llvm::zip(modulePath.components, llvm::reverse(decls))) {
+    parserListener->onModuleImport(segmentDecl, name, loc);
+    // TODO: adjust the location like this isn't accurate in the presence of
+    // backtick identifiers. We would ideally have a loc per path segment.
     loc = SMLoc::getFromPointer(loc.getPointer() + name.size() + 1);
   }
 }

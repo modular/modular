@@ -347,7 +347,7 @@ struct StmtParser : public ParserBase {
   /// rejected. \p kwLoc should be the location of the leading `from` or
   /// `import` keyword so the diagnostic caret lands on the keyword.
   ParseResult checkImportScope(SMLoc kwLoc);
-  ParseResult parseImportModuleName(StringAttr &parsedName,
+  ParseResult parseImportModuleName(SharedState::ImportPath &parsedName,
                                     bool allowRelativeImport);
   ParseResult parseDefFnStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseStructStmt(LexerCursor startCursor, size_t curIndent);
@@ -1354,8 +1354,9 @@ static LogicalResult injectDebuggerRaiseHookCall(SharedState &shared,
                                                  ASTDecl &declContext,
                                                  llvm::SMLoc loc,
                                                  const ExprNode *node) {
-  ArrayRef<ASTDecl *> raiseHookFns = shared.getBuiltinFunction(
-      declContext, "std.builtin.error", "__mojo_debugger_raise_hook", loc);
+  ArrayRef<ASTDecl *> raiseHookFns =
+      shared.getBuiltinFunction(declContext, {"std", "builtin", "error"},
+                                "__mojo_debugger_raise_hook", loc);
   if (raiseHookFns.empty())
     return failure();
 
@@ -1487,7 +1488,8 @@ ParseResult StmtParser::parseAssertStmt(size_t assertIndent) {
 
   // Look up the debug_assert function from the standard library.
   ArrayRef<ASTDecl *> debugAssertFns = shared.getBuiltinFunction(
-      getDeclScope(), "std.builtin.debug_assert", "debug_assert", kwLoc);
+      getDeclScope(), {"std", "builtin", "debug_assert"}, "debug_assert",
+      kwLoc);
   if (debugAssertFns.empty())
     return success(); // Error already emitted.
 
@@ -1896,8 +1898,8 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   auto getMutFnWrapper = [&](StringRef name) -> PValue {
     // Bind the sequence initial value to the parameter for iterator generator.
     // Start by looking up the builtin generator.
-    ArrayRef<ASTDecl *> paramForImpl =
-        shared.getBuiltinFunction(scope, "std.builtin._stubs", name, forLoc);
+    ArrayRef<ASTDecl *> paramForImpl = shared.getBuiltinFunction(
+        scope, {"std", "builtin", "_stubs"}, name, forLoc);
     if (paramForImpl.empty())
       return {};
 
@@ -3123,13 +3125,15 @@ ParseResult StmtParser::parseFromImportStmt(bool hasStableOverride) {
     return failure();
 
   SMLoc importLoc = getToken().getLoc();
-  StringAttr moduleAttr;
-  if (parseImportModuleName(moduleAttr, /*allowRelativeImport=*/true))
+  SharedState::ImportPath modulePath;
+  if (parseImportModuleName(modulePath, /*allowRelativeImport=*/true))
     return failure();
   auto nextTok = getToken();
   if (parseToken(Token::kw_import, "expected 'import' after module name") ||
       rejectTokenAtStartOfLine(nextTok, "'import' statement"))
     return failure();
+
+  auto moduleAttr = modulePath.toAttr(getContext());
 
   // Check for a wildcard import.
   nextTok = getToken();
@@ -3141,7 +3145,7 @@ ParseResult StmtParser::parseFromImportStmt(bool hasStableOverride) {
                            "wildcard imports");
     LIT::UnresolvedWildcardImportOp::create(builder,
                                             translateLocation(importLoc),
-                                            moduleAttr, /*isFullImport=*/false);
+                                            moduleAttr, /*fullImport=*/false);
     getParentDecl().addUnresolvedWildcardImport(UnresolvedWildcardImport{
         moduleAttr, importLoc, /*isFullImport=*/false});
     return success();
@@ -3165,7 +3169,7 @@ ParseResult StmtParser::parseFromImportStmt(bool hasStableOverride) {
           curModuleDecl = curModuleDecl->getParentDecl();
 
         currentResolvedModule = &shared.importModule(
-            moduleAttr,
+            modulePath,
             curModuleDecl
                 ? curModuleDecl->getIfOperation()->getParentOfType<PackageOp>()
                 : PackageOp(),
@@ -3259,23 +3263,19 @@ ParseResult StmtParser::parseFromImportStmt(bool hasStableOverride) {
   return success();
 }
 
-/// Build a chain of nested ImportOps for the dotted module path
-/// \p dottedPath (e.g. `a.b.c`) into \p dest's scope, reusing existing
+/// Build a chain of nested ImportOps for the module path
+/// \p modulePath (e.g. `a.b.c`) into \p dest's scope, reusing existing
 /// ImportOps at shared prefixes. This is the resolved form of a plain
 /// `import a.b.c`; it is built eagerly at parse time so the bound name `a`
 /// (and `a.b`, `a.b.c`) are resolvable before any reference to them.
 static void buildImportChain(ParserBase &p, ASTDecl &dest, OpBuilder builder,
-                             StringRef dottedPath, mlir::Location loc) {
-  SmallVector<StringRef> segments;
-  dottedPath.split(segments, '.');
-
+                             const SharedState::ImportPath &modulePath,
+                             mlir::Location loc) {
+  assert(modulePath.relativeLevel == 0 && "import chains are absolute");
   ASTDecl *scope = &dest;
-  std::string qualifiedName;
-  for (StringRef segment : segments) {
-    if (!qualifiedName.empty())
-      qualifiedName += '.';
-    qualifiedName += segment;
-    auto segName = StringAttr::get(p.getContext(), segment);
+  ArrayRef<StringRef> components = modulePath.components;
+  for (unsigned i = 0, e = components.size(); i != e; ++i) {
+    auto segName = StringAttr::get(p.getContext(), components[i]);
 
     // Reuse the ImportOp already bound at this scope; otherwise create a new
     // one.
@@ -3289,7 +3289,9 @@ static void buildImportChain(ParserBase &p, ASTDecl &dest, OpBuilder builder,
     if (!node) {
       node = &p.getDeclResolver().createImportOp(
           *scope, builder, segName,
-          StringAttr::get(p.getContext(), qualifiedName), loc);
+          ImportPathAttr::get(p.getContext(), /*relativeLevel=*/0,
+                              components.take_front(i + 1)),
+          loc);
     }
 
     // Descend so the next segment is gated as a child of this node.
@@ -3297,7 +3299,7 @@ static void buildImportChain(ParserBase &p, ASTDecl &dest, OpBuilder builder,
     builder = scope->getDeclEndBuilder();
   }
 
-  p.shared.notifyListenerOnModuleImport(*scope, dottedPath,
+  p.shared.notifyListenerOnModuleImport(*scope, modulePath,
                                         p.shared.diags.convertLocToSMLoc(loc));
 }
 
@@ -3317,21 +3319,21 @@ ParseResult StmtParser::parseImportStmt() {
     if (nextTok.is(Token::comma) && rejectTokenAtStartOfLine(nextTok, "comma"))
       return failure();
     SMLoc importLoc = getToken().getLoc();
-    StringAttr moduleAttr;
-    if (parseImportModuleName(moduleAttr, /*allowRelativeImport=*/false))
+    SharedState::ImportPath modulePath;
+    if (parseImportModuleName(modulePath, /*allowRelativeImport=*/false))
       return failure();
+
+    auto moduleAttr = modulePath.toAttr(getContext());
 
     // Check for a name binding. 'import a.b.c as z' is a *leaf binding*: the
     // name 'z' binds the resolved (leaf) module directly, rather than 'import
     // a.b.c' which binds each module along the dotted path.
-    StringRef boundModuleName = moduleAttr;
+    std::optional<StringRef> boundModuleName;
     SMLoc boundNameLoc;
-    bool isLeafBinding = false;
     nextTok = getToken();
     if (consumeIf(Token::kw_as)) {
       if (rejectTokenAtStartOfLine(nextTok, "'as' keyword"))
         return failure();
-      isLeafBinding = true;
       boundModuleName = getTokenSpelling();
       boundNameLoc = getToken().getLoc();
       nextTok = getToken();
@@ -3346,12 +3348,12 @@ ParseResult StmtParser::parseImportStmt() {
     // missing module is reported eagerly (this locates the module file; it does
     // not parse its body).
     ASTDecl &module =
-        shared.importModule(moduleAttr, /*currentPackage=*/nullptr, importLoc);
+        shared.importModule(modulePath, /*currentPackage=*/nullptr, importLoc);
 
-    if (!isLeafBinding) {
+    if (!boundModuleName.has_value()) {
       // 'import a.b.c' binds the chain 'a' -> 'a.b' -> 'a.b.c' under the
       // first segment 'a'.
-      buildImportChain(*this, *curDeclScope, builder, moduleAttr.getValue(),
+      buildImportChain(*this, *curDeclScope, builder, modulePath,
                        translateLocation(importLoc));
       continue;
     }
@@ -3359,14 +3361,13 @@ ParseResult StmtParser::parseImportStmt() {
     // 'import a.b.c as z' binds a single gate 'z' -> 'a.b.c'; the names 'a'
     // and 'a.b' are not bound.
     getDeclResolver().createImportOp(*curDeclScope, builder,
-                                     builder.getStringAttr(boundModuleName),
+                                     builder.getStringAttr(*boundModuleName),
                                      moduleAttr, translateLocation(importLoc));
-    shared.notifyListenerOnModuleImport(module, moduleAttr.getValue(),
-                                        importLoc);
+    shared.notifyListenerOnModuleImport(module, modulePath, importLoc);
     // Index the bound alias name (`z` in `import a.b.c as z`) as a
     // reference to the imported module so hover/semantic tokens resolve it.
     if (boundNameLoc.isValid())
-      shared.notifyListenerOnRef(&module, boundModuleName, boundNameLoc);
+      shared.notifyListenerOnRef(&module, *boundModuleName, boundNameLoc);
     nextTok = getToken();
   } while (consumeIf(Token::comma));
 
@@ -3378,11 +3379,9 @@ ParseResult StmtParser::parseImportStmt() {
 /// relative_module ::=  "."* module | "."+
 ///
 /// Relative forms are only allowed if allowRelativeImport is 'true'.
-ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
-                                              bool allowRelativeImport) {
-  // The individual name components making up a module.
-  SmallVector<StringRef> moduleNames;
-
+ParseResult
+StmtParser::parseImportModuleName(SharedState::ImportPath &parsedName,
+                                  bool allowRelativeImport) {
   // A functor used to signal to any parser listener that we're importing a
   // module.
   auto notifyListenerOfImport = [&]() {
@@ -3391,18 +3390,13 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
     SMLoc loc = getToken().getLoc();
 
     // If there isn't a module name, this is a top-level import.
-    if (moduleNames.empty())
+    if (parsedName.components.empty() && parsedName.relativeLevel == 0)
       return shared.notifyListenerOnImport(loc);
 
     // Otherwise, this is importing from within a package.
     shared.notifyListenerOnImport(loc, [&]() -> ASTDecl & {
-      std::string parentModuleName = llvm::join(moduleNames, ".");
       auto curOp = curDeclScope->getIfOperation()->getParentOfType<PackageOp>();
-
-      // Handle single parent lookups.
-      if (parentModuleName.empty())
-        parentModuleName = ".";
-      return shared.importModule(parentModuleName, curOp, loc);
+      return shared.importModule(parsedName, curOp, loc);
     });
   };
 
@@ -3415,14 +3409,13 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
   bool parsedRelativeImport =
       getToken().is(Token::dot) || getToken().is(Token::dot_dot_dot);
 
-  // Parse the relative '.' indicators that resolve to a parent package. These
-  // push "" to the set to indicate relative resolution.
+  // Parse the relative '.' indicators that resolve to a parent package.
   while (true) {
     auto nextTok = getToken();
     if (consumeIf(Token::dot))
-      moduleNames.push_back("");
+      parsedName.relativeLevel += 1;
     else if (consumeIf(Token::dot_dot_dot))
-      llvm::append_range(moduleNames, ArrayRef<StringRef>{"", "", ""});
+      parsedName.relativeLevel += 3;
     else
       break;
     if (rejectTokenAtStartOfLine(nextTok, "module path"))
@@ -3430,7 +3423,7 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
   }
 
   // If we have a non-relative module name, or we require one, try to parse it.
-  if (moduleNames.empty() || getToken().isIdentifier()) {
+  if (parsedName.relativeLevel == 0 || getToken().isIdentifier()) {
     // Parse the first module name.
     StringRef rootModuleName = getTokenSpelling();
     bool missingIdentifier = failed(parseIdentifier(
@@ -3440,7 +3433,8 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
     // If there was no identifier, then we're done.
     if (missingIdentifier)
       return failure();
-    moduleNames.push_back(rootModuleName);
+
+    parsedName.components.push_back(rootModuleName);
 
     // Parse nested module names.
     auto nextTok = getToken();
@@ -3451,7 +3445,7 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
         return failure();
       nextTok = getToken();
 
-      moduleNames.push_back(getTokenSpelling());
+      parsedName.components.push_back(getTokenSpelling());
       if (parseIdentifier("expected module name"))
         return failure();
 
@@ -3461,27 +3455,19 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
     }
   } else {
     notifyListenerOfImport();
-    moduleNames.push_back("");
   }
 
-  parsedName = builder.getStringAttr(llvm::join(moduleNames, "."));
-
   if (parsedRelativeImport && !allowRelativeImport) {
-    ArrayRef<StringRef> moduleNamesArr(moduleNames);
-    ptrdiff_t numLeadingDots = std::distance(
-        moduleNames.begin(),
-        llvm::find_if_not(moduleNames, [](StringRef s) { return s.empty(); }));
     auto diag = emitError(relativeErrorLoc)
                 << "relative imports must use 'from'";
     // If the user has provided a module name, emit a more helpful diagnostic
     // pointing them towards "from [.]+ import foo". If they've just written
     // "import [.]+" we can't point them towards valid syntax from here.
-    auto moduleName =
-        llvm::join(moduleNamesArr.drop_front(numLeadingDots), ".");
+    auto moduleName = llvm::join(parsedName.components, ".");
     if (!moduleName.empty()) {
-      diag << "; did you mean 'from ."
-           << llvm::join(moduleNamesArr.take_front(numLeadingDots), ".")
-           << " import " << moduleName << "'?";
+      diag << "; did you mean 'from "
+           << std::string(parsedName.relativeLevel, '.') << " import "
+           << moduleName << "'?";
     }
     return failure();
   }

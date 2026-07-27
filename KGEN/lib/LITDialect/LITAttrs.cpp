@@ -951,6 +951,16 @@ LogicalResult RefPackType::printValue(AsmPrinter &p, TypedAttr value) const {
   return success();
 }
 
+LogicalResult
+ImportPathAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                       unsigned relativeLevel,
+                       ArrayRef<StringAttr> components) {
+  if (relativeLevel == 0 && components.empty())
+    return emitError()
+           << "import path must be relative or have at least one component";
+  return success();
+}
+
 LogicalResult RefPackAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   ArrayRef<TypedAttr> values,
                                   RefPackType packType) {

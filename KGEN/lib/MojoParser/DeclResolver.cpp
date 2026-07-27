@@ -120,9 +120,17 @@ ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal, StringRef name,
 }
 
 ASTDecl &DeclResolver::addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
-                                        ASTDecl *parentDecl) {
+                                        ASTDecl *parentDecl, bool unlisted) {
   // Use a dummy attribute representation for the error.
   BoolAttr dummyAttr = BoolAttr::get(parentDecl->getContext(), true);
+  if (unlisted) {
+    ASTDecl &errDecl =
+        createUnlistedDecl(PValue(dummyAttr), loc, parentDecl, LexerCursor(),
+                           LexerCursor(), /*indentation=*/0);
+    errDecl.resolvedness = DeclResolvedness::body;
+    errDecl.setErroneous();
+    return errDecl;
+  }
   ASTDecl &errDecl =
       addFullyResolvedDecl(PValue(dummyAttr), baseName, loc, parentDecl);
   errDecl.setErroneous();
@@ -310,7 +318,7 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
       for (ASTDecl *existing : entries) {
         if (auto prevImportOp = dyn_cast_or_null<UnresolvedImportOp>(
                 existing->getIfOperation())) {
-          if (import.getModuleNameAttr() == prevImportOp.getModuleNameAttr() &&
+          if (import.getModulePathAttr() == prevImportOp.getModulePathAttr() &&
               import.getDeclNameAttr() == prevImportOp.getDeclNameAttr()) {
             // This is a duplicate UnresolvedImportOp, just ignore it.
             return;
@@ -430,7 +438,7 @@ LogicalResult DeclResolver::tryAliasDecls(ArrayRef<ASTDecl *> decls,
 
 LogicalResult
 DeclResolver::aliasImportDecls(ArrayRef<ASTDecl *> decls, StringAttr name,
-                               StringAttr declName, StringAttr moduleName,
+                               StringAttr declName, ImportPathAttr moduleName,
                                llvm::SMLoc aliasLoc, ASTDecl &context,
                                bool allowMultipleWithSameName) {
   return aliasDeclsImpl(decls, name, aliasLoc, context,
@@ -530,7 +538,7 @@ LogicalResult DeclResolver::checkImportNamingConflict(
 
 LogicalResult DeclResolver::aliasDeclsImpl(
     ArrayRef<ASTDecl *> decls, StringAttr name, llvm::SMLoc aliasLoc,
-    ASTDecl &context, bool emitDiagnostics, StringAttr moduleName,
+    ASTDecl &context, bool emitDiagnostics, ImportPathAttr modulePath,
     StringAttr declNameInModule, bool allowMultipleWithSameName) {
   // Check to see if the decl is an import. We create new decls within the
   // context for these instead of aliasing, because import decls lazily replace
@@ -571,15 +579,15 @@ LogicalResult DeclResolver::aliasDeclsImpl(
   // Check to see if that's the case, and if so, replace the unresolved import
   // with the real decls from the target module.
   //
-  // The `moduleName` argument tells us which module we're importing from, and
+  // The `modulePath` argument tells us which module we're importing from, and
   // is only present when we're resolving an import (not just creating an
   // alias).
   // Here, we look for that import.
   // TODO(MOCO-522): This seems weird. This function shouldn't be making
-  // assumptions about what moduleName's existence means. Possibly rename
-  // moduleName or find some better way to represent this, or last resort, make
+  // assumptions about what modulePath's existence means. Possibly rename
+  // modulePath or find some better way to represent this, or last resort, make
   // it some arcana.
-  if (moduleName) {
+  if (modulePath) {
     // Find and remove all matching imports (in case of duplicate imports).
     // Keep in mind, the user may have imported the module twice, so we have to
     // remove all matching imports (see test MSWGHRI).
@@ -587,7 +595,7 @@ LogicalResult DeclResolver::aliasDeclsImpl(
     for (int i = entries.size() - 1; i >= 0; --i) {
       if (auto importOp = dyn_cast_or_null<UnresolvedImportOp>(
               entries[i]->getIfOperation());
-          importOp && importOp.getModuleNameAttr() == moduleName &&
+          importOp && importOp.getModulePathAttr() == modulePath &&
           importOp.getDeclNameAttr() == declNameInModule) {
         // Mark the import we're replacing as resolved in case anyone sees it
         // (which would be weird, since we're about to remove it, but just in
@@ -705,10 +713,10 @@ LogicalResult DeclResolver::aliasDeclsImpl(
 
 ASTDecl &DeclResolver::createImportOp(ASTDecl &dest, mlir::OpBuilder &builder,
                                       StringAttr name,
-                                      StringAttr realModuleName,
+                                      ImportPathAttr modulePath,
                                       mlir::Location loc) {
   auto importOp = ImportOp::create(builder, loc,
-                                   /*sym_name=*/name, realModuleName);
+                                   /*sym_name=*/name, modulePath);
   SMLoc smloc = shared.diags.convertLocToSMLoc(loc);
   ASTDecl &importDecl =
       addDecl(static_cast<Operation *>(importOp), smloc, name, &dest,
@@ -722,10 +730,11 @@ ASTDecl &DeclResolver::createImportOp(ASTDecl &dest, mlir::OpBuilder &builder,
 LogicalResult DeclResolver::importModule(ASTDecl &dest, UnresolvedImportOp op,
                                          PackageOp currentPackage, SMLoc loc,
                                          SMLoc importNameLoc) {
-  StringAttr moduleName = op.getModuleNameAttr();
+  ImportPathAttr modulePathAttr = op.getModulePathAttr();
   StringAttr importName = op.getImportNameAttr();
-  ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
-  shared.notifyListenerOnModuleImport(module, moduleName, loc);
+  auto modulePath = SharedState::ImportPath::fromAttr(modulePathAttr);
+  ASTDecl &module = shared.importModule(modulePath, currentPackage, loc);
+  shared.notifyListenerOnModuleImport(module, modulePath, loc);
   shared.notifyListenerOnRef(&module, importName, importNameLoc);
 
   assert(op.getIsLeafBinding() && "Unexpected lazily-resolved absolute import");
@@ -738,13 +747,13 @@ LogicalResult DeclResolver::importModule(ASTDecl &dest, UnresolvedImportOp op,
   //    import.
   if (isa_and_nonnull<PackageOp>(dest.getIfOperation())) {
     return aliasImportDecls(&module, importName, /*declName=*/StringAttr(),
-                            moduleName, importNameLoc, dest, false);
+                            modulePathAttr, importNameLoc, dest, false);
   }
 
-  StringAttr realName = moduleName;
-  if (moduleName.getValue().starts_with(".")) {
-    if (StringAttr absolute = getAbsoluteModuleName(module))
-      realName = absolute;
+  ImportPathAttr gatePath = modulePathAttr;
+  if (modulePathAttr.getRelativeLevel() > 0) {
+    if (ImportPathAttr absolute = getAbsoluteModuleName(module))
+      gatePath = absolute;
   }
 
   // Remove the placeholder (this op, bound under `importName`) from the scope
@@ -765,23 +774,22 @@ LogicalResult DeclResolver::importModule(ASTDecl &dest, UnresolvedImportOp op,
   removeUnresolvedImportOp();
 
   OpBuilder aliasBuilder(op);
-  createImportOp(dest, aliasBuilder, importName, realName, op->getLoc());
+  createImportOp(dest, aliasBuilder, importName, gatePath, op->getLoc());
   // The placeholder op is now superseded by the gate; mark it dead so it is
   // erased after all resolution.
   deadImportPlaceholders.insert(op.getOperation());
   return success();
 }
 
-StringAttr DeclResolver::getAbsoluteModuleName(ASTDecl &moduleDecl) {
+ImportPathAttr DeclResolver::getAbsoluteModuleName(ASTDecl &moduleDecl) {
   SymbolRefAttr ref = moduleDecl.getSymbolRef();
   if (!ref)
     return {};
-  SmallString<64> name(ref.getRootReference().getValue());
-  for (FlatSymbolRefAttr nested : ref.getNestedReferences()) {
-    name += '.';
-    name += nested.getValue();
-  }
-  return StringAttr::get(getContext(), name);
+  SmallVector<StringRef> components;
+  components.push_back(ref.getRootReference().getValue());
+  for (FlatSymbolRefAttr nested : ref.getNestedReferences())
+    components.push_back(nested.getValue());
+  return ImportPathAttr::get(getContext(), /*relativeLevel=*/0, components);
 }
 
 FailureOr<ASTDecl *> DeclResolver::bodyResolvePackageInit(ASTDecl &package,
@@ -793,7 +801,9 @@ FailureOr<ASTDecl *> DeclResolver::bodyResolvePackageInit(ASTDecl &package,
   // The package's scope is empty; its __init__ holds the package's symbols.
   if (!shared.hasNestedModule(packageOp, "__init__"))
     return nullptr;
-  ASTDecl &initDecl = shared.importModule(".__init__", packageOp, loc);
+  ASTDecl &initDecl = shared.importModule(
+      SharedState::ImportPath({"__init__"}, /*relativeLevel=*/1), packageOp,
+      loc);
   if (initDecl.isErroneous())
     return nullptr;
   // If __init__'s body is itself mid-resolution - e.g. we are resolving a
@@ -927,7 +937,7 @@ private:
           // children, and matching them by leaf name alone would false-match an
           // unrelated direct child that happens to share the leaf.
           StringRef singleComponent =
-              singleComponentRelativeChild(wild.getModuleNameAttr());
+              singleComponentRelativeChild(wild.getModulePathAttr());
           if (singleComponent.empty())
             continue;
           auto it = childByLeaf.find(singleComponent);
@@ -992,12 +1002,12 @@ private:
     if (auto imp = dyn_cast<ImportOp>(&op)) {
       if (imp.getSymNameAttr().getValue() != name)
         return std::nullopt;
-      return sourceKind(imp.getRealModuleNameAttr().getValue(), packagePath);
+      return sourceKind(imp.getModulePathAttr(), packagePath);
     }
     if (auto unresolved = dyn_cast<UnresolvedImportOp>(&op)) {
       if (unresolved.getImportNameAttr().getValue() != name)
         return std::nullopt;
-      return sourceKind(unresolved.getModuleNameAttr().getValue(), packagePath);
+      return sourceKind(unresolved.getModulePathAttr(), packagePath);
     }
     return declMatches(&op) ? std::optional(MatchKind::Native) : std::nullopt;
   }
@@ -1006,10 +1016,12 @@ private:
   /// re-exporting package: within the package's own subtree — a relative import
   /// (`.x`), or an absolute path equal to or under `packagePath` — is native;
   /// anything else re-exports a different package's symbol and is foreign.
-  MatchKind sourceKind(StringRef moduleName, StringRef packagePath) const {
-    if (moduleName.starts_with("."))
+  MatchKind sourceKind(ImportPathAttr moduleName, StringRef packagePath) const {
+    if (moduleName.getRelativeLevel() > 0)
       return MatchKind::Native;
-    return isDottedPrefix(packagePath, moduleName) ? MatchKind::Native
+    std::string dottedName =
+        SharedState::ImportPath::fromAttr(moduleName).toDottedString();
+    return isDottedPrefix(packagePath, dottedName) ? MatchKind::Native
                                                    : MatchKind::Foreign;
   }
 
@@ -1084,16 +1096,15 @@ private:
   }
 
   /// If `moduleName` is a single-component relative reference (`.X`, exactly
-  /// one leading dot and no interior dots), return the component `X`; otherwise
+  /// one leading dot and one component), return the component `X`; otherwise
   /// the empty string. Rejects multi-component (`.a.b`), absolute (`a.b`), and
-  /// bare
-  /// (`.`) forms so they are never matched against direct children by leaf
-  /// name.
-  static StringRef singleComponentRelativeChild(StringRef moduleName) {
-    if (!moduleName.starts_with(".") || moduleName.size() == 1)
+  /// bare (`.`) forms so they are never matched against direct children by
+  /// leaf name.
+  static StringRef singleComponentRelativeChild(ImportPathAttr moduleName) {
+    if (moduleName.getRelativeLevel() != 1 ||
+        moduleName.getComponents().size() != 1)
       return {};
-    StringRef component = moduleName.drop_front(1);
-    return component.contains('.') ? StringRef() : component;
+    return moduleName.getComponents().front().getValue();
   }
 
   SharedState &shared;
@@ -1215,12 +1226,13 @@ DeclResolver::findUniqueStdlibImportFor(StringRef name) {
 }
 
 LogicalResult DeclResolver::importDeclFromModule(
-    ASTDecl &dest, PackageOp currentPackage, StringAttr moduleName,
+    ASTDecl &dest, PackageOp currentPackage, ImportPathAttr moduleName,
     StringAttr sourceName, StringAttr destName, SMLoc loc, SMLoc sourceNameLoc,
     SMLoc destNameLoc, bool resolveTarget) {
 
-  ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
-  shared.notifyListenerOnModuleImport(module, moduleName, loc);
+  auto modulePath = SharedState::ImportPath::fromAttr(moduleName);
+  ASTDecl &module = shared.importModule(modulePath, currentPackage, loc);
+  shared.notifyListenerOnModuleImport(module, modulePath, loc);
 
   // A relative self-import written inside a package's __init__ (`from . import
   // sub`) would, via the package->__init__ redirect, look up the submodule in
@@ -1287,17 +1299,18 @@ LogicalResult DeclResolver::importDeclFromModule(
   // `a.b.sub` if it came from an absolute `from a.b import sub`, or if it came
   // from a relative import `from . import sub` where the current package is
   // `a.b`.
-  StringAttr gateRealName;
+  ImportPathAttr gatePath;
   if (results.size() == 1 && isa_and_nonnull<PackageOp, FileModuleOp>(
                                  results.front()->getIfOperation())) {
-    if (moduleName.getValue().starts_with("."))
-      gateRealName = getAbsoluteModuleName(*results.front());
-    else
-      gateRealName = StringAttr::get(
-          getContext(),
-          (moduleName.getValue() + "." + sourceName.getValue()).str());
+    if (moduleName.getRelativeLevel() > 0) {
+      gatePath = getAbsoluteModuleName(*results.front());
+    } else {
+      SharedState::ImportPath submodulePath = modulePath;
+      submodulePath.components.push_back(sourceName.getValue());
+      gatePath = submodulePath.toAttr(getContext());
+    }
   }
-  if (gateRealName) {
+  if (gatePath) {
     // Bind an ImportOp under `destName` over the imported submodule, and
     // reuse the from-import placeholder's ASTDecl for it. The ASTDecl outlives
     // this resolution (a later resolve-body pass dereferences it), so it must
@@ -1309,7 +1322,7 @@ LogicalResult DeclResolver::importDeclFromModule(
       if (it != dest.declsInScope->end())
         for (ASTDecl *d : it->second) {
           auto imp = dyn_cast_or_null<UnresolvedImportOp>(d->getIfOperation());
-          if (imp && imp.getModuleNameAttr() == moduleName &&
+          if (imp && imp.getModulePathAttr() == moduleName &&
               imp.getDeclNameAttr() == sourceName) {
             placeholderDecl = d;
             break;
@@ -1321,7 +1334,7 @@ LogicalResult DeclResolver::importDeclFromModule(
       OpBuilder fromBuilder(oldOp);
       auto gateOp =
           ImportOp::create(fromBuilder, shared.translateLocation(destNameLoc),
-                           /*sym_name=*/destName, gateRealName);
+                           /*sym_name=*/destName, gatePath);
       placeholderDecl->setIRValue(gateOp.getOperation());
       placeholderDecl->resolvedness = DeclResolvedness::body;
       registerDeclSymbol(placeholderDecl);
@@ -1331,7 +1344,7 @@ LogicalResult DeclResolver::importDeclFromModule(
     } else {
       // No placeholder to reuse (defensive): bind a fresh gate decl.
       OpBuilder fromBuilder = dest.getDeclEndBuilder();
-      createImportOp(dest, fromBuilder, destName, gateRealName,
+      createImportOp(dest, fromBuilder, destName, gatePath,
                      shared.translateLocation(destNameLoc));
     }
   } else if (failed(aliasImportDecls(results, destName, sourceName, moduleName,
@@ -1373,7 +1386,7 @@ LogicalResult DeclResolver::importDeclFromModule(
                                   extensionNameAttr, moduleName, destNameLoc,
                                   dest, true))) {
         emitError(destNameLoc, "failed to import extensions from module '" +
-                                   moduleName.getValue() + "'");
+                                   modulePath.toDottedString() + "'");
         return failure();
       }
       // Now that we have all the extensions, go through each one and register
@@ -1393,7 +1406,7 @@ LogicalResult DeclResolver::importDeclFromModule(
                                     dest, true))) {
           emitError(destNameLoc, "failed to import extension for '" +
                                      targetStructName + "' from module '" +
-                                     moduleName.getValue() + "'");
+                                     modulePath.toDottedString() + "'");
           return failure();
         }
       }
@@ -1406,13 +1419,14 @@ LogicalResult DeclResolver::importDeclFromModule(
 LogicalResult DeclResolver::importWildcardDeclsFromModule(
     ASTDecl &context, const UnresolvedWildcardImport &unresolvedImport) {
   auto [moduleName, loc, isFullImport] = unresolvedImport;
+  auto modulePath = SharedState::ImportPath::fromAttr(moduleName);
   PackageOp currentPackage =
       dyn_cast_or_null<PackageOp>(context.getIfOperation());
   if (!currentPackage && context.getIfOperation())
     currentPackage = context.getIfOperation()->getParentOfType<PackageOp>();
 
   // Make sure the module has been resolved.
-  ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
+  ASTDecl &module = shared.importModule(modulePath, currentPackage, loc);
   if (failed(resolveBody(module, loc)))
     return failure();
 
@@ -1474,7 +1488,7 @@ LogicalResult DeclResolver::importWildcardDeclsFromModule(
                                   extensionNameAttr, moduleName, loc, context,
                                   true))) {
         emitError(loc, "failed to import extensions from module '" +
-                           moduleName.getValue() + "'");
+                           modulePath.toDottedString() + "'");
         return failure();
       }
 
@@ -1496,7 +1510,7 @@ LogicalResult DeclResolver::importWildcardDeclsFromModule(
                                     true))) {
           emitError(loc, "failed to import extension for '" +
                              targetStructName.value() + "' from module '" +
-                             moduleName.getValue() + "'");
+                             modulePath.toDottedString() + "'");
           return failure();
         }
       }
@@ -2027,8 +2041,9 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   }
 
   // Utility for resolving a decl within the Startup module.
-  ASTDecl &startupModule = shared.importModule(
-      "std.builtin._startup", /*currentPackage=*/nullptr, funcDecl.getLoc());
+  ASTDecl &startupModule =
+      shared.importModule({"std", "builtin", "_startup"},
+                          /*currentPackage=*/nullptr, funcDecl.getLoc());
   auto resolveStartDecl = [&](StringRef name) -> ASTDecl * {
     auto result = shared.lookupAndResolveDecl(
         name, funcDecl.getLoc(), startupModule, /*searchParentScopes=*/false);

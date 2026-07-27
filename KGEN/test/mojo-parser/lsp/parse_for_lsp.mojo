@@ -39,5 +39,5 @@ def main():
 # an unresolved wildcard (its symbols are never eagerly pulled in) and the
 # compiler path strips. `REGULAR-NOT: lit.unresolved` covers both the wildcard
 # and any named unresolved imports.
-# CHECK: lit.unresolved_wildcard_import from @std.builtin.stubs
+# CHECK: lit.unresolved_wildcard_import from <0, ["std", "builtin", "stubs"]>
 # REGULAR-NOT: lit.unresolved
