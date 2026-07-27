@@ -1740,12 +1740,19 @@ def test_load_prefill_scheduler_accepts_eagle_spec_decode() -> None:
             "max.serve.scheduler.prefill_scheduler."
             "TokenGenerationSchedulerConfig.from_pipeline_config",
         ) as from_pipeline_config,
+        patch(
+            "max.serve.scheduler.prefill_scheduler."
+            "PIPELINE_REGISTRY.retrieve_context_type",
+            return_value=TextContext,
+        ),
     ):
         result = load_prefill_scheduler(pipeline, config, MagicMock())
 
     assert result is sentinel
     prefill_scheduler_cls.assert_called_once()
-    from_pipeline_config.assert_called_once_with(config)
+    from_pipeline_config.assert_called_once_with(
+        config, pipeline.max_batch_size
+    )
 
 
 def test_load_prefill_scheduler_accepts_mtp_spec_decode() -> None:
@@ -1761,6 +1768,11 @@ def test_load_prefill_scheduler_accepts_mtp_spec_decode() -> None:
         patch(
             "max.serve.scheduler.prefill_scheduler."
             "TokenGenerationSchedulerConfig.from_pipeline_config",
+        ),
+        patch(
+            "max.serve.scheduler.prefill_scheduler."
+            "PIPELINE_REGISTRY.retrieve_context_type",
+            return_value=TextContext,
         ),
     ):
         load_prefill_scheduler(pipeline, config, MagicMock())

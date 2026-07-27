@@ -73,6 +73,7 @@ modular_py_test(
         requirement("numpy"),
         requirement("pydantic"),
         requirement("pytest-asyncio"),
+        requirement("pyzmq"),
         requirement("safetensors"),
         requirement("sse-starlette"),
         requirement("taskgroup"),

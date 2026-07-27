@@ -11,11 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from enum import Enum
+from typing import Generic, TypeVar
 
 import msgspec
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import TransferReqData
 from max.pipelines.modeling.types import RequestID
+
+ContextType = TypeVar("ContextType", bound=TextContext)
 
 
 class SchedulerProgress(Enum):
@@ -26,17 +29,29 @@ class SchedulerProgress(Enum):
 
 
 class PrefillRequest(
-    msgspec.Struct, tag=True, omit_defaults=True, kw_only=True
+    msgspec.Struct,
+    Generic[ContextType],
+    tag=True,
+    omit_defaults=True,
+    kw_only=True,
 ):
     """A request for prefill (context encoding) processing.
 
     Contains the request ID, input context, and transfer engine details needed to
     process a prefill request through the pipeline and transfer KV cache data.
+
+    Generic over the context type: msgspec decodes each field at its declared
+    type, so the DI prefill decoder must be parameterized with the
+    architecture's concrete context subclass (e.g. a ``TextAndVisionContext``
+    subclass for VLMs) or the wire silently narrows the context to the base
+    class, dropping vision fields. The ``tag`` stays the class name
+    (``"PrefillRequest"``) for every parameterization, keeping the decode
+    client and prefill server wire-compatible.
     """
 
     id: RequestID
     """Unique identifier for this request."""
-    context: TextContext
+    context: ContextType
     """The input context containing the request data and state."""
     transfer_engine_name: str
     """Name of the transfer engine to use for KV cache transfers."""
