@@ -395,13 +395,13 @@ struct UnprovableWithValidCandidate[T: Movable](
 # is "disproved" - definitively not a valid candidate. This is different from
 # "unprovable" because we CAN make a determination (it's definitely invalid).
 #
-# With only a disproved candidate and no valid alternative, we get a normal
-# "not implemented" error.
+# With a disproved candidate that the user actually wrote, we explain the
+# contradiction instead of reporting the requirement as missing outright.
 
 
 # expected-note @below {{trait 'ContradictingConstraintTrait' declared here}}
 trait ContradictingConstraintTrait:
-    # expected-note @below {{no 'apply' candidates have type}}
+    # expected-note @below {{required by trait method here}}
     def apply(self):
         ...
 
@@ -412,6 +412,7 @@ struct DisprovedWithWhereNot[T: Movable](
     Movable,
 ):
     # Disproved: `not conforms_to(T, Copyable)` contradicts conformance.
+    # expected-note @below {{constraint declared here evaluated to False}}
     def apply(self) where not conforms_to(Self.T, Copyable):
         pass
 
