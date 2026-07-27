@@ -722,10 +722,11 @@ struct List[T: Movable, /](
         ), "List iteration requires the element to be `Copyable`."
         return _ListIter(
             0,
-            # TODO(MOCO-4326): Remove rebind
-            rebind[Pointer[downcast[Self.T, Copyable], origin_of(self)]](
-                self._data
-            ),
+            # `_data` points at untracked owned storage; the iterator borrows
+            # at this call's origin instead.
+            self._data.unsafe_mut_cast[
+                origin_of(self).mut
+            ]().unsafe_origin_cast[origin_of(self)](),
             self._len,
         )
 
@@ -741,10 +742,9 @@ struct List[T: Movable, /](
         """
         return _ListIter[forward=False](
             len(self),
-            # TODO(MOCO-4326): Remove rebind
-            rebind[Pointer[downcast[Self.T, Copyable], origin_of(self)]](
-                self._data
-            ),
+            self._data.unsafe_mut_cast[
+                origin_of(self).mut
+            ]().unsafe_origin_cast[origin_of(self)](),
             self._len,
         )
 
