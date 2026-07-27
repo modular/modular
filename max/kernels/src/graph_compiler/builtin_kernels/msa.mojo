@@ -403,6 +403,12 @@ struct Struct_msa_attention_ragged_paged:
         # `num_rows` == total query tokens (== batch on decode, 1 token/seq).
         var num_rows = Int(q.dim_size[0]())
 
+        # A data-parallel replica with no assigned requests gets empty per-rank
+        # inputs. There is nothing to attend, and the routes below build a Q TMA
+        # descriptor, which rejects a zero global dim.
+        if num_rows == 0:
+            return
+
         # Non-owning DeviceBuffer views over the graph tensors.
         var out_lt = output.to_layout_tensor()
         var q_lt = q.to_layout_tensor()
