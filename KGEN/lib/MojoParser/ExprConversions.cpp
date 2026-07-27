@@ -545,8 +545,21 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // Emit the function return. It's just a none return if the function has a
   // result slot.
   Value retVal;
-  if (hasRegisterResult)
-    retVal = emitter.emitSRValue({callResult, &node}, EC_ConversionThunk);
+  if (hasRegisterResult) {
+    // If we're returning an SSA value, it could be an RValue or could be a
+    // ref-result.
+    if (thunkSignature.isRefResult()) {
+      retVal = emitter.emitRefValue({callResult, &node}, EC_ConversionThunk);
+      // Implicitly convert to the right result type if needed, e.g. widening
+      // the origin to a union or discarding mutability.
+      retVal = emitter.emitSRValue({SRValue(retVal), &node}, EC_ConversionThunk,
+                                   thunk.getUserResultType());
+    } else {
+      retVal = emitter.emitSRValue({callResult, &node}, EC_ConversionThunk);
+    }
+    if (!retVal)
+      return {};
+  }
 
   emitter.emitNormalReturn(mlirLoc, retVal);
   return thunk;
