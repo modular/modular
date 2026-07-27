@@ -31,7 +31,7 @@ from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 def random_weights(
     attn: LatentAttentionWithRopeFp8 | LatentAttentionWithRope,
 ) -> dict[str, WeightData]:
-    """Small random :class:`WeightData` for ``attn`` (for ``session.load`` in e2e test)."""
+    """Small random :class:`WeightData` for ``attn`` (the e2e weights registry)."""
     registry: dict[str, WeightData] = {}
     for name, w in attn.raw_state_dict().items():
         shape = tuple(int(s) for s in w.shape)
