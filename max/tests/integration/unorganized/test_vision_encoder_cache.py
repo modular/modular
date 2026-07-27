@@ -21,7 +21,7 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.driver import Buffer, Device
+from max.driver import CPU, Buffer, Device
 from max.pipelines.context import (
     GenerationStatus,
     GrammarEnforcementSnapshot,
@@ -35,6 +35,7 @@ from max.pipelines.context import (
 )
 from max.pipelines.context.context import TokenBuffer
 from max.pipelines.context.eos_tracking import EOSTracker
+from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
 from max.pipelines.lib.vision_encoder_cache import (
     SupportsVisionEncoding,
     VisionEncoderCache,
@@ -1711,3 +1712,95 @@ def test_assemble_missing_active_image_still_raises() -> None:
             n_devices=1,
             empty_embeddings=[_make_buffer(0, hidden)],
         )
+
+
+class _FakeVisionModel:
+    """The ``SupportsVisionEncoding`` surface ``finalize_vision_inputs`` uses."""
+
+    def __init__(self, hidden: int = 4) -> None:
+        self._hidden = hidden
+        self._empties: list[Buffer] | None = None
+
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> None:
+        return None
+
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: None,
+    ) -> VisionEncodeResult:
+        return VisionEncodeResult(
+            embeddings=self.empty_vision_embeddings(devices)
+        )
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        if self._empties is None:
+            self._empties = [_make_buffer(0, self._hidden) for _ in devices]
+        return self._empties
+
+
+def test_finalize_vision_inputs_sets_empties() -> None:
+    """``vision_result=None`` (decode / text-only / graph-capture warmup)
+    sets the base vision fields to the model's empty embeddings and
+    zero-length indices, making them packable into ``.buffers``."""
+    cache = _make_cache()
+    model = _FakeVisionModel()
+    inputs = ModelInputs()
+    devices: list[Device] = [CPU()]
+
+    cache.finalize_vision_inputs(model, inputs, devices, None)
+
+    assert len(inputs.vision_embeddings) == 1
+    assert inputs.vision_embeddings[0].shape[0] == 0
+    assert len(inputs.vision_scatter_indices) == 1
+    assert tuple(inputs.vision_scatter_indices[0].shape) == (0,)
+
+    # The empty index buffers are cached across steps (decode hot path).
+    first = inputs.vision_scatter_indices[0]
+    cache.finalize_vision_inputs(model, inputs, devices, None)
+    assert inputs.vision_scatter_indices[0] is first
+
+
+def test_finalize_vision_inputs_sets_real_embeddings() -> None:
+    """A vision-encode result sets the assembled embeddings and copies the
+    merge indices to per-device buffers."""
+    cache = _make_cache()
+    model = _FakeVisionModel()
+    inputs = ModelInputs()
+    devices: list[Device] = [CPU()]
+    embeds = [_make_buffer(3, 4)]
+    scatter = np.array([0, 1, 2], dtype=np.int32)
+
+    cache.finalize_vision_inputs(model, inputs, devices, (embeds, scatter))
+
+    assert inputs.vision_embeddings is embeds
+    assert len(inputs.vision_scatter_indices) == 1
+    np.testing.assert_array_equal(
+        inputs.vision_scatter_indices[0].to_numpy(), scatter
+    )
+
+
+def test_finalize_vision_inputs_empty_scatter_uses_empties() -> None:
+    """A vision result with zero merge indices falls back to the cached
+    zero-length index buffers instead of staging an empty copy."""
+    cache = _make_cache()
+    model = _FakeVisionModel()
+    inputs = ModelInputs()
+    devices: list[Device] = [CPU()]
+    embeds = model.empty_vision_embeddings(devices)
+
+    cache.finalize_vision_inputs(
+        model, inputs, devices, (embeds, np.empty(0, dtype=np.int32))
+    )
+
+    assert inputs.vision_embeddings is embeds
+    assert tuple(inputs.vision_scatter_indices[0].shape) == (0,)

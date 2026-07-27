@@ -18,16 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-import numpy as np
-import numpy.typing as npt
-from max.driver import (
-    Buffer,
-    Device,
-    DevicePinnedBuffer,
-    DLPackArray,
-    copy_pinned_to_destinations,
-)
-from max.dtype import DType
+from max.driver import Buffer, Device, DLPackArray
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Module
 from max.graph.weights import (
@@ -62,7 +53,6 @@ from typing_extensions import override
 from ..gemma4.batch_vision_inputs import (
     VisionRawInputs,
     create_empty_embeddings,
-    create_empty_indices,
     pack_uncached_images,
 )
 from ..gemma4.context import Gemma4Context
@@ -99,20 +89,15 @@ class UnifiedMTPGemma4Inputs(UnifiedSpecDecodeInputs):
     signal_buffers: list[Buffer]
     batch_context_lengths: list[Buffer]
 
-    combined_embeds: list[Buffer] | None = None
-    combined_indices: list[Buffer] | None = None
-
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         assert self.kv_cache_inputs is not None
-        assert self.combined_embeds is not None
-        assert self.combined_indices is not None
         prefix = (
             self.tokens,
             # Vision embeds + scatter indices follow tokens, matching
             # build_spec_decode_input_types(enable_vision=True).
-            *self.combined_embeds,
-            *self.combined_indices,
+            *self.vision_embeddings,
+            *self.vision_scatter_indices,
             self.input_row_offsets,
             self.host_input_row_offsets,
             self.return_n_logits,
@@ -173,11 +158,6 @@ class UnifiedMTPGemma4Model(
 
         # Force signal buffer initialization.
         _ = self.signal_buffers
-
-        # Cached per-device scatter-index buffers keyed by length. Only regular
-        # DeviceBuffers are cached; the pinned host buffer is freshly allocated
-        # every call (see ``_scatter_to_devices``).
-        self._scatter_buffers: dict[int, list[Buffer]] = {}
 
         self.vision_model, self.model = self.load_model(session)
 
@@ -458,30 +438,11 @@ class UnifiedMTPGemma4Model(
     ) -> UnifiedEagleOutputs:
         """Execute and return all 3 graph outputs for speculative decoding.
 
-        Reads the image embeddings + scatter indices the pipeline's encoder
-        cache assembled (base ``vision_embeddings`` fields) and binds them to
-        the unified graph's ``combined_embeds`` / ``combined_indices``. Images
-        appear only during prefill (``draft_tokens`` is ``[batch, 0]``); decode
-        steps carry the empty defaults, so binding is a no-op there.
+        Images appear only during prefill (``draft_tokens`` is ``[batch,
+        0]``); decode steps carry the empty vision-merge inputs, so the
+        graph's scatter is a no-op there.
         """
         assert isinstance(model_inputs, UnifiedMTPGemma4Inputs)
-
-        image_embeddings: list[Buffer]
-        image_scatter: list[Buffer]
-        if model_inputs.vision_embeddings is not None:
-            image_embeddings = model_inputs.vision_embeddings
-            scatter_np = model_inputs.vision_scatter_indices
-            if scatter_np is not None and len(scatter_np) > 0:
-                image_scatter = self._scatter_to_devices(scatter_np)
-            else:
-                image_scatter = self._empty_indices()
-        else:
-            image_embeddings = self.empty_vision_embeddings(self.devices)
-            image_scatter = self._empty_indices()
-
-        model_inputs.combined_embeds = image_embeddings
-        model_inputs.combined_indices = image_scatter
-
         model_outputs = self.model.execute(*model_inputs.buffers)
         assert len(model_outputs) == 3, (
             f"Expected 3 outputs, got {len(model_outputs)}"
@@ -560,41 +521,6 @@ class UnifiedMTPGemma4Model(
             *raw.pool_gather_index,
             raw.max_seq_len,
         )
-
-    def _scatter_to_devices(
-        self, scatter_np: npt.NDArray[np.int32]
-    ) -> list[Buffer]:
-        """Copy scatter indices to each device.
-
-        Allocates a fresh pinned host buffer every call and never reuses it
-        across calls. Under the overlap scheduler a reused pinned buffer would
-        be clobbered by the next step's host write while the current step's
-        asynchronous H2D copy is still reading it. The per-device destination
-        buffers are cached and reused (never pinned).
-        """
-        dev = self.devices[0]
-        n = len(scatter_np)
-        host_buffer_cls = DevicePinnedBuffer if not dev.is_host else Buffer
-        host: Buffer = host_buffer_cls(
-            dtype=DType.int32, shape=(n,), device=dev
-        )
-
-        buffers = self._scatter_buffers.get(n)
-        if buffers is None:
-            buffers = [
-                Buffer(shape=(n,), dtype=DType.int32, device=d)
-                for d in self.devices
-            ]
-            self._scatter_buffers[n] = buffers
-
-        host.to_numpy()[:] = scatter_np.astype(np.int32)
-        copy_pinned_to_destinations(host, buffers)
-        return buffers
-
-    def _empty_indices(self) -> list[Buffer]:
-        if not hasattr(self, "_cached_empty_indices"):
-            self._cached_empty_indices = create_empty_indices(self.devices)
-        return self._cached_empty_indices
 
     @classmethod
     def calculate_max_seq_len(
