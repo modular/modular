@@ -34,7 +34,7 @@ class TraitType;
 using DeclIRValue = SmartVariant<Operation *, CValue, std::nullopt_t>;
 
 struct UnresolvedWildcardImport {
-  StringAttr moduleName;
+  ImportPathAttr moduleName;
   SMLoc importLoc;
   bool isFullImport;
 };

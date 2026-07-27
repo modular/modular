@@ -735,7 +735,8 @@ AnyValue TStringExprNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   // Look up __make_tstring and create an overload set.
   constexpr auto kMakeTStringFnName = "__make_tstring";
   auto fnDecls = emitter.shared.getBuiltinFunction(
-      emitter.declScope, "std.format.tstring", kMakeTStringFnName, getLoc());
+      emitter.declScope, {"std", "format", "tstring"}, kMakeTStringFnName,
+      getLoc());
   if (fnDecls.empty())
     return {};
 
@@ -2191,7 +2192,8 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     // package's public surface), so only names that __init__ defines or
     // re-exports are reachable.
     ASTDecl &realDecl = shared.importModule(
-        importOp.getRealModuleName(), /*currentPackage=*/nullptr,
+        SharedState::ImportPath::fromAttr(importOp.getModulePath()),
+        /*currentPackage=*/nullptr,
         shared.diags.convertLocToSMLoc(importOp->getLoc()));
     auto memberLookup = shared.lookupAndResolveDecl(
         spelling, getLoc(), realDecl, /*searchParentScopes=*/false);
@@ -2212,13 +2214,13 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
         // ImportOp over it and hand that back (not the raw module) so deeper
         // access stays gated.
         OpBuilder gateBuilder = typeDecl->getDeclEndBuilder();
-        StringAttr childReal = StringAttr::get(
-            shared.getContext(),
-            (importOp.getRealModuleName() + "." + spelling).str());
+        SharedState::ImportPath childPath =
+            SharedState::ImportPath::fromAttr(importOp.getModulePath());
+        childPath.components.push_back(spelling);
         ASTDecl &childGate = shared.declResolver->createImportOp(
             *typeDecl, gateBuilder,
-            StringAttr::get(shared.getContext(), spelling), childReal,
-            importOp->getLoc());
+            StringAttr::get(shared.getContext(), spelling),
+            childPath.toAttr(shared.getContext()), importOp->getLoc());
         return emitter.emitCResult(PValue(ModuleAttr::get(LIT::ModuleType::get(
                                        childGate.getSymbolRef()))),
                                    this, dest);

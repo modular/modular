@@ -143,9 +143,12 @@ static ASTDecl *buildNestedModuleDecl(std::filesystem::path filepath,
 
   // Import the file from within the package.
   std::reverse(packageNames.begin(), packageNames.end());
+  SharedState::ImportPath path;
+  path.relativeLevel = 1;
+  for (const std::string &name : packageNames)
+    path.components.push_back(name);
   return &sharedState.importModule(
-      "." + llvm::join(packageNames, "."),
-      cast<PackageOp>(packageDecl.getIfOperation()), SMLoc());
+      path, cast<PackageOp>(packageDecl.getIfOperation()), SMLoc());
 }
 
 /// Create an ASTDecl for the given file module.

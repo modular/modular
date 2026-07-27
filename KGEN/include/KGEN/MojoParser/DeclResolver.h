@@ -78,9 +78,10 @@ public:
                                 llvm::SMLoc loc, ASTDecl *parentDecl);
 
   /// Add a declaration that represents an erroneous declaration. The generated
-  /// decl is treated as fully resolved, and in an error state.
+  /// decl is treated as fully resolved, and in an error state. If `unlisted`
+  /// is set, the decl is not registered in the parent's name table.
   ASTDecl &addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
-                            ASTDecl *parentDecl);
+                            ASTDecl *parentDecl, bool unlisted = false);
 
   /// Add a new declaration that needs to be resolved, but don't attach it to
   /// parent's name table.  It needs to be added later.
@@ -139,7 +140,7 @@ public:
   /// children of the specified context, using the provided alias name (which
   /// may differ from that of the decl).
   LogicalResult aliasImportDecls(ArrayRef<ASTDecl *> decls, StringAttr name,
-                                 StringAttr declName, StringAttr moduleName,
+                                 StringAttr declName, ImportPathAttr moduleName,
                                  llvm::SMLoc aliasLoc, ASTDecl &context,
                                  bool allowMultipleWithSameName);
 
@@ -150,7 +151,7 @@ private:
   LogicalResult aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
                                llvm::SMLoc aliasLoc, ASTDecl &context,
                                bool emitDiagnostics = true,
-                               StringAttr moduleName = StringAttr(),
+                               ImportPathAttr moduleName = ImportPathAttr(),
                                StringAttr declNameInModule = StringAttr(),
                                bool allowMultipleWithSameName = false);
 
@@ -171,17 +172,17 @@ private:
 
 public:
   /// Create a resolved ImportOp in \p dest's scope. Only nested ImportOps in
-  /// the region gate access to child modules of \p realModuleName.
+  /// the region gate access to child modules of \p modulePath.
   ASTDecl &createImportOp(ASTDecl &dest, mlir::OpBuilder &builder,
-                          StringAttr name, StringAttr realModuleName,
+                          StringAttr name, ImportPathAttr modulePath,
                           mlir::Location loc);
 
-  /// Return the absolute, dotted module name of a resolved module/package decl
+  /// Return the absolute module path of a resolved module/package decl
   /// (e.g. `a.b.c`), derived from its fully-resolved symbol. Used as a
-  /// gate's `realModuleName` for imports whose syntactic path is relative
+  /// gate's `modulePath` for imports whose syntactic path is relative
   /// (`import .foo as z`, `from . import sub`), where there is no absolute name
   /// to copy from the source. Returns {} if \p moduleDecl has no symbol.
-  StringAttr getAbsoluteModuleName(ASTDecl &moduleDecl);
+  ImportPathAttr getAbsoluteModuleName(ASTDecl &moduleDecl);
 
   /// Import the given module into the provided destination.
   LogicalResult importModule(ASTDecl &dest, UnresolvedImportOp op,
@@ -191,7 +192,7 @@ public:
   /// destination.
   /// resolveTarget determines whether we resolve the ultimate decl as well.
   LogicalResult importDeclFromModule(ASTDecl &dest, PackageOp currentPackage,
-                                     StringAttr moduleName,
+                                     ImportPathAttr moduleName,
                                      StringAttr sourceName, StringAttr destName,
                                      SMLoc loc, SMLoc sourceNameLoc,
                                      SMLoc destNameLoc,

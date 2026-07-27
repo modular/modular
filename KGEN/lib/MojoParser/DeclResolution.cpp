@@ -2322,7 +2322,9 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
 
   // Resolve __init__ (the public surface) if present, inheriting its docstring.
   if (std::filesystem::exists(directory / "__init__.mojo", ec) && !ec) {
-    ASTDecl &initModule = shared.importModule(".__init__", op, decl.loc);
+    ASTDecl &initModule = shared.importModule(
+        SharedState::ImportPath({"__init__"}, /*relativeLevel=*/1), op,
+        decl.loc);
     if (!initModule.isErroneous()) {
       if (failed(resolveBody(initModule, decl.loc)))
         return failure();
@@ -5033,7 +5035,7 @@ ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
       declNameLoc = decl.getLoc();
 
     return getDeclResolver().importDeclFromModule(
-        *decl.getParentDecl(), packageOp, op.getModuleNameAttr(), declName,
+        *decl.getParentDecl(), packageOp, op.getModulePathAttr(), declName,
         op.getImportNameAttr(), decl.getLoc(), declNameLoc, importNameLoc,
         resolveTarget);
   }

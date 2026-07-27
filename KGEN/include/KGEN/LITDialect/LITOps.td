@@ -1348,16 +1348,16 @@ def LIT_UnresolvedImportOp : LITOp<"unresolved_import"> {
 
     ```mlir
     // Import a module as the given name.
-    lit.unresolved_import @module as @newModule
+    lit.unresolved_import #lit.import_path<0, ["module"]> as @newModule
     // Import a relative module as the given name.
-    lit.unresolved_import @package.module as @newModule
+    lit.unresolved_import #lit.import_path<1, ["module"]> as @newModule
     // Import a function within the module as the given name.
-    lit.unresolved_import @module -> @func as @newFunc
+    lit.unresolved_import #lit.import_path<0, ["module"]> -> @func as @newFunc
     ```
   }];
 
   let arguments = (ins
-    SymbolNameAttr:$moduleName,
+    LIT_ImportPathAttr:$modulePath,
     SymbolNameAttr:$importName,
     OptionalAttr<SymbolNameAttr>:$declName,
     OptionalAttr<Builtin_LocationAttr>:$importNameLoc,
@@ -1365,7 +1365,7 @@ def LIT_UnresolvedImportOp : LITOp<"unresolved_import"> {
     DefaultValuedAttr<BoolAttr, "false">:$isLeafBinding
   );
   let assemblyFormat = [{
-    $moduleName (`->` $declName^)? `as` $importName
+    $modulePath (`->` $declName^)? `as` $importName
     (`declNameLoc` `(` $declNameLoc^ `)`)?
     (`importNameLoc` `(` $importNameLoc^ `)`)?
     attr-dict
@@ -1388,18 +1388,12 @@ def LIT_UnresolvedWildcardImportOp : LITOp<"unresolved_wildcard_import"> {
 
     ```mlir
     // Import from the given module.
-    lit.unresolved_wildcard_import (`all` $fullImport^)? from @module
+    lit.unresolved_wildcard_import from #lit.import_path<0, ["module"]>
     ```
   }];
 
-  let arguments = (ins SymbolNameAttr:$moduleName, UnitAttr:$fullImport);
-  let assemblyFormat = "`from` $moduleName attr-dict";
-
-  let builders = [OpBuilder<(ins
-    "StringAttr":$moduleName, CArg<"bool", "false">:$isFullImport), [{
-    build($_builder, $_state, moduleName,
-          isFullImport ? $_builder.getUnitAttr() : UnitAttr());
-  }]>];
+  let arguments = (ins LIT_ImportPathAttr:$modulePath, UnitAttr:$fullImport);
+  let assemblyFormat = "`from` $modulePath attr-dict";
 }
 
 //===----------------------------------------------------------------------===//
@@ -1419,18 +1413,18 @@ def LIT_ImportOp : LITOp<"import", [NoRegionArguments, Symbol, SymbolTable]
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
-    SymbolNameAttr:$realModuleName
+    LIT_ImportPathAttr:$modulePath
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    $sym_name `real` $realModuleName
+    $sym_name `path` $modulePath
     attr-dict-with-keyword $bodyRegion
   }];
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<(ins "StringAttr":$sym_name, "StringAttr":$realModuleName)>
+    OpBuilder<(ins "StringAttr":$sym_name, "ImportPathAttr":$modulePath)>
   ];
 }
 

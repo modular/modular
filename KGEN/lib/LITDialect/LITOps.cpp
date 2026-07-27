@@ -186,9 +186,9 @@ void PackageOp::build(OpBuilder &builder, OperationState &state,
 }
 
 void ImportOp::build(OpBuilder &builder, OperationState &state,
-                     StringAttr symName, StringAttr realModuleName) {
+                     StringAttr symName, ImportPathAttr modulePath) {
   state.addAttribute(getSymNameAttrName(state.name), symName);
-  state.addAttribute(getRealModuleNameAttrName(state.name), realModuleName);
+  state.addAttribute(getModulePathAttrName(state.name), modulePath);
   state.addRegion()->push_back(new Block());
 }
 

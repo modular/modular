@@ -146,6 +146,13 @@ def UnavailableInfoAttr : DialectAttribute<(attr
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
 
+def ImportPathAttr : DialectAttribute<(attr
+  VarInt:$relativeLevel,
+  ConcreteAttrArray<"StringAttr">:$components
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
+
 def DocStringAttr : DialectAttribute<(attr
   StringAttr:$string,
   OptionalAttribute<"FileLineColLoc">:$location
@@ -311,6 +318,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     WrappedInteriorOriginAttr,
     WrappedOriginSubtreeAttr,
     ImplicitConversionKindAttr,
+    ImportPathAttr,
   ];
 }
 

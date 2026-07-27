@@ -223,6 +223,53 @@ def LIT_DocStringAttr : LITAttr<"DocString", "doc.string"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ImportPathAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_ImportPathAttr : LITAttr<"ImportPath", "import_path"> {
+  let summary = "A structured module import path";
+  let description = [{
+    The `#lit.import_path` attribute is the structured form of a module import
+    path: the raw name components plus the number of leading dots of a
+    relative import (0 for an absolute import). Components carry no separators
+    or escaping, so a component may itself contain periods (an escaped
+    identifier such as `package.with.dots`).
+
+    Example:
+
+    ```mlir
+    // import a.b.c
+    #lit.import_path<0, ["a", "b", "c"]>
+    // from ..utils import x
+    #lit.import_path<2, ["utils"]>
+    // from . import x
+    #lit.import_path<1>
+    ```
+  }];
+
+  let parameters = (ins
+    "unsigned":$relativeLevel,
+    OptionalArrayRefParameter<"StringAttr">:$components
+  );
+  let assemblyFormat = "`<` $relativeLevel (`,` `[` $components^ `]`)? `>`";
+
+  let builders = [
+    AttrBuilder<(ins "unsigned":$relativeLevel,
+                     "ArrayRef<StringRef>":$components), [{
+      SmallVector<StringAttr> componentAttrs;
+      componentAttrs.reserve(components.size());
+      for (StringRef component : components)
+        componentAttrs.push_back(StringAttr::get($_ctxt, component));
+      return $_get($_ctxt, relativeLevel, componentAttrs);
+    }]>
+  ];
+
+  // An absolute path must name at least one component; import resolution
+  // relies on this invariant.
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // UnboundMLIROperationAttr
 //===----------------------------------------------------------------------===//
 

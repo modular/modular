@@ -234,7 +234,12 @@ lit.fn @wrong_error_return2(%arg0: i32) -> !kgen.variant<index> {
 // -----
 
 // expected-error @below {{specified `declNameLoc` without `declName`}}
-lit.unresolved_import @module as @newModule declNameLoc(loc(unknown))
+lit.unresolved_import <0, ["module"]> as @newModule declNameLoc(loc(unknown))
+
+// -----
+
+// expected-error @below {{import path must be relative or have at least one component}}
+lit.unresolved_import <0> as @newModule
 
 // -----
 

@@ -20,6 +20,7 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/PrettyStackTrace.h"
 
 namespace M::KGEN {
@@ -287,10 +288,46 @@ public:
   //===--------------------------------------------------------------------===//
   // Module Resolution
 
+  /// A parsed import path: module-path components plus the number of leading
+  /// dots of a relative import (0 for an absolute import).
+  struct ImportPath {
+    ImportPath() = default;
+    ImportPath(std::initializer_list<StringRef> components,
+               unsigned relativeLevel = 0)
+        : components(components), relativeLevel(relativeLevel) {}
+    ImportPath(ArrayRef<StringRef> components, unsigned relativeLevel = 0)
+        : components(components.begin(), components.end()),
+          relativeLevel(relativeLevel) {}
+
+    /// Render the path as a Mojo ASTDecl name: the joined dotted-string form
+    /// used for decl and import-op names. It is ambiguous for components that
+    /// themselves contain periods (e.g. escaped identifiers) and is not a
+    /// source-faithful rendering for diagnostics.
+    std::string toDottedString() const {
+      return std::string(relativeLevel, '.') + llvm::join(components, ".");
+    }
+
+    /// Convert to/from the unambiguous `#lit.import_path` attribute form,
+    /// which import ops should prefer over the dotted-string forms above.
+    ImportPathAttr toAttr(MLIRContext *ctx) const {
+      return ImportPathAttr::get(ctx, relativeLevel, components);
+    }
+    static ImportPath fromAttr(ImportPathAttr attr) {
+      ImportPath path;
+      path.relativeLevel = attr.getRelativeLevel();
+      for (StringAttr component : attr.getComponents())
+        path.components.push_back(component.getValue());
+      return path;
+    }
+
+    SmallVector<StringRef, 4> components;
+    unsigned relativeLevel = 0;
+  };
+
   /// Import the specified module or package, returning the decl. Always returns
   /// a valid decl, even if a corresponding module or package could not be
   /// found.
-  ASTDecl &importModule(StringRef name, PackageOp currentPackage,
+  ASTDecl &importModule(const ImportPath &path, PackageOp currentPackage,
                         llvm::SMLoc loc);
 
   /// Return true if the package has a nested module with the given name in the
@@ -482,10 +519,10 @@ public:
   void notifyListenerOnModuleDecl(ASTDecl &decl, SMLoc identifierLoc);
 
   /// Notify the parser listener, if present, that a new import of the form
-  /// `from Module [as Alias]` has been resolved by the parser. The provided
-  /// location and spelling correspond to the module name and not to its
-  /// optional alias.
-  void notifyListenerOnModuleImport(ASTDecl &decl, StringRef spelling,
+  /// `from Module [as Alias]` has been resolved by the parser. The location
+  /// corresponds to the start of the module path (not to its optional alias);
+  /// the listener is notified once per path component.
+  void notifyListenerOnModuleImport(ASTDecl &decl, const ImportPath &modulePath,
                                     SMLoc loc);
 
   /// Notify the parser listener, if present, of a parsed function or struct
@@ -573,7 +610,8 @@ public:
   ASTType getBuiltinStubsMLIRType(llvm::SMLoc loc);
 
   /// Lookup a builtin special function overload set.
-  ArrayRef<ASTDecl *> getBuiltinFunction(ASTDecl &context, StringRef moduleName,
+  ArrayRef<ASTDecl *> getBuiltinFunction(ASTDecl &context,
+                                         const ImportPath &modulePath,
                                          StringRef fnName, llvm::SMLoc loc);
   ArrayRef<ASTDecl *> getBuiltinFunction(ASTDecl &module, StringRef fnName,
                                          llvm::SMLoc loc);
@@ -674,7 +712,7 @@ private:
   /// Always returns a valid module state, even if the module could not be
   /// found. `isImplicit` marks a package pulled in by the compiler rather than
   /// a user `import`.
-  ModuleState &importModuleState(StringRef name, ASTDecl *context,
+  ModuleState &importModuleState(const ImportPath &path, ASTDecl *context,
                                  llvm::SMLoc loc, bool isImplicit = false);
 
   /// Look up a module by its name, in the specified parent scope, in the module
@@ -704,8 +742,8 @@ private:
   /// Import the specified module or package, which contains `.` indexing,
   /// returning the module state. Always returns a valid module state, even if
   /// the module could not be found.
-  ModuleState &importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
-                                         llvm::SMLoc loc);
+  ModuleState &importRelativeModuleState(const ImportPath &path,
+                                         ASTDecl *parentDecl, llvm::SMLoc loc);
 
   /// Shared core of createModuleState and createDeferredModuleState: create the
   /// `FileModuleOp` + unlisted decl + nested module state. The caller supplies
@@ -739,10 +777,13 @@ private:
                                         std::filesystem::path path,
                                         ModuleState &parentState);
 
-  /// Create an error module state and emit the given error message.
+  /// Create an error module state and emit the given error message. If
+  /// `unlisted` is set, the erroneous decl is not registered in
+  /// `errorContext`'s name table.
   ModuleState &createErrorModuleState(SMLoc loc, StringAttr name,
                                       ASTDecl &errorContext,
-                                      const Twine &errorMsg);
+                                      const Twine &errorMsg,
+                                      bool unlisted = false);
 
   /// Implicitly import the builtin modules into the given module decl.
   void importBuiltinModules(ASTDecl &moduleDecl);

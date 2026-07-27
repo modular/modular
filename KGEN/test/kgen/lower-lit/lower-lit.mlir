@@ -188,10 +188,10 @@ lit.fn @topFunc() {
 
 // CHECK-NOT: lit.unresolved_import
 lit.file_module @nested_imports {
-  lit.unresolved_import @foobar as @foo
+  lit.unresolved_import <0, ["foobar"]> as @foo
 
   lit.fn @func() {
-    lit.unresolved_import @foobar as @foo
+    lit.unresolved_import <0, ["foobar"]> as @foo
     kgen.return
   }
 }
