@@ -120,6 +120,10 @@ This version is still a work in progress.
   vision encoder now runs during prefill and its projected soft-token
   embeddings are merged into the target model, matching the non-MTP Gemma 4
   path.
+- Gemma 4 MTP speculative decoding now samples recovered tokens from the
+  residual distribution when stochastic acceptance rejects a draft token. This
+  preserves the target distribution for argmax draft proposals instead of
+  sampling recovery from the full target distribution.
 
 ## MAX framework
 
