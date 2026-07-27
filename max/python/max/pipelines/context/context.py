@@ -1254,11 +1254,27 @@ class TextAndVisionContext(TextContext):
 
     @property
     def next_images(self) -> list[ImageMetadata]:
-        """Returns the images that are not yet encoded."""
+        """Unencoded images."""
         image_idx = self.image_idx
         if len(self.images) == 0 or self.image_idx == len(self.images):
             return []
         return self.images[image_idx:]
+
+    @property
+    def next_images_in_window(self) -> list[ImageMetadata]:
+        """Unencoded images overlapping the active window.
+
+        An image the window bisects is included whole (the encoder
+        cannot split an image); an image fully ahead of the window is
+        deferred to the iteration whose chunk covers it.
+        """
+        start = self.tokens.processed_length
+        end = self.tokens.current_position
+        return [
+            img
+            for img in self.next_images
+            if img.start_idx < end and img.end_idx > start
+        ]
 
     @property
     def needs_vision_encoding(self) -> bool:
