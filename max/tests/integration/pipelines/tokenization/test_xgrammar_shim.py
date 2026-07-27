@@ -1010,6 +1010,60 @@ def test_pattern_remaining_ecma_escapes_compile() -> None:
         assert compiled is not None
 
 
+def test_negated_class_excludes_multibyte_whitespace() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "\\\\S"}'
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, '" "')
+    assert not _accepts(compiled, '"\u00a0"')
+
+
+def test_negated_ascii_range() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "[^a-z]"}'
+    )
+    assert _accepts(compiled, '"`"')  # right before 'a'
+    assert not _accepts(compiled, '"a"')  # 'a', lower boundary
+    assert not _accepts(compiled, '"m"')  # 'm', interior
+    assert not _accepts(compiled, '"z"')  # 'z', upper boundary
+    assert _accepts(compiled, '"{"')  # right after 'z'
+    assert _accepts(compiled, '"\u00e9"')  # multi-byte, still accepted
+
+
+def test_negated_single_multibyte_codepoint() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "[^\\u00e9]"}'
+    )
+    assert _accepts(compiled, '"\u00e8"')  # right before U+00E9
+    assert not _accepts(compiled, '"\u00e9"')  # excluded
+    assert _accepts(compiled, '"\u00ea"')  # right after U+00E9
+    assert _accepts(compiled, '"a"')  # ASCII 'a' still accepted
+
+
+def test_negated_multibyte_range() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "[^\\u5000-\\u8fff]"}'
+    )
+    assert _accepts(compiled, '"\u4fff"')  # right before the range
+    assert not _accepts(compiled, '"\u5000"')  # lower boundary
+    assert not _accepts(compiled, '"\u7000"')  # interior
+    assert not _accepts(compiled, '"\u8fff"')  # upper boundary
+    assert _accepts(compiled, '"\u9000"')  # right after the range
+
+
+def test_negated_mixed_ascii_and_multibyte() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "[^a\\u00e9]"}'
+    )
+    assert _accepts(compiled, '"`"')  # right before 'a'
+    assert not _accepts(compiled, '"a"')  # 'a', excluded ASCII
+    assert _accepts(compiled, '"b"')  # right after 'a'
+    assert _accepts(compiled, '"\u00e8"')  # right before U+00E9
+    assert not _accepts(compiled, '"\u00e9"')  # excluded multi-byte
+    assert _accepts(compiled, '"\u00ea"')  # right after U+00E9
+
+
 def test_pattern_unsupportable_escapes_rejected() -> None:
     # Genuinely unenforceable regex constructs are still hard-rejected by the
     # converter (fail-closed): a backreference, a Unicode property class, and a
