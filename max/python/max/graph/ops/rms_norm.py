@@ -46,8 +46,6 @@ def rms_norm(
       The weight is treated as ``1 + weight`` and multiplication runs in
       the reduction dtype before casting back.
 
-    For example:
-
     .. code-block:: python
 
         import numpy as np
@@ -92,7 +90,7 @@ def rms_norm(
             Llama-style sets this to ``False``. Defaults to ``False``.
 
     Returns:
-        A tensor with the same shape and dtype as ``input``.
+        A ``TensorValue`` with the same shape and dtype as ``input``.
 
     Raises:
         ValueError: If ``weight`` does not match the last dimension of

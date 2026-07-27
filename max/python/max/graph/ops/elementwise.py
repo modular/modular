@@ -100,7 +100,7 @@ Args:
     rhs: The right-hand side input.
 
 Returns:
-    A tensor value containing the element-wise sums.
+    A ``TensorValue`` representing the element-wise sums.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -144,7 +144,7 @@ def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
         rhs: The denominator input.
 
     Returns:
-        A tensor value with the broadcast shape containing ``lhs / rhs``
+        A ``TensorValue`` with the broadcast shape representing ``lhs / rhs``
         element-wise. The result has a floating-point dtype for integer
         operands and the promoted dtype for mixed types.
 
@@ -178,9 +178,6 @@ def floor_div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     Unlike :obj:`div`, integer operands are never promoted to ``float64``. This
     matters on backends without native 64-bit floating-point support (for
     example, Apple/Metal GPUs), where an ``f64`` intermediate fails to compile.
-    The ``//`` operator is intentionally left on its existing
-    ``floor(div(...))`` path here to keep the blast radius minimal; unifying
-    it onto ``floor_div`` is a reasonable follow-up.
 
     .. code-block:: python
 
@@ -208,7 +205,7 @@ def floor_div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
         rhs: The denominator input.
 
     Returns:
-        A tensor value with the broadcast shape containing the element-wise
+        A ``TensorValue`` with the broadcast shape representing the element-wise
         floor division of ``lhs`` by ``rhs``.
 
     Raises:
@@ -267,7 +264,7 @@ Args:
     rhs: The right-hand side input.
 
 Returns:
-    A tensor value with the maximum value at each position.
+    A ``TensorValue`` representing the maximum value at each position.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -305,7 +302,7 @@ Args:
     rhs: The right-hand side input.
 
 Returns:
-    A tensor value with the minimum value at each position.
+    A ``TensorValue`` representing the minimum value at each position.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -343,7 +340,7 @@ Args:
     rhs: The divisor.
 
 Returns:
-    A tensor value containing ``lhs % rhs`` element-wise.
+    A ``TensorValue`` representing ``lhs % rhs`` element-wise.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -382,7 +379,7 @@ Args:
     rhs: The right-hand side input.
 
 Returns:
-    A tensor value containing the element-wise products.
+    A ``TensorValue`` representing the element-wise products.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -420,7 +417,7 @@ Args:
     rhs: The exponent tensor.
 
 Returns:
-    A tensor value with the broadcast shape containing ``lhs ** rhs`` element-wise.
+    A ``TensorValue`` with the broadcast shape representing ``lhs ** rhs`` element-wise.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -458,7 +455,7 @@ Args:
     rhs: The subtrahend (right-hand side).
 
 Returns:
-    A tensor value containing the result of ``lhs - rhs`` element-wise.
+    A ``TensorValue`` representing the result of ``lhs - rhs`` element-wise.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -496,8 +493,8 @@ Args:
     rhs: The right-hand side input.
 
 Returns:
-    A tensor value with ``bool`` dtype that is ``True`` when
-    ``lhs == rhs``.
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise result
+    of ``lhs == rhs``.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -534,8 +531,8 @@ Args:
     rhs: The right-hand side input.
 
 Returns:
-    A tensor value with ``bool`` dtype that is ``True`` when
-    ``lhs > rhs``.
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise result
+    of ``lhs > rhs``.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -572,8 +569,8 @@ Args:
     rhs: The right-hand side input.
 
 Returns:
-    A tensor value with ``bool`` dtype that is ``True`` when
-    ``lhs >= rhs``.
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise result
+    of ``lhs >= rhs``.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -610,7 +607,8 @@ Args:
     rhs: The right-hand side input.
 
 Returns:
-    A tensor value with ``bool`` dtype that is ``True`` when ``lhs != rhs``.
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise result
+    of ``lhs != rhs``.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -647,8 +645,8 @@ Args:
     rhs: The right-hand side boolean tensor.
 
 Returns:
-    A tensor value with ``bool`` dtype that is ``True`` when both
-    inputs are ``True``.
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise logical
+    AND of ``lhs`` and ``rhs``.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -685,8 +683,8 @@ Args:
     rhs: The right-hand side boolean tensor.
 
 Returns:
-    A tensor value with ``bool`` dtype that is ``True`` when at least
-    one input is ``True``.
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise logical
+    OR of ``lhs`` and ``rhs``.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -723,8 +721,8 @@ Args:
     rhs: The right-hand side boolean tensor.
 
 Returns:
-    A tensor value with ``bool`` dtype that is``True`` when exactly
-    one input is ``True``.
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise logical
+    XOR of ``lhs`` and ``rhs``.
 
 Raises:
     Error: If the input shapes are not compatible for broadcasting.
@@ -813,8 +811,8 @@ Args:
     x: The input tensor.
 
 Returns:
-    A tensor value of the same shape and dtype with each element replaced by
-    its absolute value.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+    absolute value of each element of ``x``.
 
 Raises:
     Error: If the input doesn't represent a tensor.
@@ -823,9 +821,7 @@ Raises:
 exp = _elementwise_unary(rmo.MoExpOp, "exp")
 exp.__doc__ = """Computes the exponential of a tensor element-wise.
 
-Use the ``exp`` function to build neural networks with attention mechanisms,
-activation functions, and probability distributions. ``exp(x) = e^x``, where
-``e`` is Euler's number.
+This applies ``exp(x) = e^x``, where ``e`` is Euler's number.
 
 .. code-block:: python
 
@@ -848,14 +844,15 @@ activation functions, and probability distributions. ``exp(x) = e^x``, where
     assert np.allclose(result.to_numpy(), [1.0, 2.718, 7.389], atol=1e-3)
 
 Args:
-    x: The input to the exponential function.
+    x: The input to the exponential function. Must have a floating-point
+        dtype.
 
 Returns:
-    A tensor value of the same shape and dtype where each element is ``e``
-    raised to the power of the corresponding input element.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing ``e``
+    raised to the power of each element of ``x``.
 
 Raises:
-    Error: If the input does not represent a tensor.
+    Error: If the input does not represent a tensor or has a non-floating-point dtype.
 """
 
 erf = _elementwise_unary(rmo.MoErfOp, "erf")
@@ -885,14 +882,14 @@ normal distribution falls within a given range.
     assert np.allclose(result.to_numpy(), [-0.842, 0.0, 0.842], atol=1e-3)
 
 Args:
-    x: The input to the error function.
+    x: The input to the error function. Must have a floating-point dtype.
 
 Returns:
-    A tensor value of the same shape and dtype with the error function
-    applied to each element.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the error
+    function applied to each element of ``x``.
 
 Raises:
-    Error: If the input is not a tensor.
+    Error: If the input is not a tensor or has a non-floating-point dtype.
 """
 
 
@@ -903,27 +900,28 @@ def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
 
     For ``approximate == "tanh"``, MAX uses the approximation:
 
-    .. math::
+    .. code:: text
 
         gelu(x) = 0.5 * x * (1.0 + tanh(0.7978845608028654 * (x + 0.044715 * x**3)))
 
     For ``approximate == "quick"``, MAX uses the approximation:
 
-    .. math::
+    .. code:: text
 
         gelu(x) = sigmoid(1.702 * x) * x
 
     Args:
-        x: The input to the GELU computation.
+        x: The input to the GELU computation. Must have a floating-point
+            dtype.
         approximate: One of ``"none"``, ``"tanh"``, or ``"quick"``. Defaults
             to ``"none"``.
 
     Returns:
-        A tensor value of the same shape and dtype with the GELU activation
-        applied element-wise.
+        A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+        GELU activation applied to each element of ``x``.
 
     Raises:
-        Error: If the input doesn't represent a tensor.
+        Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
         ValueError: If the approximation method is invalid.
     """
     if approximate == "none":
@@ -940,10 +938,10 @@ log = _elementwise_unary(rmo.MoLogOp, "log")
 log.__doc__ = """
 Computes the natural logarithm of a tensor element-wise.
 
-The natural logarithm is used in loss functions, normalization, and probability
-calculations in machine learning. It is the inverse of the exponential
-function: ``log(x)`` returns the value ``y`` such that ``x = e^y``, where ``e``
-is Euler's number.
+This applies ``log(x)``. It is the inverse of the exponential
+function ``x = e^y``, where ``e`` is Euler's number.
+Note that ``log(x)`` is undefined for ``x <= 0`` and complex numbers
+are not currently supported.
 
 .. code-block:: python
 
@@ -967,23 +965,24 @@ is Euler's number.
 
     assert np.allclose(result.to_numpy(), [0.0, 1.0, 2.0, 2.996], atol=1e-3)
 
-Note that ``log(x)`` is undefined for ``x <= 0`` on real
-numbers and complex numbers are not currently supported.
 
 Args:
-    x: The input to the log computation. Must contain positive
-    values.
+    x: The input to the log computation. Must contain positive values only.
+        Must have a floating-point dtype.
 
 Returns:
-    A tensor value of the same shape with the natural logarithm applied
-    element-wise.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+    natural logarithm of each element of ``x``.
 
 Raises:
-    Error: If the input doesn't represent a tensor.
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
 log1p = _elementwise_unary(rmo.MoLog1pOp, "log1p")
 log1p.__doc__ = """Computes ``log(1 + x)`` element-wise.
+
+Note that ``log(1 + x)`` is undefined for ``x <= -1`` and complex
+numbers are not currently supported.
 
 .. code-block:: python
 
@@ -1005,18 +1004,16 @@ log1p.__doc__ = """Computes ``log(1 + x)`` element-wise.
 
     assert np.allclose(result.to_numpy(), [0.0, 0.693, 2.302], atol=1e-3)
 
-Note that ``log(1 + x)`` is undefined for ``x <= -1`` on real numbers and complex
-numbers are not currently supported.
 
 Args:
-    x: The input to the log computation.
+    x: The input to the log computation. Must have a floating-point dtype.
 
 Returns:
-    A tensor value of the same shape and dtype with ``log(1 + x)`` applied to
-    each element.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing
+    ``log(1 + x)`` for each element of ``x``.
 
 Raises:
-    Error: If the input doesn't represent a tensor.
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
 
@@ -1064,25 +1061,24 @@ logsoftmax.__doc__ = """Computes the log-softmax of a tensor along an axis.
     )
 
 Args:
-    value: The input to the log-softmax computation.
+    value: The input to the log-softmax computation. Must have a
+        floating-point dtype.
     axis: The axis along which to compute the log-softmax. Defaults to the
         final axis (``-1``).
 
 Returns:
-    A tensor value of the same shape and dtype with the log-softmax applied along
-    ``axis``.
+    A ``TensorValue`` of the same shape and dtype as ``value`` representing the
+    log-softmax of ``value`` computed along ``axis``.
 
 Raises:
-    Error: If the input is not a tensor.
+    Error: If the input is not a tensor or has a non-floating-point dtype.
 """
 
 relu = _elementwise_unary(rmo.MoReluOp, "relu")
 relu.__doc__ = """Applies the ReLU (Rectified Linear Unit) activation element-wise.
 
-ReLU is defined as ``relu(x) = max(0, x)``: negative values are set to zero
-while positive values are unchanged. It's one of the most common activation
-functions in neural networks because of its computational efficiency and
-its mitigation of the vanishing gradient problem.
+ReLU is defined as ``relu(x) = max(0, x)``, meaning negative values are set to zero
+while positive values are unchanged.
 
 .. code-block:: python
 
@@ -1114,8 +1110,8 @@ Args:
     x: The input to the ReLU computation.
 
 Returns:
-    A tensor value of the same shape and dtype with negative values replaced
-    by ``0``.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing ``x`` with
+    its negative elements replaced by ``0``.
 
 Raises:
     Error: If the input doesn't represent a tensor.
@@ -1126,9 +1122,7 @@ def sigmoid(x: TensorValue) -> TensorValue:
     """Applies the sigmoid activation function element-wise.
 
     Computes ``sigmoid(x) = 1 / (1 + exp(-x))``, mapping all values to the
-    range ``(0, 1)``. The sigmoid function is commonly used for binary
-    classification tasks and as an activation function in neural networks,
-    particularly in output layers for probability prediction.
+    range ``(0, 1)``.
 
     .. code-block:: python
 
@@ -1159,14 +1153,15 @@ def sigmoid(x: TensorValue) -> TensorValue:
         )
 
     Args:
-        x: The input to the sigmoid computation.
+        x: The input to the sigmoid computation. Must have a floating-point
+            dtype.
 
     Returns:
-        A tensor value of the same shape and dtype with values in the range
-        ``(0, 1)``.
+        A ``TensorValue`` of the same shape and dtype as ``x`` representing each
+        element of ``x`` mapped to the range ``(0, 1)``.
 
     Raises:
-        Error: If the input doesn't represent a tensor.
+        Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
     """
     return _activation(x, rmo.MoSigmoidOp)
 
@@ -1201,14 +1196,15 @@ def silu(x: TensorValue):  # noqa: ANN201
         )
 
     Args:
-        x: The input to the SiLU computation.
+        x: The input to the SiLU computation. Must have a floating-point
+            dtype.
 
     Returns:
-        A tensor value of the same shape and dtype with the SiLU activation
-        applied element-wise.
+        A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+        SiLU activation applied to each element of ``x``.
 
     Raises:
-        Error: If the input doesn't represent a tensor.
+        Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
     """
     return _activation(x, rmo.MoSiluOp)
 
@@ -1241,16 +1237,17 @@ exponentiated values along that axis.
     assert np.allclose(result.to_numpy(), [0.090, 0.244, 0.665], atol=1e-3)
 
 Args:
-    value: The input to the softmax computation.
+    value: The input to the softmax computation. Must have a floating-point
+        dtype.
     axis: The axis along which to compute the softmax. Defaults to the
         final axis (``-1``).
 
 Returns:
-    A tensor value of the same shape and dtype with the softmax applied along
-    ``axis``.
+    A ``TensorValue`` of the same shape and dtype as ``value`` representing the
+    softmax of ``value`` computed along ``axis``.
 
 Raises:
-    Error: If the input doesn't represent a tensor.
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
 cos = _elementwise_unary(rmo.MoCosOp, "cos")
@@ -1277,18 +1274,19 @@ cos.__doc__ = """Computes the cosine of a tensor element-wise.
     assert np.allclose(result.to_numpy(), [1.0, 0.0, -1.0], atol=1e-3)
 
 Args:
-    x: The input, interpreted as radians. Must have a floating-point
+    x: The input interpreted as radians. Must have a floating-point
         dtype.
 
 Returns:
-    A tensor value of the same shape and dtype with the cosine of each element.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the cosine
+    of each element of ``x``.
 
 Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
 ceil = _elementwise_unary(rmo.MoCeilOp, "ceil")
-ceil.__doc__ = """Computes the ceil of a tensor element-wise.
+ceil.__doc__ = """Computes the ceiling of a tensor element-wise.
 
 .. code-block:: python
 
@@ -1314,8 +1312,8 @@ Args:
     x: The input tensor. Must have a floating-point dtype.
 
 Returns:
-    A tensor value of the same shape and dtype rounded up toward positive
-    infinity.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing each
+    element of ``x`` rounded up toward positive infinity.
 
 Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
@@ -1348,8 +1346,8 @@ Args:
     x: The input tensor. Must have a floating-point dtype.
 
 Returns:
-    A tensor value of the same shape and dtype rounded down toward negative
-    infinity.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing each
+    element of ``x`` rounded down toward negative infinity.
 
 Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
@@ -1357,6 +1355,10 @@ Raises:
 
 round = _elementwise_unary(rmo.MoRoundOp, "round")
 round.__doc__ = """Rounds a tensor to the nearest integer element-wise.
+
+Values exactly halfway between two integers round to the nearest even integer
+(for example, ``2.5`` rounds to ``2.0`` and ``3.5`` rounds to ``4.0``). All
+other values follow normal rounding to the nearest integer.
 
 .. code-block:: python
 
@@ -1382,7 +1384,8 @@ Args:
     x: The input tensor. Must have a floating-point dtype.
 
 Returns:
-    A tensor value of the same shape and dtype rounded to the nearest integer.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing each
+    element of ``x`` rounded to the nearest integer.
 
 Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
@@ -1415,8 +1418,8 @@ Args:
     x: The input tensor. Must have a floating-point dtype.
 
 Returns:
-    A tensor value of the same shape and dtype with the reciprocal square root
-    of each element.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+    reciprocal square root of each element of ``x``.
 
 Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
@@ -1424,9 +1427,6 @@ Raises:
 
 sqrt = _elementwise_unary(rmo.MoSqrtOp, "sqrt")
 sqrt.__doc__ = """Computes the square root of a tensor element-wise.
-
-Square root is commonly used in normalization operations, distance
-calculations, and statistical operations like standard deviation.
 
 .. code-block:: python
 
@@ -1448,16 +1448,13 @@ calculations, and statistical operations like standard deviation.
 
     assert np.allclose(result.to_numpy(), [1.0, 2.0, 3.0, 4.0], atol=1e-3)
 
-``sqrt`` requires non-negative inputs for real-valued results. For tensors that
-may contain negative values, take the absolute value first.
-
-
 Args:
-    x: The input tensor. Must have a floating-point dtype.
+    x: The input tensor. Must have a floating-point dtype. Negative values
+    produce ``NaN`` since MAX doesn't support complex numbers.
 
 Returns:
-    A tensor value of the same shape and dtype with the square root of each
-    element.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the square
+    root of each element of ``x``.
 
 Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
@@ -1491,7 +1488,8 @@ Args:
         dtype.
 
 Returns:
-    A tensor value of the same shape and dtype with the sine of each element.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the sine
+    of each element of ``x``.
 
 Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
@@ -1500,12 +1498,8 @@ Raises:
 tanh = _elementwise_unary(rmo.MoTanhOp, "tanh")
 tanh.__doc__ = """Computes the hyperbolic tangent of a tensor element-wise.
 
-Defined as ``tanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))``, mapping
-all values to the range ``(-1, 1)``. Commonly used as an activation
-function in recurrent neural networks (RNNs) and as a hidden-layer
-activation in feedforward networks. Unlike sigmoid (which maps to
-``(0, 1)``), tanh is zero-centered, which can help with gradient flow
-during training.
+This applies ``tanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))``, which maps
+all values to the range ``(-1, 1)``.
 
 .. code-block:: python
 
@@ -1539,8 +1533,8 @@ Args:
     x: The input tensor. Must have a floating-point dtype.
 
 Returns:
-    A tensor value of the same shape and dtype with values in the range
-    ``(-1, 1)``.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing each
+    element of ``x`` mapped to the range ``(-1, 1)``.
 
 Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
@@ -1574,8 +1568,8 @@ Args:
         floating-point dtype.
 
 Returns:
-    A tensor value of the same shape and dtype with the inverse hyperbolic
-    tangent of each element.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+    inverse hyperbolic tangent of each element of ``x``.
 
 Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
@@ -1608,7 +1602,8 @@ Args:
     x: The input tensor. Must have a floating-point dtype.
 
 Returns:
-    A tensor value of the same shape and dtype with the fractional part discarded.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing each
+    element of ``x`` truncated toward zero.
 
 Raises:
     Error: If the input doesn't represent tensor or has a non-floating-point dtype.
@@ -1643,7 +1638,8 @@ Args:
     x: The input tensor.
 
 Returns:
-    A tensor value with ``bool`` dtype and the same shape, that is ``True`` when the input is
+    A ``TensorValue`` with ``bool`` dtype and the same shape as ``x``,
+    representing an element-wise NaN test. An element is ``True`` where ``x`` is
     NaN.
 
 Raises:
@@ -1680,8 +1676,9 @@ Args:
     x: The input tensor.
 
 Returns:
-    A tensor value with ``bool`` dtype and the same shape, that is ``True`` when the input is
-    positive or negative infinity.
+    A ``TensorValue`` with ``bool`` dtype and the same shape as ``x``,
+    representing an element-wise infinity test. An element is ``True`` where
+    ``x`` is positive or negative infinity.
 
 Raises:
     Error: If the input doesn't represent a tensor.
@@ -1714,7 +1711,8 @@ Args:
     x: The input boolean tensor.
 
 Returns:
-    A tensor value with ``bool`` dtype and the same shape, with each element negated.
+    A ``TensorValue`` with ``bool`` dtype and the same shape as ``x``,
+    representing the element-wise logical NOT of ``x``.
 
 Raises:
     Error: If the symbol doesn't represent a tensor.
@@ -1747,7 +1745,8 @@ Args:
     x: The input tensor.
 
 Returns:
-    A tensor value of the same shape and dtype with each element negated.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+    negation of each element of ``x``.
 
 Raises:
     Error: If the input doesn't represent a tensor.
@@ -1756,8 +1755,6 @@ Raises:
 
 def acos(x: TensorValue) -> TensorValue:
     """Computes the arccosine of a tensor element-wise.
-
-    Returns values in the range ``[0, π]`` (radians) for inputs in ``[-1, 1]``.
 
     .. code-block:: python
 
@@ -1784,13 +1781,14 @@ def acos(x: TensorValue) -> TensorValue:
         )
 
     Args:
-        x: The input tensor with values in ``[-1, 1]``. Values outside this
-            domain are clamped to the valid range. Must have a
-            floating-point dtype.
+        x: The input tensor with values in ``[-1, 1]``. For the ``float16``,
+            ``bfloat16``, and ``float32`` dtypes, values outside this domain
+            are clamped to the valid range. For ``float64``, they yield
+            ``NaN``. Must have a floating-point dtype.
 
     Returns:
-        A tensor value of the same shape and dtype with the arccosine of each
-        element in radians.
+        A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+        arccosine of each element of ``x``. Values range from ``[0, π]`` (radians).
 
     Raises:
         Error: If the input doesn't represent a tensor or has a non-floating-point dtype.

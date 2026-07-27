@@ -343,12 +343,19 @@ def uniform(
     dtype: DType | None = None,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Samples values from a uniform distribution.
+    """Samples values uniformly from the half-open interval ``[range[0], range[1])``.
 
-    When ``device`` is a
+    Values satisfy ``range[0] <= x < range[1]``. When ``device`` is a
     :class:`~max.experimental.sharding.DeviceMapping`, each Sharded
     axis draws an independent stream while shards on Replicated axes
     draw identical values.
+
+    .. code-block:: python
+
+        from max.experimental import functional as F
+
+        result = F.uniform((2, 3), range=(0.0, 1.0))
+        # result is a (2, 3) tensor sampled uniformly from [0.0, 1.0).
 
     Args:
         shape: The shape of the resulting tensor.
@@ -360,7 +367,7 @@ def uniform(
             distributed placement.
 
     Returns:
-        A tensor of the requested shape, dtype, and placement with
+        A ``Tensor`` of the requested shape, dtype, and placement with
         values sampled uniformly from ``[range[0], range[1])``.
     """
     mapping = _normalized_device(device)
@@ -382,12 +389,19 @@ def gaussian(
     dtype: DType | None = None,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Samples values from a Gaussian (normal) distribution.
+    """Samples values from a Gaussian (normal) distribution with the given mean and standard deviation.
 
     When ``device`` is a
     :class:`~max.experimental.sharding.DeviceMapping`, each Sharded
     axis draws an independent stream while shards on Replicated axes
     draw identical values.
+
+    .. code-block:: python
+
+        from max.experimental import functional as F
+
+        result = F.gaussian((2, 3), mean=0.0, std=1.0)
+        # result is a (2, 3) tensor sampled from a standard normal distribution.
 
     Args:
         shape: The shape of the resulting tensor.
@@ -400,7 +414,7 @@ def gaussian(
             distributed placement.
 
     Returns:
-        A tensor of the requested shape, dtype, and placement with
+        A ``Tensor`` of the requested shape, dtype, and placement with
         values sampled from ``Normal(mean, std**2)``.
     """
     mapping = _normalized_device(device)
@@ -521,21 +535,49 @@ def hann_window(
     dtype: DType | None = None,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Creates a Hann window of the given length.
+    """Computes a Hann window of a given length.
+
+    For a symmetric window of ``N`` points with ``N > 1``, the value at index
+    ``n`` is:
+
+    .. code-block:: text
+
+        w[n] = 0.5 * (1 - cos(2 * pi * n / (N - 1)))
+
+    A window of length ``0`` is empty, and a window of length ``1`` is
+    ``[1]``.
+
+    A periodic window instead computes ``N + 1`` points and drops the last
+    one, which makes it suitable for spectral analysis.
+
+    .. code-block:: python
+
+        from max.experimental import functional as F
+
+        result = F.hann_window(4, periodic=True)
+        # result holds [0.0, 0.5, 1.0, 0.5].
 
     Args:
-        window_length: The length of the window.
-        periodic: When ``True``, returns a window suitable for use as a
-            periodic function (matches NumPy's ``hann`` convention).
-            When ``False``, returns a symmetric window.
-        dtype: The data type of the resulting window.
+        window_length: The number of points in the window.
+        periodic: Whether to return a periodic window. When ``True``,
+            computes a symmetric window of ``window_length + 1`` points and
+            drops the last point, so that ``hann_window(L, periodic=True)``
+            equals ``hann_window(L + 1, periodic=False)[:-1]``. Defaults to
+            ``True``.
+        dtype: The output tensor's data type. Defaults to ``float32`` on CPU
+            or ``bfloat16`` on accelerators.
         device: A single device or a
             :class:`~max.experimental.sharding.DeviceMapping`. Sharded
             placement is not supported.
 
     Returns:
-        A 1-D tensor of length ``window_length`` containing the Hann
-        window samples.
+        A 1-D ``Tensor`` of shape ``(window_length,)`` containing the
+        window.
+
+    Raises:
+        ValueError: If ``window_length`` is negative, or if ``device``
+            requests a sharded placement.
+        TypeError: If ``window_length`` isn't an integer.
     """
     mapping = _normalized_device(device)
     _reject_sharded_creation(mapping, "hann_window")
@@ -563,23 +605,50 @@ def range(
     dtype: DType | None = None,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Creates a 1-D tensor with values from a start, stop, and step.
+    """Creates a sequence of evenly spaced values from ``start`` to ``stop``.
+
+    The sequence begins at ``start`` and increments by ``step``, stopping
+    before ``stop`` (the upper bound is exclusive).
+
+    ``stop - start`` must be zero or have the same sign as ``step``.
+    Currently, graph compilation fails when ``stop - start`` isn't evenly
+    divisible by ``step``. For example, ``range(0, 5, 2)`` should produce
+    three values, ``[0, 2, 4]``, but shape inference declares an output length
+    of 2. The generated values therefore don't fit the declared output shape.
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.experimental import functional as F
+
+        result = F.range(0, 5, 1, dtype=DType.float32)
+        # result holds [0.0, 1.0, 2.0, 3.0, 4.0].
 
     Args:
-        start: The first value (inclusive).
-        stop: The end value (exclusive).
-        step: The increment between consecutive values. Defaults to ``1``.
-        out_dim: The symbolic dimension for the output. Required when
-            ``start`` / ``stop`` / ``step`` are dynamic and the output
-            size cannot be inferred at graph build time.
-        dtype: The data type of the resulting tensor.
+        start: The first value in the sequence. Must be a scalar value.
+        stop: The exclusive upper bound. The sequence stops before this
+            value. Must be a scalar value.
+        step: The spacing between consecutive values. Must be non-zero.
+            Defaults to ``1``.
+        out_dim: The expected length of the output. Required when dynamic
+            scalar tensor inputs prevent static length inference. When omitted,
+            it's computed from scalar literals.
+        dtype: The element type of the result tensor. Defaults to
+            ``float32`` on CPU or ``bfloat16`` on accelerators.
         device: A single device or a
             :class:`~max.experimental.sharding.DeviceMapping`. Sharded
             placement is not supported.
 
     Returns:
-        A 1-D tensor of values ``[start, start+step, start+2*step, ...]``
-        up to but excluding ``stop``.
+        A ``Tensor`` containing the generated sequence.
+
+    Raises:
+        ValueError: If ``out_dim`` is omitted for dynamic scalar inputs, if
+            any input isn't scalar, if any input isn't on the CPU, or if
+            ``device`` requests a sharded placement.
+        RuntimeError: If a statically known interval isn't evenly divisible
+            by ``step``, causing the inferred output length to disagree with
+            the number of generated values.
     """
     mapping = _normalized_device(device)
     _reject_sharded_creation(mapping, "range")
@@ -609,25 +678,56 @@ def constant(
     dtype: DType | None = None,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Creates a constant tensor from a Python value, nested list, or DLPack array.
+    """Creates a constant tensor from a Python literal or array-like value.
 
-    For DLPack arrays, the array's own dtype is preserved when
-    ``dtype`` is :obj:`None`. For Python scalars and nested lists,
-    ``dtype`` defaults to ``float32`` on CPU or ``bfloat16`` on
-    accelerators.
+    For an array-like ``value``, the array's own dtype is preserved when
+    ``dtype`` is :obj:`None`. For a Python scalar or sequence, ``dtype``
+    defaults to ``float32`` on CPU or ``bfloat16`` on accelerators.
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.experimental import functional as F
+
+        result = F.constant([[1.0, 2.0], [3.0, 4.0]], DType.float32)
+        # result holds [[1.0, 2.0], [3.0, 4.0]].
+
+    .. warning::
+
+        Loading a constant can lose precision. For example, loading
+        ``16777217`` as a ``float32`` produces ``16777216.0``.
+
+    .. warning::
+
+        When ``device`` is a multi-device
+        :class:`~max.experimental.sharding.DeviceMapping`, the full
+        ``value`` is materialized on every device. A mapping that shards a
+        tensor axis therefore duplicates the data and reports a global shape
+        scaled by the number of devices, without raising. Create the tensor
+        Replicated and shard it afterward.
 
     Args:
-        value: The constant value. Accepts a Python scalar, a nested
-            list of numbers, or a DLPack-compatible array (NumPy,
-            PyTorch, etc.).
-        dtype: The data type of the resulting tensor. Defaults vary by
-            input type as described above.
+        value: The value to embed. A Python scalar, a (nested) sequence of
+            numbers, or an array-like object that supports DLPack, such as a
+            NumPy array.
+        dtype: The constant tensor's element type. For an array-like
+            ``value``, defaults to the array's dtype. For a Python scalar or
+            sequence, defaults to ``float32`` on CPU or ``bfloat16`` on
+            accelerators.
         device: A single device or a
             :class:`~max.experimental.sharding.DeviceMapping` for
-            distributed placement.
+            distributed placement. Defaults to an accelerator if available,
+            otherwise the CPU.
 
     Returns:
-        A tensor on the requested placement initialized from ``value``.
+        A ``Tensor`` containing the constant, with the same shape as
+        ``value``. A scalar ``value`` produces a rank-0 tensor.
+
+    Raises:
+        TypeError: If ``dtype`` is a sub-byte type.
+        ValueError: If ``value`` is a nested sequence that isn't rectangular,
+            if an integer in ``value`` is out of range for ``dtype``, or if
+            ``dtype`` doesn't match the dtype of an array-like ``value``.
     """
     mapping = _normalized_device(device)
     mesh = mapping.mesh

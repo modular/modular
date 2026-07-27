@@ -37,13 +37,13 @@ def conv2d(
 ) -> TensorValue:
     """Computes the 2-D convolution product of the input with the given filter, bias, strides, dilations, paddings, and groups.
 
-    The op supports 2-D convolution, with the following layout assumptions:
+    This uses the following layout assumptions:
 
-    - input `x` has NHWC layout, i.e.,
-      (batch_size, height, width, in_channels)
-    - filter has layout RSCF, i.e.,
-      (height, width, in_channels / num_groups, out_channels)
-    - bias has shape (out_channels,)
+    - The input has channels-last (NHWC) layout, meaning
+      ``(batch_size, height, width, in_channels)``.
+    - The filter has RSCF layout, meaning
+      ``(height, width, in_channels / num_groups, out_channels)``.
+    - The bias has shape ``(out_channels,)``.
 
     The padding values are expected to take the form (pad_dim1_before,
     pad_dim1_after, pad_dim2_before, pad_dim2_after...) and represent padding
@@ -103,20 +103,26 @@ def conv2d(
 
     Args:
         x: An NHWC input tensor to perform the convolution upon.
-        filter: The convolution filter in RSCF layout:
-            (height, width, in_channels / num_groups, out_channels).
+        filter: The convolution filter in RSCF layout,
+            ``(height, width, in_channels / num_groups, out_channels)``.
         stride: The stride of the convolution operation.
         dilation: The spacing between the kernel points.
         padding: The amount of padding applied to the input.
         groups: When greater than 1, divides the convolution into multiple
             parallel convolutions. The number of input and output channels
             must both be divisible by the number of groups.
-        bias: Optional 1-D bias of shape (out_channels,).
-        input_layout: Layout of the input tensor (default NHWC).
-        filter_layout: Layout of the filter tensor (default RSCF).
+        bias: An optional 1-D bias of shape ``(out_channels,)``.
+        input_layout: The layout of the input tensor. Defaults to NHWC.
+        filter_layout: The layout of the filter tensor. Defaults to RSCF.
 
     Returns:
-        A symbolic tensor value with the convolution applied.
+        A ``TensorValue`` representing the result of the convolution, with
+        shape ``(batch_size, height_out, width_out, out_channels)``.
+
+    Raises:
+        ValueError: If ``x`` isn't rank 4, ``filter`` isn't rank 4, ``bias`` is
+            given and isn't rank 1, or ``x`` and ``filter`` aren't on the same
+            device.
     """
     x, filter = dtype_promotion._promote_weak_dtypes(x, filter)
 
@@ -170,14 +176,14 @@ def conv3d(
     input_layout: ConvInputLayout = ConvInputLayout.NHWC,
     filter_layout: FilterLayout = FilterLayout.QRSCF,
 ) -> TensorValue:
-    """Computes the 3-D convolution product of the input with the given filter, strides, dilations, paddings, and groups.
+    """Computes the 3-D convolution product of the input with the given filter, bias, strides, dilations, paddings, and groups.
 
-    The op supports 3-D convolution, with the following layout assumptions:
+    This uses the following layout assumptions:
 
-    - input has NDHWC layout, i.e.,
-      (batch_size, depth, height, width, in_channels)
-    - filter has layout RSCF, i.e.,
-      (depth, height, width, in_channels / num_groups, out_channels)
+    - The input has channels-last (NDHWC) layout, meaning
+      ``(batch_size, depth, height, width, in_channels)``.
+    - The filter has QRSCF layout, meaning
+      ``(depth, height, width, in_channels / num_groups, out_channels)``.
 
     The padding values are expected to take the form (pad_dim1_before,
     pad_dim1_after, pad_dim2_before, pad_dim2_after...) and represent padding
@@ -202,23 +208,42 @@ def conv3d(
 
     This op currently only supports strides and padding on the input.
 
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, TensorType, ops
+
+        device = DeviceRef.CPU()
+        input_type = TensorType(DType.float32, [1, 4, 4, 4, 1], device=device)
+        filter_type = TensorType(DType.float32, [2, 2, 2, 1, 1], device=device)
+        with Graph(
+            "conv3d", input_types=[input_type, filter_type]
+        ) as graph:
+            x, filter = graph.inputs
+            # Output shape is (1, 3, 3, 3, 1).
+            graph.output(ops.conv3d(x.tensor, filter.tensor))
+
     Args:
         x: An NDHWC input tensor to perform the convolution upon.
-        filter: The convolution filter in RSCF layout:
-                (depth, height, width, in_channels / num_groups, out_channels).
+        filter: The convolution filter in QRSCF layout,
+            ``(depth, height, width, in_channels / num_groups, out_channels)``.
         stride: The stride of the convolution operation.
         dilation: The spacing between the kernel points.
         padding: The amount of padding applied to the input.
         groups: When greater than 1, divides the convolution into multiple
             parallel convolutions. The number of input and output channels
             must both be divisible by the number of groups.
-        bias: Optional 1-D bias of shape (out_channels,).
-        input_layout: Layout of the input tensor (default NDHWC).
-        filter_layout: Layout of the filter tensor (default QRSCF).
+        bias: An optional 1-D bias of shape ``(out_channels,)``.
+        input_layout: The layout of the input tensor. Defaults to NDHWC.
+        filter_layout: The layout of the filter tensor. Defaults to QRSCF.
 
     Returns:
-        A symbolic tensor value with the convolution applied.
-        Output shape = (batch_size, depth, height, width, out_channels).
+        A ``TensorValue`` representing the result of the convolution, with
+        shape ``(batch_size, depth_out, height_out, width_out, out_channels)``.
+
+    Raises:
+        ValueError: If ``x`` isn't rank 5, ``filter`` isn't rank 5, or ``bias``
+            is given and isn't rank 1.
     """
     x, filter = dtype_promotion._promote_weak_dtypes(x, filter)
 

@@ -26,35 +26,77 @@ from ..value import TensorValue, TensorValueLike
 
 
 def sum(x: TensorValueLike, axis: int = -1) -> TensorValue:
-    """Reduces a symbolic tensor using a sum operation.
+    """Computes the sum of elements along a specified axis.
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("sum_example") as graph:
+            x = ops.constant(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                DType.float32,
+                device=device,
+            )
+            graph.output(ops.sum(x, axis=-1))  # shape (2, 1): [[6.0], [15.0]]
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
 
     Args:
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of ``-1`` will
-            compute the reduction along the last dimension.
+            indexes from the last dimension. For example, a value of ``-1``
+            computes the reduction along the last dimension. Defaults to
+            ``-1``.
 
     Returns:
-        A symbolic tensor representing the result of the sum operation.
-        The tensor will have the same rank as the input tensor, and the same
-        shape except along the ``axis`` dimension which will have size ``1``.
+        A ``TensorValue`` representing the sum along ``axis``. It has the same
+        rank as ``x``, with the ``axis`` dimension reduced to size ``1``.
+
+    Raises:
+        ValueError: If ``axis`` is out of range for the input's rank.
     """
     return _reduce(rmo.MoReduceAddOp, x, axis=axis)
 
 
 def mean(x: TensorValueLike, axis: int = -1) -> TensorValue:
-    """Reduces a symbolic tensor using a mean operation.
+    """Computes the mean of elements along a specified axis.
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("mean_example") as graph:
+            x = ops.constant(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                DType.float32,
+                device=device,
+            )
+            graph.output(ops.mean(x, axis=-1))  # shape (2, 1): [[2.0], [5.0]]
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
 
     Args:
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of ``-1`` will
-            compute the reduction along the last dimension.
+            indexes from the last dimension. For example, a value of ``-1``
+            computes the reduction along the last dimension. Defaults to
+            ``-1``.
 
     Returns:
-        A symbolic tensor representing the result of the mean operation.
-        The tensor will have the same rank as the input tensor, and the same
-        shape except along the ``axis`` dimension which will have size ``1``.
+        A ``TensorValue`` representing the mean along ``axis``. It has the same
+        rank as ``x``, with the ``axis`` dimension reduced to size ``1``.
+
+    Raises:
+        ValueError: If ``axis`` is out of range for the input's rank.
     """
     return _reduce(rmo.MoReduceMeanOp, x, axis=axis)
 
@@ -97,48 +139,92 @@ def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
     Args:
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of ``-1`` will
-            compute the reduction along the last dimension.
+            indexes from the last dimension. For example, a value of ``-1``
+            computes the reduction along the last dimension. Defaults to
+            ``-1``.
 
     Returns:
-        A symbolic tensor that has the same rank as the input tensor and the same
-        shape except along the ``axis`` dimension which will have size ``1``.
+        A ``TensorValue`` representing the minimum along ``axis``. It has the
+        same rank as ``x``, with the ``axis`` dimension reduced to size ``1``.
+
+    Raises:
+        ValueError: If ``axis`` is out of range for the input's rank.
     """
     return _reduce(rmo.MoReduceMinOp, x, axis=axis)
 
 
 def max(x: TensorValueLike, axis: int = -1) -> TensorValue:
-    """Reduces a symbolic tensor using a max operation.
+    """Computes the maximum value along a specified axis.
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("max_example") as graph:
+            x = ops.constant(
+                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
+                DType.float32,
+                device=device,
+            )
+            graph.output(ops.max(x, axis=-1))  # shape (2, 1): [[3.5], [4.2]]
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
 
     Args:
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of ``-1`` will
-            compute the reduction along the last dimension.
+            indexes from the last dimension. For example, a value of ``-1``
+            computes the reduction along the last dimension. Defaults to
+            ``-1``.
 
     Returns:
-        A symbolic tensor representing the result of the max operation.
-        The tensor will have the same rank as the input tensor, and the same
-        shape except along the ``axis`` dimension which will have size ``1``.
+        A ``TensorValue`` representing the maximum along ``axis``. It has the
+        same rank as ``x``, with the ``axis`` dimension reduced to size ``1``.
+
+    Raises:
+        ValueError: If ``axis`` is out of range for the input's rank.
     """
     return _reduce(rmo.MoReduceMaxOp, x, axis=axis)
 
 
 def prod(x: TensorValueLike, axis: int = -1) -> TensorValue:
-    """Reduces a symbolic tensor using a product operation.
+    """Computes the product of elements along a specified axis.
 
-    Computes the product of elements along a specified axis.
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("prod_example") as graph:
+            x = ops.constant(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                DType.float32,
+                device=device,
+            )
+            graph.output(ops.prod(x, axis=-1))  # shape (2, 1): [[6.0], [120.0]]
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
 
     Args:
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of ``-1`` will
-            compute the reduction along the last dimension.
+            indexes from the last dimension. For example, a value of ``-1``
+            computes the reduction along the last dimension. Defaults to
+            ``-1``.
 
     Returns:
-        A symbolic tensor representing the result of the product operation.
-        The tensor will have the same rank as the input tensor, and the same
-        shape except along the ``axis`` dimension which will have size ``1``.
+        A ``TensorValue`` representing the product along ``axis``. It has the
+        same rank as ``x``, with the ``axis`` dimension reduced to size ``1``.
+
+    Raises:
+        ValueError: If ``axis`` is out of range for the input's rank.
     """
     return _reduce(rmo.MoReduceMulOp, x, axis=axis)
 
@@ -185,22 +271,44 @@ def _reduce(
 
 
 def argmin(x: TensorValueLike, axis: int = -1) -> TensorValue:
-    """Reduces a symbolic tensor using an argmin operation.
+    """Returns the indices of the minimum values along an axis.
 
-    When provided with a tensor with all identical elements,
-    on CPU this will return the first element index in the tensor,
-    on GPU this will return an arbitrary index.
+    When the input contains ties (identical minimum values), behavior
+    depends on the device: CPU returns the first matching index, while
+    GPU may return any of them.
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("argmin_example") as graph:
+            x = ops.constant(
+                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
+                DType.float32,
+                device=device,
+            )
+            graph.output(ops.argmin(x, axis=-1))  # shape (2, 1): [[3], [1]]
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
 
     Args:
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
-            indexes from the last dimension. For example, a value of ``-1`` will
-            compute the reduction along the last dimension.
+            indexes from the last dimension. For example, a value of ``-1``
+            computes the reduction along the last dimension. Defaults to
+            ``-1``.
 
     Returns:
-        A symbolic tensor representing the result of the argmin operation.
-        The tensor will have the same rank as the input tensor, and the same
-        shape except along the ``axis`` dimension which will have size ``1``.
+        A ``TensorValue`` with ``int64`` dtype representing the indices of the
+        minimum values along ``axis``. The result has the same rank as ``x``,
+        with the ``axis`` dimension reduced to size ``1``.
+
+    Raises:
+        ValueError: If ``axis`` is out of range for the input's rank.
     """
     return _reduce(rmo.MoReduceArgMinOp, x, axis, out_dtype=DType.int64)
 
@@ -218,13 +326,21 @@ def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
 
     .. code-block:: python
 
-        x = ops.constant(
-            [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
-            DType.float32,
-            device=device,
-        )
-        indices = ops.argmax(x, axis=-1)
-        # indices has shape (2, 1): [[1], [2]]
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("argmax_example") as graph:
+            x = ops.constant(
+                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
+                DType.float32,
+                device=device,
+            )
+            graph.output(ops.argmax(x, axis=-1))  # shape (2, 1): [[1], [2]]
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
 
     Args:
         x: The input tensor.
@@ -232,8 +348,11 @@ def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
             index from the last dimension. Defaults to ``-1``.
 
     Returns:
-        A symbolic integer tensor of indices marking the positions of the
+        A ``TensorValue`` with ``int64`` dtype representing the indices of the
         maximum values along ``axis``. The result has the same rank as
         ``x``, with the ``axis`` dimension reduced to size ``1``.
+
+    Raises:
+        ValueError: If ``axis`` is out of range for the input's rank.
     """
     return _reduce(rmo.MoReduceArgMaxOp, x, axis, out_dtype=DType.int64)

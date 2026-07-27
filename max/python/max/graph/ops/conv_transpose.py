@@ -34,31 +34,31 @@ def conv2d_transpose(
     input_layout: ConvInputLayout = ConvInputLayout.NHWC,
     filter_layout: FilterLayout = FilterLayout.RSCF,
 ) -> TensorValue:
-    """Computes the 2-D deconvolution of the input with the given filter, strides, dilations, paddings, and groups.
+    """Computes the 2-D deconvolution of the input with the given filter, strides, dilations, and paddings.
 
-    The op supports the transpose (gradient) of convolution, with the following layout assumptions:
-    (note the `out_channel` is w.r.t. the original convolution)
+    This computes the transpose (gradient) of convolution, with the following
+    layout assumptions (where ``out_channels`` is with respect to the original
+    convolution):
 
-    - input `x` has NHWC layout, i.e.,
-      (batch_size, height, width, in_channels)
-    - filter has layout RSCF, i.e.,
-      (kernel_height, kernel_width, out_channels, in_channels)
-    - bias has shape (out_channels,)
+    - The input ``x`` has channels-last (NHWC) layout, meaning
+      ``(batch_size, height, width, in_channels)``.
+    - The filter has RSCF layout, meaning
+      ``(kernel_height, kernel_width, out_channels, in_channels)``.
+    - The bias has shape ``(out_channels,)``.
 
-    The padding values are expected to take the form in the form [[0, 0], [pad_top, pad_bottom],
-    [pad_left, pad_right], [0, 0]].
+    This op effectively computes the gradient of a convolution with respect to
+    its input, as if the original convolution had the same filter and
+    hyperparameters as this op. For a visualization of the computation, see
+    `Transposed Convolution
+    <https://d2l.ai/chapter_computer-vision/transposed-conv.html>`_.
 
-    This op effectively computes the gradient of a convolution with
-    respect to its input (as if the original convolution operation had the same
-    filter and hyperparameters as this op). A visualization of the computation
-    can be found in https://d2l.ai/chapter_computer-vision/transposed-conv.html.
-
-    The padding values are expected to take the form (pad_dim1_before,
-    pad_dim1_after, pad_dim2_before, pad_dim2_after...) and represent padding
-    0's before and after the indicated *spatial* dimensions in `input`. In 2D
-    ConvTranspose, dim1 here represents H_out and dim2 represents W_out. In
-    python like syntax, padding a 2x4 spatial `output` with [0, 1, 2, 1] would
-    yield:
+    The padding values take the form ``(pad_dim1_before, pad_dim1_after,
+    pad_dim2_before, pad_dim2_after, ...)`` and crop that many rows or columns
+    from the borders of the indicated *spatial* dimensions of the output. In
+    2-D transposed convolution, ``dim1`` represents ``H_out`` and ``dim2``
+    represents ``W_out``. In Python-like syntax, cropping a 2x4 spatial output
+    with ``[0, 1, 2, 1]`` trims 0 rows from the top, 1 row from the bottom, 2
+    columns from the left, and 1 column from the right, leaving:
 
     .. code-block:: text
 
@@ -68,7 +68,7 @@ def conv2d_transpose(
         ]
         # Shape is 2x4
 
-        padded_input = [
+        cropped_output = [
           [3],
         ]
         # Shape is 1x1
@@ -95,23 +95,29 @@ def conv2d_transpose(
 
     Args:
         x: An NHWC input tensor to perform the deconvolution upon.
-        filter: The convolution filter in RSCF layout:
-            (height, width, out_channels, in_channels).
-        stride: The stride of the sliding window for each dimension of input.
-            If a single value is given it is replicated in the H and W dimension.
-            By default the N and C dimensions are set to 0.
+        filter: The convolution filter in RSCF layout,
+            ``(height, width, out_channels, in_channels)``.
+        stride: A tuple ``(stride_h, stride_w)``. Defaults to ``(1, 1)``.
         dilation: The spacing between the kernel points.
-        padding: The amount of padding applied to the input.
-        output_paddings: this argument is meant to resolve the ambiguity of multiple
-            potential output shapes when any stride is greater than 1. Basically,
-            we'll add `output_paddings[i]` number of zeros at the end of output's ith
-            axis. We only support output_paddings = 0.
-        bias: Tensor of shape (out_channels,).
-        input_layout: Layout of the input tensor (default NHWC).
-        filter_layout: Layout of the filter tensor (default RSCF).
+        padding: The number of rows and columns cropped from the borders of the
+            output spatial dimensions.
+        output_paddings: The number of zeros added at the end of each output
+            spatial axis. This resolves the ambiguity between multiple output
+            shapes when a stride is greater than 1. Only ``0`` is supported.
+        bias: An optional tensor of shape ``(out_channels,)``.
+        input_layout: The layout of the input tensor. Defaults to NHWC.
+        filter_layout: The layout of the filter tensor. Defaults to RSCF.
 
     Returns:
-        A symbolic tensor value with the convolution applied.
+        A ``TensorValue`` representing the result of the deconvolution, with
+        shape ``(batch_size, out_channels, height_out, width_out)`` in
+        channels-first (NCHW) layout. This differs from the channels-last
+        (NHWC) layout of the input.
+
+    Raises:
+        ValueError: If ``x`` isn't rank 4, ``filter`` isn't rank 4, ``bias`` is
+            given and isn't rank 1, an output padding isn't smaller than its
+            stride, or ``x`` and ``filter`` aren't on the same device.
     """
     x, filter = dtype_promotion._promote_weak_dtypes(x, filter)
 

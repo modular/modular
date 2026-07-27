@@ -39,8 +39,6 @@ def layer_norm(
     normalization on float16 or bfloat16 inputs, cast to float32 before
     calling this op and cast the result back.
 
-    For example:
-
     .. code-block:: python
 
         from max.dtype import DType
@@ -56,7 +54,7 @@ def layer_norm(
 
         model = InferenceSession().load(graph)
         result = model.execute()[0]
-        # Each row is normalized to zero mean and unit variance.
+        # Each row is normalized to zero mean and approximately unit variance.
 
     .. invisible-code-block: python
 
@@ -74,7 +72,7 @@ def layer_norm(
             numerical stability.
 
     Returns:
-        A tensor with the same shape and dtype as ``input``.
+        A ``TensorValue`` with the same shape and dtype as ``input``.
 
     Raises:
         ValueError: If ``gamma`` or ``beta`` does not match the last

@@ -26,17 +26,42 @@ def gather(
 ) -> TensorValue:
     """Selects elements out of an input tensor by index.
 
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("gather") as graph:
+            x = ops.constant(
+                [[1, 2], [3, 4], [5, 6]], DType.int32, device=device
+            )
+            indices = ops.constant([0, 2], DType.int64, device=device)
+            # Select rows 0 and 2, producing [[1, 2], [5, 6]].
+            graph.output(ops.gather(x, indices, axis=0))
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+
     Args:
         input: The input symbolic tensor to select elements from.
-        indices: A symbolic tensor of index values to use for selection.
-        axis: The dimension which ``indices`` indexes from ``input``. If negative,
-            indexes relative to the end of the input tensor. For instance,
-            ``gather(input, indices, axis=-1)`` will index against the last
-            dimension of ``input``.
+        indices: A symbolic tensor of ``int32`` or ``int64`` index values
+            on the same device as ``input``.
+        axis: The dimension that ``indices`` indexes into ``input``. If
+            negative, indexes relative to the end of the input tensor. For
+            example, ``gather(input, indices, axis=-1)`` indexes against the
+            last dimension of ``input``.
 
     Returns:
-        TensorValue: A new symbolic tensor representing the result of the gather
-        operation.
+        A ``TensorValue`` representing the selected elements. Its shape is
+        ``input.shape`` with the dimension at ``axis`` replaced by
+        ``indices.shape``.
+
+    Raises:
+        IndexError: If ``axis`` is out of range for ``input``.
+        ValueError: If ``indices`` isn't integral or isn't on the same
+            device as ``input``.
     """
     input, indices = TensorValue(input), TensorValue(indices)
     shape = input.shape
@@ -74,26 +99,19 @@ def gather_nd(
 
     .. code-block:: python
 
-        input_shape = ["a", "b", "c", "d", "e"]
-        indices_shape = ["a", "f", 3]
-        input_type = TensorType(DType.bfloat16, input_shape)
-        indices_type = TensorType(DType.int32, indices_shape)
-        with Graph("gather_nd", input_types=[input_type, indices_type]) as graph:
-            input, indices = graph.inputs
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, TensorType, ops
+
+        device = DeviceRef.CPU()
+        input_type = TensorType(DType.float32, [2, 3, 4, 5, 6], device)
+        indices_type = TensorType(DType.int64, [2, 7, 3], device)
+        with Graph(
+            "gather_nd", input_types=[input_type, indices_type]
+        ) as graph:
+            input, indices = (value.tensor for value in graph.inputs)
             gathered = ops.gather_nd(input, indices, batch_dims=1)
-            print(gathered.type)
-        # Output: TensorType(dtype=DType.bfloat16, shape=["a", "f", "e"])
-
-    In this example:
-
-    - ``batch_dims`` is 1, so ``input`` and ``indices`` share the leading
-      "a" dimension.
-    - ``indices`` has an additional dimension "f" which becomes part of
-      the output.
-    - The last dimension of ``indices`` (size 3) is the index vector;
-      each value selects into "b", "c", and "d" of ``input``.
-    - Since ``batch_dims (1) + index size (3) < input.rank (5)``, the
-      remaining dimension "e" is sliced into the output.
+            graph.output(gathered)
+        # gathered.shape == [2, 7, 6]
 
     Args:
         input: The input symbolic tensor to gather from.
@@ -106,8 +124,8 @@ def gather_nd(
             Defaults to ``0``.
 
     Returns:
-        A symbolic tensor with the same dtype as ``input``. Its shape is
-        the concatenation of:
+        A ``TensorValue`` representing the gathered elements, with the same
+        dtype as ``input``. Its shape is the concatenation of:
 
         - ``input.shape[:batch_dims]`` — the leading batch dimensions.
         - ``indices.shape[batch_dims:-1]`` — the gather dimensions.
@@ -115,15 +133,12 @@ def gather_nd(
           trailing sliced dimensions.
 
     Raises:
-        ValueError: If any of the following:
-
-            - ``indices``'s last dimension is not static.
-            - ``indices`` is not an integer tensor.
-            - ``batch_dims`` is negative or greater than
-              ``indices.rank - 1``.
-            - ``batch_dims + indices.shape[-1]`` exceeds ``input.rank``.
-            - The leading ``batch_dims`` of ``input`` and ``indices``
-              don't match.
+        ValueError: If any input is invalid. This includes when ``indices``'s
+            last dimension is not static, ``indices`` is not an integer tensor,
+            ``batch_dims`` is negative or greater than ``indices.rank - 1``,
+            ``batch_dims + indices.shape[-1]`` exceeds ``input.rank``, or the
+            leading ``batch_dims`` of ``input`` and ``indices`` don't match,
+            or the inputs are on different devices.
     """
     input, indices = TensorValue(input), TensorValue(indices)
     assert_same_device(input=input, indices=indices)

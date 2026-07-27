@@ -401,23 +401,60 @@ def _slice_symbolic_tensor(
 
 
 def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
-    """Slices out a subtensor view of the input tensor based on `indices`.
+    """Slices out a subtensor of the input tensor based on ``indices``.
 
-    The semantics of :obj:`slice_tensor()` follow NumPy slicing semantics with the
-    following restrictions:
+    The ``indices`` use NumPy-style slicing conventions, with one index per
+    dimension. Each index is one of:
 
-    - Slice indices must not index out of ``[-dim - 1, dim - 1]`` for negative step,
-      or ``[-dim, dim]`` for positive step.
+    - An integer
+    - A scalar ``TensorValue`` (a runtime integer index)
+    - A ``slice``
+    - A ``(slice, out_dim)`` tuple, which names the output dimension when
+      slicing a dynamic dimension
+    - ``None`` (to insert a size-1 dimension)
+    - ``Ellipsis`` (to fill in full slices for the remaining dimensions)
+
+    Slice indices must stay within ``[-dim, dim]``, and slice steps must be positive.
 
     .. code-block:: python
 
-        # Reverse a tensor.
-        slice_tensor(x, [slice(None, None, -1)])
-        # Unsqueeze the second last dimension of a tensor.
-        slice_tensor(x, [..., None, slice(None)])
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("slice_tensor") as graph:
+            x = ops.constant(
+                [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+                DType.int32,
+                device=device,
+            )
+            # Take rows 0 and 1 and columns 1 and 2, producing
+            # [[2, 3], [5, 6]].
+            graph.output(ops.slice_tensor(x, [slice(0, 2), slice(1, 3)]))
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+
+    Args:
+        x: The input symbolic tensor to slice.
+        indices: The per-dimension index expressions. Each entry is an
+            integer, a scalar ``TensorValue``, a ``slice``, a
+            ``(slice, out_dim)`` tuple, ``None``, or ``Ellipsis``.
 
     Returns:
-        The sliced subtensor of `x`.
+        A ``TensorValue`` representing the sliced subtensor of ``x``.
+
+    Raises:
+        IndexError: If an integer index or slice bound is out of range for its
+            dimension.
+        ValueError: If ``x`` is a scalar, if an index ``TensorValue`` isn't a
+            scalar, if a slice step isn't positive, or if an index form is
+            unsupported.
+        TypeError: If an index for a symbolically-shaped dimension isn't a
+            slice or integer.
+        NotImplementedError: If a slice on a dynamic dimension omits the
+            ``(slice, out_dim)`` form needed to compute its output size.
     """
     x = TensorValue(x)
 
