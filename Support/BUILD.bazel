@@ -435,18 +435,21 @@ modular_cc_library(
     ],
 )
 
-# Sources, headers, defines, and deps shared by the two :Profiling variants
-# below.
-#
-# RangeKineto.cpp is the libkineto backend; it lives in :ProfilingKineto so
-# libkineto stays out of this Mojo-facing library. RangeBackend.h is the
-# private header both sides share (quote-included from the same directory).
-PROFILING_SRCS = glob(
+# Sources of the always-linked profiler shim (:Profiling below): the Range
+# API forwarder/loader (RangeShim.cpp) plus the Tracy GPU-profiling TUs. The
+# profiler implementation — Range.cpp (state machine) and RangeKineto.cpp
+# (libkineto backend) — is excluded: it compiles only into the runtime-loaded
+# :MAXProfilerPlugin, so no host binary carries libkineto or its stubs.
+PROFILING_SHIM_SRCS = glob(
     ["lib/Profiling/internal/*.cpp"],
     # For OSS
     allow_empty = True,
-    exclude = ["lib/Profiling/internal/RangeKineto.cpp"],
-) + ["lib/Profiling/internal/RangeBackend.h"]
+    exclude = [
+        "lib/Profiling/internal/PluginEntry.cpp",
+        "lib/Profiling/internal/Range.cpp",
+        "lib/Profiling/internal/RangeKineto.cpp",
+    ],
+)
 
 PROFILING_HDRS = glob(
     ["include/Support/Profiling/internal/*.h"],
@@ -470,7 +473,7 @@ PROFILING_DEFINES = ASYNCRT_PROFILING_LOCAL_DEFINES + select({
 PROFILING_DEPS = [
     ":Base",
     # Configuration backs the session.debug.profiling_* settings that
-    # Range.cpp reads at enable()/disable() time (MXTOOLS-190).
+    # Range.cpp reads at enable()/disable() time.
     ":Configuration",
     ":Globals",
     ":MArchTargetMinimal",
@@ -505,112 +508,83 @@ PROFILING_DEPS = [
     "//conditions:default": [],
 })
 
-# Shared-library variant of the Range API, used only with `--config=kineto`.
-# Shared so Range.cpp's statics (enable flag, registered backend pointer, TLS
-# registration guard) are single-instance in the process: the kineto backend
-# registered by max._core must be visible to the mo.profile ranges recorded
-# from the Mojo runtime DSOs. As a static library those statics would be
-# duplicated into every consuming DSO, making enable() in one DSO invisible
-# to isEnabled() in another.
-modular_shared_library(
-    name = "ProfilingShared",
-    srcs = PROFILING_SRCS,
-    hdrs = PROFILING_HDRS,
-    # -fvisibility=default exports every symbol the way a static library
-    # would have, so existing consumers (which call non-Range.cpp APIs like
-    # TimeTraceProfiler, Tracy CUDA helpers, Configuration glue) keep
-    # working without needing per-symbol MODULAR_VISIBILITY_EXPORT annotations.
-    copts = [
-        "-fvisibility=default",
-    ],
-    defines = PROFILING_DEFINES,
-    output_name = "MAXProfiling",
-    deps = PROFILING_DEPS,
-)
-
-# Static variant, used in default builds. Without the kineto backend there is
-# no cross-DSO enable()/isEnabled() traffic, so per-DSO copies of Range.cpp's
-# statics are harmless — and consumers (KGEN CompilerRT, max._core) carry no
-# DT_NEEDED on a libMAXProfiling.so that the external wheel / conda packages
-# do not ship. Range.h's MODULAR_VISIBILITY_EXPORT annotations still apply
-# here, so consuming DSOs export the Range API and cross-DSO symbol binding
-# is platform-dependent (ELF interposition picks one copy; the macOS two-level
-# namespace keeps per-DSO copies). That divergence is only safe while backend
-# attachment stays kineto-gated, which forces the shared variant.
+# The Range profiling API, as an always-linked static shim: per-DSO hot-path
+# gates plus a dlopen loader that forwards to the profiler plugin
+# (:MAXProfilerPlugin) when present at runtime and degrades to no-ops
+# otherwise. Statics being per consuming DSO is by design — the plugin keeps
+# every registered copy's gates coherent (see RangeShim.cpp) — so there is no
+# shared-library variant and no DT_NEEDED on the plugin or any GPU library.
 modular_cc_library(
-    name = "ProfilingStatic",
-    srcs = PROFILING_SRCS,
+    name = "Profiling",
+    srcs = PROFILING_SHIM_SRCS,
     hdrs = PROFILING_HDRS,
     # TracyRocm.cpp uses a constructor to promote Tracy symbols to RTLD_GLOBAL
     # so that the rocprofiler-sdk plugin can resolve them via dlsym.
     copts = ["-Wno-global-constructors"],
     defines = PROFILING_DEFINES,
-    # :ProfilingShared already tidies the same sources.
-    tags = ["no-clang-tidy"],
     deps = PROFILING_DEPS,
 )
 
-# The Range profiling API (MXTOOLS-190). Shared iff kineto profiling is opted
-# in (`--config=kineto`) — a strict superset of the //:linux_x86_64_kineto
-# condition gating the max._core -> :ProfilingKineto edge, so the shared
-# variant is always in place whenever the kineto backend can attach. Default
-# builds must not give the packaged mojo / MAX libraries a DT_NEEDED on
-# libMAXProfiling.so, which the external packages do not ship.
-#
-# An alias (not a deps-forwarding library) so layering_check keeps seeing the
-# selected variant's headers as directly exported to consumers. The OSS build
-# stubs both variants by name in oss/modular/bazel/api.bzl and defines a
-# default-off //:kineto_enabled so this select resolves there too.
-alias(
-    name = "Profiling",
-    actual = select({
-        "//:kineto_enabled": ":ProfilingShared",
-        "//conditions:default": ":ProfilingStatic",
-    }),
+# The profiler implementation: state machine, trace post-processing, and the
+# backend function table — everything except the libkineto/CUDA calls
+# themselves. Split from :MAXProfilerPlugin so the unit tests
+# (//Support/unittests/internal/Profiling) can exercise the state machine
+# backendless on any platform. Never link this together with :Profiling into
+# one binary: both define the M::Profiling symbols (the plugin is loaded
+# RTLD_LOCAL with hidden visibility, so the two never meet at runtime).
+modular_cc_library(
+    name = "ProfilerCore",
+    srcs = [
+        "lib/Profiling/internal/Range.cpp",
+        "lib/Profiling/internal/RangeBackend.h",
+    ],
+    hdrs = PROFILING_HDRS,
+    defines = PROFILING_DEFINES,
+    # The plugin (same package) plus its unit tests; nothing else may link
+    # the implementation — hosts get the shim.
+    visibility = ["//Support/unittests/internal/Profiling:__pkg__"],
+    deps = PROFILING_DEPS,
 )
 
-# libkineto backend for the Range API (MXTOOLS-190).  This is the ONLY target
-# that links libkineto + the on-demand CUPTI / cudart / cuda stubs; the base
-# :Profiling library above stays free of them so it can be linked into the Mojo
-# compiler runtime (KGEN CompilerRT, MLRT) without dragging libkineto's
-# GPU-profiling shared objects into the Mojo package (which the release linter
-# rejects).  Only the MAX runtime (max._core) depends on this target; it
-# registers the KinetoBackend function table that Range.cpp routes through by
-# calling Detail::initKinetoBackend() from its nanobind module init.  When the
-# target is absent, kinetoBackend() is null and the recording paths are no-ops.
+# The runtime-loaded profiler plugin: ProfilerCore plus the
+# libkineto/CUPTI backend (RangeKineto.cpp) and the C entry point
+# (PluginEntry.cpp). This is the ONLY target that links libkineto, and it
+# links the CUDA / cudart / CUPTI dlopen trampolines statically
+# (*_stub_static), so the resulting libMAXProfilerPlugin.so is one
+# self-contained file with no vendor DT_NEEDED entries — drop it next to a
+# deployment (or point MODULAR_PROFILER_PLUGIN at it) and the always-linked
+# :Profiling shim finds it. Internal-only: never packaged into wheels; the
+# python profiler tests carry it as a data dependency.
 #
-# Tracy and libkineto are mutually exclusive at build time (both subscribe to
-# CUPTI), so this is gated to Linux x86_64 with Tracy disabled — `--config=tracy`
-# builds simply do not link it and drive Tracy CUDA exclusively. The max._core
-# edge is additionally opt-in via `--config=kineto` (//:linux_x86_64_kineto):
-# this target links the on-demand libcuda / libcudart / libcupti stub shared
-# objects, which the external wheel / conda packages do not ship, so a
-# default-configuration max._core must stay free of it or `import max._core`
-# fails outside bazel with a missing stub shared object.
+# Tracy and libkineto are mutually exclusive CUPTI consumers, so this is
+# gated to Linux x86_64 with Tracy disabled; the shim additionally compiles
+# its loader out under TRACY_ENABLE.
 modular_shared_library(
-    name = "ProfilingKineto",
+    name = "MAXProfilerPlugin",
     srcs = [
+        "lib/Profiling/internal/PluginEntry.cpp",
         "lib/Profiling/internal/RangeBackend.h",
         "lib/Profiling/internal/RangeKineto.cpp",
     ],
-    copts = [
-        "-fvisibility=default",
-    ],
+    # Only the M_profilerPluginGetAPI entry point is exported (its explicit
+    # visibility attribute); everything else, including the statically linked
+    # libkineto, stays local to the DSO.
+    linkopts = ["-Wl,--exclude-libs,ALL"],
+    output_name = "MAXProfilerPlugin",
     target_compatible_with = select({
         "//:linux_x86_64_no_tracy": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    visibility = ["//visibility:public"],
     deps = [
-        ":Profiling",
-        # RangeBackend.h uses MODULAR_VISIBILITY_EXPORT to make the backend
-        # registry a process-global symbol (cross-DSO sharing rationale there).
-        ":SymbolExport",
-        # libcuda_stub provides cuCtxGetCurrent (RangeKineto.cpp's
-        # CUDA-context probe) via on-demand dlopen of libcuda.so.1, avoiding a
-        # hard NEEDED entry on the real driver library.
-        "//bazel/third-party:libcuda_stub",
-        "//bazel/third-party:libcudart_stub",
-        "//bazel/third-party:libcupti_stub",
+        ":ProfilerCore",
+        # The stubs provide cuCtxGetCurrent (RangeKineto.cpp's CUDA-context
+        # probe) and libkineto's CUPTI/cudart symbols via on-demand dlopen of
+        # the real vendor libraries, so the plugin carries no hard NEEDED
+        # entry on any of them.
+        "//bazel/third-party:libcuda_stub_static",
+        "//bazel/third-party:libcudart_stub_static",
+        "//bazel/third-party:libcupti_stub_static",
         "@libkineto",
         "@libkineto//:libkineto_headers",
     ],
