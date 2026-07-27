@@ -116,7 +116,23 @@ modular_py_test(
         },
         "//conditions:default": {},
     }),
-    env_inherit = ["HF_TOKEN"],
+    # Forward the HuggingFace cache-locating vars so the gpt2 checkpoint is
+    # downloaded at most once instead of every run. `requires-network` sets
+    # `HF_ESCAPES_SANDBOX=1`, which leaves `HF_HOME` unset; without forwarding,
+    # HF's cache resolves under the ephemeral `$TEST_TMPDIR` (bazel redirects
+    # `HOME` there), so nothing persists. Forwarding `HOME`/`HF_HOME` points HF
+    # at the persistent user cache locally and the pre-seeded cache volume in
+    # CI; `GPT2_SAFETENSORS_PATH` enables the fully-offline local path.
+    env_inherit = [
+        "HF_TOKEN",
+        "HF_HOME",
+        "HF_HUB_CACHE",
+        "HOME",
+        "GPT2_SAFETENSORS_PATH",
+        # Persists the version-keyed compile cache across runs (~250s cold to
+        # ~2s warm); unset, it lands in the ephemeral `$TEST_TMPDIR`.
+        "MODULAR_DERIVED_PATH",
+    ],
     ignore_extra_deps = [
         # Lazy import inside the experimental interpreter path.
         "//max/python/max/_interpreter_ops",
@@ -179,7 +195,23 @@ modular_py_test(
     env = {
         "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
     },
-    env_inherit = ["HF_TOKEN"],
+    # Forward the HuggingFace cache-locating vars so the gpt2 checkpoint is
+    # downloaded at most once instead of every run. `requires-network` sets
+    # `HF_ESCAPES_SANDBOX=1`, which leaves `HF_HOME` unset; without forwarding,
+    # HF's cache resolves under the ephemeral `$TEST_TMPDIR` (bazel redirects
+    # `HOME` there), so nothing persists. Forwarding `HOME`/`HF_HOME` points HF
+    # at the persistent user cache locally and the pre-seeded cache volume in
+    # CI; `GPT2_SAFETENSORS_PATH` enables the fully-offline local path.
+    env_inherit = [
+        "HF_TOKEN",
+        "HF_HOME",
+        "HF_HUB_CACHE",
+        "HOME",
+        "GPT2_SAFETENSORS_PATH",
+        # Persists the version-keyed compile cache across runs (~250s cold to
+        # ~2s warm); unset, it lands in the ephemeral `$TEST_TMPDIR`.
+        "MODULAR_DERIVED_PATH",
+    ],
     ignore_extra_deps = [
         # Lazy import inside the experimental interpreter path.
         "//max/python/max/_interpreter_ops",
