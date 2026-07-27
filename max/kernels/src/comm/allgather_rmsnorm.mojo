@@ -323,7 +323,7 @@ def allgather_rmsnorm[
     var in_lengths = StaticTuple[Int, ngpus](0)
     var rows = 0
     comptime for i in range(ngpus):
-        src_ptrs[i] = input_buffers[i].ptr.as_immutable().as_unsafe_any_origin()
+        src_ptrs[i] = input_buffers[i].ptr.as_imm().as_unsafe_any_origin()
         var len_i = input_buffers[i].num_elements() // cols
         in_lengths[i] = len_i
         rows += len_i
