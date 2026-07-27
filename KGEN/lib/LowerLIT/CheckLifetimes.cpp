@@ -2064,9 +2064,12 @@ void InteriorOriginTracker::markInteriorOriginLive(
   //    ref b = list[j]
   //    ...
   //    use(a) # This is valid even though "b" also marked it live.
-  //
-  // However, there are cases where the live reference doesn't SSA dominate the
-  // new reference, like:
+  if (domInfo.dominates(entry.getPointer(), &op))
+    return;
+
+  // If the entry was above us but in a nested region, hoist the location up and
+  // recheck dominance.  This handles cases where the live reference doesn't SSA
+  // dominate the new reference, like:
   //    if cond:
   //       ref a = list[i]
   //       use(a)
@@ -2075,11 +2078,13 @@ void InteriorOriginTracker::markInteriorOriginLive(
   //    ref b = list[j]   # Here.
   //    use(b)
   //
-  // In these cases, we use the location of 'b' as the highest live reference,
-  // because otherwise we'd reject the use of 'a' because it doesn't dominate
-  // the use of 'b'.
-  if (!domInfo.dominates(entry.getPointer(), &op))
-    entry.setPointer(&op);
+  // In these cases, we bubble the location of "a" up to the "if", and recheck.
+  Operation *liftedDefiningOp = liftToCommonRegion(entry.getPointer(), &op);
+  if (domInfo.dominates(liftedDefiningOp, &op))
+    return;
+
+  // Otherwise, it isn't dominating, so use it.
+  entry.setPointer(&op);
 }
 
 //===----------------------------------------------------------------------===//
