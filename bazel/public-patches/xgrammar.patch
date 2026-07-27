@@ -186,7 +186,7 @@ index 5cf140d..5d7ef98 100644
  }
  
 diff --git a/cpp/grammar_functor.cc b/cpp/grammar_functor.cc
-index 4424aca..fef3efe 100644
+index 4424aca..dd6b9e0 100644
 --- a/cpp/grammar_functor.cc
 +++ b/cpp/grammar_functor.cc
 @@ -7,6 +7,7 @@
@@ -207,6 +207,15 @@ index 4424aca..fef3efe 100644
    /* Building tool functions.*/
    static std::optional<FSMWithStartEnd> BuildTagDispatch(
        const std::vector<std::pair<std::string, int>>& string_trigger_rules,
+@@ -1206,7 +1210,7 @@ void AddSameLengthCharacterRange(
+     if ((max & 0x00FFFF) != 0xBFBF) {
+       int tmp_state_max = fsm.AddState();
+       fsm.GetFsm().AddEdge(from, tmp_state_max, byte_max[2], byte_max[2]);
+-      AddSameLengthCharacterRange(fsm, tmp_state_max, to, 0x0080, (max & 0x00FFFF));
++      AddSameLengthCharacterRange(fsm, tmp_state_max, to, 0x8080, (max & 0x00FFFF));
+     } else {
+       byte_max[2]++;
+     }
 @@ -1336,22 +1340,33 @@ void GrammarFSMBuilderImpl::AddCharacterRange(
    return;
  }
