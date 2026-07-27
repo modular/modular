@@ -26,13 +26,20 @@ from typing import Generic, Protocol, TypeVar, runtime_checkable
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device
+from max.driver import (
+    Buffer,
+    Device,
+    DevicePinnedBuffer,
+    copy_pinned_to_destinations,
+)
+from max.dtype import DType
 from max.pipelines.context import (
     ImageMetadata,
     TextAndVisionContext,
     TextContext,
     VLMContextType,
 )
+from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.pipelines.request import RequestID
 from max.profiler import traced
@@ -296,6 +303,9 @@ class VisionEncoderCache(Generic[VLMContextType]):
         self._max_entries = max_entries
         self._n_devices = n_devices
         self._request_refs: defaultdict[RequestID, set[int]] = defaultdict(set)
+
+        self._empty_indices_cache: list[Buffer] | None = None
+        self._scatter_buffers: dict[int, list[Buffer]] = {}
 
         # Per-batch vision encoder metrics, populated during batch
         # preparation and drained by the scheduler once per iteration via
@@ -759,6 +769,93 @@ class VisionEncoderCache(Generic[VLMContextType]):
         return self.cache_vision_embeddings(
             context_batch, selection, result, empty
         )
+
+    @traced
+    def finalize_vision_inputs(
+        self,
+        model: SupportsVisionEncoding[PackedVisionInputsT],
+        model_inputs: ModelInputs,
+        devices: list[Device],
+        vision_result: tuple[list[Buffer], npt.NDArray[np.int32]] | None,
+    ) -> None:
+        """Sets the ABI-facing vision-merge inputs on ``model_inputs``.
+
+        The single place empties-vs-real is decided: after this call the base
+        ``vision_embeddings`` / ``vision_scatter_indices`` fields hold the
+        per-device buffers the language graph declares, and
+        ``model_inputs.buffers`` is packable. Must run on every prepared batch
+        of a vision-capable model — including graph-capture warmup, which
+        packs ``.buffers`` without going through ``execute()``.
+
+        Args:
+            model: The vision-capable pipeline model (owns the empty
+                embeddings, whose hidden size and dtype are model-specific).
+            model_inputs: The prepared inputs, finalized in place.
+            devices: The pipeline's devices.
+            vision_result: What :meth:`run_vision_encode` returned for this
+                batch — an ``(embeddings, merge_indices)`` pair of assembled
+                per-device embedding buffers and the host merge-index array
+                to copy to each device. ``None`` means nothing was encoded
+                this step (a decode or text-only batch), so the fields fall
+                back to the model's cached zero-row empties.
+        """
+        if vision_result is None:
+            model_inputs.vision_embeddings = model.empty_vision_embeddings(
+                devices
+            )
+            model_inputs.vision_scatter_indices = self._empty_indices(devices)
+            return
+        embeddings, scatter_np = vision_result
+        model_inputs.vision_embeddings = embeddings
+        if len(scatter_np) == 0:
+            model_inputs.vision_scatter_indices = self._empty_indices(devices)
+        else:
+            model_inputs.vision_scatter_indices = self._scatter_to_devices(
+                scatter_np, devices
+            )
+
+    def _empty_indices(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device zero-length merge-index buffers.
+
+        Cached: hit on every decode / text-only step, so it must not allocate
+        per call.
+        """
+        if self._empty_indices_cache is None:
+            self._empty_indices_cache = [
+                Buffer.zeros(shape=[0], dtype=DType.int32).to(dev)
+                for dev in devices
+            ]
+        return self._empty_indices_cache
+
+    @traced
+    def _scatter_to_devices(
+        self, scatter_np: npt.NDArray[np.int32], devices: list[Device]
+    ) -> list[Buffer]:
+        """Copy merge indices to each device.
+
+        Allocates a fresh pinned host buffer every call and never reuses it
+        across calls: under the overlap scheduler a reused pinned buffer would
+        be clobbered by the next step's host write while the current step's
+        asynchronous H2D copy is still reading it. The per-device destination
+        buffers are cached by index count and reused (never pinned).
+        """
+        dev = devices[0]
+        n = len(scatter_np)
+        host_buffer_cls = DevicePinnedBuffer if not dev.is_host else Buffer
+        host: Buffer = host_buffer_cls(
+            dtype=DType.int32, shape=(n,), device=dev
+        )
+
+        device_bufs = self._scatter_buffers.get(n)
+        if device_bufs is None:
+            device_bufs = [
+                Buffer(shape=(n,), dtype=DType.int32, device=d) for d in devices
+            ]
+            self._scatter_buffers[n] = device_bufs
+
+        host.to_numpy()[:] = scatter_np.astype(np.int32)
+        copy_pinned_to_destinations(host, device_bufs)
+        return device_bufs
 
 
 def as_vision_context_batches(

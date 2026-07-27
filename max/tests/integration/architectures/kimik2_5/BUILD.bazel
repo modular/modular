@@ -24,6 +24,18 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_graph_capture_vision_inputs",
+    srcs = ["test_graph_capture_vision_inputs.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [

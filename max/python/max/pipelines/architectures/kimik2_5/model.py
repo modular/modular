@@ -22,8 +22,6 @@ from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import Any, ClassVar, cast
 
-import numpy as np
-import numpy.typing as npt
 from max.driver import (
     Buffer,
     Device,
@@ -120,14 +118,6 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
     vision_position_ids: list[Buffer] | None = None
     """Vision rotary position IDs per device."""
 
-    language_image_embeddings: list[Buffer] = field(default_factory=list)
-    """Per-device image embeddings for the language model graph.
-    Shape [0, hidden_size] during decode, [num_patches, hidden_size] during prefill."""
-
-    language_image_token_indices: list[Buffer] = field(default_factory=list)
-    """Per-device scatter indices for the language model graph.
-    Shape [0] during decode, [num_image_tokens] during prefill."""
-
     eplb_counter_buffers: list[Buffer] = field(default_factory=list)
     """Per-device EP counter buffers for the language model graph."""
 
@@ -141,8 +131,8 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
         """Returns the language model input ABI tuple."""
         return (
             self.tokens,
-            *self.language_image_embeddings,
-            *self.language_image_token_indices,
+            *self.vision_embeddings,
+            *self.vision_scatter_indices,
             self.input_row_offsets,
             self.host_input_row_offsets,
             self.return_n_logits,
@@ -803,24 +793,6 @@ class KimiK2_5Model(
             self._cached_empty_vision_embeddings = [host.to(d) for d in devices]
         return self._cached_empty_vision_embeddings
 
-    def _empty_vision_scatter(self) -> list[Buffer]:
-        """Per-device empty scatter indices, cached for the decode hot path."""
-        if not hasattr(self, "_cached_empty_vision_scatter"):
-            host = Buffer.from_numpy(np.empty(0, dtype=np.int32)).to(
-                self.devices[0]
-            )
-            self._cached_empty_vision_scatter = [
-                host.to(d) for d in self.devices
-            ]
-        return self._cached_empty_vision_scatter
-
-    def _vision_scatter_to_devices(
-        self, scatter_np: npt.NDArray[np.int32]
-    ) -> list[Buffer]:
-        """Copy real scatter indices to each device."""
-        buf = Buffer.from_numpy(scatter_np.astype(np.int32)).to(self.devices[0])
-        return [buf.to(d) for d in self.devices]
-
     def execute(
         self,
         model_inputs: ModelInputs,
@@ -829,29 +801,6 @@ class KimiK2_5Model(
         assert model_inputs.kv_cache_inputs is not None, (
             "KimiK2_5 requires KV cache inputs"
         )
-        if model_inputs.vision_embeddings is not None:
-            model_inputs.language_image_embeddings = (
-                model_inputs.vision_embeddings
-            )
-            scatter_np = model_inputs.vision_scatter_indices
-            model_inputs.language_image_token_indices = (
-                self._vision_scatter_to_devices(scatter_np)
-                if scatter_np is not None and len(scatter_np) > 0
-                else self._empty_vision_scatter()
-            )
-        else:
-            model_inputs.language_image_embeddings = (
-                self.empty_vision_embeddings(self.devices)
-            )
-            model_inputs.language_image_token_indices = (
-                self._empty_vision_scatter()
-            )
-
-        if self._eplb_stats_accumulator is not None:
-            model_inputs.eplb_counter_buffers = (
-                self._eplb_stats_accumulator.device_buffers
-            )
-        model_inputs.ep_inputs = self._frozen_ep_inputs
         model_outputs = self.language_model.execute(*model_inputs.buffers)
         if self._eplb_stats_accumulator is not None:
             self._eplb_stats_accumulator.record_batch_total_tokens(
@@ -878,7 +827,7 @@ class KimiK2_5Model(
     ) -> KimiK2_5ModelInputs:
         """Delegates to the batch processor; typed for Eagle subclasses."""
         if self._batch_processor is not None:
-            return cast(
+            model_inputs = cast(
                 KimiK2_5ModelInputs,
                 self._batch_processor.prepare_initial_token_inputs(
                     replica_batches,
@@ -886,6 +835,15 @@ class KimiK2_5Model(
                     return_n_logits=return_n_logits,
                 ),
             )
+            # Graph-capture warmup packs ``.buffers`` straight from prepared
+            # inputs, so the EP / EPLB inputs must be set here, not in
+            # ``execute()``.
+            if self._eplb_stats_accumulator is not None:
+                model_inputs.eplb_counter_buffers = (
+                    self._eplb_stats_accumulator.device_buffers
+                )
+            model_inputs.ep_inputs = self._frozen_ep_inputs
+            return model_inputs
         raise RuntimeError("No batch processor configured for KimiK2_5Model")
 
     def _eplb_stats_metadata(self) -> EplbStatsMetadata:

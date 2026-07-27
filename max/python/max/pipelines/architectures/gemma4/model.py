@@ -20,7 +20,7 @@ from typing import Any, ClassVar, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, DevicePinnedBuffer, DLPackArray
+from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
@@ -44,7 +44,6 @@ from .batch_processor import Gemma4BatchProcessor
 from .batch_vision_inputs import (
     VisionRawInputs,
     create_empty_embeddings,
-    create_empty_indices,
     pack_uncached_images,
 )
 from .context import Gemma4Context
@@ -84,25 +83,16 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     signal_buffers: list[Buffer]
     return_n_logits: Buffer
 
-    empty_vision_embeds: list[Buffer] | None = None
-    empty_vision_indices: list[Buffer] | None = None
-
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         """Positional Buffer inputs for the language-model ABI."""
-        assert self.vision_embeddings is None, (
-            "buffers is the no-vision ABI path; a batch with vision embeddings "
-            "must be run through execute(), not model_inputs.buffers."
-        )
-        assert self.empty_vision_embeds is not None
-        assert self.empty_vision_indices is not None
         assert self.kv_cache_inputs is not None
         return (
             self.tokens,
             self.return_n_logits,
             *self.input_row_offsets,
-            *self.empty_vision_embeds,
-            *self.empty_vision_indices,
+            *self.vision_embeddings,
+            *self.vision_scatter_indices,
             *self.signal_buffers,
             *self.kv_cache_inputs.flatten(),
         )
@@ -171,8 +161,6 @@ class Gemma3_MultiModalModel(
             adapter,
             return_logits,
         )
-
-        self._scatter_buffers: dict[int, tuple[Buffer, list[Buffer]]] = {}
 
         # signal_buffers are provided by AlwaysSignalBuffersMixin as a cached_property
         # to avoid GPU memory allocation during compile-only mode (cross-compilation).
@@ -481,33 +469,9 @@ class Gemma3_MultiModalModel(
 
     @traced
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        """Execute the vision model (if needed), then the language model."""
+        """Execute the language model over the pipeline-finalized inputs."""
         model_inputs = cast(Gemma3MultiModalModelInputs, model_inputs)
-
-        image_embeddings: list[Buffer]
-        image_scatter: list[Buffer]
-        if model_inputs.vision_embeddings is not None:
-            image_embeddings = model_inputs.vision_embeddings
-            scatter_np = model_inputs.vision_scatter_indices
-            if scatter_np is not None and len(scatter_np) > 0:
-                image_scatter = self._scatter_to_devices(scatter_np)
-            else:
-                image_scatter = self._empty_indices()
-        else:
-            image_embeddings = self.empty_vision_embeddings(self.devices)
-            image_scatter = self._empty_indices()
-
-        assert model_inputs.kv_cache_inputs
-
-        model_outputs = self.language_model.execute(
-            model_inputs.tokens,
-            model_inputs.return_n_logits,
-            *model_inputs.input_row_offsets,
-            *image_embeddings,
-            *image_scatter,
-            *model_inputs.signal_buffers,
-            *model_inputs.kv_cache_inputs.flatten(),
-        )
+        model_outputs = self.language_model.execute(*model_inputs.buffers)
 
         if len(model_outputs) == 3:
             assert isinstance(model_outputs[0], Buffer)
@@ -524,33 +488,3 @@ class Gemma3_MultiModalModel(
                 logits=model_outputs[0],
                 next_token_logits=model_outputs[0],
             )
-
-    def _empty_indices(self) -> list[Buffer]:
-        if not hasattr(self, "_cached_empty_indices"):
-            self._cached_empty_indices = create_empty_indices(self.devices)
-        return self._cached_empty_indices
-
-    @traced
-    def _scatter_to_devices(
-        self, scatter_np: npt.NDArray[np.int32]
-    ) -> list[Buffer]:
-        """Copy scatter indices to each device using cached pinned buffers."""
-        dev = self.devices[0]
-        n = len(scatter_np)
-        bufs = self._scatter_buffers.get(n)
-        host: Buffer
-        if bufs is None:
-            if not dev.is_host:
-                host = DevicePinnedBuffer(
-                    dtype=DType.int32, shape=(n,), device=dev
-                )
-            else:
-                host = Buffer(shape=(n,), dtype=DType.int32, device=dev)
-            device = [host.to(d) for d in self.devices]
-            bufs = (host, device)
-            self._scatter_buffers[n] = bufs
-        host, device = bufs
-        host.to_numpy()[:] = scatter_np.astype(np.int32)
-        for d in device:
-            d.inplace_copy_from(host)
-        return device

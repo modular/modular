@@ -429,16 +429,17 @@ class TextGenerationPipeline(
 
         if self._encoder_cache is not None:
             assert isinstance(self._pipeline_model, SupportsVisionEncoding)
-            vision = self._encoder_cache.run_vision_encode(
+            vision_result = self._encoder_cache.run_vision_encode(
                 self._pipeline_model,
                 as_vision_context_batches(replica_batches),
                 self._devices,
             )
-            if vision is not None:
-                (
-                    model_inputs.vision_embeddings,
-                    model_inputs.vision_scatter_indices,
-                ) = vision
+            self._encoder_cache.finalize_vision_inputs(
+                self._pipeline_model,
+                model_inputs,
+                self._devices,
+                vision_result,
+            )
 
         return (model_inputs, bitmask, flat_batch)
 

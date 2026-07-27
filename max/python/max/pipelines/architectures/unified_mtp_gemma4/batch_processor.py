@@ -30,10 +30,6 @@ from max.pipelines.lib.interfaces.batch_processor import (
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
 
-from ..gemma4.batch_vision_inputs import (
-    create_empty_embeddings,
-    create_empty_indices,
-)
 from ..gemma4.context import Gemma4Context
 
 if TYPE_CHECKING:
@@ -153,10 +149,6 @@ class UnifiedMTPGemma4BatchProcessor(
             for _ in range(len(self.runtime.devices))
         ]
 
-        assert self._config is not None, (
-            "config must be bound before prepare_initial_token_inputs(); "
-            "call bind_model_state() in load_model()"
-        )
         return UnifiedMTPGemma4Inputs(
             tokens=device_tokens,
             input_row_offsets=device_row_offsets,
@@ -168,26 +160,7 @@ class UnifiedMTPGemma4BatchProcessor(
             batch_context_lengths=batch_context_lengths,
             draft_tokens=None,
             structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,
-            combined_embeds=self._empty_embeddings(),
-            combined_indices=self._empty_indices(),
         )
-
-    def _empty_embeddings(self) -> list[Buffer]:
-        assert self._config is not None
-        if not hasattr(self, "_cached_empty_embeddings"):
-            self._cached_empty_embeddings = create_empty_embeddings(
-                self.runtime.devices,
-                self._config.text_config.hidden_size,
-                self._config.unquantized_dtype,
-            )
-        return self._cached_empty_embeddings
-
-    def _empty_indices(self) -> list[Buffer]:
-        if not hasattr(self, "_cached_empty_indices"):
-            self._cached_empty_indices = create_empty_indices(
-                self.runtime.devices
-            )
-        return self._cached_empty_indices
 
     def process_outputs(
         self, outputs: Sequence[Buffer | object]

@@ -242,4 +242,8 @@ def test_batch_processor_carries_no_vision_plumbing() -> None:
     assert "config" in bind_params
     field_names = {f.name for f in dataclasses.fields(UnifiedMTPGemma4Inputs)}
     assert "images" not in field_names
-    assert "combined_embeds" in field_names
+    # The vision-merge inputs are the base ModelInputs fields set by the
+    # pipeline's vision seam, not a model-specific carrier.
+    assert "combined_embeds" not in field_names
+    assert "vision_embeddings" in field_names
+    assert "vision_scatter_indices" in field_names
