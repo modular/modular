@@ -413,6 +413,43 @@ class CompositeBundledAllreduceAddRmsNormQuantFp8Op(max._core.Operation):
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
 
+class CompositeDistributedAllgatherRmsNormOp(max._core.Operation):
+    """
+    AllGather concatenates the per-device row shards (`inputs`) so every device
+    holds the full replicated tensor, then RMSNorms it in the same launch (no
+    separate-norm HBM round-trip). Returns the normed tensor (`output`) and the
+    raw gathered residual (`outResidual`); a gathered row is a verbatim copy, so
+    the residual is bit-identical to a standalone all-gather (no f32 peer-sum).
+    `multiply_before_cast=true`, bf16 in/out only (no quantization).
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: Sequence[max._core.Type],
+        out_residual: Sequence[max._core.Type],
+        out_chain: ChainType,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        gamma: Sequence[max._core.Value[max._core.Type]],
+        epsilon: Sequence[max._core.Value[max._core.Type]],
+        weight_offset: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def gamma(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def epsilon(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def weight_offset(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+
 class CompositeDistributedMatmulReduceScatterSumOp(max._core.Operation):
     """
     Each device computes a matmul (A_i @ B_i^T) and the results are

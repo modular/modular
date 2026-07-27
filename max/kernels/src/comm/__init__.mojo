@@ -21,6 +21,7 @@ These APIs are consumed by the model-serving layer when running distributed
 inference across multiple GPUs within a node.
 """
 
+from .allgather_rmsnorm import allgather_rmsnorm
 from .lamport import (
     LamportGeneration,
     has_neg_zero,

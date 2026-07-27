@@ -24,6 +24,7 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/support",
+        requirement("ml-dtypes"),
         requirement("numpy"),
         requirement("torch"),
     ],
