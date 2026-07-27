@@ -14,6 +14,7 @@
 """Gemma4-specific context for storing prompt state."""
 
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -26,3 +27,13 @@ class Gemma4Context(TextAndVisionContext):
 
     mm_token_type_ids: npt.NDArray[np.int64]
     pixel_position_ids: list[npt.NDArray[np.int32]]
+
+    @classmethod
+    def _padding_context_required_fields(cls) -> dict[str, Any]:
+        # A DP padding dummy holds a single text token, so its per-token
+        # type-id array marks that one token as text (0).
+        return {
+            **super()._padding_context_required_fields(),
+            "mm_token_type_ids": np.zeros(1, dtype=np.int64),
+            "pixel_position_ids": [],
+        }
