@@ -293,6 +293,21 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="ms",
         description="dKV read_blocks RPC latency",
     ),  # type: ignore
+    "maxserve.dkv.connected_clients": _meter.create_gauge(
+        "maxserve.dkv.connected_clients",
+        unit="clients",
+        description="Number of dKV connector clients currently connected to the external KV tier.",
+    ),  # type: ignore
+    "maxserve.dkv.total_clients": _meter.create_gauge(
+        "maxserve.dkv.total_clients",
+        unit="clients",
+        description="Total number of dKV connector clients, one per data-parallel replica.",
+    ),  # type: ignore
+    "maxserve.dkv.reconnect_attempts": _meter.create_gauge(
+        "maxserve.dkv.reconnect_attempts",
+        unit="attempts",
+        description="Cumulative dKV reconnect attempts across all clients, reported as a gauge of the current lifetime total.",
+    ),  # type: ignore
     "maxserve.spec_decode.acceptance_rate_per_position": _meter.create_histogram(
         "maxserve.spec_decode.acceptance_rate_per_position",
         unit="percent",
@@ -1001,6 +1016,33 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.dkv.rpc_read_latency",
                 latency_ms,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_connected_clients(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.connected_clients",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_total_clients(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.total_clients",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_reconnect_attempts(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.reconnect_attempts",
+                value,
                 self.extra_attributes,
             ),
         )

@@ -1015,6 +1015,12 @@ class DKVConnector:
         total = KVCacheMetrics()
         for client in self._clients:
             m = client.metrics()
+            # connected and reconnect_attempts are a level and a lifetime
+            # counter read live from the Rust connector, so unlike the sibling
+            # transfer keys they are not cleared by reset_metrics. Fold each
+            # client in as one client contributing its own connected 1 or 0 and
+            # its own reconnect total, so the summed metric reports how many of
+            # the replica clients are up out of the total.
             total = total + KVCacheMetrics(
                 nixl_read_blocks=m["read_blocks"],
                 nixl_write_blocks=m["write_blocks"],
@@ -1026,6 +1032,9 @@ class DKVConnector:
                     "write_transfer_latency_total_ms"
                 ],
                 nixl_write_latency_count=m["write_transfer_latency_count"],
+                dkv_connected_clients=1 if m["connected"] else 0,
+                dkv_total_clients=1,
+                dkv_reconnect_attempts=m["reconnect_attempts"],
             )
         return total
 

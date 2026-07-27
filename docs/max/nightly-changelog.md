@@ -433,6 +433,15 @@ This version is still a work in progress.
   while still resident on device; a best-effort recency `touch` now keeps hot
   shared prefixes warm in an external tier such as dKV. Set
   `MODULAR_DKV_DISABLE_G0_TOUCH=1` to disable the refresh.
+- Added dKV external-tier health metrics so operators can alert on a dead or
+  degraded external KV cache. The `dkv` connector now surfaces its per-replica
+  connection state through `KVCacheMetrics`, and MAX exports three
+  OpenTelemetry gauges: `maxserve.dkv.connected_clients`,
+  `maxserve.dkv.total_clients`, and `maxserve.dkv.reconnect_attempts` (a
+  cumulative lifetime count reported as a gauge). Alert on
+  `connected_clients == 0` for a fully dead tier or
+  `connected_clients < total_clients` for a degraded one. The scheduler also
+  logs a `dKV degraded` clause while any replica client is disconnected.
 
 ### Server metrics
 

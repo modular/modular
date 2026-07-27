@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from max.driver import Buffer
+from max.nn.kv_cache.metrics import dkv_tier_degraded
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderMetrics
@@ -114,6 +115,16 @@ class BatchMetrics:
     nixl_read_gib_per_s: float = 0.0
     nixl_write_gib_per_s: float = 0.0
 
+    # dKV external-tier health, summed across the per-replica connector
+    # clients. The connected and total counts support a degraded alert when
+    # connected is below total and a dead-tier alert when connected is zero,
+    # and reconnect_attempts is a lifetime cumulative counter. All three are
+    # levels or cumulative rather than per-batch deltas, so they publish as
+    # gauges. Zero when no dKV tier is attached.
+    dkv_connected_clients: int = 0
+    dkv_total_clients: int = 0
+    dkv_reconnect_attempts: int = 0
+
     # When True, ``batch_execution_time_s`` is the execution time of the
     # previous batch (i.e. the overlap scheduler is active).
     batch_execution_time_is_previous: bool = False
@@ -203,6 +214,9 @@ class BatchMetrics:
         rpc_read_latency_avg_ms = 0.0
         nixl_read_gib_per_s = 0.0
         nixl_write_gib_per_s = 0.0
+        dkv_connected_clients = 0
+        dkv_total_clients = 0
+        dkv_reconnect_attempts = 0
         num_replicas = sch_config.data_parallel_degree
 
         # Data-parallel balance, along two axes: active tokens (compute load
@@ -281,6 +295,13 @@ class BatchMetrics:
             rpc_read_latency_avg_ms = metrics_agg.rpc_read_latency_avg_ms
             nixl_read_gib_per_s = metrics_agg.nixl_read_gib_per_s
             nixl_write_gib_per_s = metrics_agg.nixl_write_gib_per_s
+
+            # dKV external-tier health. Read before reset_metrics like the
+            # metrics above, though the connector reports these live and does
+            # not clear them on reset.
+            dkv_connected_clients = metrics_agg.dkv_connected_clients
+            dkv_total_clients = metrics_agg.dkv_total_clients
+            dkv_reconnect_attempts = metrics_agg.dkv_reconnect_attempts
 
             kv_cache.reset_metrics()
 
@@ -386,6 +407,9 @@ class BatchMetrics:
             rpc_read_latency_avg_ms=rpc_read_latency_avg_ms,
             nixl_read_gib_per_s=nixl_read_gib_per_s,
             nixl_write_gib_per_s=nixl_write_gib_per_s,
+            dkv_connected_clients=dkv_connected_clients,
+            dkv_total_clients=dkv_total_clients,
+            dkv_reconnect_attempts=dkv_reconnect_attempts,
             batch_execution_time_is_previous=batch_execution_time_is_previous,
             dp_active_token_occupancy_pct=dp_active_token_occupancy_pct,
             dp_context_token_occupancy_pct=dp_context_token_occupancy_pct,
@@ -472,6 +496,19 @@ class BatchMetrics:
                 f"pin {self.rpc_read_latency_avg_ms:.1f}ms | "
             )
 
+        # A separate clause from dkv_str above, because a degraded tier does no
+        # transfers and so would show nothing there. Emitted only while
+        # degraded to keep the healthy log line quiet.
+        dkv_health_str = ""
+        if dkv_tier_degraded(
+            self.dkv_connected_clients, self.dkv_total_clients
+        ):
+            dkv_health_str = (
+                f"dKV degraded: {self.dkv_connected_clients}/"
+                f"{self.dkv_total_clients} connected, "
+                f"{self.dkv_reconnect_attempts} reconnect attempts | "
+            )
+
         vision_str = ""
         vm = self.vision_metrics
         if vm is not None and vm.num_images_total > 0:
@@ -516,6 +553,7 @@ class BatchMetrics:
             f"{host_kv_str}"
             f"{disk_kv_str}"
             f"{dkv_str}"
+            f"{dkv_health_str}"
             f"{spec_decode_str}"
             f"{vision_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
@@ -606,6 +644,13 @@ class BatchMetrics:
                 self.rpc_acquire_latency_avg_ms
             )
             extra["rpc_read_latency_avg_ms"] = self.rpc_read_latency_avg_ms
+
+        # Emitted whenever a dKV tier is attached, not only while transferring,
+        # so a dead tier that does no transfers still records its health.
+        if self.dkv_total_clients > 0:
+            extra["dkv_connected_clients"] = self.dkv_connected_clients
+            extra["dkv_total_clients"] = self.dkv_total_clients
+            extra["dkv_reconnect_attempts"] = self.dkv_reconnect_attempts
 
         return extra
 
@@ -704,6 +749,14 @@ class BatchMetrics:
             METRICS.dkv_rpc_acquire_latency(self.rpc_acquire_latency_avg_ms)
         if self.rpc_read_latency_avg_ms > 0:
             METRICS.dkv_rpc_read_latency(self.rpc_read_latency_avg_ms)
+
+        # Publish dKV health whenever a dKV tier is attached, independent of
+        # transfer activity, because a dead tier does no transfers and yet is
+        # exactly the state an operator needs to alert on.
+        if self.dkv_total_clients > 0:
+            METRICS.dkv_connected_clients(self.dkv_connected_clients)
+            METRICS.dkv_total_clients(self.dkv_total_clients)
+            METRICS.dkv_reconnect_attempts(self.dkv_reconnect_attempts)
 
         if self.draft_tokens_generated > 0:
             METRICS.spec_decode_avg_acceptance_length(
