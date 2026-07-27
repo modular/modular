@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
+import pytest
 from max.driver import CPU, Accelerator, Buffer, DevicePinnedBuffer
 from max.dtype import DType
 
@@ -163,4 +164,42 @@ def test_non_pinned_cross_device_copy() -> None:
     assert np.all(result == 42), (
         "Cross-device copy of non-pinned memory failed. "
         "Expected tensor to contain 42."
+    )
+
+
+def test_batch_inplace_copy_from_rejects_mixed_devices() -> None:
+    """batch_inplace_copy_from must fail closed on mixed-device destinations.
+
+    Issues the batch on GPU0's context with one destination on GPU0 and one on
+    GPU1. The driver API is single-device; accepting the foreign pointer under
+    CUDA UVA would risk a silent wrong-stream write. Expect an error before
+    any copy lands.
+    """
+    gpu0 = Accelerator(id=0)
+    gpu1 = Accelerator(id=1)
+
+    src0 = Buffer.from_numpy(np.array([1.0, 2.0], dtype=np.float32))
+    src1 = Buffer.from_numpy(np.array([3.0, 4.0], dtype=np.float32))
+    dst0 = Buffer(DType.float32, (2,), device=gpu0)
+    dst1 = Buffer(DType.float32, (2,), device=gpu1)
+    # Sentinel so a silent success would be observable.
+    dst0.inplace_copy_from(
+        Buffer.from_numpy(np.array([-1.0, -1.0], dtype=np.float32))
+    )
+    dst1.inplace_copy_from(
+        Buffer.from_numpy(np.array([-2.0, -2.0], dtype=np.float32))
+    )
+    gpu0.synchronize()
+    gpu1.synchronize()
+
+    with pytest.raises((ValueError, RuntimeError), match="same device"):
+        dst0.batch_inplace_copy_from([dst0, dst1], [src0, src1])
+
+    gpu0.synchronize()
+    gpu1.synchronize()
+    np.testing.assert_array_equal(
+        dst0.to(CPU()).to_numpy(), [-1.0, -1.0], err_msg="dst0 was mutated"
+    )
+    np.testing.assert_array_equal(
+        dst1.to(CPU()).to_numpy(), [-2.0, -2.0], err_msg="dst1 was mutated"
     )

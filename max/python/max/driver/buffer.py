@@ -101,6 +101,41 @@ def inplace_copy_from(self: Buffer, src: Buffer) -> None:
     self._inplace_copy_from(src)
 
 
+def batch_inplace_copy_from(
+    self: Buffer, dsts: Sequence[Buffer], srcs: Sequence[Buffer]
+) -> None:
+    """Copy host buffers into device buffers in a single batched call.
+
+    Submits all (dsts[i], srcs[i]) pairs as one cuMemcpyBatchAsync call when
+    the CUDA 12.8+ driver is available, otherwise falls back to individual
+    copies per pair. ``self`` provides the device context for routing; all
+    ``dsts`` must reside on the same device as ``self``. Mixed-device
+    destinations are rejected in the C++ Buffer / device-context path —
+    callers that span devices must group by device and invoke once per
+    device.
+
+    Identical (src, dst) pairs (same object) are skipped in the C++ Buffer
+    path so all callers share one no-op.
+
+    Args:
+        self: The buffer whose device context routes the batch; all ``dsts``
+            must reside on this buffer's device.
+        dsts: Destination device buffers.
+        srcs: Source host buffers, paired with ``dsts`` by index.
+
+    Raises:
+        ValueError: If ``dsts``/``srcs`` lengths differ.
+    """
+    if len(dsts) != len(srcs):
+        raise ValueError(
+            f"batch_inplace_copy_from: dsts and srcs must have the same length"
+            f" (got {len(dsts)} dsts, {len(srcs)} srcs)"
+        )
+    # Binding takes nb::list; materialize so Sequence inputs type-check and
+    # are accepted at runtime.
+    self._batch_inplace_copy_from(list(dsts), list(srcs))
+
+
 def _from_numpy(arr: npt.NDArray[Any]) -> Buffer:
     """Creates a buffer from a provided numpy array on the host device.
 
@@ -228,6 +263,7 @@ Buffer.contiguous = _contiguous  # type: ignore[method-assign]
 Buffer.__repr__ = _repr  # type: ignore[method-assign, assignment]
 Buffer.view = _view  # type: ignore[method-assign]
 Buffer.inplace_copy_from = inplace_copy_from  # type: ignore[method-assign]
+Buffer.batch_inplace_copy_from = batch_inplace_copy_from  # type: ignore[method-assign]
 Buffer.from_numpy = _from_numpy  # type: ignore[method-assign]
 Buffer.to_numpy = _to_numpy  # type: ignore[method-assign]
 Buffer.from_dlpack = _from_dlpack  # type: ignore[method-assign]

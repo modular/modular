@@ -311,3 +311,52 @@ def test_zero_copy_on_to_stream_on_same_device(is_pinned: bool) -> None:
     assert tensor2.stream is stream2
     assert tensor2.stream is not stream1
     assert (tensor2.to_numpy() == tensor.to_numpy()).all()
+
+
+def test_batch_inplace_copy_from_same_device_parity() -> None:
+    """Batched H2D into one GPU matches a per-copy loop bit-exactly.
+
+    Positive-path smoke for enqueueBatchCopyToDevice (cuMemcpyBatchAsync on
+    CUDA 12.8+, sequential fallback otherwise).
+    """
+    gpu = Accelerator()
+    n = 5
+    srcs = [
+        Buffer.from_numpy(np.full((8,), float(i + 1), dtype=np.float32))
+        for i in range(n)
+    ]
+    batch_dsts = [Buffer(DType.float32, (8,), device=gpu) for _ in range(n)]
+    loop_dsts = [Buffer(DType.float32, (8,), device=gpu) for _ in range(n)]
+
+    batch_dsts[0].batch_inplace_copy_from(batch_dsts, srcs)
+    for dst, src in zip(loop_dsts, srcs, strict=True):
+        dst.inplace_copy_from(src)
+
+    gpu.synchronize()
+    for i, (batch_dst, loop_dst) in enumerate(
+        zip(batch_dsts, loop_dsts, strict=True)
+    ):
+        np.testing.assert_array_equal(
+            batch_dst.to(CPU()).to_numpy(),
+            loop_dst.to(CPU()).to_numpy(),
+            err_msg=f"batch vs per-copy mismatch at index {i}",
+        )
+
+
+def test_batch_inplace_copy_from_skips_identity_on_accelerator() -> None:
+    """Identity pairs on GPU are no-ops; adjacent pairs still copy."""
+    gpu = Accelerator()
+    stable = Buffer.from_numpy(np.array([42.0], dtype=np.float32)).to(gpu)
+    other_src = Buffer.from_numpy(np.array([99.0], dtype=np.float32))
+    other_dst = Buffer(DType.float32, (1,), device=gpu)
+    other_dst.inplace_copy_from(
+        Buffer.from_numpy(np.array([0.0], dtype=np.float32))
+    )
+    gpu.synchronize()
+
+    # stable is both src and dst (identity no-op); other_* is a real H2D copy.
+    stable.batch_inplace_copy_from([stable, other_dst], [stable, other_src])
+    gpu.synchronize()
+
+    np.testing.assert_array_equal(stable.to(CPU()).to_numpy(), [42.0])
+    np.testing.assert_array_equal(other_dst.to(CPU()).to_numpy(), [99.0])

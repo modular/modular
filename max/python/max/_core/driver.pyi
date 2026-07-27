@@ -1078,6 +1078,18 @@ class Buffer:
         Requires that both buffers are contiguous and have same size.
         """
 
+    def batch_inplace_copy_from(
+        self, dsts: Sequence[Buffer], srcs: Sequence[Buffer]
+    ) -> None:
+        """
+        Copies host buffers into device buffers in a single batched call.
+
+        Submits all ``(dsts[i], srcs[i])`` pairs as one ``cuMemcpyBatchAsync``
+        call when the CUDA 12.8+ driver is available, otherwise falls back to
+        individual copies per pair. ``self`` provides the device context for
+        routing; all ``dsts`` must reside on the same device as ``self``.
+        """
+
     @staticmethod
     def from_dlpack(array: Any, *, copy: bool | None = None) -> Buffer:
         """
@@ -1250,6 +1262,18 @@ class Buffer:
         self, dtype: max._core.dtype.DType, shape: Sequence[int]
     ) -> Buffer: ...
     def _inplace_copy_from(self, src: Buffer) -> None: ...
+    def _batch_inplace_copy_from(self, dsts: list, srcs: list) -> None:
+        """
+        Batched host-to-device copy in a single driver submission.
+
+        Submits all ``(dsts[i], srcs[i])`` pairs in one ``cuMemcpyBatchAsync``
+        call when the CUDA 12.8+ driver is present, otherwise falls back to
+        individual copies. ``self`` is used for device-context routing; all
+        ``dsts`` must reside on the same device as ``self``. Mixed-device
+        destinations raise. Identical pairs (``dst is src``) are skipped.
+        All buffers must have matching sizes.
+        """
+
     def _data_ptr(self) -> int:
         """Gets the memory address of the buffer data. Internal use only."""
 
