@@ -14,6 +14,7 @@
 from std.random import rand
 from std.sys import get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.gpu.host import DeviceContext
 
@@ -138,7 +139,7 @@ def bench_single_group_router_eplb[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     b.bench_function[bench_fn](
         BenchId(
@@ -231,7 +232,7 @@ def bench_moe_create_indices[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     b.bench_function[bench_fn](
         BenchId(
@@ -327,7 +328,7 @@ def bench_router_group_limited[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     b.bench_function[bench_fn](
         BenchId(
@@ -422,7 +423,7 @@ def bench_single_group_router[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     b.bench_function[bench_fn](
         BenchId(
@@ -523,7 +524,7 @@ def bench_eplb_remap[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     b.bench_function[bench_fn](
         BenchId(

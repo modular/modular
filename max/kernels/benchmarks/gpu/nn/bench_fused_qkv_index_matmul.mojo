@@ -45,6 +45,7 @@ Or via bazel:  ./bazelw run //max/kernels/benchmarks:gpu/nn/bench_fused_qkv_inde
 
 from std.random import seed
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -332,7 +333,7 @@ def bench_shape(
     @parameter
     @always_inline
     def fused_bench(mut b: Bencher) raises:
-        b.iter_custom[fused_launch](ctx)
+        bencher_iter_custom[fused_launch](b, ctx)
 
     m.bench_function[fused_bench](
         BenchId("fused   " + regime + " total_seq=" + String(total_seq)),
@@ -402,7 +403,7 @@ def bench_shape(
     @parameter
     @always_inline
     def unfused_bench(mut b: Bencher) raises:
-        b.iter_custom[unfused_launch](ctx)
+        bencher_iter_custom[unfused_launch](b, ctx)
 
     m.bench_function[unfused_bench](
         BenchId("unfused " + regime + " total_seq=" + String(total_seq)),

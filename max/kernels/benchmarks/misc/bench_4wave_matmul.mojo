@@ -19,6 +19,7 @@ from std.sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -458,7 +459,7 @@ def bench_matmul[
     @parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,

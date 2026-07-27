@@ -76,6 +76,7 @@ mojo_binary(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:layout",
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

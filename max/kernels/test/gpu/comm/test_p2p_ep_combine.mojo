@@ -19,6 +19,7 @@ from std.sys import (
 )
 
 from std.algorithm import sync_parallelize
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     BenchConfig,
@@ -497,7 +498,7 @@ def test_combine[
                 var dev_id = Int(ctx.id())
                 run_combine_async(dev_id, cache_iter)
 
-            b.iter_custom[call_fn](list_of_ctx[i])
+            bencher_iter_custom[call_fn](b, list_of_ctx[i])
 
         var bench_config = BenchConfig()
         bench_config.show_progress = False
@@ -539,7 +540,7 @@ def test_combine[
                 var dev_id = Int(ctx.id())
                 run_combine_async_wait(dev_id, cache_iter)
 
-            b.iter_custom[call_fn](list_of_ctx[i])
+            bencher_iter_custom[call_fn](b, list_of_ctx[i])
 
         var bench_config = BenchConfig()
         bench_config.show_progress = False

@@ -16,6 +16,7 @@ from std.memory import UnsafePointer, alloc
 from std.random import randn
 from std.sys import get_defined_dtype, get_defined_int, get_defined_bool
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -163,7 +164,7 @@ def bench_decode[
                 num_partitions=num_partitions,
             )
 
-        b.iter_custom[_kernel_launch](ctx)
+        bencher_iter_custom[_kernel_launch](b, ctx)
 
     def compute_flops() {imm} -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
@@ -356,7 +357,7 @@ def bench_prefill[
                 q_max_seq_len=seq_len,
             )
 
-        b.iter_custom[_kernel_launch](ctx)
+        bencher_iter_custom[_kernel_launch](b, ctx)
 
     def compute_flops() {imm} -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
@@ -557,7 +558,7 @@ def bench_prefill_sparse[
                 ctx,
             )
 
-        b.iter_custom[_kernel_launch](ctx)
+        bencher_iter_custom[_kernel_launch](b, ctx)
 
     def compute_flops() {imm} -> Int:
         return 2 * s_q * topk * num_heads * (qk_depth + v_depth)

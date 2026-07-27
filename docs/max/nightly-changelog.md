@@ -741,6 +741,8 @@ This version is still a work in progress.
 
   - `std.benchmark.Bench.bench_multicontext` ->
     `max.benchmark.bench_multicontext`
+  - `std.benchmark.Bencher.iter_custom(DeviceContext)` ->
+    `max.benchmark.bencher_iter_custom`
 
 ## Breaking changes
 

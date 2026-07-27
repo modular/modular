@@ -13,6 +13,7 @@
 
 from std.sys import get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, Bencher, BenchId
 from std.builtin._closure import __ownership_keepalive
 from std.gpu import (
@@ -173,7 +174,7 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
         def kernel_launch(ctx: DeviceContext) raises:
             run_func()
 
-        b.iter_custom[kernel_launch](context)
+        bencher_iter_custom[kernel_launch](b, context)
 
     b.bench_function[bench_func](
         BenchId("copy_pdl", input_id=String("length=", length)),
@@ -242,7 +243,7 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
         def kernel_launch(ctx: DeviceContext) raises:
             run_func()
 
-        b.iter_custom[kernel_launch](context)
+        bencher_iter_custom[kernel_launch](b, context)
 
     b.bench_function[bench_func](
         BenchId("copy_n", input_id=String("length=", length)),

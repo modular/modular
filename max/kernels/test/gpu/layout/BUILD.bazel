@@ -121,6 +121,7 @@ _FILECHECK_TESTS = [
             "//max:kv_cache",
             "//max:layout",
             "//max:linalg",
+            "//max:max_mojo",
             "//max:nn",
             "//max:quantization",
             "@mojo//:std",

@@ -31,6 +31,7 @@ _SM100_GPU_BENCHMARKS = [
         deps = [
             "//max:internal_utils",
             "//max:layout",
+            "//max:max_mojo",
             "//max:nn",
             "@mojo//:std",
         ],
@@ -56,6 +57,7 @@ _SM100_GPU_BENCHMARKS = [
         deps = [
             "//max:internal_utils",
             "//max:layout",
+            "//max:max_mojo",
             "//max:nn",
             "@mojo//:std",
         ],
@@ -81,6 +83,7 @@ _SM100_GPU_BENCHMARKS = [
         deps = [
             "//max:internal_utils",
             "//max:layout",
+            "//max:max_mojo",
             "//max:nn",
             "//max:structured_kernels",
             "@mojo//:std",

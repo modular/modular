@@ -28,7 +28,10 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from max.benchmark import bench_multicontext
+from max.benchmark import (
+    bench_multicontext,
+    bencher_iter_custom,
+)
 from layout import Idx, TileTensor, row_major
 from comm.sync import enable_p2p, init_signal_buffer
 from comm.allreduce import allreduce
@@ -271,7 +274,7 @@ def bench_reduce[
                     max_num_blocks,
                 )
 
-        b.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](b, ctx)
 
     bench_multicontext[bench_iter](
         b,

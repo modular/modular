@@ -48,7 +48,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from max.benchmark import bench_multicontext
+from max.benchmark import bench_multicontext, bencher_iter_custom
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.reducescatter import reducescatter, ReduceScatterConfig
 from comm.reducescatter_rmsnorm import reducescatter_rmsnorm, _dispatch_rs_norm
@@ -706,7 +706,7 @@ def bench_reducescatter_rmsnorm[
                 in_bufs, out_shards[ctx_idx], rank_sigs, ctx_inner
             )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
     bench_multicontext[bench_rs_iter](
         b,
@@ -737,7 +737,7 @@ def bench_reducescatter_rmsnorm[
                     ctx_inner,
                 )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
     bench_multicontext[bench_norm_cold_iter](
         b,
@@ -778,7 +778,7 @@ def bench_reducescatter_rmsnorm[
                     ctx_inner,
                 )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
     bench_multicontext[bench_chained_iter](
         b,
@@ -816,7 +816,7 @@ def bench_reducescatter_rmsnorm[
                 ctx_inner,
             )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
     bench_multicontext[bench_fused_iter](
         b,
@@ -875,7 +875,7 @@ def bench_reducescatter_rmsnorm[
                 ctx_inner,
             )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
     bench_multicontext[bench_dispatch_iter](
         b,

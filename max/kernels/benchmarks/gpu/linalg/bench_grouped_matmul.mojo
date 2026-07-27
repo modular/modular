@@ -22,6 +22,7 @@ from std.sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -432,7 +433,7 @@ def bench_grouped_matmul[
                         ctx,
                     )
 
-            bench.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](bench, ctx)
 
         bench.bench_function[bench_func_nvfp4](
             BenchId(
@@ -557,7 +558,7 @@ def bench_grouped_matmul[
                         ctx,
                     )
 
-            bench.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](bench, ctx)
 
         bench.bench_function[bench_func_fp8_1d2d](
             BenchId(
@@ -619,7 +620,7 @@ def bench_grouped_matmul[
                         ctx,
                     )
 
-            bench.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](bench, ctx)
 
         bench.bench_function[bench_func](
             BenchId(

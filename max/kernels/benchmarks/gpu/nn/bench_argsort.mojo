@@ -15,6 +15,7 @@ from std.random import random_float64
 from std.sys import get_defined_dtype, get_defined_int
 from std.sys.info import size_of
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -70,7 +71,7 @@ def bench_argsort[
                 device_indices_tensor, device_input_tensor, ctx
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     var num_bytes = N * (size_of[dtype]() + size_of[DType.int64]())
     m.bench_function[bench_ascending](

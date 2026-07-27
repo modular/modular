@@ -13,6 +13,7 @@
 
 from std.sys import get_defined_dtype, get_defined_int, size_of
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     BenchConfig,
@@ -63,7 +64,7 @@ def bench_pad_gpu[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     # Total memory traffic: read input + write output.
     var total_bytes = (input_size + output_size) * size_of[dtype]()

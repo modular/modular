@@ -63,6 +63,7 @@ from std.sys.info import (
     has_nvidia_gpu_accelerator,
 )
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     BenchConfig,
@@ -340,7 +341,7 @@ def bench_conv2d[
                     ctx,
                 )
 
-            bencher.iter_custom[kernel](ctx)
+            bencher_iter_custom[kernel](bencher, ctx)
 
         b.bench_function[im2col_bench](
             BenchId("conv2d_im2col", input_id=bench_input_id),
@@ -370,7 +371,7 @@ def bench_conv2d[
                     ctx,
                 )
 
-            bencher.iter_custom[kernel](ctx)
+            bencher_iter_custom[kernel](bencher, ctx)
 
         b.bench_function[cudnn_bench](
             BenchId("conv2d_cudnn", input_id=bench_input_id),
@@ -510,7 +511,7 @@ def bench_conv2d[
                     C_in=in_channels,
                 ](input_nhwc_amd, filter_frsc_tt, output_2d_tt, ctx)
 
-            bencher.iter_custom[kernel](ctx)
+            bencher_iter_custom[kernel](bencher, ctx)
 
         b.bench_function[amd_4wave_bench](
             BenchId("conv2d_amd_4wave", input_id=bench_input_id),
@@ -554,7 +555,7 @@ def bench_conv2d[
                     block_dim=(block_size, block_size, 1),
                 )
 
-            bencher.iter_custom[kernel](ctx)
+            bencher_iter_custom[kernel](bencher, ctx)
 
         b.bench_function[naive_bench](
             BenchId("conv2d_naive", input_id=bench_input_id),

@@ -119,6 +119,7 @@ mojo_test(
             "//max:internal_utils",
             "//max:kv_cache",
             "//max:linalg",
+            "//max:max_mojo",
             "//max:nn",
             "//max:quantization",
             "//max:shmem",

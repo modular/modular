@@ -32,6 +32,7 @@ from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
 from std.testing import assert_equal
+from max.benchmark import bencher_iter_custom
 
 # Initialize parameters
 # To achieve high bandwidth increase SIZE to large value
@@ -127,7 +128,7 @@ def sum_kernel_benchmark(
         )
 
     var bench_ctx = DeviceContext()
-    b.iter_custom[kernel_launch_sum](bench_ctx)
+    bencher_iter_custom[kernel_launch_sum](b, bench_ctx)
 
 
 def main() raises:

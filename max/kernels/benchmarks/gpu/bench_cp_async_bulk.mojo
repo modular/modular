@@ -33,6 +33,7 @@ different slot, hiding g2s latency behind S-1 iterations of work.
 
 from std.sys import get_defined_bool, get_defined_int, size_of
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -246,7 +247,7 @@ def main() raises:
                     shared_mem_bytes=smem_bytes,
                 )
 
-            b.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](b, ctx)
 
         m.bench_function[bench_func](
             BenchId(

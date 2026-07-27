@@ -58,7 +58,7 @@ from internal_utils import CacheBustingBuffer, arg_parse
 
 from layout import Coord, TileTensor, row_major
 from nn.normalization import rms_norm_gpu
-from max.benchmark import bench_multicontext
+from max.benchmark import bench_multicontext, bencher_iter_custom
 
 from std.math import rsqrt
 from std.utils.index import Index
@@ -496,7 +496,7 @@ def bench_allgather_rmsnorm[
             var out_views = _ag_out_views(ctx_idx)
             allgather(in_shards, out_views, rank_sigs, ctx_inner, ctx_idx)
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
     bench_multicontext[bench_ag_iter](
         b,
@@ -525,7 +525,7 @@ def bench_allgather_rmsnorm[
                     ctx_inner,
                 )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
     bench_multicontext[bench_norm_cold_iter](
         b,
@@ -557,7 +557,7 @@ def bench_allgather_rmsnorm[
                     ctx_inner,
                 )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
     bench_multicontext[bench_chained_iter](
         b,
@@ -587,7 +587,7 @@ def bench_allgather_rmsnorm[
                 ctx_inner,
             )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
     bench_multicontext[bench_fused_iter](
         b,
@@ -646,7 +646,7 @@ def bench_allgather_rmsnorm[
                 ctx_inner,
             )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
     bench_multicontext[bench_dispatch_iter](
         b,

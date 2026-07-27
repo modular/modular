@@ -33,6 +33,7 @@ from std.math import ceildiv
 from std.random import seed
 from std.sys import get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -311,7 +312,7 @@ def bench_fused_qk_rms_norm_rope[
                 context=ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     m.bench_function[bench_two_step](
         BenchId(
@@ -375,7 +376,7 @@ def bench_fused_qk_rms_norm_rope[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     m.bench_function[bench_fused](
         BenchId(

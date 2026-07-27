@@ -20,6 +20,7 @@ from std.sys import (
 )
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 import linalg.matmul.vendor.blas as vendor_blas
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -544,7 +545,7 @@ def bench_matmul[
     @parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
@@ -784,7 +785,7 @@ def bench_mxfp4_amd[
     @parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](bencher, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,

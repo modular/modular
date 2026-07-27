@@ -28,6 +28,7 @@ from std.sys import (
     size_of,
 )
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -383,7 +384,7 @@ def bench_dispatch[
             def kernel_launch(ctx: DeviceContext) raises:
                 run_dispatch_async_func()
 
-            b.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](b, ctx)
 
         @parameter
         @always_inline
@@ -393,7 +394,7 @@ def bench_dispatch[
             def kernel_launch(ctx: DeviceContext) raises:
                 run_combine_async_func()
 
-            b.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](b, ctx)
 
         @parameter
         @always_inline
@@ -403,7 +404,7 @@ def bench_dispatch[
             def kernel_launch(ctx: DeviceContext) raises:
                 run_clean_up_func()
 
-            b.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](b, ctx)
 
         var input_id_parts = String(
             "n_tokens_per_rank=",

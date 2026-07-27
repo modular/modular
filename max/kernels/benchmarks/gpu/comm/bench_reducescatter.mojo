@@ -28,7 +28,10 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from max.benchmark import bench_multicontext
+from max.benchmark import (
+    bench_multicontext,
+    bencher_iter_custom,
+)
 from comm.sync import enable_p2p
 from comm.reducescatter import reducescatter, ReduceScatterConfig
 from layout import Idx, TileTensor, row_major
@@ -243,7 +246,7 @@ def bench_reducescatter_2d[
                 max_num_blocks,
             )
 
-        b.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](b, ctx)
 
     bench_multicontext[bench_iter_2d](
         b,
@@ -472,7 +475,7 @@ def bench_reducescatter[
                 max_num_blocks,
             )
 
-        b.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](b, ctx)
 
     bench_multicontext[bench_iter](
         b,
