@@ -833,8 +833,10 @@ def test_dependent[a: Int](arg: HasDependent[a], arg2: HasDependent[a, 4]):
   # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
   test_dependent(arg, arg)
 
-struct HasIntParam[p: Int]:
-  def __init__(out self): # expected-note {{function declared here}}
+struct HasIntParam[p: Int](Movable where False):
+  # expected-note @below {{candidate declared here with type 'def() thin -> HasIntParam[Int(1)]' (specialized from 'def[p: Int, //]() thin -> HasIntParam[p]')}}
+  # expected-note @below {{function declared here}}
+  def __init__(out self):
      pass
 
 comptime HasIntParamAlias[p: Int] = HasIntParam[p]
@@ -847,7 +849,7 @@ def take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntPar
   take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())
 
 def test_signature():
-  # expected-error @+1 {{cannot implicitly convert 'def __init__() thin -> HasIntParam[Int(1)]' value to 'def(x: HasIntParam[Int(1)]) thin -> None' in 'var' initializer}}
+  # expected-error @+1 {{no '__init__' candidates have type 'def(x: HasIntParam[Int(1)]) thin -> None'}}
   var x : def(x: HasIntParam[1]) thin -> None = HasIntParam[1].__init__
 
   # expected-error @+1 {{use of unknown declaration 'UndefinedStruct'}}
