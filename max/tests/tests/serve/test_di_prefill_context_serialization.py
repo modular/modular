@@ -29,7 +29,9 @@ import queue
 import time
 
 import numpy as np
+import pytest
 import zmq
+from max._core import nixl
 from max.pipelines.architectures.kimik2_5.context import (
     KimiK2_5TextAndVisionContext,
 )
@@ -44,6 +46,16 @@ from max.serve.scheduler.di_dispatchers import (
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 
 _TIMEOUT = 10.0
+
+# The dispatcher's wire type unions in ``KVTransferEngineMetadata``, whose
+# ``memory_type`` field is annotated ``nixl.MemoryType``. Outside linux-x86_64
+# the NIXL bindings are an empty stub module, so msgspec cannot resolve that
+# annotation and the dispatcher cannot be constructed at all. DI is unreachable
+# on those platforms anyway.
+pytestmark = pytest.mark.skipif(
+    not hasattr(nixl, "MemoryType"),
+    reason="DI dispatchers need the NIXL bindings (linux-x86_64 only)",
+)
 
 
 def _round_trip(
