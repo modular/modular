@@ -171,7 +171,6 @@ precompiled_mefs(
         "prefill_only_fp8_128h",
         "prefill_only_fp8_8h",
     ],
-    target = "cuda:sm_100a",
     target_compatible_with = ["//:b200_gpu"],
 )
 
