@@ -856,6 +856,7 @@ class _DiskConnectorConfig:
     disk_offload_dir: str
     disk_offload_max_gb: float
     host_kvcache_swap_space_gb: float
+    num_disk_workers: int = 32
 
 
 def _fp8_cache_params(

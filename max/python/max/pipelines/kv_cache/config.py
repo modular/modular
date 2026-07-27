@@ -133,6 +133,17 @@ class KVConnectorConfig(ConfigFileModel):
     )
     """Maximum disk space in GB for KV cache offloading."""
 
+    num_disk_workers: int = Field(
+        default=32,
+        gt=0,
+        description=(
+            "Number of disk I/O worker threads for the tiered / rust_tiered "
+            "connector's disk offload tier. Higher values drain the disk-op "
+            "queue faster under load; returns diminish past ~32."
+        ),
+    )
+    """Number of disk I/O worker threads for the tiered connectors."""
+
     block_store_endpoint: str | None = Field(
         default=None,
         description=(

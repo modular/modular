@@ -106,6 +106,7 @@ class RustTierConnector:
         disk_cache_dir: str,
         kv_hash_algo: KVHashAlgo = "ahash64",
         max_disk_size_gb: float = 50.0,
+        num_disk_workers: int = 32,
     ) -> None:
         # Lazy import: OSS MAX can import this module without the extension.
         from kv_tier_connector import (  # type: ignore[import-not-found]
@@ -188,12 +189,15 @@ class RustTierConnector:
             _resolve_only_use_kv_connector_last_level_cache(),
             disk_cache_dir,
             max_disk_size_gb,
+            num_disk_workers,
         )
         self._shutdown = False
         logger.info(
-            "RustTierConnector initialized: host=%d blocks, disk=%s",
+            "RustTierConnector initialized: host=%d blocks, disk=%s, "
+            "num_disk_workers=%d",
             total_num_host_blocks,
             disk_cache_dir,
+            num_disk_workers,
         )
 
     @property

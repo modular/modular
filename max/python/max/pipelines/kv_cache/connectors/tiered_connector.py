@@ -94,6 +94,7 @@ class TieredConnector:
         total_num_host_blocks: int,
         disk_cache_dir: str,
         max_disk_size_gb: float,
+        num_disk_workers: int = 32,
         synchronous_d2h_copy_mode: bool = False,
     ) -> None:
         if total_num_host_blocks <= 0:
@@ -131,12 +132,14 @@ class TieredConnector:
             cache_dir=disk_cache_dir,
             block_nbytes=self._block_disk_bytes,
             max_disk_size_bytes=int(max_disk_size_gb * GiB),
+            num_workers=num_disk_workers,
         )
 
         logger.info(
             "TieredConnector initialized: "
             f"CPU={total_num_host_blocks} blocks, "
             f"Disk={disk_cache_dir} (max {max_disk_size_gb:.1f} GB), "
+            f"num_disk_workers={num_disk_workers}, "
             f"block_size={self._block_disk_bytes / (1024 * 1024):.1f} MB"
         )
 

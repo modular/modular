@@ -110,7 +110,8 @@ def create_connector(
             "Creating TieredConnector: "
             f"host_blocks={total_num_host_blocks}, "
             f"disk_dir={cfg.disk_offload_dir}, "
-            f"disk_max_gb={cfg.disk_offload_max_gb}"
+            f"disk_max_gb={cfg.disk_offload_max_gb}, "
+            f"num_disk_workers={cfg.num_disk_workers}"
         )
 
         return TieredConnector(
@@ -119,6 +120,7 @@ def create_connector(
             total_num_host_blocks=total_num_host_blocks,
             disk_cache_dir=cfg.disk_offload_dir,
             max_disk_size_gb=cfg.disk_offload_max_gb,
+            num_disk_workers=cfg.num_disk_workers,
         )
 
     if connector == KVConnectorType.rust_tiered:
@@ -143,7 +145,8 @@ def create_connector(
             "Creating RustTierConnector: "
             f"host_blocks={total_num_host_blocks}, "
             f"disk_dir={cfg.disk_offload_dir}, "
-            f"disk_max_gb={cfg.disk_offload_max_gb}"
+            f"disk_max_gb={cfg.disk_offload_max_gb}, "
+            f"num_disk_workers={cfg.num_disk_workers}"
         )
         return RustTierConnector(
             replica_kv_memory=replica_kv_memory,
@@ -151,6 +154,7 @@ def create_connector(
             kv_hash_algo=params.kv_hash_algo,
             disk_cache_dir=cfg.disk_offload_dir,
             max_disk_size_gb=cfg.disk_offload_max_gb,
+            num_disk_workers=cfg.num_disk_workers,
         )
 
     if connector == KVConnectorType.local:
