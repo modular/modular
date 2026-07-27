@@ -39,8 +39,9 @@ def _precompiled_mef_impl(ctx):
             cpu_target = copt.removeprefix("--target-cpu=")
 
     # not sure what this is about, is there a disconnect between the GC and Mojo?
-    target = target.replace("nvidia", "cuda")
-    target = target.replace("amdgpu", "hip")
+    if target:
+        target = target.replace("nvidia", "cuda")
+        target = target.replace("amdgpu", "hip")
 
     binary = ctx.attr.producer[DefaultInfo].files_to_run
     env = dict(ctx.attr.producer[RunEnvironmentInfo].environment)
