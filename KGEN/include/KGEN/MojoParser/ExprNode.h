@@ -67,7 +67,7 @@ public:
     kSubscript,         // thing[a, b:c]
     kSubscriptArrow,    // thing[x, y -> a, b]
     kChainedCmp,        // a < b <= c
-    kFunctionType,      // async fn[](owned Int, &F32) capturing raises -> F64
+    kFunctionType,      // async def[](owned Int, &F32) capturing raises -> F64
 
     // Magic functions
     kGetMValueAsLitRef,          // __get_mvalue_as_litref(x)
