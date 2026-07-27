@@ -1064,6 +1064,23 @@ def test_negated_mixed_ascii_and_multibyte() -> None:
     assert _accepts(compiled, '"\u00ea"')  # right after U+00E9
 
 
+def test_char_class_3byte_range_max_lead_block() -> None:
+    # A 3-byte range whose max endpoint's trailing continuation bytes are not
+    # both 0xBF (e.g. U+4DFF = E4 B7 BF) must accept every codepoint up to its
+    # max, including the whole max-lead-byte block (U+4000-U+4DFF, lead byte
+    # 0xE4), and reject just past the max.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "[\\u0800-\\u4dff]"}'
+    )
+    assert not _accepts(compiled, '"\u07ff"')  # just below the min
+    assert _accepts(compiled, '"\u0800"')  # min boundary
+    assert _accepts(compiled, '"\u3fff"')  # block below the max lead (0xE3)
+    assert _accepts(compiled, '"\u4000"')  # start of the max-lead (0xE4) block
+    assert _accepts(compiled, '"\u4500"')  # middle of the max-lead block
+    assert _accepts(compiled, '"\u4dff"')  # max boundary
+    assert not _accepts(compiled, '"\u4e00"')  # just past the max
+
+
 def test_pattern_unsupportable_escapes_rejected() -> None:
     # Genuinely unenforceable regex constructs are still hard-rejected by the
     # converter (fail-closed): a backreference, a Unicode property class, and a
