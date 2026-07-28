@@ -1242,6 +1242,18 @@ This version is still a work in progress.
 
 ## Tooling changes
 
+- Crash reporting now defaults to the `telemetry.enabled` setting, so the two
+  are enabled or disabled together unless overridden. Setting
+  `crash_reporting.enabled` (or the `MODULAR_CRASH_REPORTING_ENABLED`
+  environment variable) explicitly still takes precedence. Previously crash
+  reporting was disabled by default in one initialization path and enabled by
+  default in production builds in another.
+
+- The `program.crash_reporting_enabled_invocation` telemetry event has been
+  renamed to `program.initialized`. It is emitted once per process whenever
+  telemetry is enabled and carries a `crash_reporting.enabled` attribute
+  recording whether crash reporting was on for that session.
+
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
 
 - `mojo-lsp-server` no longer parses or type-checks code blocks inside
