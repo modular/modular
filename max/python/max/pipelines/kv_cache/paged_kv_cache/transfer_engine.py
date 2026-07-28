@@ -25,7 +25,7 @@ from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, NamedTuple
 from uuid import uuid4
 
 if TYPE_CHECKING:
@@ -477,13 +477,26 @@ def _assert_no_gather_scatter(strategy: list[_TransferStrategy]) -> None:
 # ---------------------------------------------------------------------------
 
 
+class ConnectPair(NamedTuple):
+    """A single connect/disconnect/cleanup wiring step.
+
+    Pairs one local agent with one remote agent by their physical grid
+    indices.
+    """
+
+    local_replica: int
+    local_shard: int
+    remote_replica: int
+    remote_shard: int
+
+
 def connect_pairing(
     strategy: list[_TransferStrategy],
     local_dp: int,
     local_tp: int,
     remote_dp: int,
     remote_tp: int,
-) -> list[tuple[int, int, int, int]]:
+) -> list[ConnectPair]:
     """Plan the connect/disconnect/cleanup wiring for a peer.
 
     Returns physical index quads ``(local_replica, local_shard,
@@ -496,7 +509,7 @@ def connect_pairing(
     _assert_no_gather_scatter(strategy)
     shard_pairs = _connect_shard_pairs(strategy, local_tp, remote_tp)
     return [
-        (local_replica, local_shard, remote_replica, remote_shard)
+        ConnectPair(local_replica, local_shard, remote_replica, remote_shard)
         for local_replica in range(local_dp)
         for remote_replica in range(remote_dp)
         for local_shard, remote_shard in shard_pairs
