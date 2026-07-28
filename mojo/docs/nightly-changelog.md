@@ -31,6 +31,12 @@ This version is still a work in progress.
   The message must be a string literal; a non-literal message is
   reported as an error.
 
+- Support for `lambda` expressions: anonymous, single-expression closures that
+  desugar to a nested `def`. As in Python, the body is a single expression with
+  no `return`; unlike Python, the arguments are parenthesized and typed like in
+  a `def` signature — for example `lambda (x: Int) {} -> Int: x + 1`. For now
+  the capture list `{…}` and the return type must both be written explicitly.
+
 - Mojo supports an (internal only for now) feature known as *interior origins*,
   which allows collections to protect from a common class of memory unsafety
   problems. `List`, for example, now returns element references bound
