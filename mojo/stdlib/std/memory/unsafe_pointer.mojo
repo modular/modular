@@ -224,7 +224,7 @@ comptime OpaquePointer[
     origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = UnsafePointer[NoneType, origin, address_space=address_space]
+] = Pointer[NoneType, origin, address_space=address_space, _safe=True]
 """An opaque pointer, equivalent to the C `(const) void*` type.
 
 Parameters:

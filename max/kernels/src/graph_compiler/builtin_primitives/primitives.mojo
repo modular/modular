@@ -370,7 +370,7 @@ def unpack_buffer_ref(
         OpaquePointer[MutAnyOrigin],
     ](async_ptr, UnsafePointer(to=size))
     var shape = IndexList[1](Int(size))
-    var view = MutByteBuffer(data_ptr.bitcast[Int8](), shape)
+    var view = MutByteBuffer(data_ptr.unsafe_bitcast[Int8](), shape)
     # Retain the backing storage of the source async value so this composite
     # keeps the memory alive if it (or a derivative) is re-packed as an output.
     return OwnedByteBuffer(
@@ -404,7 +404,7 @@ def unpack_tensor[
         shapes[0] = 1
 
     var view = DynamicTensor[dtype, buffer_rank](
-        buffer_ptr.bitcast[Scalar[dtype]](), shapes
+        buffer_ptr.unsafe_bitcast[Scalar[dtype]](), shapes
     )
     # Retain the backing storage of the source async value so this composite
     # keeps the memory alive if it (or a derivative) is re-packed as an output.
@@ -617,7 +617,7 @@ def mgp_buffer_constant(
     # Constant memory is owned by the resource system, not refcounted, so the
     # storage handle is the empty (non-tracked) reference.
     var view = MutByteBuffer(
-        resource_ptr.bitcast[Int8](), IndexList[1](resource_bytecount)
+        resource_ptr.unsafe_bitcast[Int8](), IndexList[1](resource_bytecount)
     )
     return OwnedByteBuffer(view, AnyAsyncValueRef())
 
@@ -1404,7 +1404,7 @@ struct StateContext(ImplicitlyCopyable, RegisterPassable):
         )
 
         var buffer = MutByteBuffer(
-            buffer_data.unsafe_value().bitcast[Int8](),
+            buffer_data.unsafe_value().unsafe_bitcast[Int8](),
             Index(buffer_size),
         )
 
@@ -1453,9 +1453,9 @@ def mogg_async_unpack[
     """
     var ptr = external_call[
         "MGP_RT_GetValueFromAsync", OpaquePointer[MutAnyOrigin]
-    ](async_ptr).bitcast[T]()
+    ](async_ptr).unsafe_bitcast[T]()
 
-    return UnsafePointer[T, MutAnyOrigin].__getitem__(ptr, 0)
+    return ptr[]
 
 
 struct MoggAsyncPackHelper:

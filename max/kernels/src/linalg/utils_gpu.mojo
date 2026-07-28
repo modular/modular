@@ -647,7 +647,7 @@ def get_hilbert_lut_with_cache(
     var cached_ptr = _get_global_or_null(key_str)
 
     if cached_ptr:
-        var device_ptr = cached_ptr.unsafe_value().bitcast[UInt32]()
+        var device_ptr = cached_ptr.unsafe_value().unsafe_bitcast[UInt32]()
         var num_blocks = grid_x * grid_y
         # the cached buffer stays alive as long as the program runs
         return DeviceBuffer[DType.uint32](
