@@ -317,7 +317,7 @@ def s12_bindIt(mem: String) -> Int:
         _ = mem
 
 # COM: Check that the origin set is bound to the wrapper
-# S13-LABEL: lit.fn @"nonemptyOriginSet(::String&)"
+# S13-LABEL: lit.fn @"nonemptyOriginSet(::String)"
 # COM: The captured mutable reference contributes byRefMut's origin to the
 # COM: closure storage struct.
 # S13: lit.call {{.*}}::myclosure::__storage"::@"__init__

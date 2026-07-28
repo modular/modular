@@ -706,7 +706,7 @@ def patterns():
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
-# CHECK-LABEL: lit.fn @"byval_byref_function(::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> mut) -> !kgen.none
+# CHECK-LABEL: lit.fn @"byval_byref_function(::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)])"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> mut) -> !kgen.none
 def byval_byref_function(a: Int, mut b: Int):
   # CHECK-NEXT: lit.ref.store %a, %b
   b = a
