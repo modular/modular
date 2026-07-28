@@ -164,7 +164,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice[MutUntrackedOrigin](
+            StringSlice(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=buffer.unsafe_value(), length=bytes_read - 1
                 )

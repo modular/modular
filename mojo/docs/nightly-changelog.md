@@ -593,6 +593,10 @@ This version is still a work in progress.
   the field directly should bind it to an `UnsafePointer` variable first or use
   the ungated `unsafe_*` spellings.
 
+- The `Span(unsafe_ptr=..., length=...)` constructor now takes a safe `Pointer`
+  instead of an `UnsafePointer`, matching `Span`'s internal pointer field. The
+  two share the same layout and convert implicitly, so most code is unaffected.
+
 - `OwnedPointer.steal_data()`, `ArcPointer.steal_data()`, and
   `List.steal_data()` have been renamed to `unsafe_take_allocation()` and now
   return an owning `Allocation` instead of a raw pointer. The methods keep an
