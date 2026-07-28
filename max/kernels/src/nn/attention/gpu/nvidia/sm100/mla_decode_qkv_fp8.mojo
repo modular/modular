@@ -436,12 +436,14 @@ struct MLA_SM100_Decode_QKV_FP8[
 
         # ---- SMEM layout (all FP8, N stages) ----
         # Q FP8 region: 64 x 576 x 1 bytes = 36864 bytes
-        q_smem = external_memory[
-            Scalar[Self.fp8_type],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-            name="mha_dynamic_shared_memory",
-        ]()
+        q_smem = UnsafePointer(
+            external_memory[
+                Scalar[Self.fp8_type],
+                address_space=AddressSpace.SHARED,
+                alignment=128,
+                name="mha_dynamic_shared_memory",
+            ]()
+        )
 
         # KV FP8 SMEM: N stages, starts right after Q FP8
         # Each stage = 64 x 576 x 1 = 36864 bytes
