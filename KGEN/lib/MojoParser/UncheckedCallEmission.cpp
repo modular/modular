@@ -507,85 +507,135 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
 FailureOr<std::pair<SmallVector<ASTExprAnd<AnyValue>>, llvm::BitVector>>
 CallEmitter::emitArgValues(const CallOperands &operands) {
-  // This is the index into the operands list for the next operand value to look
-  // at for positional arguments.
-  size_t posOperandIdx = 0;
+  PogListAttr argListAttr = calleeSig.getArgListAttrs();
 
-  // We will collect argument names that were passed by keyword, so that we can
-  // emit **kwargs arguments in the end with anything that's left.
-  SmallPtrSet<StringAttr, 4> passedByKw;
-  // We also remember if we had a **kwargs.
-  MRValue kwargsDict;
-  // Index of the sole '**' splat, set once the scan passes it (if any).
-  std::optional<size_t> starStarIdx;
+  // Map the operands onto the callee's arguments using the same logic type
+  // checking used, so that emission and inference agree on which operand
+  // fulfills which argument.
+  CallOperands::PogAssignment pogAssignment;
+  std::optional<MojoInflightDiag> stagedDiag;
+  auto getStagedDiag = [&](SMLoc loc) -> MojoInflightDiag & {
+    stagedDiag = emitter.emitError(loc);
+    return *stagedDiag;
+  };
+  if (failed(operands.assignToPogs(argListAttr, /*isParameterList=*/false,
+                                   pogAssignment, getStagedDiag)))
+    return failure();
 
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   llvm::BitVector isDefaultMask(calleeSig.getNumArguments(), false);
   argumentValues.reserve(calleeSig.getNumArguments());
 
-  PogListAttr argListAttr = calleeSig.getArgListAttrs();
   for (auto [argIdx, expectedType, convention, pogAttr] :
        llvm::enumerate(calleeSig.getArguments(), calleeSig.getArgConventions(),
                        argListAttr.getPogs())) {
-
-    // If this is the return slot for a call, we need a temporary to emit into,
-    // but don't know the type until the arguments (and their origins) are all
-    // emitted. Just skip over it for now.
-    if (isResultSlot(convention)) {
+    switch (pogAssignment.operandIdxs[argIdx]) {
+    case CallOperands::PogAssignment::kPA_Unspecified:
+      // This is the return or error slot for the call, so we need a temporary
+      // to emit into, but don't know the type until the arguments (and their
+      // origins) are all emitted. Just skip over it for now.
+      assert(isResultSlot(convention) && "unknown unspecified operand");
       assert(calleeSig.hasMemoryOnlyResult() ||
              (calleeSig.isThrows() &&
               pogAttr.getPassingKind() == PassingKind::Implicit));
       argumentValues.push_back({AnyValue(), callExpr});
       continue;
+
+    // The normal case fulfills the argument with a single operand, whether it
+    // was passed positionally or by keyword.
+    default: {
+      size_t operandIdx = pogAssignment.operandIdxs[argIdx];
+      const OperandValue &operand = operands[operandIdx];
+      AnyValue argVal =
+          emitOneArgVal(operand, argIdx, convention, expectedType);
+      if (!argVal)
+        return failure();
+      argumentValues.push_back({argVal, operand.expr});
+      continue;
     }
 
-    // See what the next positional argument is, skipping over any keywords.
-    // A '**' unpack carries no keyword name but is not positional either.
-    while (posOperandIdx < operands.size() &&
-           (operands[posOperandIdx].keyword ||
-            operands[posOperandIdx].unpackStyle == ArgUnpackStyle::kStarStar)) {
-      if (operands[posOperandIdx].unpackStyle == ArgUnpackStyle::kStarStar)
-        starStarIdx = posOperandIdx;
-      ++posOperandIdx;
+    case CallOperands::PogAssignment::kPA_Default: {
+      // Apply the default argument. We need to emit it with our expected type
+      // because there may be an implicit conversion.
+      PValue defaultVal = argListAttr.getDefault(argIdx);
+      assert(defaultVal && "default value is missing");
+      AnyValue argVal = emitOneArgVal({defaultVal, callExpr}, argIdx,
+                                      convention, expectedType);
+      if (!argVal)
+        return failure();
+      isDefaultMask.set(argIdx);
+      argumentValues.push_back({argVal, callExpr});
+      continue;
     }
 
-    // Process positional arguments.
-    if (posOperandIdx < operands.size()) {
-      // For a normal (not a vararg or a pack) positional argument, we just emit
-      // it and add it to our list.
-      if (!calleeSig.isPosVarArg(argIdx) && !calleeSig.isPack(argIdx)) {
-        ASTExprAnd<AnyValue> operand = operands[posOperandIdx++];
+    case CallOperands::PogAssignment::kPA_Variadic:
+      // Handle variadics below.
+      break;
+    }
+
+    // Keyword variadics either forward a whole '**' unpack, or collect the
+    // keyword operands that no named argument claimed into a dictionary.
+    if (calleeSig.isKwVarArg(argIdx)) {
+      ArrayRef<size_t> kwOperandIdxs = pogAssignment.kwVariadicIdxs;
+      if (kwOperandIdxs.size() == 1 &&
+          operands[kwOperandIdxs[0]].unpackStyle == ArgUnpackStyle::kStarStar) {
+        const OperandValue &splat = operands[kwOperandIdxs[0]];
         AnyValue argVal =
-            emitOneArgVal(operand, argIdx, convention, expectedType);
+            emitOneArgVal(splat, argIdx, convention, expectedType);
         if (!argVal)
           return failure();
-        argumentValues.push_back({argVal, operand.expr});
+        argumentValues.push_back({argVal, splat.expr});
         continue;
       }
 
-      // At this point, we must be dealing with variadic or pack arguments. We
-      // handle these all at once (or fail).
-      SmallVector<OperandValue> remainingOperands;
-      do {
-        auto &operand = operands[posOperandIdx];
-        if (operand.unpackStyle == ArgUnpackStyle::kStarStar)
-          starStarIdx = posOperandIdx;
-        else if (!operand.keyword)
-          remainingOperands.push_back(operand);
-        ++posOperandIdx;
-      } while (posOperandIdx < operands.size());
+      // Otherwise, initialize a dictionary; the keyword operands are inserted
+      // into it below.
+      auto dict = emitter.emitConstructorCall(
+          sugarCast<RefType>(expectedType).getElementType(),
+          CallOperands(CallSyntax::kTypeCall, callExpr, EC_KWArgsArgument));
+      auto kwargsDict = emitter.emitMRValue({dict, callExpr}, EC_CallArgValue);
 
-      // NOTE: this implicitly assumes that variadics/packs are at the end.
-      if (succeeded(emitRemainingPosOperands(argIdx, remainingOperands,
-                                             convention, expectedType,
-                                             argumentValues)))
-        continue;
+      // Fill the **kwargs dict with the keyword operands that no named argument
+      // claimed.  There is no dict when a '**' unpack was forwarded whole.
+      for (size_t operandIdx : pogAssignment.kwVariadicIdxs) {
+        const OperandValue &operand = operands[operandIdx];
+        assert(operand.keyword &&
+               "should have been rejected during `assignToPogs`");
+        SMLoc loc = operand.expr->getLoc();
+        SyntheticNode tmpNode(loc);
+        ExprDest kwargsDest(EC_KWArgsArgument);
+        CValue literalKey = StringLiteralNode::emitCtorCall(
+            operand.keyword.strref(), &tmpNode, kwargsDest, emitter);
+        if (!literalKey)
+          return {};
 
-      return failure();
+        // Then we set the element with the given key and the operand as value.
+        CallOperands insertOperands(CallSyntax::kMethodCall, callExpr,
+                                    EC_KWArgsArgument,
+                                    {{MLValue(kwargsDict), callExpr},
+                                     {literalKey, operand.expr},
+                                     operand});
+        emitter.emitNamedMethodCall("_insert", std::move(insertOperands));
+      }
+      argumentValues.push_back({kwargsDict, callExpr});
+      continue;
     }
 
-    // If we ran out of operands, fulfill this with a keyword argument, default
-    // value, empty variadic list, or empty pack.
+    // Positional variadics and packs are handled all at once (or fail).
+    if (!pogAssignment.posVariadicIdxs.empty()) {
+      SmallVector<OperandValue> variadicOperands;
+      variadicOperands.reserve(pogAssignment.posVariadicIdxs.size());
+      for (size_t operandIdx : pogAssignment.posVariadicIdxs)
+        variadicOperands.push_back(operands[operandIdx]);
+
+      if (failed(emitRemainingPosOperands(argIdx, variadicOperands, convention,
+                                          expectedType, argumentValues)))
+        return failure();
+      continue;
+    }
+
+    // With no operands assigned to it, fulfill this with an empty variadic
+    // list or an empty pack.
     if (calleeSig.isPosVarArg(argIdx)) {
       ASTType listType = RefType::stripRefConvention(expectedType, convention);
       auto refType = listType.getVariadicListInfo().getElementRefType();
@@ -606,99 +656,19 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     }
 
     // Pack arguments are fulfilled with an empty #lit.ref.pack.
-    if (calleeSig.isPack(argIdx)) {
-      ASTType packType = RefType::stripRefConvention(expectedType, convention);
-      assert(sugarCast<ParamListAttr>(packType.getVariadicPackInfo().typeList)
-                 .getValues()
-                 .empty() &&
-             "pack type already checked against operand count");
-      RefPackType refPackType = packType.getVariadicPackInfo(emitter.shared);
-      auto argAttr = RefPackAttr::get(ArrayRef<TypedAttr>(), refPackType);
-      auto result =
-          emitVariadicCtor(packType, PValue(argAttr), callExpr, emitter);
-      if (!result)
-        return failure();
-      argumentValues.push_back({result, callExpr});
-      continue;
-    }
-
-    if (calleeSig.isKwVarArg(argIdx)) {
-      assert(!kwargsDict && "multiple **kwargs not supported yet");
-      // The '**' splat is the dict's sole source (ParamInf rejects mixing); the
-      // scan above passes every operand, so it is recorded by now.
-      if (starStarIdx) {
-        auto &splat = operands[*starStarIdx];
-        AnyValue argVal =
-            emitOneArgVal(splat, argIdx, convention, expectedType);
-        if (!argVal)
-          return failure();
-        argumentValues.push_back({argVal, splat.expr});
-        continue;
-      }
-      // Otherwise, initialize a dictionary; unbound keyword operands are
-      // inserted into it below.
-      auto dict = emitter.emitConstructorCall(
-          sugarCast<RefType>(expectedType).getElementType(),
-          CallOperands(CallSyntax::kTypeCall, callExpr, EC_KWArgsArgument));
-      kwargsDict = emitter.emitMRValue({dict, callExpr}, EC_CallArgValue);
-      argumentValues.push_back({kwargsDict, callExpr});
-      continue;
-    }
-
-    StringAttr argName = pogAttr.getName();
-    if (const OperandValue *kwOperandOr = operands.findKwArg(argName);
-        kwOperandOr) {
-      // The argument is passed as a keyword operand.
-      AnyValue argVal =
-          emitOneArgVal(*kwOperandOr, argIdx, convention, expectedType);
-      if (!argVal)
-        return failure();
-      passedByKw.insert(argName);
-      argumentValues.push_back({argVal, kwOperandOr->expr});
-      continue;
-    }
-
-    // Otherwise, apply the default argument. We've ensured before that we
-    // have a default argument for each missing operand.  We need to emit it
-    // with our expected type because there may be an implicit conversion.
-    PValue defaultVal = argListAttr.getDefault(argIdx);
-    AnyValue argVal =
-        emitOneArgVal({defaultVal, callExpr}, argIdx, convention, expectedType);
-    if (!argVal)
+    assert(calleeSig.isPack(argIdx) && "unknown variadic kind");
+    ASTType packType = RefType::stripRefConvention(expectedType, convention);
+    assert(sugarCast<ParamListAttr>(packType.getVariadicPackInfo().typeList)
+               .getValues()
+               .empty() &&
+           "pack type already checked against operand count");
+    RefPackType refPackType = packType.getVariadicPackInfo(emitter.shared);
+    auto argAttr = RefPackAttr::get(ArrayRef<TypedAttr>(), refPackType);
+    auto result =
+        emitVariadicCtor(packType, PValue(argAttr), callExpr, emitter);
+    if (!result)
       return failure();
-    isDefaultMask.set(argIdx);
-    argumentValues.push_back({argVal, callExpr});
-  }
-
-  assert(posOperandIdx == operands.size() &&
-         "typechecking confirmed that we would use up all positional operands");
-
-  // Fill the **kwargs dict with values that we didn't bind to an argument.
-  for (auto &operand : operands.values) {
-    if (!operand.keyword || passedByKw.contains(operand.keyword))
-      continue;
-
-    // No dict here means a '**' unpack was forwarded whole. ParamInf-checked
-    // calls can't reach this (it rejects the mixed shape); only an unchecked
-    // synthetic call could.
-    assert(kwargsDict &&
-           "a '**' unpack with other keyword arguments for '**kwargs' should "
-           "have been rejected before emission");
-
-    SMLoc loc = operand.expr->getLoc();
-
-    SyntheticNode tmpNode(loc);
-    ExprDest kwargsDest(EC_KWArgsArgument);
-    CValue literalKey = StringLiteralNode::emitCtorCall(
-        operand.keyword.strref(), &tmpNode, kwargsDest, emitter);
-    if (!literalKey)
-      return {};
-
-    // Then we set the element with the given key and the operand as value.
-    CallOperands insertOperands(
-        CallSyntax::kMethodCall, callExpr, EC_KWArgsArgument,
-        {{MLValue(kwargsDict), callExpr}, {literalKey, operand.expr}, operand});
-    emitter.emitNamedMethodCall("_insert", std::move(insertOperands));
+    argumentValues.push_back({result, callExpr});
   }
 
   return std::make_pair(std::move(argumentValues), std::move(isDefaultMask));
