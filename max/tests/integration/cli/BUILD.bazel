@@ -1,4 +1,8 @@
-load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+load(
+    "//max/tests/integration/test_common:pipeline_mef_precompile.bzl",
+    "precompiled_pipeline_mefs",
+)
 
 package(default_visibility = [
     "//:__pkg__",
@@ -57,10 +61,51 @@ modular_py_test(
     ],
 )
 
+# The pipeline flags shared by the GPU test and its CPU precompiler, so the
+# precompiled graphs cannot drift from the ones the GPU run builds.
+modular_py_library(
+    name = "structured_output_cli_args",
+    testonly = True,
+    srcs = ["_structured_output_cli_args.py"],
+    imports = ["."],
+    deps = ["//max/tests/integration:hf_repo_lock"],
+)
+
+# Compiles under virtual devices, so it needs no GPU. Run only as a build action
+# by precompiled_pipeline_mefs.
+modular_py_binary(
+    name = "precompile_structured_output_bin",
+    testonly = True,
+    srcs = ["precompile_structured_output.py"],
+    imports = ["."],
+    main = "precompile_structured_output.py",
+    tags = ["manual"],
+    deps = [
+        ":structured_output_cli_args",
+        "//max/python/max/_entrypoints:pipelines",
+        "//max/python/max/driver",
+        requirement("click"),
+    ],
+)
+
+# Moves the model, sampler and realize_future_token compiles off the GPU worker
+# onto a cacheable CPU build action. The arch comes from the mojo toolchain, so
+# one target serves every GPU lane the test runs on -- but a lane with no
+# accelerator has no arch to compile for, hence the same gate the test carries.
+precompiled_pipeline_mefs(
+    name = "structured_output_mefs",
+    producer = ":precompile_structured_output_bin",
+    target_compatible_with = ["//:has_gpu"],
+)
+
 modular_py_test(
     name = "test_pipelines_cli_gpu_structured_output",
     size = "enormous",
     srcs = ["test_pipelines_cli_gpu_structured_output.py"],
+    data = [":structured_output_mefs"],
+    env = {
+        "PRECOMPILED_MEFS_DIR": "$(rootpath :structured_output_mefs)",
+    },
     exec_properties = {
         "test.resources:gpu-memory": "6",
     },
@@ -74,8 +119,8 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
+        ":structured_output_cli_args",
         "//max/python/max/_entrypoints:pipelines",
-        "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:graph_utils",
     ],
 )

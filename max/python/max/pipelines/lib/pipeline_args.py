@@ -254,6 +254,22 @@ class PipelineArgs(ConfigFileModel):
         description=("Maximum batch size to execute with the model."),
     )
 
+    precompiled_mefs: str | None = Field(
+        default=None,
+        description=(
+            "Directory of compiled-graph artifacts to initialize instead of "
+            "compiling."
+        ),
+    )
+
+    export_mefs: str | None = Field(
+        default=None,
+        description=(
+            "Directory to write a compiled-graph artifact into for every graph "
+            "compiled."
+        ),
+    )
+
     max_queue_size_tg: int | None = Field(
         default=None,
         description=("Maximum number of requests in decode queue."),
@@ -806,6 +822,8 @@ class PipelineArgs(ConfigFileModel):
             # PipelineRuntimeConfig fields
             pipeline_role=runtime.pipeline_role,
             max_batch_size=runtime.max_batch_size,
+            precompiled_mefs=runtime.precompiled_mefs,
+            export_mefs=runtime.export_mefs,
             max_queue_size_tg=runtime.max_queue_size_tg,
             min_batch_size_tg=runtime.min_batch_size_tg,
             ep_size=runtime.ep_size,

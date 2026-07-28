@@ -55,6 +55,26 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    precompiled_mefs: str | None = Field(
+        default=None,
+        description=(
+            "Directory of compiled-graph artifacts written by an earlier run's "
+            "``--export-mefs``. Every graph is initialized from its artifact "
+            "instead of being compiled, so the compiling and the executing run "
+            "can happen on different machines. The runs must build the same "
+            "graphs; a mismatch is an error rather than a silent recompile."
+        ),
+    )
+
+    export_mefs: str | None = Field(
+        default=None,
+        description=(
+            "Directory to write a compiled-graph artifact into for every graph "
+            "this run compiles, for a later run to reuse via "
+            "``--precompiled-mefs``. Compilation itself is unaffected."
+        ),
+    )
+
     max_queue_size_tg: int | None = Field(
         default=None,
         description=(

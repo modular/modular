@@ -1602,6 +1602,8 @@ class PipelineConfig(ConfigFileModel):
             runtime=PipelineRuntimeConfig(
                 pipeline_role=args.pipeline_role,
                 max_batch_size=args.max_batch_size,
+                precompiled_mefs=args.precompiled_mefs,
+                export_mefs=args.export_mefs,
                 max_queue_size_tg=args.max_queue_size_tg,
                 min_batch_size_tg=args.min_batch_size_tg,
                 ep_size=args.ep_size,
