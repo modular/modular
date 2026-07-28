@@ -6,8 +6,8 @@
 //
 // FFI bridge between Mojo and the M::Profiling Range API. Mojo's planned
 // mo.profile range op will lower to KGEN_CompilerRT_Range{Begin,End} via this
-// file (not yet implemented), and the Python kineto_enable/disable bindings
-// call the matching control surface.
+// file (not yet implemented). The enable/disable control surface is driven by
+// InferenceSession construction auto-start (max-debug.profiling-enabled).
 //
 //===----------------------------------------------------------------------===//
 
@@ -59,8 +59,8 @@ KGEN_CompilerRT_RangeStep(void) {
 #endif
 }
 
-// Enable / disable control surface. The Python session.profiling.start() /
-// .stop() bindings call into these via nanobind.
+// Enable / disable control surface. Driven by InferenceSession's
+// construction-time auto-start (max-debug.profiling-enabled).
 // TODO(MXTOOLS-190): Dynolog's IPC listener will drive enable/disable
 // through these same entry points.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
