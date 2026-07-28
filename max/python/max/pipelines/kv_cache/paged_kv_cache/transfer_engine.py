@@ -24,6 +24,7 @@ import time
 from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
@@ -201,31 +202,6 @@ def _validate_tensor_shape(tensors: Sequence[Buffer]) -> int:
 
     # shape == [total_num_pages, bytes_per_page]; the stride is dim 1.
     return first_shape[1]
-
-
-def _derive_replicate_kv_across_tp(
-    memory: Sequence[Sequence[KVCacheMemoryGroup]],
-) -> bool:
-    """Return the engine-wide replication flag for per-group KV memory.
-
-    Replication is a per-group property: each group is independently replicated
-    (MLA-style, identical across TP shards) or sharded (e.g. MiniMax3: sharded
-    GQA plus a replicated indexer). The engine-wide flag feeds only the flatten
-    routing decision in :func:`resolve_peer_view`, which fires only on
-    heterogeneous topology, so it is ``True`` only when *every* group is
-    replicated:
-
-    - uniform topology, any mix -> no flatten, works;
-    - all-replicated + heterogeneous -> flatten (MLA; Kimi/DeepSeek 1p1d),
-      works;
-    - mixed + heterogeneous -> :func:`resolve_peer_view` raises (deferred to
-      MXSERV-290).
-    """
-    return all(
-        group.replicated
-        for replica_groups in memory
-        for group in replica_groups
-    )
 
 
 def _build_group_descriptors(
@@ -412,73 +388,87 @@ class TensorAgent:
         )
 
 
-@dataclass
-class _PeerView:
-    """Per-peer routing view computed at connect() time.
+class _TransferStrategy(Enum):
+    """How one NIXL group moves across a peer's ``[dp][tp]`` topology.
 
-    Captures whether either side's ``[dp][tp]`` must be reinterpreted as
-    ``[dp*tp][1]`` for this peer, and the resulting effective DP.
+    A group's strategy is a function of two independent axes: the *topology*
+    (did TP change?) and the group's *replication*. DP change is orthogonal
+    (routing only) and does not affect the strategy.
+
+    - ``DIRECT``: uniform TP -- shard ``i`` -> shard ``i``.
+    - ``BROADCAST``: heterogeneous TP, replicated group -- pick one slice and
+      replicate it onto the other side.
+    - ``GATHER_SCATTER``: heterogeneous TP, sharded group -- a genuine
+      ``tp != tp'`` reshard (a token/head transpose-gather). Net-new; the
+      transport refuses it until MXSERV-290 lands.
     """
 
-    flatten_local: bool
-    flatten_remote: bool
-    effective_dp: int
+    DIRECT = "direct"
+    BROADCAST = "broadcast"
+    GATHER_SCATTER = "gather_scatter"
 
 
-def resolve_peer_view(
-    local_dp: int,
+def resolve_transfer_strategy(
     local_tp: int,
-    local_replicate: bool,
-    remote_dp: int,
+    local_replicate: Sequence[bool],
     remote_tp: int,
-    remote_replicate: bool,
-) -> _PeerView:
-    """Decide how to view the local and remote ``[dp][tp]`` for this peer.
+    remote_replicate: Sequence[bool],
+) -> list[_TransferStrategy]:
+    """Plan the per-group :class:`_TransferStrategy` for this peer -- a pure planner.
 
-    Homogeneous shapes match as-is. Heterogeneous shapes are accepted only
-    when exactly one side has ``replicate=True``, ``tp > 1``, and its
-    ``dp * tp`` matches the other side's ``dp``. Anything else raises.
+    The strategy keys on the **TP axis** (a DP change is the scheduler's
+    request routing, not a transfer strategy):
+
+    - ``local_tp == remote_tp`` -> ``DIRECT`` (shard-to-shard) for every group;
+    - a TP change -> ``BROADCAST`` for a replicated group (pick one slice) or
+      ``GATHER_SCATTER`` for a sharded one.
     """
-    if (local_dp, local_tp) == (remote_dp, remote_tp):
-        return _PeerView(
-            flatten_local=False, flatten_remote=False, effective_dp=local_dp
-        )
+    local_vec = list(local_replicate)
+    remote_vec = list(remote_replicate)
 
-    if (
-        local_replicate
-        and local_tp > 1
-        and remote_tp == 1
-        and local_dp * local_tp == remote_dp
-    ):
-        return _PeerView(
-            flatten_local=True, flatten_remote=False, effective_dp=remote_dp
-        )
+    if local_tp == remote_tp:
+        # TP unchanged: no reshard. Replication is irrelevant (DP is routing).
+        return [_TransferStrategy.DIRECT for _ in local_vec]
 
-    if (
-        remote_replicate
-        and remote_tp > 1
-        and local_tp == 1
-        and remote_dp * remote_tp == local_dp
-    ):
-        return _PeerView(
-            flatten_local=False, flatten_remote=True, effective_dp=local_dp
-        )
+    # TP change: replicated -> BROADCAST, sharded -> GATHER_SCATTER. The
+    # replicated flag is `tp > 1`-scoped (one shard can't replicate across TP),
+    # so a tp==1 side reports every group False. OR the two sides so the tp>1
+    # side -- always present on a TP change -- supplies the truth; a genuinely
+    # sharded group is False on both.
+    return [
+        _TransferStrategy.BROADCAST
+        if (loc or rem)
+        else _TransferStrategy.GATHER_SCATTER
+        for loc, rem in zip(local_vec, remote_vec, strict=True)
+    ]
 
-    raise ValueError(
-        f"Incompatible transfer engine shapes: "
-        f"local=(dp={local_dp},tp={local_tp},replicate={local_replicate}) "
-        f"remote=(dp={remote_dp},tp={remote_tp},replicate={remote_replicate}). "
-        f"Heterogeneous DP/TP is only supported when exactly one side "
-        f"has replicate_kv_across_tp=True (e.g. MLA) with TP>1 and its "
-        f"DP*TP matches the other side's DP. Both-TP>1 and sharded TP "
-        f"reshards are not supported."
-    )
+
+def _is_broadcast(strategy: list[_TransferStrategy]) -> bool:
+    """Whether this peer's transfer is a ``BROADCAST`` (a replicated TP change)."""
+    return any(s is _TransferStrategy.BROADCAST for s in strategy)
+
+
+def _assert_no_gather_scatter(strategy: list[_TransferStrategy]) -> None:
+    """Refuse a plan the transport cannot execute yet.
+
+    A sharded cache on a heterogeneous topology resolves to
+    ``GATHER_SCATTER`` -- a ``tp != tp'`` reshard (MXSERV-290) the transport
+    does not implement. The planner still produces the per-group plan; the
+    transport rejects it here until that strategy lands. ``DIRECT`` and
+    ``BROADCAST`` groups pass through.
+    """
+    if any(s is _TransferStrategy.GATHER_SCATTER for s in strategy):
+        raise NotImplementedError(
+            "sharded tp!=tp' reshard (GATHER_SCATTER) is not implemented "
+            "(MXSERV-290); on a heterogeneous topology every group must be "
+            "replicated (BROADCAST)"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Topology resolver (pure, NIXL-free)
 #
-# These functions turn a resolved ``_PeerView`` plus the two engines' ``[dp][tp]``
+# These functions turn a resolved per-group strategy plus the two engines' ``[dp][tp]``
 # shapes into *index plans*: which (local, remote) agent pairs to wire at
 # connect time, and which (source, destination) shards to pair for a single
 # transfer. They hold no ``self`` and touch no NIXL objects, so they are
@@ -487,22 +477,8 @@ def resolve_peer_view(
 # ---------------------------------------------------------------------------
 
 
-def _effective_grid(
-    dp: int, tp: int, flatten: bool
-) -> list[list[tuple[int, int]]]:
-    """View a ``[dp][tp]`` grid as ``[effective_dp][effective_tp]`` (physical) indices.
-
-    When ``flatten`` is True the natural ``[dp][tp]`` is reinterpreted as
-    ``[dp*tp][1]`` -- each TP shard becomes its own single-shard replica.
-    Every entry is the physical ``(replica, shard)`` coordinate.
-    """
-    if flatten:
-        return [[(r, s)] for r in range(dp) for s in range(tp)]
-    return [[(r, s) for s in range(tp)] for r in range(dp)]
-
-
 def connect_pairing(
-    view: _PeerView,
+    strategy: list[_TransferStrategy],
     local_dp: int,
     local_tp: int,
     remote_dp: int,
@@ -512,21 +488,34 @@ def connect_pairing(
 
     Returns physical index quads ``(local_replica, local_shard,
     remote_replica, remote_shard)`` in the order the NIXL metadata
-    load/invalidate must iterate: the full cartesian product of local x remote
-    effective replicas, zipping shards within each replica pair. Applies the
-    peer view's flatten flags so heterogeneous shapes line up under ``zip``.
+    load/invalidate must iterate. Connect always pairs every DP replica (a
+    full cartesian -- the scheduler routes any prefill replica to any decode
+    replica); the strategy decides only the shard pattern within each replica
+    pair.
     """
-    local_grid = _effective_grid(local_dp, local_tp, view.flatten_local)
-    remote_grid = _effective_grid(remote_dp, remote_tp, view.flatten_remote)
-    assert len(local_grid) == len(remote_grid) == view.effective_dp
-    pairs: list[tuple[int, int, int, int]] = []
-    for local_replica in local_grid:
-        for remote_replica in remote_grid:
-            for (lr, ls), (rr, rs) in zip(
-                local_replica, remote_replica, strict=True
-            ):
-                pairs.append((lr, ls, rr, rs))
-    return pairs
+    _assert_no_gather_scatter(strategy)
+    shard_pairs = _connect_shard_pairs(strategy, local_tp, remote_tp)
+    return [
+        (local_replica, local_shard, remote_replica, remote_shard)
+        for local_replica in range(local_dp)
+        for remote_replica in range(remote_dp)
+        for local_shard, remote_shard in shard_pairs
+    ]
+
+
+def _connect_shard_pairs(
+    strategy: list[_TransferStrategy], local_tp: int, remote_tp: int
+) -> list[tuple[int, int]]:
+    """Shard-connection pattern within one (local_replica, remote_replica) pair.
+
+    DIRECT wires the shard diagonal (``i <-> i``, ``local_tp == remote_tp``);
+    BROADCAST wires the full cross-shard mesh (any src shard may send to any
+    dst shard, so every ``(s, s')`` is connectable -- the transfer picks the
+    subset it actually moves).
+    """
+    if _is_broadcast(strategy):
+        return [(s, s2) for s in range(local_tp) for s2 in range(remote_tp)]
+    return [(i, i) for i in range(local_tp)]
 
 
 def transfer_shard_pairing(
@@ -602,21 +591,18 @@ class KVTransferEngineMetadata(TransferEngineMetadata):
     bytes_per_page: int
     """Bytes per page for each tensor."""
 
-    # Wire key is the field name; renaming it breaks decode against peers on an
-    # older build, so add a `msgspec.field(name=...)` alias if DI ever does rolling deploys.
-    replicate_kv_across_tp: bool = False
-    """True iff buffers are identical across TP ranks (e.g. MLA KV with
-    num_kv_heads=1). When both sides declare different (dp, tp) but one
-    replicates, the engine can reinterpret the replicating side as
-    ``[dp*tp][1]`` to let a prefill worker at (DP=m, TP=n) connect to a
-    decode worker at (DP=m*n, TP=1)."""
-
     bytes_per_group: list[int] = []
     """Bytes per page for each tensor group. The first entry is the main
     group; subsequent entries correspond to extra groups (e.g., draft KV in
     speculative decoding). When non-empty, ``bytes_per_page`` equals
     ``sum(bytes_per_group)``; when empty, the engine is single-group and
     ``bytes_per_page`` holds the only group's value."""
+
+    replicated_per_group: list[bool] = []
+    """Per-group TP replication, parallel to ``bytes_per_group``. ``True``
+    entries are replicated identically across TP shards (MLA-style); ``False``
+    entries are sharded. This is the sole replication datum on the wire; the
+    peer's :func:`resolve_transfer_strategy` plans each group from it."""
 
 
 class TransferReqData(
@@ -660,8 +646,8 @@ class TransferReqData(
     local_shards_used: list[int] = []
     """Physical TP shard indices on the initiator that own this transfer's
     handles. Empty means "all shards in the recorded replica" (pre-flatten
-    behavior). Required to release/status-check transfers when flatten_local
-    has picked a subset of shards."""
+    behavior). Required to release/status-check transfers when a flattened
+    group has picked a subset of shards."""
 
 
 class TransferEngine:
@@ -703,6 +689,10 @@ class TransferEngine:
     group; subsequent entries are extra groups (e.g., draft KV in
     speculative decoding)."""
 
+    replicated_per_group: list[bool]
+    """Per-group TP replication, parallel to ``bytes_per_group``. Routing plans
+    each group from this vector; there is no engine-wide replication flag."""
+
     memory_type: nixl.MemoryType
     """Type of memory being managed."""
 
@@ -736,7 +726,7 @@ class TransferEngine:
         dp: int,
         tp: int,
         backend_type: NixlBackendType,
-        replicate_kv_across_tp: bool = False,
+        replicated_per_group: list[bool] | None = None,
     ) -> None:
         self.name = name
         self.tensor_agents = tensor_agents
@@ -747,13 +737,23 @@ class TransferEngine:
         self.dp = dp
         self.tp = tp
         self._backend_type = backend_type
-        self.replicate_kv_across_tp = replicate_kv_across_tp
+
+        # Replication is carried per group (parallel to bytes_per_group) and
+        # routed per group; there is no engine-wide replication flag.
+        if replicated_per_group is None:
+            replicated_per_group = [False] * len(bytes_per_group)
+        if len(replicated_per_group) != len(bytes_per_group):
+            raise ValueError(
+                f"replicated_per_group has {len(replicated_per_group)} "
+                f"entries but bytes_per_group has {len(bytes_per_group)}"
+            )
+        self.replicated_per_group = replicated_per_group
 
         # Remote connections
         self.remote_connections: dict[str, KVTransferEngineMetadata] = {}
 
-        # Per-peer routing view populated at connect().
-        self._peer_views: dict[str, _PeerView] = {}
+        # Per-peer group strategies populated at connect().
+        self._transfer_strategies: dict[str, list[_TransferStrategy]] = {}
 
         # Map of agents to completed transfers
         self.completed_recv_transfers: dict[str, dict[str, int]] = defaultdict(
@@ -788,8 +788,8 @@ class TransferEngine:
             memory_type=self.memory_type,
             agents_meta=agents_meta,
             hostname=socket.gethostname(),
-            replicate_kv_across_tp=self.replicate_kv_across_tp,
             bytes_per_group=self.bytes_per_group,
+            replicated_per_group=self.replicated_per_group,
         )
 
     def _resolve_local_agents_for_transfer(
@@ -807,24 +807,25 @@ class TransferEngine:
             for s in transfer_req.local_shards_used
         ]
 
-    def _compute_peer_view(self, remote: KVTransferEngineMetadata) -> _PeerView:
-        """Decide how the local and remote shapes should be viewed for this peer.
+    def _compute_transfer_strategy(
+        self, remote: KVTransferEngineMetadata
+    ) -> list[_TransferStrategy]:
+        """Plan the per-group transfer strategy for this peer.
 
-        Thin wrapper around :func:`resolve_peer_view`.
+        Thin wrapper around :func:`resolve_transfer_strategy`.
         """
-        rdp = len(remote.agents_meta)
         rtp = len(remote.agents_meta[0]) if remote.agents_meta else 0
-        return resolve_peer_view(
-            local_dp=self.dp,
+        return resolve_transfer_strategy(
             local_tp=self.tp,
-            local_replicate=self.replicate_kv_across_tp,
-            remote_dp=rdp,
+            local_replicate=self.replicated_per_group,
             remote_tp=rtp,
-            remote_replicate=remote.replicate_kv_across_tp,
+            remote_replicate=remote.replicated_per_group,
         )
 
     def _iter_peer_agents(
-        self, remote: KVTransferEngineMetadata, view: _PeerView
+        self,
+        remote: KVTransferEngineMetadata,
+        strategy: list[_TransferStrategy],
     ) -> Iterator[tuple[TensorAgent, TensorAgentMetadata]]:
         """Yield ``(local agent, remote agent-meta)`` pairs for a peer.
 
@@ -834,7 +835,9 @@ class TransferEngine:
         """
         rdp = len(remote.agents_meta)
         rtp = len(remote.agents_meta[0]) if remote.agents_meta else 0
-        for lr, ls, rr, rs in connect_pairing(view, self.dp, self.tp, rdp, rtp):
+        for lr, ls, rr, rs in connect_pairing(
+            strategy, self.dp, self.tp, rdp, rtp
+        ):
             yield self.tensor_agents[lr][ls], remote.agents_meta[rr][rs]
 
     def connect(self, remote: KVTransferEngineMetadata) -> None:
@@ -846,7 +849,10 @@ class TransferEngine:
         if remote.name in self.remote_connections:
             raise ValueError(f"Agent {remote.name} already connected")
 
-        view = self._compute_peer_view(remote)
+        strategy = self._compute_transfer_strategy(remote)
+        # Fail fast on a plan the transport cannot execute yet (sharded
+        # reshard); the per-group plan is valid, the reshard strategy is not.
+        _assert_no_gather_scatter(strategy)
 
         if self.bytes_per_page != remote.bytes_per_page:
             raise ValueError(
@@ -889,7 +895,9 @@ class TransferEngine:
                 )
 
         # Load remote metadata for every wired (local, remote) agent pair.
-        for local_ta, remote_agent_meta in self._iter_peer_agents(remote, view):
+        for local_ta, remote_agent_meta in self._iter_peer_agents(
+            remote, strategy
+        ):
             loaded_bytes = local_ta.agent.load_remote_metadata(
                 remote_agent_meta.metadata
             )
@@ -907,7 +915,7 @@ class TransferEngine:
                 )
 
         self.remote_connections[remote.name] = remote
-        self._peer_views[remote.name] = view
+        self._transfer_strategies[remote.name] = strategy
 
         # Update the remote agent to engine mapping
         for replica_agents_meta in remote.agents_meta:
@@ -932,13 +940,13 @@ class TransferEngine:
             raise ValueError(
                 f"Remote connection '{name}' not found; cannot disconnect"
             )
-        view = self._peer_views.pop(name, None)
-        # Defensive: connect() populates _peer_views and remote_connections
-        # together, so this is unreachable today. If they ever desync,
-        # recompute (rather than assuming non-flattened) so a flattened peer's
-        # teardown still mirrors connect()'s pairing.
-        if view is None:
-            view = self._compute_peer_view(remote)
+        strategy = self._transfer_strategies.pop(name, None)
+        # Defensive: connect() populates _transfer_strategies and
+        # remote_connections together, so this is unreachable today. If they
+        # ever desync, recompute (rather than assuming DIRECT) so a broadcast
+        # peer's teardown still mirrors connect()'s pairing.
+        if strategy is None:
+            strategy = self._compute_transfer_strategy(remote)
 
         # Release inflight send transfers targeting this remote.
         stale_sends = [
@@ -989,7 +997,9 @@ class TransferEngine:
                     )
 
         # Teardown iterates the same pairs as connect() (shared iterator).
-        for local_ta, remote_agent_meta in self._iter_peer_agents(remote, view):
+        for local_ta, remote_agent_meta in self._iter_peer_agents(
+            remote, strategy
+        ):
             try:
                 status = local_ta.agent.invalidate_remote_metadata(
                     remote_agent_meta.agent_name
@@ -1060,7 +1070,7 @@ class TransferEngine:
             )
 
         remote = self.remote_connections[remote_metadata.name]
-        view = self._peer_views[remote_metadata.name]
+        strategy = self._transfer_strategies[remote_metadata.name]
 
         if len(src_idxs) != len(dst_idxs):
             raise ValueError(
@@ -1088,14 +1098,15 @@ class TransferEngine:
         transfer_name = str(uuid4())
         transfer_ids = []
 
-        # Plan (source_shard, dest_shard) pairs. flatten_local collapses the
-        # MLA-replicated source to shard 0 (any shard's copy suffices, saves
-        # bandwidth); the destination always spans all its TP shards since each
-        # owns distinct GPU memory. The source is the local side here.
+        # Plan (source_shard, dest_shard) pairs. A BROADCAST source collapses to
+        # shard 0 (any replicated shard's copy suffices, saves bandwidth); the
+        # destination always spans all its TP shards since each owns distinct GPU
+        # memory. The source is the local side here (a send).
+        _assert_no_gather_scatter(strategy)
         local_replica_agents = self.tensor_agents[src_replica_idx]
         remote_replica_agents_meta = remote.agents_meta[dst_replica_idx]
         shard_pairs = transfer_shard_pairing(
-            flatten_source=view.flatten_local,
+            flatten_source=_is_broadcast(strategy),
             source_tp=len(local_replica_agents),
             dest_tp=len(remote_replica_agents_meta),
         )
@@ -1198,7 +1209,7 @@ class TransferEngine:
             )
 
         remote = self.remote_connections[remote_metadata.name]
-        view = self._peer_views[remote_metadata.name]
+        strategy = self._transfer_strategies[remote_metadata.name]
 
         if len(src_idxs) != len(dst_idxs):
             raise ValueError(
@@ -1220,13 +1231,14 @@ class TransferEngine:
         transfer_name = str(uuid4())
         transfer_ids = []
 
-        # Plan (source_shard, dest_shard) pairs. Here the remote is the source
-        # (flatten_remote collapses an MLA-replicated remote to shard 0) and the
-        # local engine is the destination, always spanning all its TP shards.
+        # Plan (source_shard, dest_shard) pairs. Here the remote is the source (a
+        # BROADCAST remote collapses to shard 0) and the local engine is the
+        # destination, always spanning all its TP shards.
+        _assert_no_gather_scatter(strategy)
         local_replica_agents = self.tensor_agents[dst_replica_idx]
         remote_replica_agents_meta = remote.agents_meta[src_replica_idx]
         shard_pairs = transfer_shard_pairing(
-            flatten_source=view.flatten_remote,
+            flatten_source=_is_broadcast(strategy),
             source_tp=len(remote_replica_agents_meta),
             dest_tp=len(local_replica_agents),
         )
@@ -1563,18 +1575,18 @@ class TransferEngine:
             self._cleanup_read_transfer(read_transfer_req)
 
         # Invalidate metadata of other agents. Iterate via the recorded
-        # peer view so heterogeneous flatten shapes line up under zip.
+        # per-group strategy so teardown mirrors connect()'s exact pairing.
         for remote_name in self.remote_connections:
             remote = self.remote_connections[remote_name]
-            view = self._peer_views.get(remote_name)
-            # Defensive: connect() populates _peer_views and remote_connections
-            # together, so this is unreachable today. If they ever desync,
-            # recompute (rather than assuming non-flattened) so a flattened
-            # peer's teardown still mirrors connect()'s pairing.
-            if view is None:
-                view = self._compute_peer_view(remote)
+            strategy = self._transfer_strategies.get(remote_name)
+            # Defensive: connect() populates _transfer_strategies and
+            # remote_connections together, so this is unreachable today. If
+            # they ever desync, recompute (rather than assuming DIRECT) so a
+            # broadcast peer's teardown still mirrors connect()'s pairing.
+            if strategy is None:
+                strategy = self._compute_transfer_strategy(remote)
             for local_ta, remote_agent_meta in self._iter_peer_agents(
-                remote, view
+                remote, strategy
             ):
                 status = local_ta.agent.invalidate_remote_metadata(
                     remote_agent_meta.agent_name
@@ -1605,8 +1617,8 @@ class KVTransferEngine(TransferEngine):
 
     - Validation of tensor shapes and device types
     - NIXL group construction from the authored groups
-    - Derivation of ``replicate_kv_across_tp`` from the groups' ``replicated`` field
-      (no caller plumbing needed)
+    - Per-group replication (``replicated_per_group``) authored from the
+      groups' ``replicated`` field (no caller plumbing needed)
     - ``from_paged_kv_cache()`` convenience constructor
 
     All NIXL transport operations are delegated to :class:`TransferEngine`.
@@ -1660,12 +1672,6 @@ class KVTransferEngine(TransferEngine):
 
         dp = len(memory)
 
-        # Replication is per-group; the engine-wide flag is True only when every
-        # group is replicated (see _derive_replicate_kv_across_tp). Mixed replication
-        # is representable and works on uniform topology; heterogeneous-topology
-        # routing for a mix is deferred to MXSERV-290.
-        replicate_kv_across_tp = _derive_replicate_kv_across_tp(memory)
-
         # A logical cache is consistently replicated across DP replicas, so a
         # given group index must agree on ``replicated`` across replicas. This
         # is a real structural invariant (unlike "all groups agree"), so keep a
@@ -1716,7 +1722,12 @@ class KVTransferEngine(TransferEngine):
         if tp == 0:
             raise ValueError("Each replica must contain at least one tensor")
 
-        effective_replicate = replicate_kv_across_tp and tp > 1
+        # Replication rides on the authored groups; replica 0 is authoritative
+        # (per-replica agreement was validated above). `g.replicated` comes from
+        # the producer (replicates_kv_across_tp) and already accounts for tp, so
+        # trust it -- don't re-guard with `and tp > 1` (that would re-mask a
+        # producer that ever reports logical replication).
+        replicated_per_group = [g.replicated for g in memory[0]]
 
         backend_type = _get_nixl_backend_type()
 
@@ -1786,7 +1797,7 @@ class KVTransferEngine(TransferEngine):
             dp=dp,
             tp=tp,
             backend_type=backend_type,
-            replicate_kv_across_tp=effective_replicate,
+            replicated_per_group=replicated_per_group,
         )
 
         logger.info(
@@ -1809,8 +1820,8 @@ class KVTransferEngine(TransferEngine):
 
         Calls ``KVCacheBuffer.to_memory_groups()`` on each replica's device
         buffer to obtain the producer-authored NIXL groups, then passes them to
-        the constructor which derives ``replicate_kv_across_tp`` from the groups'
-        ``replicated`` field.
+        the constructor, which carries each group's ``replicated`` field as
+        ``replicated_per_group``.
 
         For models with multiple KV caches (e.g., speculative decoding with a
         separate target and draft KV), each child cache contributes its own

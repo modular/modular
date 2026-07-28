@@ -67,8 +67,8 @@ def test_kv_metadata_extends_with_kv_fields() -> None:
     assert kv_fields - base_fields == {
         "total_num_pages",
         "bytes_per_page",
-        "replicate_kv_across_tp",
         "bytes_per_group",
+        "replicated_per_group",
     }
 
 
@@ -87,8 +87,8 @@ def test_kv_metadata_roundtrip_all_fields() -> None:
         agents_meta=[[_agent_meta()]],
         total_num_pages=17,
         bytes_per_page=800,
-        replicate_kv_across_tp=True,
         bytes_per_group=[784, 16],
+        replicated_per_group=[True, True],
     )
     dec = msgspec.json.decode(
         msgspec.json.encode(md), type=KVTransferEngineMetadata
@@ -96,4 +96,4 @@ def test_kv_metadata_roundtrip_all_fields() -> None:
     assert dec == md
     assert dec.total_num_pages == 17
     assert dec.bytes_per_group == [784, 16]
-    assert dec.replicate_kv_across_tp is True
+    assert dec.replicated_per_group == [True, True]
