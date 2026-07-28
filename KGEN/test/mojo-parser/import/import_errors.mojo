@@ -219,8 +219,40 @@ def importInWhile():
 
 # // -----
 
-# Imports inside comptime control flow are allowed: branches are folded
-# immediately so the import lands directly in the function body block.
+# Imports inside try blocks are rejected like other runtime control flow; a
+# Mojo import cannot fail at runtime, so Python's try/except-ImportError
+# pattern does not apply.
+
+def importInTry() raises:
+    try:
+        # expected-error @below {{'import' statements must be at module or function scope; move this to a valid location}}
+        from std.collections import Dict
+    except e:
+        pass
+
+# // -----
+
+# Imports inside with blocks are rejected as well.
+
+@fieldwise_init
+struct _Ctx(TrivialRegisterPassable):
+    def __enter__(self) -> Int:
+        return 0
+
+    def __exit__(self):
+        pass
+
+def importInWith():
+    with _Ctx() as _val:
+        # expected-error @below {{'import' statements must be at module or function scope; move this to a valid location}}
+        from std.collections import Dict
+
+# // -----
+
+# Imports inside comptime control flow are allowed, since comptime blocks are
+# treated as part of the enclosing function scope for import placement. The
+# binding is only visible within the comptime block; see
+# import_fn_scope_comptime_blocks.mojo.
 
 def importInComptimeIf():
     comptime if True:
