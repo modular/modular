@@ -1890,14 +1890,24 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
   // 7. Collect captures over the resolved body and materialize the closure.
   BodyCaptures bodyCaptures = collectBodyCaptures(shared, decl, funcOp);
 
-  if (insideParamContext) {
-    // A captured runtime variable makes the lambda dynamic, so reject it.
-    if (!bodyCaptures.values.empty()) {
-      // Same diagnostic as the explicit-capture reject above.
-      emitter.emitErrorForDynamicValueInParameter(
-          node, "cannot use a capturing lambda");
-      return {};
-    }
+  // A captured runtime variable makes a parameter-context lambda dynamic, so
+  // reject it.
+  if (insideParamContext && !bodyCaptures.values.empty()) {
+    // Same diagnostic as the explicit-capture reject above.
+    emitter.emitErrorForDynamicValueInParameter(
+        node, "cannot use a capturing lambda");
+    return {};
+  }
+
+  // Fold a thin lambda to the promoted function's literal -- the value a named
+  // `def` yields -- so it decays and rebinds like one. The singleton test is
+  // the one a reference to a named `def` applies to itself, so the two agree.
+  bool isThin = bodyCaptures.values.empty() && node->captures.empty() &&
+                !node->captureAllByConvention;
+  if (insideParamContext ||
+      (isThin && llvm::all_of(signature.getInputParamTypes(), [&](Type type) {
+         return ASTType(type).isSingleton(shared);
+       }))) {
     resolveAllWithin(decl);
     shared.closureEmitter->promoteClosure(decl, bodyCaptures.paramRefs);
     // Two folds, keyed on whether enclosing parameters were baked in. With

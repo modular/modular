@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-# A lambda desugars to an anonymous closure, constructed at emit time. An
-# explicit capture list and return type are required (elision is not yet
-# supported). A thin (capture-free) lambda also folds to a function literal in a
-# parameter context (a `comptime` initializer or a `thin` fn-typed parameter),
-# exactly as a `def` referenced by name does.
+# A lambda desugars to an anonymous def, constructed at emit time. A thin
+# (capture-free, non-parametric) lambda is the promoted function's value,
+# exactly as a `def` referenced by name is -- in a parameter context (a
+# `comptime` initializer or a `thin` fn-typed parameter) and in runtime slots,
+# where it decays to a `thin` fn-pointer. A capturing lambda constructs a
+# closure instance.
 
 
 def callInt[T: def(x: Int) -> Int, //](f: T, arg: Int):
@@ -83,8 +84,9 @@ def test_construct_and_infer():
     print(addEnclosingParam[7]())
     # CHECK: 10
 
-    # Variadic arguments through the closure wrapper: `*args` positionally,
-    # `**kwargs` as a keyword splat (packed into an OwnedKwargsDict).
+    # Variadic arguments: `*args` positionally, `**kwargs` packed into an
+    # OwnedKwargsDict. All three lambdas are thin, so all three are promoted
+    # plain functions called through their fn value.
     var va = lambda (*args: Int) {} -> Int: len(args)
     print(va(10, 20, 30))
     # CHECK: 3
@@ -215,7 +217,143 @@ def test_struct_fn_parameter():
     # CHECK: 12
 
 
-def main():
+# ===----------------------------------------------------------------------=== #
+# Decay to a thin fn-pointer in runtime slots
+# ===----------------------------------------------------------------------=== #
+
+
+def applyThin(f: def(x: Int) thin -> Int, arg: Int) -> Int:
+    return f(arg)
+
+
+def mkAdder() -> def(x: Int) thin -> Int:
+    return lambda (x: Int) -> Int: x + 10
+
+
+def applyRaises(f: def(x: Int) raises thin -> Int, arg: Int) raises -> Int:
+    return f(arg)
+
+
+def withDefault(
+    x: Int, cb: def(x: Int) thin -> Int = lambda (x: Int) -> Int: x + 1
+) -> Int:
+    return cb(x)
+
+
+struct Holder:
+    var cb: def(x: Int) thin -> Int
+
+    def __init__(out self):
+        self.cb = lambda (x: Int) -> Int: x * 2
+
+
+def paramDecay[N: Int]() -> Int:
+    var f: def(x: Int) thin -> Int = lambda (x: Int) -> Int: x + N
+    return f(1)
+
+
+# The enclosing parameter may be a struct's, reached via `Self`.
+struct PSDecay[P: Int]:
+    var v: Int
+
+    def __init__(out self):
+        var f: def(x: Int) thin -> Int = lambda (x: Int) -> Int: x + Self.P
+        self.v = f(1)
+
+
+def take(*fs: def(x: Int) thin -> Int) -> Int:
+    return fs[0](1) + fs[1](1)
+
+
+# Overload set with both a function-trait-inference candidate and a runtime
+# `thin` fn-pointer candidate: a lambda ranks exactly as a `def` name does and
+# picks the thin runtime overload.
+def pick[T: def(x: Int) -> Int, //](f: T, arg: Int) -> Int:
+    return f(arg) + 100
+
+
+def pick(f: def(x: Int) thin -> Int, arg: Int) -> Int:
+    return f(arg) + 200
+
+
+def test_thin_decay() raises:
+    # A thin lambda is the promoted function's value, as a `def` name is, so it
+    # decays to a `thin` fn-pointer in a typed var...
+    var t: def(x: Int) thin -> Int = lambda (x: Int) -> Int: x + 1
+    print(t(1))
+    # CHECK: 2
+
+    # ...which is rebindable, like `var t = some_def`.
+    t = lambda (x: Int) -> Int: x * 3
+    print(t(2))
+    # CHECK: 6
+
+    # A written `{}` is explicitly thin (unlike a written `{imm}`/`{mut}`,
+    # which reifies a closure instance) and decays the same way.
+    t = lambda (x: Int) {} -> Int: x + 7
+    print(t(2))
+    # CHECK: 9
+
+    # In a return slot...
+    print(mkAdder()(5))
+    # CHECK: 15
+
+    # ...in an argument slot...
+    print(applyThin(lambda (x: Int) -> Int: x - 1, 4))
+    # CHECK: 3
+
+    # ...as a defaulted runtime-argument value...
+    print(withDefault(4))
+    # CHECK: 5
+    print(withDefault(4, lambda (x: Int) -> Int: x * 10))
+    # CHECK: 40
+
+    # ...into a struct field, both at construction and by reassignment...
+    var h = Holder()
+    print(h.cb(3))
+    # CHECK: 6
+    h.cb = lambda (x: Int) -> Int: x + 30
+    print(h.cb(3))
+    # CHECK: 33
+
+    # ...and for a raising thin lambda into a `raises thin` slot.
+    print(applyRaises(lambda (x: Int) raises -> Int: x + 1, 2))
+    # CHECK: 3
+
+    # An untyped var binds the function value too: callable and rebindable.
+    var u = lambda (x: Int) -> Int: x + 100
+    print(u(1))
+    # CHECK: 101
+    u = lambda (x: Int) -> Int: x + 1000
+    print(u(1))
+    # CHECK: 1001
+
+    # A thin lambda referencing an enclosing parameter still decays: the
+    # reference is bound at promotion, like a stateless nested def using `N`.
+    print(paramDecay[5]())
+    # CHECK: 6
+
+    # The same holds for an enclosing STRUCT parameter (`Self.P`).
+    print(PSDecay[7]().v)
+    # CHECK: 8
+
+    # A variadic lambda decays as well: the pack's implicit origin parameters
+    # bind at the reference, as they do for a named variadic `def`.
+    var vd: def(* args: Int) thin -> Int = lambda (*args: Int) -> Int: len(args)
+    print(vd(1, 2, 3))
+    # CHECK: 3
+
+    # Decay also feeds a variadic `thin` fn-pointer pack -- a distinct
+    # emission path from a plain argument.
+    print(take(lambda (x: Int) -> Int: x + 1, lambda (x: Int) -> Int: x * 2))
+    # CHECK: 4
+
+    # Overload ranking matches a def name: the thin runtime overload wins.
+    print(pick(lambda (x: Int) -> Int: x, 1))
+    # CHECK: 201
+
+
+def main() raises:
     test_construct_and_infer()
     test_comptime_bind()
     test_comptime_apply()
@@ -223,3 +361,4 @@ def main():
     test_comptime_parameters()
     test_fn_typed_parameter()
     test_struct_fn_parameter()
+    test_thin_decay()
