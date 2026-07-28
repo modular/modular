@@ -108,16 +108,24 @@ class BracketTracker:
         self.maybe_decrement_after_lambda_arguments(leaf)
         if leaf.type in CLOSING_BRACKETS:
             self.depth -= 1
+            opening_bracket: Leaf | None
             try:
                 opening_bracket = self.bracket_match.pop(
                     (self.depth, leaf.type)
                 )
             except KeyError as e:
-                raise BracketMatchError(
-                    "Unable to match a closing bracket to the following opening"
-                    f" bracket: {leaf}"
-                ) from e
-            leaf.opening_bracket = opening_bracket
+                if self.depth >= 0:
+                    raise BracketMatchError(
+                        "Unable to match a closing bracket to the following"
+                        f" opening bracket: {leaf}"
+                    ) from e
+                # Orphan closer whose opener lives on a different line -- e.g.
+                # the leading `]` of a tail produced by `bracket_split_build_line`.
+                # Reset to depth 0 and let the rest of `mark` run uniformly.
+                self.depth = 0
+                opening_bracket = None
+            if opening_bracket is not None:
+                leaf.opening_bracket = opening_bracket
             if not leaf.value:
                 self.invisible.append(leaf)
         leaf.bracket_depth = self.depth

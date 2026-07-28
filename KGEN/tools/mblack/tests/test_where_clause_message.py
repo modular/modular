@@ -63,6 +63,74 @@ def test_fn_where_clause_message_adjacent_literals():
     assert_mojo_format(source, expected)
 
 
+def test_fn_where_clause_message_wraps_when_too_long():
+    """A message too long for one line wraps as adjacent string literals
+    (the only wrapping the parser accepts here). MOCO-4446."""
+    source = (
+        "def gated[n: Int]() where (n > 0,"
+        ' "the scaling factor must be greater than one for this operation'
+        ' to be well defined"):\n'
+        "    pass\n"
+    )
+    expected = (
+        "def gated[\n"
+        "    n: Int\n"
+        "]() where (\n"
+        "    n > 0,\n"
+        '    "the scaling factor must be greater than one for this operation'
+        ' to be well"\n'
+        '    " defined",\n'
+        "):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_fn_where_clause_message_prewrapped_adjacent_literals_too_long():
+    """Author-supplied adjacent-literal split points are preserved when the
+    merged form is still too long. MOCO-4446."""
+    source = (
+        "def gated[n: Int]() where (\n"
+        "    n > 0,\n"
+        '    "the scaling factor must be greater"\n'
+        '    " than one for this operation to be well defined",\n'
+        "):\n"
+        "    pass\n"
+    )
+    expected = (
+        "def gated[\n"
+        "    n: Int\n"
+        "]() where (\n"
+        "    n > 0,\n"
+        '    "the scaling factor must be greater"\n'
+        '    " than one for this operation to be well defined",\n'
+        "):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_fn_where_clause_long_message_without_spaces():
+    """A long message with no splittable space stays intact while the clause
+    explodes across lines. MOCO-4446."""
+    source = (
+        "def gated[n: Int]() where (n > 0,"
+        ' "the_scaling_factor_must_be_greater_than_one_for_this_operation"'
+        "):\n"
+        "    pass\n"
+    )
+    expected = (
+        "def gated[\n"
+        "    n: Int\n"
+        "]() where (\n"
+        "    n > 0,\n"
+        '    "the_scaling_factor_must_be_greater_than_one_for_this_operation",\n'
+        "):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
 # ============================ #
 # Structs with where messages
 # ============================ #
