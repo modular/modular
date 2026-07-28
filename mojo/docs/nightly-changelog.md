@@ -590,6 +590,21 @@ This version is still a work in progress.
   the field directly should bind it to an `UnsafePointer` variable first or use
   the ungated `unsafe_*` spellings.
 
+- `OwnedPointer.steal_data()`, `ArcPointer.steal_data()`, and
+  `List.steal_data()` have been renamed to `unsafe_take_allocation()` and now
+  return an owning `Allocation` instead of a raw pointer. The methods keep an
+  `unsafe_` prefix because the elements are handed over still initialized:
+  deallocating does not run their destructors. Recover the previous raw pointer
+  with `unsafe_leak()`. `List.steal_data()` and `OwnedPointer.steal_data()`
+  remain as `@deprecated` methods and will be removed in a future release.
+
+- The reconstructing `ArcPointer(unsafe_from_raw_pointer=...)` constructor now
+  takes a pointer to the control block, obtained from
+  `unsafe_take_allocation().unsafe_leak()`, rather than a pointer to the
+  payload. `ArcPointer.steal_data()` handed out a payload pointer that the new
+  constructor no longer accepts, so it is removed outright instead of
+  deprecated.
+
 - The `as_immutable()` method on `UnsafePointer` and the
   `get_immutable()` method on `Span`, `StringSlice`, and `UnsafePointer`
   have all been renamed to a single `as_imm()` method, embracing the
@@ -1017,9 +1032,9 @@ This version is still a work in progress.
 - `OwnedPointer[T]` now *conditionally* conforms to `ImplicitlyDeletable`,
   conforming only when `T` does, so it can hold a non-`ImplicitlyDeletable`
   (linear) value. Such an `OwnedPointer` is itself linear and must be consumed
-  explicitly with `take()` (for a `Movable` `T`) or `steal_data()` rather than
-  dropped implicitly. For deletable element types (the common case) this is
-  transparent.
+  explicitly with `take()` (for a `Movable` `T`) or `unsafe_take_allocation()`
+  rather than dropped implicitly. For deletable element types (the common case)
+  this is transparent.
 
 - `InlineArray`'s element type bound loosened from `Movable` to `AnyType`, so an
   `InlineArray` can now hold a non-`Movable` element type. The `Movable`

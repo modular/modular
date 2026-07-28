@@ -652,7 +652,11 @@ struct PythonTypeBuilder(Copyable):
         if self.methods:
             self.methods.append(PyMethodDef())  # Zeroed item as terminator
             # FIXME: Avoid leaking the methods data pointer in this way.
-            self._insert_slot(PyType_Slot.tp_methods(self.methods.steal_data()))
+            self._insert_slot(
+                PyType_Slot.tp_methods(
+                    self.methods.unsafe_take_allocation().unsafe_leak()
+                )
+            )
 
         # Convert _slots dictionary to a list of PyType_Slot structs
         var slots = List[PyType_Slot]()

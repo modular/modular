@@ -706,8 +706,8 @@ struct Deque[ElementType: Movable](
             self._prepare_for_new_elements(n_move_total, n_move_self)
 
         # we will consume all elements of `values`
-        var values_capacity = values.capacity()
-        values_data = values.steal_data()
+        var values_alloc = values.unsafe_take_allocation()
+        values_data = values_alloc.unsafe_ptr()
 
         # pop excess elements from `values`
         for i in range(n_pop_values):
@@ -722,11 +722,7 @@ struct Deque[ElementType: Movable](
             self._tail = self._physical_index(self._tail + 1)
 
         # free the list backing buffer
-        dealloc(
-            ThinAllocation(
-                unsafe_assume_ownership=values_data
-            ).unsafe_with_layout({count = values_capacity})
-        )
+        dealloc(values_alloc^)
 
     def extendleft(
         mut self, var values: List[Self.ElementType]
@@ -752,8 +748,8 @@ struct Deque[ElementType: Movable](
             self._prepare_for_new_elements(n_move_total, n_move_self)
 
         # we will consume all elements of `values`
-        var values_capacity = values.capacity()
-        values_data = values.steal_data()
+        var values_alloc = values.unsafe_take_allocation()
+        values_data = values_alloc.unsafe_ptr()
 
         # pop excess elements from `values`
         for i in range(n_pop_values):
@@ -767,11 +763,7 @@ struct Deque[ElementType: Movable](
                 src.unsafe_offset(i)
             )
 
-        dealloc(
-            ThinAllocation(
-                unsafe_assume_ownership=values_data
-            ).unsafe_with_layout({count = values_capacity})
-        )
+        dealloc(values_alloc^)
 
     def index(
         self,

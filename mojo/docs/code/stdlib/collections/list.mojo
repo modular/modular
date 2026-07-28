@@ -110,18 +110,19 @@ def clear():
     print(len(list))  # 0
 
 
-def steal():
+def unsafe_take_allocation():
     from std.collections import List
-    from std.memory import ArcPointer
+    from std.memory.alloc import dealloc
 
     list: List[Int64] = [1, 2, 3, 4]
-    ptr = list.steal_data()
+    var allocation = list.unsafe_take_allocation()
+    var ptr = allocation.unsafe_ptr()
     for idx in range(4):
-        print(ptr[idx], end=" ")
+        print(ptr[unsafe_offset=idx], end=" ")
     print()  # Output: 1 2 3 4
     for idx in range(4):
-        (ptr + idx).unsafe_deinit_pointee()
-    ptr.free()
+        ptr.unsafe_offset(idx).unsafe_deinit_pointee()
+    dealloc(allocation^)
 
 
 def count():
@@ -142,5 +143,5 @@ def main():
     shrink()
     reverse()
     clear()
-    steal()
+    unsafe_take_allocation()
     count()
