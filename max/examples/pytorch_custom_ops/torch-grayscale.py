@@ -12,7 +12,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/api/python/experimental/torch.py
+# DOC: max/develop/custom-kernels-pytorch.mdx
 
 import max.experimental.torch
 import numpy as np
