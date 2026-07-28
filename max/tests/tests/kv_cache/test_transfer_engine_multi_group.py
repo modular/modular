@@ -31,6 +31,11 @@ from max.nn.kv_cache.cache_params import (
     KVCacheMemoryGroup,
     MultiKVCacheBuffer,
 )
+from max.pipelines.kv_cache import KVTransferEngine
+from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
+    _build_group_descriptors,
+    _validate_tensor_shape,
+)
 
 
 def _cpu_buf(
@@ -208,8 +213,6 @@ def test_inconsistent_replication_across_replicas_raises() -> None:
     0's group 0 is rejected. This raises before any NIXL registration, so it is
     CPU-testable.
     """
-    from max.pipelines.kv_cache import KVTransferEngine
-
     replica0 = [_group(replicated=True)]
     replica1 = [_group()]  # same group index, different replication kind
     with pytest.raises(ValueError, match="consistently across DP replicas"):
@@ -218,8 +221,6 @@ def test_inconsistent_replication_across_replicas_raises() -> None:
 
 def test_replicas_with_different_group_counts_raises() -> None:
     """Replicas that provide different NIXL group counts are rejected."""
-    from max.pipelines.kv_cache import KVTransferEngine
-
     # Replica 0: two groups; replica 1: one group.
     replica0 = [_group(64), _group(16)]
     replica1 = [_group(64)]
@@ -241,10 +242,6 @@ def test_build_group_descriptors_uses_own_stride_per_group() -> None:
     different ``bytes_per_page`` (e.g. a 1-layer draft next to a 61-layer
     target) can never inherit another group's stride.
     """
-    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
-        _build_group_descriptors,
-    )
-
     base_addrs = [0x1000, 0x5000]  # target group, draft group
     bytes_per_group = [800, 16]  # deliberately different per-page sizes
     page_idxs = [0, 2, 5]
@@ -285,10 +282,6 @@ def test_validate_tensor_shape_rejects_mismatched_shards() -> None:
     needs: a differing page count or per-page stride across shards is rejected
     outright rather than silently producing a mismatched transfer descriptor.
     """
-    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
-        _validate_tensor_shape,
-    )
-
     good = _cpu_buf(17, 24, DType.uint8)
     # Same per-page stride, different page count.
     fewer_pages = _cpu_buf(9, 24, DType.uint8)
