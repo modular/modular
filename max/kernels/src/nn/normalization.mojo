@@ -16,12 +16,11 @@ from std.math.uutils import umod, ufloordiv, uceildiv
 from std.sys.info import align_of, simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from std.algorithm import map_reduce, mean, variance, vectorize
+from std.algorithm import mean, variance, vectorize
 from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     sync_parallelize,
 )
-from std.algorithm.reduction import _simd_sum, _simd_sum_elementwise
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
@@ -748,16 +747,6 @@ def layer_norm_cpu[
 
     for var row in range(num_rows):
 
-        @always_inline
-        @parameter
-        @__copy_capture(row)
-        def output_fn_1d[
-            dtype_: DType, simd_width: SIMDLength, alignment: Int
-        ](idx: Int, val: SIMD[dtype_, simd_width]):
-            output_fn[simd_width, alignment](
-                row, idx, rebind[SIMD[dtype, simd_width]](val)
-            )
-
         @__copy_capture(row)
         @parameter
         def input_gen_wrapper[
@@ -765,17 +754,16 @@ def layer_norm_cpu[
         ](col: Int) -> SIMD[dtype, simd_width]:
             return input_fn[simd_width, alignment=1](row, col).cast[dtype]()
 
-        var sum_val = map_reduce[
-            simd_width,
-            dtype,
-            dtype,
-            origin_of()._mlir_origin,
-            input_gen_wrapper,
-            origin_of()._mlir_origin,
-            _simd_sum_elementwise,
-            _simd_sum,
-            output_fn_1d,
-        ](num_cols, 0)
+        # map_reduce (used previously) also stores each value to output_fn as
+        # an aligned vector store, which faults on unaligned output buffers
+        # (KERN-3270). Sum it directly instead, like rms_norm_cpu below.
+        var simd_loop_end = align_down(num_cols, simd_width)
+        var sum_simd = SIMD[dtype, simd_width]()
+        for col in range(0, simd_loop_end, simd_width):
+            sum_simd += input_gen_wrapper[dtype, simd_width](col)
+        var sum_val = sum_simd.reduce_add()
+        for col in range(simd_loop_end, num_cols):
+            sum_val += input_gen_wrapper[dtype, 1](col)
 
         var mean_val = _sum_to_mean(sum_val, num_cols)
         var var_val = variance[dtype, input_gen_wrapper](
@@ -1161,7 +1149,7 @@ def rms_norm_gpu_warp_per_row[
     comptime if single_pass:
         # Register-cached input chunks (accum precision), carried across the warp
         # reduction so the normalize pass needs no re-read.
-        var vec_data = InlineArray[SIMD[accum_type, simd_width], chunks](
+        var vec_data = Array[SIMD[accum_type, simd_width], chunks](
             fill=SIMD[accum_type, simd_width](0)
         )
 
@@ -1333,10 +1321,10 @@ def rms_norm_gpu_warp_tiling[
 
     # Per-chunk register-cached input (in accum precision) and gamma weights,
     # carried across the reduction so the normalize pass needs no re-read.
-    var vec_data = InlineArray[SIMD[accum_type, simd_width], chunks_per_thread](
+    var vec_data = Array[SIMD[accum_type, simd_width], chunks_per_thread](
         fill=SIMD[accum_type, simd_width](0)
     )
-    var gamma_val = InlineArray[SIMD[dtype, simd_width], chunks_per_thread](
+    var gamma_val = Array[SIMD[dtype, simd_width], chunks_per_thread](
         fill=SIMD[dtype, simd_width](0)
     )
 
@@ -1865,6 +1853,8 @@ def rms_norm_gpu[
         else:
             _enqueue[False]()
 
+    # _rms_norm_input_alignment trusts gates like this one. Loosen or
+    # remove it and update that function too.
     if cols % simd_width == 0:
         # When the number of columns are less enough that they can be placed in
         # registers we do warp tiling which is a single pass to do mean/var
@@ -2192,10 +2182,28 @@ def rms_norm_cpu[
 
 
 @always_inline
+def _rms_norm_input_alignment[
+    dtype: DType, width: Int, target: StaticString
+]() -> Int:
+    """The alignment an rms_norm input_fn can claim for a load of `width`.
+
+    Sound only on GPU, whose dispatchers prove `cols % width == 0` before
+    requesting `width > 1`. CPU always claims 1: its vectorized loop runs
+    regardless of `num_cols % simd_width`.
+    """
+    comptime if is_cpu[target]():
+        return 1
+    else:
+        return align_of[SIMD[dtype, width]]()
+
+
+@always_inline
 def _rms_norm_impl[
     dtype: DType,
     rank: Int,
-    input_0_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
+    input_0_fn: def[width: Int, alignment: Int](Coord) capturing -> SIMD[
+        dtype, width
+    ],
     output_fn: def[width: SIMDLength, alignment: Int](
         Coord, SIMD[dtype, width]
     ) capturing -> None,
@@ -2233,6 +2241,12 @@ def _rms_norm_impl[
         # Nothing to do.
         return
 
+    @parameter
+    @always_inline
+    def input_fn_target[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        comptime align = _rms_norm_input_alignment[dtype, width, target]()
+        return input_0_fn[width, align](coords)
+
     comptime if is_cpu[target]():
         # The CPU path consumes n-D `IndexList`-form lambdas; wrap the Coord
         # public lambdas back to that interface.
@@ -2241,7 +2255,9 @@ def _rms_norm_impl[
         def input_fn_il[
             width: Int, _rank: Int
         ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input_0_fn[width](Coord(rebind[IndexList[rank]](indices)))
+            return input_fn_target[width](
+                Coord(rebind[IndexList[rank]](indices))
+            )
 
         @parameter
         @always_inline
@@ -2262,7 +2278,7 @@ def _rms_norm_impl[
     elif is_gpu[target]():
         rms_norm_gpu[
             rank,
-            input_0_fn,
+            input_fn_target,
             output_fn,
             multiply_before_cast=multiply_before_cast,
         ](
@@ -2639,6 +2655,8 @@ def rms_norm_fused_residual_add_gpu[
         WARP_SIZE * max_warps_per_block,
     )
 
+    # _rms_norm_input_alignment trusts gates like this one. Loosen or
+    # remove it and update that function too.
     if cols % simd_width == 0:
         # When the number of columns are less enough that they can be placed in
         # registers we do warp tiling which is a single pass to do mean/var
@@ -2786,8 +2804,11 @@ def rms_norm_fused_residual_add_cpu[
     var intermediate_buffer_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=shape.flattened_length())
     )
+    var intermediate_buffer_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(intermediate_buffer_alloc._alloc)
+    ] = intermediate_buffer_alloc.unsafe_ptr()
     var intermediate_buffer = TileTensor(
-        intermediate_buffer_alloc.unsafe_ptr(),
+        intermediate_buffer_ptr,
         row_major(Coord(shape)),
     )
 
@@ -3546,7 +3567,9 @@ def rms_norm_rope_gpu[
 def rms_norm[
     dtype: DType,
     rank: Int,
-    input_0_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
+    input_0_fn: def[width: Int, alignment: Int](Coord) capturing -> SIMD[
+        dtype, width
+    ],
     output_0_fn: def[width: SIMDLength, rank: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
@@ -4363,9 +4386,9 @@ def apply_qk_rms_norm[
 def _rms_norm_fused_residual_add_impl[
     dtype: DType,
     rank: Int,
-    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
+    input_0_fn: def[width: Int, rank: Int, alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     input_1_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
@@ -4414,9 +4437,17 @@ def _rms_norm_fused_residual_add_impl[
         # Nothing to do.
         return
 
+    @parameter
+    @always_inline
+    def input_fn_target[
+        width: Int, rank_: Int
+    ](indices: IndexList[rank_]) -> SIMD[dtype, width]:
+        comptime align = _rms_norm_input_alignment[dtype, width, target]()
+        return input_0_fn[width, rank_, align](indices)
+
     comptime if is_gpu[target]():
         rms_norm_fused_residual_add_gpu[
-            input_0_fn,
+            input_fn_target,
             input_1_fn,
             output_residual_fn,
             output_fn,
@@ -4433,7 +4464,7 @@ def _rms_norm_fused_residual_add_impl[
         )
     else:
         rms_norm_fused_residual_add_cpu[
-            input_0_fn,
+            input_fn_target,
             input_1_fn,
             output_residual_fn,
             output_fn,
@@ -4454,9 +4485,9 @@ def rms_norm_fused_residual_add[
     dtype: DType,
     rank: Int,
     //,
-    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
+    input_0_fn: def[width: Int, rank: Int, alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     input_1_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],

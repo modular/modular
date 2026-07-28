@@ -803,6 +803,7 @@ struct Optional[T: Movable](
             return self._value^.unsafe_take[Self.T]()
         return default^
 
+    @__allow_legacy_custom_self_type
     def copied[
         mut: Bool,
         origin: Origin[mut=mut],
@@ -841,6 +842,7 @@ struct Optional[T: Movable](
         else:
             return None
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def _unsafe_nullable[
         U: AnyType, origin: Origin, address_space: AddressSpace
@@ -1227,6 +1229,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
             return self.value()
         return default
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def _unsafe_nullable[
         U: AnyType, origin: Origin, address_space: AddressSpace
@@ -1244,6 +1247,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
         " `.unsafe_value()` (unchecked), then index the pointer, e.g."
         " `p.unsafe_value()[]` instead of `p[]`."
     )
+    @__allow_legacy_custom_self_type
     @doc_hidden
     def __getitem__[
         type: AnyType,
@@ -1265,6 +1269,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
         " (unchecked), then index the pointer, e.g. `p.unsafe_value()[i]`"
         " instead of `p[i]`."
     )
+    @__allow_legacy_custom_self_type
     @doc_hidden
     def __getitem__[
         type: AnyType,

@@ -156,7 +156,7 @@ the `*` can be passed only by keyword. For details, see
 You may also see argument names prefixed with one or two stars (`*`):
 
 ```mojo
-def myfunc2(*names, **attributes):
+def myfunc2(*names, var **attributes):
 ```
 
 An argument name prefixed by a single star character, like `*names` identifies a
@@ -355,10 +355,10 @@ generates the `ArgTypes` list itself.
 Mojo functions also support variadic keyword arguments (`**kwargs`). Variadic
 keyword arguments allow the user to pass an arbitrary number of keyword
 arguments. To define a function that takes a variadic keyword argument, use the
-variadic keyword argument syntax <code>**<var>kw_argument_name</var></code>:
+variadic keyword argument syntax <code>var **<var>kw_argument_name</var></code>:
 
 ```mojo
-def print_nicely(**kwargs: Int):
+def print_nicely(var **kwargs: Int):
     for item in kwargs.items():
         print(item.key, "=", item.value)
 
@@ -376,19 +376,19 @@ an instance of
 
 There are currently a few limitations:
 
-- Variadic keyword arguments are always implicitly treated as if they
-  were declared with the `var` [argument
-  convention](/docs/manual/values/ownership#argument-conventions), and
-  can't be declared otherwise:
+- Variadic keyword arguments must be declared with the `var` [argument
+  convention](/docs/manual/values/ownership#argument-conventions) (the
+  function owns the argument dictionary and may mutate it); no other
+  convention is supported:
 
   ```mojo
-  # Not supported yet.
-  def read_var_kwargs(read **kwargs: Int): ...
+  # Not supported.
+  def imm_kwargs(imm **kwargs: Int): ...
   ```
 
 - All the variadic keyword arguments must have the same type, and this
   determines the type of the argument dictionary. For example, if the argument
-  is `**kwargs: Float64` then the argument dictionary will be a
+  is `var **kwargs: Float64` then the argument dictionary will be a
   `StringDict[Float64]`.
 
 - The argument type must conform to the

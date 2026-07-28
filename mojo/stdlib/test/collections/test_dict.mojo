@@ -183,7 +183,7 @@ def test_dict_fromkeys_duplicate_keys() raises:
 def test_dict_fromkeys_iterable() raises:
     # `fromkeys` accepts any borrowed `Iterable`, not just `List`. Duplicate
     # keys collapse to a single entry.
-    var keys: InlineArray[String, 4] = ["a", "b", "a", "c"]
+    var keys: Array[String, 4] = ["a", "b", "a", "c"]
     var dict = Dict.fromkeys(keys, 7)
 
     assert_equal(len(dict), 3)
@@ -671,7 +671,7 @@ def test_mojo_issue_1729() raises:
         assert_equal(i, d[DummyKey(key)])
 
 
-def _test_taking_owned_kwargs_dict(**kwargs: Int) raises:
+def _test_taking_owned_kwargs_dict(var **kwargs: Int) raises:
     assert_equal(len(kwargs), 2)
 
     assert_true("fruit" in kwargs)
@@ -1398,7 +1398,7 @@ def test_dict_iter_owned() raises:
 
 def test_dict_iter_owned_destroys_elements_if_not_consumed() raises:
     var del_count = 0
-    var ptr = UnsafePointer(to=del_count).as_immutable().as_unsafe_any_origin()
+    var ptr = UnsafePointer(to=del_count).as_imm().as_unsafe_any_origin()
     var d = Dict[Int, DelCounter[ptr.origin]]()
     d[1] = DelCounter(ptr)
     d[2] = DelCounter(ptr)
@@ -1413,7 +1413,7 @@ def test_dict_iter_owned_destroys_elements_if_not_consumed() raises:
 
 def test_dict_iter_owned_destroys_elements_if_partially_consumed() raises:
     var del_count = 0
-    var ptr = UnsafePointer(to=del_count).as_immutable().as_unsafe_any_origin()
+    var ptr = UnsafePointer(to=del_count).as_imm().as_unsafe_any_origin()
     var d = Dict[Int, DelCounter[ptr.origin]]()
     d[1] = DelCounter(ptr)
     d[2] = DelCounter(ptr)
@@ -1794,7 +1794,7 @@ def test_dict_insert_linear_key_and_value() raises:
 
 
 def _test_taking_owned_kwargs_dict_linear_popitem(
-    **kwargs: ExplicitDestroy,
+    var **kwargs: ExplicitDestroy,
 ) raises:
     var disposed_keys = List[String]()
     var disposed_vals = List[Int]()
@@ -1821,7 +1821,7 @@ def _test_taking_owned_kwargs_dict_linear_popitem(
 
 
 def _test_taking_owned_kwargs_dict_linear_insert_pop(
-    **kwargs: ExplicitDestroy,
+    var **kwargs: ExplicitDestroy,
 ) raises:
     var disposed = List[Int]()
 

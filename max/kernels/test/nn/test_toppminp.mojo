@@ -16,7 +16,7 @@ from std.random import random_float64
 
 from std.algorithm.functional import parallelize_over_rows
 from std.benchmark import Bench, Bencher, BenchId
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, Idx, PointerStorage, TileTensor, row_major
 from nn.toppminp import min_p_sampling, top_p_sampling
 from std.testing import assert_equal
 
@@ -26,7 +26,9 @@ comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
 
 comptime FillFnType = def[dtype: DType](
-    mut TileTensor[mut=True, dtype, ...]
+    mut TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
 ) -> None
 
 
@@ -70,7 +72,13 @@ def time_kernel[
     m.bench_function[bench_func](BenchId(kernel_name))
 
 
-def fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
+def fill_random[
+    dtype: DType
+](
+    mut buffer: TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
+):
     comptime min_val = -1e6
     comptime max_val = 1e6
     var total_elements = buffer.num_elements()
@@ -79,8 +87,14 @@ def fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
         buffer.raw_store(i, random_value.cast[dtype]())
 
 
-def fill_iota[dtype: DType](mut buf: TileTensor[mut=True, dtype, ...]):
-    iota(buf.ptr, buf.num_elements())
+def fill_iota[
+    dtype: DType
+](
+    mut buf: TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
+):
+    iota(buf._storage, buf.num_elements())
 
 
 def test_is_sorted_descending[

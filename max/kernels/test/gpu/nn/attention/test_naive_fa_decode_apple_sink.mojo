@@ -182,7 +182,7 @@ def _run_sink_closed_form[
     var sink_dev = sink_managed.device_tensor()
     var sink_opt = OptionalReg[
         LayoutTensor[dtype, sink_layout, ImmutAnyOrigin]
-    ](sink_dev.get_immutable().as_unsafe_any_origin())
+    ](sink_dev.as_imm().as_unsafe_any_origin())
 
     naive_fa_decode_apple[
         sink=True,

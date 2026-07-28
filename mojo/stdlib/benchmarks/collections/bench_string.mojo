@@ -98,9 +98,7 @@ def bench_string_split[
     filename: StaticString = "UN_charter_EN",
     sequence: Optional[StaticString] = None,
 ](mut b: Bencher) raises:
-    var items = StringSlice(
-        make_string[length](filename + ".txt")
-    ).get_immutable()
+    var items = StringSlice(make_string[length](filename + ".txt")).as_imm()
 
     @always_inline
     def call_fn() {imm}:
@@ -307,7 +305,7 @@ def bench_write_utf8[
 
     @always_inline
     def call_fn() {imm}:
-        var data = InlineArray[Byte, 4](uninitialized=True)
+        var data = Array[Byte, 4](uninitialized=True)
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
             for i in range(len(codepoints)):

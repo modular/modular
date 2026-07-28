@@ -81,8 +81,8 @@ class Eagle3MHAKimiK25Inputs(UnifiedSpecDecodeInputs, KimiK2_5ModelInputs):
         # image_token_indices, then the rest of the inputs.
         buffers = (
             self.tokens,
-            *self.language_image_embeddings,
-            *self.language_image_token_indices,
+            *self.vision_embeddings,
+            *self.vision_scatter_indices,
             self.input_row_offsets,
             self.host_input_row_offsets,
             self.return_n_logits,
@@ -447,8 +447,6 @@ class Eagle3MHAKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
             cu_seqlens=base.cu_seqlens,
             max_seqlen=base.max_seqlen,
             vision_position_ids=base.vision_position_ids,
-            language_image_embeddings=base.language_image_embeddings,
-            language_image_token_indices=base.language_image_token_indices,
             draft_tokens=draft_tokens,
             structured_output=self.pipeline_config.needs_bitmask_constraints,
         )

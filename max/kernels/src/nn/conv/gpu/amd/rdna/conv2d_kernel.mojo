@@ -336,7 +336,7 @@ def conv2d_kernel_rdna[
     ]()
 
     # Initialize C accumulators
-    var c_accum = InlineArray[SIMD[s_type, CD_FRAG_SIZE], NUM_C_TILES](
+    var c_accum = Array[SIMD[s_type, CD_FRAG_SIZE], NUM_C_TILES](
         fill=SIMD[s_type, CD_FRAG_SIZE](0)
     )
 
@@ -379,7 +379,7 @@ def conv2d_kernel_rdna[
 
         # --- COMPUTE: WMMA on current buffer ---
         comptime for k_inner in range(K_ITERS):
-            var a_frag = InlineArray[SIMD[in_type, AB_FRAG_SIZE], WARP_TILE_M](
+            var a_frag = Array[SIMD[in_type, AB_FRAG_SIZE], WARP_TILE_M](
                 fill=SIMD[in_type, AB_FRAG_SIZE](0)
             )
             comptime for wm in range(WARP_TILE_M):
@@ -391,9 +391,9 @@ def conv2d_kernel_rdna[
                     a_row * SMEM_STRIDE + k_base
                 )
 
-            var b_frag = InlineArray[
-                SIMD[filter_type, AB_FRAG_SIZE], WARP_TILE_N
-            ](fill=SIMD[filter_type, AB_FRAG_SIZE](0))
+            var b_frag = Array[SIMD[filter_type, AB_FRAG_SIZE], WARP_TILE_N](
+                fill=SIMD[filter_type, AB_FRAG_SIZE](0)
+            )
             comptime for wn in range(WARP_TILE_N):
                 var b_row = (
                     warp_n * WARP_TILE_N * MMA_N + wn * MMA_N + effective_lane

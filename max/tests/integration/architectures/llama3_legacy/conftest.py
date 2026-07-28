@@ -85,7 +85,6 @@ def make_pipeline_config(
             quantization_encoding="bfloat16",
             device_specs=device_specs,
         )
-        pipeline_config.model.kv_cache._cache_dtype = DType.bfloat16
         pipeline_config.model._huggingface_config = hf_config
         pipeline_config.model.weight_path = [Path("fake.safetensors")]
         return pipeline_config
@@ -110,7 +109,7 @@ def make_kv_inputs(
         input_seq_len: int = 3,
     ) -> KVCacheInputs[Buffer, Buffer]:
         kv_params_kwargs = dict(
-            dtype=pipeline_config.model.kv_cache._cache_dtype,
+            dtype=DType.bfloat16,
             num_layers=hf_config.num_hidden_layers,
             n_kv_heads=hf_config.num_key_value_heads,
             head_dim=hf_config.head_dim,

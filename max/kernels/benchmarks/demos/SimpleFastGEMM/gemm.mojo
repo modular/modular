@@ -82,7 +82,7 @@ def kernel(
     var b = TileTensor(b_ptr, row_major(k * NR))
     var c = TileTensor(c_ptr, row_major(MR * n))
 
-    var c_stack = InlineArray[Scalar[dtype], align_up(MR * NR, alignment)](
+    var c_stack = Array[Scalar[dtype], align_up(MR * NR, alignment)](
         uninitialized=True
     )
     var c_local = TileTensor(c_stack, row_major[MR * NR]())

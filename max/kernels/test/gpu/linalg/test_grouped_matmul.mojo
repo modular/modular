@@ -209,7 +209,11 @@ def test[
         comptime for i in range(width):
             new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
 
-        ptr = c_dev_tile.ptr.bitcast[Scalar[out_type]]() + idx[0] * N + idx[1]
+        ptr = (
+            c_dev_tile._storage.bitcast[Scalar[out_type]]()
+            + idx[0] * N
+            + idx[1]
+        )
 
         ptr.store[width=width, alignment=alignment](new_val.cast[out_type]())
 
@@ -229,7 +233,7 @@ def test[
         # The permdim tensor has the shape 3 x M x N, so the index is then
         # [new_j, i, new_k].
         ptr = (
-            c_dev_tile.ptr.bitcast[Scalar[out_type]]()
+            c_dev_tile._storage.bitcast[Scalar[out_type]]()
             + new_j * total_num_tokens * N
             + i * N
             + new_k

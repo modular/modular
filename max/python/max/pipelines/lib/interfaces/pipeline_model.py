@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
@@ -41,7 +41,10 @@ from max.nn.kv_cache import (
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContextType, LogProbabilities
-from max.pipelines.kv_cache.config import KVCacheConfig
+from max.pipelines.kv_cache.config import (
+    KVCacheConfig,
+    cache_dtype_for_encoding,
+)
 from max.pipelines.lib.utils import (
     CompilationTimer,
     parse_state_dict_from_weights,
@@ -192,6 +195,17 @@ class ModelInputs:
 
     lora: LoRAInputs | None = None
     """Per-batch LoRA adapter buffers, or ``None`` when LoRA is disabled."""
+
+    vision_embeddings: list[Buffer] = field(default_factory=list)
+    """Per-device vision-merge embedding inputs for the language graph, set
+    by the pipeline's vision seam (``finalize_vision_inputs``) on every
+    prepared batch of a vision-capable model: the assembled embeddings when
+    this step encoded images, the model's cached zero-row empties otherwise.
+    Stays empty for text-only architectures."""
+
+    vision_scatter_indices: list[Buffer] = field(default_factory=list)
+    """Per-device merge (scatter) indices for :attr:`vision_embeddings`,
+    with the same lifecycle."""
 
     hidden_states: Buffer | list[Buffer] | None = None
     """Hidden states for a variable number of tokens per sequence.
@@ -756,7 +770,10 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             pipeline_config=self.pipeline_config,
             devices=self.device_refs,
             kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
+            cache_dtype=cache_dtype_for_encoding(
+                self.pipeline_config.model.quantization_encoding,
+                self.pipeline_config.model.kv_cache.kv_cache_format,
+            ),
         )
 
     def _unflatten_kv_inputs(

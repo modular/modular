@@ -870,3 +870,38 @@ async def test_prefix_caching_with_images_and_page_size_gt_1() -> None:
     assert ctx1.tokens.processed_length == 12
     block_manager = kv_manager._replica[0].block_manager
     assert block_manager.req_to_committed_idx[ctx1.request_id] == 12
+
+
+@pytest.mark.asyncio
+async def test_prefix_caching_video_frames_fold_into_block_hashes() -> None:
+    """Video frames are per-frame image entries, so their content folds into KV
+    block hashing: two clips with an identical token stream but different
+    content don't share KV past the first frame; the same clip fully reuses."""
+    VID = 99
+    kv_manager = create_kv_cache(num_blocks=128, page_size=1)
+    vision_token_ids = [VID]
+    tokens = np.array([51, 52, VID, VID, VID, VID, 53], dtype=np.int64)
+    px = np.array([[7], [7]])
+
+    def video_ctx(rid: str, h0: int, h1: int) -> TextAndVisionContext:
+        return TextAndVisionContext(
+            max_length=100,
+            tokens=TokenBuffer(tokens.copy()),
+            images=[
+                ImageMetadata(
+                    start_idx=2, end_idx=4, pixel_values=px, image_hash=h0
+                ),
+                ImageMetadata(
+                    start_idx=4, end_idx=6, pixel_values=px, image_hash=h1
+                ),
+            ],
+            vision_token_ids=vision_token_ids,
+        )
+
+    clip_a = video_ctx("a", 0xA0, 0xA1)
+    clip_a2 = video_ctx("a2", 0xA0, 0xA1)  # same clip
+    clip_b = video_ctx("b", 0xB0, 0xB1)  # different content, same tokens
+
+    assert run_and_check_num_cached_tokens(kv_manager, clip_a) == 0
+    assert run_and_check_num_cached_tokens(kv_manager, clip_a2) == 6  # full
+    assert run_and_check_num_cached_tokens(kv_manager, clip_b) == 2

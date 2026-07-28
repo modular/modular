@@ -83,7 +83,7 @@ struct _POpenHandle:
                 )
             )
 
-        libc.free(unsafe_cast[Type=NoneType](line))
+        libc.free(unsafe_cast[Type=NoneType, origin=MutAnyOrigin](line))
         return String(res.rstrip())
 
 

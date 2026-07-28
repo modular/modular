@@ -25,19 +25,6 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    # Host config-arithmetic probe for the BM-driven FA4Config API (pure
-    # comptime; no kernel launch). Pinned to B200 with its sibling WS tests.
-    "test_fa4_config_ws_bm32_probe.mojo": select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    # Host layout probe: proves the natural mn_major[128,256] V tile is byte-
-    # identical to the banded [256,64] WS P@V operand (pure layout algebra; no
-    # kernel launch, no GPU needed — but pinned to B200 with its sibling WS tests).
-    "test_ws_v_layout_probe.mojo": select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
     # No SM100/B200-specific code; runs on any GPU. Apple is excluded because
     # `_block_reduce_topk` uses MAX_BLOCK_SIZE == WARP_SIZE there, which the
     # 128-thread block in the test would exceed.
@@ -132,6 +119,18 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_prefill_sparse_kv_fp8.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_prefill_sparse_qkv_fp8.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_qkv_fp8.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_qkv_fp8_smoke.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -371,7 +370,11 @@ _EXTRA_CONSTRAINTS = {
     }),  # FIXME: MOCO-2411 — segfaults on Apple GPU remote workers
 }
 
-_EXTRA_DEPS = {}
+_EXTRA_DEPS = {
+    "test_topk_gpu.mojo": ["//max:max_mojo"],
+    "test_topk_gpu_fi.mojo": ["//max:max_mojo"],
+    "test_toppminp_gpu.mojo": ["//max:max_mojo"],
+}
 
 _GPU_MEMORY = {
     "test_cudnn_conv.mojo": "7",

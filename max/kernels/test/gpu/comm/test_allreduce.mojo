@@ -84,7 +84,7 @@ def allreduce_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -127,7 +127,7 @@ def allreduce_test[
     comptime InTensorType = TileTensor[
         dtype, type_of(row_major(length)), ImmutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, num_buffers](uninitialized=True)
+    var in_tensors = Array[InTensorType, num_buffers](uninitialized=True)
 
     if use_multimem:
         var multicast_buf = DeviceMulticastBuffer[dtype](
@@ -155,7 +155,7 @@ def allreduce_test[
     comptime OutTensorType = TileTensor[
         dtype, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         out_tensors[i] = TileTensor(out_dev[i], row_major(length))
 
@@ -220,7 +220,7 @@ def allreduce_test[
             comptime OutVendorTileType = TileTensor[
                 dtype, type_of(row_major(length)), MutAnyOrigin
             ]
-            var out_tensors_vendor = InlineArray[OutVendorTileType, ngpus](
+            var out_tensors_vendor = Array[OutVendorTileType, ngpus](
                 uninitialized=True
             )
             for i in range(ngpus):
@@ -247,6 +247,7 @@ def allreduce_test[
             # Verify RCCL results
             for i in range(ngpus):
                 list_of_ctx[i].enqueue_copy(host_buffers[i], out_dev_vendor[i])
+                list_of_ctx[i].synchronize()
             for i in range(ngpus):
                 for j in range(length):
                     assert_almost_equal(host_buffers[i][j], expected_sum)
@@ -257,6 +258,7 @@ def allreduce_test[
     # Copy results back and verify
     for i in range(ngpus):
         list_of_ctx[i].enqueue_copy(host_buffers[i], out_dev[i])
+        list_of_ctx[i].synchronize()
 
     var mocl_expected_sum = (
         expected_sum if not use_custom_epilogue else -expected_sum
@@ -329,7 +331,7 @@ def allreduce_naive_test() raises -> None:
     comptime InTensorType = TileTensor[
         DType.float32, type_of(row_major(length)), ImmutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
+    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tensors[i] = TileTensor(
             rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
@@ -341,7 +343,7 @@ def allreduce_naive_test() raises -> None:
     comptime OutTensorType = TileTensor[
         DType.float32, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         out_tensors[i] = TileTensor(out_dev[i], row_major(length))
 
@@ -383,6 +385,7 @@ def allreduce_naive_test() raises -> None:
     for i in range(ngpus):
         expected += Float32(i + 1)
         ctxs[i].enqueue_copy(host_ptrs[i], out_dev[i])
+        ctxs[i].synchronize()
 
     for i in range(ngpus):
         for j in range(length):

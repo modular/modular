@@ -58,7 +58,7 @@ var total_size = size(shape)  # Results in 120
 
 from std.os import abort
 
-from std.builtin.range import _StridedRange, _StridedScalarRange
+from std.builtin.range import _StridedRange
 from std.memory import dealloc, unsafe_memcpy, ThinAllocation
 from std.memory.alloc import Layout as AllocLayout
 from std.collections import check_bounds
@@ -419,7 +419,7 @@ struct IntTuple(
     @always_inline("nodebug")
     def elements_size[
         _origin: ImmOrigin, n: Int
-    ](elements: InlineArray[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
+    ](elements: Array[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
         """Calculate the total storage size needed for IntTuples at a specific index.
 
         Computes the sum of sizes for all elements at the given index in an array
@@ -588,7 +588,7 @@ struct IntTuple(
         self._store = _owned^
 
     @always_inline
-    def __init__(out self, existing: Self, rng: _StridedRange):
+    def __init__(out self, existing: Self, rng: _StridedRange[DType.int]):
         """Initialize an `IntTuple` as a slice of an existing `IntTuple`.
 
         Creates a new `IntTuple` containing only the elements from the existing
@@ -2968,7 +2968,7 @@ def coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
     """
     var result = IntTuple()
 
-    comptime for i in range(element_types.size):
+    comptime for i in range(element_types.length):
         comptime T = element_types[i]
 
         comptime if T.is_tuple:

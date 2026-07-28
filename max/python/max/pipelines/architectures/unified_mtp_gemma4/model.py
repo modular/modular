@@ -14,19 +14,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-import numpy as np
-import numpy.typing as npt
-from max.driver import (
-    Buffer,
-    Device,
-    DevicePinnedBuffer,
-    DLPackArray,
-    copy_pinned_to_destinations,
-)
-from max.dtype import DType
+from max.driver import Buffer, Device, DLPackArray
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Module
 from max.graph.weights import (
@@ -40,6 +32,7 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     KVCacheConfig,
@@ -53,18 +46,14 @@ from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
-from max.pipelines.modeling.types import RequestID
+from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from transformers import AutoConfig
 from typing_extensions import override
 
 from ..gemma4.batch_vision_inputs import (
-    ImageInputs,
-    VideoInputs,
     VisionRawInputs,
     create_empty_embeddings,
-    create_empty_indices,
-    merge_per_device_buffers,
+    pack_uncached_images,
 )
 from ..gemma4.context import Gemma4Context
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
@@ -100,26 +89,15 @@ class UnifiedMTPGemma4Inputs(UnifiedSpecDecodeInputs):
     signal_buffers: list[Buffer]
     batch_context_lengths: list[Buffer]
 
-    # Vision inputs. ``images``/``video`` carry the raw encoder inputs consumed
-    # by ``execute``; ``combined_embeds``/``combined_indices`` are the per-device
-    # projected soft-token embeddings and scatter indices bound to the graph
-    # (empty for text-only and decode steps).
-    images: ImageInputs | None = None
-    video: VideoInputs | None = None
-    combined_embeds: list[Buffer] | None = None
-    combined_indices: list[Buffer] | None = None
-
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         assert self.kv_cache_inputs is not None
-        assert self.combined_embeds is not None
-        assert self.combined_indices is not None
         prefix = (
             self.tokens,
             # Vision embeds + scatter indices follow tokens, matching
             # build_spec_decode_input_types(enable_vision=True).
-            *self.combined_embeds,
-            *self.combined_indices,
+            *self.vision_embeddings,
+            *self.vision_scatter_indices,
             self.input_row_offsets,
             self.host_input_row_offsets,
             self.return_n_logits,
@@ -146,8 +124,9 @@ class UnifiedMTPGemma4Model(
     )
 
     model: Model
-    """The compiled unified MTP graph (target + draft + rejection). This is the
-    graph exposed for device graph capture / replay."""
+    """The compiled unified MTP graph (target + draft + rejection). Re-executed
+    each step; device graph capture is disabled for this arch (see ``arch.py``:
+    the eager prefill vision encoder produces variable-shape embeddings)."""
 
     vision_model: Model | None
     """The compiled vision encoder graph, or None for text-only checkpoints.
@@ -180,29 +159,13 @@ class UnifiedMTPGemma4Model(
         # Force signal buffer initialization.
         _ = self.signal_buffers
 
-        # Cached per-device scatter-index buffers keyed by length. Only regular
-        # DeviceBuffers are cached; the pinned host buffer is freshly allocated
-        # every call (see ``_scatter_to_devices``).
-        self._scatter_buffers: dict[int, list[Buffer]] = {}
-
         self.vision_model, self.model = self.load_model(session)
-
-        self._ve_cache: VisionEncoderCache[Gemma4Context] = VisionEncoderCache(
-            max_entries=pipeline_config.runtime.max_vision_cache_entries
-        )
 
         if self._batch_processor is not None:
             assert isinstance(
                 self._batch_processor, UnifiedMTPGemma4BatchProcessor
             )
-            self._batch_processor.bind_model_state(
-                config=self.config,
-                ve_cache=self._ve_cache,
-            )
-
-    def release(self, request_id: RequestID) -> None:
-        """Release vision encoder cache for a completed request."""
-        self._ve_cache.release_request(request_id)
+            self._batch_processor.bind_model_state(config=self.config)
 
     _draft_state_dict: dict[str, Any]
     _target_state_dict: dict[str, Any]
@@ -418,95 +381,68 @@ class UnifiedMTPGemma4Model(
 
         return graph, weights_registry
 
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[tuple[Gemma4Context, Sequence[ImageMetadata]]],
+        devices: list[Device],
+    ) -> VisionRawInputs | None:
+        """Pack the pipeline-selected uncached image pixels to device.
+
+        Runs in the pipeline's prep-ahead window (pinned host-to-device copy)
+        so it overlaps the prior batch, delegating to the shared
+        :func:`pack_uncached_images`.
+        """
+        assert self.config.vision_config is not None
+        return pack_uncached_images(
+            selection,
+            devices,
+            self.config.vision_config.pooling_kernel_size,
+            self.config.unquantized_dtype,
+        )
+
+    def vision_execute(
+        self,
+        selection: Sequence[tuple[Gemma4Context, Sequence[ImageMetadata]]],
+        devices: list[Device],
+        packed: VisionRawInputs | None,
+    ) -> VisionEncodeResult:
+        """Run the vision encoder on the pixels ``pack_vision_inputs`` packed.
+
+        Returns embeddings only; the cache derives per-image counts from its
+        selection. When there were no packable patches (``packed is None``),
+        returns an empty result so the cache assembles from resident entries.
+        """
+        if packed is None:
+            return VisionEncodeResult(
+                embeddings=self.empty_vision_embeddings(self.devices)
+            )
+        return VisionEncodeResult(embeddings=self._run_vision_encoder(packed))
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device zero-row image embeddings for cached / text-only batches.
+
+        Cached: hit on every text-only / decode step, so it must not allocate
+        per call.
+        """
+        if not hasattr(self, "_cached_empty_embeddings"):
+            self._cached_empty_embeddings = create_empty_embeddings(
+                devices,
+                self.huggingface_config.text_config.hidden_size,
+                self.config.unquantized_dtype,
+            )
+        return self._cached_empty_embeddings
+
     def execute(
         self,
         model_inputs: ModelInputs,
     ) -> UnifiedEagleOutputs:
         """Execute and return all 3 graph outputs for speculative decoding.
 
-        Runs the vision encoder (prefill only) before the unified graph and
-        binds the projected soft-token embeddings + scatter indices. Images
-        only appear during prefill (draft_tokens is [batch, 0]); decode steps
-        replay the captured unified graph with the empty defaults, so this
-        pre-pass is a no-op there.
+        Images appear only during prefill (``draft_tokens`` is ``[batch,
+        0]``); decode steps carry the empty vision-merge inputs, so the
+        graph's scatter is a no-op there.
         """
         assert isinstance(model_inputs, UnifiedMTPGemma4Inputs)
-
-        # --- image embeddings ---
-        image_embeddings: list[Buffer]
-        image_scatter: list[Buffer]
-        img = model_inputs.images
-        if img is not None and img.raw is not None:
-            raw_embeds = self._run_vision_encoder(img.raw)
-            assert img.cache_context_batch is not None
-            assert img.cache_uncached_contexts is not None
-            assert img.cache_uncached_images is not None
-            assert img.cache_per_image_token_counts is not None
-            image_embeddings, scatter_np = (
-                self._ve_cache.prepare_vision_outputs(
-                    context_batch=img.cache_context_batch,
-                    uncached_contexts=img.cache_uncached_contexts,
-                    uncached_images=img.cache_uncached_images,
-                    vision_embeds=raw_embeds,
-                    per_image_token_counts=img.cache_per_image_token_counts,
-                    n_devices=len(self.devices),
-                    empty_embeddings=self._empty_embeddings(),
-                )
-            )
-            if len(scatter_np) > 0:
-                image_scatter = self._scatter_to_devices(scatter_np)
-            else:
-                image_scatter = self._empty_indices()
-        elif img is not None and img.cached_embeddings is not None:
-            image_embeddings = img.cached_embeddings
-            if img.cached_token_indices is not None:
-                image_scatter = img.cached_token_indices
-            else:
-                assert img.cached_token_indices_np is not None
-                image_scatter = self._scatter_to_devices(
-                    img.cached_token_indices_np
-                )
-        else:
-            image_embeddings = self._empty_embeddings()
-            image_scatter = self._empty_indices()
-
-        # --- video embeddings ---
-        video_embeddings: list[Buffer]
-        video_scatter: list[Buffer]
-        vid = model_inputs.video
-        if vid is not None and vid.cached_embeddings is not None:
-            video_embeddings = vid.cached_embeddings
-        elif vid is not None and vid.raw is not None:
-            video_embeddings = self._run_vision_encoder(vid.raw)
-            if vid.cache_hashes:
-                assert vid.cache_per_video_token_counts is not None
-                assert vid.cache_req_ids is not None
-                self._ve_cache._cache_and_split(
-                    vision_outputs=video_embeddings,
-                    per_image_token_counts=vid.cache_per_video_token_counts,
-                    image_hashes=vid.cache_hashes,
-                    request_ids=vid.cache_req_ids,
-                )
-        else:
-            video_embeddings = self._empty_embeddings()
-
-        if vid is not None:
-            if vid.token_indices is not None:
-                video_scatter = vid.token_indices
-            else:
-                assert vid.token_indices_np is not None
-                video_scatter = self._scatter_to_devices(vid.token_indices_np)
-        else:
-            video_scatter = self._empty_indices()
-
-        # --- merge image + video into the graph-bound buffers ---
-        model_inputs.combined_embeds = merge_per_device_buffers(
-            image_embeddings, video_embeddings
-        )
-        model_inputs.combined_indices = merge_per_device_buffers(
-            image_scatter, video_scatter
-        )
-
         model_outputs = self.model.execute(*model_inputs.buffers)
         assert len(model_outputs) == 3, (
             f"Expected 3 outputs, got {len(model_outputs)}"
@@ -585,50 +521,6 @@ class UnifiedMTPGemma4Model(
             *raw.pool_gather_index,
             raw.max_seq_len,
         )
-
-    def _scatter_to_devices(
-        self, scatter_np: npt.NDArray[np.int32]
-    ) -> list[Buffer]:
-        """Copy scatter indices to each device.
-
-        Allocates a fresh pinned host buffer every call and never reuses it
-        across calls. Under the overlap scheduler a reused pinned buffer would
-        be clobbered by the next step's host write while the current step's
-        asynchronous H2D copy is still reading it. The per-device destination
-        buffers are cached and reused (never pinned).
-        """
-        dev = self.devices[0]
-        n = len(scatter_np)
-        host_buffer_cls = DevicePinnedBuffer if not dev.is_host else Buffer
-        host: Buffer = host_buffer_cls(
-            dtype=DType.int32, shape=(n,), device=dev
-        )
-
-        buffers = self._scatter_buffers.get(n)
-        if buffers is None:
-            buffers = [
-                Buffer(shape=(n,), dtype=DType.int32, device=d)
-                for d in self.devices
-            ]
-            self._scatter_buffers[n] = buffers
-
-        host.to_numpy()[:] = scatter_np.astype(np.int32)
-        copy_pinned_to_destinations(host, buffers)
-        return buffers
-
-    def _empty_embeddings(self) -> list[Buffer]:
-        if not hasattr(self, "_cached_empty_embeddings"):
-            self._cached_empty_embeddings = create_empty_embeddings(
-                self.devices,
-                self.huggingface_config.text_config.hidden_size,
-                self.config.unquantized_dtype,
-            )
-        return self._cached_empty_embeddings
-
-    def _empty_indices(self) -> list[Buffer]:
-        if not hasattr(self, "_cached_empty_indices"):
-            self._cached_empty_indices = create_empty_indices(self.devices)
-        return self._cached_empty_indices
 
     @classmethod
     def calculate_max_seq_len(

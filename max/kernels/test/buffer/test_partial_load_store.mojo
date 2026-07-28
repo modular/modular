@@ -21,15 +21,19 @@ def test_partial_load_store() raises:
     # The total amount of data to allocate
     comptime total_buffer_size: Int = 32
 
-    var read_data = InlineArray[Scalar[DType.int], total_buffer_size](
+    var read_data = Array[Scalar[DType.int], total_buffer_size](
         uninitialized=True
     )
-    var write_data = InlineArray[Scalar[DType.int], total_buffer_size](
+    var write_data = Array[Scalar[DType.int], total_buffer_size](
         uninitialized=True
     )
 
-    var read_ptr = read_data.unsafe_ptr()
-    var write_ptr = write_data.unsafe_ptr()
+    var read_ptr: UnsafePointer[
+        Scalar[DType.int], origin_of(read_data)
+    ] = read_data.unsafe_ptr()
+    var write_ptr: UnsafePointer[
+        Scalar[DType.int], origin_of(write_data)
+    ] = write_data.unsafe_ptr()
 
     for idx in range(total_buffer_size):
         # Fill read with 0->31

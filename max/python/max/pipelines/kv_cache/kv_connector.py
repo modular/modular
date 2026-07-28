@@ -11,15 +11,111 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Connector protocol for external KV cache tiers."""
+"""Connector protocol and transfer handle for external KV cache tiers."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from enum import Enum
 from typing import Protocol, runtime_checkable
 
 from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
+
+
+class TransferDirection(str, Enum):
+    """Whether a KV connector transfer is an onload or an offload."""
+
+    LOAD = "load"
+    OFFLOAD = "offload"
+
+
+@runtime_checkable
+class KVConnectorTransfer(Protocol):
+    """Handle for one KV connector transfer (an onload or an offload).
+
+    Returned by :meth:`KVConnector.load` and :meth:`KVConnector.offload`. It lets
+    the manager overlap a transfer with GPU compute: the transfer owns the
+    ``g0`` device block ids it touches (a load's H2D destinations, an offload's
+    D2H sources), and the manager keeps those blocks pinned until
+    :meth:`is_complete` returns ``True``, then unpins them exactly once (see the
+    scheduler's ``poll_transfers`` loop).
+
+    Two completion models cross this handle:
+
+    * Synchronous / stream-ordered connectors (the deprecated host
+      :class:`~.connectors.local_connector.LocalConnector` and
+      :class:`~.connectors.tiered_connector.TieredConnector`, and dKV) issue
+      their copies on -- or GPU-ordered ahead of -- the forward stream and return
+      :class:`CompletedTransfer`. ``is_complete`` is immediately ``True``, so the
+      manager commits the reused prefix at once and never holds the request out
+      of a batch.
+    * Asynchronous connectors (the Rust ``rust_tiered`` connector) issue their
+      copies on a separate copy engine and return a handle whose
+      ``is_complete`` flips only once the copy lands. The manager pins the blocks,
+      defers committing an onloaded prefix, and cordons the request out of the
+      batch until then -- so the GPU runs other ready work while the copy is in
+      flight.
+
+    ``is_complete`` must be a cheap, side-effect-free poll (a plain atomic /
+    ``cudaEventQuery``-style check), safe to call every scheduler iteration.
+    """
+
+    @property
+    def direction(self) -> TransferDirection:
+        """Whether this transfer is a ``load`` (onload) or an ``offload``."""
+        ...
+
+    @property
+    def g0_blocks(self) -> list[int]:
+        """Device (G0) block ids this transfer pins until it completes."""
+        ...
+
+    def is_complete(self) -> bool:
+        """Returns whether the transfer has completed. Never blocks."""
+        ...
+
+    def synchronize(self) -> None:
+        """Blocks until the transfer completes. Used only at drain/shutdown."""
+        ...
+
+
+class CompletedTransfer:
+    """An already-complete :class:`KVConnectorTransfer`.
+
+    Returned by synchronous / stream-ordered connectors (host, tiered, dKV):
+    their copies ride the forward stream or are GPU-ordered ahead of it, so from
+    the manager's perspective the transfer is already done -- no pinning, no
+    deferred commit, no cordoning. ``g0_blocks`` still reports the device blocks
+    the connector loaded (fewer than requested is allowed), which the manager
+    uses to trim any surplus staging blocks.
+    """
+
+    def __init__(
+        self,
+        direction: TransferDirection,
+        g0_blocks: list[int] | None = None,
+    ) -> None:
+        self._direction: TransferDirection = direction
+        self._g0_blocks = g0_blocks if g0_blocks is not None else []
+
+    @property
+    def direction(self) -> TransferDirection:
+        """The transfer direction (``load`` or ``offload``)."""
+        return self._direction
+
+    @property
+    def g0_blocks(self) -> list[int]:
+        """The device blocks the connector loaded/offloaded."""
+        return self._g0_blocks
+
+    def is_complete(self) -> bool:
+        """Always ``True``: this transfer is already complete."""
+        return True
+
+    def synchronize(self) -> None:
+        """No-op: this transfer is already complete."""
+        return None
 
 
 @runtime_checkable
@@ -71,7 +167,7 @@ class KVConnector(Protocol):
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
-    ) -> int:
+    ) -> KVConnectorTransfer:
         """Load data from external cache into device blocks.
 
         Args:
@@ -84,7 +180,11 @@ class KVConnector(Protocol):
                 hash); this only selects the H2D destination.
 
         Returns:
-            Number of blocks loaded from external cache.
+            A :class:`KVConnectorTransfer` for the H2D copy. ``g0_blocks``
+            reports the device blocks actually loaded (a prefix of
+            ``device_block_ids``; fewer than requested is allowed). Synchronous
+            connectors return a :class:`CompletedTransfer`; asynchronous ones
+            return a handle the manager polls before reading the loaded KV.
         """
         ...
 
@@ -94,7 +194,7 @@ class KVConnector(Protocol):
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
-    ) -> None:
+    ) -> KVConnectorTransfer:
         """Offload the device blocks to the external cache.
 
         The blocks form one ordered sequence whose first block chains onto
@@ -113,6 +213,11 @@ class KVConnector(Protocol):
                 or ``None`` if this run begins at the root.
             replica_idx: DP replica whose device buffers source the offloaded
                 blocks. The external tier itself is replica-agnostic.
+
+        Returns:
+            A :class:`KVConnectorTransfer` for the D2H copy; ``g0_blocks`` are
+            the device source blocks the manager keeps pinned until it lands.
+            Synchronous connectors return a :class:`CompletedTransfer`.
         """
         ...
 
@@ -175,6 +280,15 @@ class KVConnector(Protocol):
     def wait_for_loads(self) -> None:
         """Order all posted loads before the forward pass.
 
+        .. deprecated::
+            Superseded by the :class:`KVConnectorTransfer` model: asynchronous
+            connectors report load completion through
+            :meth:`KVConnectorTransfer.is_complete` (the manager's
+            ``poll_transfers`` loop plus the scheduler's cordon), so the forward
+            never reads KV that has not landed without any pre-forward barrier.
+            Retained only for the dKV connector, which still posts its READs in
+            :meth:`load` and orders them here; a no-op for every other connector.
+
         Called before the forward pass. Connectors whose loads already ride the
         device stream (host/disk tiers) need no work here. The dKV connector
         does one of two things by transport: for a co-located (same-host) load it
@@ -188,6 +302,12 @@ class KVConnector(Protocol):
 
     def wait_for_offloads(self) -> None:
         """Settle offloads posted since the last call.
+
+        .. deprecated::
+            The post-forward counterpart of :meth:`wait_for_loads`; see its note.
+            Asynchronous connectors settle offloads through
+            :meth:`KVConnectorTransfer.is_complete` / ``poll_transfers``. Retained
+            only for the dKV connector; a no-op for every other connector.
 
         Called after the forward pass. No-op by default. For a co-located
         (same-host) offload the dKV connector defers marking the block readable

@@ -548,7 +548,7 @@ struct _DualGridStrideKernel[
     See `_ClcKernel` for the rationale behind the callable-struct form.
     """
 
-    comptime rank = Self.shape_0_types.size
+    comptime rank = Self.shape_0_types.length
 
     var func_0: Self.Func0Type
     var func_1: Self.Func1Type
@@ -571,7 +571,7 @@ struct _DualGridStrideKernel[
         t"{Self.trace_description}_r{Self.rank}_w{Self.simd_width}_b{Self.block_size}.dual_gs.{Self.handle_uneven_simd}"
     )
     def __call__(self) capturing:
-        comptime assert Self.shape_0_types.size == Self.shape_1_types.size
+        comptime assert Self.shape_0_types.length == Self.shape_1_types.length
         var tid = thread_idx.x + Self.block_size * block_idx.x
         var stride = Self.block_size * grid_dim.x
 

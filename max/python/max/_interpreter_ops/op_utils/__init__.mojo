@@ -131,15 +131,15 @@ def dispatch_dtype[T: Dispatchable](body: T, dtype: DType) raises:
 
 def _get_shape(
     shape_obj: PythonObject, rank: Int
-) raises -> InlineArray[Int, MAX_RANK]:
-    """Extract shape as InlineArray from Python sequence.
+) raises -> Array[Int, MAX_RANK]:
+    """Extract shape as Array from Python sequence.
 
     Args:
         shape_obj: Python sequence containing the shape.
         rank: The rank of the shape.
 
     Returns:
-        The shape as an InlineArray (only first `rank` elements are valid).
+        The shape as an Array (only first `rank` elements are valid).
     """
     if rank > MAX_RANK:
         raise Error(
@@ -148,7 +148,7 @@ def _get_shape(
             + " exceeds MAX_RANK "
             + String(MAX_RANK)
         )
-    var result = InlineArray[Int, MAX_RANK](fill=0)
+    var result = Array[Int, MAX_RANK](fill=0)
     for i in range(rank):
         result[i] = Int(py=shape_obj[i])
     return result^

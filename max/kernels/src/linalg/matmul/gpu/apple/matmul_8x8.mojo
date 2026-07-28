@@ -95,7 +95,7 @@ def _simdgroup8x8_matmul_kernel[
     # Fully-interior simdgroup subtile -> unguarded loads (the common case).
     var interior = (row_base + SG_M <= m) and (col_base + SG_N <= n)
 
-    var accum = InlineArray[SIMD[DType.float32, FRAG8], NT_M * NT_N](
+    var accum = Array[SIMD[DType.float32, FRAG8], NT_M * NT_N](
         fill=SIMD[DType.float32, FRAG8](0)
     )
 
@@ -106,7 +106,7 @@ def _simdgroup8x8_matmul_kernel[
         var kk = ks * MMA8_DIM
         # A (M,K) row-major: lane's 2 frag elems are consecutive K cols (K is
         # always in-bounds); only the row needs a bound for ragged M.
-        var afrag = InlineArray[SIMD[a_type, FRAG8], NT_M](uninitialized=True)
+        var afrag = Array[SIMD[a_type, FRAG8], NT_M](uninitialized=True)
         comptime for mi in range(NT_M):
             var grow = row_base + mi * MMA8_DIM + frow
             if interior or grow < m:
@@ -114,7 +114,7 @@ def _simdgroup8x8_matmul_kernel[
             else:
                 afrag[mi] = SIMD[a_type, FRAG8](0)
         # B holds B[k_idx, j]: row=k_idx (always in-bounds), col=j (bound for n).
-        var bfrag = InlineArray[SIMD[b_type, FRAG8], NT_N](uninitialized=True)
+        var bfrag = Array[SIMD[b_type, FRAG8], NT_N](uninitialized=True)
         comptime for ni in range(NT_N):
             comptime if transpose_b:
                 # B stored (N,K): B[k,j]=b_ptr[j*k+k_idx]; slots differ in j.

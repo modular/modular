@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.memory import OpaquePointer, UnsafePointer
 from std.os import abort
 from std.gpu.host import DeviceContext, DeviceContextArray
@@ -84,7 +84,7 @@ def _do_broadcast[
     var root_v = Int(py=root)
     var in_addr = Int(py=input_data_ptr)
 
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     for i in range(ngpus):
@@ -98,10 +98,10 @@ def _do_broadcast[
     )
     var in_tile = TileTensor(in_ptr, row_major(n)).as_immut()
 
-    var out_ptrs = InlineArray[
+    var out_ptrs = Array[
         UnsafePointer[Scalar[DType.uint8], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var ctx_array = InlineArray[DeviceContext, ngpus](uninitialized=True)
+    var ctx_array = Array[DeviceContext, ngpus](uninitialized=True)
     for i in range(ngpus):
         var buf = output_buffers[i]
         var out_addr = Int(py=buf._data_ptr())
@@ -111,7 +111,10 @@ def _do_broadcast[
         )
         # unsafe_write prevents DeviceContext.__del__ from dropping a
         # refcount, so assigning into the uninitialized slot would destroy it
-        (ctx_array.unsafe_ptr() + i).unsafe_write(
+        var ctx_array_ptr: UnsafePointer[
+            DeviceContext, origin_of(ctx_array)
+        ] = ctx_array.unsafe_ptr()
+        (ctx_array_ptr + i).unsafe_write(
             DeviceContext(
                 OpaquePointer[MutUntrackedOrigin](unsafe_from_address=ctx_addr)
             )

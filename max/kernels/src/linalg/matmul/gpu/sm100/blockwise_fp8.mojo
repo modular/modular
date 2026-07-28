@@ -307,7 +307,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
     # final results accumulator regs for C
     comptime c_frag_size = MMA_M * MMA_N // num_threads
-    var c_frag = InlineArray[Scalar[accum_type], c_frag_size](
+    var c_frag = Array[Scalar[accum_type], c_frag_size](
         fill=Scalar[accum_type](0)
     )
 
@@ -319,7 +319,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime assert (
         total_repeat % repeat == 0
     ), "total_repeat must be divisible by repeat"
-    var c_frag_temp: InlineArray[Scalar[accum_type], temp_cfrags_size]
+    var c_frag_temp: Array[Scalar[accum_type], temp_cfrags_size]
 
     for k_iter in range(num_iters):
         if elect_one_thread:

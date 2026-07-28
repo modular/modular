@@ -24,7 +24,7 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 @fieldwise_init
 struct NullWriter(Writer):
-    var array: InlineArray[Byte, 1024]
+    var array: Array[Byte, 1024]
 
     @always_inline
     def __init__(out self):
@@ -33,8 +33,11 @@ struct NullWriter(Writer):
     @always_inline
     def write_string(mut self, string: StringSlice):
         var bytes = string.as_bytes()
+        var array_ptr: UnsafePointer[
+            Byte, origin_of(self.array)
+        ] = self.array.unsafe_ptr()
         for i in range(len(bytes)):
-            (self.array.unsafe_ptr() + i).store(bytes.unsafe_get(i))
+            (array_ptr + i).store(bytes.unsafe_get(i))
         keep(self.array)
 
 

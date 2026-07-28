@@ -220,14 +220,14 @@ def copy_accum_to_gmem[
     # every element in tmem is 4 bytes, so bits being 256 means 8 elements stored across N
     # repeated 4 times is 8*4 = 32, enough to move elements into the width of our 128x32 tile
     comptime rep_frag_size = repeat * fragment_size
-    var upper_frag_partial: InlineArray[Scalar[accum_type], rep_frag_size]
-    var lower_frag_partial = InlineArray[Scalar[accum_type], rep_frag_size](
+    var upper_frag_partial: Array[Scalar[accum_type], rep_frag_size]
+    var lower_frag_partial = Array[Scalar[accum_type], rep_frag_size](
         uninitialized=True
     )
-    var upper_frag_casted = InlineArray[Scalar[epilogue_dtype], rep_frag_size](
+    var upper_frag_casted = Array[Scalar[epilogue_dtype], rep_frag_size](
         uninitialized=True
     )
-    var lower_frag_casted = InlineArray[Scalar[epilogue_dtype], rep_frag_size](
+    var lower_frag_casted = Array[Scalar[epilogue_dtype], rep_frag_size](
         uninitialized=True
     )
     var scale = expert_scale.cast[accum_type]()
@@ -868,23 +868,23 @@ struct B200BlockScaledMatmulSmem[
     comptime num_group_pipeline_stages = Self.config.num_pipeline_stages // Self.config.k_group_size
 
     # AB pipelines
-    var a_smem: InlineArray[Self.AType, Self.a_smem_size]
-    var b_smem: InlineArray[Self.BType, Self.b_smem_size]
-    var c_smem: InlineArray[Self.CType, Self.c_smem_size]
-    var sfa_smem: InlineArray[Self.AScalesType, Self.sfa_smem_size]
-    var sfb_smem: InlineArray[Self.BScalesType, Self.sfb_smem_size]
+    var a_smem: Array[Self.AType, Self.a_smem_size]
+    var b_smem: Array[Self.BType, Self.b_smem_size]
+    var c_smem: Array[Self.CType, Self.c_smem_size]
+    var sfa_smem: Array[Self.AScalesType, Self.sfa_smem_size]
+    var sfb_smem: Array[Self.BScalesType, Self.sfb_smem_size]
 
-    var tma_mma_mbars: InlineArray[
+    var tma_mma_mbars: Array[
         SharedMemBarrier, Self.num_group_pipeline_stages * 2
     ]
     # ACCUM
-    var accum_mbars: InlineArray[
+    var accum_mbars: Array[
         SharedMemBarrier, Self.config.num_accum_pipeline_stages * 2
     ]
 
     # TMEM
-    var tmem_dealloc_mbar: InlineArray[SharedMemBarrier, 1]
-    var tmem_addr: InlineArray[UInt32, 1]
+    var tmem_dealloc_mbar: Array[SharedMemBarrier, 1]
+    var tmem_addr: Array[UInt32, 1]
 
 
 @always_inline
@@ -2172,15 +2172,36 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ref tmem_addr_storage = smem_storage.tmem_addr
     ref tmem_dealloc_mbar_storage = smem_storage.tmem_dealloc_mbar
 
-    var a_smem_base = a_smem_storage.unsafe_ptr().bitcast[Scalar[a_type]]()
-    var b_smem_base = b_smem_storage.unsafe_ptr().bitcast[Scalar[b_type]]()
-    var c_smem_base = c_smem_storage.unsafe_ptr().bitcast[Scalar[c_type]]()
-    var sfa_smem_base = sfa_smem_storage.unsafe_ptr().bitcast[
-        Scalar[sfa_dtype]
-    ]()
-    var sfb_smem_base = sfb_smem_storage.unsafe_ptr().bitcast[
-        Scalar[sfb_dtype]
-    ]()
+    var a_smem_ptr: UnsafePointer[
+        Scalar[a_type],
+        origin_of(a_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = a_smem_storage.unsafe_ptr()
+    var a_smem_base = a_smem_ptr.bitcast[Scalar[a_type]]()
+    var b_smem_ptr: UnsafePointer[
+        Scalar[b_type],
+        origin_of(b_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = b_smem_storage.unsafe_ptr()
+    var b_smem_base = b_smem_ptr.bitcast[Scalar[b_type]]()
+    var c_smem_ptr: UnsafePointer[
+        Scalar[c_type],
+        origin_of(c_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = c_smem_storage.unsafe_ptr()
+    var c_smem_base = c_smem_ptr.bitcast[Scalar[c_type]]()
+    var sfa_smem_ptr: UnsafePointer[
+        Scalar[sfa_dtype],
+        origin_of(sfa_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = sfa_smem_storage.unsafe_ptr()
+    var sfa_smem_base = sfa_smem_ptr.bitcast[Scalar[sfa_dtype]]()
+    var sfb_smem_ptr: UnsafePointer[
+        Scalar[sfb_dtype],
+        origin_of(sfb_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = sfb_smem_storage.unsafe_ptr()
+    var sfb_smem_base = sfb_smem_ptr.bitcast[Scalar[sfb_dtype]]()
 
     # Load warp as producer and mma warp as consumer
     # Dependence on MMA input in SMEM.
@@ -2204,7 +2225,11 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         ](),
     )
 
-    var ptr_tmem_addr = tmem_addr_storage.unsafe_ptr()
+    var ptr_tmem_addr: UnsafePointer[
+        UInt32,
+        origin_of(tmem_addr_storage),
+        address_space=AddressSpace.SHARED,
+    ] = tmem_addr_storage.unsafe_ptr()
 
     tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
 

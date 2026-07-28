@@ -104,7 +104,7 @@ def kernel_case_a(
     var total = BN * DEPTH
     var i = tid
     while i < total:
-        out_ptr[i] = dst_smem.ptr[i]
+        out_ptr[i] = dst_smem._storage[i]
         i += 64
 
 
@@ -140,7 +140,7 @@ def kernel_case_b(
     var total = BN * DEPTH
     var i = tid
     while i < total:
-        out_ptr[i] = dst_smem.ptr[i]
+        out_ptr[i] = dst_smem._storage[i]
         i += 64
 
 

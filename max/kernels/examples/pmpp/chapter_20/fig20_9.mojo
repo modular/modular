@@ -13,7 +13,7 @@
 
 from std.math import exp, sqrt
 from std.random import rand
-from std.collections import InlineArray
+from std.collections import Array
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
 from std.gpu.memory import AddressSpace
 from std.gpu.host import DeviceContext
@@ -74,10 +74,10 @@ def flashattention_forward_kernel(
     ]()
 
     # Per-thread register storage (like CUDA)
-    var O_i = InlineArray[Float32, B_r_warp * d_size](fill=0.0)  # 2 * 4 = 8
-    var D_i = InlineArray[Float32, B_r_warp](fill=0.0)  # 2
-    var m_i = InlineArray[Float32, B_r_warp](fill=0.0)  # 2
-    var Q_i = InlineArray[Float32, B_r_warp * d_size](
+    var O_i = Array[Float32, B_r_warp * d_size](fill=0.0)  # 2 * 4 = 8
+    var D_i = Array[Float32, B_r_warp](fill=0.0)  # 2
+    var m_i = Array[Float32, B_r_warp](fill=0.0)  # 2
+    var Q_i = Array[Float32, B_r_warp * d_size](
         fill=0.0
     )  # 2 * 4 = 8 (Q in registers!)
 

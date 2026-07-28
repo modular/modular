@@ -268,7 +268,6 @@ def create_pipeline_with_lora(
             if pipeline_config.sampling.sample_on_host
             else self._devices[0]
         )
-        self._eos_token_id = {999}
         self._tokenizer = MagicMock()
         self.batch_info_output_fname = None
         self.batch_infos = []
@@ -279,12 +278,12 @@ def create_pipeline_with_lora(
         self._pinned_new_tokens = None
         self._identity_logit_offsets = None
         self._structured_output = StructuredOutputHelper(enabled=False)
+        self._encoder_cache = None
 
     with patch.object(TextGenerationPipeline, "__init__", mock_text_init):
         return TextGenerationPipeline(
             pipeline_config=mock_config,
             pipeline_model=MagicMock(),
-            eos_token_id=999,
             weight_adapters={},
             tokenizer=MagicMock(),
             memory_plan=_MemoryPlan(max_batch_size=1, footprint=0),

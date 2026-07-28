@@ -84,7 +84,7 @@ def create_mock_pipeline_config(
     mock_kv_cache_config.kv_cache_page_size = kv_cache_page_size
     mock_kv_cache_config.enable_prefix_caching = enable_prefix_caching
     mock_kv_cache_config.kv_connector_config = kv_connector_config
-    mock_kv_cache_config.cache_dtype = DType.bfloat16
+    mock_kv_cache_config.kv_cache_format = None
 
     mock_model.kv_cache = mock_kv_cache_config
     mock_config.model = mock_model
@@ -176,7 +176,7 @@ class TestArchConfigWithAttentionKVCache:
         mock_config = create_mock_pipeline_config(quantization_encoding="q4_k")
         result = ConcreteArchConfig.initialize(mock_config)
         assert result.dtype == DType.uint8
-        assert result.cache_dtype == DType.bfloat16
+        assert result.cache_dtype == DType.float32
         assert result.data_parallel_degree == 1
 
     def test_create_with_only_dtype(self) -> None:

@@ -313,7 +313,7 @@ def kernel_load_K_fp8[
     comptime _total = _K_SLOT_ROWS * _K_SUB_COLS
     var i = tid
     while i < _total:
-        k_smem.ptr[i] = src_swz_ptr[i]
+        k_smem._storage[i] = src_swz_ptr[i]
         i += 64
     barrier()
 
@@ -538,7 +538,7 @@ def kernel_load_V_fp8[
     comptime _total = _V_SLOT_ROWS * _V_SUB_COLS
     var i = tid
     while i < _total:
-        v_smem.ptr[i] = src_ptr[i]
+        v_smem._storage[i] = src_ptr[i]
         i += 64
     barrier()
 

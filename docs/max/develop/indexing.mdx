@@ -58,7 +58,7 @@ selects elements from `input` at the positions given by `indices`, along `axis`.
 The following example uses it for a vocabulary lookup: each token ID selects one
 row from an embedding table:
 
-{/* @sync: _examples/indexing/gather.py */}
+{/* @sync: ../../code/develop/indexing/gather.py */}
 
 ```python
 import max.experimental.functional as F
@@ -101,7 +101,7 @@ After `F.where`, softmax drives the masked positions toward zero.
 The following example applies a causal mask to attention scores of shape
 `(batch, seq_len, seq_len)`, setting masked positions to `-1e9`:
 
-{/* @sync: _examples/indexing/where.py */}
+{/* @sync: ../../code/develop/indexing/where.py */}
 
 ```python
 import max.experimental.functional as F
@@ -150,7 +150,7 @@ The following example writes 4 expert outputs back into an 8-token sequence.
 repeats the route indices across all 64 feature positions so that `indices` has
 the same shape as `expert_out`:
 
-{/* @sync: _examples/indexing/scatter.py */}
+{/* @sync: ../../code/develop/indexing/scatter.py */}
 
 ```python
 import max.experimental.functional as F

@@ -173,16 +173,19 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
         config = pipeline_config.model.huggingface_config
 
-        self._default_eos_token_ids = set([self.eos])
+        eos_token_id = self.delegate.eos_token_id
+        self._eos_token_ids = (
+            {eos_token_id} if eos_token_id is not None else set()
+        )
         if eos_token_id := getattr(config, "eos_token_id", None):
             if isinstance(eos_token_id, int):
-                self._default_eos_token_ids.add(eos_token_id)
+                self._eos_token_ids.add(eos_token_id)
             elif isinstance(eos_token_id, list):
-                self._default_eos_token_ids.update(eos_token_id)
+                self._eos_token_ids.update(eos_token_id)
 
         im_end_id = self.delegate.convert_tokens_to_ids(_IM_END_TOKEN)
         if isinstance(im_end_id, int):
-            self._default_eos_token_ids.add(im_end_id)
+            self._eos_token_ids.add(im_end_id)
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
@@ -433,7 +436,8 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
         json_schema = (
             json.dumps(request.response_format.json_schema)
-            if request.response_format and request.response_format.json_schema
+            if request.response_format
+            and request.response_format.json_schema is not None
             else None
         )
 

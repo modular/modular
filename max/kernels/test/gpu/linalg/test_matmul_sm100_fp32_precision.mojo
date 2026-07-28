@@ -41,7 +41,7 @@ from std.random import random_float64, seed
 
 from std.gpu.host import DeviceContext
 from std.testing import assert_true
-from layout import TileTensor, Coord, Idx, row_major
+from layout import TileTensor, Coord, Idx, PointerStorage, row_major
 from linalg.matmul.gpu import _matmul_gpu
 
 comptime N = 128
@@ -93,9 +93,20 @@ def _stats_vs_ref(
 def _run_matmul[
     use_tf32: Bool = True
 ](
-    a_host: TileTensor[f32, address_space=AddressSpace.GENERIC, ...],
+    a_host: TileTensor[
+        f32,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
     b_dev: TileTensor[f32, ...],
-    c_host: TileTensor[mut=True, f32, address_space=AddressSpace.GENERIC, ...],
+    c_host: TileTensor[
+        mut=True,
+        f32,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
     m: Int,
     ctx: DeviceContext,
 ) raises:
@@ -105,7 +116,7 @@ def _run_matmul[
     applies; the runtime `m` picks the kernel and the comptime `use_tf32`
     picks the dispatch mode."""
     var a_dev_buf = ctx.enqueue_create_buffer[f32](m * K)
-    ctx.enqueue_copy(a_dev_buf, a_host.ptr)
+    ctx.enqueue_copy(a_dev_buf, a_host._storage)
     var a_dev = TileTensor(a_dev_buf, row_major(Coord(Int(m), Idx[K])))
 
     var c_dev_buf = ctx.enqueue_create_buffer[f32](m * N)
@@ -115,7 +126,7 @@ def _run_matmul[
         c_dev, a_dev, b_dev, ctx
     )
 
-    ctx.enqueue_copy(c_host.ptr, c_dev_buf)
+    ctx.enqueue_copy(c_host._storage, c_dev_buf)
     ctx.synchronize()
     _ = a_dev_buf^
     _ = c_dev_buf^
@@ -137,7 +148,7 @@ def main() raises:
 
         var b_dev_buf = ctx.enqueue_create_buffer[f32](N * K)
         var b_dev = TileTensor(b_dev_buf, row_major(Coord(Idx[N], Idx[K])))
-        ctx.enqueue_copy(b_dev_buf, b_host.ptr)
+        ctx.enqueue_copy(b_dev_buf, b_host._storage)
         ctx.synchronize()
 
         # fp64 reference for the first REF_ROWS rows, from the same fp32

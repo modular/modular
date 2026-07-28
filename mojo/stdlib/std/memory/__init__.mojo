@@ -62,7 +62,6 @@ from .pointer import (
 )
 from .unsafe import bitcast, pack_bits
 from .unsafe_pointer import (
-    alloc,
     ImmOpaquePointer,
     ImmutOpaquePointer,
     MutOpaquePointer,

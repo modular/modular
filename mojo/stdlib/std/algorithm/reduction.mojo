@@ -844,7 +844,7 @@ def map_reduce[
     def output_fn[
         _dtype: DType, width: SIMDLength, rank: Int
     ](idx: Int, val: SIMD[_dtype, width]):
-        dst.unsafe_ptr().store(idx, rebind[SIMD[dtype, width]](val))
+        dst.unsafe_ptr().unsafe_store(idx, rebind[SIMD[dtype, width]](val))
 
     return map_reduce[
         simd_width,
@@ -964,7 +964,9 @@ def reduce[
     def input_fn[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
-        return src.unsafe_ptr().load[width=width](idx[0])._refine[_dtype]()
+        return (
+            src.unsafe_ptr().unsafe_load[width=width](idx[0])._refine[_dtype]()
+        )
 
     var out: Scalar[init.dtype] = 0
 
@@ -1035,12 +1037,14 @@ def reduce_boolean[
     var vector_end = align_down(length, simd_width)
     var curr = init
     for i in range(0, unrolled_vector_end, unrolled_simd_width):
-        curr = reduce_fn(src.unsafe_ptr().load[width=unrolled_simd_width](i))
+        curr = reduce_fn(
+            src.unsafe_ptr().unsafe_load[width=unrolled_simd_width](i)
+        )
         if not continue_fn(curr):
             return curr
 
     for i in range(unrolled_vector_end, vector_end, simd_width):
-        curr = reduce_fn(src.unsafe_ptr().load[width=simd_width](i))
+        curr = reduce_fn(src.unsafe_ptr().unsafe_load[width=simd_width](i))
         if not continue_fn(curr):
             return curr
 
@@ -1193,7 +1197,7 @@ def sum[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         return rebind[SIMD[dtype_, width]](
-            src.unsafe_ptr().load[width=width](idx)
+            src.unsafe_ptr().unsafe_load[width=width](idx)
         )
 
     return sum[dtype, input_fn_1d](len(src))
@@ -1338,7 +1342,7 @@ def mean[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         return rebind[SIMD[dtype_, width]](
-            src.unsafe_ptr().load[width=width](idx)
+            src.unsafe_ptr().unsafe_load[width=width](idx)
         )
 
     return mean[dtype, input_fn_1d](len(src))
@@ -1415,7 +1419,7 @@ def variance[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         return rebind[SIMD[dtype_, width]](
-            src.unsafe_ptr().load[width=width](idx)
+            src.unsafe_ptr().unsafe_load[width=width](idx)
         )
 
     return variance[dtype, input_fn_1d](len(src), mean_value, correction)
@@ -1528,7 +1532,7 @@ def variance[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         return rebind[SIMD[dtype_, width]](
-            src.unsafe_ptr().load[width=width](idx)
+            src.unsafe_ptr().unsafe_load[width=width](idx)
         )
 
     return variance[dtype, input_fn_1d](len(src), correction)
@@ -1613,12 +1617,12 @@ def cumsum[
     comptime rep = log2_floor(simd_width)
 
     for i in range(0, div_size, simd_width):
-        var x_simd = src.unsafe_ptr().load[width=simd_width](i)
+        var x_simd = src.unsafe_ptr().unsafe_load[width=simd_width](i)
 
         comptime for i in range(rep):
             x_simd += x_simd.shift_right[2**i]()
 
-        dst.unsafe_ptr().store(i, x_simd)
+        dst.unsafe_ptr().unsafe_store(i, x_simd)
 
     # e.g., Assuming input buffer 1, 2, 3, 4, 5, 6, 7, 8 and simd_width = 4
     # The first outer iteration of the above would be the following;
@@ -1638,8 +1642,8 @@ def cumsum[
     # offset used in iteration 0: 0, 0, 0, 0
     # offset used in iteration 1: 10, 10, 10, 10
     for i in range(0, div_size, simd_width):
-        var x_simd = dst.unsafe_ptr().load[width=simd_width](i) + offset
-        dst.unsafe_ptr().store(i, x_simd)
+        var x_simd = dst.unsafe_ptr().unsafe_load[width=simd_width](i) + offset
+        dst.unsafe_ptr().unsafe_store(i, x_simd)
         offset = SIMD[dtype, simd_width](x_simd[simd_width - 1])
 
     # Handles the tail, i.e., num of elements at the end that don't

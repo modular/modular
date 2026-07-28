@@ -51,7 +51,7 @@ var ptr = allocation.unsafe_ptr()
 
 # initialize the memory
 for i in range(allocation.layout().count()):
-    (ptr + i).unsafe_write("🔥")
+    ptr.unsafe_offset(i).unsafe_write("🔥")
 
 # print the values
 for string in allocation.unsafe_span():
@@ -207,7 +207,7 @@ struct Allocation[T: AnyType](
         """
         return self._alloc^.unsafe_leak()
 
-    def unsafe_ptr(ref self) -> UnsafePointer[Self.T, origin_of(self._alloc)]:
+    def unsafe_ptr(ref self) -> Pointer[Self.T, origin_of(self._alloc)]:
         """Returns a pointer to the allocated storage without consuming `self`.
 
         The returned pointer borrows from `self`, so the `Allocation` retains
@@ -355,7 +355,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
     var deletable = alloc(Layout[Int32](count=4)).into_deletable()
     var ptr = deletable.unsafe_ptr()
     for i in range(4):
-        (ptr + i).unsafe_write(i)
+        ptr.unsafe_offset(i).unsafe_write(i)
     # `deletable` frees its storage when it is destroyed (after its last use).
     ```
     """
@@ -403,7 +403,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
 
     def unsafe_ptr(
         ref self,
-    ) -> UnsafePointer[Self.T, origin_of(self)]:
+    ) -> Pointer[Self.T, origin_of(self)]:
         """Returns a pointer to the allocated storage without consuming `self`.
 
         The returned pointer borrows from `self`, so the `DeletableAllocation`
@@ -601,6 +601,61 @@ def _alloc_bytes(
     return pointer.unsafe_value()
 
 
+@always_inline
+def alloc[
+    type: AnyType, /
+](count: Int, *, alignment: Int = align_of[type]()) -> UnsafePointer[
+    type, MutUntrackedOrigin
+]:
+    """Allocates contiguous storage for `count` elements of `type` with
+    alignment `alignment`.
+
+    Parameters:
+        type: The type of the elements to allocate storage for.
+
+    Args:
+        count: Number of elements to allocate.
+        alignment: The alignment of the allocation.
+
+    Returns:
+        A pointer to the newly allocated uninitialized array.
+
+    Constraints:
+        `count` must be positive and `size_of[type]()` must be > 0.
+
+    Safety:
+
+    - The returned memory is uninitialized; reading before writing is undefined.
+    - The returned pointer has an empty mutable origin; you must call `free()`
+      to release it.
+
+    Example:
+
+    ```mojo
+    var ptr = alloc[Int32](4)
+    ptr.store(0, Int32(42))
+    ptr.store(1, Int32(7))
+    ptr.store(2, Int32(9))
+    var a = ptr.load(0)
+    print(a[0], ptr.load(1)[0], ptr.load(2)[0])
+    ptr.free()
+    ```
+    """
+    comptime size_of_t = size_of[type]()
+    comptime type_name = reflect[type].name()
+    debug_assert(
+        count >= 0,
+        "alloc[",
+        type_name,
+        "]() count must be non-negative: ",
+        Int(count),
+    )
+    var pointer = _malloc[type](size_of_t * count, alignment=alignment)
+    if unlikely(not pointer):
+        abort("alloc failed: returned a null pointer")
+    return pointer.unsafe_value()
+
+
 def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
     """Allocates owned storage for `layout.count()` elements of `T`.
 
@@ -633,7 +688,7 @@ def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
     var allocation = alloc(Layout[Int32](count=4))
     var ptr = allocation.unsafe_ptr()
     for i in range(4):
-        (ptr + i).unsafe_write(i)
+        ptr.unsafe_offset(i).unsafe_write(i)
     dealloc(allocation^)
     ```
     """

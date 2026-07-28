@@ -21,6 +21,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 from max.nn.transformer import ReturnLogits
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
@@ -102,7 +103,10 @@ class MistralConfig(
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)

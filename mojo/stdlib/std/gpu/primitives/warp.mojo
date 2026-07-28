@@ -326,7 +326,7 @@ def _shuffle[
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[dtype]
         ](Int32(mask), val, offset, WIDTH_MASK)
-    elif dtype in (DType.int64, DType.uint64):
+    elif dtype.is_integral() and bit_width_of[dtype]() == 64:
         var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
         var val_half1, val_half2 = val_bitcast.deinterleave()
         var shuffle1 = _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
@@ -417,7 +417,7 @@ def _shuffle_apple_helper[
 
     var arg = UInt16(offset)  # AIR intrinsics use 16-bit offsets
 
-    comptime if dtype in (DType.int64, DType.uint64):
+    comptime if dtype.is_integral() and bit_width_of[dtype]() == 64:
         var bits = bitcast[DType.uint32, simd_width * 2](val)
         var half1, half2 = bits.deinterleave()
 
@@ -550,7 +550,7 @@ def shuffle_idx[
             from std.gpu.primitives.warp import shuffle_idx
 
             # Only broadcast to first 16 lanes
-            var mask = 0xFFFF  # 16 ones
+            var mask: UInt = 0xFFFF  # 16 ones
             var val = SIMD[DType.float32, 32](1.0)
             var result = shuffle_idx(mask, val, 5)
         ```
@@ -847,9 +847,9 @@ def shuffle_xor[
             from std.gpu.primitives.warp import shuffle_xor
 
             # Exchange values between even-numbered threads 4 lanes apart
-            mask = 0xAAAAAAAA  # Even threads only
+            var mask: UInt = 0xAAAAAAAA  # Even threads only
             var val = SIMD[DType.float32, 16](42.0)  # Example value
-            result = shuffle_xor(mask, val, 4.0)
+            var result = shuffle_xor(mask, val, 4)
         ```
     """
 
@@ -1463,6 +1463,7 @@ def match_any[
 
         # If lanes 0, 3, 7 hold the same value, each of them gets a mask with
         # bits 0, 3, and 7 set; the remaining lanes get their own groups.
+        var my_key = Int32(42)
         var group = match_any(my_key)
         ```
 
@@ -1580,6 +1581,7 @@ def match_all[
 
         # `agreed` is non-zero (the active-lane mask) iff every lane passed the
         # same `key`.
+        var key = Int32(42)
         var agreed = match_all(key)
         ```
 

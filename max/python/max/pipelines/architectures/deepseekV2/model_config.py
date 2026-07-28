@@ -20,6 +20,7 @@ from typing import Any
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -167,7 +168,9 @@ class DeepseekV2Config(ArchConfigWithKVCache):
         quantization_encoding = model_config.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        cache_dtype = model_config.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
         kv_params = cls.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,

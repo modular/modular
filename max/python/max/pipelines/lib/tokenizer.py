@@ -252,9 +252,9 @@ class IdentityPipelineTokenizer(
     """A pass-through tokenizer that returns prompts unchanged."""
 
     @property
-    def eos(self) -> int:
-        """Returns the end-of-sequence token ID (0 for identity)."""
-        return 0
+    def eos_token_ids(self) -> set[int]:
+        """Returns the end-of-sequence token IDs (empty for identity)."""
+        return set()
 
     @property
     def expects_content_wrapping(self) -> bool:
@@ -337,14 +337,14 @@ def replace_unpaired_surrogates(prompt: str) -> str:
 
 
 async def build_eos_tracker_for_request(
-    default_eos_token_ids: set[int],
+    eos_token_ids: set[int],
     request: TextGenerationRequest,
     encode_fn: Callable[[str, bool], Awaitable[npt.NDArray[np.integer[Any]]]],
 ) -> EOSTracker:
     """Builds an :class:`~max.pipelines.modeling.types.EOSTracker` from request sampling params.
 
     Args:
-        default_eos_token_ids: Default EOS token IDs from tokenizer/model config.
+        eos_token_ids: The model's EOS token IDs from tokenizer/model config.
         request: Generation request; uses ``request.sampling_params`` for stops.
         encode_fn: Async encode callable ``(text, add_special_tokens) -> token ids``.
 
@@ -352,20 +352,20 @@ async def build_eos_tracker_for_request(
         Configured :class:`~max.pipelines.modeling.types.EOSTracker` for this request.
     """
     params = request.sampling_params
-    eos_token_ids = set(default_eos_token_ids)
+    resolved_eos_token_ids = set(eos_token_ids)
     eos_sequences: list[list[int]] = []
     if params.ignore_eos:
-        eos_token_ids = set()
+        resolved_eos_token_ids = set()
     else:
         if params.stop_token_ids:
-            eos_token_ids.update(params.stop_token_ids)
+            resolved_eos_token_ids.update(params.stop_token_ids)
         if params.stop:
             for stop_string in params.stop:
                 tokenized = (await encode_fn(stop_string, False)).tolist()
                 if tokenized:
                     eos_sequences.append(tokenized)
     return EOSTracker(
-        eos_token_ids=eos_token_ids,
+        eos_token_ids=resolved_eos_token_ids,
         eos_sequences=eos_sequences,
         eos_stop_strings=params.stop or [],
     )
@@ -444,7 +444,10 @@ class TextTokenizer(
         ) = self._llama_whitespace_fix_dummy_token
 
         # cache tokenizer eos token ids
-        self._default_eos_token_ids = set([self.eos])
+        eos_token_id = self.delegate.eos_token_id
+        self._eos_token_ids = (
+            {eos_token_id} if eos_token_id is not None else set()
+        )
 
         if pipeline_config:
             target_eos = getattr(
@@ -456,9 +459,14 @@ class TextTokenizer(
             draft_eos = getattr(draft_hf, "eos_token_id", None)
             for eos in (target_eos, draft_eos):
                 if isinstance(eos, int):
-                    self._default_eos_token_ids.add(eos)
+                    self._eos_token_ids.add(eos)
                 elif isinstance(eos, list):
-                    self._default_eos_token_ids.update(eos)
+                    self._eos_token_ids.update(eos)
+
+    @property
+    def eos_token_ids(self) -> set[int]:
+        """The full set of token ids that end generation for this model."""
+        return set(self._eos_token_ids)
 
     @cached_property
     def tokenizer_vocab_size(self) -> int:
@@ -504,11 +512,6 @@ class TextTokenizer(
 
         assert isinstance(templated_message, str)
         return templated_message
-
-    @property
-    def eos(self) -> int:
-        """Returns the end-of-sequence token ID from the delegate."""
-        return self.delegate.eos_token_id
 
     @property
     def expects_content_wrapping(self) -> bool:
@@ -607,7 +610,7 @@ class TextTokenizer(
         stop_token_ids: list[int] | None,
         stop: list[str] | None,
     ) -> tuple[set[int], list[list[int]]]:
-        eos_token_ids = set(self._default_eos_token_ids)
+        eos_token_ids = set(self._eos_token_ids)
         eos_sequences = list()
 
         if ignore_eos:
@@ -624,7 +627,7 @@ class TextTokenizer(
     ) -> EOSTracker:
         """Builds an :class:`EOSTracker` from the request sampling params and tokenizer default EOS token IDs."""
         return await build_eos_tracker_for_request(
-            self._default_eos_token_ids,
+            self._eos_token_ids,
             request,
             self.encode,
         )
@@ -641,7 +644,8 @@ class TextTokenizer(
 
         json_schema = (
             json.dumps(request.response_format.json_schema)
-            if request.response_format and request.response_format.json_schema
+            if request.response_format
+            and request.response_format.json_schema is not None
             else None
         )
 
@@ -772,14 +776,17 @@ class TextAndVisionTokenizer(
         self.processor = AutoProcessor.from_pretrained(
             model_path, revision=revision, trust_remote_code=trust_remote_code
         )
-        self._default_eos_token_ids = set([self.eos])
+        eos_token_id = self.delegate.eos_token_id
+        self._eos_token_ids = (
+            {eos_token_id} if eos_token_id is not None else set()
+        )
 
         huggingface_config = pipeline_config.model.huggingface_config
         if eos_token_id := getattr(huggingface_config, "eos_token_id", None):
             if isinstance(eos_token_id, int):
-                self._default_eos_token_ids.add(eos_token_id)
+                self._eos_token_ids.add(eos_token_id)
             elif isinstance(eos_token_id, list):
-                self._default_eos_token_ids.update(eos_token_id)
+                self._eos_token_ids.update(eos_token_id)
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
@@ -803,6 +810,11 @@ class TextAndVisionTokenizer(
             self.processor, "image_break_token_id", None
         ):
             self.vision_token_ids.append(image_break_token_id)
+
+    @property
+    def eos_token_ids(self) -> set[int]:
+        """The full set of token ids that end generation for this model."""
+        return set(self._eos_token_ids)
 
     @cached_property
     def tokenizer_vocab_size(self) -> int:
@@ -838,11 +850,6 @@ class TextAndVisionTokenizer(
         )
         assert isinstance(templated_message, str)
         return templated_message
-
-    @property
-    def eos(self) -> int:
-        """Returns the end-of-sequence token ID from the delegate."""
-        return self.delegate.eos_token_id
 
     @property
     def expects_content_wrapping(self) -> bool:
@@ -901,7 +908,7 @@ class TextAndVisionTokenizer(
     ) -> EOSTracker:
         """Builds an :class:`EOSTracker` from the request sampling params and tokenizer default EOS token IDs."""
         return await build_eos_tracker_for_request(
-            self._default_eos_token_ids,
+            self._eos_token_ids,
             request,
             self.encode,
         )
@@ -1008,7 +1015,8 @@ class TextAndVisionTokenizer(
 
         json_schema = (
             json.dumps(request.response_format.json_schema)
-            if request.response_format and request.response_format.json_schema
+            if request.response_format
+            and request.response_format.json_schema is not None
             else None
         )
 
@@ -1088,7 +1096,7 @@ class TextAndVisionTokenizer(
         stop_token_ids: list[int] | None,
         stop: list[str] | None,
     ) -> tuple[set[int], list[list[int]]]:
-        eos_token_ids = set(self._default_eos_token_ids)
+        eos_token_ids = set(self._eos_token_ids)
         eos_sequences = list()
 
         if ignore_eos:

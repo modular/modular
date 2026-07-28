@@ -369,8 +369,8 @@ def test_continuous_kv_cache[
                         dtype, kv_params
                     ](
                         src_host_tensor.as_unsafe_any_origin(),
-                        cache_lengths_host_tensor.as_unsafe_any_origin().get_immutable(),
-                        lookup_host_tensor.as_unsafe_any_origin().get_immutable(),
+                        cache_lengths_host_tensor.as_unsafe_any_origin().as_imm(),
+                        lookup_host_tensor.as_unsafe_any_origin().as_imm(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )
@@ -378,8 +378,8 @@ def test_continuous_kv_cache[
                         dtype, kv_params
                     ](
                         dst_host_tensor.as_unsafe_any_origin(),
-                        cache_lengths_host_tensor.as_unsafe_any_origin().get_immutable(),
-                        lookup_host_tensor.as_unsafe_any_origin().get_immutable(),
+                        cache_lengths_host_tensor.as_unsafe_any_origin().as_imm(),
+                        lookup_host_tensor.as_unsafe_any_origin().as_imm(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )
@@ -552,8 +552,8 @@ def test_paged_kv_cache[
                         dtype, kv_params, page_size
                     ](
                         src_host_tensor.as_unsafe_any_origin(),
-                        cache_lengths_host_tensor.as_unsafe_any_origin().get_immutable(),
-                        paged_lut_host_tensor.as_unsafe_any_origin().get_immutable(),
+                        cache_lengths_host_tensor.as_unsafe_any_origin().as_imm(),
+                        paged_lut_host_tensor.as_unsafe_any_origin().as_imm(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )
@@ -561,8 +561,8 @@ def test_paged_kv_cache[
                         dtype, kv_params, page_size
                     ](
                         dst_host_tensor.as_unsafe_any_origin(),
-                        cache_lengths_host_tensor.as_unsafe_any_origin().get_immutable(),
-                        paged_lut_host_tensor.as_unsafe_any_origin().get_immutable(),
+                        cache_lengths_host_tensor.as_unsafe_any_origin().as_imm(),
+                        paged_lut_host_tensor.as_unsafe_any_origin().as_imm(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )

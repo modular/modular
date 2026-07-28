@@ -51,6 +51,11 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 from max.profiler import traced
 
 _logger = logging.getLogger("max.pipelines")
@@ -846,7 +851,7 @@ class DKVConnector:
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
-    ) -> int:
+    ) -> KVConnectorTransfer:
         """Loads external blocks into ``replica_idx``'s device memory by hash.
 
         Each ``block_hashes`` element must be canonical bytes: 8 bytes for
@@ -863,10 +868,16 @@ class DKVConnector:
         fan-out or cross-client drain at this layer.
         """
         dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
-        return self._clients[replica_idx].load(
+        num_loaded = self._clients[replica_idx].load(
             group_id=_DKV_GROUP_FULL_ATTENTION,
             device_block_ids=device_block_ids,
             block_hashes=dkv_hashes,
+        )
+        # dKV orders its posted READs before the forward in the deprecated
+        # ``wait_for_loads`` barrier, so the manager treats the load as already
+        # complete (no cordoning / deferred commit).
+        return CompletedTransfer(
+            TransferDirection.LOAD, list(device_block_ids[:num_loaded])
         )
 
     def offload(
@@ -875,7 +886,7 @@ class DKVConnector:
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
-    ) -> None:
+    ) -> KVConnectorTransfer:
         """Offloads ``replica_idx``'s device blocks to the dkv service by hash.
 
         Each ``block_hashes`` element follows the same 8-or-32 byte
@@ -897,6 +908,9 @@ class DKVConnector:
             block_ids=block_ids,
             block_hashes=dkv_hashes,
         )
+        # dKV registers its posted WRITEs in the deprecated ``wait_for_offloads``
+        # barrier, so the manager keeps no pin on the source blocks.
+        return CompletedTransfer(TransferDirection.OFFLOAD, list(block_ids))
 
     def touch(
         self,
@@ -1001,6 +1015,12 @@ class DKVConnector:
         total = KVCacheMetrics()
         for client in self._clients:
             m = client.metrics()
+            # connected and reconnect_attempts are a level and a lifetime
+            # counter read live from the Rust connector, so unlike the sibling
+            # transfer keys they are not cleared by reset_metrics. Fold each
+            # client in as one client contributing its own connected 1 or 0 and
+            # its own reconnect total, so the summed metric reports how many of
+            # the replica clients are up out of the total.
             total = total + KVCacheMetrics(
                 nixl_read_blocks=m["read_blocks"],
                 nixl_write_blocks=m["write_blocks"],
@@ -1012,6 +1032,9 @@ class DKVConnector:
                     "write_transfer_latency_total_ms"
                 ],
                 nixl_write_latency_count=m["write_transfer_latency_count"],
+                dkv_connected_clients=1 if m["connected"] else 0,
+                dkv_total_clients=1,
+                dkv_reconnect_attempts=m["reconnect_attempts"],
             )
         return total
 

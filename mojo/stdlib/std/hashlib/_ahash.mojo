@@ -142,16 +142,28 @@ struct AHasher[key: U256](Defaultable, Hasher):
         self.buffer = (self.buffer + UInt64(length)) * MULTIPLE
         if length > 8:
             if length > 16:
-                var tail = (ptr + length - 16).bitcast[UInt64]().load[width=2]()
+                var tail = (
+                    ptr.unsafe_offset(length - 16)
+                    .unsafe_bitcast[UInt64]()
+                    .unsafe_load[width=2]()
+                )
                 self._large_update(tail)
                 var offset = 0
                 while length - offset > 16:
-                    var block = (ptr + offset).bitcast[UInt64]().load[width=2]()
+                    var block = (
+                        ptr.unsafe_offset(offset)
+                        .unsafe_bitcast[UInt64]()
+                        .unsafe_load[width=2]()
+                    )
                     self._large_update(block)
                     offset += 16
             else:
-                var a = ptr.bitcast[UInt64]().load()
-                var b = (ptr + length - 8).bitcast[UInt64]().load()
+                var a = ptr.unsafe_bitcast[UInt64]().unsafe_load()
+                var b = (
+                    ptr.unsafe_offset(length - 8)
+                    .unsafe_bitcast[UInt64]()
+                    .unsafe_load()
+                )
                 self._large_update(U128(a, b))
         else:
             var value = _read_small(ptr, length)

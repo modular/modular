@@ -7,6 +7,20 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "test_native_backends",
+    size = "small",
+    srcs = ["test_native_backends.py"],
+    # aiohttp transitively provides multidict + frozenlist, which the test
+    # probes by name; it does not import aiohttp itself, hence ignore_extra_deps.
+    ignore_extra_deps = [
+        requirement("aiohttp"),
+    ],
+    deps = [
+        requirement("aiohttp"),
+    ],
+)
+
+modular_py_test(
     name = "test_local_runtime",
     size = "small",
     srcs = ["test_local_runtime.py"],
@@ -77,6 +91,17 @@ modular_py_test(
         requirement("fastapi"),
         requirement("httpx"),
         requirement("pillow"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_http_framing",
+    size = "small",
+    srcs = ["test_http_framing.py"],
+    deps = [
+        "//max/python/max/experimental/cascade/http_runtime",
+        requirement("aiohttp"),
         requirement("pytest-asyncio"),
     ],
 )
@@ -179,6 +204,28 @@ modular_py_test(
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
         requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_arch_import_layering",
+    size = "medium",
+    srcs = ["test_arch_import_layering.py"],
+    # The architecture module is imported dynamically (importlib, inside the
+    # test) so the static scanner can't see the dependency.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/llama3",
+    ],
+    # Importing the Llama architecture pulls max.pipelines.lib, which alone can
+    # blow the 300s budget on the shared BuildBuddy macOS workers (times out in
+    # pytest collection); the layering invariant is platform-independent, so
+    # run on Linux only.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/pipelines/architectures/llama3",
     ],
 )
 

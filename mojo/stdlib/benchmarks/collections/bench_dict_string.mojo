@@ -151,9 +151,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
 
     @always_inline
     def get(self, index: Int) -> StringSlice[ImmOrigin(origin_of(self))]:
-        var keys_ptr = self.keys.as_immutable().unsafe_origin_cast[
-            origin_of(self)
-        ]()
+        var keys_ptr = self.keys.as_imm().unsafe_origin_cast[origin_of(self)]()
         if index < 0 or index >= self.count:
             return StringSlice(
                 unsafe_from_utf8=Span(unsafe_ptr=keys_ptr, length=0)

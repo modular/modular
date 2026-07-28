@@ -588,7 +588,7 @@ def test_indexing() raises:
 def test_list_dtor() raises:
     var dtor_count = 0
 
-    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_unsafe_any_origin()
+    var ptr = UnsafePointer(to=dtor_count).as_imm().as_unsafe_any_origin()
     var l = LinkedList[DelCounter[ptr.origin]]()
     assert_equal(dtor_count, 0)
 
@@ -705,7 +705,7 @@ def test_linked_list_iter_owned() raises:
 
 def test_linked_list_iter_owned_destroys_elements_if_not_consumed() raises:
     var dtor_count = 0
-    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_unsafe_any_origin()
+    var ptr = UnsafePointer(to=dtor_count).as_imm().as_unsafe_any_origin()
     var ll = LinkedList[DelCounter[ptr.origin]]()
     ll.append(DelCounter(ptr))
     ll.append(DelCounter(ptr))
@@ -720,7 +720,7 @@ def test_linked_list_iter_owned_destroys_elements_if_not_consumed() raises:
 
 def test_linked_list_iter_owned_destroys_elements_if_partially_consumed() raises:
     var dtor_count = 0
-    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_unsafe_any_origin()
+    var ptr = UnsafePointer(to=dtor_count).as_imm().as_unsafe_any_origin()
     var ll = LinkedList[DelCounter[ptr.origin]]()
     ll.append(DelCounter(ptr))
     ll.append(DelCounter(ptr))

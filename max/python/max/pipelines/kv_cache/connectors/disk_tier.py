@@ -26,11 +26,9 @@ https://github.com/LMCache/LMCache/blob/dev/lmcache/v1/storage_backend/local_dis
 from __future__ import annotations
 
 import itertools
-import json
 import logging
-import os
 import queue
-import tempfile
+import shutil
 import threading
 from collections import OrderedDict
 from collections.abc import Callable
@@ -41,12 +39,9 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import psutil
-from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.profiler import Tracer
 
 logger = logging.getLogger("max.pipelines")
-
-_META_FILE = "kv-disk-cache.meta.json"
 
 _SENTINEL = None
 
@@ -167,15 +162,10 @@ class DiskTier:
     first byte of the hash. All TP shards are concatenated into a single file.
     Writes are async, reads return a Future.
     LRU eviction keeps disk usage within a configurable budget.
-    The cached set is the ``*.bin`` files themselves: a warm start rebuilds the
-    in-memory index by scanning the shard subdirectories, so no metadata is
-    persisted and the write path keeps no index in sync. A cache directory
-    written by an older flat-layout build is treated as a cold start.
 
-    ``block_nbytes`` is assumed constant for a given ``cache_dir``. Reusing a
-    directory across a block-size change (page size, model, dtype, or TP degree)
-    is unsupported: the stale, wrong-sized blocks are not detected and may be
-    read as valid data. Point a changed configuration at a fresh ``cache_dir``.
+    The cache is ephemeral scratch: the index starts empty and the whole
+    ``cache_dir`` tree is removed on :meth:`shutdown`. Blocks are never reloaded
+    from a directory left behind by a previous process.
     """
 
     def __init__(
@@ -183,13 +173,12 @@ class DiskTier:
         cache_dir: str,
         block_nbytes: int,
         max_disk_size_bytes: int,
-        kv_hash_algo: KVHashAlgo = "ahash64",
         num_workers: int = 16,
     ) -> None:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         # Pre-create the shard buckets so the write path can open files without
-        # a per-write mkdir. Created before _load_existing scans them.
+        # a per-write mkdir.
         for bucket in range(_NUM_SHARD_BUCKETS):
             (self._cache_dir / f"{bucket:02x}").mkdir(exist_ok=True)
 
@@ -214,17 +203,7 @@ class DiskTier:
         # Priority executor: reads preempt deletes preempt writes.
         self._executor = PriorityExecutor(num_workers=num_workers)
 
-        self._hash_algo: KVHashAlgo = kv_hash_algo
-        self._verify_or_record_algo()
-
-        self._load_existing()
-
-        # Blocks already indexed by the warm-start scan reuse the budget, so add
-        # them back to the free-space headroom rather than double-counting them.
-        reusable_bytes = len(self._saved_hashes) * self._block_nbytes
-        available_bytes = (
-            psutil.disk_usage(str(self._cache_dir)).free + reusable_bytes
-        )
+        available_bytes = psutil.disk_usage(str(self._cache_dir)).free
         if self._max_disk_size_bytes > available_bytes:
             raise RuntimeError(
                 "disk_offload_max_gb requests "
@@ -350,9 +329,15 @@ class DiskTier:
         self._executor.wait_until_idle()
 
     def shutdown(self) -> None:
-        """Wait for pending writes and shut down the executor."""
+        """Wait for pending writes, stop the executor, and delete the cache dir.
+
+        The disk cache is ephemeral scratch, so the whole ``cache_dir`` tree is
+        removed here. ``ignore_errors`` keeps a filesystem hiccup from turning a
+        best-effort cleanup into a shutdown failure.
+        """
         self.wait_for_writes()
         self._executor.shutdown(wait=True)
+        shutil.rmtree(self._cache_dir, ignore_errors=True)
 
     def reset(self) -> None:
         """Clear all blocks from disk."""
@@ -444,128 +429,6 @@ class DiskTier:
         finally:
             with self._lock:
                 self._pending_deletes.discard(block_hash)
-
-    # -- persistence --
-
-    def _load_existing(self) -> None:
-        """Rebuild the in-memory index by scanning the shard subdirectories.
-
-        Blocks live at ``<xx>/<hex>.bin`` where ``<hex>`` is either a 16-char
-        u64 (ahash64) or a 64-char SHA-256 digest. Other lengths are skipped
-        with a warning so a mis-placed sidecar file does not abort warm start.
-        Only the ``<xx>/`` bucket subdirectories are scanned, so a cache
-        directory written by an older flat-layout build is treated as a cold
-        start (its root-level files are not indexed); point a changed
-        configuration at a fresh ``cache_dir``.
-        """
-        scanned = 0
-        for bucket in os.scandir(self._cache_dir):
-            if not bucket.is_dir():
-                continue
-            for entry in os.scandir(bucket.path):
-                scanned += 1
-                name = entry.name
-                if not name.endswith(".bin"):
-                    continue
-                stem = name[:-4]
-                if len(stem) not in (16, 64):
-                    logger.warning(
-                        "Skipping disk cache file with unexpected stem "
-                        "length: %s",
-                        name,
-                    )
-                    continue
-                try:
-                    block_hash = bytes.fromhex(stem)
-                except ValueError:
-                    continue
-                self._saved_hashes[block_hash] = None
-
-        if self._saved_hashes:
-            logger.info(
-                "Disk cache warm start: indexed %d blocks (%.1f GB) from "
-                "%d files in %s",
-                len(self._saved_hashes),
-                len(self._saved_hashes) * self._block_nbytes / (1024**3),
-                scanned,
-                self._cache_dir,
-            )
-        else:
-            logger.info(
-                "Disk cache cold start at %s (scanned %d files)",
-                self._cache_dir,
-                scanned,
-            )
-
-    def _verify_or_record_algo(self) -> None:
-        """Verify the on-disk cache hash algo matches ``self._hash_algo``.
-        Maintains a ``kv-disk-cache.meta.json`` sidecar that pins the
-        algorithm used for filenames in the cache directory.
-        On startup:
-            - If the meta file exists, compare its ``hash_algo`` to
-              ``self._hash_algo`` and raise ``RuntimeError`` on mismatch
-              with a clear remediation message.
-            - If the meta file is missing but ``.bin`` files exist, infer
-              the algo from the first filename's stem length: 64 hex chars
-              must be ``sha256`` (32-byte digests). 16 hex chars are
-              ambiguous between ``ahash64`` and ``sha256_64`` (both store
-              64-bit ints) so we trust the configured algo. Refuse startup
-              on a clear mismatch (e.g. 64-char stems with configured
-              ``ahash64``).
-            - If no meta and no ``.bin`` files exist, write a fresh meta
-              file with the configured algo.
-        """
-        meta_path = self._cache_dir / _META_FILE
-        if meta_path.exists():
-            try:
-                recorded = json.loads(meta_path.read_text())
-            except (OSError, json.JSONDecodeError) as exc:
-                raise RuntimeError(
-                    f"Failed to read disk cache meta at {meta_path}: "
-                    f"{exc}. Delete {self._cache_dir} and restart to "
-                    "start fresh."
-                ) from exc
-            recorded_algo = recorded.get("hash_algo")
-            if recorded_algo != self._hash_algo:
-                raise RuntimeError(
-                    f"Disk cache at {self._cache_dir} was created with "
-                    f"hash_algo={recorded_algo!r}; current configuration "
-                    f"requires {self._hash_algo!r}. Delete "
-                    f"{self._cache_dir} and restart to start fresh."
-                )
-            return
-        existing_stem_len: int | None = None
-        for entry in os.scandir(self._cache_dir):
-            if entry.name.endswith(".bin"):
-                existing_stem_len = len(entry.name) - 4
-                break
-        if existing_stem_len == 64 and self._hash_algo != "sha256":
-            raise RuntimeError(
-                f"Disk cache at {self._cache_dir} contains SHA-256 files "
-                f"(64-char stems) but current configuration requires "
-                f"hash_algo={self._hash_algo!r}. Delete "
-                f"{self._cache_dir} and restart to start fresh."
-            )
-        if existing_stem_len == 16 and self._hash_algo == "sha256":
-            raise RuntimeError(
-                f"Disk cache at {self._cache_dir} contains int-hash files "
-                "(16-char stems) but current configuration requires "
-                "hash_algo='sha256' (64-char stems). Delete "
-                f"{self._cache_dir} and restart to start fresh."
-            )
-        payload = json.dumps(
-            {"hash_algo": self._hash_algo}, separators=(",", ":")
-        )
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            dir=meta_path.parent,
-            prefix=".kv-disk-cache.meta.",
-            suffix=".tmp",
-            delete=False,
-        ) as tmp:
-            tmp.write(payload)
-            tmp_path = tmp.name
-        os.replace(tmp_path, meta_path)
 
     @property
     def inflight_disk_ops(self) -> int:

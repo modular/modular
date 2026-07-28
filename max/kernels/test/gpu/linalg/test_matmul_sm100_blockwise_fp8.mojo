@@ -160,13 +160,13 @@ def test_matmul_sm100_blockwise_scaled_fp8[
             rebind[SIMD[c_type, width]](val),
         )
 
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
     _ = c_host.fill(0)
     _ = c_host_ref.fill(0)
 
-    rand(a_scales_host.ptr, a_scales_host.num_elements())
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(a_scales_host._storage, a_scales_host.num_elements())
+    rand(b_scales_host._storage, b_scales_host.num_elements())
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -223,12 +223,15 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.ptr, c_host_ref.ptr, c_host.num_elements(), threshold=0.001
+        c_host._storage,
+        c_host_ref._storage,
+        c_host.num_elements(),
+        threshold=0.001,
     )
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,

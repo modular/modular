@@ -24,7 +24,7 @@ Factored from the 2-stage AR kernel (`allreduce_residual_rmsnorm.mojo`); keep
 the reduce/norm math in sync with it.
 """
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.math import ceildiv, rsqrt
 from std.sys import (
     align_of,
@@ -82,9 +82,7 @@ def _reducescatter_rmsnorm_kernel[
     simd_width: Int,
     threads_per_block: Int,
 ](
-    src_ptrs: InlineArray[
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
-    ],
+    src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     gamma: TileTensor[in_dtype, GammaLayoutType, origin],
     normed_out: TileTensor[mut=True, in_dtype, NormedLayoutType, normed_origin],
     sum_out: TileTensor[mut=True, in_dtype, SumLayoutType, sum_origin],
@@ -92,7 +90,7 @@ def _reducescatter_rmsnorm_kernel[
     weight_offset: Scalar[in_dtype],
     rows: Int,
     cols: Int,
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
 ):
     """Reduce-scatter each owned row in f32, then RMSNorm it in registers.
@@ -123,9 +121,9 @@ def _reducescatter_rmsnorm_kernel[
     # Round-robin peer order (RS's `circular_add`): peer 0 is self, so accum
     # from 0 over all peers is bit-for-bit RS's `accum = peer[0]` init (AMD
     # non-multimem).
-    var ptrs = InlineArray[
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
-    ](uninitialized=True)
+    var ptrs = Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus](
+        uninitialized=True
+    )
     comptime for i in range(ngpus):
         ptrs[i] = src_ptrs[(my_rank + i) % ngpus]
 
@@ -208,15 +206,13 @@ def _reducescatter_rmsnorm_launch[
 ](
     rows: Int,
     cols: Int,
-    src_ptrs: InlineArray[
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
-    ],
+    src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
     sum_out: TileTensor[mut=True, in_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     ctx: DeviceContext,
 ) raises:
@@ -273,15 +269,13 @@ def reducescatter_rmsnorm[
     in_origin: Origin,
     //,
 ](
-    input_buffers: InlineArray[
-        TileTensor[in_dtype, in_layout, in_origin], ngpus
-    ],
+    input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
     sum_out: TileTensor[mut=True, in_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:
     """Fused reduce-scatter + RMSNorm across `ngpus` GPUs (bf16 in/out).
@@ -332,11 +326,11 @@ def reducescatter_rmsnorm[
     var rows = in_num_elems // cols
 
     # Raw peer pointers, origin erased to ImmutAnyOrigin (matches standalone RS).
-    var src_ptrs = InlineArray[
+    var src_ptrs = Array[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ](uninitialized=True)
     comptime for i in range(ngpus):
-        src_ptrs[i] = input_buffers[i].ptr.as_immutable().as_unsafe_any_origin()
+        src_ptrs[i] = input_buffers[i]._storage.as_imm().as_unsafe_any_origin()
 
     # Each thread owns `simd_width` cols; H=6144 fits the base width
     # (64*8*16=8192) on all targets (no AR two-width dispatch). Assert fit +
@@ -394,15 +388,13 @@ def _dispatch_rs_norm[
     //,
     two_launch: def() raises capturing -> None,
 ](
-    input_buffers: InlineArray[
-        TileTensor[in_dtype, in_layout, in_origin], ngpus
-    ],
+    input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
     sum_out: TileTensor[mut=True, in_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     threshold: Int = RS_NORM_FUSE_THRESHOLD,
 ) raises:

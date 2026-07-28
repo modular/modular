@@ -533,7 +533,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             # tile — no prior O accumulator to correct).
             if tiles_done > first_processed_tile_sw:
                 c_prod.acquire()
-                var _scale_tuple = InlineArray[Scalar[Self.AccumType], 1](
+                var _scale_tuple = Array[Scalar[Self.AccumType], 1](
                     fill=scale_for_old_max
                 )
                 tcgen05_st[
@@ -981,7 +981,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         float2_register[j] = element * SIMD[Self.AccumType, 2](
                             scale_value
                         )
-                    var _o_st_corr = InlineArray[
+                    var _o_st_corr = Array[
                         Scalar[Self.AccumType], per_warp_corr_elems
                     ](uninitialized=True)
 

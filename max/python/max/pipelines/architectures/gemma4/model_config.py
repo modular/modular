@@ -24,6 +24,7 @@ from max.pipelines.architectures.gemma3.model_config import (
     _HIDDEN_ACTIVATION_MAP,
     Gemma3Config,
 )
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
@@ -194,7 +195,10 @@ class Gemma4TextConfig(Gemma3Config):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
 
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
@@ -593,7 +597,10 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
 
         tie_word_embeddings = getattr(
             huggingface_config, "tie_word_embeddings", False

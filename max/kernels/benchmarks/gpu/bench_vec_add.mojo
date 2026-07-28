@@ -13,6 +13,7 @@
 
 from std.sys import get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -78,7 +79,7 @@ def bench_vec_add(
         def kernel_launch(ctx: DeviceContext) raises:
             run_func()
 
-        b.iter_custom[kernel_launch](context)
+        bencher_iter_custom[kernel_launch](b, context)
 
     b.bench_function[bench_func](
         BenchId("vec_add", input_id=String("block_dim=", block_dim)),

@@ -487,7 +487,7 @@ struct OwnedDLHandle(Movable):
     def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> Optional[
-        UnsafePointer[result_type, MutUntrackedOrigin]
+        Pointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -506,7 +506,7 @@ struct OwnedDLHandle(Movable):
     def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: Pointer[mut=False, Int8, _]) -> Optional[
-        UnsafePointer[result_type, MutUntrackedOrigin]
+        Pointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -600,7 +600,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             If `dlopen(nullptr, flags)` fails.
         """
         self = Self._dlopen(
-            Optional[UnsafePointer[c_char, UntrackedOrigin[mut=False]]](), flags
+            OptionalPointer[c_char, ImmUntrackedOrigin](), flags
         )
 
     def __init__[
@@ -621,18 +621,29 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         """
 
         var fspath = path.__fspath__()
-        self = Self._dlopen(fspath.as_c_string_slice().unsafe_ptr(), flags)
+        var file = (
+            fspath.as_c_string_slice()
+            .unsafe_ptr()
+            .as_imm()
+            .unsafe_origin_cast[ImmUntrackedOrigin]()
+        )
+        var handle = Self._dlopen(file, flags)
+        # `file` carries an untracked origin, so nothing ties it back to
+        # `fspath`. Without this, the compiler could destroy `fspath` before
+        # `dlopen` copies the filename, freeing the buffer out from under it.
+        _ = fspath^
+        self = handle
 
     @staticmethod
     def _dlopen(
-        file: OptionalUnsafePointer[c_char, _], flags: Int
+        file: OptionalPointer[mut=False, c_char, ImmUntrackedOrigin], flags: Int
     ) raises -> _DLHandle:
         var handle = dlopen(file, Int32(flags))
         if not handle:
             var error_message = dlerror()
             var message = StringSlice(
                 unsafe_from_utf8=CStringSlice(
-                    unsafe_from_ptr=error_message.value().as_immutable()
+                    unsafe_from_ptr=error_message.value().as_imm()
                 )
             ) if error_message else {}
             raise Error("dlopen failed: ", message)
@@ -725,7 +736,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         # Force unique the func_name so we know that it is nul-terminated.
         comptime func_name_literal = get_static_string[func_name]()
         return self._get_function[result_type](
-            cstr_name=func_name_literal.unsafe_ptr().bitcast[c_char](),
+            cstr_name=func_name_literal.unsafe_ptr().unsafe_bitcast[c_char](),
         )
 
     @always_inline
@@ -759,7 +770,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
     def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> Optional[
-        UnsafePointer[result_type, MutUntrackedOrigin]
+        Pointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -781,7 +792,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
     def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: Pointer[mut=False, Int8, _]) -> Optional[
-        UnsafePointer[result_type, MutUntrackedOrigin]
+        Pointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -814,7 +825,9 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         # Clear any pre-existing error.
         _ = dlerror()
 
-        var res = dlsym[result_type](self.handle, cstr_name)
+        var res: Optional[Pointer[result_type, MutUntrackedOrigin]] = dlsym[
+            result_type
+        ](self.handle, cstr_name)
 
         if not res:
             # Result is NULL — check if it's an error or a valid NULL symbol.

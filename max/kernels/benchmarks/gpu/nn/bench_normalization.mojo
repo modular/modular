@@ -19,6 +19,7 @@ from std.sys import (
     get_defined_string,
 )
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
@@ -120,7 +121,7 @@ def bench_layer_norm_gpu[
                 shape_coord, beta, epsilon, ctx=ctx
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     comptime shape_tag = "static" if static_shape else "dynamic"
     b.bench_function[bench_fn](
@@ -209,7 +210,7 @@ def bench_rms_norm_gpu[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     b.bench_function[bench_fn](
         BenchId("rms_norm", input_id=String(fn_name, "/", dtype, "/", shape)),

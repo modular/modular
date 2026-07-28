@@ -25,6 +25,7 @@ so the achievable ceiling is the device-to-device memcpy bandwidth.
 
 from std.sys import get_defined_dtype, get_defined_int, size_of
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     BenchId,
@@ -73,7 +74,7 @@ def run_row_scatter[
                 data_tt, idx_tt, upd_tt, out_tt, ctx
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     comptime data_bytes = rows * cols * size_of[dtype]()
     comptime upd_bytes = num_idx * cols * size_of[dtype]()
@@ -130,7 +131,7 @@ def run_elem_scatter[
                 data_tt, idx_tt, upd_tt, out_tt, ctx
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     comptime data_bytes = rows * cols * size_of[dtype]()
     comptime upd_bytes = num_idx * size_of[dtype]()

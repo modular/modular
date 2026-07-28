@@ -116,11 +116,15 @@ def test_matmul_sm90_swapAB_comparison[
     var c_normal_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
     ).into_deletable()
-    var c_normal_host_ptr = c_normal_host_alloc.unsafe_ptr()
+    var c_normal_host_ptr: UnsafePointer[
+        Scalar[c_type], origin_of(c_normal_host_alloc)
+    ] = c_normal_host_alloc.unsafe_ptr()
     var c_swapAB_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
     ).into_deletable()
-    var c_swapAB_host_ptr = c_swapAB_host_alloc.unsafe_ptr()
+    var c_swapAB_host_ptr: UnsafePointer[
+        Scalar[c_type], origin_of(c_swapAB_host_alloc)
+    ] = c_swapAB_host_alloc.unsafe_ptr()
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -526,11 +530,15 @@ def test_matmul_sm90_swapAB_comparison_v2[
     var c_normal_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
     ).into_deletable()
-    var c_normal_host_ptr = c_normal_host_alloc.unsafe_ptr()
+    var c_normal_host_ptr: UnsafePointer[
+        Scalar[c_type], origin_of(c_normal_host_alloc)
+    ] = c_normal_host_alloc.unsafe_ptr()
     var c_swapAB_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
     ).into_deletable()
-    var c_swapAB_host_ptr = c_swapAB_host_alloc.unsafe_ptr()
+    var c_swapAB_host_ptr: UnsafePointer[
+        Scalar[c_type], origin_of(c_swapAB_host_alloc)
+    ] = c_swapAB_host_alloc.unsafe_ptr()
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)

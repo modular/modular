@@ -31,7 +31,11 @@ from max.pipelines.kv_cache import (
     PagedKVCacheManager,
     TransferReqData,
 )
-from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
+from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
+    PipelineConfig,
+    TextGenerationPipeline,
+)
 from max.pipelines.modeling.types import (
     Pipeline,
     RequestID,
@@ -290,10 +294,13 @@ class DecodeScheduler(Scheduler):
             # the prefill node generates extra KV entries for draft tokens,
             # so we must allocate matching blocks on the decode side.
             try:
-                self.kv_cache.alloc(
+                load_event = self.kv_cache.alloc(
                     context,
                     replica_idx=replica_idx,
                 )
+                # TODO: cordon the request (like the CE batch constructor) so the
+                # onload overlaps GPU execution instead of blocking here.
+                load_event.synchronize()
             except InsufficientBlocksError:
                 # If we don't have enough space, we will return this to the request queue.
                 self.pending_reqs[req_id] = context
@@ -652,12 +659,19 @@ def load_decode_scheduler(
         scheduler_config.data_parallel_degree > 1
         and pipeline_config.runtime.device_graph_capture
     ):
+        # Padding dummies must match the architecture's concrete context
+        # type — for VLMs the overlap pipeline narrows every batched context
+        # to TextAndVisionContext, so plain-TextContext dummies would crash
+        # the first padded batch.
+        context_type = PIPELINE_REGISTRY.retrieve_context_type(pipeline_config)
+        assert issubclass(context_type, TextContext)
         dp_padder = DPBatchPadder(
             dp_size=scheduler_config.data_parallel_degree,
             kv_manager=pipeline.kv_manager,
             max_length=pipeline._pipeline_model.max_seq_len,
             model_name=pipeline_config.model.model_name,
             pipeline=pipeline,
+            context_type=context_type,
         )
 
     return DecodeScheduler(

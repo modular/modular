@@ -298,10 +298,10 @@ struct Coord[*element_types: CoordLike](
     comptime static_product = _StaticProduct[*Self.element_types]
     """The product of all static dimensions, or -1 if any are dynamic."""
 
-    comptime rank = Self.element_types.size
+    comptime rank = Self.element_types.length
     """The number of top-level elements in this `Coord`."""
 
-    comptime flat_rank = _Flattened[*Self.element_types].size
+    comptime flat_rank = _Flattened[*Self.element_types].length
     """The total number of leaf elements after flattening nested `Coord`s."""
 
     comptime is_flat = Self.rank == Self.flat_rank
@@ -369,7 +369,7 @@ struct Coord[*element_types: CoordLike](
         Returns:
             The number of elements in the tuple.
         """
-        return Self.element_types.size
+        return Self.element_types.length
 
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this `Coord` to a writer.
@@ -646,7 +646,7 @@ struct Coord[*element_types: CoordLike](
             ```
         """
         comptime FlatTypes = _Flattened[*Self.element_types]
-        comptime flat_size = FlatTypes.size
+        comptime flat_size = FlatTypes.length
 
         var flat_tuple: _RegTuple[*FlatTypes]
 
@@ -1329,7 +1329,7 @@ def _get_flattened_helper[
     comptime T = element_types[i]
 
     comptime if T.is_tuple:
-        comptime count = _Flattened[*T.ParamListType].size
+        comptime count = _Flattened[*T.ParamListType].length
 
         comptime if flat_idx >= current_offset and flat_idx < current_offset + count:
             return _get_flattened[flat_idx - current_offset](tuple[i].tuple())
@@ -1612,7 +1612,7 @@ comptime _Idx2CrdResultTypes[
     shape_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    shape_types.size,
+    shape_types.length,
     _Idx2CrdResultTabulator[
         out_dtype, idx_type, stride_types, shape_types, ...
     ],
@@ -1690,7 +1690,7 @@ struct _RegTuple[*element_types: CoordLike](
             The tuple length.
         """
 
-        comptime result = Self.element_types.size
+        comptime result = Self.element_types.length
         return result
 
     @always_inline("nodebug")
@@ -1768,7 +1768,7 @@ struct _RegTuple[*element_types: CoordLike](
         comptime for i in range(type_of(result).__len__()):
             Pointer(to=result[i]).unsafe_write(
                 rebind[type_of(result[i])](
-                    self[Self.element_types.size - 1 - i]
+                    self[Self.element_types.length - 1 - i]
                 )
             )
 
@@ -1870,7 +1870,7 @@ comptime _Multiply[
     Rhs: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    Lhs.size,
+    Lhs.length,
     _MultiplyTabulator[Lhs, Rhs, ...],
 ]()
 
@@ -1921,7 +1921,7 @@ comptime _Divide[
     Rhs: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    Lhs.size,
+    Lhs.length,
     _DivideTabulator[Lhs, Rhs, ...],
 ]()
 
@@ -1945,7 +1945,7 @@ comptime _CeilDiv[
     Rhs: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    Lhs.size,
+    Lhs.length,
     _CeilDivTabulator[Lhs, Rhs, ...],
 ]()
 

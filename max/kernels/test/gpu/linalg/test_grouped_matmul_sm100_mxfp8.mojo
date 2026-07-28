@@ -257,14 +257,14 @@ def _test_kernel_impl[
                 for k in range(K):
                     b_host[e, n, k] = random_ui64(0, 1).cast[b_type]()
     else:
-        rand(a_host.ptr, a_host.num_elements())
-        rand(b_host.ptr, b_host.num_elements())
+        rand(a_host._storage, a_host.num_elements())
+        rand(b_host._storage, b_host.num_elements())
 
     var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_tensor_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     for i in range(a_scales_host.num_elements()):
-        a_scales_host.ptr[i] = Scalar[scales_dtype](0.0)
+        a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
     effective_n = expert_shape[0]
     effective_k = expert_shape[1]
@@ -478,22 +478,22 @@ def _test_kernel_impl[
         expert_id = expert_ids_host_ptr[i]
 
         var c_slice = TileTensor(
-            c_ref_tensor.ptr + start * c_row_stride,
+            c_ref_tensor._storage + start * c_row_stride,
             row_major((end - start, Idx[expert_shape[0]])),
         )
 
         var new_a_tensor = TileTensor(
-            a_tensor.ptr + start * a_row_stride,
+            a_tensor._storage + start * a_row_stride,
             row_major((end - start, Idx[expert_shape[1]])),
         )
 
         var new_b_tensor = TileTensor(
-            b_tensor.ptr + Int(expert_id) * b_expert_stride,
+            b_tensor._storage + Int(expert_id) * b_expert_stride,
             row_major((Idx[expert_shape[0]], Idx[expert_shape[1]])),
         )
 
         var new_b_scales_tensor = TileTensor(
-            b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
+            b_scales_tensor._storage + Int(expert_id) * b_scales_expert_stride,
             row_major(
                 Coord(
                     Idx[n_groups],
@@ -509,7 +509,7 @@ def _test_kernel_impl[
             a_scale_offsets_ptr[i]
         )
         var new_a_scales_tensor = TileTensor(
-            a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
+            a_scales_tensor._storage + a_scales_start * a_scales_row_stride,
             row_major(
                 Coord(
                     ceildiv(end - start, SF_MN_GROUP_SIZE),
@@ -541,8 +541,8 @@ def _test_kernel_impl[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=test_atol,
         rtol=test_rtol,

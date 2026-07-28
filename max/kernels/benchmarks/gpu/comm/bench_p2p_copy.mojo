@@ -45,6 +45,10 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from max.benchmark import (
+    bench_multicontext,
+    bencher_iter_custom,
+)
 from comm.sync import enable_p2p
 from std.gpu import (
     global_idx,
@@ -206,9 +210,10 @@ def bench_p2p[
                 block_dim=BLOCK_SIZE,
             )
 
-        bencher.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bencher, ctx)
 
-    b.bench_multicontext[bench_iter](
+    bench_multicontext[bench_iter](
+        b,
         ctxs,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],

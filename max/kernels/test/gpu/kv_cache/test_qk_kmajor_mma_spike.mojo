@@ -281,7 +281,7 @@ def qk_mma_kernel[
 
     comptime accum_type = get_accum_type[ab_type]()
     comptime c_frag_size = MMA_M * MMA_N // num_threads
-    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
+    var c_frag: Array[Scalar[accum_type], c_frag_size]
 
     comptime q_expected_bytes = q_size * size_of[ab_type]()
     comptime k_expected_bytes = k_size * size_of[ab_type]()

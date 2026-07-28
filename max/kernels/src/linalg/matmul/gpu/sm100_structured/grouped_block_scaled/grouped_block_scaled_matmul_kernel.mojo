@@ -1792,11 +1792,11 @@ struct GroupedBlockScaledMatmulKernel[
 
                 # Peer CTA slicing using TileTensor pattern (ptr + layout)
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 

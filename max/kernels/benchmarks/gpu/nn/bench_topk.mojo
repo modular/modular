@@ -15,6 +15,7 @@ from std.math import ceildiv, iota
 from std.random import random_float64
 
 from std.algorithm.reduction import max as reduce_max
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -176,7 +177,7 @@ def bench_topk_batched[
                 top_p=top_p_tt.as_unsafe_any_origin().as_immut(),
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     var kernel_name = String(
         "bench-topk", "/N=", N, "/K=", K, "/batch_size=", batch_size
@@ -351,7 +352,7 @@ def bench_topk_multi_rank[
                 num_blocks_per_input=num_blocks_per_input,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     var kernel_name = "topk-multirank"
     var num_bytes = device_in.num_elements() * size_of[dtype]()
@@ -484,7 +485,7 @@ def bench_topk_fi[
                 rng_seed=seed_tt.as_unsafe_any_origin().as_immut(),
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     var kernel_name = String(
         "bench-topk-fi",
@@ -689,7 +690,7 @@ def bench_dispatch[
             )
             iter0 += 1
 
-        bb.iter_custom(launch, ctx)
+        bencher_iter_custom(bb, launch, ctx)
 
     b.bench_function[do_bench](BenchId(label))
 
@@ -770,7 +771,7 @@ def bench_bitonic_topk(
                 batch_size,
             )
 
-        bb.iter_custom[launch](ctx)
+        bencher_iter_custom[launch](bb, ctx)
 
     b.bench_function[bench_fn](
         BenchId(

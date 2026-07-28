@@ -107,7 +107,7 @@ def targets():
         testonly = True,
         actual = select({{
             "@@//:use_sglang_setting": ":llguidance@0.7.30",
-            "@@//:use_vllm_setting": ":llguidance@1.3.0",
+            "@@//:use_vllm_setting": ":llguidance@1.7.5",
             "//conditions:default": ":llguidance@1.7.5",
         }}),
     )
@@ -184,7 +184,7 @@ def targets():
     native.alias(
         name = "vllm@multiple",
         testonly = True,
-        actual = ":vllm@0.20.0",
+        actual = ":vllm@0.22.1",
         target_compatible_with = ["@@//:nvidia_gpu"],
     )
 

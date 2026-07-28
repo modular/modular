@@ -199,10 +199,12 @@ def kernel_v227_round_trip(
     # R — read back the full V register tile from each slot, per-lane.
     # v227 base + faithful v227 readout cell.
     var base_v227 = _Op.precompute_v_lane_base[v_full_v227=True](
-        v_smem_v227.ptr
+        v_smem_v227._storage
     )
     # ours base + ours st_8x32 readout cell.
-    var base_ref = _Op.precompute_v_lane_base[v_full_v227=False](v_smem_ref.ptr)
+    var base_ref = _Op.precompute_v_lane_base[v_full_v227=False](
+        v_smem_ref._storage
+    )
 
     var lid = Int(lane_id())
 

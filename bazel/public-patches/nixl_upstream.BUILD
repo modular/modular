@@ -297,6 +297,50 @@ cc_library(
     alwayslink = True,
 )
 
+# --- UCCL backend plugin --------------------------------------------------
+# UCCL runs its transport protocol on CPUs over plain verbs queue pairs, so
+# it saturates AMD RoCE NICs. The plugin source is vendored here; the transport
+# itself is the prebuilt @uccl_prebuilt//:uccl (libuccl_p2p.so). Single AMD
+# flavor: UCCL does its own transport, so there is no separate verbs variant.
+cc_library(
+    name = "uccl_plugin_lib",
+    srcs = [
+        "src/plugins/uccl/uccl_backend.cpp",
+        "src/plugins/uccl/uccl_backend.h",
+        "src/plugins/uccl/uccl_plugin.cpp",
+    ],
+    # Upstream uccl_backend.h does not mark its overrides consistently; relax
+    # the Modular -Werror on this vendored third-party source.
+    copts = ["-Wno-inconsistent-missing-override"],
+    target_compatible_with = _LINUX_X86,
+    deps = [
+        ":nixl",
+        ":nixl_api_headers",
+        ":nixl_common",
+        ":nixl_serdes",
+        "@uccl_prebuilt//:uccl",
+    ],
+    alwayslink = True,
+)
+
+# libuccl_p2p.so is staged alongside libplugin_UCCL.so in the plugin dir, so
+# the first rpath ($ORIGIN) resolves it; the second reaches <root>/lib for
+# libnixl.so. -z undefs allows the transport lib's undefined Python symbols
+# to bind at load time in the Python serving process.
+cc_binary(
+    name = "rocm-uccl/libplugin_UCCL.so",
+    linkopts = [
+        "-Wl,-z,undefs",
+        "-Wl,-rpath,$$ORIGIN",
+        # Installed layout: <root>/lib/nixl/rocm-uccl/ → <root>/lib.
+        "-Wl,-rpath,$$ORIGIN/../../../lib",
+    ],
+    linkshared = True,
+    linkstatic = True,
+    target_compatible_with = _LINUX_X86,
+    deps = [":uccl_plugin_lib"],
+)
+
 # --- libfabric backend plugin --------------------------------------------
 # Upstream src/utils/libfabric/* is a separate library that the plugin
 # links against. We fold both into a single cc_library that builds the

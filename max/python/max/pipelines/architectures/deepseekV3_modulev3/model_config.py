@@ -21,8 +21,9 @@ from max.dtype import DType
 from max.experimental.sharding import DeviceMesh
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, spec_decode_cache_slack
 from max.nn.quant_config import QuantConfig
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -174,7 +175,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = model_config.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -228,7 +231,8 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             first_k_dense_replace=config.first_k_dense_replace,
             norm_topk_prob=config.norm_topk_prob,
             hidden_act=config.hidden_act,
-            max_position_embeddings=config.max_position_embeddings,
+            max_position_embeddings=config.max_position_embeddings
+            + spec_decode_cache_slack(kv_params),
             max_seq_len=max_seq_len,
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,

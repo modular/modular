@@ -256,6 +256,9 @@ struct Span[
         """
         self = rebind[type_of(self)](other)
 
+    # TODO(MOCO-4334): `unsafe_ptr` should be a safe `Pointer`, but flipping it
+    # collapses the inferred origin when a caller builds a `Span` from a safe
+    # pointer. Flip once MOCO-4334 is fixed; cleanup tracked in MSTDL-2941.
     @always_inline("builtin")
     def __init__(
         out self,
@@ -294,14 +297,14 @@ struct Span[
         //,
     ](
         out self: Span[U, array_origin],
-        ref[array_origin] array: InlineArray[U, size],
+        ref[array_origin] array: Array[U, size],
     ):
-        """Construct a `Span` from an `InlineArray`.
+        """Construct a `Span` from an `Array`.
 
         Parameters:
             array_origin: The origin of the array.
-            U: The type of the elements in the `InlineArray`.
-            size: The size of the `InlineArray`.
+            U: The type of the elements in the `Array`.
+            size: The size of the `Array`.
 
         Args:
             array: The array to which the span refers.
@@ -422,6 +425,7 @@ struct Span[
         """
         return self._len
 
+    @__allow_legacy_custom_self_type
     @stable(since="1.0")
     def __contains__[
         dtype: DType, //
@@ -438,7 +442,7 @@ struct Span[
             True if the value is contained in the list, False otherwise.
         """
 
-        comptime widths: InlineArray[Int, 6] = [256, 128, 64, 32, 16, 8]
+        comptime widths: Array[Int, 6] = [256, 128, 64, 32, 16, 8]
         var ptr = self.unsafe_ptr()
         var length = len(self)
         var processed = 0
@@ -544,13 +548,19 @@ struct Span[
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    def get_immutable(self) -> Self.Immutable:
+    def as_imm(self) -> Self.Immutable:
         """Return an immutable version of this `Span`.
 
         Returns:
             An immutable version of the same `Span`.
         """
         return rebind[Self.Immutable](self)
+
+    @doc_hidden
+    @always_inline
+    @deprecated(use=as_imm)
+    def get_immutable(self) -> Self.Immutable:
+        return self.as_imm()
 
     @always_inline
     def unsafe_get(self, idx: Some[Indexer]) -> ref[Self.origin] Self.T:
@@ -574,7 +584,7 @@ struct Span[
     @always_inline("builtin")
     def unsafe_ptr(
         self,
-    ) -> UnsafePointer[Self.T, Self.origin]:
+    ) -> Pointer[Self.T, Self.origin]:
         """Retrieves a pointer to the underlying memory, or a dangling
         pointer if the span doesn't point to anything.
 
@@ -778,6 +788,7 @@ struct Span[
             length = self._len,
         }
 
+    @__allow_legacy_custom_self_type
     def reverse[dtype: DType, //](self: Span[mut=True, Scalar[dtype], _]):
         """Reverse the elements of the `Span` inplace.
 
@@ -814,6 +825,7 @@ struct Span[
             ptr.unsafe_offset(middle + 1).unsafe_write_move_from(middle_prev)
             middle_prev.unsafe_write(value)
 
+    @__allow_legacy_custom_self_type
     def apply[
         dtype: DType,
         //,
@@ -845,6 +857,7 @@ struct Span[
                 func(ptr[unsafe_offset=processed + i])
             )
 
+    @__allow_legacy_custom_self_type
     def apply[
         dtype: DType,
         //,
@@ -883,6 +896,7 @@ struct Span[
             if cond(vec):
                 ptr.unsafe_offset(processed + i).unsafe_write(func(vec))
 
+    @__allow_legacy_custom_self_type
     def count[
         dtype: DType,
         //,
@@ -902,7 +916,7 @@ struct Span[
         """
 
         comptime simdwidth = simd_width_of[dtype]()
-        var ptr = self.unsafe_ptr().as_immutable()
+        var ptr = self.unsafe_ptr().as_imm()
         var length = len(self)
         var count = 0
 
@@ -936,6 +950,7 @@ struct Span[
         assert 0 <= offset + length <= len(self), "subspan out of bounds."
         return Self(unsafe_ptr=self._data.unsafe_offset(offset), length=length)
 
+    @__allow_legacy_custom_self_type
     def _binary_search_index[
         dtype: DType,
         //,

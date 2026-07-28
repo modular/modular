@@ -72,8 +72,8 @@ struct TypeList[
     comptime tl = TypeList.of[Trait=AnyType, Int, String, Float64]()
 
     def main() raises:
-        # Query size
-        assert_equal(tl.size, 3)
+        # Query length
+        assert_equal(tl.length, 3)
 
         # Check membership
         comptime assert tl.contains[Int]()
@@ -87,7 +87,7 @@ struct TypeList[
     comptime _mlir_type = _MLIR.KGENParamListType[Self.Trait]
     """The low-level MLIR type of the type list."""
 
-    comptime size = Int(
+    comptime length = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,
             Self._mlir_type,
@@ -97,6 +97,10 @@ struct TypeList[
         ]
     )
     """The number of types in the list."""
+
+    @deprecated("`TypeList.size` is deprecated, use `TypeList.length`.")
+    comptime size = Self.length
+    """The number of types in the list. Deprecated alias for `length`."""
 
     comptime __getitem_param__[idx: SIMDLength] = __mlir_attr[
         `#kgen.param_list.get<:`,
@@ -375,7 +379,7 @@ struct TypeList[
     """Folds this type list to a single value using a step function of position.
 
     Like `reduce`, but the reducer receives each element's index in this list,
-    from `0` through `size - 1`, as a third compile-time argument.
+    from `0` through `length - 1`, as a third compile-time argument.
 
     Parameters:
         FromAndTo: The type of the accumulator and the final result.
@@ -500,7 +504,7 @@ struct TypeList[
         Mapper: Self._TypeToTypeGenerator[ToTrait],
     ] = TypeList.tabulate[
         Trait=ToTrait,
-        Self.size,
+        Self.length,
         Self._MapTabulator[ToTrait, Mapper, idx=_],
     ]
     """Maps types to new types using a mapper.
@@ -547,14 +551,14 @@ struct TypeList[
         Predicate: Self._TypeIndexPredicateGenerator,
     ] = TypeList._concat[
         *ParameterList.tabulate[
-            Self.size,
+            Self.length,
             Self._FilterIdxTabulator[Predicate, _],
         ]()
     ]
     """Returns a new `TypeList` containing only elements selected by a predicate.
 
     The predicate is evaluated at compile time for each `(element, index)` pair.
-    Indices are the positions in this list, from `0` through `size - 1`.
+    Indices are the positions in this list, from `0` through `length - 1`.
 
     Parameters:
         Predicate: A compile-time generator
@@ -591,7 +595,7 @@ struct TypeList[
         Mapper: Self._MapToValuesGeneratorType[ValueType=ValueType],
     ] = ParameterList.tabulate[
         type=ValueType,
-        Self.size,
+        Self.length,
         Self._MapToValuesIntTabulator[
             ValueType=ValueType, Mapper=Mapper, idx=_
         ],
@@ -613,9 +617,9 @@ struct TypeList[
     # ===-------------------------------------------------------------------===#
 
     comptime _ReverseTabulator[idx: Int]: Self.Trait = Self.__getitem_param__[
-        Self.size - 1 - idx
+        Self.length - 1 - idx
     ]
-    comptime reverse = TypeList.tabulate[Self.size, Self._ReverseTabulator[_]]
+    comptime reverse = TypeList.tabulate[Self.length, Self._ReverseTabulator[_]]
     """Returns this type list in reverse order."""
 
     comptime _SliceTabulator[
@@ -625,7 +629,7 @@ struct TypeList[
 
     comptime slice[
         start: Int = 0,
-        end: Int = Self.size,
+        end: Int = Self.length,
     ] = TypeList.tabulate[
         max(end - start, 0),
         Self._SliceTabulator[start, _],
@@ -637,20 +641,20 @@ struct TypeList[
 
     Parameters:
         start: The starting index (inclusive). Defaults to 0.
-        end: The ending index (exclusive). Defaults to the list size.
+        end: The ending index (exclusive). Defaults to the list length.
 
     Constraints:
-        0 <= start <= end <= size.
+        0 <= start <= end <= length.
     """
 
     @always_inline
     def __len__(self) -> Int:
-        """Gets the size of the TypeList.
+        """Gets the number of elements in the TypeList.
 
         Returns:
             The number of elements on the TypeList.
         """
-        return Self.size
+        return Self.length
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1370,7 +1374,7 @@ struct VariadicList[
             A low-level pointer to the element on the list corresponding to the
             given index.
         """
-        return self._value.unsafe_ptr()[idx][]
+        return self._value.unsafe_ptr()[unsafe_offset=idx][]
 
     def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[
@@ -1606,7 +1610,7 @@ struct VariadicPack[
         Returns:
             The number of elements in the variadic pack.
         """
-        return Self.element_types.size
+        return Self.element_types.length
 
     @always_inline
     def __len__(self) -> Int:

@@ -21,7 +21,6 @@ from unittest.mock import MagicMock
 
 import torch
 from max.driver import DeviceSpec, load_devices, scan_available_devices
-from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.weights import SafetensorWeights, WeightsAdapter
 from test_common.mocks import DummyPipelineConfig
@@ -82,7 +81,6 @@ def make_pipeline_config_factory(
             quantization_encoding="bfloat16",
             device_specs=device_specs,
         )
-        pipeline_config.model.kv_cache._cache_dtype = DType.bfloat16
         pipeline_config.model._huggingface_config = hf_config
         pipeline_config.model.weight_path = [Path("fake.safetensors")]
         return pipeline_config

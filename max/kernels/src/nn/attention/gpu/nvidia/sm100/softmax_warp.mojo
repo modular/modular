@@ -95,6 +95,7 @@ def fa4_scale_write_output[
     config: FA4Config,
     output_swizzle_mode: TensorMapSwizzle,
     tma_bpo: Int,
+    zero_fill: Bool = False,
 ](
     local_row: UInt32,
     local_warp_idx: UInt32,
@@ -173,24 +174,38 @@ def fa4_scale_write_output[
     @always_inline
     def write_block[blk: Int]():
         comptime col = blk * o_sw_K
-        var o_vals = tcgen05_ld[
-            datapaths=32,
-            bits=32,
-            repeat=o_sw_K,
-            dtype=accum_dtype,
-            pack=False,
-            width=o_sw_K,
-        ](o_tmem_arg.tmem_addr + UInt32(col))
+        comptime if zero_fill:
+            # Empty (all-masked) row: emit zeros without reading the
+            # never-produced O accumulator in TMEM.
+            var o_vals = InlineArray[Scalar[accum_dtype], o_sw_K](
+                fill=Scalar[accum_dtype](0)
+            )
+            var packed = scale_pack_o_row[output_type, w=o_sw_K](
+                o_vals, inv_row_sum
+            )
+            var o_inner = Int(local_row) * o_sw_K
+            (o_smem_arg + blk * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
+                Scalar[DType.uint32]
+            ]().store(packed)
+        else:
+            var o_vals = tcgen05_ld[
+                datapaths=32,
+                bits=32,
+                repeat=o_sw_K,
+                dtype=accum_dtype,
+                pack=False,
+                width=o_sw_K,
+            ](o_tmem_arg.tmem_addr + UInt32(col))
 
-        var packed = scale_pack_o_row[output_type, w=o_sw_K](
-            o_vals, inv_row_sum
-        )
+            var packed = scale_pack_o_row[output_type, w=o_sw_K](
+                o_vals, inv_row_sum
+            )
 
-        # Block `blk` is one k-block [BM, o_sw_K]; col % o_sw_K == 0.
-        var o_inner = Int(local_row) * o_sw_K
-        (o_smem_arg + blk * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
-            Scalar[DType.uint32]
-        ]().store(packed)
+            # Block `blk` is one k-block [BM, o_sw_K]; col % o_sw_K == 0.
+            var o_inner = Int(local_row) * o_sw_K
+            (o_smem_arg + blk * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
+                Scalar[DType.uint32]
+            ]().store(packed)
 
     comptime if batched:
         # Single issuer, 2-phase pipeline: write the first half to smem and kick
@@ -505,7 +520,13 @@ def fa4_ws_intracta_combine[
     # P@V MMA wrote `num_d_tiles` such tiles contiguously (Step 1 of
     # docs/plans/sm100-fa4-ws-mma32-warp-splitk.md, §8), so warp g's full-depth O
     # reads back as `num_d_tiles` per-tile `tcgen05_ld`s of `depth_tile` columns.
-    comptime depth_tile = 256 // m_pack
+    # `min(_, ov_depth)`: Layout-G (m_pack==4) DEPTH-SCATTERS into `256//m_pack`
+    # (=64)-wide tiles, always <= ov_depth. Layout-E (m_pack==2) instead
+    # REDUCTION-ACCUMULATES into ONE `ov_depth`-wide tile (mma_warp.mojo's
+    # `num_d_tiles = num_qk_stages`, `pv_mma_n = m_pack*ov_depth`); at ov_depth=64
+    # the depth-scatter `256//2=128` would overrun (`num_d_tiles=0`, assert
+    # fires). `256//m_pack == ov_depth` only coincidentally at Layout-E d128.
+    comptime depth_tile = min(256 // m_pack, ov_depth)
     comptime num_d_tiles = ov_depth // depth_tile
     comptime own_cols = ov_depth // m_pack
     comptime assert ov_depth % depth_tile == 0
@@ -538,25 +559,42 @@ def fa4_ws_intracta_combine[
     # stage_K]` whose `.store()` is one bank-conflict-free `STS.128` (as at the
     # split-K peer store below).
     comptime tile_sblocks = depth_tile // stage_K
+    # `tcgen05.ld` register-pressure cap: a single width-128 read (Layout-E,
+    # depth_tile=128) needs 128 consecutive destination registers, which can
+    # exceed the kernel's register budget (`ptxas` C7602 "Insufficient
+    # registers (128)... Try to compile with register target of 146 or
+    # higher" -- confirmed via a local `ptxas` 12.9/PTX-8.8 run against the
+    # emitted PTX, `tcgen05.ld.sync.aligned.32x32b.x128.b32` with a
+    # 128-register destination list). Split into `ld_width`(<=64)-wide
+    # sub-reads; Layout-G's existing width=64 read folds to `ld_splits==1`
+    # (byte-identical -- the split only changes instruction-level register
+    # footprint, not the staged bytes: two contiguous 64-wide reads followed
+    # by staging cover the exact same `sblk` range, in the same order, as one
+    # 128-wide read would).
+    comptime ld_width = min(depth_tile, 64)
+    comptime ld_splits = depth_tile // ld_width
+    comptime ld_sblocks = ld_width // stage_K
+    comptime assert depth_tile % ld_width == 0
     comptime for t in range(num_d_tiles):
-        var c_frag = tcgen05_ld[
-            datapaths=32,
-            bits=32,
-            repeat=depth_tile,
-            dtype=accum_dtype,
-            pack=False,
-            width=depth_tile,
-        ](o_tmem + UInt32(t) * UInt32(depth_tile))
-        comptime for sb in range(tile_sblocks):
-            comptime sblk = t * tile_sblocks + sb
-            var v = SIMD[accum_dtype, stage_K]()
-            comptime for k in range(stage_K):
-                v[k] = c_frag[sb * stage_K + k]
-            (
-                stage_smem
-                + (g * stage_blocks + sblk) * rows * stage_K
-                + r * stage_K
-            ).store(v)
+        comptime for ld in range(ld_splits):
+            var c_frag = tcgen05_ld[
+                datapaths=32,
+                bits=32,
+                repeat=ld_width,
+                dtype=accum_dtype,
+                pack=False,
+                width=ld_width,
+            ](o_tmem + UInt32(t * depth_tile + ld * ld_width))
+            comptime for sb in range(ld_sblocks):
+                comptime sblk = t * tile_sblocks + ld * ld_sblocks + sb
+                var v = SIMD[accum_dtype, stage_K]()
+                comptime for k in range(stage_K):
+                    v[k] = c_frag[sb * stage_K + k]
+                (
+                    stage_smem
+                    + (g * stage_blocks + sblk) * rows * stage_K
+                    + r * stage_K
+                ).store(v)
     maxsum_smem[(g * rows + r) * 2] = own_max
     maxsum_smem[(g * rows + r) * 2 + 1] = own_sum
 
@@ -575,8 +613,8 @@ def fa4_ws_intracta_combine[
         )
         m = max_ftz(m, maxsum_smem[(3 * rows + r) * 2])
 
-    var scale = InlineArray[Scalar[accum_dtype], m_pack](uninitialized=True)
-    var lps = InlineArray[Scalar[accum_dtype], m_pack](uninitialized=True)
+    var scale = Array[Scalar[accum_dtype], m_pack](uninitialized=True)
+    var lps = Array[Scalar[accum_dtype], m_pack](uninitialized=True)
     comptime for p in range(m_pack):
         var mp = maxsum_smem[(p * rows + r) * 2]
         var lp = maxsum_smem[(p * rows + r) * 2 + 1]
@@ -663,7 +701,7 @@ def fa4_ws_level1_combine[
     o_tmem: UInt32,
     stage_smem: SharedMemPointer[Scalar[DType.float32]],
     maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
-    mut o_band: InlineArray[Scalar[DType.float32], ov_depth // m_pack],
+    mut o_band: Array[Scalar[DType.float32], ov_depth // m_pack],
 ) -> Tuple[Float32, Float32]:
     """Level 1 of the two-level WS combine: per-warpgroup `m_pack`-way merge of
     the packed-TMEM datapath quarters into an UNNORMALIZED partial.
@@ -693,7 +731,11 @@ def fa4_ws_level1_combine[
         `(m_wg, l_wg)` for this lane's row (raw-unit max, unnormalized sum).
     """
     comptime accum_dtype = DType.float32
-    comptime depth_tile = 256 // m_pack
+    # `min(_, ov_depth)`: see `fa4_ws_intracta_combine` -- Layout-E (m_pack==2)
+    # reduction-accumulates O into ONE `ov_depth`-wide tile, so the depth-scatter
+    # `256//m_pack` would overrun at ov_depth=64 (num_d_tiles=0, assert fires);
+    # byte-identical for Layout-G and Layout-E d128 (`256//m_pack <= ov_depth`).
+    comptime depth_tile = min(256 // m_pack, ov_depth)
     comptime num_d_tiles = ov_depth // depth_tile
     comptime own_cols = ov_depth // m_pack
     comptime assert ov_depth % depth_tile == 0
@@ -715,25 +757,34 @@ def fa4_ws_level1_combine[
     # `depth_tile`-column fragments, sub-split into bank-conflict-free 16 B
     # block-major `stage_smem` stores.
     comptime tile_sblocks = depth_tile // stage_K
+    # `tcgen05.ld` register-pressure cap: see `fa4_ws_intracta_combine` (same
+    # fix, same rationale -- a single width-128 read at Layout-E blows the
+    # register budget; split into `ld_width`(<=64)-wide sub-reads, folds to
+    # `ld_splits==1` (byte-identical) for Layout-G's width=64 read.
+    comptime ld_width = min(depth_tile, 64)
+    comptime ld_splits = depth_tile // ld_width
+    comptime ld_sblocks = ld_width // stage_K
+    comptime assert depth_tile % ld_width == 0
     comptime for t in range(num_d_tiles):
-        var c_frag = tcgen05_ld[
-            datapaths=32,
-            bits=32,
-            repeat=depth_tile,
-            dtype=accum_dtype,
-            pack=False,
-            width=depth_tile,
-        ](o_tmem + UInt32(t) * UInt32(depth_tile))
-        comptime for sb in range(tile_sblocks):
-            comptime sblk = t * tile_sblocks + sb
-            var v = SIMD[accum_dtype, stage_K]()
-            comptime for k in range(stage_K):
-                v[k] = c_frag[sb * stage_K + k]
-            (
-                stage_smem
-                + (g * stage_blocks + sblk) * rows * stage_K
-                + r * stage_K
-            ).store(v)
+        comptime for ld in range(ld_splits):
+            var c_frag = tcgen05_ld[
+                datapaths=32,
+                bits=32,
+                repeat=ld_width,
+                dtype=accum_dtype,
+                pack=False,
+                width=ld_width,
+            ](o_tmem + UInt32(t * depth_tile + ld * ld_width))
+            comptime for sb in range(ld_sblocks):
+                comptime sblk = t * tile_sblocks + ld * ld_sblocks + sb
+                var v = SIMD[accum_dtype, stage_K]()
+                comptime for k in range(stage_K):
+                    v[k] = c_frag[sb * stage_K + k]
+                (
+                    stage_smem
+                    + (g * stage_blocks + sblk) * rows * stage_K
+                    + r * stage_K
+                ).store(v)
     maxsum_smem[(g * rows + r) * 2] = own_max
     maxsum_smem[(g * rows + r) * 2 + 1] = own_sum
 
@@ -752,8 +803,8 @@ def fa4_ws_level1_combine[
         )
         m = max_ftz(m, maxsum_smem[(3 * rows + r) * 2])
 
-    var scale = InlineArray[Scalar[accum_dtype], m_pack](uninitialized=True)
-    var lps = InlineArray[Scalar[accum_dtype], m_pack](uninitialized=True)
+    var scale = Array[Scalar[accum_dtype], m_pack](uninitialized=True)
+    var lps = Array[Scalar[accum_dtype], m_pack](uninitialized=True)
     comptime for p in range(m_pack):
         var mp = maxsum_smem[(p * rows + r) * 2]
         var lp = maxsum_smem[(p * rows + r) * 2 + 1]
@@ -824,7 +875,7 @@ def fa4_ws_level2_reduce_scatter_write[
     own_max: Float32,
     own_sum: Float32,
     scale_log2e: Float32,
-    o_band: InlineArray[Scalar[DType.float32], ov_depth // m_pack],
+    o_band: Array[Scalar[DType.float32], ov_depth // m_pack],
     l2_stage_smem: SharedMemPointer[Scalar[DType.float32]],
     l2_maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
     o_smem: SharedMemPointer[Scalar[output_type]],
@@ -973,7 +1024,7 @@ def fa4_ws_intracta_combine_partial[
     o_tmem: UInt32,
     stage_smem: SharedMemPointer[Scalar[DType.float32]],
     maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
-    mut o_band_norm: InlineArray[Scalar[DType.float32], ov_depth // m_pack],
+    mut o_band_norm: Array[Scalar[DType.float32], ov_depth // m_pack],
 ) -> Tuple[Float32, Float32]:
     """T==1 cross-CTA (split-K) partial: the 4-way intra-CTA combine emitting the
     NORMALIZED per-CTA band into `o_band_norm` (registers) + returning
@@ -1020,10 +1071,10 @@ def fa4_ws_level2_combine_partial[
     own_max: Float32,
     own_sum: Float32,
     scale_log2e: Float32,
-    o_band: InlineArray[Scalar[DType.float32], ov_depth // m_pack],
+    o_band: Array[Scalar[DType.float32], ov_depth // m_pack],
     l2_stage_smem: SharedMemPointer[Scalar[DType.float32]],
     l2_maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
-    mut o_band_norm: InlineArray[Scalar[DType.float32], ov_depth // m_pack],
+    mut o_band_norm: Array[Scalar[DType.float32], ov_depth // m_pack],
 ) -> Tuple[Float32, Float32]:
     """T>=2 cross-CTA (split-K) partial: a fork of
     `fa4_ws_level2_reduce_scatter_write` that emits the NORMALIZED per-CTA band
@@ -1121,7 +1172,7 @@ def fa4_ws_splitk_reduce_scatter_write[
     own_max: Float32,
     own_sum: Float32,
     scale_log2e: Float32,
-    o_band_norm: InlineArray[Scalar[DType.float32], ov_depth // m_pack],
+    o_band_norm: Array[Scalar[DType.float32], ov_depth // m_pack],
     stage_smem: SharedMemPointer[Scalar[DType.float32]],
     maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
     o_smem: SharedMemPointer[Scalar[output_type]],
@@ -1250,8 +1301,8 @@ def fa4_ws_splitk_reduce_scatter_write[
                     if band_g == UInt32(gg):
                         # Loop A: cluster LSE over the P partitions' (M,L).
                         var b_rank: Int = Int(partition_idx)
-                        var pmax = InlineArray[Float32, P](uninitialized=True)
-                        var psum = InlineArray[Float32, P](uninitialized=True)
+                        var pmax = Array[Float32, P](uninitialized=True)
+                        var psum = Array[Float32, P](uninitialized=True)
                         var gmax: Float32 = own_max
                         pmax[0] = own_max
                         psum[0] = own_sum
@@ -1263,7 +1314,7 @@ def fa4_ws_splitk_reduce_scatter_write[
                             pmax[pp + 1] = ms[0]
                             psum[pp + 1] = ms[1]
                             gmax = max(gmax, pmax[pp + 1])
-                        var w = InlineArray[Float32, P](uninitialized=True)
+                        var w = Array[Float32, P](uninitialized=True)
                         var gsum: Float32 = 0
                         comptime for pp in range(P_static):
                             var d: Float32 = pmax[pp] - gmax
@@ -1277,7 +1328,7 @@ def fa4_ws_splitk_reduce_scatter_write[
                             w[pp] = wp[0]
                             w[pp + 1] = wp[1]
                         # Seed own band by rank b's weight (stored at slot 0).
-                        var o_out = InlineArray[Scalar[accum_dtype], own_cols](
+                        var o_out = Array[Scalar[accum_dtype], own_cols](
                             uninitialized=True
                         )
                         var wb = w[0]
@@ -1450,7 +1501,7 @@ def fa4_splitk_stage_partial[
     stage_smem: SharedMemPointer[Scalar[DType.float32]],
     own_o_tmem: TMemTile[DType.float32, config.BM, config.padded_ov_depth],
     peer_o_tmem: TMemTile[DType.float32, config.BM, config.padded_ov_depth],
-    mut o_final: InlineArray[Scalar[DType.float32], band_cols],
+    mut o_final: Array[Scalar[DType.float32], band_cols],
 ):
     """Split-K pass 1: LSE-combine the two WG O fragments into this partition's
     NORMALIZED `O_cta` (f32) over the FULL `[0, iters)` depth range, routing each
@@ -1536,7 +1587,7 @@ def fa4_splitk_stage_partial[
         comptime process = (in_own and do_own) or ((not in_own) and do_peers)
         comptime if process:
             comptime col = j * o_sw_K
-            var vblk = InlineArray[SIMD[accum_dtype, F], subblocks](
+            var vblk = Array[SIMD[accum_dtype, F], subblocks](
                 uninitialized=True
             )
             comptime if zero_fill:
@@ -1643,7 +1694,7 @@ def fa4_splitk_combine_write[
     num_output_rows: Int32,
     out_head_idx: UInt32,
     out_row_idx: UInt32,
-    mut o_final: InlineArray[Scalar[DType.float32], band_cols],
+    mut o_final: Array[Scalar[DType.float32], band_cols],
 ):
     """Split-K pass 2 (reduce-scatter): EVERY partition's WG0 owns the
     depth-column band `[wg_j_offset, wg_j_offset+iters_per_wg)` (output blocks).
@@ -1716,8 +1767,8 @@ def fa4_splitk_combine_write[
     # and double-count `b` for b != 0.) `P` (comptime ceiling) sizes the
     # buffers; loops run to RUNTIME `np`, so slots [np, P) are never read.
     var b: Int = Int(own_rank)
-    var pmax = InlineArray[Float32, P](uninitialized=True)
-    var psum = InlineArray[Float32, P](uninitialized=True)
+    var pmax = Array[Float32, P](uninitialized=True)
+    var psum = Array[Float32, P](uninitialized=True)
     var gmax: Float32 = own_max
     # Own partition's (max,sum) goes to comptime slot 0 (not slot `b`); the
     # other ranks fill comptime slots `p+1`. This keeps every pmax/psum index
@@ -1744,7 +1795,7 @@ def fa4_splitk_combine_write[
         else:
             gmax = max_ftz(gmax, pmax[p])
 
-    var w = InlineArray[Float32, P](uninitialized=True)
+    var w = Array[Float32, P](uninitialized=True)
     var gsum: Float32 = 0
     comptime for p in range(P):
         var d: Float32 = pmax[p] - gmax
@@ -1954,7 +2005,7 @@ def fa4_splitk_reduce_scatter_write[
             if partition_idx == UInt32(p_static):
                 comptime if ipw > 0:
                     comptime band_cols = ipw * o_sw_K
-                    var o_final = InlineArray[Scalar[DType.float32], band_cols](
+                    var o_final = Array[Scalar[DType.float32], band_cols](
                         uninitialized=True
                     )
                     if warp_group_idx == UInt32(0):
@@ -2039,7 +2090,7 @@ def fa4_splitk_reduce_scatter_write[
                     # and publish (round-1). No bf16 write here -> no
                     # round-2 needed; the staged O_cta stays alive for
                     # peers via the kernel's terminal `cluster_sync()`.
-                    var o_final_empty = InlineArray[Scalar[DType.float32], 0](
+                    var o_final_empty = Array[Scalar[DType.float32], 0](
                         uninitialized=True
                     )
                     if warp_group_idx == UInt32(0):
@@ -2204,6 +2255,21 @@ def fa4_softmax[
     var row = tid % 128
     var warp_idx: UInt32 = warp.broadcast(tid // 32)
     var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
+    # WS {warp, lane} -> {key-partition, query-row} map. Layout-G (m_pack==4):
+    # `warps_per_partition == 1`, so `partition_g == warp_idx & 3` and
+    # `row_half` is always 0 -- every substitution below folds to the
+    # historical (byte-identical) `warp_idx & 3` / `warp_idx % 4`. Layout-E
+    # (m_pack==2): `warps_per_partition == 2`; the HIGH bit of `warp_idx & 3`
+    # selects the key-partition (warp-pairs {0,1} -> p0, {2,3} -> p1) and the
+    # LOW bit selects the 32-row half of the 64-row tile -- CONTIGUOUS, not
+    # interleaved (corroborated by `thread_tile_row = tid % config.BM`, which
+    # already yields `(warp_idx&1)*32+lane` at BM=64, see `:2218` below). Only
+    # meaningful inside `config.use_ws` blocks. Non-WS (m_pack==1) never reads
+    # this (dead, no crash risk either way since `warps_per_partition` would
+    # be 4 there too, folding `partition_g` to 0 -- see `attention.mojo`'s
+    # `use_ws` gate).
+    comptime warps_per_partition = 4 // config.m_pack
+    var partition_g: UInt32 = (warp_idx & 3) // UInt32(warps_per_partition)
     # Per-thread BM row within the current Q tile.
     # 2Q (BM = 256): WG0 covers BM rows [0, 128) and WG1 covers
     # [128, 256), so `tid` directly indexes the BM row.
@@ -2304,7 +2370,7 @@ def fa4_softmax[
     @always_inline
     def mask_row[
         BN: Int, //, mask_strategy: MaskStrategy
-    ](mut s: InlineArray[Scalar[accum_dtype], BN], kv_row: UInt32):
+    ](mut s: Array[Scalar[accum_dtype], BN], kv_row: UInt32):
         apply_mask[
             mask_strategy=mask_strategy,
             skip_scale=use_fma,
@@ -2355,7 +2421,7 @@ def fa4_softmax[
     gmem_row = PositionType.get_q_gmem_row[ragged=ragged](seq_info, max_seq_len)
     # Per-row score scratch: one warp's own quarter is `score_cols` wide
     # (== config.BN for the non-WS m_pack==1 layout).
-    var s = InlineArray[Scalar[accum_dtype], score_cols](uninitialized=True)
+    var s = Array[Scalar[accum_dtype], score_cols](uninitialized=True)
 
     # Per-token k_scale buffer offset. The load warp cycles k_scale through
     # num_k_scale_bufs staged buffers (each BN elements wide). The softmax
@@ -2382,7 +2448,7 @@ def fa4_softmax[
     @always_inline
     def apply_k_scale[
         N: Int, //, offset: Int
-    ](mut s0: InlineArray[Float32, N], k_scale_off: UInt32):
+    ](mut s0: Array[Float32, N], k_scale_off: UInt32):
         comptime if not QScaleType.is_null:
             comptime for n in range(0, N, 2):
                 var k_sc: f32x2 = (
@@ -2752,13 +2818,14 @@ def fa4_softmax[
     # per-WG start offset and a stride of BN (set below).
     comptime if config.num_q == 1 and not config.single_o:
         kv_row += warp_group_idx * UInt32(config.BN)
-        # Packed WS: within a 256-key tile, warp `g` (0-3) owns the logical key
-        # column-quarter [g*score_cols, g*score_cols+score_cols). Fold that
-        # per-quarter base into `kv_row` so it flows through every masking call
-        # below (`mask_row` itself stays per-warp-invariant). Inert non-WS
-        # (m_pack==1 -> no inner block elaborated).
+        # Packed WS: within a 256-key tile, this warp's partition `g` owns the
+        # logical key band [g*score_cols, g*score_cols+score_cols) -- a
+        # quarter for Layout-G (m_pack==4), a half for Layout-E (m_pack==2).
+        # Fold that per-partition base into `kv_row` so it flows through every
+        # masking call below (`mask_row` itself stays per-warp-invariant).
+        # Inert non-WS (m_pack==1 -> no inner block elaborated).
         comptime if config.use_ws:
-            kv_row += (warp_idx % 4) * UInt32(score_cols)
+            kv_row += partition_g * UInt32(score_cols)
     comptime mask_sets = MaskType.nonfull_sets[BM_mask, BN]()
     comptime mask_strategies = MaskType.mask_strategies[BM_mask, BN]()
     comptime num_sets = len(mask_strategies)
@@ -2921,7 +2988,7 @@ def fa4_softmax[
                     var ws_o_e = (
                         ws_l2_stagee + (WS_L2STAGE + WS_L2MS)
                     ).bitcast[Scalar[output_type]]()
-                    var o_band_zero = InlineArray[
+                    var o_band_zero = Array[
                         Scalar[DType.float32],
                         config.ov_depth // config.m_pack,
                     ](fill=Scalar[DType.float32](0))
@@ -2934,7 +3001,7 @@ def fa4_softmax[
                         use_fma=use_fma,
                     ](
                         thread_tile_row,
-                        warp_idx & 3,
+                        partition_g,
                         warp_group_idx,
                         UInt32(config.splitk_partitions),
                         splitk_partition_idx(UInt32(config.splitk_partitions)),
@@ -3001,6 +3068,38 @@ def fa4_softmax[
                 named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
                 return
 
+    # All-masked row (valid_length 0): no scores produced, so `pipeline_s.wait()`
+    # below would hang. Write a deterministic zero output row (the O accumulator
+    # was never produced, so `zero_fill` skips the TMEM read), then take WG0's
+    # normal terminal exit -- rendezvous on the 2*WG barrier (unless there is no
+    # second WG) and free the TMEM warp 0 owns on the single-CTA path; a bare
+    # return would leak it and wedge the next launch.
+    comptime if config.num_q == 1 and not (config.splitk_partitions > 1):
+        if total_iters_combined == UInt32(0):
+            fa4_scale_write_output[config, zero_fill=True](
+                row,
+                warp_idx & 3,
+                UInt32(0),
+                Float32(0),
+                o_smem,
+                TMemTile[accum_dtype, BM // config.num_q, padded_ov_depth](
+                    tmem_addr + UInt32(config.TMEM_O0)
+                ),
+                ragged_tma_store,
+                num_output_rows,
+                head_idx,
+                gmem_row + cta_q_offset,
+            )
+            comptime if not single_softmax_wg:
+                named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
+            comptime if not config.pair_cta and config.splitk_partitions == 1:
+                if warp_idx == 0:
+                    tcgen05_release_allocation_lock[Int32(cta_group)]()
+                    tcgen05_dealloc[Int32(cta_group)](
+                        tmem_addr, UInt32(config.sm100_tmem_cols)
+                    )
+            return
+
     pipeline_s.wait()
     tcgen05_fence_after()
     # Apply per-token q_scale
@@ -3030,19 +3129,22 @@ def fa4_softmax[
             UInt32(config.splitk_partitions)
         ) == UInt32(0)
 
-    # WS 8-way key split: WG0's 4 warps cover the SAME 32 Q rows but disjoint
-    # 64-key quarters. The intra-CTA mass add below is WG0-gated (warp_group_idx
-    # == 0) but NOT per-quarter, so all 4 WG0 warps would each fold the sink ->
-    # 4x over-count in the combined denominator. Confine the ENTIRE fold (the
-    # `row_max` clamp AND the mass add, both gated on `fold_sink`) to WG0
-    # quarter 0 (`warp_idx == 0`), a single key-partition -- exactly the
-    # split-K partition-0 discipline above. The two-level LSE combine then
-    # rescales WG0's partial (which carries `m >= sink` and `l += exp2(sink -
-    # m)`) into `exp2(sink - Gmax)` exactly once. `warp_idx == 0` (not
-    # `warp_idx & 3 == 0`) keeps the clamp out of WG1 quarter 0, which would
-    # otherwise inflate `m_wg1` toward the sink with no matching mass.
+    # WS key split: WG0's warps cover the SAME query rows but disjoint key
+    # partitions (quarters for Layout-G, halves for Layout-E). The intra-CTA
+    # mass add below is WG0-gated (warp_group_idx == 0) but NOT per-partition,
+    # so every WG0 warp would each fold the sink -> an m_pack-x over-count in
+    # the combined denominator. Confine the ENTIRE fold (the `row_max` clamp
+    # AND the mass add, both gated on `fold_sink`) to WG0 PARTITION 0
+    # (`partition_g == 0`) -- exactly the split-K partition-0 discipline
+    # above. The two-level LSE combine then rescales WG0's partial (which
+    # carries `m >= sink` and `l += exp2(sink - m)`) into `exp2(sink - Gmax)`
+    # exactly once. `partition_g == 0` (covering ALL `warps_per_partition`
+    # warps of partition 0 -- both row-halves at Layout-E, not just
+    # `warp_idx == 0`) keeps the clamp out of every OTHER partition's warps,
+    # which would otherwise inflate their `m_wg` toward the sink with no
+    # matching mass.
     comptime if config.use_ws:
-        fold_sink = fold_sink and warp_idx == UInt32(0)
+        fold_sink = fold_sink and partition_g == UInt32(0)
 
     comptime if not SinkType.is_null:
         var sink_weights_ptr = rebind[
@@ -3433,7 +3535,7 @@ def fa4_softmax[
                     # and TMA-stores this CTA's OWN depth band. Uses the dead
                     # `ws_l2_stage`/`ws_maxsum1` for the cross-CTA staging (the
                     # intra-CTA `ws_stage0`/`ws_maxsum0` are consumed above).
-                    var o_band_norm_t1 = InlineArray[
+                    var o_band_norm_t1 = Array[
                         Scalar[DType.float32],
                         config.ov_depth // config.m_pack,
                     ](uninitialized=True)
@@ -3444,7 +3546,7 @@ def fa4_softmax[
                         use_fma=use_fma,
                     ](
                         thread_tile_row,
-                        warp_idx & 3,
+                        partition_g,
                         warp_group_idx,
                         row_max,
                         ws_row_sum,
@@ -3463,7 +3565,7 @@ def fa4_softmax[
                         use_fma=use_fma,
                     ](
                         thread_tile_row,
-                        warp_idx & 3,
+                        partition_g,
                         warp_group_idx,
                         UInt32(config.splitk_partitions),
                         splitk_partition_idx(UInt32(config.splitk_partitions)),
@@ -3488,7 +3590,7 @@ def fa4_softmax[
                         use_fma=use_fma,
                     ](
                         thread_tile_row,
-                        warp_idx & 3,
+                        partition_g,
                         warp_group_idx,
                         row_max,
                         ws_row_sum,
@@ -3538,14 +3640,14 @@ def fa4_softmax[
                 var ws_maxsum = (
                     ws_maxsum0 if warp_group_idx == UInt32(0) else ws_maxsum1
                 )
-                var o_band = InlineArray[
+                var o_band = Array[
                     Scalar[DType.float32], config.ov_depth // config.m_pack
                 ](uninitialized=True)
                 var m_wg, l_wg = fa4_ws_level1_combine[
                     config.m_pack, config.BM, config.ov_depth, use_fma=use_fma
                 ](
                     thread_tile_row,
-                    warp_idx & 3,
+                    partition_g,
                     warp_group_idx,
                     row_max,
                     ws_row_sum,
@@ -3566,7 +3668,7 @@ def fa4_softmax[
                     # own band slot -- program-order safe); `ws_maxsum1` (WG1's
                     # dead Level-1 maxsum, ordered by Level 2's barrier 3) holds
                     # the per-CTA (M,L).
-                    var o_band_norm = InlineArray[
+                    var o_band_norm = Array[
                         Scalar[DType.float32],
                         config.ov_depth // config.m_pack,
                     ](uninitialized=True)
@@ -3577,7 +3679,7 @@ def fa4_softmax[
                         use_fma=use_fma,
                     ](
                         thread_tile_row,
-                        warp_idx & 3,
+                        partition_g,
                         warp_group_idx,
                         m_wg,
                         l_wg,
@@ -3596,7 +3698,7 @@ def fa4_softmax[
                         use_fma=use_fma,
                     ](
                         thread_tile_row,
-                        warp_idx & 3,
+                        partition_g,
                         warp_group_idx,
                         UInt32(config.splitk_partitions),
                         splitk_partition_idx(UInt32(config.splitk_partitions)),
@@ -3621,7 +3723,7 @@ def fa4_softmax[
                         use_fma=use_fma,
                     ](
                         thread_tile_row,
-                        warp_idx & 3,
+                        partition_g,
                         warp_group_idx,
                         m_wg,
                         l_wg,
@@ -3781,7 +3883,7 @@ def fa4_softmax[
         #     col TMEM_S0+1     = WG0 row_sum_total
         #     col TMEM_S0+BN+0  = WG1 row_max
         #     col TMEM_S0+BN+1  = WG1 row_sum_total
-        var own_lse: InlineArray[Scalar[accum_dtype], 2] = [
+        var own_lse: Array[Scalar[accum_dtype], 2] = [
             row_max,
             row_sum_total,
         ]

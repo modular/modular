@@ -53,67 +53,51 @@ def repeat_interleave(
     axis: int | None = None,
     out_dim: DimLike | None = None,
 ) -> TensorValue:
-    """Repeats elements of a tensor along the given dimension.
+    """Repeats each element of a tensor along an axis.
 
-    Modeled after :obj:`torch.repeat_interleave`, with the constraint that
+    This op runs on CPU only; a GPU input raises an error.
 
-    For example, given ``repeats=2`` and the following input:
-
-    .. code-block:: python
-
-        # Input tensor with shape (2, 2)
-        input = TensorValue(x)  # Contains [[1.0, 2.0], [3.0, 4.0]]
-
-    ``repeat_interleave`` with ``axis=0``:
+    The examples below use an
+    input containing ``[[1.0, 2.0], [3.0, 4.0]]``:
 
     .. code-block:: python
 
-        # Output tensor with shape (4, 2)
-        output = repeat_interleave(input, repeats=2, axis=0)
-        # Contains [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0]]
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, ops
 
-    ``repeat_interleave`` with ``axis=1``:
+        device = DeviceRef.CPU()
+        with Graph("repeat_interleave_example") as graph:
+            input = ops.constant(
+                [[1.0, 2.0], [3.0, 4.0]], DType.float32, device=device
+            )
 
-    .. code-block:: python
+            # Repeat each row twice.
+            rows = ops.repeat_interleave(input, repeats=2, axis=0)
+            # [[1, 2], [1, 2], [3, 4], [3, 4]], shape (4, 2)
 
-        # Output tensor with shape (2, 4)
-        output = repeat_interleave(input, repeats=2, axis=1)
-        # Contains [[1.0, 1.0, 2.0, 2.0], [3.0, 3.0, 4.0, 4.0]]
-
-    ``repeat_interleave`` with ``axis=None`` (the default):
-
-    ``repeat_interleave`` with ``repeats=[2, 3]`` and ``axis=0``:
-
-    .. code-block:: python
-
-        repeat_value = TensorValue([2, 3])
-
-        # Output tensor with shape (5, 2)
-        output = repeat_interleave(input, repeats=repeat_value, axis=0)
-        # Contains [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0], [3.0, 4.0]]
-
-    .. code-block:: python
-
-        # Output tensor with shape (8,)
-        output = repeat_interleave(input, repeats=2)  # axis = None
-        # Contains [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]
+            # Repeat row 0 twice and row 1 three times.
+            repeats = ops.constant([2, 3], DType.int64, device=device)
+            uneven_rows = ops.repeat_interleave(
+                input, repeats=repeats, axis=0, out_dim=5
+            )
+            # [[1, 2], [1, 2], [3, 4], [3, 4], [3, 4]], shape (5, 2)
+            graph.output(rows, uneven_rows)
 
     Args:
-        x:
-            The input tensor.
-        repeats:
-            The number of repetitions for each element.
-        axis:
-            The dimension along which to repeat values. If axis is not
-            specified or None (the default), flatten the input array
-            and repeat the flattened values.
-        out_dim: Optional symbolic dimension for the output size (for graph validation).
+        x: The input tensor.
+        repeats: The number of times to repeat each element. Pass either a
+            positive integer or a rank-0/rank-1 integer ``TensorValue``.
+        axis: The axis to repeat along. If ``None`` (the default), the input is
+            flattened first.
+        out_dim: The output size along ``axis``. Required when ``repeats`` is a
+            ``TensorValue``.
 
     Returns:
-        A symbolic tensor with the elements interleaved.
+        A ``TensorValue`` representing the input with its elements interleaved.
 
     Raises:
-        ValueError: If ``repeats`` non-positive or if ``axis`` is out of range.
+        ValueError: If ``repeats`` is non-positive, if ``axis`` is out of range,
+            or if the input is on a GPU device.
     """
     x = TensorValue(x)
 

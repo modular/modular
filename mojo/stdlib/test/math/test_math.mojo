@@ -559,7 +559,7 @@ def test_log1p_accuracy() raises:
     # Compare log1p against libm across several regimes.
 
     # Small values near zero (critical regime where log1p matters).
-    var small_vals: InlineArray[Float64, 14] = [
+    var small_vals: Array[Float64, 14] = [
         1e-15,
         1e-12,
         1e-10,
@@ -583,7 +583,7 @@ def test_log1p_accuracy() raises:
         )
 
     # Float32 small values.
-    var small_vals_f32: InlineArray[Float32, 6] = [
+    var small_vals_f32: Array[Float32, 6] = [
         1e-7,
         1e-5,
         1e-3,
@@ -609,7 +609,7 @@ def test_log1p_accuracy() raises:
         )
 
     # Values near the singularity at x = -1.
-    var near_neg1: InlineArray[Float64, 5] = [
+    var near_neg1: Array[Float64, 5] = [
         -0.9,
         -0.99,
         -0.999,
@@ -632,7 +632,7 @@ def test_log1p_accuracy() raises:
 
 def test_gcd() raises:
     var l = [2, 4, 6, 8, 16]
-    var il: InlineArray[Int, 5] = [4, 16, 2, 8, 6]
+    var il: Array[Int, 5] = [4, 16, 2, 8, 6]
     assert_equal(gcd(Span[Int](il)), 2)
     assert_equal(gcd(2, 4, 6, 8, 16), 2)
     assert_equal(gcd(l), 2)
@@ -663,7 +663,7 @@ def test_lcm() raises:
     assert_equal(lcm(0, 4), 0)
     assert_equal(lcm(5, 33), 165)
     assert_equal(lcm(-34, -56, -32), 3808)
-    var il: InlineArray[Int, 5] = [4, 16, 2, 8, 6]
+    var il: Array[Int, 5] = [4, 16, 2, 8, 6]
     assert_equal(lcm(Span[Int](il)), 48)
     assert_equal(lcm(345, 623, 364, 84, 93), 346475220)
     assert_equal(lcm(0, 0), 0)

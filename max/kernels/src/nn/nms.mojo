@@ -371,9 +371,12 @@ def non_max_suppression[
                 #   2. The end contains suppressed boxes with score=-inf (order doesn't matter)
                 # Note: Use num_boxes_curr_pred (not num_boxes_remaining) because it
                 # represents the count before we marked boxes as suppressed above
+                var box_idxs_ptr: UnsafePointer[
+                    box_idxs.T, origin_of(box_idxs)
+                ] = box_idxs.unsafe_ptr()
                 sort[_greater_than](
                     Span[box_idxs.T, origin_of(box_idxs)](
-                        unsafe_ptr=box_idxs.unsafe_ptr() + pred_idx,
+                        unsafe_ptr=box_idxs_ptr + pred_idx,
                         length=num_boxes_curr_pred,
                     )
                 )

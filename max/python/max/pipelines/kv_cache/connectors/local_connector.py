@@ -25,6 +25,11 @@ from collections.abc import Sequence
 
 from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
 
@@ -39,6 +44,14 @@ class LocalConnector:
 
     Manages host memory as a secondary cache tier. Committed device blocks
     can be offloaded via save() and loaded back via lookup()/load().
+
+    .. deprecated::
+        Superseded by the Rust ``rust_tiered`` connector (host + disk), which
+        runs its copies on a dedicated copy engine and reports completion
+        through :class:`KVConnectorTransfer` so onloads overlap GPU compute.
+        This connector issues its H2D on the forward stream (ordered by the
+        deprecated :meth:`wait_for_loads` barrier), so a large onload stalls the
+        GPU. Kept for backward compatibility.
     """
 
     @traced
@@ -107,11 +120,14 @@ class LocalConnector:
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
-    ) -> int:
+    ) -> KVConnectorTransfer:
         """Load data from host cache into ``replica_idx``'s device blocks.
 
         Returns:
-            Number of blocks loaded from host cache.
+            A :class:`CompletedTransfer`: the H2D rides the forward stream and
+            is ordered ahead of the forward by :meth:`wait_for_loads`, so from
+            the manager's perspective it is already complete. ``g0_blocks`` are
+            the device blocks that were loaded.
         """
         host_cache = self._host_block_pool.prefix_cache
         dsts: list[int] = []
@@ -127,7 +143,7 @@ class LocalConnector:
 
         self._block_copy_engine.memcpy_h2d(dsts, srcs, replica_idx)
         self._h2d_blocks_copied += len(dsts)
-        return len(dsts)
+        return CompletedTransfer(TransferDirection.LOAD, dsts)
 
     def count_cached_prefix(
         self, block_hashes: Sequence[bytes]
@@ -152,7 +168,7 @@ class LocalConnector:
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
-    ) -> None:
+    ) -> KVConnectorTransfer:
         """Offload ``replica_idx``'s device blocks to the host cache.
 
         ``parent_seq_hash`` is ignored: host blocks are keyed by hash.
@@ -162,6 +178,10 @@ class LocalConnector:
         ``wait_for_loads``; ``offload`` is now called once per request
         (multiple times per forward pass), so syncing here would re-serialize
         the copies against the forward pass and destroy the overlap.
+
+        Returns:
+            A :class:`CompletedTransfer`: the D2H is stream-ordered, so the
+            manager keeps no pin. ``g0_blocks`` are the offloaded device blocks.
         """
         dsts: list[int] = []
         srcs: list[int] = []
@@ -173,6 +193,7 @@ class LocalConnector:
 
         self._block_copy_engine.memcpy_d2h(dsts, srcs, replica_idx)
         self._d2h_blocks_copied += len(dsts)
+        return CompletedTransfer(TransferDirection.OFFLOAD, srcs)
 
     def touch(
         self,

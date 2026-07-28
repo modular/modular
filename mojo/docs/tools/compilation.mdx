@@ -425,3 +425,137 @@ which Mojo doesn't provide and aren't working:
 
 To produce a cross-compiled executable or shared library, generate an
 object file and link it with a toolchain for your target platform.
+
+## Call a Mojo shared library from C or C++
+
+You can compile Mojo code into a shared library and call it from a
+program written in another language, such as C or C++, through the C
+ABI.
+
+### Build and export
+
+Build the shared library with `--emit shared-lib`:
+
+```sh
+mojo build mylib.mojo --emit shared-lib -o libmylib.so
+```
+
+(Use a `.dylib` extension on macOS.)
+
+Mark each function you want to call from the host with the
+[`@export`](/docs/reference/decorators/export/) decorator, giving it a
+name that's a valid C identifier and the `abi("C")` effect so it
+follows the C calling convention.
+
+### Initialize the Mojo runtime
+
+When a Mojo program starts from its own `main()` function, compiler-generated
+startup code initializes the Mojo runtime — the thread pool that
+parallel and asynchronous APIs such as
+[`parallelize()`](/docs/std/algorithm/backend/cpu/parallelize/parallelize/) and
+[`TaskGroup`](/docs/std/runtime/asyncrt/TaskGroup/) depend on. When the
+process `main()` belongs to a C or C++ host instead, that startup code
+never runs, so the runtime is never initialized. An exported function
+that then uses a runtime-dependent API crashes with a segmentation
+fault.
+
+To fix this, call
+[`initialize_runtime()`](/docs/std/runtime/asyncrt/initialize_runtime/)
+before any runtime-dependent Mojo code executes. The call is idempotent
+and inexpensive when the runtime is already initialized, and one
+initialization covers all threads in the process. There are two common
+patterns:
+
+- Call `initialize_runtime()` at the start of every exported function.
+  This is the simplest approach and imposes no calling contract on the
+  host program.
+
+- Export a dedicated initialization function and require the host to
+  call it once before anything else:
+
+  ```mojo
+  from std.runtime import initialize_runtime
+
+  @export("mylib_init")
+  def mylib_init() abi("C"):
+      initialize_runtime()
+  ```
+
+### Complete example
+
+The following Mojo library exports one function that fills a list in
+parallel and returns a checksum:
+
+```mojo title="mylib.mojo"
+from std.algorithm import parallelize
+from std.runtime import initialize_runtime
+
+
+@export("parallel_sum")
+def parallel_sum(n: Int64) abi("C") -> Int64:
+    initialize_runtime()
+
+    var count = Int(n)
+    var results = List[Int64](length=count, fill=0)
+
+    @parameter
+    def fill(i: Int):
+        results[i] = Int64(i)
+
+    parallelize[fill](count)
+
+    var total = Int64(0)
+    for r in results:
+        total += r
+    return total
+```
+
+A C host program that calls it:
+
+```c title="main.c"
+#include <stdio.h>
+
+extern long long parallel_sum(long long n);
+
+int main(void) {
+  printf("sum=%lld\n", parallel_sum(1000));
+  return 0;
+}
+```
+
+Build and run on Linux:
+
+```sh
+mojo build mylib.mojo --emit shared-lib -o libmylib.so
+cc main.c -o main -L. -lmylib -Wl,-rpath,'$ORIGIN'
+./main
+```
+
+On macOS:
+
+```sh
+mojo build mylib.mojo --emit shared-lib -o libmylib.dylib
+install_name_tool -id @rpath/libmylib.dylib libmylib.dylib
+cc main.c -o main -L. -lmylib -Wl,-rpath,@loader_path
+./main
+```
+
+Both print:
+
+```output
+sum=499500
+```
+
+:::note Differences from a Mojo executable
+Without a Mojo `main()` function, some process-level setup that Mojo
+executables perform doesn't happen:
+
+- `sys.argv()` isn't populated with the host program's arguments.
+- The signal handler that prints a stack trace on a crash isn't
+  installed.
+- The runtime, once initialized, remains alive until the process
+  exits; there is no API to shut it down.
+- The host program's dynamic loader must be able to locate the Modular
+  runtime libraries that the shared library depends on (for example,
+  through the rpath entries embedded in the shared library).
+:::

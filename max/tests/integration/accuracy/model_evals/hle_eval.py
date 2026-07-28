@@ -27,6 +27,15 @@ Run locally against a server on ``localhost:8000``::
     ./bazelw run //max/tests/integration/accuracy/model_evals:hle_eval -- \\
         --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 \\
         --sample-size 2 --out-dir /tmp/hle
+
+Results stream to ``<out-dir>/results.jsonl`` as each request completes, so a
+killed/crashed run keeps everything already finished. To debug specific
+questions (e.g. re-run exactly the ones that errored or looked wrong last
+time), pass ``--row-ids`` instead of ``--sample-size``::
+
+    ./bazelw run //max/tests/integration/accuracy/model_evals:hle_eval -- \\
+        --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 \\
+        --row-ids 3,17,42 --out-dir /tmp/hle-debug
 """
 
 from __future__ import annotations
@@ -46,9 +55,9 @@ from eval_common import (
     load_gated,
     make_client,
     run_parallel,
+    select_rows,
     self_judge,
     strip_think,
-    subsample,
     token_stats,
     truncation_stats,
 )
@@ -95,12 +104,13 @@ def build_messages(
 def infer(
     client: ChatClient,
     model: str,
-    sample: dict[str, Any],
+    item: tuple[int, dict[str, Any]],
     params: GenParams,
     root_preamble: str,
     system_prompt: str,
 ) -> dict[str, Any]:
     """Runs one question then self-judges the answer against the reference."""
+    prompt_index, sample = item
     question = sample["question"]
     reference = sample["answer"].strip()
     messages = build_messages(question, root_preamble, system_prompt)
@@ -117,6 +127,7 @@ def infer(
         seed=params.seed,
     )
     return {
+        "prompt_index": prompt_index,
         "question": question[:120],
         "reference": reference,
         "predicted": prediction[:200],
@@ -170,32 +181,43 @@ def score(results: list[dict[str, Any]], total: int) -> dict[str, Any]:
 
 def run_eval(
     client: ChatClient,
-    dataset: list[dict[str, Any]],
+    indexed_dataset: list[tuple[int, dict[str, Any]]],
     model: str,
     workers: int,
     params: GenParams,
     root_preamble: str,
     system_prompt: str,
+    out_dir: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Runs HLE over ``dataset`` (one pass) and returns results + score.
+    """Runs HLE over ``indexed_dataset`` (one pass) and returns results + score.
 
     A failed/timed-out request is recorded as an incorrect row, never dropped.
+    When ``out_dir`` is set, results stream to ``results.jsonl`` as they
+    complete, so a crash mid-run doesn't lose already-finished samples.
 
     Returns:
         A ``(results, score)`` tuple.
     """
-    print(f"HLE: evaluating {len(dataset)} questions")
+    print(f"HLE: evaluating {len(indexed_dataset)} questions")
 
-    def fn(sample: dict[str, Any]) -> dict[str, Any]:
-        return infer(
-            client, model, sample, params, root_preamble, system_prompt
-        )
+    def fn(item: tuple[int, dict[str, Any]]) -> dict[str, Any]:
+        return infer(client, model, item, params, root_preamble, system_prompt)
 
-    def on_error(sample: dict[str, Any], exc: Exception) -> dict[str, Any]:
-        return {"error": str(exc), "correct": False}
+    def on_error(
+        item: tuple[int, dict[str, Any]], exc: Exception
+    ) -> dict[str, Any]:
+        prompt_index, sample = item
+        return {
+            "prompt_index": prompt_index,
+            "question": sample["question"][:120],
+            "error": str(exc),
+            "correct": False,
+        }
 
-    results, _errors = run_parallel(dataset, fn, on_error, workers, "HLE")
-    return results, score(results, len(dataset))
+    results, _errors = run_parallel(
+        indexed_dataset, fn, on_error, workers, "HLE", out_dir=out_dir
+    )
+    return results, score(results, len(indexed_dataset))
 
 
 @click.command()
@@ -209,7 +231,16 @@ def run_eval(
     "--sample-size",
     type=int,
     default=None,
-    help="Max questions (evenly sampled). Empty = full dataset.",
+    help="Max questions (evenly sampled). Empty = full dataset. Mutually "
+    "exclusive with --row-ids.",
+)
+@click.option(
+    "--row-ids",
+    default=None,
+    help="Explicit comma-separated dataset row indices to evaluate, e.g. "
+    "'3,17,42' (indices into the full dataset, order/duplicates preserved). "
+    "Mutually exclusive with --sample-size — use this to re-run exactly the "
+    "questions that errored or looked wrong last time.",
 )
 @click.option(
     "--seed",
@@ -239,6 +270,7 @@ def main(
     base_url: str,
     model: str,
     sample_size: int | None,
+    row_ids: str | None,
     seed: int | None,
     workers: int,
     out_dir: str,
@@ -251,12 +283,19 @@ def main(
 ) -> None:
     """Runs HLE against a running OpenAI-compatible server and scores it."""
     client = make_client(base_url)
-    dataset = subsample(load_hle_dataset(), sample_size)
+    indexed_dataset = select_rows(load_hle_dataset(), sample_size, row_ids)
     params = GenParams(
         max_tokens=max_tokens, temperature=temperature, top_p=top_p, seed=seed
     )
     results, summary = run_eval(
-        client, dataset, model, workers, params, root_preamble, system_prompt
+        client,
+        indexed_dataset,
+        model,
+        workers,
+        params,
+        root_preamble,
+        system_prompt,
+        out_dir=out_dir,
     )
     dump_jsonl(out_dir, results)
     dump_score(out_dir, summary)

@@ -297,7 +297,7 @@ def _run[
                 sink_d.unsafe_ptr(),
                 RuntimeLayout[sinks_layout].row_major(Index(num_heads)),
             )
-            .get_immutable()
+            .as_imm()
             .as_unsafe_any_origin()
         )
     else:

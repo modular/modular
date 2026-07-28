@@ -298,13 +298,16 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         )
 
         # Initialize EOS token IDs
-        self._default_eos_token_ids = set([self.eos])
+        eos_token_id = self.delegate.eos_token_id
+        self._eos_token_ids = (
+            {eos_token_id} if eos_token_id is not None else set()
+        )
 
         if eos_token_id := getattr(config, "eos_token_id", None):
             if isinstance(eos_token_id, int):
-                self._default_eos_token_ids.add(eos_token_id)
+                self._eos_token_ids.add(eos_token_id)
             elif isinstance(eos_token_id, list):
-                self._default_eos_token_ids.update(eos_token_id)
+                self._eos_token_ids.update(eos_token_id)
 
         self.image_token_id = config.image_token_id
         self.video_token_id = config.video_token_id
@@ -358,7 +361,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         concurrent borrow errors from the HuggingFace tokenizer's Rust internals.
         """
         params = request.sampling_params
-        eos_token_ids = set(self._default_eos_token_ids)
+        eos_token_ids = set(self._eos_token_ids)
         eos_sequences: list[list[int]] = []
         if params.ignore_eos:
             eos_token_ids = set()
@@ -579,7 +582,8 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         # Handle JSON schema if provided
         json_schema = (
             json.dumps(request.response_format.json_schema)
-            if request.response_format and request.response_format.json_schema
+            if request.response_format
+            and request.response_format.json_schema is not None
             else None
         )
 

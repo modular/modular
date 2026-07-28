@@ -188,7 +188,7 @@ def kernel_pv_chain[
     comptime _smem_total = _V_SLOT_ROWS * _V_SUB_COLS
     var i = tid
     while i < _smem_total:
-        v_smem.ptr[i] = src_v_subtile_ptr[i]
+        v_smem._storage[i] = src_v_subtile_ptr[i]
         i += 64
     barrier()
 

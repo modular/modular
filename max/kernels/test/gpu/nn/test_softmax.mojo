@@ -214,6 +214,7 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
     ctx.synchronize()
     ctx.enqueue_copy(out_host_ref_ptr, out_device_ref_ptr)
     ctx.enqueue_copy(out_host_test_ptr, out_device_test_ptr)
+    ctx.synchronize()
 
     for i in range(length):
         var ref_val = out_host_ref_ptr[i]

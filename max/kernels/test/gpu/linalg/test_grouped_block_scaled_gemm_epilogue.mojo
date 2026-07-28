@@ -194,8 +194,8 @@ def test_grouped_gemm_epilogue[
 
     # Initialize random data
     seed(42)
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
 
     # Initialize C with random values for epilogue test
     for i in range(Int(m.value())):
@@ -207,7 +207,7 @@ def test_grouped_gemm_epilogue[
     # Copy to device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
-    ctx.enqueue_copy(c_device, c_host.ptr)
+    ctx.enqueue_copy(c_device, c_host._storage)
     ctx.enqueue_copy(sfa_device, sfa_host_ptr)
     ctx.enqueue_copy(sfb_device, sfb_host_ptr)
 
@@ -360,8 +360,8 @@ def test_grouped_gemm_epilogue[
     ctx.synchronize()
 
     # Copy results back
-    ctx.enqueue_copy(c_host.ptr, c_device)
-    ctx.enqueue_copy(c_host_ref.ptr, c_device_ref)
+    ctx.enqueue_copy(c_host._storage, c_device)
+    ctx.enqueue_copy(c_host_ref._storage, c_device_ref)
     ctx.synchronize()
 
     # Apply epilogue lambda on CPU to reference
@@ -391,8 +391,8 @@ def test_grouped_gemm_epilogue[
     # Compare results
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,

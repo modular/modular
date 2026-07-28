@@ -89,6 +89,10 @@ HF_MODELS: dict[str, set[str]] = {
     "microsoft/Phi-3.5-mini-instruct": MULTI,
     "microsoft/phi-4": MULTI,
     "MiniMaxAI/MiniMax-M2.7": NON_XL | {"4xMI355", "sglang"},
+    # MODELS-1611: MXFP8 runs on 8xB200 only (MI355 comes later). max-ci
+    # exercises the private M3 arch; sglang serves the HF checkpoint as a
+    # reference. vLLM and released MAX are excluded.
+    "MiniMaxAI/MiniMax-M3-MXFP8": NON_XL | {"4xMI355", "max", "vllm"},
     "lukealonso/MiniMax-M2.7-NVFP4": NON_XL | {"4xMI355", "sglang"},
     "mistralai/Mistral-Nemo-Instruct-2407": MULTI | {"vllm"},
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": MULTI | {"vllm"},
@@ -141,15 +145,12 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "google/gemma-4-31B-it__tuned": MULTI | {"MI355"},
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": MULTI | {"MI355"},
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": MULTI | {"MI355"},
-    "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": MULTI | {"MI355"},
-    "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": MULTI | {"MI355"},
-    "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": MULTI | {"MI355"},
+    "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": MULTI | {"MI355"},
     "nvidia/Kimi-K2.5-NVFP4__tpep": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.5-NVFP4__local_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
+    "nvidia/Kimi-K2.5-NVFP4__eagle_rust_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
+    "nvidia/Kimi-K2.5-NVFP4__mha_eagle_rust_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
     "nvidia/Kimi-K2.6-NVFP4__eagle_tpep": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.6-NVFP4__eagle_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
+    "nvidia/Kimi-K2.6-NVFP4__eagle_rust_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": NON_XL | {"4xMI355"},
 }
 

@@ -23,6 +23,7 @@ from enum import Enum
 from max.pipelines.context import TextGenerationOutput
 from max.pipelines.context.context import TextContext
 from max.pipelines.kv_cache import InsufficientBlocksError, PagedKVCacheManager
+from max.pipelines.kv_cache.kv_connector import KVConnectorTransfer
 from max.pipelines.lib import LoRAManager
 from max.pipelines.modeling.types import (
     Pipeline,
@@ -64,6 +65,20 @@ class _PendingCERequest:
 
     ctx: TextContext
     weights: list[int]
+
+
+@dataclass
+class _OnloadingRequest:
+    """A CE request cordoned out of the batch while its KV onload is in flight.
+
+    The request is already bound to ``replica_idx`` and fully allocated (its
+    blocks are pinned by ``event``); it is held here, out of any run queue,
+    until ``event`` polls complete, then re-admitted to the replica's CE queue.
+    """
+
+    ctx: TextContext
+    replica_idx: int
+    event: KVConnectorTransfer
 
 
 @dataclass
@@ -437,6 +452,11 @@ class TextBatchConstructor:
         self._request_id_to_replica_idx: dict[RequestID, int] = {}
         self._request_id_to_lora_name: dict[RequestID, str | None] = {}
 
+        # CE requests cordoned out of the batch while their KV onload is in
+        # flight, keyed by request id. Re-admitted to their replica's CE queue
+        # once the onload completes (see ``_readmit_completed_onloads``).
+        self._onloading_reqs: dict[RequestID, _OnloadingRequest] = {}
+
         # DP-balanced CE deferral state. New CE requests wait in
         # ``_ce_pending`` unbound to any replica (insertion order == arrival
         # order); binding happens at the step the planner first schedules
@@ -665,6 +685,7 @@ class TextBatchConstructor:
         return (
             request_id in self._request_id_to_replica_idx
             or request_id in self._ce_pending
+            or request_id in self._onloading_reqs
         )
 
     def release_request(self, request_id: RequestID) -> None:
@@ -690,6 +711,11 @@ class TextBatchConstructor:
             return
 
         self._ce_arrival.pop(request_id, None)
+
+        # Drop any cordon entry; the request's blocks are freed by the normal
+        # release path below (its pending onload keeps them pinned until it
+        # completes, after which poll_transfers unpins them).
+        self._onloading_reqs.pop(request_id, None)
 
         # Retrieve the replica index for the request
         replica_idx = self._request_id_to_replica_idx[request_id]
@@ -762,6 +788,11 @@ class TextBatchConstructor:
         reqs.update(
             (req_id, pending.ctx)
             for req_id, pending in self._ce_pending.items()
+        )
+        # Cordoned onloading requests are still pending CE work.
+        reqs.update(
+            (req_id, onloading.ctx)
+            for req_id, onloading in self._onloading_reqs.items()
         )
         return reqs
 
@@ -840,9 +871,12 @@ class TextBatchConstructor:
         return RequestType.CE
 
     def _inflight_kv_transfer_count(self) -> int:
+        # Cordoned onloading requests hold KV blocks while their H2D is in
+        # flight, so count them alongside any external (DI prefill) transfers.
+        count = len(self._onloading_reqs)
         if self._get_inflight_kv_transfer_count is not None:
-            return self._get_inflight_kv_transfer_count()
-        return 0
+            count += self._get_inflight_kv_transfer_count()
+        return count
 
     def _add_ce_requests(self, batch: ReplicaBatch, replica_idx: int) -> None:
         # Deferred by the DP CE balancer this iteration (also covers paths
@@ -908,16 +942,34 @@ class TextBatchConstructor:
                     break
 
                 try:
-                    self.kv_cache.alloc(ctx, replica_idx=replica_idx)
+                    onload_event = self.kv_cache.alloc(
+                        ctx, replica_idx=replica_idx
+                    )
                 except InsufficientBlocksError:
+                    # Only a genuine OOM (nothing else to run and no in-flight
+                    # transfer that will free blocks once it lands) is fatal.
+                    # Otherwise requeue and retry next iteration; poll_transfers
+                    # unpins completed transfers' blocks in the meantime.
                     if (
                         len(replica_requests.tg_reqs) == 0
                         and len(batch) == 0
                         and self._inflight_kv_transfer_count() == 0
+                        and not self.kv_cache.pending_transfers_exist(
+                            replica_idx
+                        )
                     ):
                         raise
                     self._return_to_request_queue(ctx, replica_idx)
                     break
+
+                # Cordon the request if its KV onload has not landed: hold it
+                # out of the batch (keeping its allocated/pinned blocks) so the
+                # GPU runs other ready work while the H2D completes.
+                if not onload_event.is_complete():
+                    self._onloading_reqs[req_id] = _OnloadingRequest(
+                        ctx=ctx, replica_idx=replica_idx, event=onload_event
+                    )
+                    continue
 
             # Check if it fits within the token budget
             match batch.token_budget.status_after_context(
@@ -988,10 +1040,18 @@ class TextBatchConstructor:
                     break
                 except InsufficientBlocksError:
                     if len(candidate_ids) == 0:
-                        if len(batch) == 0:
+                        # Only a genuine OOM is fatal: nothing left to preempt,
+                        # an empty batch, and no in-flight transfer that will
+                        # free blocks once it lands.
+                        if (
+                            len(batch) == 0
+                            and self._inflight_kv_transfer_count() == 0
+                            and not self.kv_cache.pending_transfers_exist(
+                                replica_idx
+                            )
+                        ):
                             raise
-                        else:
-                            return
+                        return
 
                     # Pop the oldest candidate id
                     oldest_id = candidate_ids.pop()
@@ -1269,8 +1329,34 @@ class TextBatchConstructor:
                 replica_idx for _, replica_idx in deferrable_tails
             }
 
+    def _readmit_completed_onloads(self) -> None:
+        """Re-admits cordoned requests whose KV onload has completed.
+
+        Runs once per iteration. Completed requests return to the front of their
+        replica's CE queue (FIFO by arrival) so the next batch pass can schedule
+        them; their onloaded prefix is now device-resident.
+        """
+        if not self._onloading_reqs:
+            return
+        completed = [
+            req_id
+            for req_id, onloading in self._onloading_reqs.items()
+            if onloading.event.is_complete()
+        ]
+        for req_id in completed:
+            onloading = self._onloading_reqs.pop(req_id)
+            replica = self.replicas[onloading.replica_idx]
+            replica.ce_reqs[req_id] = onloading.ctx
+            replica.ce_reqs.move_to_end(req_id, last=False)
+
     def construct_batch(self) -> TextGenerationInputs[TextContext]:
         """Constructs Pipeline Inputs which includes a batch for each replica."""
+
+        # Re-admit any cordoned requests whose KV onload has landed. The
+        # block-level drain (unpin/commit/reclaim) is handled inside
+        # ``kv_cache.alloc`` itself, so the scheduler only tracks the
+        # request-level side here.
+        self._readmit_completed_onloads()
 
         # DP-balanced CE deferral: decide this iteration's CE work (late
         # binding + per-replica deferral) before priorities are identified.

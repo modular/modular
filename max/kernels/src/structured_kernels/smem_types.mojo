@@ -146,7 +146,7 @@ struct SMemTileArray[
 
     comptime storage_size = Self.num_elements * size_of[Self.dtype]()
 
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     var ptr: UnsafePointer[
         Scalar[Self.dtype],
@@ -237,7 +237,7 @@ struct SMemArray[type: TrivialRegisterPassable, size: Int](
         Self.type, MutUntrackedOrigin, address_space=AddressSpace.SHARED
     ]
     comptime storage_size = Self.size * size_of[Self.type]()
-    comptime Storage = InlineArray[Self.type, Self.size]
+    comptime Storage = Array[Self.type, Self.size]
 
     var ptr: Self.ptr_type
 

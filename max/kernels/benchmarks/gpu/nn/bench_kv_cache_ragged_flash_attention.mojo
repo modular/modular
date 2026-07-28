@@ -16,6 +16,7 @@ from std.math import rsqrt
 from std.random import random_ui64, seed
 from std.sys import get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -150,11 +151,12 @@ def execute_kv_cache_ragged_flash_attention[
                 cache_lengths_host[i] = curr_cache_length
                 total_seq_len += curr_seq_length
 
-                flop_count += Int(
-                    UInt32(4 * num_q_heads)
-                    * (curr_cache_length + curr_seq_length)
-                    * curr_seq_length
-                    * UInt32(head_dim)
+                flop_count += (
+                    4
+                    * num_q_heads
+                    * Int(curr_cache_length + curr_seq_length)
+                    * Int(curr_seq_length)
+                    * head_dim
                 )
 
             row_offsets_host[batch_size] = total_seq_len
@@ -271,14 +273,14 @@ def execute_kv_cache_ragged_flash_attention[
             ),
         ),
         LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-            cache_lengths_tensor.ptr.as_immutable().as_unsafe_any_origin(),
+            cache_lengths_tensor.ptr.as_imm().as_unsafe_any_origin(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths_tensor.runtime_layout.shape.value,
                 cache_lengths_tensor.runtime_layout.stride.value,
             ),
         ),
         LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-            lookup_table_tensor.ptr.as_immutable().as_unsafe_any_origin(),
+            lookup_table_tensor.ptr.as_imm().as_unsafe_any_origin(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 lookup_table_tensor.runtime_layout.shape.value,
                 lookup_table_tensor.runtime_layout.stride.value,
@@ -315,7 +317,7 @@ def execute_kv_cache_ragged_flash_attention[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     m.bench_function[bench_func](
         BenchId(

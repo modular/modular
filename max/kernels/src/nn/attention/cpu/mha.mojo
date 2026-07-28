@@ -113,9 +113,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         @parameter
         @always_inline
         def loop_body[lane_count: Int](k: Int):
-            var a_tile = InlineArray[SIMD[Self.dtype, lane_count], tile_m](
-                fill=0
-            )
+            var a_tile = Array[SIMD[Self.dtype, lane_count], tile_m](fill=0)
 
             comptime for m in range(tile_m):
                 a_tile[m] = ak_ptr.load[width=lane_count](m * a_stride)
@@ -156,7 +154,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         @parameter
         @always_inline
         def loop_body[unroll_factor: Int](k: Int):
-            var b_tile = InlineArray[SIMD[Self.dtype, Self.simd_width], tile_n](
+            var b_tile = Array[SIMD[Self.dtype, Self.simd_width], tile_n](
                 fill=0
             )
 
@@ -358,7 +356,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             ](
                 start: Int,
                 end: Int,
-                mut accum: InlineArray[SIMD[Self.dtype, _simd_width], tile_n],
+                mut accum: Array[SIMD[Self.dtype, _simd_width], tile_n],
             ):
                 for _k in range(start, end, _simd_width):
                     var a_data = a_ptr.load[width=_simd_width](_k)
@@ -371,10 +369,10 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             @always_inline
             def do_reduce_accum[
                 target_width: Int, _simd_width: SIMDLength
-            ](
-                accum: InlineArray[SIMD[Self.dtype, _simd_width], tile_n]
-            ) -> InlineArray[SIMD[Self.dtype, target_width], tile_n]:
-                var accum_reduce = InlineArray[
+            ](accum: Array[SIMD[Self.dtype, _simd_width], tile_n]) -> Array[
+                SIMD[Self.dtype, target_width], tile_n
+            ]:
+                var accum_reduce = Array[
                     SIMD[Self.dtype, target_width], tile_n
                 ](fill=0)
 
@@ -386,7 +384,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             comptime unroll_simd_width = Self.simd_width * unroll_factor
 
             var unroll_loop_end = align_down(K, unroll_simd_width)
-            var unroll_accum = InlineArray[
+            var unroll_accum = Array[
                 SIMD[Self.dtype, unroll_simd_width], tile_n
             ](fill=0)
             do_reduce(0, unroll_loop_end, unroll_accum)
@@ -748,13 +746,13 @@ struct _FlashAttention[
                 Self.dtype,
                 alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
             ]()
-            var max_vals_storage = InlineArray[
+            var max_vals_storage = Array[
                 Scalar[Self.dtype], Self._config.block_m
             ](uninitialized=True)
             var max_vals = TileTensor(
                 Span(max_vals_storage), row_major[Self._config.block_m]()
             )
-            var sum_vals_storage = InlineArray[
+            var sum_vals_storage = Array[
                 Scalar[Self.dtype], Self._config.block_m
             ](uninitialized=True)
             var sum_vals = TileTensor(

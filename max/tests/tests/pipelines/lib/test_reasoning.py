@@ -143,7 +143,7 @@ async def test_minimax_m2_register_and_create() -> None:
 def _stub_reasoning_tokenizer(start_id: int, end_id: int) -> Mock:
     """Build a Mock that satisfies the full ``ReasoningPipelineTokenizer``."""
     tok = Mock()
-    tok.eos = 0
+    tok.eos_token_ids = set()
     tok.expects_content_wrapping = False
     tok.reasoning_start_token_id = start_id
     tok.reasoning_end_token_id = end_id

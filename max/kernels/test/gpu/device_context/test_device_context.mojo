@@ -38,7 +38,7 @@ def test_declared_arg_types(ctx: DeviceContext) raises:
     comptime arg_types = type_of(compiled).declared_arg_types
 
     # The list is always present and reports the kernel's arity.
-    assert_equal(arg_types.size, 5)
+    assert_equal(arg_types.length, 5)
 
     # Indexing yields the declared argument types in order.
     comptime assert arg_types[0] == UnsafePointer[Float32, ImmutAnyOrigin]

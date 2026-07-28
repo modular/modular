@@ -173,7 +173,7 @@ def _build_shared_b[
     for i in range(b_scales_total):
         b_scales_host_ptr[i] = sf_small
     for i in range(b_scales_perm_host.num_elements()):
-        b_scales_perm_host.ptr[i] = sf_zero
+        b_scales_perm_host._storage[i] = sf_zero
 
     # sigma-permute W on the N axis: W_perm[e, 2i, :] = W[e, i, :],
     # W_perm[e, 2i+1, :] = W[e, H + i, :].

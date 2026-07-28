@@ -121,7 +121,7 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
         # Destroy the remaining elements that have not yet been
         # iterated over.
         unsafe_destroy_n(
-            self._list.unsafe_ptr() + self._index,
+            self._list.unsafe_ptr().unsafe_offset(self._index),
             count=len(self._list) - self._index,
         )
         self._list._len = 0
@@ -134,7 +134,11 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
         if self._index >= len(self._list):
             raise StopIteration()
         self._index += 1
-        return (self._list.unsafe_ptr() + self._index - 1).unsafe_take_pointee()
+        return (
+            self._list.unsafe_ptr()
+            .unsafe_offset(self._index - 1)
+            .unsafe_take_pointee()
+        )
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -718,10 +722,11 @@ struct List[T: Movable, /](
         ), "List iteration requires the element to be `Copyable`."
         return _ListIter(
             0,
-            # TODO(MOCO-4326): Remove rebind
-            rebind[Pointer[downcast[Self.T, Copyable], origin_of(self)]](
-                self._data
-            ),
+            # `_data` points at untracked owned storage; the iterator borrows
+            # at this call's origin instead.
+            self._data.unsafe_mut_cast[
+                origin_of(self).mut
+            ]().unsafe_origin_cast[origin_of(self)](),
             self._len,
         )
 
@@ -737,10 +742,9 @@ struct List[T: Movable, /](
         """
         return _ListIter[forward=False](
             len(self),
-            # TODO(MOCO-4326): Remove rebind
-            rebind[Pointer[downcast[Self.T, Copyable], origin_of(self)]](
-                self._data
-            ),
+            self._data.unsafe_mut_cast[
+                origin_of(self).mut
+            ]().unsafe_origin_cast[origin_of(self)](),
             self._len,
         )
 
@@ -988,6 +992,7 @@ struct List[T: Movable, /](
             count=elements_len,
         )
 
+    @__allow_legacy_custom_self_type
     def extend[
         dtype: DType, //
     ](mut self: List[Scalar[dtype]], value: SIMD[dtype, _]):
@@ -1019,6 +1024,7 @@ struct List[T: Movable, /](
         self._unsafe_next_uninit_ptr().unsafe_store(value)
         self._len += value.size
 
+    @__allow_legacy_custom_self_type
     def extend[
         dtype: DType, //
     ](mut self: List[Scalar[dtype]], value: SIMD[dtype, _], *, count: Int):
@@ -1253,6 +1259,54 @@ struct List[T: Movable, /](
             earlier_idx += 1
             later_idx -= 1
 
+    def try_index(
+        ref self,
+        value: Self.T,
+        start: Int = 0,
+        stop: Optional[Int] = None,
+    ) -> Optional[Int] where conforms_to(Self.T, Equatable):
+        """Returns the index of the first occurrence of a value in a list
+        restricted by the range given the start and stop bounds.
+
+        Args:
+            value: The value to search for.
+            start: The starting index of the search, treated as a slice index
+                (defaults to 0).
+            stop: The ending index of the search, treated as a slice index
+                (defaults to None, which means the end of the list).
+
+        Returns:
+            The index of the first occurrence of the value in the list or `None` if the value is not found.
+
+        Examples:
+
+        ```mojo
+        var my_list = [1, 2, 3]
+        print(my_list.index(2)) # prints `1`
+        ```
+        """
+        var start_normalized = start
+
+        var stop_normalized: Int
+        if stop is None:
+            # Default end
+            stop_normalized = len(self)
+        else:
+            stop_normalized = stop.value()
+
+        if start_normalized < 0:
+            start_normalized += len(self)
+        if stop_normalized < 0:
+            stop_normalized += len(self)
+
+        start_normalized = _clip(start_normalized, 0, len(self))
+        stop_normalized = _clip(stop_normalized, 0, len(self))
+
+        for i in range(start_normalized, stop_normalized):
+            if self[i] == value:
+                return i
+        return None
+
     def index(
         ref self,
         value: Self.T,
@@ -1282,27 +1336,10 @@ struct List[T: Movable, /](
         print(my_list.index(2)) # prints `1`
         ```
         """
-        var start_normalized = start
-
-        var stop_normalized: Int
-        if stop is None:
-            # Default end
-            stop_normalized = len(self)
-        else:
-            stop_normalized = stop.value()
-
-        if start_normalized < 0:
-            start_normalized += len(self)
-        if stop_normalized < 0:
-            stop_normalized += len(self)
-
-        start_normalized = _clip(start_normalized, 0, len(self))
-        stop_normalized = _clip(stop_normalized, 0, len(self))
-
-        for i in range(start_normalized, stop_normalized):
-            if self[i] == value:
-                return i
-        raise "ValueError: Given element is not in list"
+        var result = self.try_index(value, start=start, stop=stop)
+        if result is None:
+            raise "ValueError: Given element is not in list"
+        return result.value()
 
     def clear(
         mut self,
@@ -1548,7 +1585,7 @@ struct List[T: Movable, /](
 
     def unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
-    ](ref[origin, address_space] self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> Pointer[
         Self.T, origin, address_space=address_space
     ]:
         """Retrieves a pointer to the underlying memory, or a dangling pointer

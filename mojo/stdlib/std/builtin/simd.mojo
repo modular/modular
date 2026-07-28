@@ -41,7 +41,7 @@ domain-specific libraries for machine learning and scientific computing.
 """
 
 import std.math
-from std.collections import InlineArray
+from std.collections import Array
 from std.collections.interval import IntervalElement
 from std.collections.string.string import (
     _calc_initial_buffer_size_int32,
@@ -422,6 +422,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
     CeilDivable,
     Ceilable,
     Comparable,
+    ConvertibleFromPython,
     CoordLike,
     Defaultable,
     DevicePassable,
@@ -627,17 +628,38 @@ struct SIMD[dtype: DType, size: SIMDLength](
         comptime res = SIMD[Self.dtype, Self.size](0)
         self = res
 
+    # The target dtype is a defaulted parameter rather than `Self.dtype` so that
+    # this overload stays out of the way of the `Floatable` constructor below:
+    # spelled with `Self.dtype`, `Float64(x)` for an `Intable` and `Floatable`
+    # `x` becomes ambiguous.
     @always_inline("nodebug")
-    def __init__[T: Intable](out self: Int, value: T):
-        """Initialize from an intable value.
+    def __init__[
+        T: Intable, target_dtype: DType = DType.int
+    ](out self: Scalar[target_dtype], value: T):
+        """Initialize an integer scalar from an intable value.
 
         Parameters:
             T: The Intable type.
+            target_dtype: The dtype of the scalar to construct.
 
         Args:
             value: The value to initialize from.
+
+        Constraints:
+            The target dtype must be integral.
+
+        Example:
+
+        ```mojo
+        var x = 42
+        var p = Pointer(to=x)
+        print(UInt(p))  # the address of `x`
+        ```
         """
-        self = value.__int__()
+        comptime assert (
+            target_dtype.is_integral()
+        ), "constructing from an `Intable` value requires an integral dtype"
+        self = Scalar[target_dtype](value.__int__())
 
     @always_inline("nodebug")
     def __init__[T: IntableRaising](out self: Int, value: T) raises:
@@ -926,7 +948,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
             self = bitcast[Self.dtype, Self.size](from_bits)
 
     @always_inline
-    def __init__(out self: Scalar[Self.dtype], *, py: PythonObject) raises:
+    def __init__(out self: Self, *, py: PythonObject) raises:
         """Initialize a SIMD value from a PythonObject.
 
         Args:
@@ -2084,6 +2106,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
     # Methods
     # ===------------------------------------------------------------------=== #
 
+    @__allow_legacy_custom_self_type
     def _decimal_digit_count(self: Int) -> Int:
         """
         Returns the number of decimal digits required to display this integer.
@@ -2390,7 +2413,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
     def from_bytes[
         *,
         big_endian: Bool = is_big_endian(),
-    ](bytes: InlineArray[Byte, size_of[Self]()]) -> SIMD[Self.dtype, Self.size]:
+    ](bytes: Array[Byte, _]) -> SIMD[Self.dtype, Self.size]:
         """Converts a byte array to a vector.
 
         Args:
@@ -2402,6 +2425,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
         Returns:
             The integer value.
         """
+        comptime assert bytes.length == size_of[Self]()
         var ptr = bytes.unsafe_ptr().unsafe_bitcast[Self]()
         var value = ptr[]
 
@@ -2413,7 +2437,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
     def as_bytes[
         *,
         big_endian: Bool = is_big_endian(),
-    ](self) -> InlineArray[Byte, size_of[Self]()]:
+    ](self) -> Array[Byte, size_of[Self]()]:
         """Convert the vector to a byte array.
 
         Parameters:
@@ -2428,7 +2452,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
             value = byte_swap(value)
 
         var ptr = Pointer(to=value)
-        var array = InlineArray[Byte, size_of[Self]()](uninitialized=True)
+        var array = Array[Byte, size_of[Self]()](uninitialized=True)
         unsafe_memcpy(
             dest=array.unsafe_ptr(),
             src=ptr.unsafe_bitcast[Byte](),

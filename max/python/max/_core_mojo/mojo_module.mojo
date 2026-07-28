@@ -168,10 +168,11 @@ def _mojo_block_hasher_sha256(
     var parent_bytes = parent_hash_ptr[].data
     var out_bytes = out_ptr[].data
 
-    var pair = InlineArray[UInt8, 64](fill=UInt8(0))
+    var pair = Array[UInt8, 64](fill=UInt8(0))
+    var pair_ptr: UnsafePointer[UInt8, origin_of(pair)] = pair.unsafe_ptr()
 
     # Initialise prev with the caller-provided parent hash
-    unsafe_memcpy(dest=pair.unsafe_ptr() + 32, src=parent_bytes, count=32)
+    unsafe_memcpy(dest=pair_ptr + 32, src=parent_bytes, count=32)
 
     for block_idx in range(num_blocks):
         # Local hash = SHA-256( token_bytes_for_this_block )
@@ -182,19 +183,15 @@ def _mojo_block_hasher_sha256(
         var local_hash = sha256(token_span)
 
         # Pair = local_hash || prev_seq_hash; seq = SHA-256(pair)
-        unsafe_memcpy(
-            dest=pair.unsafe_ptr(), src=local_hash.unsafe_ptr(), count=32
-        )
-        var pair_span = Span[Byte, _](unsafe_ptr=pair.unsafe_ptr(), length=64)
+        unsafe_memcpy(dest=pair_ptr, src=local_hash.unsafe_ptr(), count=32)
+        var pair_span = Span[Byte, _](unsafe_ptr=pair_ptr, length=64)
         var seq_hash = sha256(pair_span)
 
         # Write to out[block_idx, :] and shift seq into pair[32:64] for newx iter
         unsafe_memcpy(
             dest=out_bytes + block_idx * 32, src=seq_hash.unsafe_ptr(), count=32
         )
-        unsafe_memcpy(
-            dest=pair.unsafe_ptr() + 32, src=seq_hash.unsafe_ptr(), count=32
-        )
+        unsafe_memcpy(dest=pair_ptr + 32, src=seq_hash.unsafe_ptr(), count=32)
 
 
 @always_inline

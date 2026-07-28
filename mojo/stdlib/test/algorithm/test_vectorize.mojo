@@ -21,13 +21,13 @@ from std.sys.intrinsics import masked_load, masked_store
 
 def test_vectorize() raises:
     # Create a mem of size 5
-    var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
+    var vector_stack: Array[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
     var vector = Span(vector_stack)
 
     @always_inline
     def add_two[width: Int](idx: Int) {var vector}:
-        vector.unsafe_ptr().store[width=width](
-            idx, vector.unsafe_ptr().load[width=width](idx) + 2
+        vector.unsafe_ptr().unsafe_store[width=width](
+            idx, vector.unsafe_ptr().unsafe_load[width=width](idx) + 2
         )
 
     vectorize[2](len(vector), add_two)
@@ -40,10 +40,10 @@ def test_vectorize() raises:
 
     @always_inline
     def add[width: Int](idx: Int) {var vector}:
-        vector.unsafe_ptr().store[width=width](
+        vector.unsafe_ptr().unsafe_store[width=width](
             idx,
-            vector.unsafe_ptr().load[width=width](idx)
-            + vector.unsafe_ptr().load[width=width](idx),
+            vector.unsafe_ptr().unsafe_load[width=width](idx)
+            + vector.unsafe_ptr().unsafe_load[width=width](idx),
         )
 
     vectorize[2](len(vector), add)
@@ -57,14 +57,14 @@ def test_vectorize() raises:
 
 def test_vectorize_evl() raises:
     # Create a mem of size 5
-    var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
+    var vector_stack: Array[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
     var vector = Span(vector_stack)
 
     @always_inline
     def add_two[width: Int](idx: Int, evl: Int) {var vector}:
         if evl == width:
-            vector.unsafe_ptr().store[width=width](
-                idx, vector.unsafe_ptr().load[width=width](idx) + 2
+            vector.unsafe_ptr().unsafe_store[width=width](
+                idx, vector.unsafe_ptr().unsafe_load[width=width](idx) + 2
             )
         else:
             for i in range(evl):
@@ -81,13 +81,13 @@ def test_vectorize_evl() raises:
     @always_inline
     def add[width: Int](idx: Int, evl: Int) {var vector}:
         if evl == width:
-            vector.unsafe_ptr().store[width=width](
+            vector.unsafe_ptr().unsafe_store[width=width](
                 idx,
-                vector.unsafe_ptr().load[width=width](idx)
-                + vector.unsafe_ptr().load[width=width](idx),
+                vector.unsafe_ptr().unsafe_load[width=width](idx)
+                + vector.unsafe_ptr().unsafe_load[width=width](idx),
             )
         else:
-            var ptr = vector.unsafe_ptr() + idx
+            var ptr = vector.unsafe_ptr().unsafe_offset(idx)
             var incr = iota[DType.int32, width]()
             var mask = incr.lt(Int32(evl))
             var loaded = masked_load[width](
@@ -108,9 +108,9 @@ def test_vectorize_evl() raises:
 def test_vectorize_unroll() raises:
     comptime buf_len = 23
 
-    var vec_stack = InlineArray[Float32, buf_len](uninitialized=True)
+    var vec_stack = Array[Float32, buf_len](uninitialized=True)
     var vec = Span(vec_stack)
-    var buf_stack = InlineArray[Float32, buf_len](uninitialized=True)
+    var buf_stack = Array[Float32, buf_len](uninitialized=True)
     var buf = Span(buf_stack)
 
     for i in range(buf_len):
@@ -119,18 +119,18 @@ def test_vectorize_unroll() raises:
 
     @always_inline
     def double_buf[simd_width: Int](idx: Int) {var buf}:
-        buf.unsafe_ptr().store[width=simd_width](
+        buf.unsafe_ptr().unsafe_store[width=simd_width](
             idx,
-            buf.unsafe_ptr().load[width=simd_width](idx)
-            + buf.unsafe_ptr().load[width=simd_width](idx),
+            buf.unsafe_ptr().unsafe_load[width=simd_width](idx)
+            + buf.unsafe_ptr().unsafe_load[width=simd_width](idx),
         )
 
     @always_inline
     def double_vec[simd_width: Int](idx: Int) {var vec}:
-        vec.unsafe_ptr().store[width=simd_width](
+        vec.unsafe_ptr().unsafe_store[width=simd_width](
             idx,
-            vec.unsafe_ptr().load[width=simd_width](idx)
-            + vec.unsafe_ptr().load[width=simd_width](idx),
+            vec.unsafe_ptr().unsafe_load[width=simd_width](idx)
+            + vec.unsafe_ptr().unsafe_load[width=simd_width](idx),
         )
 
     comptime simd_width = 4

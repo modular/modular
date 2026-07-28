@@ -21,6 +21,7 @@ from unittest.mock import Mock, mock_open, patch
 
 import msgspec
 import pytest
+from huggingface_hub import errors as hf_hub_errors
 from max.benchmark.benchmark_shared.datasets import (
     DATASET_REGISTRY,
     ArtificialAnalysisBenchmarkDataset,
@@ -43,6 +44,9 @@ from max.benchmark.benchmark_shared.datasets import (
     SonnetBenchmarkDataset,
     SyntheticPixelBenchmarkDataset,
     VisionArenaBenchmarkDataset,
+)
+from max.benchmark.benchmark_shared.datasets._hf_download import (
+    hf_hub_download_with_retry,
 )
 from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
     TokenizerPool,
@@ -320,7 +324,9 @@ def test_benchmark_dataset_repr(mock_exists: Mock) -> None:
 
 
 @patch("os.path.exists")
-@patch("max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download")
+@patch(
+    "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download_with_retry"
+)
 def test_code_debug_from_flags(mock_download: Mock, mock_exists: Mock) -> None:
     """Test fetching code_debug dataset from HuggingFace Hub."""
     mock_download.return_value = "/path/to/downloaded/file.jsonl"
@@ -336,7 +342,9 @@ def test_code_debug_from_flags(mock_download: Mock, mock_exists: Mock) -> None:
     )
 
 
-@patch("max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download")
+@patch(
+    "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download_with_retry"
+)
 def test_code_debug_from_flags_unknown(mock_download: Mock) -> None:
     """Test fetching unknown dataset raises ValueError."""
     mock_download.return_value = "/tmp/fake_code_debug.jsonl"
@@ -352,7 +360,9 @@ def test_code_debug_from_flags_unknown(mock_download: Mock) -> None:
 
 
 @patch("os.path.exists")
-@patch("max.benchmark.benchmark_shared.datasets.sharegpt.hf_hub_download")
+@patch(
+    "max.benchmark.benchmark_shared.datasets.sharegpt.hf_hub_download_with_retry"
+)
 def test_sharegpt_from_flags(mock_download: Mock, mock_exists: Mock) -> None:
     """Test fetching ShareGPT dataset from HuggingFace Hub."""
     mock_download.return_value = "/path/to/downloaded/file.json"
@@ -636,7 +646,9 @@ def test_local_benchmark_dataset_base_class() -> None:
         dataset.fetch()  # Should not raise
 
 
-@patch("max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download")
+@patch(
+    "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download_with_retry"
+)
 def test_huggingface_benchmark_dataset_base_class(mock_download: Mock) -> None:
     """Test HuggingFaceBenchmarkDataset base class behavior."""
     mock_download.return_value = "/tmp/fake_code_debug.jsonl"
@@ -696,7 +708,7 @@ def test_huggingface_datasets_fetch_behavior() -> None:
     """Test that HuggingFace datasets fetch from HF when used directly."""
     # Test CodeDebugBenchmarkDataset
     with patch(
-        "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download"
+        "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download_with_retry"
     ) as mock_download:
         mock_download.return_value = "/path/to/downloaded/file.jsonl"
 
@@ -715,7 +727,7 @@ def test_huggingface_datasets_fetch_behavior() -> None:
 
     # Test ShareGPTBenchmarkDataset
     with patch(
-        "max.benchmark.benchmark_shared.datasets.sharegpt.hf_hub_download"
+        "max.benchmark.benchmark_shared.datasets.sharegpt.hf_hub_download_with_retry"
     ) as mock_download:
         mock_download.return_value = "/path/to/downloaded/file.json"
 
@@ -870,6 +882,30 @@ def test_synthetic_pixel_dataset_sample_requests_for_image_to_image() -> None:
         assert request.image_options.height == 832
         assert request.image_options.steps == 18
         assert request.image_options.guidance_scale == 3.0
+
+
+def test_synthetic_pixel_dataset_sample_requests_for_image_to_video() -> None:
+    dataset = BenchmarkDataset.from_flags(dataset_name="synthetic-pixel")
+    assert isinstance(dataset, SyntheticPixelBenchmarkDataset)
+
+    samples = dataset.sample_requests(
+        num_requests=2,
+        tokenizer=None,
+        benchmark_task="image-to-video",
+        image_width=832,
+        image_height=480,
+        num_frames=81,
+    )
+
+    assert len(samples.requests) == 2
+    for request in samples.requests:
+        assert isinstance(request, PixelGenerationSampledRequest)
+        assert request.prompt_formatted.startswith("Random prompt")
+        # image-to-video still attaches an input image, like image-to-image.
+        assert len(request.input_image_paths) == 1
+        assert Path(request.input_image_paths[0]).exists()
+        assert request.image_options is not None
+        assert request.image_options.num_frames == 81
 
 
 def test_random_multiturn_emits_zero_prefix_turns() -> None:
@@ -1510,3 +1546,29 @@ def test_aa_sampled_output_len_caps_with_eos_enabled() -> None:
         # Output length is set (a runaway cap), but EOS is not ignored.
         assert r.output_len == 50
         assert r.ignore_eos is False
+
+
+def test_hf_hub_download_retries_on_racy_cache_entry() -> None:
+    """A racy `.incomplete` FileNotFoundError triggers one force_download retry."""
+    with patch(
+        "max.benchmark.benchmark_shared.datasets._hf_download"
+        ".huggingface_hub.hf_hub_download",
+        side_effect=[
+            FileNotFoundError("dangling .incomplete"),
+            "/cache/d.json",
+        ],
+    ) as mock_download:
+        assert hf_hub_download_with_retry(repo_id="org/d") == "/cache/d.json"
+    assert mock_download.call_args_list[1].kwargs["force_download"] is True
+
+
+def test_hf_hub_download_does_not_retry_offline_miss() -> None:
+    """An offline/uncached miss (LocalEntryNotFoundError) is surfaced at once."""
+    with patch(
+        "max.benchmark.benchmark_shared.datasets._hf_download"
+        ".huggingface_hub.hf_hub_download",
+        side_effect=hf_hub_errors.LocalEntryNotFoundError("offline"),
+    ) as mock_download:
+        with pytest.raises(hf_hub_errors.LocalEntryNotFoundError):
+            hf_hub_download_with_retry(repo_id="org/d")
+    assert mock_download.call_count == 1

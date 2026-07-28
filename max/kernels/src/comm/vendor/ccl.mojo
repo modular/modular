@@ -295,7 +295,7 @@ struct Communicators(ImplicitlyCopyable):
     var ngpus: Int
     """The number of GPUs participating in the communicator group."""
 
-    var comms: InlineArray[ncclComm_t, MAX_GPUS]
+    var comms: Array[ncclComm_t, MAX_GPUS]
     """Per-GPU communicator handles, valid for indices `0..ngpus-1`."""
 
     def __init__(out self, *, copy: Self):
@@ -328,8 +328,8 @@ def _get_global_comms(ngpus: Int) raises -> Communicators:
     if ngpus > MAX_GPUS:
         raise Error("too many GPUs for CCL")
 
-    var comms = InlineArray[ncclComm_t, MAX_GPUS](fill={})
-    var devlist = InlineArray[Int32, MAX_GPUS](fill={})
+    var comms = Array[ncclComm_t, MAX_GPUS](fill={})
+    var devlist = Array[Int32, MAX_GPUS](fill={})
     for i in range(ngpus):
         devlist[i] = Int32(i)
 
@@ -377,6 +377,8 @@ def allreduce[
     in_layout: TensorLayout,
     in_origin: Origin[mut=False],
     rank_sigs_origin: Origin[mut=True],
+    out_layout: TensorLayout,
+    out_origin: MutOrigin,
     //,
     ngpus: Int,
     output_lambda: Optional[elementwise_epilogue_type] = None,
@@ -384,11 +386,11 @@ def allreduce[
     *,
     use_multimem: Bool = False,
 ](
-    input_tensors: InlineArray[
+    input_tensors: Array[
         TileTensor[dtype, in_layout, in_origin], 1 if use_multimem else ngpus
     ],
-    output_tensor: TileTensor[mut=True, dtype, ...],
-    rank_sigs: InlineArray[UnsafePointer[Signal, rank_sigs_origin], MAX_GPUS],
+    output_tensor: TileTensor[mut=True, dtype, out_layout, out_origin],
+    rank_sigs: Array[UnsafePointer[Signal, rank_sigs_origin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
@@ -413,8 +415,8 @@ def allreduce[
 
     _check_ccl_ok(
         _ccl_allreduce(
-            input_tensor.ptr.bitcast[NoneType](),
-            output_tensor.ptr.bitcast[NoneType](),
+            input_tensor._storage.bitcast[NoneType](),
+            output_tensor._storage.bitcast[NoneType](),
             count,
             dtype_ccl,
             op,
@@ -507,8 +509,8 @@ def allgather[
     //,
     ngpus: Int,
 ](
-    inputs: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
-    outputs: InlineArray[
+    inputs: Array[TileTensor[dtype, in_layout, in_origin], ngpus],
+    outputs: Array[
         TileTensor[mut=True, dtype, out_layout, out_origin], ngpus * ngpus
     ],
     list_of_ctx: List[DeviceContext],
@@ -568,7 +570,7 @@ def allgather[
             with list_of_ctx[i].push_context():
                 _check_ccl_ok(
                     _ccl_allgather(
-                        inputs[i].ptr.bitcast[NoneType](),
+                        inputs[i]._storage.bitcast[NoneType](),
                         recv_tmp[i].unsafe_ptr().bitcast[NoneType](),
                         count,
                         dtype_nccl,
@@ -583,7 +585,7 @@ def allgather[
             var src_off = src * count
             var out_idx = dev * ngpus + src
             var dest_db = DeviceBuffer[dtype](
-                ctx, outputs[out_idx].ptr, count, owning=False
+                ctx, outputs[out_idx]._storage, count, owning=False
             )
             var src_db = DeviceBuffer[dtype](
                 ctx, recv_tmp[dev].unsafe_ptr() + src_off, count, owning=False
@@ -597,14 +599,16 @@ def broadcast[
     dtype: DType,
     in_layout: TensorLayout,
     in_origin: Origin,
+    out_layout: TensorLayout,
+    out_origin: MutOrigin,
     //,
     ngpus: Int,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
     input_tensor: TileTensor[dtype, in_layout, in_origin],
-    output_tensor: TileTensor[mut=True, dtype, ...],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    output_tensor: TileTensor[mut=True, dtype, out_layout, out_origin],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,
@@ -625,8 +629,8 @@ def broadcast[
 
     _check_ccl_ok(
         _ccl_broadcast(
-            input_tensor.ptr.bitcast[NoneType](),
-            output_tensor.ptr.bitcast[NoneType](),
+            input_tensor._storage.bitcast[NoneType](),
+            output_tensor._storage.bitcast[NoneType](),
             count,
             dtype_ccl,
             root,

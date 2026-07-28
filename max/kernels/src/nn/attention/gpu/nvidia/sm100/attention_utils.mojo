@@ -360,7 +360,7 @@ def o_store_tma_blocks_per_op[
 @always_inline
 def pack_row[
     n: Int, //, output_type: DType, w: Int, start: Int = 0
-](o_vals: InlineArray[Scalar[DType.float32], n]) -> SIMD[DType.uint32, 4]:
+](o_vals: Array[Scalar[DType.float32], n]) -> SIMD[DType.uint32, 4]:
     """Cast the `w` f32 O lanes `o_vals[start : start + w]` to `output_type` and
     pack them into one 16 B SWIZZLE_NONE store register (exactly four u32).
 
@@ -411,7 +411,7 @@ def pack_row[
 @always_inline
 def scale_pack_o_row[
     n: Int, //, output_type: DType, w: Int, start: Int = 0
-](o_vals: InlineArray[Scalar[DType.float32], n], inv_row_sum: Float32) -> SIMD[
+](o_vals: Array[Scalar[DType.float32], n], inv_row_sum: Float32) -> SIMD[
     DType.uint32, w // 2
 ]:
     """Scale the `w` f32 O lanes `o_vals[start : start + w]` by `inv_row_sum`,
@@ -457,8 +457,8 @@ def scale_pack_o_row[
 def combine_pack_o_row[
     n: Int, //, output_type: DType
 ](
-    own: InlineArray[Scalar[DType.float32], n],
-    peer: InlineArray[Scalar[DType.float32], n],
+    own: Array[Scalar[DType.float32], n],
+    peer: Array[Scalar[DType.float32], n],
     scale_own: Float32,
     scale_peer: Float32,
 ) -> SIMD[DType.uint32, n // 2]:
@@ -635,7 +635,7 @@ struct TMemTile[
                         m_mma=m_mma,
                     ]()
                     tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
-                    var frag = InlineArray[
+                    var frag = Array[
                         Scalar[DType.uint32], offsets.local_frag_size_b32
                     ](uninitialized=True)
 
@@ -764,9 +764,9 @@ struct TMemTile[
     @always_inline
     def load_async(
         self,
-        out dst: InlineArray[Scalar[Self.dtype], Self.BN],
+        out dst: Array[Scalar[Self.dtype], Self.BN],
     ):
-        dst = InlineArray[Scalar[Self.dtype], Self.BN](uninitialized=True)
+        dst = Array[Scalar[Self.dtype], Self.BN](uninitialized=True)
         # The uint32 bitcast path below assumes dtype_size == 4.
         # Sub-32-bit types (bf16, f16) pack multiple elements per uint32
         # and would need unpacking logic not yet implemented.
@@ -816,7 +816,7 @@ struct TMemTile[
         def store_fn[pow_two: Int, offset: Int]():
             comptime if pow_two > 0:
                 comptime frag_width = pow_two * Self.dtype_size // 4
-                var frag = InlineArray[Scalar[DType.uint32], frag_width](
+                var frag = Array[Scalar[DType.uint32], frag_width](
                     uninitialized=True
                 )
 
@@ -869,13 +869,13 @@ struct TMemTile[
         src_type: DType,
         src_len: Int,
         src_offset: Int = 0,
-    ](self, src: InlineArray[Scalar[src_type], src_len]):
+    ](self, src: Array[Scalar[src_type], src_len]):
         @parameter
         @always_inline
         def store_fn[pow_two: Int, offset: Int]():
             comptime if pow_two > 0:
                 comptime frag_width = pow_two * Self.dtype_size // 4
-                var frag = InlineArray[Scalar[DType.uint32], frag_width](
+                var frag = Array[Scalar[DType.uint32], frag_width](
                     uninitialized=True
                 )
 
@@ -942,6 +942,13 @@ struct SM100TensorAccumulator[
     cta_group: Int = 1,
     num_stages: Int = 1,
     b_page_dense: Bool = False,
+    # ANDed into `use_3_then_1_split` below (default True: byte-identical for
+    # every existing caller). Layout-E's P@V reduction-split accumulator
+    # (`mma_warp.mojo`) sets this False so its `num_stages==2` P sub-stage
+    # split stays an EVEN 2-then-2 of each reduction chunk's own `BK`, instead
+    # of the 3-then-1 split calibrated for Layout-G's (non-reduction-split)
+    # P write cadence -- see docs/plans/sm100-fa4-layout-e-mma64.md.
+    allow_3_then_1_split: Bool = True,
 ](TrivialRegisterPassable):
     """Performs the `C = A @ B` tensor contraction on SM100 using `tcgen05.mma` instructions.
 
@@ -969,6 +976,12 @@ struct SM100TensorAccumulator[
             hiding (defaults to 1).
         b_page_dense: Whether B uses the row-major page-fold layout
             (defaults to `False`).
+        allow_3_then_1_split: Whether a `num_stages == 2` A-in-TMEM
+            contraction with `num_k_blocks % 4 == 0` may use the 3-then-1
+            K sub-stage split (defaults to `True`, the historical behavior).
+            Set `False` by Layout-E's P@V reduction-split accumulator so the
+            P sub-stage chunks stay an even 2-then-2 aligned with the V
+            reduction chunks.
     """
 
     # This performs C = A @ B
@@ -1018,7 +1031,7 @@ struct SM100TensorAccumulator[
         Self.BK, Self.swizzle_granularity
     )
     comptime num_k_blocks = Self.padded_BK // Self.MMA_K
-    comptime use_3_then_1_split: Bool = Self.a_tmem and Self.num_stages == 2 and Self.num_k_blocks % 4 == 0
+    comptime use_3_then_1_split: Bool = Self.allow_3_then_1_split and Self.a_tmem and Self.num_stages == 2 and Self.num_k_blocks % 4 == 0
     comptime num_k_blocks_per_stage = Self.num_k_blocks // (
         4 if Self.use_3_then_1_split else Self.num_stages
     )
@@ -2650,10 +2663,7 @@ def expect_bytes_pred(
 @always_inline
 def maximum[
     BN: Int, //, *, width: Int = 4
-](
-    x: InlineArray[Scalar[DType.float32], BN],
-    out res: StaticTuple[Float32, width],
-):
+](x: Array[Scalar[DType.float32], BN], out res: StaticTuple[Float32, width],):
     """Reduces `BN` float32 scores into `width` lane-maxima using FTZ max."""
     res = {}
 
@@ -2696,7 +2706,7 @@ def maximum[
 def maximum[
     BN: Int, //, *, width: Int = 4
 ](
-    x: InlineArray[Scalar[DType.float32], BN],
+    x: Array[Scalar[DType.float32], BN],
     init: StaticTuple[Float32, width],
     out res: StaticTuple[Float32, width],
 ):
@@ -3560,7 +3570,7 @@ def apply_mask[
     mask_strategy: MaskStrategy,
     skip_scale: Bool = False,
 ](
-    mut srow: InlineArray[Scalar[DType.float32], BN],
+    mut srow: Array[Scalar[DType.float32], BN],
     mask: MaskType,
     scale_log2e: Float32,
     *,

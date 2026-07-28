@@ -113,6 +113,21 @@ sh_binary(
     tags = ["manual"],
 )
 
+modular_py_binary(
+    name = "mmmu_pro_eval",
+    testonly = True,
+    srcs = ["mmmu_pro_eval.py"],
+    imports = ["."],
+    main = "mmmu_pro_eval.py",
+    deps = [
+        ":eval_common",
+        requirement("click"),
+        requirement("datasets"),
+        # Images are base64-encoded via Pillow (imported directly).
+        requirement("pillow"),
+    ],
+)
+
 # Suite-level score consolidation for the full-accuracy-eval orchestrator.
 # Stdlib-only: the CI collector job runs it with a bare python3, no bazel.
 modular_py_binary(

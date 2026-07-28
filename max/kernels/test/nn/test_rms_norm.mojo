@@ -87,9 +87,12 @@ def run_rms_norm_cpu[
         weight_offset,
     )
 
+    var input_ptr_ptr: UnsafePointer[
+        input_ptr.T, origin_of(input_ptr)
+    ] = input_ptr.unsafe_ptr()
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
-            input_ptr.unsafe_ptr() + r * cols,
+            input_ptr_ptr + r * cols,
             row_major(cols),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)

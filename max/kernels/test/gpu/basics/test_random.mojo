@@ -33,7 +33,7 @@ def run_elementwise[
 
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
-    var out_stack = InlineArray[Scalar[dtype], length](uninitialized=True)
+    var out_stack = Array[Scalar[dtype], length](uninitialized=True)
     var out_host = TileTensor(out_stack, row_major[length]())
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
@@ -72,7 +72,7 @@ def run_elementwise[
     else:
         elementwise[4, target="gpu"](func_normal, Coord(length), ctx)
 
-    ctx.enqueue_copy(out_host.ptr, out_device)
+    ctx.enqueue_copy(out_host._storage, out_device)
     ctx.synchronize()
 
     print("Testing", distribution, "distribution:")

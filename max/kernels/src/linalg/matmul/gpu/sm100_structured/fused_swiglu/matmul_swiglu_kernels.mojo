@@ -128,41 +128,41 @@ struct _SwiGLUSmem[
     )
 
     # A/B pipelines
-    var a_smem: InlineArray[
+    var a_smem: Array[
         Scalar[Self.a_type], Self.BM * Self.BK * Self.config.num_pipeline_stages
     ]
-    var b_smem: InlineArray[
+    var b_smem: Array[
         Scalar[Self.b_type], Self.BN * Self.BK * Self.config.num_pipeline_stages
     ]
 
-    var tma_mma_mbars: InlineArray[
+    var tma_mma_mbars: Array[
         SharedMemBarrier, Self.num_group_pipeline_stages * 2
     ]
-    var accum_mbars: InlineArray[
+    var accum_mbars: Array[
         SharedMemBarrier, Self.config.num_accum_pipeline_stages * 2
     ]
 
     # CLC
-    var clc_mbars_full: InlineArray[
+    var clc_mbars_full: Array[
         SharedMemBarrier, Self.config.num_clc_pipeline_stages
     ]
-    var clc_mbars_empty: InlineArray[
+    var clc_mbars_empty: Array[
         SharedMemBarrier, Self.config.num_clc_pipeline_stages
     ]
-    var clc_throttle_mbars: InlineArray[
+    var clc_throttle_mbars: Array[
         SharedMemBarrier, Self.config.num_clc_pipeline_stages * 2
     ]
-    var clc_response: InlineArray[UInt128, Self.config.num_clc_pipeline_stages]
+    var clc_response: Array[UInt128, Self.config.num_clc_pipeline_stages]
 
     # TMEM dealloc barrier and address storage
-    var tmem_dealloc_mbar: InlineArray[SharedMemBarrier, 1]
-    var tmem_addr: InlineArray[UInt32, 1]
+    var tmem_dealloc_mbar: Array[SharedMemBarrier, 1]
+    var tmem_addr: Array[UInt32, 1]
     # Epilogue load producer/consumer pipeline barriers (4 for 2-stage pipeline)
-    var epilogue_load_mbars: InlineArray[
+    var epilogue_load_mbars: Array[
         SharedMemBarrier, 4 if Self.config.use_bias else 0
     ]
     # 1D bias SMEM tile (2 * bias_dim elements for 2-stage double buffering)
-    var bias_smem: InlineArray[Scalar[Self.c_type], Self.bias_smem_elems]
+    var bias_smem: Array[Scalar[Self.c_type], Self.bias_smem_elems]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -300,11 +300,11 @@ def load_AB[
             var b_smem_tile = b_smem_tiles[offset]
 
             var a_smem_slice = type_of(a_smem_tile)(
-                a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size,
+                a_smem_tile._storage + peer_cta_coord[2] * a_tma_load_size,
                 a_smem_tile.layout,
             )
             var b_smem_slice = type_of(b_smem_tile)(
-                b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size,
+                b_smem_tile._storage + peer_cta_coord[1] * b_tma_load_size,
                 b_smem_tile.layout,
             )
 
@@ -523,8 +523,8 @@ def _swiglu_epilogue_gmem[
     )
     var frag_coords = EpilogueApplierType.Coords(UInt32(lane))
 
-    var upper_frag_partial: InlineArray[Scalar[accum_type], rep_frag_size]
-    var lower_frag_partial = InlineArray[Scalar[accum_type], rep_frag_size](
+    var upper_frag_partial: Array[Scalar[accum_type], rep_frag_size]
+    var lower_frag_partial = Array[Scalar[accum_type], rep_frag_size](
         uninitialized=True
     )
 
@@ -532,7 +532,7 @@ def _swiglu_epilogue_gmem[
         var frags = accum_tiles[stage].load_fragments[rep]()
         AccumTmemArray.Tile.wait_load()
 
-        comptime PartialType = InlineArray[Scalar[accum_type], rep_frag_size]
+        comptime PartialType = Array[Scalar[accum_type], rep_frag_size]
         upper_frag_partial = rebind[PartialType](frags.upper).copy()
 
         comptime if is_lower_frag_required:
@@ -945,8 +945,8 @@ def _swiglu_epilogue_smem_tma[
     var lane_row = frag_coords.top_upper[0]
     var lane_col = frag_coords.top_upper[1]
 
-    var upper_frag_partial: InlineArray[Scalar[accum_type], rep_frag_size]
-    var lower_frag_partial = InlineArray[Scalar[accum_type], rep_frag_size](
+    var upper_frag_partial: Array[Scalar[accum_type], rep_frag_size]
+    var lower_frag_partial = Array[Scalar[accum_type], rep_frag_size](
         uninitialized=True
     )
 
@@ -956,7 +956,7 @@ def _swiglu_epilogue_smem_tma[
         var frags = accum_tiles[stage].load_fragments[rep]()
         AccumTmemArray.Tile.wait_load()
 
-        comptime PartialType = InlineArray[Scalar[accum_type], rep_frag_size]
+        comptime PartialType = Array[Scalar[accum_type], rep_frag_size]
         upper_frag_partial = rebind[PartialType](frags.upper).copy()
 
         comptime if is_lower_frag_required:
@@ -1603,7 +1603,11 @@ def blackwell_swiglu_warp_specialized_kernel[
         Scalar[DType.uint8], address_space=AddressSpace.SHARED, alignment=128
     ]()
     ref smem = smem_bytes.bitcast[SmemType]()[]
-    var ptr_tmem_addr = smem.tmem_addr.unsafe_ptr()
+    var ptr_tmem_addr: UnsafePointer[
+        UInt32,
+        origin_of(smem.tmem_addr),
+        address_space=AddressSpace.SHARED,
+    ] = smem.tmem_addr.unsafe_ptr()
     var tmem_dealloc_mbar = smem.tmem_dealloc_mbar.unsafe_ptr()
     var c_out_smem = (smem_bytes + c_out_smem_offset).bitcast[Scalar[c_type]]()
 
@@ -1883,12 +1887,15 @@ def blackwell_swiglu_warp_specialized_kernel[
                         0
                     )
                     var src_ptr = (
-                        bias_1d_tile.ptr + gmem_offset + lane_start
+                        bias_1d_tile._storage + gmem_offset + lane_start
                     ).address_space_cast[AddressSpace.GLOBAL]()
+                    var bias_smem_base: UnsafePointer[
+                        Scalar[c_type],
+                        origin_of(smem.bias_smem),
+                        address_space=AddressSpace.SHARED,
+                    ] = smem.bias_smem.unsafe_ptr()
                     var dst_ptr = (
-                        smem.bias_smem.unsafe_ptr()
-                        + Int(stage) * bias_dim
-                        + lane_start
+                        bias_smem_base + Int(stage) * bias_dim + lane_start
                     )
                     async_copy[bytes_per_lane, fill=Scalar[c_type](0)](
                         src_ptr, dst_ptr, src_size=src_bytes
@@ -1939,9 +1946,12 @@ def blackwell_swiglu_warp_specialized_kernel[
 
                 var epi_stage = Int(epi_load_pl.consumer_stage())
                 epi_load_pl.wait_producer()
-                var bias_smem_ptr = (
-                    smem.bias_smem.unsafe_ptr() + epi_stage * bias_dim
-                )
+                var bias_smem_base: UnsafePointer[
+                    Scalar[c_type],
+                    origin_of(smem.bias_smem),
+                    address_space=AddressSpace.SHARED,
+                ] = smem.bias_smem.unsafe_ptr()
+                var bias_smem_ptr = bias_smem_base + epi_stage * bias_dim
                 comptime if config.register_swiglu:
                     _swiglu_epilogue_gmem[
                         a_type,

@@ -205,6 +205,29 @@ def _hf_tqdm_using_threading_only_lock():  # noqa: ANN202
         delattr(hf_tqdm, "_lock")
 
 
+# Mirrored by ``max.benchmark.benchmark_shared.datasets._hf_download``;
+# duplicated to keep ``benchmark_shared`` decoupled from the pipelines package.
+def _hf_hub_download_with_retry(**kwargs: Any) -> str:
+    """Calls ``hf_hub_download``, retrying past a racy ``.incomplete`` entry.
+
+    A concurrent download or an evicted cache can delete the ``.incomplete``
+    temp before ``hf_hub_download`` renames it, raising ``FileNotFoundError``;
+    a clean re-fetch repairs it. An offline/uncached miss is not retryable.
+    """
+    try:
+        return huggingface_hub.hf_hub_download(**kwargs)
+    except hf_hub_errors.LocalEntryNotFoundError:
+        raise  # offline/uncached miss, not retryable
+    except FileNotFoundError:
+        _logger.warning(
+            "Retrying download of %s with force_download.",
+            kwargs.get("filename", kwargs.get("repo_id")),
+        )
+        return huggingface_hub.hf_hub_download(
+            **{**kwargs, "force_download": True}
+        )
+
+
 def download_weight_files(
     huggingface_model_id: str,
     filenames: list[str],
@@ -275,9 +298,9 @@ def download_weight_files(
         weight_paths = list(
             thread_map(
                 lambda filename: Path(
-                    huggingface_hub.hf_hub_download(
-                        huggingface_model_id,
-                        filename,
+                    _hf_hub_download_with_retry(
+                        repo_id=huggingface_model_id,
+                        filename=filename,
                         revision=revision,
                         force_download=force_download,
                     )

@@ -140,6 +140,20 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "mef_precompile",
+    testonly = True,
+    srcs = ["mef_precompile.py"],
+    imports = [".."],
+    deps = [
+        requirement("click"),
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+modular_py_library(
     name = "context_utils",
     testonly = True,
     srcs = ["context_utils.py"],
@@ -369,7 +383,6 @@ modular_py_library(
     deps = [
         ":mocks",
         "//max/python/max/driver",
-        "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("torch"),

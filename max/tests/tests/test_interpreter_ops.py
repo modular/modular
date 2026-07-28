@@ -28,6 +28,7 @@ from max._interpreter_ops import (
     elementwise_binary_gc,
     gc_compile,
     matmul_gc,
+    select_gc,
     shape_rearrange_gc,
     unary_elementwise_gc,
 )
@@ -3219,6 +3220,44 @@ class TestSelectOp:
         expected = np.where(cond_np, x_np, y_np)
         np.testing.assert_array_equal(np.from_dlpack(result), expected)
 
+    @pytest.mark.parametrize("dtype", UINT_DTYPES)
+    def test_select_uint(self, dtype: DType) -> None:
+        """Test select op with unsigned integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        cond_np = np.array([True, False, True, False], dtype=np.bool_)
+        x_np = np.array([1, 2, 3, 4], dtype=np_dtype)
+        y_np = np.array([10, 20, 30, 40], dtype=np_dtype)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = np.where(cond_np, x_np, y_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_select_bool_values(self) -> None:
+        """Test select op where x/y (not just cond) are bool tensors."""
+        cond_np = np.array([True, False, True, False], dtype=np.bool_)
+        x_np = np.array([True, True, False, False], dtype=np.bool_)
+        y_np = np.array([False, False, True, True], dtype=np.bool_)
+
+        cond = Tensor.from_dlpack(cond_np)
+        x = Tensor.from_dlpack(x_np)
+        y = Tensor.from_dlpack(y_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = np.where(cond_np, x_np, y_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
     def test_select_all_true(self) -> None:
         """Test select with all-true condition returns x."""
         cond_np = np.ones(4, dtype=np.bool_)
@@ -3526,7 +3565,7 @@ class TestRmsNormOp:
     """Tests for rms_norm interpreter op via F.rms_norm.
 
     Routes through F.rms_norm -> ops.rms_norm -> mo.ReduceRmsNormOp ->
-    _handle_rms_norm -> rms_norm_ops.RmsNorm.
+    _handle_rms_norm -> rms_norm_gc.rms_norm_model.
     """
 
     @staticmethod
@@ -3651,84 +3690,15 @@ class TestRmsNormOp:
 class TestGroupNormOp:
     """Tests for group_norm interpreter op via F.group_norm.
 
-    Routes through F.group_norm -> ops.group_norm -> mo.ReduceGroupNormOp ->
-    _handle_group_norm -> group_norm_ops.GroupNorm.
+    group_norm's graph-compiler kernel (nn.normalization.group_norm) is
+    GPU-only (see group_norm_gc.py's module docstring); CPU calls raise
+    NotImplementedError. GPU correctness is covered by TestGroupNormGPU in
+    test_interpreter_ops_gpu.py.
     """
 
-    @staticmethod
-    def _group_norm_ref(
-        x: np.ndarray,
-        gamma: np.ndarray,
-        beta: np.ndarray,
-        num_groups: int,
-        eps: float,
-    ) -> np.ndarray:
-        """Pure-numpy group norm reference.
-
-        Input layout: [N, C, ...]. Channels at dim 1.
-        """
-        x_f64 = x.astype(np.float64)
-        N = x.shape[0]
-        C = x.shape[1]
-        spatial = x_f64.reshape(N, C, -1)
-        channels_per_group = C // num_groups
-        grouped = spatial.reshape(N, num_groups, channels_per_group, -1)
-        mean = grouped.mean(axis=(2, 3), keepdims=True)
-        var = grouped.var(axis=(2, 3), keepdims=True)
-        normed = (grouped - mean) / np.sqrt(var + eps)
-        normed = normed.reshape(N, C, -1)
-        gamma_f64 = gamma.astype(np.float64).reshape(1, C, 1)
-        beta_f64 = beta.astype(np.float64).reshape(1, C, 1)
-        result = normed * gamma_f64 + beta_f64
-        return result.reshape(x.shape).astype(x.dtype)
-
-    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
-    def test_basic_4d(self, dtype: DType) -> None:
-        """Test group_norm on a 4D NCHW tensor."""
-        np_dtype = dtype.to_numpy()
+    def test_group_norm_cpu_raises(self) -> None:
+        """group_norm on CPU raises NotImplementedError (no CPU GC kernel)."""
         rng = np.random.default_rng(50)
-        x_np = rng.standard_normal((2, 4, 3, 3)).astype(np_dtype)
-        gamma_np = rng.standard_normal(4).astype(np_dtype)
-        beta_np = rng.standard_normal(4).astype(np_dtype)
-
-        x = Tensor.from_dlpack(x_np)
-        gamma = Tensor.from_dlpack(gamma_np)
-        beta = Tensor.from_dlpack(beta_np)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.group_norm(x, gamma, beta, num_groups=2, epsilon=1e-5)
-
-        expected = self._group_norm_ref(x_np, gamma_np, beta_np, 2, 1e-5)
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-4, atol=1e-4
-        )
-
-    def test_3d_input(self) -> None:
-        """Test group_norm on a 3D [N, C, L] tensor."""
-        rng = np.random.default_rng(51)
-        x_np = rng.standard_normal((2, 6, 8)).astype(np.float32)
-        gamma_np = rng.standard_normal(6).astype(np.float32)
-        beta_np = rng.standard_normal(6).astype(np.float32)
-
-        x = Tensor.from_dlpack(x_np)
-        gamma = Tensor.from_dlpack(gamma_np)
-        beta = Tensor.from_dlpack(beta_np)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.group_norm(x, gamma, beta, num_groups=3, epsilon=1e-5)
-
-        expected = self._group_norm_ref(x_np, gamma_np, beta_np, 3, 1e-5)
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
-
-    def test_single_group(self) -> None:
-        """Test group_norm with num_groups=1 (like layer norm over C+spatial)."""
-        rng = np.random.default_rng(52)
         x_np = rng.standard_normal((2, 4, 3, 3)).astype(np.float32)
         gamma_np = rng.standard_normal(4).astype(np.float32)
         beta_np = rng.standard_normal(4).astype(np.float32)
@@ -3736,58 +3706,17 @@ class TestGroupNormOp:
         x = Tensor.from_dlpack(x_np)
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.group_norm(x, gamma, beta, num_groups=1, epsilon=1e-5)
-
-        expected = self._group_norm_ref(x_np, gamma_np, beta_np, 1, 1e-5)
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
-
-    def test_groups_equal_channels(self) -> None:
-        """Test group_norm with num_groups=C (instance norm)."""
-        rng = np.random.default_rng(53)
-        x_np = rng.standard_normal((2, 4, 5, 5)).astype(np.float32)
-        gamma_np = rng.standard_normal(4).astype(np.float32)
-        beta_np = rng.standard_normal(4).astype(np.float32)
-
-        x = Tensor.from_dlpack(x_np)
-        gamma = Tensor.from_dlpack(gamma_np)
-        beta = Tensor.from_dlpack(beta_np)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.group_norm(x, gamma, beta, num_groups=4, epsilon=1e-5)
-
-        expected = self._group_norm_ref(x_np, gamma_np, beta_np, 4, 1e-5)
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
-
-    def test_large_spatial(self) -> None:
-        """Test group_norm with larger spatial dimensions."""
-        rng = np.random.default_rng(54)
-        x_np = rng.standard_normal((1, 8, 16, 16)).astype(np.float32)
-        gamma_np = rng.standard_normal(8).astype(np.float32)
-        beta_np = rng.standard_normal(8).astype(np.float32)
-
-        x = Tensor.from_dlpack(x_np)
-        gamma = Tensor.from_dlpack(gamma_np)
-        beta = Tensor.from_dlpack(beta_np)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            y = F.group_norm(x, gamma, beta, num_groups=4, epsilon=1e-6)
-
-        expected = self._group_norm_ref(x_np, gamma_np, beta_np, 4, 1e-6)
-        np.testing.assert_allclose(
-            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
-        )
+        # Realization is lazy: NotImplementedError only raises inside
+        # EagerRealizationContext.__exit__, so pytest.raises must wrap that
+        # exit rather than sit as a sibling in the same `with (...)` tuple
+        # (which would exit, and fail, first).
+        with pytest.raises(NotImplementedError, match="group_norm"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                y = F.group_norm(x, gamma, beta, num_groups=2, epsilon=1e-5)
+                assert y is not None
 
 
 class TestSliceOp:
@@ -6151,22 +6080,26 @@ class TestConv2dOp:
             np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
         )
 
-    def test_dilation(self) -> None:
-        """Dilation != 1 is not supported after the GC migration (MXF-529):
-        the GC-compiled conv kernel raises rather than silently
-        computing a wrong result."""
-        x_np = np.arange(1 * 7 * 7 * 1, dtype=np.float32).reshape(1, 7, 7, 1)
+    @pytest.mark.parametrize("dilation", [(2, 2), (2, 3), (1, 2)])
+    def test_dilation(self, dilation: tuple[int, int]) -> None:
+        """Non-unit dilation produces correct output (MXF-529 / KERN-3238)."""
+        x_np = np.arange(1 * 9 * 9 * 1, dtype=np.float32).reshape(1, 9, 9, 1)
         f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
 
         x = Tensor.from_dlpack(x_np)
         f = Tensor.from_dlpack(f_np)
-        with pytest.raises(NotImplementedError, match="dilation"):
-            with (
-                rc.EagerRealizationContext() as ctx,
-                realization_context(ctx),
-            ):
-                y = F.conv2d(x, f, dilation=(2, 2))
-                assert y is not None
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f, dilation=dilation)
+
+        expected = self._conv2d_ref(
+            x_np, f_np, (1, 1), dilation, (0, 0, 0, 0), 1
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
 
     def test_groups(self) -> None:
         """Grouped conv (groups > 1) is not supported after the GC migration
@@ -7234,9 +7167,7 @@ class TestTopKOp:
             np.from_dlpack(idxs), np.array([[0, 3, 1, 2]])
         )
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES + INT_DTYPES)
     def test_dtypes(self, dtype: DType) -> None:
         """Test top-2 with numeric dtypes."""
         np_dtype = dtype.to_numpy()
@@ -7342,9 +7273,7 @@ class TestBottomKOp:
             np.from_dlpack(idxs), np.array([[2, 1, 3, 0]])
         )
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES + INT_DTYPES)
     def test_dtypes(self, dtype: DType) -> None:
         """Test bottom-2 with numeric dtypes."""
         np_dtype = dtype.to_numpy()
@@ -8803,6 +8732,33 @@ class TestLazyGCModelCompilation:
         )
         monkeypatch.setattr(matmul_gc._FAMILY, "cache", {})
         model = matmul_gc.matmul_model(CPU(), DType.float32)
+        assert model is not None
+
+    def test_select_model_compiles_once_and_reuses(self) -> None:
+        """A second call for the same (device, dtype) returns the cached model."""
+        cpu = CPU()
+        first = select_gc.select_model(cpu, DType.float32)
+        second = select_gc.select_model(cpu, DType.float32)
+        assert first is second
+
+    def test_select_model_precompile_raises_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With MAX_EAGER_OP_PRECOMPILE=1, a cache miss is a hard error."""
+        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
+        monkeypatch.setattr(select_gc._FAMILY, "cache", {})
+        with pytest.raises(KeyError, match="No pre-compiled select model"):
+            select_gc.select_model(CPU(), DType.float32)
+
+    def test_select_model_lazy_default_compiles_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """By default (env var unset) a miss compiles the target lazily."""
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(select_gc._FAMILY, "cache", {})
+        model = select_gc.select_model(CPU(), DType.float32)
         assert model is not None
 
     def test_unary_model_precompile_raises_on_miss(

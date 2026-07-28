@@ -15,6 +15,7 @@ from std.math import ceildiv, iota, nan
 from std.random import random_float64
 
 from std.algorithm.reduction import max as reduce_max
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -24,7 +25,14 @@ from std.benchmark import (
 )
 from std.gpu.host import DeviceContext
 
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import (
+    Coord,
+    Idx,
+    PointerStorage,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 
 from nn.topk import (
     _top_k_cpu,
@@ -53,7 +61,7 @@ def time_kernel[
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             func(ctx)
 
-        m.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](m, ctx)
 
     m.bench_function[bench_func](
         BenchId(
@@ -64,9 +72,11 @@ def time_kernel[
 
 def test_case_batched[
     dtype: DType,
-    fill_fn: def[dtype: DType](TileTensor[mut=True, dtype, ...]) capturing[
-        _
-    ] -> None,
+    fill_fn: def[dtype: DType](
+        TileTensor[
+            mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+        ]
+    ) capturing[_] -> None,
     out_idx_type: DType = DType.int,
     rank: Int = 2,
 ](ctx: DeviceContext, test_case: TestCase) raises:
@@ -314,9 +324,11 @@ def test_case_batched[
 
 def test_case_multi_rank[
     dtype: DType,
-    fill_fn: def[dtype: DType](TileTensor[mut=True, dtype, ...]) capturing[
-        _
-    ] -> None,
+    fill_fn: def[dtype: DType](
+        TileTensor[
+            mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+        ]
+    ) capturing[_] -> None,
     rank: Int,
     out_idx_type: DType = DType.int,
 ](ctx: DeviceContext, test_case: TestCaseMultiRank[rank=rank, ...]) raises:
@@ -476,7 +488,13 @@ def test_case_multi_rank[
 
 
 @parameter
-def fill_random[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
+def fill_random[
+    dtype: DType
+](
+    buffer: TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
+):
     comptime min_val = -1e9
     comptime max_val = 1e9
     var total_elements = buffer.num_elements()
@@ -486,7 +504,13 @@ def fill_random[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
 
 
 @parameter
-def fill_constant[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
+def fill_constant[
+    dtype: DType
+](
+    buffer: TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
+):
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         if i % 3 == 1:
@@ -496,7 +520,13 @@ def fill_constant[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
 
 
 @parameter
-def fill_nan[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
+def fill_nan[
+    dtype: DType
+](
+    buffer: TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
+):
     """Fill all elements with NaN — regression guard for Bug 1 (all-NaN row
     emits invalid token) and Bug 3 (p==-1 sentinel causes OOB read/write)."""
     var nan_val = nan[dtype]()
@@ -506,9 +536,15 @@ def fill_nan[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
 
 
 @parameter
-def fill_iota[dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
+def fill_iota[
+    dtype: DType
+](
+    buf: TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
+):
     iota(
-        buf.ptr,
+        buf._storage,
         coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
     )
 

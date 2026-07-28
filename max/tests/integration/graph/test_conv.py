@@ -103,3 +103,65 @@ def test_conv2d(
                 rtol=ACCURACY_RTOL,
                 atol=ACCURACY_ATOL,
             )
+
+
+@pytest.mark.parametrize(
+    "input_shape, filter_shape, groups",
+    [
+        ([1, 16, 16, 4], [16, 16, 2, 6], 2),
+    ],
+)
+def test_conv2d_grouped(
+    session: InferenceSession,
+    input_shape: list[int],
+    filter_shape: list[int],
+    groups: int,
+) -> None:
+    # Grouped conv on CPU requires the filter to be pre-packed; the filter
+    # here is a graph input (not a compile-time constant), which used to
+    # crash with "grouped conv requires packed filter" (KERN-3239).
+    device = DeviceRef.CPU()
+    input_type = TensorType(DType.float32, input_shape, device=device)
+    filter_type = TensorType(DType.float32, filter_shape, device=device)
+
+    with Graph(
+        "conv2d_grouped", input_types=[input_type, filter_type]
+    ) as graph:
+        x, filter = graph.inputs
+        stride = (1, 1)
+        padding = (0, 0)
+        dilation = (1, 1)
+
+        conv = conv2d(
+            x.tensor,
+            filter.tensor,
+            stride,
+            dilation,
+            (0, 0, 0, 0),
+            groups=groups,
+        )
+        graph.output(conv)
+
+        @modular_graph_test(session, graph)
+        def test_correctness(
+            execute: Callable[[Sequence[Buffer]], Buffer],
+            inputs: Sequence[Buffer],
+            torch_inputs: Sequence[torch.Tensor],
+        ) -> None:
+            result = execute(inputs).to_numpy()
+            x, w = torch_inputs
+            expected = (
+                torch_conv2d(x, w, stride, dilation, padding, groups=groups)
+                .detach()
+                .cpu()
+                .numpy()
+            )
+            ACCURACY_RTOL = 1e-4
+            ACCURACY_ATOL = 1e-6
+            np.testing.assert_allclose(
+                result,
+                expected,
+                equal_nan=True,
+                rtol=ACCURACY_RTOL,
+                atol=ACCURACY_ATOL,
+            )

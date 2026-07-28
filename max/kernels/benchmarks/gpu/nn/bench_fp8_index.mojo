@@ -14,6 +14,7 @@
 from std.random import seed
 from std.sys import get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -144,7 +145,7 @@ def execute_fp8_index[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     m.bench_function[bench_func](
         BenchId(_get_run_name[num_heads, depth](batch_size, seq_len, num_keys)),

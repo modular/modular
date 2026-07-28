@@ -23,6 +23,11 @@ from collections.abc import Sequence
 
 from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 
 
 class NullConnector:
@@ -37,8 +42,8 @@ class NullConnector:
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
-    ) -> int:
-        return 0
+    ) -> KVConnectorTransfer:
+        return CompletedTransfer(TransferDirection.LOAD)
 
     def offload(
         self,
@@ -46,8 +51,8 @@ class NullConnector:
         block_hashes: Sequence[bytes],
         parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
-    ) -> None:
-        pass
+    ) -> KVConnectorTransfer:
+        return CompletedTransfer(TransferDirection.OFFLOAD)
 
     def touch(
         self,

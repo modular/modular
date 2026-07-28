@@ -38,7 +38,7 @@ struct PyObjectFunction[
 
     The has_kwargs parameter indicates whether this function accepts keyword arguments:
     - False (default): Function does not accept kwargs
-    - True: Function accepts variadic keyword arguments (**kwargs: PythonObject)
+    - True: Function accepts variadic keyword arguments (var **kwargs: PythonObject)
 
     Note:
         This is a private implementation detail of the Python bindings, and have
@@ -57,10 +57,10 @@ struct PyObjectFunction[
     comptime _0e = def() thin raises
     comptime _0 = def() thin
 
-    comptime _0er_kwargs = def(** kwargs: PO) thin raises -> PO
-    comptime _0r_kwargs = def(** kwargs: PO) thin -> PO
-    comptime _0e_kwargs = def(** kwargs: PO) thin raises
-    comptime _0_kwargs = def(** kwargs: PO) thin
+    comptime _0er_kwargs = def(var ** kwargs: PO) thin raises -> PO
+    comptime _0r_kwargs = def(var ** kwargs: PO) thin -> PO
+    comptime _0e_kwargs = def(var ** kwargs: PO) thin raises
+    comptime _0_kwargs = def(var ** kwargs: PO) thin
 
     @doc_hidden
     @implicit
@@ -123,10 +123,10 @@ struct PyObjectFunction[
     comptime _1e = def(PO) thin raises
     comptime _1 = def(PO) thin
 
-    comptime _1er_kwargs = def(a0: PO, ** kwargs: PO) thin raises -> PO
-    comptime _1r_kwargs = def(a0: PO, ** kwargs: PO) thin -> PO
-    comptime _1e_kwargs = def(a0: PO, ** kwargs: PO) thin raises
-    comptime _1_kwargs = def(a0: PO, ** kwargs: PO) thin
+    comptime _1er_kwargs = def(a0: PO, var ** kwargs: PO) thin raises -> PO
+    comptime _1r_kwargs = def(a0: PO, var ** kwargs: PO) thin -> PO
+    comptime _1e_kwargs = def(a0: PO, var ** kwargs: PO) thin raises
+    comptime _1_kwargs = def(a0: PO, var ** kwargs: PO) thin
 
     @doc_hidden
     @implicit
@@ -208,16 +208,16 @@ struct PyObjectFunction[
     comptime _1_self = def(Pointer[Self.self_type, MutAnyOrigin]) thin
 
     comptime _1er_self_kwargs = def(
-        self: Pointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], var ** kwargs: PO
     ) thin raises -> PO
     comptime _1r_self_kwargs = def(
-        self: Pointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], var ** kwargs: PO
     ) thin -> PO
     comptime _1e_self_kwargs = def(
-        self: Pointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], var ** kwargs: PO
     ) thin raises
     comptime _1_self_kwargs = def(
-        self: Pointer[Self.self_type, MutAnyOrigin], ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], var ** kwargs: PO
     ) thin
 
     @doc_hidden
@@ -308,16 +308,16 @@ struct PyObjectFunction[
     comptime _2_self = def(Pointer[Self.self_type, MutAnyOrigin], PO) thin
 
     comptime _2er_self_kwargs = def(
-        self: Pointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], a0: PO, var ** kwargs: PO
     ) thin raises -> PO
     comptime _2r_self_kwargs = def(
-        self: Pointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], a0: PO, var ** kwargs: PO
     ) thin -> PO
     comptime _2e_self_kwargs = def(
-        self: Pointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], a0: PO, var ** kwargs: PO
     ) thin raises
     comptime _2_self_kwargs = def(
-        self: Pointer[Self.self_type, MutAnyOrigin], a0: PO, ** kwargs: PO
+        self: Pointer[Self.self_type, MutAnyOrigin], a0: PO, var ** kwargs: PO
     ) thin
 
     @doc_hidden
@@ -410,22 +410,26 @@ struct PyObjectFunction[
     comptime _3er_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
-        a1: PO, ** kwargs: PO,
+        a1: PO,
+        var ** kwargs: PO,
     ) thin raises -> PO
     comptime _3r_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
-        a1: PO, ** kwargs: PO,
+        a1: PO,
+        var ** kwargs: PO,
     ) thin -> PO
     comptime _3e_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
-        a1: PO, ** kwargs: PO,
+        a1: PO,
+        var ** kwargs: PO,
     ) thin raises
     comptime _3_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
-        a1: PO, ** kwargs: PO,
+        a1: PO,
+        var ** kwargs: PO,
     ) thin
 
     @doc_hidden
@@ -521,25 +525,29 @@ struct PyObjectFunction[
         self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
-        a2: PO, ** kwargs: PO,
+        a2: PO,
+        var ** kwargs: PO,
     ) thin raises -> PO
     comptime _4r_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
-        a2: PO, ** kwargs: PO,
+        a2: PO,
+        var ** kwargs: PO,
     ) thin -> PO
     comptime _4e_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
-        a2: PO, ** kwargs: PO,
+        a2: PO,
+        var ** kwargs: PO,
     ) thin raises
     comptime _4_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
-        a2: PO, ** kwargs: PO,
+        a2: PO,
+        var ** kwargs: PO,
     ) thin
 
     @doc_hidden
@@ -623,10 +631,12 @@ struct PyObjectFunction[
     comptime _2e = def(PO, PO) thin raises
     comptime _2 = def(PO, PO) thin
 
-    comptime _2er_kwargs = def(a0: PO, a1: PO, ** kwargs: PO) thin raises -> PO
-    comptime _2r_kwargs = def(a0: PO, a1: PO, ** kwargs: PO) thin -> PO
-    comptime _2e_kwargs = def(a0: PO, a1: PO, ** kwargs: PO) thin raises
-    comptime _2_kwargs = def(a0: PO, a1: PO, ** kwargs: PO) thin
+    comptime _2er_kwargs = def(
+        a0: PO, a1: PO, var ** kwargs: PO
+    ) thin raises -> PO
+    comptime _2r_kwargs = def(a0: PO, a1: PO, var ** kwargs: PO) thin -> PO
+    comptime _2e_kwargs = def(a0: PO, a1: PO, var ** kwargs: PO) thin raises
+    comptime _2_kwargs = def(a0: PO, a1: PO, var ** kwargs: PO) thin
 
     @doc_hidden
     @implicit
@@ -706,11 +716,15 @@ struct PyObjectFunction[
     comptime _3 = def(PO, PO, PO) thin
 
     comptime _3er_kwargs = def(
-        a0: PO, a1: PO, a2: PO, ** kwargs: PO
+        a0: PO, a1: PO, a2: PO, var ** kwargs: PO
     ) thin raises -> PO
-    comptime _3r_kwargs = def(a0: PO, a1: PO, a2: PO, ** kwargs: PO) thin -> PO
-    comptime _3e_kwargs = def(a0: PO, a1: PO, a2: PO, ** kwargs: PO) thin raises
-    comptime _3_kwargs = def(a0: PO, a1: PO, a2: PO, ** kwargs: PO) thin
+    comptime _3r_kwargs = def(
+        a0: PO, a1: PO, a2: PO, var ** kwargs: PO
+    ) thin -> PO
+    comptime _3e_kwargs = def(
+        a0: PO, a1: PO, a2: PO, var ** kwargs: PO
+    ) thin raises
+    comptime _3_kwargs = def(a0: PO, a1: PO, a2: PO, var ** kwargs: PO) thin
 
     @doc_hidden
     @implicit
@@ -790,15 +804,17 @@ struct PyObjectFunction[
     comptime _4 = def(PO, PO, PO, PO) thin
 
     comptime _4er_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, ** kwargs: PO
+        a0: PO, a1: PO, a2: PO, a3: PO, var ** kwargs: PO
     ) thin raises -> PO
     comptime _4r_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, ** kwargs: PO
+        a0: PO, a1: PO, a2: PO, a3: PO, var ** kwargs: PO
     ) thin -> PO
     comptime _4e_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, ** kwargs: PO
+        a0: PO, a1: PO, a2: PO, a3: PO, var ** kwargs: PO
     ) thin raises
-    comptime _4_kwargs = def(a0: PO, a1: PO, a2: PO, a3: PO, ** kwargs: PO) thin
+    comptime _4_kwargs = def(
+        a0: PO, a1: PO, a2: PO, a3: PO, var ** kwargs: PO
+    ) thin
 
     @doc_hidden
     @implicit
@@ -890,28 +906,32 @@ struct PyObjectFunction[
         a0: PO,
         a1: PO,
         a2: PO,
-        a3: PO, ** kwargs: PO,
+        a3: PO,
+        var ** kwargs: PO,
     ) thin raises -> PO
     comptime _5r_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
-        a3: PO, ** kwargs: PO,
+        a3: PO,
+        var ** kwargs: PO,
     ) thin -> PO
     comptime _5e_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
-        a3: PO, ** kwargs: PO,
+        a3: PO,
+        var ** kwargs: PO,
     ) thin raises
     comptime _5_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
         a0: PO,
         a1: PO,
         a2: PO,
-        a3: PO, ** kwargs: PO,
+        a3: PO,
+        var ** kwargs: PO,
     ) thin
 
     @doc_hidden
@@ -996,16 +1016,16 @@ struct PyObjectFunction[
     comptime _5 = def(PO, PO, PO, PO, PO) thin
 
     comptime _5er_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, ** kwargs: PO
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, var ** kwargs: PO
     ) thin raises -> PO
     comptime _5r_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, ** kwargs: PO
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, var ** kwargs: PO
     ) thin -> PO
     comptime _5e_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, ** kwargs: PO
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, var ** kwargs: PO
     ) thin raises
     comptime _5_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, ** kwargs: PO
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, var ** kwargs: PO
     ) thin
 
     @doc_hidden
@@ -1099,7 +1119,8 @@ struct PyObjectFunction[
         a1: PO,
         a2: PO,
         a3: PO,
-        a4: PO, ** kwargs: PO,
+        a4: PO,
+        var ** kwargs: PO,
     ) thin raises -> PO
     comptime _6r_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
@@ -1107,7 +1128,8 @@ struct PyObjectFunction[
         a1: PO,
         a2: PO,
         a3: PO,
-        a4: PO, ** kwargs: PO,
+        a4: PO,
+        var ** kwargs: PO,
     ) thin -> PO
     comptime _6e_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
@@ -1115,7 +1137,8 @@ struct PyObjectFunction[
         a1: PO,
         a2: PO,
         a3: PO,
-        a4: PO, ** kwargs: PO,
+        a4: PO,
+        var ** kwargs: PO,
     ) thin raises
     comptime _6_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
@@ -1123,7 +1146,8 @@ struct PyObjectFunction[
         a1: PO,
         a2: PO,
         a3: PO,
-        a4: PO, ** kwargs: PO,
+        a4: PO,
+        var ** kwargs: PO,
     ) thin
 
     @doc_hidden
@@ -1208,16 +1232,16 @@ struct PyObjectFunction[
     comptime _6 = def(PO, PO, PO, PO, PO, PO) thin
 
     comptime _6er_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, ** kwargs: PO
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, var ** kwargs: PO
     ) thin raises -> PO
     comptime _6r_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, ** kwargs: PO
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, var ** kwargs: PO
     ) thin -> PO
     comptime _6e_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, ** kwargs: PO
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, var ** kwargs: PO
     ) thin raises
     comptime _6_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, ** kwargs: PO
+        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, var ** kwargs: PO
     ) thin
 
     @doc_hidden
@@ -1312,7 +1336,8 @@ struct PyObjectFunction[
         a2: PO,
         a3: PO,
         a4: PO,
-        a5: PO, ** kwargs: PO,
+        a5: PO,
+        var ** kwargs: PO,
     ) thin raises -> PO
     comptime _7r_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
@@ -1321,7 +1346,8 @@ struct PyObjectFunction[
         a2: PO,
         a3: PO,
         a4: PO,
-        a5: PO, ** kwargs: PO,
+        a5: PO,
+        var ** kwargs: PO,
     ) thin -> PO
     comptime _7e_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
@@ -1330,7 +1356,8 @@ struct PyObjectFunction[
         a2: PO,
         a3: PO,
         a4: PO,
-        a5: PO, ** kwargs: PO,
+        a5: PO,
+        var ** kwargs: PO,
     ) thin raises
     comptime _7_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
@@ -1339,7 +1366,8 @@ struct PyObjectFunction[
         a2: PO,
         a3: PO,
         a4: PO,
-        a5: PO, ** kwargs: PO,
+        a5: PO,
+        var ** kwargs: PO,
     ) thin
 
     @doc_hidden
@@ -1424,16 +1452,44 @@ struct PyObjectFunction[
     comptime _7 = def(PO, PO, PO, PO, PO, PO, PO) thin
 
     comptime _7er_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, a6: PO, ** kwargs: PO
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO,
+        a6: PO,
+        var ** kwargs: PO,
     ) thin raises -> PO
     comptime _7r_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, a6: PO, ** kwargs: PO
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO,
+        a6: PO,
+        var ** kwargs: PO,
     ) thin -> PO
     comptime _7e_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, a6: PO, ** kwargs: PO
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO,
+        a6: PO,
+        var ** kwargs: PO,
     ) thin raises
     comptime _7_kwargs = def(
-        a0: PO, a1: PO, a2: PO, a3: PO, a4: PO, a5: PO, a6: PO, ** kwargs: PO
+        a0: PO,
+        a1: PO,
+        a2: PO,
+        a3: PO,
+        a4: PO,
+        a5: PO,
+        a6: PO,
+        var ** kwargs: PO,
     ) thin
 
     @doc_hidden
@@ -1529,7 +1585,8 @@ struct PyObjectFunction[
         a3: PO,
         a4: PO,
         a5: PO,
-        a6: PO, ** kwargs: PO,
+        a6: PO,
+        var ** kwargs: PO,
     ) thin raises -> PO
     comptime _8r_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
@@ -1539,7 +1596,8 @@ struct PyObjectFunction[
         a3: PO,
         a4: PO,
         a5: PO,
-        a6: PO, ** kwargs: PO,
+        a6: PO,
+        var ** kwargs: PO,
     ) thin -> PO
     comptime _8e_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
@@ -1549,7 +1607,8 @@ struct PyObjectFunction[
         a3: PO,
         a4: PO,
         a5: PO,
-        a6: PO, ** kwargs: PO,
+        a6: PO,
+        var ** kwargs: PO,
     ) thin raises
     comptime _8_self_kwargs = def(
         self: Pointer[Self.self_type, MutAnyOrigin],
@@ -1559,7 +1618,8 @@ struct PyObjectFunction[
         a3: PO,
         a4: PO,
         a5: PO,
-        a6: PO, ** kwargs: PO,
+        a6: PO,
+        var ** kwargs: PO,
     ) thin
 
     @doc_hidden
@@ -1651,7 +1711,8 @@ struct PyObjectFunction[
         a4: PO,
         a5: PO,
         a6: PO,
-        a7: PO, ** kwargs: PO,
+        a7: PO,
+        var ** kwargs: PO,
     ) thin raises -> PO
     comptime _8r_kwargs = def(
         a0: PO,
@@ -1661,7 +1722,8 @@ struct PyObjectFunction[
         a4: PO,
         a5: PO,
         a6: PO,
-        a7: PO, ** kwargs: PO,
+        a7: PO,
+        var ** kwargs: PO,
     ) thin -> PO
     comptime _8e_kwargs = def(
         a0: PO,
@@ -1671,7 +1733,8 @@ struct PyObjectFunction[
         a4: PO,
         a5: PO,
         a6: PO,
-        a7: PO, ** kwargs: PO,
+        a7: PO,
+        var ** kwargs: PO,
     ) thin raises
     comptime _8_kwargs = def(
         a0: PO,
@@ -1681,7 +1744,8 @@ struct PyObjectFunction[
         a4: PO,
         a5: PO,
         a6: PO,
-        a7: PO, ** kwargs: PO,
+        a7: PO,
+        var ** kwargs: PO,
     ) thin
 
     @doc_hidden
@@ -2427,7 +2491,7 @@ struct PyObjectFunction[
         func: Self.func_type,
         py_self: PO,
         py_args: PO,
-        **kwargs: PO,
+        var **kwargs: PO,
     ) raises -> PO:
         """Compile-time dispatch for kwargs function/method calls."""
         comptime assert Self.has_kwargs, "only for kwargs functions"

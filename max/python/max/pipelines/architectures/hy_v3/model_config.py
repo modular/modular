@@ -22,6 +22,7 @@ from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
@@ -204,7 +205,10 @@ class HYV3Config(Llama3Config):
         base_config.use_subgraphs = True
 
         kv_cache_config = pipeline_config.model.kv_cache
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            pipeline_config.model.quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
         n_devices = len(pipeline_config.model.device_specs)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)

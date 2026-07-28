@@ -232,12 +232,15 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="blocks",
         description="Total number of blocks or pages, measured at the scheduler after batch work.",
     ),  # type: ignore
-    "maxserve.cache.hit_rate": _meter.create_histogram(
-        "maxserve.cache.hit_rate",
-        unit="percent_utilization",
+    "maxserve.cache.request_prefix_coverage": _meter.create_histogram(
+        "maxserve.cache.request_prefix_coverage",
+        unit="percent",
         description=(
-            "Per-request KV cache hit rate (cached prefix tokens / prompt "
-            "tokens), emitted once per admitted request."
+            "Per-request prefix cache coverage (cached prefix tokens / "
+            "prompt tokens), emitted once per admitted request and "
+            "unweighted by request size. For the token-weighted cache hit "
+            "rate, derive it from maxserve.cache.hits and "
+            "maxserve.cache.misses instead."
         ),
     ),  # type: ignore
     "maxserve.cache.preemption_count": _meter.create_counter(
@@ -289,6 +292,21 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.dkv.rpc_read_latency",
         unit="ms",
         description="dKV read_blocks RPC latency",
+    ),  # type: ignore
+    "maxserve.dkv.connected_clients": _meter.create_gauge(
+        "maxserve.dkv.connected_clients",
+        unit="clients",
+        description="Number of dKV connector clients currently connected to the external KV tier.",
+    ),  # type: ignore
+    "maxserve.dkv.total_clients": _meter.create_gauge(
+        "maxserve.dkv.total_clients",
+        unit="clients",
+        description="Total number of dKV connector clients, one per data-parallel replica.",
+    ),  # type: ignore
+    "maxserve.dkv.reconnect_attempts": _meter.create_gauge(
+        "maxserve.dkv.reconnect_attempts",
+        unit="attempts",
+        description="Cumulative dKV reconnect attempts across all clients, reported as a gauge of the current lifetime total.",
     ),  # type: ignore
     "maxserve.spec_decode.acceptance_rate_per_position": _meter.create_histogram(
         "maxserve.spec_decode.acceptance_rate_per_position",
@@ -875,10 +893,12 @@ class _AsyncMetrics:
             ),
         )
 
-    def cache_hit_rate(self, hit_rate: float) -> None:
+    def cache_request_prefix_coverage(self, coverage: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.hit_rate", hit_rate, self.extra_attributes
+                "maxserve.cache.request_prefix_coverage",
+                coverage,
+                self.extra_attributes,
             ),
         )
 
@@ -996,6 +1016,33 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.dkv.rpc_read_latency",
                 latency_ms,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_connected_clients(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.connected_clients",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_total_clients(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.total_clients",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_reconnect_attempts(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.reconnect_attempts",
+                value,
                 self.extra_attributes,
             ),
         )

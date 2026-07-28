@@ -84,6 +84,7 @@ modular_py_test(
 _NN_LIGHT_GPU_TESTS = [
     "test_async_host_func_gpu.py",
     "test_completion_flag_gpu.py",
+    "test_graph_observes_pending_driver_work_gpu.py",
     "test_grouped_matmul_rowwise_fp8_gpu.py",
     "test_host_func_gpu.py",
     "test_moe_gpu.py",
@@ -128,6 +129,12 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
+    # Distinct MXFP8 / FP8-KV graphs are compiled. Shard so
+    # they run as parallel processes instead of serializing in one (keeps the
+    # per-shard wall-clock and peak memory down).
+    per_test_shard_count = {
+        "test_fused_qkv_mxfp8_matmul_gpu.py": 3,
+    },
     tags = [
         "gpu",
     ],

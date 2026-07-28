@@ -1671,7 +1671,14 @@ def _resolve_grammar_constraints(
     # When tools are forced, constrain to tool calls only.
     if response_format is not None and not tools_forced:
         if response_format.type == "json_schema":
-            response_format_schema = response_format.json_schema or None
+            # An explicit ``{}`` ("any valid JSON value") is a real schema to OR
+            # into the tool-call alternation, distinct from an absent schema;
+            # ``is not None`` preserves it where ``or None`` would drop it.
+            response_format_schema = (
+                response_format.json_schema
+                if response_format.json_schema is not None
+                else None
+            )
 
     # enforce_from_start: True for required/named OR auto+response_format
     # False for auto without response_format (conditional enforcement)
@@ -1823,7 +1830,7 @@ async def openai_create_chat_completion(
                 response_format = TextGenerationResponseFormat(
                     type="grammar",
                     grammar=grammar,
-                    json_schema={},
+                    json_schema=None,
                     grammar_enforced=enforce_from_start,
                     tools_forced=tools_forced,
                     requires_structured_output_flag=response_format_schema
@@ -2191,19 +2198,22 @@ def _create_response_format(
         else:
             _validate_json_schema(json_schema)
 
-    # Enforce grammar from the first token only when there is an actual
-    # schema to enforce. The json_schema can also be used to create a grammar,
-    # hence we need to specify that the grammar should constrain from the
-    # start if there's a json_schema present here.
+    # A json_schema/json_object response_format ALWAYS requests enforcement,
+    # even when the schema is an explicit ``{}`` / boolean ``true`` ("any valid
+    # JSON value"). Deriving enforcement from ``bool(json_schema)`` would treat
+    # that empty-but-present schema as "no schema" and leave the output
+    # unconstrained (trailing prose after a valid value). Take the intent from
+    # the request type instead; the empty schema compiles to xgrammar's
+    # any-value grammar, which forces exactly one well-formed JSON value.
     # TODO: improve the field naming here; grammar_enforced should be constrain_with_bitmask.
     return TextGenerationResponseFormat(
         type=response_type,
         json_schema=json_schema,
         grammar=None,
-        grammar_enforced=bool(json_schema),
+        grammar_enforced=True,
         tools_forced=False,
         requires_structured_output_flag=True,
-        has_json_schema=bool(json_schema),
+        has_json_schema=True,
     )
 
 
