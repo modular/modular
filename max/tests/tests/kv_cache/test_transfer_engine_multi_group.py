@@ -191,51 +191,13 @@ def _group(
 
 
 # ---------------------------------------------------------------------------
-# Per-group replication derivation (replicate_kv_across_tp = "every group replicated")
+# Per-group replication
 # ---------------------------------------------------------------------------
 #
-# Replication is per-group, so mixed replication within one engine is now
-# representable (no blanket "same replication kind" assertion). The engine-wide
-# replicate_kv_across_tp feeds only the flatten routing decision in resolve_peer_view,
-# so it is True only when EVERY group is replicated. These exercise the pure
-# derivation helper directly -- no NIXL registration required.
-
-
-def test_derive_replicate_kv_across_tp_mixed_allowed() -> None:
-    """A sharded + replicated mix is allowed and derives False.
-
-    Previously this raised a "same replication kind" ValueError. With per-group
-    replication it constructs (uniform-topology transfers work); the engine-wide
-    flag is False because not every group is replicated. Heterogeneous-topology
-    routing for a mix is deferred to MXSERV-290.
-    """
-    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
-        _derive_replicate_kv_across_tp,
-    )
-
-    replicated = _group(replicated=True)
-    sharded = _group()
-    assert _derive_replicate_kv_across_tp([[replicated, sharded]]) is False
-
-
-def test_derive_replicate_kv_across_tp_all_replicated() -> None:
-    """All-replicated (MLA) derives True so the flatten path still fires."""
-    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
-        _derive_replicate_kv_across_tp,
-    )
-
-    memory = [[_group(replicated=True), _group(replicated=True)]]
-    assert _derive_replicate_kv_across_tp(memory) is True
-
-
-def test_derive_replicate_kv_across_tp_all_sharded() -> None:
-    """All-sharded derives False."""
-    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
-        _derive_replicate_kv_across_tp,
-    )
-
-    memory = [[_group(), _group()]]
-    assert _derive_replicate_kv_across_tp(memory) is False
+# Replication is per-group, so mixed replication within one engine is
+# representable (no blanket "same replication kind" assertion). The per-group
+# routing plan lives in resolve_transfer_strategy and is covered in
+# test_transfer_engine_resolver.py.
 
 
 def test_inconsistent_replication_across_replicas_raises() -> None:

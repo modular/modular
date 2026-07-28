@@ -283,8 +283,8 @@ def create_di_scheduler(
         )
 
     # For heterogeneous-MLA DI (prefill DP=1/TP>1, decode DP=N/TP=1), the
-    # engine auto-detects the shape mismatch via replicate_kv_across_tp on
-    # both sides' metadata at connect() time — no config flag needed.
+    # engine auto-detects the shape mismatch via each side's per-group
+    # replication in the metadata at connect() time — no config flag needed.
     prefill_scheduler_config = _make_scheduler_config(effective_prefill_dp)
     decode_scheduler_config = _make_scheduler_config(effective_decode_dp)
 
@@ -443,8 +443,8 @@ def test_one_req_end_to_end() -> None:
 def test_heterogeneous_mla_prefill_tp2_to_decode_dp2_end_to_end() -> None:
     """
     Both engines are constructed with their natural ``[dp][tp]`` layout.
-    At connect(), ``resolve_peer_view`` picks ``flatten_local=True`` on
-    the prefill side so the KVTransferEngine's effective view matches
+    At connect(), ``resolve_peer_view`` flattens the prefill side's
+    replicated group so the KVTransferEngine's effective view matches
     the decode side's DP=2/TP=1 shape. This test drives a full request
     through the pair and asserts the KV transfer completes and tokens
     land on the decode side.
@@ -456,15 +456,15 @@ def test_heterogeneous_mla_prefill_tp2_to_decode_dp2_end_to_end() -> None:
         decode_dp=2,
     )
 
-    # Prefill engine keeps its natural DP=1/TP=2 shape and advertises
-    # replicate_kv_across_tp so peers can flatten at connect() time.
+    # Prefill engine keeps its natural DP=1/TP=2 shape and advertises its
+    # replicated group so peers can flatten it at connect() time.
     assert prefill.transfer_engine.dp == 1
     assert prefill.transfer_engine.tp == 2
-    assert prefill.transfer_engine.replicate_kv_across_tp is True
-    # Decode engine is natural DP=2/TP=1; replicate is coerced off by TP=1.
+    assert all(prefill.transfer_engine.replicated_per_group)
+    # Decode engine is natural DP=2/TP=1; replication is coerced off by TP=1.
     assert decode.transfer_engine.dp == 2
     assert decode.transfer_engine.tp == 1
-    assert decode.transfer_engine.replicate_kv_across_tp is False
+    assert not any(decode.transfer_engine.replicated_per_group)
 
     ctx = create_text_context(
         target_endpoint=server_addr, prompt_len=100, output_len=5

@@ -128,7 +128,8 @@ def receiver_routine(
 
     TP=1 means replicates_kv_across_tp=True but len(values)==1, which does
     NOT emit ReplicatedKVCacheMemory (requires at least 2 shards).  We use
-    plain KVCacheMemory here; replicate_kv_across_tp is False for TP=1 receivers.
+    plain KVCacheMemory here; replicated_per_group is all-False for TP=1
+    receivers.
     """
     raw_bufs = [
         paged(total_bytes, page_values=[99, 99], accelerator_idx=2 + r)
