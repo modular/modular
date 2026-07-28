@@ -167,44 +167,44 @@ def test_parametric_field_offset_alignment() raises:
 def test_parametric_align_heap() raises:
     """Test that heap allocations respect parametric @align."""
     # Allocate on the heap with 64-byte alignment.
-    var ptr64_alloc = alloc[AlignedBuffer[64]]({count = 1}).into_deletable()
+    var ptr64_alloc = alloc[AlignedBuffer[64]]({count = 1}).into_managed()
     var ptr64 = ptr64_alloc.unsafe_ptr()
     var addr64 = Int(ptr64)
     assert_true(
         (addr64 & 63) == 0, "Heap AlignedBuffer[64] should be 64-byte aligned"
     )
-    dealloc(ptr64_alloc^.into_allocation())
+    dealloc(ptr64_alloc^)
 
     # Allocate on the heap with 128-byte alignment.
-    var ptr128_alloc = alloc[AlignedBuffer[128]]({count = 1}).into_deletable()
+    var ptr128_alloc = alloc[AlignedBuffer[128]]({count = 1}).into_managed()
     var ptr128 = ptr128_alloc.unsafe_ptr()
     var addr128 = Int(ptr128)
     assert_true(
         (addr128 & 127) == 0,
         "Heap AlignedBuffer[128] should be 128-byte aligned",
     )
-    dealloc(ptr128_alloc^.into_allocation())
+    dealloc(ptr128_alloc^)
 
     # Allocate on the heap with 256-byte alignment.
-    var ptr256_alloc = alloc[AlignedBuffer[256]]({count = 1}).into_deletable()
+    var ptr256_alloc = alloc[AlignedBuffer[256]]({count = 1}).into_managed()
     var ptr256 = ptr256_alloc.unsafe_ptr()
     var addr256 = Int(ptr256)
     assert_true(
         (addr256 & 255) == 0,
         "Heap AlignedBuffer[256] should be 256-byte aligned",
     )
-    dealloc(ptr256_alloc^.into_allocation())
+    dealloc(ptr256_alloc^)
 
     # Test multiple separate allocations to verify each respects alignment.
     for _ in range(4):
-        var ptr_alloc = alloc[AlignedBuffer[64]]({count = 1}).into_deletable()
+        var ptr_alloc = alloc[AlignedBuffer[64]]({count = 1}).into_managed()
         var ptr = ptr_alloc.unsafe_ptr()
         var addr = Int(ptr)
         assert_true(
             (addr & 63) == 0,
             "Each separate heap allocation should be 64-byte aligned",
         )
-        dealloc(ptr_alloc^.into_allocation())
+        dealloc(ptr_alloc^)
 
 
 def main() raises:

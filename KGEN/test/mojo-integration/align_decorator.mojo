@@ -147,23 +147,23 @@ def test_heap_allocation_alignment() raises:
     so heap allocations should respect the @align decorator.
     """
     # Allocate on heap - should be 64-byte aligned
-    var heap_ptr_alloc = alloc[CacheAligned]({count = 1}).into_deletable()
+    var heap_ptr_alloc = alloc[CacheAligned]({count = 1}).into_managed()
     var heap_ptr = heap_ptr_alloc.unsafe_ptr()
     var heap_addr = Int(heap_ptr)
     assert_true(
         (heap_addr & 63) == 0, "CacheAligned should be 64-byte aligned on heap"
     )
-    dealloc(heap_ptr_alloc^.into_allocation())
+    dealloc(heap_ptr_alloc^)
 
     # Large alignment on heap
-    var page_ptr_alloc = alloc[PageAligned]({count = 1}).into_deletable()
+    var page_ptr_alloc = alloc[PageAligned]({count = 1}).into_managed()
     var page_ptr = page_ptr_alloc.unsafe_ptr()
     var page_addr = Int(page_ptr)
     assert_true(
         (page_addr & 4095) == 0,
         "PageAligned should be 4096-byte aligned on heap",
     )
-    dealloc(page_ptr_alloc^.into_allocation())
+    dealloc(page_ptr_alloc^)
 
 
 def test_stack_allocation_alignment() raises:
@@ -225,7 +225,7 @@ def test_array_alignment() raises:
     align_of[T](). This matches how C++ alignas works with arrays.
     """
     # Allocate array - base pointer should be 64-byte aligned
-    var arr_alloc = alloc[CacheAligned]({count = 4}).into_deletable()
+    var arr_alloc = alloc[CacheAligned]({count = 4}).into_managed()
     var arr: UnsafePointer[
         CacheAligned, origin_of(arr_alloc)
     ] = arr_alloc.unsafe_ptr()
@@ -240,7 +240,7 @@ def test_array_alignment() raises:
     var stride = Int(arr + 1) - Int(arr)
     assert_equal(stride, 8)
 
-    dealloc(arr_alloc^.into_allocation())
+    dealloc(arr_alloc^)
 
 
 def test_cross_struct_alignment() raises:
