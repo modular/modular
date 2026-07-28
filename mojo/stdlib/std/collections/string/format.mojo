@@ -164,10 +164,12 @@ struct _FormatUtils:
 
         @always_inline
         def _build_slice(
-            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
+            p: Pointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(
-                unsafe_from_utf8=Span(unsafe_ptr=p + start, length=end - start)
+                unsafe_from_utf8=Span(
+                    unsafe_ptr=p.unsafe_offset(start), length=end - start
+                )
             )
 
         var auto_arg_index = 0
