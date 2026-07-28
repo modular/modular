@@ -614,6 +614,73 @@ def test_bitset_simd_init() raises:
     assert_equal(len(bs3), 2, msg="BitSet count should be 2")
 
 
+def test_bitset_resized_from_same_size() raises:
+    var src = BitSet[128]()
+    src.set(1)
+    src.set(64)
+    src.set(127)
+
+    var dst = BitSet[128](resized_from=src)
+    assert_equal(len(dst), 3, msg="Same-size copy should preserve count")
+    assert_true(dst.test(1), msg="Same-size copy: bit 1")
+    assert_true(dst.test(64), msg="Same-size copy: bit 64")
+    assert_true(dst.test(127), msg="Same-size copy: bit 127")
+
+    # The copy must be independent of the source.
+    dst.clear(1)
+    assert_true(src.test(1), msg="Mutating the copy must not affect the source")
+
+
+def test_bitset_resized_from_smaller_widens() raises:
+    # Widening within a single word.
+    var src = BitSet[64]()
+    src.set(0)
+    src.set(63)
+
+    var dst = BitSet[128](resized_from=src)
+    assert_equal(len(dst), 2, msg="Widen: count preserved")
+    assert_true(dst.test(0), msg="Widen: bit 0")
+    assert_true(dst.test(63), msg="Widen: bit 63")
+    assert_false(dst.test(64), msg="Widen: new high bits start clear")
+    assert_false(dst.test(127), msg="Widen: new high bits start clear")
+
+    # Widening across several words must zero all the new high words.
+    var narrow = BitSet[40]()
+    narrow.set(0)
+    narrow.set(39)
+
+    var wide = BitSet[200](resized_from=narrow)
+    assert_equal(len(wide), 2, msg="Widen across words: count preserved")
+    assert_true(wide.test(0), msg="Widen across words: bit 0")
+    assert_true(wide.test(39), msg="Widen across words: bit 39")
+    assert_false(wide.test(100), msg="Widen across words: high word 1 clear")
+    assert_false(wide.test(199), msg="Widen across words: high word 3 clear")
+
+
+def test_bitset_resized_from_larger_narrows() raises:
+    # Word-aligned narrowing drops whole trailing words.
+    var src = BitSet[128]()
+    src.set(5)
+    src.set(70)  # In word 1, dropped when narrowing to a single word.
+
+    var dst = BitSet[64](resized_from=src, truncate_set_bits=())
+    assert_equal(len(dst), 1, msg="Narrow aligned: only in-range bits survive")
+    assert_true(dst.test(5), msg="Narrow aligned: bit 5 survives")
+
+    # Non-word-aligned narrowing must ignore bits at or above the new size,
+    # including those sharing the last retained word.
+    var big = BitSet[128]()
+    big.set(10)  # In range for BitSet[40].
+    big.set(39)  # In range for BitSet[40].
+    big.set(40)  # Beyond 40 but in the same word.
+    big.set(50)  # Beyond 40 but in the same word.
+    big.set(100)  # In a dropped word.
+
+    var small = BitSet[40](resized_from=big, truncate_set_bits=())
+    assert_equal(len(small), 2, msg="Narrow unaligned: bits >= size ignored")
+    assert_true(small.test(10), msg="Narrow unaligned: bit 10 survives")
+
+
 def test_bitset_len() raises:
     # 1. Empty BitSet
     var bs = BitSet[128]()
@@ -768,6 +835,192 @@ def test_bitset_small_size() raises:
     assert_false(
         bsDifference.test(3),
         msg="Small BitSet difference: Bit 3 should not be set",
+    )
+
+
+def test_bitset_test_all_before_after_single_word() raises:
+    # Bits 0..9 set, rest clear (within a single word).
+    var bs = BitSet[64]()
+    for i in range(10):
+        bs.set(i)
+
+    # Everything below the first clear bit is set.
+    assert_true(bs.test_range[True, hi=10](), msg="[0,10) all set")
+    assert_true(bs.test_range[True, hi=5](), msg="[0,5) all set")
+    assert_true(bs.test_range[True, hi=0](), msg="empty range is vacuously set")
+    assert_false(bs.test_range[True, hi=11](), msg="bit 10 is clear")
+
+    # Everything at or below the last set bit is not all clear.
+    assert_false(bs.test_range[False, lo=9](), msg="(9,64) all clear")
+    assert_true(bs.test_range[False, lo=10](), msg="(10,64) all clear")
+    assert_false(bs.test_range[False, lo=8](), msg="bit 9 is set")
+    assert_true(
+        bs.test_range[False, lo=63](), msg="empty range is vacuously clear"
+    )
+
+    # Inverse predicates.
+    assert_false(bs.test_range[False, hi=5](), msg="[0,5) not clear")
+    assert_true(bs.test_range[False, hi=0](), msg="empty range vacuously clear")
+    assert_false(bs.test_range[True, lo=9](), msg="(9,64) not all set")
+
+
+def test_bitset_test_all_across_words() raises:
+    # Set every bit in [0, 200); leave [200, 256) clear across word boundaries.
+    var bs = BitSet[256]()
+    for i in range(200):
+        bs.set(i)
+
+    assert_true(bs.test_range[True, hi=200](), msg="[0,200) all set")
+    assert_true(bs.test_range[True, hi=128](), msg="[0,128) all set")
+    assert_true(bs.test_range[True, hi=65](), msg="[0,65) all set")
+    assert_false(bs.test_range[True, hi=201](), msg="bit 200 is clear")
+
+    assert_false(bs.test_range[False, lo=199](), msg="(199,256) all clear")
+    assert_true(bs.test_range[False, lo=200](), msg="(200,256) all clear")
+    assert_false(bs.test_range[False, lo=198](), msg="bit 199 is set")
+
+    # A single clear bit in the middle breaks a run of set bits.
+    bs.clear(100)
+    assert_false(bs.test_range[True, hi=200](), msg="bit 100 now clear")
+    assert_true(bs.test_range[True, hi=100](), msg="[0,100) still all set")
+
+
+def test_bitset_test_all_full_and_empty() raises:
+    var full = BitSet[130]()
+    full.set_all()
+    assert_true(
+        full.test_range[True, hi=130](), msg="fully-set: all before set"
+    )
+    assert_true(full.test_range[True, lo=0](), msg="fully-set: all after set")
+
+    var empty = BitSet[130]()
+    assert_true(
+        empty.test_range[False, hi=130](), msg="empty: all before clear"
+    )
+    assert_true(empty.test_range[False, lo=0](), msg="empty: all after clear")
+
+
+def test_bitset_test_all_large_set() raises:
+    # 2048 bits (32 words) so the interior-word SIMD loop runs several full
+    # batches plus a scalar drain regardless of `simd_width_of[Int64]()`
+    # (2 on NEON, 8 on AVX-512). The `[0, 650)` span has ~9 interior words.
+    comptime N = 2048
+    var bs = BitSet[N]()
+    bs.set_all()
+
+    assert_true(bs.test_range[True, hi=650](), msg="large: [0,650) all set")
+    assert_true(bs.test_range[True, lo=3](), msg="large: (3,N) all set")
+    assert_true(bs.test_range[True, lo=63](), msg="large: (63,N) all set")
+    assert_false(bs.test_range[False, hi=650](), msg="large: [0,650) not clear")
+    assert_false(bs.test_range[False, lo=3](), msg="large: (3,N) not clear")
+
+    # A single clear bit deep in an interior word must break an all-set run
+    # scanned from either direction.
+    bs.clear(300)  # Word 4 -- an interior word for both spans below.
+    assert_false(bs.test_range[True, hi=650](), msg="large: before-set hole")
+    assert_true(bs.test_range[True, hi=300](), msg="large: [0,300) still set")
+    assert_false(bs.test_range[True, lo=3](), msg="large: after-set hole")
+    assert_true(bs.test_range[True, lo=301](), msg="large: (300,N) still set")
+
+
+def test_bitset_test_all_large_unset() raises:
+    comptime N = 2048
+    var bs = BitSet[N]()  # All clear.
+
+    assert_true(bs.test_range[False, hi=650](), msg="large: [0,650) all clear")
+    assert_true(bs.test_range[False, lo=3](), msg="large: (3,N) all clear")
+    assert_false(bs.test_range[True, hi=650](), msg="large: [0,650) not set")
+
+    # A single set bit deep in an interior word breaks an all-clear run.
+    bs.set(300)
+    assert_false(bs.test_range[False, hi=650](), msg="large: before-unset hole")
+    assert_true(
+        bs.test_range[False, hi=300](), msg="large: [0,300) still clear"
+    )
+    assert_false(bs.test_range[False, lo=3](), msg="large: after-unset hole")
+    assert_true(
+        bs.test_range[False, lo=301](), msg="large: [301,N) still clear"
+    )
+
+
+def test_bitset_test_all_min_size() raises:
+    # In a size-1 set the only valid index is 0, so every range around it is
+    # empty and therefore vacuously true for all predicates.
+    var one = BitSet[1]()
+    one.set(0)
+    assert_true(one.test_range[True, hi=0](), msg="size-1: empty before set")
+    assert_true(one.test_range[True, lo=0](), msg="size-1: empty after set")
+    assert_true(one.test_range[False, hi=0](), msg="size-1: empty before unset")
+    assert_true(one.test_range[False, lo=1](), msg="size-1: empty after unset")
+
+
+def test_bitset_resized_from_large_simd() raises:
+    # 31 words (odd) so the copy loop runs full SIMD batches plus a scalar
+    # drain on any width; the widen target adds an odd number of zero words so
+    # the zero loop also hits a drain.
+    comptime SRC = 1984  # 31 words.
+    var src = BitSet[SRC]()
+    for i in range(SRC):
+        if i % 3 == 0:
+            src.set(i)
+    comptime expected = SRC // 3 + 1
+
+    # Same-size large copy: every word must match bit-for-bit.
+    var same = BitSet[SRC](resized_from=src, truncate_set_bits=())
+    assert_equal(len(same), expected, msg="large copy: count matches")
+    for i in range(SRC):
+        assert_equal(same.test(i), src.test(i), msg="large copy: bit matches")
+
+    # Widen to 48 words (17 new zero words).
+    var wide = BitSet[3072](resized_from=src, truncate_set_bits=())
+    assert_equal(len(wide), expected, msg="large widen: count preserved")
+    for i in range(SRC):
+        assert_equal(
+            wide.test(i), src.test(i), msg="large widen: low bits match"
+        )
+    assert_false(wide.test(SRC), msg="large widen: first new word cleared")
+    assert_false(wide.test(3071), msg="large widen: last new word cleared")
+
+    # Narrow to 16 words: bits at or above the new size are dropped, so the
+    # count reflects only set bits in `[0, 1000)`.
+    var small = BitSet[1000](resized_from=src, truncate_set_bits=())
+    for i in range(1000):
+        assert_equal(
+            small.test(i), src.test(i), msg="large narrow: bit matches"
+        )
+    comptime narrow_expected = 999 // 3 + 1
+    assert_equal(
+        len(small), narrow_expected, msg="large narrow: no bits leak past size"
+    )
+
+
+def test_bitset_resized_from_edge_contents() raises:
+    # Empty source widened stays empty.
+    var empty = BitSet[64]()
+    var widened_empty = BitSet[256](resized_from=empty, truncate_set_bits=())
+    assert_equal(len(widened_empty), 0, msg="empty widened stays empty")
+
+    # Full source narrowed fills exactly the retained range; the bits beyond
+    # the new size in the last retained word must be masked off.
+    var full = BitSet[256]()
+    full.set_all()
+    var narrowed_full = BitSet[100](resized_from=full, truncate_set_bits=())
+    assert_equal(len(narrowed_full), 100, msg="full narrowed fills new range")
+
+    # Independence must hold after widening and narrowing, not just same-size.
+    var src = BitSet[128]()
+    src.set(5)
+
+    var w = BitSet[256](resized_from=src, truncate_set_bits=())
+    w.set(200)
+    assert_equal(
+        len(src), 1, msg="source unchanged after mutating widened copy"
+    )
+
+    var n = BitSet[64](resized_from=src, truncate_set_bits=())
+    n.set(10)
+    assert_equal(
+        len(src), 1, msg="source unchanged after mutating narrowed copy"
     )
 
 
