@@ -48,6 +48,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from max.benchmark import bench_multicontext, bencher_iter_custom
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.reducescatter import reducescatter, ReduceScatterConfig
 from comm.reducescatter_rmsnorm import reducescatter_rmsnorm, _dispatch_rs_norm
@@ -120,7 +121,7 @@ def _verify_results[
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[DType.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
     gamma_host: List[Scalar[in_dtype]],
     host_bufs: List[List[Scalar[in_dtype]]],
@@ -169,7 +170,7 @@ def _verify_results[
     comptime OutShardType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
     ]
-    var in_bufs = InlineArray[InTensorType, ngpus](uninitialized=True)
+    var in_bufs = Array[InTensorType, ngpus](uninitialized=True)
     comptime for _i in range(ngpus):
         in_bufs[_i] = InTensorType(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -536,7 +537,7 @@ def bench_reducescatter_rmsnorm[
     var fused_sum = List[DeviceBuffer[in_dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -610,7 +611,7 @@ def bench_reducescatter_rmsnorm[
         list_of_ctx[i].synchronize()
 
     # RS input / output-shard tensor views. Inputs rotate per iter (as a direct
-    # InlineArray arg); output shards are fixed (RS overwrites the storage).
+    # Array arg); output shards are fixed (RS overwrites the storage).
     comptime InTensorType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
@@ -620,11 +621,11 @@ def bench_reducescatter_rmsnorm[
     comptime GammaShardType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ]
-    var in_bufs = InlineArray[InTensorType, ngpus](uninitialized=True)
-    var out_shards = InlineArray[OutShardType, ngpus](uninitialized=True)
+    var in_bufs = Array[InTensorType, ngpus](uninitialized=True)
+    var out_shards = Array[OutShardType, ngpus](uninitialized=True)
     # Fused-kernel output-shard views: normed + sum, both [rank_units, cols].
-    var normed_shards = InlineArray[OutShardType, ngpus](uninitialized=True)
-    var fused_sum_shards = InlineArray[OutShardType, ngpus](uninitialized=True)
+    var normed_shards = Array[OutShardType, ngpus](uninitialized=True)
+    var fused_sum_shards = Array[OutShardType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_bufs[i] = InTensorType(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -656,13 +657,13 @@ def bench_reducescatter_rmsnorm[
         list_of_ctx[i].synchronize()
 
     # Per-GPU norm shard pointers, captured once for the timed closures.
-    var cold_ptrs = InlineArray[
+    var cold_ptrs = Array[UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
+    var rs_out_ptrs = Array[
         UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var rs_out_ptrs = InlineArray[
-        UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
-    var normed_ptrs = InlineArray[
+    var normed_ptrs = Array[
         UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
     var gamma_ptr = rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -705,9 +706,10 @@ def bench_reducescatter_rmsnorm[
                 in_bufs, out_shards[ctx_idx], rank_sigs, ctx_inner
             )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
-    b.bench_multicontext[bench_rs_iter](
+    bench_multicontext[bench_rs_iter](
+        b,
         list_of_ctx,
         BenchId("reducescatter_only", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -735,9 +737,10 @@ def bench_reducescatter_rmsnorm[
                     ctx_inner,
                 )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
-    b.bench_multicontext[bench_norm_cold_iter](
+    bench_multicontext[bench_norm_cold_iter](
+        b,
         list_of_ctx,
         BenchId("rms_norm_shard_cold", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -775,9 +778,10 @@ def bench_reducescatter_rmsnorm[
                     ctx_inner,
                 )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
-    b.bench_multicontext[bench_chained_iter](
+    bench_multicontext[bench_chained_iter](
+        b,
         list_of_ctx,
         BenchId(
             "reducescatter_then_rms_norm_chained", input_id=bench_name_prefix
@@ -812,9 +816,10 @@ def bench_reducescatter_rmsnorm[
                 ctx_inner,
             )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
-    b.bench_multicontext[bench_fused_iter](
+    bench_multicontext[bench_fused_iter](
+        b,
         list_of_ctx,
         BenchId("reducescatter_rmsnorm_fused", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -870,9 +875,10 @@ def bench_reducescatter_rmsnorm[
                 ctx_inner,
             )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
-    b.bench_multicontext[bench_dispatch_iter](
+    bench_multicontext[bench_dispatch_iter](
+        b,
         list_of_ctx,
         BenchId("reducescatter_rmsnorm_dispatch", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],

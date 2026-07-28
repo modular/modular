@@ -861,7 +861,7 @@ def assume(val: Bool):
 
 @always_inline
 def implicitarg_ptr(
-    out result: UnsafePointer[
+    out result: Pointer[
         UInt8, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]
 ):
@@ -884,9 +884,12 @@ def implicitarg_ptr(
 
 
 @always_inline
-def readfirstlane(value: UnsafePointer) -> type_of(value):
+def readfirstlane[T: AnyType, //](value: Pointer[T, ...]) -> type_of(value):
     """
     Get the value in the lowest active lane of the input operand.
+
+    Parameters:
+        T: The type the pointer points to.
 
     Args:
         value: The input pointer.

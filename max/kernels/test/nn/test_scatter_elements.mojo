@@ -55,7 +55,7 @@ def main() raises:
             output_ptr.unsafe_ptr(), IndexList[2](3, 3)
         )
 
-        var expected: InlineArray[Float32, 9] = [
+        var expected: Array[Float32, 9] = [
             Float32(2.0),
             1.1,
             0.0,
@@ -109,7 +109,7 @@ def main() raises:
             output_ptr.unsafe_ptr(), IndexList[2](1, 5)
         )
 
-        var expected: InlineArray[Float32, 5] = [
+        var expected: Array[Float32, 5] = [
             Float32(1.0),
             1.1,
             3.0,
@@ -159,7 +159,7 @@ def main() raises:
             output_ptr.unsafe_ptr(), IndexList[2](1, 5)
         )
 
-        var expected: InlineArray[Float32, 5] = [
+        var expected: Array[Float32, 5] = [
             Float32(1.0),
             1.1,
             2.1,
@@ -209,7 +209,7 @@ def main() raises:
             output_ptr.unsafe_ptr(), IndexList[2](1, 5)
         )
 
-        var expected: InlineArray[Float32, 5] = [
+        var expected: Array[Float32, 5] = [
             Float32(1.0),
             2.1,
             3.0,

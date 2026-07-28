@@ -259,7 +259,7 @@ struct MXFP4MoERoutedMatmul[
             mut=False, dtype=DType.uint8, origin=ImmutAnyOrigin
         ](
             (b_pre_tt.ptr + expert_id * b_per_expert_bytes)
-            .as_immutable()
+            .as_imm()
             .unsafe_origin_cast[ImmutAnyOrigin]()
             .address_space_cast[AddressSpace.GENERIC](),
             row_major(Coord(Idx[1], Idx[b_per_expert_bytes])),
@@ -268,7 +268,7 @@ struct MXFP4MoERoutedMatmul[
             mut=False, dtype=DType.uint8, origin=ImmutAnyOrigin
         ](
             (sfb_pre_tt.ptr + expert_id * sfb_per_expert_bytes)
-            .as_immutable()
+            .as_imm()
             .unsafe_origin_cast[ImmutAnyOrigin]()
             .address_space_cast[AddressSpace.GENERIC](),
             row_major(Coord(Idx[1], Idx[sfb_per_expert_bytes])),
@@ -277,7 +277,7 @@ struct MXFP4MoERoutedMatmul[
             mut=False, dtype=DType.uint8, origin=ImmutAnyOrigin
         ](
             (sfa_pre_tt.ptr + bx * sfa_per_block_bytes)
-            .as_immutable()
+            .as_imm()
             .unsafe_origin_cast[ImmutAnyOrigin]()
             .address_space_cast[AddressSpace.GENERIC](),
             row_major(Coord(Idx[1], Idx[sfa_per_block_bytes])),

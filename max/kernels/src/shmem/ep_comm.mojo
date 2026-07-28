@@ -231,7 +231,7 @@ def ep_signal_completion[
 ](
     my_rank: Int32,
     dst_rank: Int32,
-    recv_count_ptrs: InlineArray[
+    recv_count_ptrs: Array[
         UnsafePointer[UInt64, MutUntrackedOrigin], p2p_world_size
     ],
     signal_offset: Int32,
@@ -1954,7 +1954,7 @@ struct EPDispatchKernel[
     @always_inline
     def monitor_and_signal_completion(
         topk_ids: TileTensor[mut=False, DType.int32, ...],
-        recv_count_ptrs: InlineArray[
+        recv_count_ptrs: Array[
             UnsafePointer[UInt64, MutUntrackedOrigin], Self.p2p_world_size
         ],
         expert_reserved_counter: UnsafePointer[Int32, MutUntrackedOrigin],
@@ -2052,7 +2052,7 @@ struct EPDispatchKernel[
         input_tokens: TileTensor[mut=False, input_type, ...],
         topk_ids: TileTensor[mut=False, DType.int32, ...],
         send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
-        recv_buf_ptrs: InlineArray[
+        recv_buf_ptrs: Array[
             UnsafePointer[UInt8, MutUntrackedOrigin], Self.p2p_world_size
         ],
         expert_reserved_counter: UnsafePointer[Int32, MutUntrackedOrigin],
@@ -2726,10 +2726,10 @@ def dispatch_async_kernel[
     ],
     topk_ids: TileTensor[DType.int32, topk_ids_layout, ImmUntrackedOrigin],
     send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
-    recv_buf_ptrs: InlineArray[
+    recv_buf_ptrs: Array[
         UnsafePointer[UInt8, MutUntrackedOrigin], p2p_world_size
     ],
-    recv_count_ptrs: InlineArray[
+    recv_count_ptrs: Array[
         UnsafePointer[UInt64, MutUntrackedOrigin], p2p_world_size
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
@@ -3097,10 +3097,10 @@ struct EPCombineKernel[
         input_tokens: TileTensor[input_type, ...],
         src_info: TileTensor[DType.int32, ...],
         send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
-        recv_buf_ptrs: InlineArray[
+        recv_buf_ptrs: Array[
             UnsafePointer[UInt8, MutUntrackedOrigin], Self.p2p_world_size
         ],
-        recv_count_ptrs: InlineArray[
+        recv_count_ptrs: Array[
             UnsafePointer[UInt64, MutUntrackedOrigin], Self.p2p_world_size
         ],
         atomic_counter: UnsafePointer[Int32, MutUntrackedOrigin],
@@ -3552,10 +3552,10 @@ def combine_async_kernel[
     ],
     src_info: TileTensor[DType.int32, src_info_layout, ImmUntrackedOrigin],
     send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
-    recv_buf_ptrs: InlineArray[
+    recv_buf_ptrs: Array[
         UnsafePointer[UInt8, MutUntrackedOrigin], p2p_world_size
     ],
-    recv_count_ptrs: InlineArray[
+    recv_count_ptrs: Array[
         UnsafePointer[UInt64, MutUntrackedOrigin], p2p_world_size
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
@@ -3766,10 +3766,10 @@ def dispatch_kernel[
     expert_ids: TileTensor[DType.int32, expert_ids_layout, MutUntrackedOrigin],
     src_info: TileTensor[DType.int32, src_info_layout, MutUntrackedOrigin],
     send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
-    recv_buf_ptrs: InlineArray[
+    recv_buf_ptrs: Array[
         UnsafePointer[UInt8, MutUntrackedOrigin], p2p_world_size
     ],
-    recv_count_ptrs: InlineArray[
+    recv_count_ptrs: Array[
         UnsafePointer[UInt64, MutUntrackedOrigin], p2p_world_size
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
@@ -3976,10 +3976,10 @@ def combine_kernel[
         input_type, output_tokens_layout, MutUntrackedOrigin
     ],
     send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
-    recv_buf_ptrs: InlineArray[
+    recv_buf_ptrs: Array[
         UnsafePointer[UInt8, MutUntrackedOrigin], p2p_world_size
     ],
-    recv_count_ptrs: InlineArray[
+    recv_count_ptrs: Array[
         UnsafePointer[UInt64, MutUntrackedOrigin], p2p_world_size
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
@@ -4911,7 +4911,7 @@ def fused_silu_mxfp4_kernel[
             comptime if clamp_activation:
                 var g_c = min(gate_proj, limit)
                 var u_c = up_proj.clamp(-limit, limit)
-                output_val = (u_c + 1.0) * g_c * _sigmoid(g_c * alpha)
+                output_val = (g_c * _sigmoid(g_c * alpha)) * (u_c + 1.0)
             else:
                 gate_proj = gate_proj / (1.0 + exp(-gate_proj))
                 output_val = gate_proj * up_proj

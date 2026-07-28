@@ -124,7 +124,7 @@ struct HopperMatmulSM90Kernel_SMem[
     bank-conflict-free access patterns for tensor core operations.
 
     All tiles use TileTensor-based types from tile_types.mojo. At TMA/WGMMA
-    boundaries, pass {tile.ptr} to construct the tile view.
+    boundaries, pass {tile._storage} to construct the tile view.
     """
 
     # SM90 blocked_product ordering: ((8, tiles_m), ...) with non-zero K-tile stride.
@@ -172,7 +172,7 @@ struct HopperMatmulSM90Kernel_SMem[
     # Number of pipeline stages for barriers (adjusted for k_group_size)
     comptime _num_barrier_stages = Self.num_pipeline_stages // Self.k_group_size
 
-    # InlineArray storage fields (like SM100 pattern)
+    # Array storage fields (like SM100 pattern)
     var a_tiles_storage: Self.ATileArray.Storage
     var b_tiles_storage: Self.BTileArray.Storage
     var c_tile_storage: Self.CTileArray.Storage
@@ -1453,7 +1453,7 @@ struct HopperMatmulSM90Kernel[
 
             # C tile for current expert.
             var c_by_expert = TileTensor(
-                c.ptr + a_start_row * UInt32(N),
+                c._storage + a_start_row * UInt32(N),
                 row_major(Coord(Int(M), Idx[N])),
             )
 

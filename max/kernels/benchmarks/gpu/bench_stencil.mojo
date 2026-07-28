@@ -14,6 +14,7 @@
 from std.sys import get_defined_dtype, get_defined_int, get_defined_string
 
 from std.algorithm.functional import stencil, stencil_gpu
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -214,7 +215,7 @@ def bench_stencil_avg_pool[
                 avg_pool_compute_finalize_gpu,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
@@ -496,7 +497,7 @@ def bench_stencil_max_pool[
                 max_pool_compute_finalize_gpu,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
@@ -769,7 +770,7 @@ def bench_stencil_avg_pool_padded[
                 avg_pool_compute_finalize_gpu,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     def map_fn_cpu(
         point: IndexList[stencil_rank, ...],

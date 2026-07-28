@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import pytest
 from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
+    connect_pairing,
     resolve_peer_view,
+    transfer_shard_pairing,
 )
 
 
@@ -92,3 +94,99 @@ def test_resolve_peer_view_rejected(
             remote_tp=remote_tp,
             remote_replicate=remote_rep,
         )
+
+
+# ---------------------------------------------------------------------------
+# connect_pairing: physical (local_replica, local_shard, remote_replica,
+# remote_shard) index quads for connect/disconnect/cleanup.
+# ---------------------------------------------------------------------------
+
+
+def _pairing(
+    local_dp: int,
+    local_tp: int,
+    local_rep: bool,
+    remote_dp: int,
+    remote_tp: int,
+    remote_rep: bool,
+) -> list[tuple[int, int, int, int]]:
+    view = resolve_peer_view(
+        local_dp=local_dp,
+        local_tp=local_tp,
+        local_replicate=local_rep,
+        remote_dp=remote_dp,
+        remote_tp=remote_tp,
+        remote_replicate=remote_rep,
+    )
+    return connect_pairing(view, local_dp, local_tp, remote_dp, remote_tp)
+
+
+def test_connect_pairing_homogeneous_dp2() -> None:
+    """dp=2,tp=2: full cartesian product of replicas, shard-wise zip."""
+    assert _pairing(2, 2, False, 2, 2, False) == [
+        (0, 0, 0, 0),
+        (0, 1, 0, 1),
+        (0, 0, 1, 0),
+        (0, 1, 1, 1),
+        (1, 0, 0, 0),
+        (1, 1, 0, 1),
+        (1, 0, 1, 0),
+        (1, 1, 1, 1),
+    ]
+
+
+def test_connect_pairing_flatten_local() -> None:
+    """Local (dp=1,tp=2,MLA) flattens to [dp*tp][1] against remote (dp=2,tp=1)."""
+    assert _pairing(1, 2, True, 2, 1, True) == [
+        (0, 0, 0, 0),
+        (0, 0, 1, 0),
+        (0, 1, 0, 0),
+        (0, 1, 1, 0),
+    ]
+
+
+def test_connect_pairing_flatten_remote() -> None:
+    """Remote (dp=1,tp=2,MLA) flattens against local (dp=2,tp=1)."""
+    assert _pairing(2, 1, True, 1, 2, True) == [
+        (0, 0, 0, 0),
+        (0, 0, 0, 1),
+        (1, 0, 0, 0),
+        (1, 0, 0, 1),
+    ]
+
+
+def test_connect_pairing_dp2tp4_to_dp8_mla() -> None:
+    """DP2/TP4 MLA prefill -> DP8/TP1 decode: 8x8 effective mesh."""
+    pairs = _pairing(2, 4, True, 8, 1, True)
+    assert len(pairs) == 64
+    # Local effective replica e maps to physical (e // 4, e % 4); it pairs
+    # with every one of the 8 remote replicas, remote shard always 0.
+    assert pairs[:8] == [(0, 0, r, 0) for r in range(8)]
+    assert pairs[8:16] == [(0, 1, r, 0) for r in range(8)]
+    # Last local effective replica is physical (1, 3).
+    assert pairs[-8:] == [(1, 3, r, 0) for r in range(8)]
+
+
+# ---------------------------------------------------------------------------
+# transfer_shard_pairing: (source_shard, dest_shard) pairs for one transfer.
+# ---------------------------------------------------------------------------
+
+
+def test_transfer_shard_pairing_homogeneous() -> None:
+    """No flatten, equal TP: 1:1 shard pairing."""
+    pairs = transfer_shard_pairing(flatten_source=False, source_tp=2, dest_tp=2)
+    assert pairs == [(0, 0), (1, 1)]
+
+
+def test_transfer_shard_pairing_flatten_source() -> None:
+    """Flatten source collapses to shard 0 (dest TP=1)."""
+    pairs = transfer_shard_pairing(flatten_source=True, source_tp=4, dest_tp=1)
+    assert pairs == [(0, 0)]
+
+
+def test_transfer_shard_pairing_fanout() -> None:
+    """Single source shard fans out to every destination shard."""
+    pairs = transfer_shard_pairing(flatten_source=False, source_tp=1, dest_tp=4)
+    assert pairs == [(0, 0), (0, 1), (0, 2), (0, 3)]
+    # local_shards_used semantics: source side for a send.
+    assert [src for src, _ in pairs] == [0, 0, 0, 0]

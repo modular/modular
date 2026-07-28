@@ -597,7 +597,7 @@ struct TMemAccumulator[
                 tmem = self.tmem_addr + UInt32(tmem_offset)
                 frag = bitcast[DType.uint32, frag_size_b32](frags[mma_id, 0])
                 # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
-                var frag_st = InlineArray[Scalar[DType.uint32], frag_size_b32](
+                var frag_st = Array[Scalar[DType.uint32], frag_size_b32](
                     uninitialized=True
                 )
 
@@ -817,7 +817,7 @@ struct TMemOperand[
             )
             # 16 x 256b results in repeated 8x4<1x64b> pattern
             # 256b means 256 // 4 = 64b per thread
-            var frag_st2 = InlineArray[Scalar[DType.uint32], frag_size_b32](
+            var frag_st2 = Array[Scalar[DType.uint32], frag_size_b32](
                 uninitialized=True
             )
 

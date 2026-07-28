@@ -86,12 +86,12 @@ def fa4_load[
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         config.swizzle_mode,
-        BN=kv_sub_tile_rows(config.BN, KVLUTType.page_size),
-        # WS shared sub-tile ring: V is depth-split into num_qk_stages 256x64
-        # sub-tiles (mirrors K's BK0), loaded as one TMA per depth-tile. Non-WS
-        # keeps the full-depth V box. `v_box_cols()` is used identically at every
-        # V TMA type-param site so the expressions fold consistently.
-        BK=config.v_box_cols(),
+        # V TMA box geometry per layout via `v_tma_box_rows()` /
+        # `v_tma_box_cols()` -- the one selector shared with dispatch's
+        # `create_tma_tile` and the kernel `VTMAOpType`, so the box shape folds
+        # identically at every V TMA type-param site.
+        BN=config.v_tma_box_rows(KVLUTType.page_size),
+        BK=config.v_tma_box_cols(),
     ],
     kv_lut: KVLUTType,
 ):
@@ -357,12 +357,16 @@ def fa4_load[
     var kv_row: UInt32 = mask.start_column[BM_mask, BN, page_size](
         seq_info.prompt_idx, score_row
     )
-    var iter_count: UInt32 = (
-        mask.last_masked_set_end[BM_mask, BN, page_size](
-            seq_info.prompt_idx, score_row, num_keys
-        )
-        - 1
-    )
+    var last_masked_set_end: UInt32 = mask.last_masked_set_end[
+        BM_mask, BN, page_size
+    ](seq_info.prompt_idx, score_row, num_keys)
+    # All-masked row (valid_length 0): last_masked_set_end == 0, so the
+    # `- 1` below underflows and the load warp over-produces, hanging the KV
+    # pipeline. Split-K is guarded below; guard the non-split path here.
+    comptime if not (config.num_q == 1 and config.splitk_partitions > 1):
+        if last_masked_set_end == UInt32(0):
+            return
+    var iter_count: UInt32 = last_masked_set_end - 1
 
     # Split-K (1Q): shift this CTA to its own tile window [cb, ce) of the
     # combined range. Offset kv_row by cb*BN BEFORE the first-tile
@@ -553,6 +557,79 @@ def fa4_load[
             depth_offset=UInt32(v_depth_stage_offset + v_col_offset),
         )
 
+    # Layout-E (m_pack==2) reduction-chunk V producer: `r` selects the
+    # reduction-chunk ring slot (one of `num_qk_stages`, mirrors K's
+    # `qk_stage`); within it, TWO per-partition natural TMA loads (full
+    # depth, `pv_bk_chunk` keys each) land at `p * partition_region_elems`
+    # sub-offsets, filling the 32 KB slot as the CONTIGUOUS `mn = p*ov_depth
+    # + d` B-operand `test_ws_v_layout_e_probe.mojo` pins.
+    #
+    # Populates each partition's OWN `partition_keys`-row range via a FRESH
+    # `kv_lut.populate[BN=partition_keys]` call (single-CTA only:
+    # `pair_cta=False, is_leader=True`, matching Layout-E's `supported()`
+    # invariant) rather than reusing the SHARED `BN=config.BN` row LUT
+    # Layout-G's depth-split V load reuses from K. `PagedRowIndices`'s
+    # `num_v_sub_tiles` sub-tile row math (`kv_cache/types.mojo`) is
+    # documented correct only for `num_pages >= num_v_sub_tiles` or
+    # `num_pages == 1` (the depth-512 MLA precedent); a single BN=256
+    # populate split `m_pack * num_qk_stages` ways would fall in NEITHER
+    # case at e.g. `page_size=128` (`num_pages=2 < 4`). Populating each
+    # partition's own `partition_keys`-row range keeps the
+    # `num_v_sub_tiles=num_qk_stages` reduction split within one of those two
+    # documented cases for any `page_size`.
+    comptime partition_keys = config.BN // config.m_pack
+    # Per-partition SMEM footprint WITHIN one reduction-chunk ring slot: the
+    # TMA box (`v_e_box_rows()` chunk-keys x `v_e_box_cols()` full depth) =
+    # `pv_bk_chunk * padded_ov_depth` elems. `tma_copy_v`'s
+    # `num_v_sub_tiles`/`v_sub_tile_idx` offset only the SOURCE KV rows, never
+    # the destination, so partition `p`'s box is written verbatim at
+    # `smem_ptr + p*partition_region_elems`; partition 1 sits directly above
+    # partition 0 (probe `PARTITION_REGION_ELEMS`, = 8192 @d128 = 16 KB),
+    # together filling the 32 KB slot. NOT `partition_keys * ov_depth` -- that
+    # is a partition's TOTAL keys (all reduction chunks), which would overrun
+    # into the next ring slot and leave this slot's upper half unwritten.
+    comptime partition_region_elems = (
+        config.v_e_box_rows() * config.v_e_box_cols()
+    )
+
+    @parameter
+    @always_inline
+    def _produce_v_e[
+        partial: Bool,
+        r: Int,
+    ](
+        kv_row_base: UInt32,
+        smem_ptr: SharedMemPointer[Scalar[qkv_type]],
+        mbar: SharedMemPointer[SharedMemBarrier],
+        v_num_valid_pages: UInt32,
+    ):
+        # `_produce_v_e` is Layout-E-only (m_pack==2 => use_ws), so the non-WS
+        # per-page byte count `_produce_v` carries never applies: V bytes are
+        # always the full `v_expect_bytes`, and OOB-fill reduces to `partial`.
+        comptime v_oob_fill = partial
+        comptime if is_leader:
+            expect_bytes_pred(mbar, Int32(v_expect_bytes), e)
+        comptime for p in range(config.m_pack):
+            var p_rows = kv_lut.populate[
+                partition_keys, base_alignment, False, True
+            ](
+                seq_info.prompt_idx,
+                kv_row_base + UInt32(p * partition_keys),
+            )
+            p_rows.tma_copy_v[
+                needs_partial=partial,
+                num_v_sub_tiles=config.num_qk_stages,
+                v_sub_tile_idx=r,
+                oob_fill_pages=v_oob_fill,
+            ](
+                v_tma_op,
+                smem_ptr + UInt32(p) * UInt32(partition_region_elems),
+                mbar[],
+                kv_head_idx=kv_head_idx,
+                elect=e,
+                num_valid_pages=v_num_valid_pages,
+            )
+
     comptime if config.use_shared_kv:
         # ---- Shared KV mode ----
         # Single StagedPipeline alternating K and V stages.
@@ -629,20 +706,39 @@ def fa4_load[
         @always_inline
         def _emit_v[
             partial: Bool, acquire: Bool = True
-        ](rows: KVPagedRows, v_num_valid_pages: UInt32):
-            # WS shared sub-tile ring: emit num_qk_stages V depth-tile sub-tiles
-            # (each a 32768-B ring slot with its own barrier). Folds to one slot
-            # for non-WS shared (num_qk_stages==1).
-            comptime for d_tile in range(config.num_qk_stages):
-                comptime if acquire or d_tile != 0:
+        ](
+            rows: KVPagedRows,
+            v_num_valid_pages: UInt32,
+            # Layout-E (m_pack==2) ONLY: this reduction chunk's base kv_row
+            # (used to derive each partition's own populate range). Unused
+            # (dead) for Layout-G / non-WS / 2Q -- default keeps every
+            # existing (2-arg) call site byte-identical.
+            kv_row_base: UInt32 = 0,
+        ):
+            # WS shared sub-tile ring: emit num_qk_stages V sub-tiles (each a
+            # 32768-B ring slot with its own barrier). Folds to one slot for
+            # non-WS shared (num_qk_stages==1). The ring scaffolding
+            # (acquire/mbar/smem_ptr/step) is layout-independent; only the
+            # producer differs: Layout-G (m_pack==4) depth-splits
+            # (`_produce_v`, reuses the shared `rows` LUT), Layout-E (m_pack==2)
+            # reduction/key-splits (`_produce_v_e`, its own per-partition LUT
+            # populated from `kv_row_base` -- see its docstring for why it
+            # cannot reuse `rows`).
+            comptime for stage in range(config.num_qk_stages):
+                comptime if acquire or stage != 0:
                     kv_pipeline.producer_acquire()
                 var mbar = kv_pipeline.producer_mbar()
                 var smem_ptr = kv_smem + kv_pipeline.state.index() * UInt32(
                     kv_stage_elems
                 )
-                _produce_v[partial=partial, d_tile=d_tile](
-                    rows, smem_ptr, mbar, v_num_valid_pages
-                )
+                comptime if config.m_pack == 2:
+                    _produce_v_e[partial=partial, r=stage](
+                        kv_row_base, smem_ptr, mbar, v_num_valid_pages
+                    )
+                else:
+                    _produce_v[partial=partial, d_tile=stage](
+                        rows, smem_ptr, mbar, v_num_valid_pages
+                    )
                 kv_pipeline.state.step()
 
         comptime if num_q == 1:
@@ -676,7 +772,7 @@ def fa4_load[
                 _emit_k[partial=needs_partial, with_q=True, acquire=False](
                     rows_e_t1, k_nvp
                 )
-                _emit_v[partial=needs_partial](rows_e_t1, v_nvp)
+                _emit_v[partial=needs_partial](rows_e_t1, v_nvp, kv_row)
                 return
 
             # ---- Peel (T >= 2): K_e[0], K_o[0], V_e[0], V_o[0] ----
@@ -704,10 +800,10 @@ def fa4_load[
             _emit_k[partial=needs_partial](rows_o, k_nvp_o)
 
             # V_e[0] (reuses rows_e)
-            _emit_v[partial=needs_partial](rows_e, v_nvp)
+            _emit_v[partial=needs_partial](rows_e, v_nvp, kv_row)
 
             # V_o[0] (reuses rows_o)
-            _emit_v[partial=needs_partial](rows_o, v_nvp_o)
+            _emit_v[partial=needs_partial](rows_o, v_nvp_o, kv_row + UInt32(BN))
 
             # ---- Loop bookkeeping ----
             # T is total K-tiles. Peel consumed K_e[0] + K_o[0] (2 tiles)
@@ -744,10 +840,14 @@ def fa4_load[
                 _emit_k[partial=False](rows_o, UInt32(KVPagedRows.num_pages))
 
                 # V_e[n] (full, reuses rows_e)
-                _emit_v[partial=False](rows_e, UInt32(KVPagedRows.num_pages))
+                _emit_v[partial=False](
+                    rows_e, UInt32(KVPagedRows.num_pages), kv_row
+                )
 
                 # V_o[n] (full, reuses rows_o)
-                _emit_v[partial=False](rows_o, UInt32(KVPagedRows.num_pages))
+                _emit_v[partial=False](
+                    rows_o, UInt32(KVPagedRows.num_pages), kv_row + UInt32(BN)
+                )
 
             # ---- Tail K_e + V_e (T odd, any needs_partial) ----
             # mma_warp's break-check at mma_warp.mojo:257-274 swaps
@@ -765,7 +865,7 @@ def fa4_load[
                     BN, base_alignment, pair_cta, is_leader
                 ](seq_info.prompt_idx, kv_row)
                 _emit_k[partial=needs_partial](rows_t, k_nvp_t)
-                _emit_v[partial=needs_partial](rows_t, v_nvp_t)
+                _emit_v[partial=needs_partial](rows_t, v_nvp_t, kv_row)
 
             # ---- Peeled-last full pair (needs_partial && T even) ----
             comptime if needs_partial:
@@ -789,10 +889,12 @@ def fa4_load[
                     _emit_k[partial=True](rows_po, k_nvp_po)
 
                     # V_e (partial, reuses rows_pe)
-                    _emit_v[partial=True](rows_pe, v_nvp_pe)
+                    _emit_v[partial=True](rows_pe, v_nvp_pe, kv_row)
 
                     # V_o (partial, reuses rows_po)
-                    _emit_v[partial=True](rows_po, v_nvp_po)
+                    _emit_v[partial=True](
+                        rows_po, v_nvp_po, kv_row + UInt32(BN)
+                    )
         else:
             # ---- 2Q shared-KV producer (existing path, unchanged) ----
 

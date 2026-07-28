@@ -238,7 +238,7 @@ def transpose_op[
     in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
-    perm_data: InlineArray[Int64, MAX_RANK],
+    perm_data: Array[Int64, MAX_RANK],
     ctx: DeviceContext,
 ) raises:
     """Call Transpose.execute with MAX_RANK tensors.
@@ -308,7 +308,7 @@ struct _TransposeBody(Dispatchable):
     var in_addr: Int
     var in_shape: IndexList[MAX_RANK]
     var out_shape: IndexList[MAX_RANK]
-    var perm: InlineArray[Int64, MAX_RANK]
+    var perm: Array[Int64, MAX_RANK]
     var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
@@ -363,7 +363,7 @@ def transpose_dispatcher(
 
     # Pad permutation: identity for leading dims, shifted original perm
     var pad_count = MAX_RANK - in_rank
-    var padded_perm = InlineArray[Int64, MAX_RANK](fill=0)
+    var padded_perm = Array[Int64, MAX_RANK](fill=0)
     for i in range(pad_count):
         padded_perm[i] = Int64(i)
     for i in range(in_rank):
@@ -510,9 +510,9 @@ def mutable_store_slice_op[
     src_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dst_shape: IndexList[MAX_RANK],
     src_shape: IndexList[MAX_RANK],
-    starts: InlineArray[Int64, MAX_RANK],
-    stops: InlineArray[Int64, MAX_RANK],
-    steps: InlineArray[Int64, MAX_RANK],
+    starts: Array[Int64, MAX_RANK],
+    stops: Array[Int64, MAX_RANK],
+    steps: Array[Int64, MAX_RANK],
     ctx: DeviceContext,
 ) raises:
     """Call MutableStoreSlice.execute with MAX_RANK tensors.
@@ -597,9 +597,9 @@ struct _MutableStoreSliceBody(Dispatchable):
     var src_addr: Int
     var dst_shape: IndexList[MAX_RANK]
     var src_shape: IndexList[MAX_RANK]
-    var starts: InlineArray[Int64, MAX_RANK]
-    var stops: InlineArray[Int64, MAX_RANK]
-    var steps: InlineArray[Int64, MAX_RANK]
+    var starts: Array[Int64, MAX_RANK]
+    var stops: Array[Int64, MAX_RANK]
+    var steps: Array[Int64, MAX_RANK]
     var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
@@ -662,9 +662,9 @@ def mutable_store_slice_dispatcher(
     var padded_src_shape = _pad_shape_to_max_rank(src_shape_obj, src_rank)
 
     var pad_count = MAX_RANK - dst_rank
-    var padded_starts = InlineArray[Int64, MAX_RANK](fill=0)
-    var padded_stops = InlineArray[Int64, MAX_RANK](fill=1)
-    var padded_steps = InlineArray[Int64, MAX_RANK](fill=1)
+    var padded_starts = Array[Int64, MAX_RANK](fill=0)
+    var padded_stops = Array[Int64, MAX_RANK](fill=1)
+    var padded_steps = Array[Int64, MAX_RANK](fill=1)
     for i in range(dst_rank):
         padded_starts[pad_count + i] = Int64(Int(py=starts_obj[i]))
         padded_stops[pad_count + i] = Int64(Int(py=stops_obj[i]))

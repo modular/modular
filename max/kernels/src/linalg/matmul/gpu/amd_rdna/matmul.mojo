@@ -347,14 +347,14 @@ def _load_tile_regs[
     k_offset: Int,
     max_rows: Int,
     tid: Int,
-) -> InlineArray[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD]:
+) -> Array[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD]:
     """Issue a tile's coalesced global loads into a register buffer.
 
     Load phase of the register-staged pipeline (drained by _store_tile_regs);
     lets the caller overlap the next K-tile's global loads with WMMA on the
     current tile. Coalesced (transpose_b=True) path only.
     """
-    var regs = InlineArray[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD](
+    var regs = Array[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD](
         fill=SIMD[dtype, VECTOR_WIDTH](0)
     )
     comptime total_vectors = BLOCK_ROWS * BLOCK_K // VECTOR_WIDTH
@@ -383,7 +383,7 @@ def _store_tile_regs[
     smem: UnsafePointer[
         mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ],
-    regs: InlineArray[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD],
+    regs: Array[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD],
     tid: Int,
 ):
     """Drain a register-loaded tile into LDS."""
@@ -412,9 +412,7 @@ def _compute_ktile[
     b_smem: UnsafePointer[
         mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
     ],
-    mut c_accum: InlineArray[
-        SIMD[s_type, CD_FRAG_SIZE], WARP_TILE_M * WARP_TILE_N
-    ],
+    mut c_accum: Array[SIMD[s_type, CD_FRAG_SIZE], WARP_TILE_M * WARP_TILE_N],
     warp_m: Int,
     warp_n: Int,
     effective_lane: Int,
@@ -425,7 +423,7 @@ def _compute_ktile[
     ``b_smem`` are the current tile's A and B buffers.
     """
     comptime for k_inner in range(K_ITERS):
-        var a_frag = InlineArray[SIMD[a_type, AB_FRAG_SIZE], WARP_TILE_M](
+        var a_frag = Array[SIMD[a_type, AB_FRAG_SIZE], WARP_TILE_M](
             fill=SIMD[a_type, AB_FRAG_SIZE](0)
         )
         comptime for wm in range(WARP_TILE_M):
@@ -436,7 +434,7 @@ def _compute_ktile[
             a_frag[wm] = a_smem.load[width=AB_FRAG_SIZE](
                 a_row * SMEM_STRIDE + k_base
             )
-        var b_frag = InlineArray[SIMD[b_type, AB_FRAG_SIZE], WARP_TILE_N](
+        var b_frag = Array[SIMD[b_type, AB_FRAG_SIZE], WARP_TILE_N](
             fill=SIMD[b_type, AB_FRAG_SIZE](0)
         )
         comptime for wn in range(WARP_TILE_N):
@@ -543,7 +541,7 @@ def _wmma_matmul_kernel[
     var effective_lane = lid % 16
 
     # Initialize C accumulators (WARP_TILE_M * WARP_TILE_N tiles per warp)
-    var c_accum = InlineArray[SIMD[s_type, CD_FRAG_SIZE], NUM_C_TILES](
+    var c_accum = Array[SIMD[s_type, CD_FRAG_SIZE], NUM_C_TILES](
         fill=SIMD[s_type, CD_FRAG_SIZE](0)
     )
 

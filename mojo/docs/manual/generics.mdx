@@ -519,7 +519,7 @@ use an argument.
 ```mojo
 # size is compile-time: the compiler specializes
 def fixed[size: Int]():
-    var buf = InlineArray[Int, size](fill=0)
+    var buf = Array[Int, size](fill=0)
 
 # size is runtime: no specialization
 def dynamic(size: Int):

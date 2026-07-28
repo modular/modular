@@ -26,11 +26,10 @@ from std.utils.index import IndexList
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_elementwise[n: Int](mut b: Bencher) raises:
-    var vector = InlineArray[Scalar[DType.int], n](fill=-1)
+    var vector = Array[Scalar[DType.int], n](fill=-1)
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {mut vector}:
         @always_inline
         @parameter
         def func[simd_width: Int, alignment: Int = 1](idx: Coord):
@@ -40,8 +39,7 @@ def bench_elementwise[n: Int](mut b: Bencher) raises:
             Coord(IndexList[1](n)), DeviceContext(api="cpu")
         )
 
-    b.iter[call_fn]()
-    _ = vector
+    b.iter(call_fn)
 
 
 def main() raises:

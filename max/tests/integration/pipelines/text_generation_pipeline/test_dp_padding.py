@@ -14,16 +14,19 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import MHAKVCacheParams
-from max.pipelines.context import TextContext
+from max.pipelines.context import TextAndVisionContext, TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import (
     BatchType,
@@ -36,6 +39,30 @@ from max.serve.scheduler.batch_constructor.text_batch_constructor import (
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.dp_padding import DPBatchPadder, DPPaddingInfo
 from test_common.context_utils import create_text_context
+
+
+@dataclass(kw_only=True)
+class _KimiLikeContext(TextAndVisionContext):
+    """Mimics KimiK2_5TextAndVisionContext: extra fields all have defaults."""
+
+    grid_thws: npt.NDArray[np.int64] = field(
+        default_factory=lambda: np.empty((0, 3), dtype=np.int64)
+    )
+
+
+@dataclass(kw_only=True)
+class _Gemma4LikeContext(TextAndVisionContext):
+    """Mimics Gemma4Context: a required constructor field with no default."""
+
+    mm_token_type_ids: npt.NDArray[np.int64]
+
+    @classmethod
+    def _padding_context_required_fields(cls) -> dict[str, Any]:
+        return {
+            **super()._padding_context_required_fields(),
+            "mm_token_type_ids": np.zeros(1, dtype=np.int64),
+        }
+
 
 PadderKV = tuple[DPBatchPadder, PagedKVCacheManager, MagicMock]
 UnevenTGBatch = tuple[
@@ -59,6 +86,7 @@ def _make_padder(
     max_batch_size: int = 128,
     max_length: int = 100,
     pipeline: MagicMock | None = None,
+    context_type: type[TextContext] = TextContext,
 ) -> tuple[DPBatchPadder, PagedKVCacheManager, MagicMock]:
     """Creates a DPBatchPadder, PagedKVCacheManager, and pipeline mock."""
     if pipeline is None:
@@ -86,6 +114,7 @@ def _make_padder(
         max_length=max_length,
         model_name="test-model",
         pipeline=pipeline,
+        context_type=context_type,
     )
     return padder, kv_manager, pipeline
 
@@ -320,6 +349,73 @@ def test_dummies_are_appended_to_short_replica(padder_kv: PadderKV) -> None:
     # Dummies should be the last 2 entries on replica 1.
     for ctx in padded_inputs.batches[1][1:]:
         assert ctx.request_id in dummy_ids
+
+    _release_info(info, kv_manager, pipeline)
+
+
+# ---------------------------------------------------------------------------
+# Context type of padding dummies
+# ---------------------------------------------------------------------------
+
+
+def _pad_uneven_batch(
+    padder: DPBatchPadder, kv_manager: PagedKVCacheManager
+) -> tuple[TextContext, DPPaddingInfo]:
+    """Pads a [2, 1] TG batch and returns the dummy context plus its info."""
+    ctxs_r0 = _make_contexts(2)
+    ctxs_r1 = _make_contexts(1)
+    _claim_and_alloc(kv_manager, ctxs_r0, replica_idx=0)
+    _claim_and_alloc(kv_manager, ctxs_r1, replica_idx=1)
+
+    padded_inputs, info = padder.pad_batch(
+        _make_inputs([ctxs_r0, ctxs_r1], batch_type=BatchType.TG)
+    )
+    assert info is not None
+    return padded_inputs.batches[1][1], info
+
+
+def test_padding_dummies_use_vision_context_type() -> None:
+    """VLM padders build dummies of the arch's TextAndVisionContext subclass.
+
+    The overlap pipeline's vision drive narrows every context in an
+    executed batch via `isinstance(ctx, TextAndVisionContext)`, so plain
+    TextContext dummies crash VLM decode with DP padding.
+    """
+    padder, kv_manager, pipeline = _make_padder(
+        dp_size=2, context_type=_KimiLikeContext
+    )
+    dummy, info = _pad_uneven_batch(padder, kv_manager)
+
+    assert isinstance(dummy, TextAndVisionContext)
+    assert type(dummy) is _KimiLikeContext
+    assert dummy._is_padding_ctx
+    # Empty vision fields: the dummy is a valid "no image" context.
+    assert not dummy.needs_vision_encoding
+
+    _release_info(info, kv_manager, pipeline)
+
+
+def test_padding_dummies_default_to_plain_text_context() -> None:
+    """Text-only archs (the default context type) keep plain TextContext dummies."""
+    padder, kv_manager, pipeline = _make_padder(dp_size=2)
+    dummy, info = _pad_uneven_batch(padder, kv_manager)
+
+    assert type(dummy) is TextContext
+    assert dummy._is_padding_ctx
+
+    _release_info(info, kv_manager, pipeline)
+
+
+def test_padding_dummies_subclass_required_fields() -> None:
+    """Context subclasses with required fields supply their own padding defaults."""
+    padder, kv_manager, pipeline = _make_padder(
+        dp_size=2, context_type=_Gemma4LikeContext
+    )
+    dummy, info = _pad_uneven_batch(padder, kv_manager)
+
+    assert type(dummy) is _Gemma4LikeContext
+    assert isinstance(dummy, TextAndVisionContext)
+    assert not dummy.needs_vision_encoding
 
     _release_info(info, kv_manager, pipeline)
 

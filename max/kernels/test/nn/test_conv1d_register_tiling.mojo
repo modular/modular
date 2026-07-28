@@ -102,15 +102,15 @@ def conv1d_register_tiling(
 
 
 def test_conv1d_register_tiling() raises:
-    var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
+    var output_stack = Array[Scalar[type], Int(output_shape.product())](
         uninitialized=True
     )
     var output = TileTensor(output_stack, output_shape)
-    var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
+    var input_stack = Array[Scalar[type], Int(input_shape.product())](
         uninitialized=True
     )
     var input = TileTensor(input_stack, input_shape)
-    var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
+    var filter_stack = Array[Scalar[type], Int(filter_shape.product())](
         uninitialized=True
     )
     var filter = TileTensor(filter_stack, filter_shape)

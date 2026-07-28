@@ -20,7 +20,7 @@ from std.collections import Deque
 from std.collections.deque import _DequeIter
 from std.collections.dict import _DictEntryIter, _DictKeyIter, _DictValueIter
 from std.collections.list import _ListIter
-from std.collections.inline_array import _InlineArrayIter
+from std.collections.array import _ArrayIter
 from std.hashlib import Hasher
 
 from std.collections.span import Span, _SpanIter
@@ -103,9 +103,7 @@ def reversed[T: Copyable](ref value: List[T]) -> type_of(value.__reversed__()):
 
 def reversed[
     T: Copyable, size: Int
-](ref value: InlineArray[T, size]) -> _InlineArrayIter[
-    T, size, origin_of(value), False
-]:
+](ref value: Array[T, size]) -> _ArrayIter[T, size, origin_of(value), False]:
     """Get a reversed iterator of the input array.
 
     **Note**: iterators are currently non-raising.

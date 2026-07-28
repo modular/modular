@@ -218,7 +218,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
@@ -248,7 +248,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     comptime InputTileType = TileTensor[
         in_dtype, type_of(in_layout), ImmutAnyOrigin
     ]
-    var in_tiles = InlineArray[InputTileType, ngpus](uninitialized=True)
+    var in_tiles = Array[InputTileType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tiles[i] = TileTensor(in_dev[i], in_layout).as_immut()
     for i in range(ngpus):
@@ -424,7 +424,7 @@ def test_fused_allreduce_rmsnorm_noquant[
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     var temp_bytes = ngpus * size_of[dtype]() * length
@@ -454,7 +454,7 @@ def test_fused_allreduce_rmsnorm_noquant[
     comptime InputTileType = TileTensor[
         dtype, type_of(in_layout), ImmutAnyOrigin
     ]
-    var in_tiles = InlineArray[InputTileType, ngpus](uninitialized=True)
+    var in_tiles = Array[InputTileType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tiles[i] = TileTensor(in_dev[i], in_layout).as_immut()
     for i in range(ngpus):
@@ -582,7 +582,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
@@ -612,7 +612,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     comptime InputTileType = TileTensor[
         in_dtype, type_of(in_layout), ImmutAnyOrigin
     ]
-    var in_tiles = InlineArray[InputTileType, ngpus](uninitialized=True)
+    var in_tiles = Array[InputTileType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tiles[i] = TileTensor(in_dev[i], in_layout).as_immut()
     for i in range(ngpus):
@@ -851,7 +851,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     var temp_bytes = ngpus * size_of[dtype]() * length
@@ -881,7 +881,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     comptime InputTileType = TileTensor[
         dtype, type_of(in_layout), ImmutAnyOrigin
     ]
-    var in_tiles = InlineArray[InputTileType, ngpus](uninitialized=True)
+    var in_tiles = Array[InputTileType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tiles[i] = TileTensor(in_dev[i], in_layout).as_immut()
     for i in range(ngpus):

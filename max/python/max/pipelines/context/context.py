@@ -23,6 +23,7 @@ import numpy as np
 import numpy.typing as npt
 from max.pipelines.request import RequestID
 from max.pipelines.request.open_responses import OutputImageContent
+from typing_extensions import Self
 
 from .eos_tracking import EOSTracker
 from .log_probabilities import LogProbabilities
@@ -340,13 +341,22 @@ class GrammarEnforcementState:
         Returns:
             True if the matcher should consume the token.
         """
-        # Check thinking region transitions FIRST (higher priority).
-        # Thinking-end delimiter is NOT grammar content — return False
-        # so the caller skips the matcher even though enforcement resumed.
         if (
             self.thinking_region_delimiters is not None
             and self._in_thinking_region
         ):
+            if (
+                self.tool_region is not None
+                and self.tool_region.start_token_ids is not None
+                and self._check_sequence_match(
+                    token, self.tool_region.start_token_ids
+                )
+            ):
+                self._in_thinking_region = False
+                self._thinking_match_buffer.clear()
+                self.grammar_enforced = True
+                return True
+
             if (
                 self.thinking_region_delimiters.end_token_ids is not None
                 and self._check_sequence_match_with_buffer(
@@ -575,6 +585,42 @@ class TextContext:
                 raise ValueError(
                     f"target_endpoint must contain a port if using tcp: {self.target_endpoint}"
                 )
+
+    @classmethod
+    def new_padding_context(cls, *, max_length: int, model_name: str) -> Self:
+        """Creates a single-token dummy context for DP batch padding.
+
+        DP batch padding must construct dummies of the architecture's
+        concrete context type: for VLMs the overlap pipeline narrows every
+        context in an executed batch to :obj:`TextAndVisionContext`, so a
+        plain ``TextContext`` dummy would fail that check. Subclasses with
+        required constructor fields supply empty defaults via
+        :meth:`_padding_context_required_fields`.
+
+        Args:
+            max_length: The maximum sequence length for the dummy context.
+            model_name: The model name recorded on the dummy context.
+
+        Returns:
+            A fresh padding dummy of type ``cls``.
+        """
+        return cls(
+            max_length=max_length,
+            tokens=TokenBuffer(np.zeros(1, dtype=np.int64)),
+            model_name=model_name,
+            _is_padding_ctx=True,
+            **cls._padding_context_required_fields(),
+        )
+
+    @classmethod
+    def _padding_context_required_fields(cls) -> dict[str, Any]:
+        """Returns empty defaults for required subclass constructor fields.
+
+        Subclasses that add required (no-default) constructor fields must
+        override this so :meth:`new_padding_context` can construct a valid
+        empty dummy of the subclass type.
+        """
+        return {}
 
     @property
     def is_done(self) -> bool:
@@ -1190,6 +1236,14 @@ class TextAndVisionContext(TextContext):
 
         self._validate_state()
 
+    @classmethod
+    def _padding_context_required_fields(cls) -> dict[str, Any]:
+        """Supplies empty vision tokens so padding dummies are valid "no image" contexts."""
+        return {
+            **super()._padding_context_required_fields(),
+            "vision_token_ids": [],
+        }
+
     @property
     def image_idx(self) -> int:
         """Index of the next unencoded image in the prompt."""
@@ -1200,11 +1254,27 @@ class TextAndVisionContext(TextContext):
 
     @property
     def next_images(self) -> list[ImageMetadata]:
-        """Returns the images that are not yet encoded."""
+        """Unencoded images."""
         image_idx = self.image_idx
         if len(self.images) == 0 or self.image_idx == len(self.images):
             return []
         return self.images[image_idx:]
+
+    @property
+    def next_images_in_window(self) -> list[ImageMetadata]:
+        """Unencoded images overlapping the active window.
+
+        An image the window bisects is included whole (the encoder
+        cannot split an image); an image fully ahead of the window is
+        deferred to the iteration whose chunk covers it.
+        """
+        start = self.tokens.processed_length
+        end = self.tokens.current_position
+        return [
+            img
+            for img in self.next_images
+            if img.start_idx < end and img.end_idx > start
+        ]
 
     @property
     def needs_vision_encoding(self) -> bool:

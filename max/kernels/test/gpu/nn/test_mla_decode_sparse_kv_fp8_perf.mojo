@@ -99,6 +99,8 @@ def bench_sparse_kv_fp8[
     # A/B: False = unfolded per-position baseline; True = shared-index fold
     # (one identity-ordered topk list shared by every q position).
     shared_index: Bool = False,
+    # Output dtype defaults to BF16; pass q_type explicitly for non-FP8 callers.
+    output_type: DType = DType.bfloat16,
 ](
     name: StringLiteral,
     batch_size: Int,
@@ -174,7 +176,7 @@ def bench_sparse_kv_fp8[
     ctx.enqueue_memset(q_device, 0)
 
     var out_size = total_q_tokens * num_heads * V_DEPTH
-    var out_device = ctx.enqueue_create_buffer[q_type](out_size)
+    var out_device = ctx.enqueue_create_buffer[output_type](out_size)
 
     # Per-query-token topk indices: deterministic permutation, in
     # physical form block_id * PAGE_SIZE + tok_in_page (identity LUT).
@@ -368,7 +370,20 @@ def main() raises:
                 bench_sparse_kv_fp8[
                     DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=False
                 ](
-                    "glm52_q1_splitk",
+                    "glm52_q1_splitk_bf16q_4wg",
+                    bs,
+                    2048,
+                    ctx,
+                    topk=2048,
+                    q_max_seq_len=1,
+                )
+                bench_sparse_kv_fp8[
+                    DType.float8_e4m3fn,
+                    DType.float8_e4m3fn,
+                    8,
+                    shared_index=False,
+                ](
+                    "glm52_q1_splitk_fp8q_3wg",
                     bs,
                     2048,
                     ctx,
@@ -378,7 +393,20 @@ def main() raises:
                 bench_sparse_kv_fp8[
                     DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=False
                 ](
-                    "glm52_q1_splitk",
+                    "glm52_q1_splitk_bf16q_4wg",
+                    bs,
+                    1024,
+                    ctx,
+                    topk=2048,
+                    q_max_seq_len=1,
+                )
+                bench_sparse_kv_fp8[
+                    DType.float8_e4m3fn,
+                    DType.float8_e4m3fn,
+                    8,
+                    shared_index=False,
+                ](
+                    "glm52_q1_splitk_fp8q_3wg",
                     bs,
                     1024,
                     ctx,

@@ -72,7 +72,9 @@ def _metal_print_write(text: StringSlice[_]):
         # Copy up to 64 bytes from the source.
         var remaining = length - offset
         var copy_len = remaining if remaining < _CHUNK_SIZE else _CHUNK_SIZE
-        unsafe_memcpy(dest=chunk, src=data_ptr + offset, count=copy_len)
+        unsafe_memcpy(
+            dest=chunk, src=data_ptr.unsafe_offset(offset), count=copy_len
+        )
 
         # Emit the chunk.
         _metal_os_log_chunk(chunk)

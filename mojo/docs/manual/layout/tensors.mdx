@@ -177,17 +177,17 @@ tensors for use on the CPU.
 To create a `LayoutTensor` for use on the CPU, you need a `Layout` and a block
 of memory to store the tensor data. A common way to allocate memory for a
 `LayoutTensor` is to use an
-[`InlineArray`](/docs/std/collections/inline_array/InlineArray/):
+[`Array`](/docs/std/collections/array/Array/):
 
 ```mojo
 comptime rows = 8
 comptime columns = 16
 comptime layout = Layout.row_major(rows, columns)
-var storage = InlineArray[Float32, rows * columns](uninitialized=True)
+var storage = Array[Float32, rows * columns](uninitialized=True)
 var tensor = LayoutTensor[DType.float32, layout](storage).fill(0)
 ```
 
-`InlineArray` is a statically-sized, stack-allocated array, so it's a fast and
+`Array` is a statically-sized, stack-allocated array, so it's a fast and
 efficient way to allocate storage for most kinds of `LayoutTensor`. There are
 target-dependent limits on how much memory can be allocated this way, however.
 
@@ -373,7 +373,7 @@ comptime tile_size = 32
 comptime tile_layout = Layout.row_major(tile_size, tile_size)
 comptime tiler_layout = Layout.row_major(rows, columns)
 comptime tiled_layout = blocked_product(tile_layout, tiler_layout)
-var storage = InlineArray[Float32, tiled_layout.size()](uninitialized=True)
+var storage = Array[Float32, tiled_layout.size()](uninitialized=True)
 for i in range(comptime (tiled_layout.size())):
     storage[i] = Float32(i)
 var tensor = LayoutTensor[DType.float32, tiled_layout](storage)
@@ -439,7 +439,7 @@ tiles.
 
 ```mojo
 comptime buf_size = 128
-var storage = InlineArray[Int16, buf_size](uninitialized=True)
+var storage = Array[Int16, buf_size](uninitialized=True)
 for i in range(buf_size):
     storage[i] = Int16(i)
 comptime tile_layout = Layout.row_major(4, 4)

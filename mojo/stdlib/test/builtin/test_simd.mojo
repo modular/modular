@@ -161,6 +161,31 @@ def test_init_from_index() raises:
     assert_equal(a_str, String(Int256(a)))
 
 
+@fieldwise_init
+struct MyIntable(Intable):
+    var value: Int
+
+    def __int__(self) -> Int:
+        return self.value
+
+
+def test_init_from_intable() raises:
+    var v = MyIntable(42)
+    assert_equal(Int(v), 42)
+    assert_equal(UInt(v), 42)
+    assert_equal(UInt8(v), 42)
+    assert_equal(Int64(v), 42)
+
+    # A pointer is `Intable`, so its address is available as any integer scalar.
+    var x = 1
+    var p = Pointer(to=x)
+    assert_equal(UInt(p), UInt(Int(p)))
+    assert_equal(UInt64(p), UInt64(Int(p)))
+
+    # `Floatable` conversions still win for types that are also `Intable`.
+    assert_equal(Float64(Int(3)), 3.0)
+
+
 def test_from_bits() raises:
     assert_true(Scalar[DType.bool](from_bits=UInt8(0x01)))
     assert_false(Scalar[DType.bool](from_bits=UInt8(0x00)))
@@ -435,7 +460,7 @@ def test_issue_30237() raises:
     comptime dtype = DType.float32
     comptime simd_width = 1
     comptime coefficients_len = 7
-    var coefficients: InlineArray[SIMD[dtype, simd_width], coefficients_len] = [
+    var coefficients: Array[SIMD[dtype, simd_width], coefficients_len] = [
         4.89352455891786e-03,
         6.37261928875436e-04,
         1.48572235717979e-05,

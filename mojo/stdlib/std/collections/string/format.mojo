@@ -134,8 +134,8 @@ def _comptime_list_to_span[
 ]() -> Span[T, ImmStaticOrigin]:
     """Convert a comptime list to a runtime span of static constant origin."""
 
-    def list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
-        var array = InlineArray[T, len(list)](uninitialized=True)
+    def list_to_array[list: List[T]]() -> Array[T, len(list)]:
+        var array = Array[T, len(list)](uninitialized=True)
 
         comptime for i in range(len(list)):
             Pointer(to=array[i]).unsafe_write(materialize[list[i].copy()]())
@@ -334,7 +334,7 @@ struct _FormatUtils:
         var raised_manual_index = Optional[Int](None)
         var raised_automatic_index = Optional[Int](None)
         var raised_kwarg_field = Optional[StringSlice[FormatOrigin]](None)
-        comptime n_args = Ts.size
+        comptime n_args = Ts.length
         comptime `}` = UInt8(ord("}"))
         comptime `{` = UInt8(ord("{"))
         comptime l_err = "there is a single curly { left unclosed or unescaped"
@@ -351,7 +351,7 @@ struct _FormatUtils:
             if skip_next:
                 skip_next = False
                 continue
-            if fmt_ptr[i] == `{`:
+            if fmt_ptr[unsafe_offset=i] == `{`:
                 if not start:
                     start = i
                     continue
@@ -361,10 +361,12 @@ struct _FormatUtils:
                 entries.append(EntryType(start.value(), i, field=False))
                 start = None
                 continue
-            elif fmt_ptr[i] == `}`:
+            elif fmt_ptr[unsafe_offset=i] == `}`:
                 if not start:
                     # python escapes double curlies
-                    if (i + 1) < fmt_len and fmt_ptr[i + 1] == `}`:
+                    if (i + 1) < fmt_len and fmt_ptr[
+                        unsafe_offset=i + 1
+                    ] == `}`:
                         entries.append(EntryType(i, i + 1, field=True))
                         total_estimated_entry_byte_width += 2
                         skip_next = True
@@ -525,10 +527,12 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
     ) raises -> Bool:
         @always_inline("nodebug")
         def _build_slice(
-            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
+            p: Pointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(
-                unsafe_from_utf8=Span(unsafe_ptr=p + start, length=end - start)
+                unsafe_from_utf8=Span[UInt8, p.origin](
+                    unsafe_ptr=p.unsafe_offset(start), length=end - start
+                )
             )
 
         var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
@@ -537,7 +541,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
         var exclamation_index = -1
         var idx = 0
         while idx < field_len:
-            if field_ptr[idx] == UInt8(ord("!")):
+            if field_ptr[unsafe_offset=idx] == UInt8(ord("!")):
                 exclamation_index = idx
                 break
             idx += 1
@@ -545,7 +549,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
         if exclamation_index != -1:
             if new_idx == field_len:
                 raise Error("Empty conversion flag.")
-            var conversion_flag = field_ptr[new_idx]
+            var conversion_flag = field_ptr[unsafe_offset=new_idx]
             if field_len - new_idx > 1 or (
                 conversion_flag not in Self.supported_conversion_flags
             ):
@@ -604,7 +608,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
         # alias a_value = UInt8(ord("a")) # TODO
 
         def _format(idx: Int) {imm self, imm args, mut writer}:
-            comptime for i in range(Ts.size):
+            comptime for i in range(Ts.length):
                 if i == idx:
                     var flag = self.conversion_flag
                     var empty = flag == 0

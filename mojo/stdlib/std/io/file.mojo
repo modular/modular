@@ -302,7 +302,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         var file = open(file_name, "r")
 
         # Allocate and load 8 elements
-        var buffer = InlineArray[Float32, length=8](fill=0)
+        var buffer = Array[Float32, length=8](fill=0)
         var bytes = file.read(buffer)
         print("bytes read", bytes)
 
@@ -313,7 +313,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         _ = file.seek(2 * size_of[DType.float32](), SEEK_CUR)
 
         # Allocate and load 8 more elements from file handle seek position
-        var buffer2 = InlineArray[Float32, length=8](fill=0)
+        var buffer2 = Array[Float32, length=8](fill=0)
         var bytes2 = file.read(buffer2)
 
         var eleventh_element = buffer2[0]
@@ -606,7 +606,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             var fd = self._get_raw_fd()
             var bytes_written = external_call["write", c_ssize_t](
                 fd,
-                bytes.unsafe_ptr() + total_written,
+                bytes.unsafe_ptr().unsafe_offset(total_written),
                 len(bytes) - total_written,
             )
 

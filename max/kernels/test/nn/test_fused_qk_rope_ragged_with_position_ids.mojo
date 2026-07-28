@@ -156,7 +156,7 @@ def test_fused_qk_rope[
     var q = TileTensor(q_buffer, q_layout)
 
     # Create input_row_offsets tensor using TileTensor.
-    var input_row_offsets_stack = InlineArray[UInt32, batch_size + 1](
+    var input_row_offsets_stack = Array[UInt32, batch_size + 1](
         uninitialized=True
     )
     for i in range(batch_size):
@@ -177,7 +177,7 @@ def test_fused_qk_rope[
         type_of(position_ids_static).LayoutType,
         ImmutAnyOrigin,
     ](
-        position_ids_static._storage.as_immutable().unsafe_origin_cast[
+        position_ids_static._storage.as_imm().unsafe_origin_cast[
             ImmutAnyOrigin
         ](),
         position_ids_static.layout,

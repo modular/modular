@@ -116,7 +116,7 @@ struct CStringSlice[origin: ImmOrigin](
         """
         _validate_bytes(slice.as_bytes())
         # Safety: _validate_bytes ensures span is a non-null terminated cstring.
-        self._data = slice.unsafe_ptr().bitcast[Int8]()
+        self._data = slice.unsafe_ptr().unsafe_bitcast[Int8]()
 
     @always_inline
     def __init__(out self, span: Span[Byte, Self.origin]) raises:
@@ -131,7 +131,7 @@ struct CStringSlice[origin: ImmOrigin](
         """
         _validate_bytes(span)
         # Safety: _validate_bytes ensures span is a non-null terminated cstring.
-        self._data = span.unsafe_ptr().bitcast[Int8]()
+        self._data = span.unsafe_ptr().unsafe_bitcast[Int8]()
 
     @always_inline
     def __eq__(self, rhs_same: Self) -> Bool:

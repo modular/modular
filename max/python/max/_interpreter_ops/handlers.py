@@ -31,10 +31,14 @@ from max._core.dialects import builtin, kgen, mo, mosh
 from max._interpreter_ops import (
     conv_gc,
     elementwise_binary_gc,
+    group_norm_gc,
+    layer_norm_gc,
     matmul_gc,
     pooling_gc,
     reduce_axis_gc,
     resize_gc,
+    rms_norm_gc,
+    select_gc,
     shape_rearrange_gc,
     topk_gc,
     unary_elementwise_gc,
@@ -1357,42 +1361,35 @@ _register_reduce_axis_handlers()
 def _handle_layer_norm(
     op: mo.ReduceLayerNormOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.reduce.layer_norm by dispatching to Mojo layer_norm kernel.
+    """Routes eager layer_norm through a GC model.
+
+    Looks up the rank-2 layer_norm :class:`~max.engine.Model` for the
+    realized input's device and dtype (see
+    :func:`layer_norm_gc.layer_norm_model`), view-shims the input to
+    canonical rank 2 ``[rows, features]``, executes the model, and
+    view-shims the result back. All views are zero-copy.
 
     Args:
-        op: The layer_norm operation.
-        inputs: Input buffers - input tensor, gamma, beta, epsilon.
-            Note: epsilon is always on CPU (MO_SingleDeviceWithHostOperands).
+        op: The layer_norm operation being handled.
+        inputs: Input buffers -- input tensor, gamma, beta, epsilon.
+            Epsilon is always on CPU (MO_SingleDeviceWithHostOperands).
 
     Returns:
-        List containing the normalized tensor buffer.
+        A single-element list holding the normalized tensor buffer.
     """
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
+    x, gamma, beta, epsilon = inputs
+    assert isinstance(x, Buffer)
+    assert isinstance(gamma, Buffer)
+    assert isinstance(beta, Buffer)
+    assert isinstance(epsilon, Buffer)
 
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # gamma
-    assert isinstance(inputs[2], Buffer)  # beta
-    assert isinstance(inputs[3], Buffer)  # epsilon (always CPU)
+    model = layer_norm_gc.layer_norm_model(x.device, x.dtype)
 
-    # Output shape = input shape (trivial, no Mojo shape delegation)
-    output = Buffer(
-        shape=inputs[0].shape,
-        dtype=inputs[0].dtype,
-        device=target_device,
-    )
+    rows, features = layer_norm_gc.canonical_rank2(x.shape)
+    x_view = x.view(x.dtype, (rows, features))
+    (out,) = model(x_view, gamma, beta, epsilon)
 
-    ops.layer_norm_ops.LayerNorm(
-        output,
-        inputs[0],
-        inputs[1],
-        inputs[2],
-        inputs[3],
-        target_device._device_context_ptr(),
-    )
-
-    return [output]
+    return [out.view(out.dtype, x.shape)]
 
 
 # RMS norm operations
@@ -1402,44 +1399,37 @@ def _handle_layer_norm(
 def _handle_rms_norm(
     op: mo.ReduceRmsNormOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.reduce.rms_norm by dispatching to Mojo rms_norm kernel.
+    """Routes eager rms_norm through a GC model.
+
+    Looks up the rank-2 rms_norm :class:`~max.engine.Model` for the realized
+    input's device, dtype, and compile-time ``multiply_before_cast`` variant
+    (see :func:`rms_norm_gc.rms_norm_model`), view-shims the input to
+    canonical rank 2 ``[rows, features]``, executes the model, and
+    view-shims the result back. All views are zero-copy.
 
     Args:
-        op: The rms_norm operation.
-        inputs: Input buffers - input tensor, weight, epsilon, weight_offset.
-            Epsilon and weight_offset are always on CPU
+        op: The rms_norm operation being handled.
+        inputs: Input buffers -- input tensor, weight, epsilon,
+            weight_offset. Epsilon and weight_offset are always on CPU
             (MO_SingleDeviceWithHostOperands).
 
     Returns:
-        List containing the normalized tensor buffer.
+        A single-element list holding the normalized tensor buffer.
     """
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
+    x, weight, epsilon, weight_offset = inputs
+    assert isinstance(x, Buffer)
+    assert isinstance(weight, Buffer)
+    assert isinstance(epsilon, Buffer)
+    assert isinstance(weight_offset, Buffer)
 
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # weight
-    assert isinstance(inputs[2], Buffer)  # epsilon (always CPU)
-    assert isinstance(inputs[3], Buffer)  # weight_offset (always CPU)
+    multiply_before_cast = bool(op.multiply_before_cast)
+    model = rms_norm_gc.rms_norm_model(x.device, x.dtype, multiply_before_cast)
 
-    output = Buffer(
-        shape=inputs[0].shape,
-        dtype=inputs[0].dtype,
-        device=target_device,
-    )
+    rows, features = rms_norm_gc.canonical_rank2(x.shape)
+    x_view = x.view(x.dtype, (rows, features))
+    (out,) = model(x_view, weight, epsilon, weight_offset)
 
-    multiply_before_cast = int(bool(op.multiply_before_cast))
-
-    ops.rms_norm_ops.RmsNorm(
-        output,
-        inputs[0],
-        inputs[1],
-        inputs[2],
-        (inputs[3], multiply_before_cast),
-        target_device._device_context_ptr(),
-    )
-
-    return [output]
+    return [out.view(out.dtype, x.shape)]
 
 
 # Group norm operations
@@ -1449,43 +1439,48 @@ def _handle_rms_norm(
 def _handle_group_norm(
     op: mo.ReduceGroupNormOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.reduce.group_norm by dispatching to Mojo group_norm kernel.
+    """Routes eager group_norm through a GC model (GPU only).
+
+    Looks up the group_norm :class:`~max.engine.Model` for the realized
+    input's device and dtype (see :func:`group_norm_gc.group_norm_model`),
+    view-shims the input to canonical rank 4 ``[n, c, h, 1]`` (spatial dims
+    collapsed into ``h``), executes the model, and view-shims the result
+    back. All views are zero-copy.
 
     Args:
-        op: The group_norm operation.
-        inputs: Input buffers - input tensor, gamma, beta, epsilon,
+        op: The group_norm operation being handled.
+        inputs: Input buffers -- input tensor, gamma, beta, epsilon,
             num_groups. Epsilon and num_groups are always on CPU
             (MO_SingleDeviceWithHostOperands).
 
     Returns:
-        List containing the normalized tensor buffer.
+        A single-element list holding the normalized tensor buffer.
+
+    Raises:
+        NotImplementedError: On CPU -- group_norm's GC kernel
+            (``nn.normalization.group_norm``) is GPU-only today.
     """
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
+    x, gamma, beta, epsilon, num_groups = inputs
+    assert isinstance(x, Buffer)
+    assert isinstance(gamma, Buffer)
+    assert isinstance(beta, Buffer)
+    assert isinstance(epsilon, Buffer)
+    assert isinstance(num_groups, Buffer)
 
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # gamma
-    assert isinstance(inputs[2], Buffer)  # beta
-    assert isinstance(inputs[3], Buffer)  # epsilon (always CPU)
-    assert isinstance(inputs[4], Buffer)  # num_groups (always CPU, int32)
+    # See KERN-3267: no CPU kernel yet.
+    if x.device.is_host:
+        raise NotImplementedError(
+            "group_norm is not supported on CPU in the eager interpreter"
+            " (nn.normalization.group_norm's GC kernel is GPU-only)."
+        )
 
-    output = Buffer(
-        shape=inputs[0].shape,
-        dtype=inputs[0].dtype,
-        device=target_device,
-    )
+    model = group_norm_gc.group_norm_model(x.device, x.dtype)
 
-    ops.group_norm_ops.GroupNorm(
-        output,
-        inputs[0],
-        inputs[1],
-        inputs[2],
-        (inputs[3], inputs[4]),
-        target_device._device_context_ptr(),
-    )
+    n, c, h, w = group_norm_gc.canonical_shape(x.shape)
+    x_view = x.view(x.dtype, (n, c, h, w))
+    (out,) = model(x_view, gamma, beta, epsilon, num_groups)
 
-    return [output]
+    return [out.view(out.dtype, x.shape)]
 
 
 # Range operations
@@ -1653,41 +1648,36 @@ def _handle_random_uniform(
 def _handle_select(
     op: mo.SelectOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.select by dispatching to Mojo select kernel.
+    """Dispatches eager select (``cond ? x : y``) to its GC model.
 
-    Performs element-wise selection: result = cond ? x : y.
+    The model is compiled once per (device, value dtype) at rank 1 (see
+    :func:`select_gc.select_model`); all three operands are flattened around
+    the call and the result reshaped back (zero-copy views). ``cond``/``x``/
+    ``y`` arrive already broadcast to one common shape by the RMO->MO
+    lowering, so a single rank-1 dtype keys the model exactly.
 
     Args:
-        op: The select operation.
-        inputs: Input buffers - cond (bool tensor), x (true values),
-            y (false values).
+        op: The select operation being handled.
+        inputs: The realized input buffers (``cond``, ``x``, ``y``).
 
     Returns:
-        List containing the selected tensor buffer.
+        A single-element list holding the result buffer.
     """
-    assert isinstance(inputs[0], Buffer)  # cond
-    assert isinstance(inputs[1], Buffer)  # x (true values)
-    assert isinstance(inputs[2], Buffer)  # y (false values)
+    cond, x, y = inputs
+    assert isinstance(cond, Buffer)
+    assert isinstance(x, Buffer)
+    assert isinstance(y, Buffer)
 
     target_device = _get_target_device(op)
     _check_buffers_on_device(inputs, target_device)
 
-    # Output dtype matches x/y dtype (not cond dtype which is bool)
-    output = Buffer(
-        shape=inputs[1].shape,
-        dtype=inputs[1].dtype,
-        device=target_device,
-    )
-
-    ops.select_ops.Select(
-        output,
-        inputs[0],
-        inputs[1],
-        inputs[2],
-        target_device._device_context_ptr(),
-    )
-
-    return [output]
+    model = select_gc.select_model(target_device, x.dtype)
+    shape = select_gc.canonical_shape(x.shape)
+    cond_view = cond.view(cond.dtype, shape)
+    x_view = x.view(x.dtype, shape)
+    y_view = y.view(y.dtype, shape)
+    (out,) = model(cond_view, x_view, y_view)
+    return [out.view(out.dtype, x.shape)]
 
 
 # Concat operations
@@ -2420,10 +2410,6 @@ def _handle_conv(
         List containing the convolution output buffer.
 
     Raises:
-        NotImplementedError: If dilation != 1 -- the GC-compiled kernel
-            hard-errors at runtime with "Non-unit dilation is not
-            supported yet"; pre-checked here for a clear error instead.
-            TODO(KERN-3238): add kernel support.
         NotImplementedError: If groups != 1 -- grouped conv needs a
             pre-packed filter layout, and there's no Python-exposed op to
             produce one (the packing kernel is only invoked by an internal
@@ -2439,11 +2425,6 @@ def _handle_conv(
     assert isinstance(paddings, Buffer)
     assert isinstance(num_groups, Buffer)
 
-    dilations_np = dilations.to_numpy().flatten()
-    if any(int(d) != 1 for d in dilations_np):
-        raise NotImplementedError(
-            f"conv: dilation != 1 is not supported (got {dilations_np.tolist()})"
-        )
     groups = int(num_groups.to_numpy().item())
     if groups != 1:
         raise NotImplementedError(

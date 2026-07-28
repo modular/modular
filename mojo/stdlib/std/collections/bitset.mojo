@@ -38,7 +38,7 @@ from std.bit import log2_floor, pop_count
 from std.format._utils import FormatStruct
 from std.memory import pack_bits
 
-from .inline_array import InlineArray
+from .array import Array
 
 # ===-----------------------------------------------------------------------===#
 # Utilities
@@ -106,7 +106,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
     """
 
     comptime _words_size = max(1, ceildiv(Self.size, _WORD_BITS))
-    var _words: InlineArray[Int64, Self._words_size]  # Payload storage.
+    var _words: Array[Int64, Self._words_size]  # Payload storage.
 
     # --------------------------------------------------------------------- #
     # Constructors

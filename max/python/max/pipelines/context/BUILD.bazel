@@ -12,5 +12,6 @@ modular_py_library(
         requirement("msgspec"),
         requirement("numpy"),
         requirement("pydantic"),
+        requirement("typing-extensions"),
     ],
 )

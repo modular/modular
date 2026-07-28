@@ -143,10 +143,14 @@ def _read_write_to_tensors[
 
     # Allocate and populate tensor to encode
     # Buffer with the original data
-    var data_matrix_backing = InlineArray[Float32, num_elements](
-        uninitialized=True
+    var data_matrix_backing = Array[Float32, num_elements](uninitialized=True)
+    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
+    var data_matrix_ptr: UnsafePointer[
+        Float32, origin_of(data_matrix_backing)
+    ] = data_matrix_backing.unsafe_ptr()
+    var data_matrix = TileTensor(
+        ptr=data_matrix_ptr, layout=row_major[num_elements]()
     )
-    var data_matrix = TileTensor(data_matrix_backing, row_major[num_elements]())
     for i in range(num_elements):
         data_matrix[i] = Float32(i)
 
@@ -154,7 +158,7 @@ def _read_write_to_tensors[
     comptime assert num_elements % group_size == 0
     comptime num_blocks = ceildiv(num_elements, group_size)
     comptime block_size = size_of[Q4sym[group_size]]()
-    var packed_blob_backing = InlineArray[UInt8, num_blocks * block_size](
+    var packed_blob_backing = Array[UInt8, num_blocks * block_size](
         uninitialized=True
     )
     var packed_blob = TileTensor(
@@ -162,7 +166,7 @@ def _read_write_to_tensors[
     )
 
     # Tensor to store the dequantized data
-    var out_data_matrix_backing = InlineArray[Float32, num_elements](
+    var out_data_matrix_backing = Array[Float32, num_elements](
         uninitialized=True
     )
     var out_data_matrix = TileTensor(

@@ -27,7 +27,7 @@ Uses a pull-based approach: each GPU reads its chunk from root via P2P.
 
 from layout import TileTensor
 from layout.tile_layout import TensorLayout
-from std.collections import InlineArray
+from std.collections import Array
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -67,11 +67,9 @@ def scatter_pull_kernel[
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
 ](
     output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input_ptrs: InlineArray[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size
-    ],
-    chunk_num_elems: InlineArray[Int, dp_size],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    input_ptrs: Array[UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size],
+    chunk_num_elems: Array[Int, dp_size],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
 ):
     """Pull-based scatter+broadcast: each GPU reads its chunk from root.
@@ -126,11 +124,9 @@ def scatter[
     in_origin: Origin,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    input_buffers: InlineArray[
-        TileTensor[dtype, in_layout, in_origin], dp_size
-    ],
+    input_buffers: Array[TileTensor[dtype, in_layout, in_origin], dp_size],
     output_buffer: TileTensor[mut=True, dtype, ...],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:
     """Pull-based scatter+broadcast.
@@ -160,13 +156,13 @@ def scatter[
         raise Error("Scatter currently requires P2P access between GPUs")
 
     # Extract raw pointers and sizes from TileTensors for the kernel.
-    var input_ptrs = InlineArray[
+    var input_ptrs = Array[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size
     ](uninitialized=True)
-    var chunk_num_elems = InlineArray[Int, dp_size](fill=0)
+    var chunk_num_elems = Array[Int, dp_size](fill=0)
     for i in range(dp_size):
         input_ptrs[i] = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-            input_buffers[i].ptr
+            input_buffers[i]._storage
         )
         chunk_num_elems[i] = input_buffers[i].num_elements()
 
@@ -189,7 +185,9 @@ def scatter[
     ]
 
     ctx.enqueue_function[kernel](
-        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
+        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+            output_buffer._storage
+        ),
         input_ptrs,
         chunk_num_elems,
         rank_sigs,

@@ -109,10 +109,10 @@ def test_apply_preserves_qkv_weight_fqns() -> None:
     keys = set(model.raw_state_dict().keys())
     # Base q/k/v keep their checkpoint names (StackedLinear name-omit).
     assert "self_attn.q_proj.weight" in keys
-    # Fused adapter weights sit at qkv_lora.*, matching LoRAManager's combine.
+    # Fused adapter weights sit at qkv_lora.*, matching LoRAManager's combine;
+    # lora_B is the single Q | K | V fused weight.
     assert "self_attn.qkv_lora.lora_A.weight" in keys
-    assert "self_attn.qkv_lora.lora_B_q.weight" in keys
-    assert "self_attn.qkv_lora.lora_B_kv.weight" in keys
+    assert "self_attn.qkv_lora.lora_B.weight" in keys
 
 
 def test_apply_qkv_is_idempotent() -> None:

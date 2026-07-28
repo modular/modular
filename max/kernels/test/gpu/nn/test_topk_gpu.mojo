@@ -15,6 +15,7 @@ from std.math import ceildiv, iota, nan
 from std.random import random_float64
 
 from std.algorithm.reduction import max as reduce_max
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -60,7 +61,7 @@ def time_kernel[
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             func(ctx)
 
-        m.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](m, ctx)
 
     m.bench_function[bench_func](
         BenchId(

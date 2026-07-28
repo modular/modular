@@ -165,10 +165,10 @@ struct MLASparseSharedMemoryFP8[config: MLASparseConfig, scale_block_size: Int]:
     comptime V_SCALES_SIZE = Self.config.B_TOPK * Self.V_scales_per_token
 
     var base: MLASparseSharedMemory[Self.config]
-    var k_scales: InlineArray[Float32, Self.K_SCALES_SIZE]
-    var v_scales: InlineArray[Float32, Self.V_SCALES_SIZE]
-    var k_fp8_tma_done: InlineArray[SharedMemBarrier, Self.num_mbars]
-    var v_fp8_tma_done: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var k_scales: Array[Float32, Self.K_SCALES_SIZE]
+    var v_scales: Array[Float32, Self.V_SCALES_SIZE]
+    var k_fp8_tma_done: Array[SharedMemBarrier, Self.num_mbars]
+    var v_fp8_tma_done: Array[SharedMemBarrier, Self.num_mbars]
 
 
 struct MLAPrefillSparseFP8[
@@ -239,8 +239,6 @@ struct MLAPrefillSparseFP8[
     comptime v_tile_shape = Index(Self.v_tile_height, Self.v_gather_box)
     comptime v_desc_shape = Index(1, Self.v_gather_box)
 
-    # desc_shape inner dim 64×2=128B satisfies the ≤256B SWIZZLE_NONE constraint.
-    # SMEM is written in column-group order to match TMA's sub-copy layout.
     comptime o_tile_shape = Index(Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth)
     comptime o_desc_shape = Index(Self.NUM_Q_HEADS_PER_CTA, 64)
 
@@ -996,39 +994,115 @@ struct MLAPrefillSparseFP8[
         ref qkvo_union = smem.qkvo_union
 
         var full_q_ptr = qkvo_union.unsafe_get[Self.FULL_Q_TYPE]().unsafe_ptr()
-        var shared_qkv_ptr = qkvo_union.unsafe_get[
-            Self.SHARED_QKV_TYPE
-        ]().unsafe_ptr()
+        ref shared_qkv = qkvo_union.unsafe_get[Self.SHARED_QKV_TYPE]()
+        var shared_qkv_ptr: UnsafePointer[
+            Scalar[Self.qkv_dtype],
+            origin_of(shared_qkv),
+            address_space=AddressSpace.SHARED,
+        ] = shared_qkv.unsafe_ptr()
         var q_smem_ptr = shared_qkv_ptr
         var v_smem_ptr = shared_qkv_ptr + Self.SMemType.SHARED_Q_SIZE
         var k_smem_ptr = v_smem_ptr + Self.SMemType.V_SIZE
-        var o_ptr = qkvo_union.unsafe_get[Self.O_TYPE]().unsafe_ptr()
+        ref o_union = qkvo_union.unsafe_get[Self.O_TYPE]()
+        var o_ptr: UnsafePointer[
+            Scalar[Self.qkv_dtype],
+            origin_of(o_union),
+            address_space=AddressSpace.SHARED,
+        ] = o_union.unsafe_ptr()
         var scores_ptr = smem.scores.unsafe_ptr()
         var p_ptr = smem.p.unsafe_ptr()
         var prologue_q_ptr = smem.prologue_q.unsafe_ptr()
         var prologue_q_cp_ptr = smem.prologue_q_cp.unsafe_ptr()
-        var qk_ss_done_ptr = smem.qk_ss_done.unsafe_ptr()
-        var qk_ts_done_ptr = smem.qk_ts_done.unsafe_ptr()
-        var sv_p0_done_ptr = smem.sv_p0_done.unsafe_ptr()
-        var sv_p1_done_ptr = smem.sv_p1_done.unsafe_ptr()
-        var k_p0_ready_ptr = smem.k_p0_ready.unsafe_ptr()
-        var k_p1_ready_ptr = smem.k_p1_ready.unsafe_ptr()
-        var v_p0_ready_ptr = smem.v_p0_ready.unsafe_ptr()
-        var v_p1_ready_ptr = smem.v_p1_ready.unsafe_ptr()
-        var p_free_ptr = smem.p_free.unsafe_ptr()
-        var so_ready_ptr = smem.so_ready.unsafe_ptr()
-        var k_valid_ready_ptr = smem.k_valid_ready.unsafe_ptr()
-        var k_valid_free_ptr = smem.k_valid_free.unsafe_ptr()
-        var is_k_valid_ptr = smem.is_k_valid.unsafe_ptr()
+        var qk_ss_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.qk_ss_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem.qk_ss_done.unsafe_ptr()
+        var qk_ts_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.qk_ts_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem.qk_ts_done.unsafe_ptr()
+        var sv_p0_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.sv_p0_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem.sv_p0_done.unsafe_ptr()
+        var sv_p1_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.sv_p1_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem.sv_p1_done.unsafe_ptr()
+        var k_p0_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.k_p0_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.k_p0_ready.unsafe_ptr()
+        var k_p1_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.k_p1_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.k_p1_ready.unsafe_ptr()
+        var v_p0_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.v_p0_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.v_p0_ready.unsafe_ptr()
+        var v_p1_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.v_p1_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.v_p1_ready.unsafe_ptr()
+        var p_free_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.p_free),
+            address_space=AddressSpace.SHARED,
+        ] = smem.p_free.unsafe_ptr()
+        var so_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.so_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.so_ready.unsafe_ptr()
+        var k_valid_ready_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.k_valid_ready),
+            address_space=AddressSpace.SHARED,
+        ] = smem.k_valid_ready.unsafe_ptr()
+        var k_valid_free_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem.k_valid_free),
+            address_space=AddressSpace.SHARED,
+        ] = smem.k_valid_free.unsafe_ptr()
+        var is_k_valid_ptr: UnsafePointer[
+            UInt8,
+            origin_of(smem.is_k_valid),
+            address_space=AddressSpace.SHARED,
+        ] = smem.is_k_valid.unsafe_ptr()
         var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
-        var rowwise_max_ptr = smem.rowwise_max.unsafe_ptr()
-        var rowwise_sum_ptr = smem.rowwise_sum.unsafe_ptr()
+        var rowwise_max_ptr: UnsafePointer[
+            Float32,
+            origin_of(smem.rowwise_max),
+            address_space=AddressSpace.SHARED,
+        ] = smem.rowwise_max.unsafe_ptr()
+        var rowwise_sum_ptr: UnsafePointer[
+            Float32,
+            origin_of(smem.rowwise_sum),
+            address_space=AddressSpace.SHARED,
+        ] = smem.rowwise_sum.unsafe_ptr()
 
         # FP8-specific SMEM pointers.
         var k_scales_ptr = smem_fp8.k_scales.unsafe_ptr()
         var v_scales_ptr = smem_fp8.v_scales.unsafe_ptr()
-        var k_fp8_tma_done_ptr = smem_fp8.k_fp8_tma_done.unsafe_ptr()
-        var v_fp8_tma_done_ptr = smem_fp8.v_fp8_tma_done.unsafe_ptr()
+        var k_fp8_tma_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem_fp8.k_fp8_tma_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem_fp8.k_fp8_tma_done.unsafe_ptr()
+        var v_fp8_tma_done_ptr: UnsafePointer[
+            SharedMemBarrier,
+            origin_of(smem_fp8.v_fp8_tma_done),
+            address_space=AddressSpace.SHARED,
+        ] = smem_fp8.v_fp8_tma_done.unsafe_ptr()
         # FP8 K staging: upper half of K SMEM (k_smem_ptr + K_SIZE FP8 bytes).
         # FP8 V staging: upper half of V SMEM (v_smem_ptr + V_SIZE FP8 bytes).
         var k_smem_fp8_ptr = (
@@ -1205,7 +1279,7 @@ struct MLAPrefillSparseFP8[
                 mi = new_max
                 li = mul_ftz(li, scale_for_old)
 
-                var s_bf16 = InlineArray[Scalar[Self.qkv_dtype], P_PER_THREAD](
+                var s_bf16 = Array[Scalar[Self.qkv_dtype], P_PER_THREAD](
                     uninitialized=True
                 )
                 comptime for i in range(P_PER_THREAD):
@@ -1221,7 +1295,7 @@ struct MLAPrefillSparseFP8[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
-                var o_chunk_prefetch = InlineArray[
+                var o_chunk_prefetch = Array[
                     Scalar[DType.float32], O_RESCALE_CHUNK
                 ](uninitialized=True)
                 if k > 0 and should_scale_o:
@@ -1261,7 +1335,7 @@ struct MLAPrefillSparseFP8[
                 # was prefetched above, chunks 1..N-1 load sequentially.
                 if k > 0 and should_scale_o:
                     tcgen05_load_wait()
-                    var o_scaled_0 = InlineArray[
+                    var o_scaled_0 = Array[
                         Scalar[DType.float32], O_RESCALE_CHUNK
                     ](uninitialized=True)
                     comptime for j in range(O_RESCALE_CHUNK):
@@ -1288,7 +1362,7 @@ struct MLAPrefillSparseFP8[
                             + UInt32(chunk_idx * O_RESCALE_CHUNK)
                         )
                         tcgen05_load_wait()
-                        var o_scaled = InlineArray[
+                        var o_scaled = Array[
                             Scalar[DType.float32], O_RESCALE_CHUNK
                         ](uninitialized=True)
                         comptime for j in range(O_RESCALE_CHUNK):
@@ -1362,6 +1436,10 @@ struct MLAPrefillSparseFP8[
 
             comptime GROUP_STRIDE = Self.NUM_Q_HEADS_PER_CTA * 64
 
+            comptime o_sw = make_swizzle[
+                Self.output_dtype, TensorMapSwizzle.SWIZZLE_128B
+            ]()
+
             comptime for atom_idx in range(Self.NUM_SV_ATOMS):
                 comptime atom_o_tmem_addr = (
                     Self.O_TMEM_ADDR + atom_idx * Self.O_ATOM_PHYS_COLS
@@ -1372,7 +1450,7 @@ struct MLAPrefillSparseFP8[
                     var col_group = (
                         Int(depth_col_block) * 2 + atom_idx * 4 + chunk
                     )
-                    var c_chunk: InlineArray[Scalar[DType.float32], CHUNK]
+                    var c_chunk: Array[Scalar[DType.float32], CHUNK]
                     c_chunk = tcgen05_ld[
                         datapaths=32,
                         bits=32,
@@ -1390,10 +1468,8 @@ struct MLAPrefillSparseFP8[
                             v0_f32.cast[Self.qkv_dtype](),
                             v1_f32.cast[Self.qkv_dtype](),
                         )
-                        var smem_offset = (
-                            col_group * GROUP_STRIDE
-                            + Int(head_local) * 64
-                            + i * 2
+                        var smem_offset = col_group * GROUP_STRIDE + o_sw(
+                            Int(head_local) * 64 + i * 2
                         )
                         # Store only the real head rows; padded rows
                         # [num_q_heads, 64) carry dropped MMA output and would
@@ -1768,7 +1844,7 @@ def mla_prefill_sparse_fp8[
     )
     o_tma_op_fp8 = create_tensor_tile[
         Index(config.num_q_heads // config.cta_group, config.v_depth),
-        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         __desc_shape=Index(config.num_q_heads // config.cta_group, 64),
     ](ctx, output_2d_fp8)
 

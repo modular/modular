@@ -221,17 +221,17 @@ To create a `TileTensor` for use on the CPU, you need a
 [`Layout`](/docs/layout/tile_layout/Layout/) and a block
 of memory to store the tensor data. A common way to allocate memory for a
 `TileTensor` is to use an
-[`InlineArray`](/docs/std/collections/inline_array/InlineArray/) or a `List`:
+[`Array`](/docs/std/collections/array/Array/) or a `List`:
 
 ```mojo
 comptime rows = 8
 comptime columns = 16
 comptime layout = row_major[rows, columns]()
-var storage = InlineArray[Float32, rows * columns](fill=0.0)
+var storage = Array[Float32, rows * columns](fill=0.0)
 var tensor = TileTensor(storage, layout)
 ```
 
-`InlineArray` is a statically-sized, stack-allocated array, so it's a fast and
+`Array` is a statically-sized, stack-allocated array, so it's a fast and
 efficient way to allocate storage for small tensors. There are
 target-dependent limits on how much memory can be allocated this way, however.
 This example and the following example initialize the tensor memory to zeros.
@@ -255,7 +255,7 @@ var tensor = TileTensor(storage, layout)
 Both of these examples use a `TileTensor` constructor that accepts a
 [`Span`](/docs/std/memory/span/Span/), a type that represents a contiguous block
 of memory that's owned elsewhere. Mojo can implicitly convert a `List` or
-`InlineArray` to a `Span` representing the underlying memory. The span tracks
+`Array` to a `Span` representing the underlying memory. The span tracks
 the size, data type, and ownership of the memory block, providing a safe way to
 reference the memory.
 
@@ -489,7 +489,7 @@ var layout = row_major_nested(
         Coord(Idx[grid_cols], Idx[frag_cols]),
     )
 )
-var storage = InlineArray[Float32, total](uninitialized=True)
+var storage = Array[Float32, total](uninitialized=True)
 for i in range(total):
     storage[i] = Float32(i)
 var tensor = TileTensor(storage, layout)
@@ -623,7 +623,7 @@ partition count and returns a `StaticTuple` of `count` equal-sized views. The
 split axis must be statically divisible by `count`:
 
 ```mojo
-var data = InlineArray[Int32, 16](uninitialized=True)
+var data = Array[Int32, 16](uninitialized=True)
 for i in range(16):
     data[i] = Int32(i)
 var tensor = TileTensor(data, row_major[4, 4]())
@@ -637,7 +637,7 @@ The dynamic form, `split(count, idx)`, takes a run-time partition count and
 returns a single partition with a run-time-sized split axis:
 
 ```mojo
-var data = InlineArray[Int32, 16](uninitialized=True)
+var data = Array[Int32, 16](uninitialized=True)
 for i in range(16):
     data[i] = Int32(i)
 var tensor = TileTensor(data, row_major[8, 2]())
@@ -672,8 +672,8 @@ layout. The source and destination dtypes may also differ, in which case each
 element is cast to the destination dtype:
 
 ```mojo
-var src_data: InlineArray[Int32, 4] = [1, 2, 3, 4]
-var dst_data = InlineArray[Float32, 4](fill=0.0)
+var src_data: Array[Int32, 4] = [1, 2, 3, 4]
+var dst_data = Array[Float32, 4](fill=0.0)
 
 var src = TileTensor(src_data, row_major[2, 2]())
 var dst = TileTensor(dst_data, row_major[2, 2]())

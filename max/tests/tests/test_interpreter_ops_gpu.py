@@ -108,8 +108,12 @@ DTYPE_TO_TORCH = {
     DType.float32: torch.float32,
     DType.float16: torch.float16,
     DType.bfloat16: torch.bfloat16,
+    DType.int8: torch.int8,
+    DType.int16: torch.int16,
     DType.int32: torch.int32,
     DType.int64: torch.int64,
+    DType.uint8: torch.uint8,
+    DType.uint16: torch.uint16,
     DType.uint32: torch.uint32,
     DType.uint64: torch.uint64,
     DType.bool: torch.bool,
@@ -2156,6 +2160,8 @@ class TestSelectGPU:
     @pytest.mark.parametrize(
         "dtype",
         [
+            DType.int8,
+            DType.int16,
             DType.int32,
             DType.int64,
         ],
@@ -2198,6 +2204,68 @@ class TestSelectGPU:
         y_torch = torch.arange(
             10, 70, 10, dtype=torch.float32, device="cuda"
         ).reshape(2, 3)
+
+        cond = Tensor.from_dlpack(cond_torch)
+        x = Tensor.from_dlpack(x_torch)
+        y = Tensor.from_dlpack(y_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        expected = torch.where(cond_torch, x_torch, y_torch)
+        torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.uint8,
+            DType.uint16,
+            DType.uint32,
+            DType.uint64,
+        ],
+    )
+    def test_select_uint_gpu(self, dtype: DType) -> None:
+        """Test select op with unsigned integer dtypes on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        cond_torch = torch.tensor(
+            [True, False, True, False],
+            dtype=torch.bool,
+            device="cuda",
+        )
+        x_torch = torch.tensor([1, 2, 3, 4], dtype=torch_dtype, device="cuda")
+        y_torch = torch.tensor(
+            [10, 20, 30, 40], dtype=torch_dtype, device="cuda"
+        )
+
+        cond = Tensor.from_dlpack(cond_torch)
+        x = Tensor.from_dlpack(x_torch)
+        y = Tensor.from_dlpack(y_torch)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.where(cond, x, y)
+
+        # torch.where has no uint16/32/64 kernel (only uint8), so compute the
+        # oracle in int64 and cast back; F.where above already ran natively.
+        expected = torch.where(
+            cond_torch, x_torch.to(torch.int64), y_torch.to(torch.int64)
+        ).to(torch_dtype)
+        torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+    def test_select_bool_values_gpu(self) -> None:
+        """Test select op where x/y (not just cond) are bool tensors on GPU."""
+        cond_torch = torch.tensor(
+            [True, False, True, False], dtype=torch.bool, device="cuda"
+        )
+        x_torch = torch.tensor(
+            [True, True, False, False], dtype=torch.bool, device="cuda"
+        )
+        y_torch = torch.tensor(
+            [False, False, True, True], dtype=torch.bool, device="cuda"
+        )
 
         cond = Tensor.from_dlpack(cond_torch)
         x = Tensor.from_dlpack(x_torch)
@@ -2439,6 +2507,165 @@ class TestLayerNormGPU:
         )
         torch.testing.assert_close(
             torch.from_dlpack(y), expected, atol=1e-5, rtol=1e-5
+        )
+
+
+class TestRmsNormGPU:
+    """Tests for rms_norm on GPU."""
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    def test_rms_norm_gpu(self, dtype: DType) -> None:
+        """Test rms_norm (Llama-style) on GPU matches torch reference."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+        torch.manual_seed(42)
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        weight_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        weight = Tensor.from_dlpack(weight_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(x, weight, epsilon=1e-5)
+
+        variance = x_torch.to(torch.float32).pow(2).mean(-1, keepdim=True)
+        normed = x_torch.to(torch.float32) * torch.rsqrt(variance + 1e-5)
+        expected = (weight_torch.to(torch.float32) * normed).to(torch_dtype)
+        tol = 1e-2 if dtype == DType.bfloat16 else 1e-3
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=tol, rtol=tol
+        )
+
+    def test_rms_norm_gpu_multiply_before_cast(self) -> None:
+        """Test rms_norm (Gemma-style multiply_before_cast=True) on GPU."""
+        shape = [4, 6]
+        torch.manual_seed(42)
+        x_torch = torch.randn(shape, dtype=torch.bfloat16, device="cuda")
+        weight_torch = torch.randn(
+            shape[-1], dtype=torch.bfloat16, device="cuda"
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        weight = Tensor.from_dlpack(weight_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(
+                x,
+                weight,
+                epsilon=1e-6,
+                weight_offset=1.0,
+                multiply_before_cast=True,
+            )
+
+        x_f32 = x_torch.to(torch.float32)
+        variance = x_f32.pow(2).mean(-1, keepdim=True)
+        normed = x_f32 * torch.rsqrt(variance + 1e-6)
+        w_f32 = weight_torch.to(torch.float32) + 1.0
+        expected = (normed * w_f32).to(torch.bfloat16)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=1e-2, rtol=1e-2
+        )
+
+
+class TestGroupNormGPU:
+    """Tests for group_norm on GPU."""
+
+    @staticmethod
+    def _group_norm_ref(
+        x: torch.Tensor,
+        gamma: torch.Tensor,
+        beta: torch.Tensor,
+        num_groups: int,
+        eps: float,
+    ) -> torch.Tensor:
+        """Torch reference via ``torch.nn.functional.group_norm``."""
+        return torch.nn.functional.group_norm(
+            x, num_groups, weight=gamma, bias=beta, eps=eps
+        )
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    def test_group_norm_gpu_4d(self, dtype: DType) -> None:
+        """Test group_norm on a 4D NCHW tensor on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        torch.manual_seed(50)
+        x_torch = torch.randn(2, 4, 3, 3, dtype=torch_dtype, device="cuda")
+        gamma_torch = torch.randn(4, dtype=torch_dtype, device="cuda")
+        beta_torch = torch.randn(4, dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        gamma = Tensor.from_dlpack(gamma_torch)
+        beta = Tensor.from_dlpack(beta_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=2, epsilon=1e-5)
+
+        expected = self._group_norm_ref(
+            x_torch, gamma_torch, beta_torch, 2, 1e-5
+        )
+        tol = 1e-2 if dtype == DType.bfloat16 else 1e-3
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=tol, rtol=tol
+        )
+
+    def test_group_norm_gpu_3d_input(self) -> None:
+        """Test group_norm on a 3D [N, C, L] tensor on GPU."""
+        torch.manual_seed(51)
+        x_torch = torch.randn(2, 6, 8, dtype=torch.float32, device="cuda")
+        gamma_torch = torch.randn(6, dtype=torch.float32, device="cuda")
+        beta_torch = torch.randn(6, dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        gamma = Tensor.from_dlpack(gamma_torch)
+        beta = Tensor.from_dlpack(beta_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=3, epsilon=1e-5)
+
+        expected = self._group_norm_ref(
+            x_torch, gamma_torch, beta_torch, 3, 1e-5
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=1e-4, rtol=1e-4
+        )
+
+    def test_group_norm_gpu_single_group(self) -> None:
+        """Test group_norm with num_groups=1 on GPU."""
+        torch.manual_seed(52)
+        x_torch = torch.randn(2, 4, 3, 3, dtype=torch.float32, device="cuda")
+        gamma_torch = torch.randn(4, dtype=torch.float32, device="cuda")
+        beta_torch = torch.randn(4, dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        gamma = Tensor.from_dlpack(gamma_torch)
+        beta = Tensor.from_dlpack(beta_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=1, epsilon=1e-5)
+
+        expected = self._group_norm_ref(
+            x_torch, gamma_torch, beta_torch, 1, 1e-5
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, atol=1e-4, rtol=1e-4
         )
 
 

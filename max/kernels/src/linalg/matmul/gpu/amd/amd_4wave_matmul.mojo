@@ -38,7 +38,7 @@ from std.math import ceildiv
 from std.sys import align_of, size_of, llvm_intrinsic
 from std.sys.intrinsics import readfirstlane
 from std.utils import Index, IndexList, StaticTuple
-from std.collections import InlineArray
+from std.collections import Array
 from std.utils.numerics import get_accum_type
 
 from std.gpu import (
@@ -1784,14 +1784,14 @@ struct AMD4WaveMatmul[
         # of total kernel time). A single `s_waitcnt vmcnt(0)` drains
         # the cluster before the first `v_pk_fma_f32` in the epilogue.
         #
-        # Storage: per-lane `InlineArray` of
+        # Storage: per-lane `Array` of
         # `SIMD[c_type, c_frag_size]` × num_m_mmas × num_n_mmas. For
         # BM=BN=128 / MMA=16x16 / c_frag_size=4 that's 16 slots × 4 bf16
         # = 16 dwords per lane (well under the 196-Dword VGPR headroom
         # at 316 baseline). OOB blocks waste a few HBM reads — SRD
         # bounds clamping returns 0, so it's harmless.
         comptime n_slots = num_m_mmas * num_n_mmas
-        var prefetched = InlineArray[SIMD[Self.c_type, c_frag_size], n_slots](
+        var prefetched = Array[SIMD[Self.c_type, c_frag_size], n_slots](
             uninitialized=True
         )
         var lane_group, thread_m = divmod(Int(_lane_id), MMA_M)

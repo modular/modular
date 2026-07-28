@@ -201,7 +201,7 @@ struct OwnedPointer[T: AnyType](
         mut: Bool,
         origin: Origin[mut=mut],
         //,
-    ](ref[origin] self) -> UnsafePointer[Self.T, origin]:
+    ](ref[origin] self) -> Pointer[Self.T, origin]:
         """Returns the backing pointer for this `OwnedPointer`.
 
         Parameters:
@@ -209,7 +209,7 @@ struct OwnedPointer[T: AnyType](
             origin: The origin of the pointer.
 
         Returns:
-            An UnsafePointer to the backing allocation for this `OwnedPointer`.
+            A pointer to the backing allocation for this `OwnedPointer`.
         """
         return (
             self._inner.unsafe_ptr()
@@ -217,6 +217,7 @@ struct OwnedPointer[T: AnyType](
             .unsafe_origin_cast[origin]()
         )
 
+    @__allow_legacy_custom_self_type
     def take[_T: Movable](deinit self: OwnedPointer[_T]) -> _T:
         """Move the value within the `OwnedPointer` out of it, consuming the
         `OwnedPointer` in the process.

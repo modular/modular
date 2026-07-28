@@ -701,7 +701,7 @@ def naive_fa_decode_apple[
     # just carry the device pointers with TileTensor typing (no raw pointers /
     # DeviceBuffer-as-pointer inside the kernels).
     var q_flat = TileTensor(
-        q.ptr.as_immutable().as_unsafe_any_origin(),
+        q.ptr.as_imm().as_unsafe_any_origin(),
         row_major(Coord(Int(q.size()))),
     )
     var output_flat = TileTensor(
@@ -709,7 +709,7 @@ def naive_fa_decode_apple[
         row_major(Coord(Int(output.size()))),
     )
     var valid_length_flat = TileTensor(
-        valid_length.ptr.as_immutable().as_unsafe_any_origin(),
+        valid_length.ptr.as_imm().as_unsafe_any_origin(),
         row_major(Coord(Int(valid_length.size()))),
     )
     var o_partial_t = TileTensor(
@@ -722,15 +722,15 @@ def naive_fa_decode_apple[
         l_partial_dev.unsafe_ptr(), row_major(Coord(ml_partial_n))
     )
     var o_partial_imm = TileTensor(
-        o_partial_dev.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+        o_partial_dev.unsafe_ptr().as_imm().as_unsafe_any_origin(),
         row_major(Coord(o_partial_n)),
     )
     var m_partial_imm = TileTensor(
-        m_partial_dev.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+        m_partial_dev.unsafe_ptr().as_imm().as_unsafe_any_origin(),
         row_major(Coord(ml_partial_n)),
     )
     var l_partial_imm = TileTensor(
-        l_partial_dev.unsafe_ptr().as_immutable().as_unsafe_any_origin(),
+        l_partial_dev.unsafe_ptr().as_imm().as_unsafe_any_origin(),
         row_major(Coord(ml_partial_n)),
     )
 
@@ -748,7 +748,7 @@ def naive_fa_decode_apple[
         var sw = sink_weights.value()
         sink_tile = OptionalReg[SinkTile](
             SinkTile(
-                sw.ptr.as_immutable().as_unsafe_any_origin(),
+                sw.ptr.as_imm().as_unsafe_any_origin(),
                 sink_layout_val,
             )
         )

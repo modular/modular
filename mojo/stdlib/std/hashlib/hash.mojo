@@ -15,9 +15,9 @@
 There are a few main tools in this module:
 
 - `Hashable` trait for types implementing `__hash__(self, mut hasher)`
-- `hash[T: Hashable](hashable: T) -> Int` built-in function.
+- `hash[T: Hashable](hashable: T) -> UInt64` built-in function.
 - A `hash()` implementation for arbitrary byte strings,
-  `hash(data: UnsafePointer[mut=False, UInt8], n: Int) -> Int`,
+  `hash(bytes: Pointer[mut=False, UInt8], n: Int) -> UInt64`,
   is the workhorse function, which implements efficient hashing via SIMD
   vectors. See the documentation of this function for more details on the hash
   implementation.

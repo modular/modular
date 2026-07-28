@@ -363,7 +363,7 @@ struct Fp4WeightLoader[
         self,
         arow0: Int,
         k0: Int,
-        a_rc: InlineArray[IndexList[2], 8],
+        a_rc: Array[IndexList[2], 8],
     ) -> SIMD[
         Self.in_type, 8
     ]:
@@ -628,11 +628,11 @@ struct Matmul2dFp4[
         )
 
         # A frag: base map. B frag: transpose_right map (n, k) w/ k contiguous.
-        var a_rc = InlineArray[IndexList[2], 8](uninitialized=True)
+        var a_rc = Array[IndexList[2], 8](uninitialized=True)
         comptime for i in range(8):
             a_rc[i] = a_frag_coord(lane, i)
         # C store: UNCHANGED base bc map (transpose_right permutes only B).
-        var c_rc = InlineArray[IndexList[2], 16](uninitialized=True)
+        var c_rc = Array[IndexList[2], 16](uninitialized=True)
         comptime for i in range(16):
             c_rc[i] = bc_frag_coord(lane, i)
 
@@ -648,16 +648,14 @@ struct Matmul2dFp4[
             Self.in_type, a_layout, packed_layout, scale_layout
         ].from_kernel_args(a, packed, scales, M, N, K)
 
-        var accs = InlineArray[SIMD[DType.float32, 16], Self.tm * Self.tn](
+        var accs = Array[SIMD[DType.float32, 16], Self.tm * Self.tn](
             uninitialized=True
         )
         comptime for t in range(Self.tm * Self.tn):
             accs[t] = SIMD[DType.float32, 16](0)
 
-        var a_frag = InlineArray[SIMD[DType.bfloat16, 8], Self.tm](
-            uninitialized=True
-        )
-        var b_frag = InlineArray[SIMD[DType.bfloat16, 16], Self.tn](
+        var a_frag = Array[SIMD[DType.bfloat16, 8], Self.tm](uninitialized=True)
+        var b_frag = Array[SIMD[DType.bfloat16, 16], Self.tn](
             uninitialized=True
         )
 
@@ -784,14 +782,14 @@ struct Matmul2dFp4[
         ]()
         var b_view = TileTensor(b_sm, Layout(Coord(BN, BK), Coord(BK, Idx[1])))
 
-        var a_rc = InlineArray[IndexList[2], 8](uninitialized=True)
+        var a_rc = Array[IndexList[2], 8](uninitialized=True)
         comptime for i in range(8):
             a_rc[i] = a_frag_coord(lane, i)
         # B fragment (n, k) local coords under transpose_right; k contiguous.
-        var b_nk = InlineArray[IndexList[2], 16](uninitialized=True)
+        var b_nk = Array[IndexList[2], 16](uninitialized=True)
         comptime for i in range(16):
             b_nk[i] = bt_frag_coord(lane, i)
-        var c_rc = InlineArray[IndexList[2], 16](uninitialized=True)
+        var c_rc = Array[IndexList[2], 16](uninitialized=True)
         comptime for i in range(16):
             c_rc[i] = bc_frag_coord(lane, i)
 
@@ -801,16 +799,14 @@ struct Matmul2dFp4[
             Self.in_type, a_layout, packed_layout, scale_layout
         ].from_kernel_args(a, packed, scales, M, N, K)
 
-        var accs = InlineArray[SIMD[DType.float32, 16], Self.tm * Self.tn](
+        var accs = Array[SIMD[DType.float32, 16], Self.tm * Self.tn](
             uninitialized=True
         )
         comptime for t in range(Self.tm * Self.tn):
             accs[t] = SIMD[DType.float32, 16](0)
 
-        var a_frag = InlineArray[SIMD[DType.bfloat16, 8], Self.tm](
-            uninitialized=True
-        )
-        var b_frag = InlineArray[SIMD[DType.bfloat16, 16], Self.tn](
+        var a_frag = Array[SIMD[DType.bfloat16, 8], Self.tm](uninitialized=True)
+        var b_frag = Array[SIMD[DType.bfloat16, 16], Self.tn](
             uninitialized=True
         )
 

@@ -1072,7 +1072,7 @@ def test_indexing() raises:
 def test_list_dtor() raises:
     var dtor_count = 0
 
-    var ptr = UnsafePointer(to=dtor_count).as_immutable()
+    var ptr = UnsafePointer(to=dtor_count).as_imm()
     var l = List[DelCounter[ptr.origin]]()
     assert_equal(dtor_count, 0)
 
@@ -1086,7 +1086,7 @@ def test_list_dtor() raises:
 def test_destructor_trivial_elements() raises:
     var dtor_count = 0
 
-    var ptr = UnsafePointer(to=dtor_count).as_immutable()
+    var ptr = UnsafePointer(to=dtor_count).as_imm()
     var l = List[DelCounter[ptr.origin, trivial_del=True]]()
     l.append(DelCounter[ptr.origin, trivial_del=True](ptr))
 

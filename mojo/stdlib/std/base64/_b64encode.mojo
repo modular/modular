@@ -221,18 +221,22 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
 
     # Main loop
     while input_index + simd_width <= input_bytes_len:
-        var start_of_input_chunk = input_bytes.unsafe_ptr() + input_index
+        var start_of_input_chunk = input_bytes.unsafe_ptr().unsafe_offset(
+            input_index
+        )
 
-        var input_vector = start_of_input_chunk.load[width=simd_width]()
+        var input_vector = start_of_input_chunk.unsafe_load[width=simd_width]()
 
         var result_vector = _to_b64_ascii(input_vector)
-        (res_ptr + res_offset).store(result_vector)
+        res_ptr.unsafe_offset(res_offset).unsafe_store(result_vector)
         res_offset += result_vector.size
         input_index += input_simd_width
 
     # We handle the last 0, 1 or 2 chunks
     while input_index < input_bytes_len:
-        var start_of_input_chunk = input_bytes.unsafe_ptr() + input_index
+        var start_of_input_chunk = input_bytes.unsafe_ptr().unsafe_offset(
+            input_index
+        )
         var nb_of_elements_to_load = min(
             input_simd_width, input_bytes_len - input_index
         )
@@ -265,7 +269,9 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
 
         var v_ptr = Pointer(to=result_vector_with_equals).unsafe_bitcast[Byte]()
         unsafe_memcpy(
-            dest=res_ptr + res_offset, src=v_ptr, count=nb_of_elements_to_store
+            dest=res_ptr.unsafe_offset(res_offset),
+            src=v_ptr,
+            count=nb_of_elements_to_store,
         )
         res_offset += nb_of_elements_to_store
         input_index += input_simd_width

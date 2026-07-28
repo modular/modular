@@ -1,7 +1,6 @@
 {
   "maxConceptsSidebar": [
     "max/intro",
-    "max/changelog/index",
     "max/faq",
     {
       "label": "Get started",
@@ -290,6 +289,17 @@
               },
               "items": [
                 "__AUTOGEN:max.experimental.tensor__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "testing",
+              "link": {
+                "type": "doc",
+                "id": "max/api/python/experimental.testing"
+              },
+              "items": [
+                "__AUTOGEN:max.experimental.testing__"
               ]
             },
             {

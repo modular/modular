@@ -12,6 +12,7 @@ _EXTRA_ALIASES = {
 }
 
 _MAX_PACKAGES = {
+    "algorithm": "kernels/src/algorithm",
     "machine": "driver/src/machine",
     "_hal": "driver/src/_hal",
     "kv_cache": "kernels/src/kv_cache",

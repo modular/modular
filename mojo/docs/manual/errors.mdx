@@ -145,7 +145,7 @@ def main() raises:
             except e:
                 if "invalid" in String(e):
                     print("except  => fatal:", e)
-                    raise e^
+                    raise e
                 print("except  => handled:", e)
             else:
                 print("else    => success:", result)
@@ -183,25 +183,31 @@ Notice:
 - When `id` is 1001: `process_record()` raises an error. The `except` clause
   handles it and execution continues with the next iteration.
 - When `id` is -3: `process_record()` raises an "invalid" error. The `except`
-  clause re-raises it with `raise e^`, which transfers ownership of the error
-  to the outer `try`/`except`. The `finally` clause still runs before the error
-  propagates. Because the re-raise exits the loop, `id` 42 is never processed.
+  clause re-raises it, so it propagates to the outer `try`/`except`. The
+  `finally` clause still runs before the error propagates. Because the re-raise
+  exits the loop, `id` 42 is never processed.
 
 ### Re-raise an error
 
-To re-raise a caught error, use `raise` with the
-[transfer sigil](/docs/manual/values/ownership/#transfer-arguments-var-and-)
-(`^`) to transfer ownership of the error value:
+To re-raise a caught error, pass it to `raise`:
 
 ```mojo
 try:
     result = process_record(-1)
 except e:
     print("Logging error:", e)
-    raise e^  # re-raise with ownership transfer
+    raise e  # re-raise
 ```
 
 You can also raise a different error from within an `except` clause.
+
+Re-raising copies the error, which is cheap because both its message and its
+optional stack trace are reference counted. To avoid the copy, transfer the
+error with the
+[transfer sigil](/docs/manual/values/ownership/#transfer-arguments-var-and-):
+`raise e^`. A [custom error type](#typed-errors) that doesn't conform to
+[`ImplicitlyCopyable`](/docs/std/builtin/value/ImplicitlyCopyable/) requires the
+transfer sigil to re-raise.
 
 ## Typed errors
 

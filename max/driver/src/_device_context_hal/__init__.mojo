@@ -22,7 +22,7 @@ from std.math import align_up
 from std.memory import (
     alloc,
     dealloc,
-    memcpy,
+    unsafe_memcpy,
     ThinAllocation,
     ArcPointer,
     Layout,
@@ -67,6 +67,7 @@ from std.gpu.host.constant_memory_mapping import ConstantMemoryMapping
 from std.gpu.host.device_attribute import DeviceAttribute
 from std.gpu.host.dim import Dim
 from std.gpu.host.info import GPUInfo
+from std.gpu.host.func_attribute import Attribute, FuncAttribute
 from std.gpu.host.launch_attribute import LaunchAttribute
 
 
@@ -142,14 +143,12 @@ trait _HALFunctionEnqueuer:
 struct _DeviceFunctionInner(Movable):
     """Wrapper around a HAL-loaded `FunctionHandle`.
 
-    Owns the function handle, the `RuntimeBundle` it was loaded from, and
-    the `Context` needed to unload the bundle. The bundle is kept alive for the
-    lifetime of the function handle - destroying the bundle invalidates the
-    function symbol it owns.
+    The function handle (and the `RuntimeBundle` defining it) is owned by the
+    `Context`'s function cache and stays loaded for the context's lifetime;
+    the held `Context` `ArcPointer` keeps it valid.
     """
 
     var _func_handle: FunctionHandle
-    var _bundle: RuntimeBundle
     var _context: ArcPointer[Context[get_device_spec[0]()]]
     # Stable copy of the kernel's per-capture byte sizes, taken at
     # `DeviceFunction.__init__`. `CompiledFunctionInfo.capture_sizes` points at
@@ -159,18 +158,12 @@ struct _DeviceFunctionInner(Movable):
     var _num_captures: Int
 
     def __del__(deinit self):
-        try:
-            self._context[].unload_function(self._func_handle)
-        except e:
-            print("warning: unload_function failed:", e)
         dealloc(
             ThinAllocation(
                 unsafe_assume_ownership=self._capture_sizes
             ).unsafe_with_layout({count = max(self._num_captures, 1)})
         )
-        # Unloading must precede the bundle release (the bundle owns the
-        # loaded binary), and the context must outlive both.
-        _ = self._bundle^
+        # Anchor the context refcount past the dealloc above.
         _ = self._context^
 
 
@@ -392,7 +385,7 @@ struct DeviceContext(
         """
         self._stream[].synchronize()
 
-    def id(self) -> Int64:
+    def id(self) raises -> Int64:
         """Returns the ID associated with this device.
 
         Returns:
@@ -595,10 +588,7 @@ struct DeviceContext(
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) thin -> None,
-        # Passthrough parameters, accepted for API parity with the legacy
-        # backend and ignored: the HAL compile path derives compile options
-        # from the device spec and does not emit asm/LLVM/SASS dumps or honor
-        # link options.
+        # Ignored; accepted for API parity with the legacy backend.
         compile_options: StaticString = "",
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
@@ -613,6 +603,23 @@ struct DeviceContext(
         Parameters:
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
+            link_options: Additional linker flags and options as a string.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            func_attribute: An attribute to use when compiling the code (such
+                as maximum shared memory size).
 
         Returns:
             The compiled function.
@@ -629,10 +636,7 @@ struct DeviceContext(
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
-        # Passthrough parameters, accepted for API parity with the legacy
-        # backend and ignored: the HAL compile path derives compile options
-        # from the device spec and does not emit asm/LLVM/SASS dumps or honor
-        # link options.
+        # Ignored; accepted for API parity with the legacy backend.
         compile_options: StaticString = "",
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
@@ -648,6 +652,23 @@ struct DeviceContext(
         Parameters:
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
+            link_options: Additional linker flags and options as a string.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            func_attribute: An attribute to use when compiling the code (such
+                as maximum shared memory size).
 
         Returns:
             The compiled function.
@@ -845,9 +866,7 @@ struct DeviceContext(
         //,
         func: def(* args: * declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
-        # Debug/link passthrough parameters, accepted for API parity with the
-        # legacy backend and ignored (the HAL compile path does not emit
-        # asm/LLVM/SASS dumps or honor link options).
+        # Ignored; accepted for API parity with the legacy backend.
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -871,6 +890,17 @@ struct DeviceContext(
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile and launch.
             actual_arg_types: The dtypes of the arguments being passed to the function.
+            link_options: Additional linker flags and options as a string.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
 
         Args:
             args: Variadic arguments which are passed to the `func`.
@@ -880,6 +910,8 @@ struct DeviceContext(
             shared_mem_bytes: Per-block memory shared between blocks.
             attributes: A `List` of launch attributes.
             constant_memory: A `List` of constant memory mappings.
+            func_attribute: An attribute to use when compiling the code (such
+                as maximum shared memory size).
             location: Source location for the function call.
 
         You can pass the function directly to `enqueue_function`
@@ -953,9 +985,7 @@ struct DeviceContext(
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
-        # Debug/link passthrough params, accepted for API parity with the
-        # legacy backend and ignored (the HAL compile path does not emit
-        # asm/LLVM/SASS dumps or honor link options).
+        # Ignored; accepted for API parity with the legacy backend.
         link_options: StaticString = "",
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -984,11 +1014,11 @@ struct DeviceContext(
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile and launch.
             actual_arg_types: The dtypes of the arguments being passed to the function.
-            link_options: Ignored; accepted for parity with the AsyncRT backend.
-            dump_asm: Ignored; accepted for parity with the AsyncRT backend.
-            dump_llvm: Ignored; accepted for parity with the AsyncRT backend.
-            _dump_sass: Ignored; accepted for parity with the AsyncRT backend.
-            _ptxas_info_verbose: Ignored; accepted for parity with the AsyncRT backend.
+            link_options: Ignored; accepted for parity with the legacy backend.
+            dump_asm: Ignored; accepted for parity with the legacy backend.
+            dump_llvm: Ignored; accepted for parity with the legacy backend.
+            _dump_sass: Ignored; accepted for parity with the legacy backend.
+            _ptxas_info_verbose: Ignored; accepted for parity with the legacy backend.
 
         Args:
             args: Variadic arguments which are passed to the `func`.
@@ -998,6 +1028,8 @@ struct DeviceContext(
             shared_mem_bytes: Per-block memory shared between blocks.
             attributes: A `List` of launch attributes.
             constant_memory: A `List` of constant memory mappings.
+            func_attribute: An attribute to use when compiling the code (such
+                as maximum shared memory size).
             location: Source location for the function call.
 
         Raises:
@@ -1777,7 +1809,7 @@ struct DeviceContext(
 
         The HAL backend has no host-function enqueue plugin entry, so the range
         runs serially and synchronously here; `synchronize()` is then a no-op
-        for this work. Results match the AsyncRT backend; only the parallelism
+        for this work. Results match the legacy backend; only the parallelism
         differs.
 
         Parameters:
@@ -2025,7 +2057,7 @@ struct DeviceContext(
         """Returns whether peer-to-peer access is enabled between all GPU pairs.
 
         The HAL backend manages a single device (fewer than two GPUs), so this
-        returns False, matching the AsyncRT semantics for that case."""
+        returns False, matching the legacy semantics for that case."""
         return False
 
     def enqueue_wait_for(self, other: DeviceContext) raises:
@@ -2347,13 +2379,7 @@ struct DeviceFunction[
             If compilation or function loading fails, or if an unsupported
             function attribute is provided.
         """
-        # Compile and load the bundle as two steps (exactly what
-        # `Context.compile` does internally).
         var info = ctx._context[]._compile_inner[Self.func_type, Self.func]()
-        var bundle = ctx._context[].load_bundle(info.asm)
-        var func_handle = ctx._context[].load_function(
-            bundle, info.function_name
-        )
         # Snapshot the per-capture byte sizes into stable heap storage now,
         # while `info.capture_sizes` is still valid. It points at elaborator
         # stack storage that is not guaranteed to survive to launch time.
@@ -2361,34 +2387,42 @@ struct DeviceFunction[
         var snap_capture_sizes = alloc(
             Layout[UInt64](count=max(snap_num_captures, 1))
         ).unsafe_leak()
+        var info_capture_sizes: UnsafePointer[
+            UInt64, ImmUntrackedOrigin
+        ] = info.capture_sizes
         for i in range(snap_num_captures):
-            snap_capture_sizes[i] = info.capture_sizes[i]
+            snap_capture_sizes[i] = info_capture_sizes[i]
+        var attr_code = OptionalReg[Int32](None)
+        var attr_value = Int32(0)
         if func_attribute:
             if (
                 func_attribute.value().attribute
                 == Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             ):
-                ctx._context[].set_function_attribute(
-                    func_handle,
-                    func_attribute.value().attribute.code,
-                    Int32(func_attribute.value().value),
+                attr_code = OptionalReg[Int32](
+                    func_attribute.value().attribute.code
                 )
+                attr_value = Int32(func_attribute.value().value)
             else:
                 raise Error(
                     "the function attribute '",
                     func_attribute.value().attribute,
                     "' is not currently supported",
                 )
+        # The context's function cache owns the loaded module: repeated
+        # constructions of the same kernel reuse the cached module.
+        var func_handle = ctx._context[].get_or_load_function(
+            info.asm,
+            info.function_name,
+            attr_code=attr_code,
+            attr_value=attr_value,
+        )
         self._ctx = ctx
         self._handle = None
         self._func_info = info
-        # The `RuntimeBundle` owns the loaded binary; the function handle is
-        # only valid while the bundle is alive. Move it into the refcounted
-        # inner struct.
         self._inner = ArcPointer(
             _DeviceFunctionInner(
                 func_handle,
-                bundle^,
                 ctx._context,
                 snap_capture_sizes,
                 snap_num_captures,
@@ -2400,8 +2434,8 @@ struct DeviceFunction[
     def _validate_arguments[
         *Ts: DevicePassable,
         num_args: Int,
-    ]() -> Tuple[Int, InlineArray[Int, num_args]]:
-        comptime declared_num_args = Self.declared_arg_types.size
+    ]() -> Tuple[Int, Array[Int, num_args]]:
+        comptime declared_num_args = Self.declared_arg_types.length
 
         comptime assert (
             declared_num_args == num_args
@@ -2411,9 +2445,7 @@ struct DeviceFunction[
         # calculate the offset into a contiguous memory area which will
         # be used to remap the passed arguments into the device dtypes.
         var tmp_arg_offset = 0
-        var translated_arg_offsets = InlineArray[Int, num_args](
-            uninitialized=True
-        )
+        var translated_arg_offsets = Array[Int, num_args](uninitialized=True)
         var num_translated_args = 0
 
         comptime for i in range(num_args):
@@ -2540,7 +2572,7 @@ struct DeviceFunction[
             "shared_mem_bytes must be non-negative",
         )
 
-        comptime num_passed_args = Ts.size
+        comptime num_passed_args = Ts.length
         var validated_args = Self._validate_arguments[
             *Ts, num_args=num_passed_args
         ]()
@@ -2564,7 +2596,7 @@ struct DeviceFunction[
 
         comptime args_size = calculate_args_size()
 
-        var translated_args = InlineArray[Byte, args_size](uninitialized=True)
+        var translated_args = Array[Byte, args_size](uninitialized=True)
         var start_addr = Int(translated_args.unsafe_ptr())
         var extra_align = align_up(start_addr, 8) - start_addr
 
@@ -2594,16 +2626,9 @@ struct DeviceFunction[
             for i in range(num_captures_static + num_passed_args):
                 dense_args_sizes[i] = 0
 
-        # Unlike the legacy path — whose `ctx.enqueue` is `@always_inline`, so
-        # the launch reads that storage in the same frame — HAL dispatches the
-        # launch through a chain of non-inlined calls (`Stream.execute` ->
-        # `Queue.execute` -> plugin -> C ABI). The compiler treats `populate`'s
-        # alloca as dead once `populate` returns and reuses the storage for
-        # those call frames, corrupting the kernel-param values. Copy the
-        # capture values into stable heap storage right after `populate` and
-        # repoint `dense_args_addrs` at the copies so they survive dispatch.
-        # Capture byte sizes come from the `_DeviceFunctionInner` snapshot taken
-        # in `DeviceFunction.__init__`.
+        # `populate` writes capture pointers into stack storage that does not
+        # survive HAL's non-inlined launch chain; copy the values into a heap
+        # blob, with byte sizes from the `_DeviceFunctionInner` snapshot.
         var capture_blob = Optional[UnsafePointer[Byte, MutUntrackedOrigin]]()
         var capture_blob_size = 0
         if num_captures > 0:
@@ -2626,7 +2651,7 @@ struct DeviceFunction[
             for i in range(num_captures):
                 blob_off = align_up(blob_off, 16)
                 var sz = Int(self._inner[]._capture_sizes[i])
-                memcpy(
+                unsafe_memcpy(
                     dest=blob + blob_off,
                     src=dense_args_addrs[num_translated_args + i].bitcast[
                         Byte
@@ -2692,9 +2717,7 @@ struct DeviceFunction[
             num_attributes=UInt32(len(attributes)),
         )
 
-        # Keep `attributes` and the marshaled arg bytes alive past the launch:
-        # `attr_ptr` and `dense_args_addrs` point into them, and ASAP-drop
-        # would otherwise release the storage before the plugin reads it.
+        # Keep these alive until the plugin has read them.
         _ = attributes^
         _ = translated_args^
 
@@ -2748,7 +2771,7 @@ struct DeviceFunction[
                 " `constant_memory` mappings."
             )
 
-        comptime num_args = Ts.size
+        comptime num_args = Ts.length
         ref func_info = self._func_info
         var num_captures = max(0, func_info.num_captures)
         comptime populate = type_of(func_info).populate
@@ -2794,17 +2817,8 @@ struct DeviceFunction[
         comptime for i in range(num_args):
             _populate_arg_sizes[i]()
 
-        # See `_call_with_pack_checked`: `populate`'s stack capture storage
-        # does not survive HAL's non-inlined launch chain, so copy the capture
-        # values into a stable heap blob and repoint `dense_args_addrs` at the
-        # copies.
-        #
-        # Unchecked path: this is reached via `enqueue_function(func_value)`,
-        # so the `DeviceFunction` outlives the frame that filled
-        # `func_info.capture_sizes` (elaborator stack storage) — by here it
-        # has been reused/clobbered. Use the `_DeviceFunctionInner` snapshot
-        # taken at `__init__` instead, which captured the sizes while they
-        # were valid.
+        # Same capture-lifetime hazard as `_call_with_pack_checked`: copy the
+        # captures into a heap allocation.
         var capture_blob = Optional[UnsafePointer[Byte, MutUntrackedOrigin]]()
         var capture_blob_size = 0
         if num_captures > 0:
@@ -2825,7 +2839,7 @@ struct DeviceFunction[
             for i in range(num_captures):
                 blob_off = align_up(blob_off, 16)
                 var sz = Int(self._inner[]._capture_sizes[i])
-                memcpy(
+                unsafe_memcpy(
                     dest=blob + blob_off,
                     src=dense_args_addrs[num_args + i].bitcast[Byte](),
                     count=sz,
@@ -2874,7 +2888,7 @@ struct DeviceFunction[
             num_attributes=UInt32(len(attributes)),
         )
 
-        # Keep `attributes` alive past the launch
+        # Keep attributes alive until the plugin has read them.
         _ = attributes^
 
         if capture_blob:
@@ -2911,7 +2925,7 @@ struct DeviceFunction[
     ) raises:
         _check_device_context_hal_only_supported_exec_config(execution_config)
 
-        comptime num_args = Ts.size
+        comptime num_args = Ts.length
         ref func_info = self._func_info
         var num_captures = max(0, func_info.num_captures)
         comptime populate = type_of(func_info).populate
@@ -2957,8 +2971,8 @@ struct DeviceFunction[
         comptime for i in range(num_args):
             _populate_arg_sizes[i]()
 
-        # See `_call_with_pack_checked`: keep capture data alive once
-        # `populate`'s stack storage is dead.
+        # Same capture-lifetime hazard as `_call_with_pack_checked`: heap-blob
+        # the captures, sizes from the `_DeviceFunctionInner` snapshot.
         var capture_blob = Optional[UnsafePointer[Byte, MutUntrackedOrigin]]()
         var capture_blob_size = 0
         if num_captures > 0:
@@ -2979,7 +2993,7 @@ struct DeviceFunction[
             for i in range(num_captures):
                 blob_off = align_up(blob_off, 16)
                 var sz = Int(self._inner[]._capture_sizes[i])
-                memcpy(
+                unsafe_memcpy(
                     dest=blob + blob_off,
                     src=dense_args_addrs[num_args + i].bitcast[Byte](),
                     count=sz,
@@ -3138,7 +3152,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
                 " `constant_memory` mappings."
             )
 
-        comptime num_args = Ts.size
+        comptime num_args = Ts.length
         var dense_args_addrs = stack_allocation[
             num_args + 1, OpaquePointer[MutAnyOrigin]
         ]()
@@ -3213,7 +3227,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
     ) raises:
         _check_device_context_hal_only_supported_exec_config(execution_config)
 
-        comptime num_args = Ts.size
+        comptime num_args = Ts.length
         var dense_args_addrs = stack_allocation[
             num_args + 1, OpaquePointer[MutAnyOrigin]
         ]()
@@ -4086,7 +4100,7 @@ struct DeviceBuffer[dtype: DType](
                 _HALBufferInner(buffer^, ctx._context, addr, [], [])
             )
         except e:
-            abort("DeviceBuffer: failed to wrap external memory")
+            abort(String(t"DeviceBuffer: failed to wrap external memory: {e}"))
 
     @staticmethod
     @doc_hidden
@@ -4152,7 +4166,7 @@ struct DeviceBuffer[dtype: DType](
         exactly one live reference transfers, net-zero.
         """
         var box = alloc[DeviceBuffer[Self.dtype]](1)
-        box.init_pointee_move(self^)
+        box.unsafe_write(self^)
         return _DeviceBufferPtr[mut=True](
             box.bitcast[_DeviceBufferCpp]().unsafe_origin_cast[
                 UntrackedOrigin[mut=True]
@@ -5409,14 +5423,12 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
     """The number of `DeviceContext` values in the collection. Deprecated
     alias for `length`."""
 
-    var device_contexts: InlineArray[DeviceContext, Self.length]
+    var device_contexts: Array[DeviceContext, Self.length]
     """The underlying storage for the per-device contexts."""
 
     @always_inline
-    def __init__(
-        out self, device_contexts: InlineArray[DeviceContext, Self.length]
-    ):
-        """Initialize from an `InlineArray` of `DeviceContext` values.
+    def __init__(out self, device_contexts: Array[DeviceContext, Self.length]):
+        """Initialize from an `Array` of `DeviceContext` values.
 
         Args:
             device_contexts: The per-device contexts to store.
@@ -5424,12 +5436,18 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
         self.device_contexts = device_contexts
 
     @always_inline
-    def __init__(
-        out self,
+    def __init__[
+        *, __literal_size__: Int
+    ](
+        out self: DeviceContextArray[__literal_size__],
         var *device_contexts: DeviceContext,
         __list_literal__: NoneType = None,
     ):
         """Initialize from a variadic sequence of `DeviceContext` values.
+
+        Parameters:
+            __literal_size__: The number of contexts in the literal, inferred
+                from the number of elements given.
 
         Args:
             device_contexts: One `DeviceContext` per device, exactly `length`
@@ -5440,9 +5458,9 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
         assert (
             len(device_contexts) == Self.length
         ), "mismatch in the number of elements"
-        self.device_contexts = InlineArray[DeviceContext, Self.length](
-            *device_contexts^, __list_literal__=None
-        )
+        self.device_contexts = Array[
+            DeviceContext, __literal_size__
+        ]._from_variadic(*device_contexts^)
 
     def __getitem_param__[index: Int](self) -> DeviceContext:
         """Access a `DeviceContext` at a compile-time known index.
@@ -5479,20 +5497,20 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
 
     def filter_gpu_contexts[
         num_gpu_devices: Int
-    ](self) raises -> InlineArray[DeviceContext, num_gpu_devices]:
+    ](self) raises -> Array[DeviceContext, num_gpu_devices]:
         """Filters CPU contexts out and returns the GPU contexts in order.
 
         Some kernels receive a `DeviceContextArray` that mixes GPU contexts
         with CPU contexts carrying host-side pointers. Most kernels only
         want the GPU contexts in launch order, packed into a fixed-size
-        `InlineArray`.
+        `Array`.
 
         Parameters:
             num_gpu_devices: The expected number of GPU contexts. Used as
-                the size of the returned `InlineArray`.
+                the size of the returned `Array`.
 
         Returns:
-            An `InlineArray` of size `num_gpu_devices` containing the GPU
+            An `Array` of size `num_gpu_devices` containing the GPU
             contexts in their original order.
 
         Raises:
@@ -5501,7 +5519,7 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
         """
         # Validate the count up front. Passing a partially-filled staging
         # array to `unsafe_assume_initialized=` would still be UB at the
-        # eventual destruction of the returned `InlineArray`.
+        # eventual destruction of the returned `Array`.
         var gpu_count = 0
         for i in range(Self.length):
             if self[i].api() != "cpu":
@@ -5513,16 +5531,16 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
         # `__del__` is a no-op, so the staging array is safe to drop even
         # with uninitialized slots in scope (e.g. on an early raise). The
         # `unsafe_assume_initialized=` constructor then moves every slot
-        # into a fully-initialized `InlineArray[DeviceContext]`.
-        var staging = InlineArray[
-            UnsafeMaybeUninit[DeviceContext], num_gpu_devices
-        ](uninitialized=True)
+        # into a fully-initialized `Array[DeviceContext]`.
+        var staging = Array[UnsafeMaybeUninit[DeviceContext], num_gpu_devices](
+            uninitialized=True
+        )
         var dev_idx = 0
         for i in range(Self.length):
             if self[i].api() != "cpu":
                 staging[dev_idx].init_from(DeviceContext(copy=self[i]))
                 dev_idx += 1
-        return InlineArray[DeviceContext, num_gpu_devices](
+        return Array[DeviceContext, num_gpu_devices](
             unsafe_assume_initialized=staging^
         )
 

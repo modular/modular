@@ -237,7 +237,7 @@ def test_skip_a2a[
 
     var topk_ids_immut_ptr = (
         device_topk_buf.unsafe_ptr()
-        .as_immutable()
+        .as_imm()
         .unsafe_origin_cast[ImmUntrackedOrigin]()
     )
 

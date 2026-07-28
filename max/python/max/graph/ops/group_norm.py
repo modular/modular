@@ -71,7 +71,7 @@ def group_norm(
             numerical stability.
 
     Returns:
-        A tensor with the same shape and dtype as ``input``.
+        A ``TensorValue`` with the same shape and dtype as ``input``.
 
     Raises:
         ValueError: If ``input`` has fewer than 2 dimensions.

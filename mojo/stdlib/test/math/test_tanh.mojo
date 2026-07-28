@@ -31,9 +31,9 @@ def test_tanh_tfvals_fp32() raises:
 
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
-    var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var x_stack = Array[Scalar[dtype], 4](uninitialized=True)
     var x = Span(x_stack)
-    x.unsafe_ptr().store[width=4](
+    x.unsafe_ptr().unsafe_store[width=4](
         0,
         SIMD[dtype, 4](
             -1.2583316564559937,
@@ -43,7 +43,7 @@ def test_tanh_tfvals_fp32() raises:
         ),
     )
 
-    var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var y_stack = Array[Scalar[dtype], 4](uninitialized=True)
     var y = Span(y_stack)
     for i in range(4):
         y[i] = tanh(x[i])
@@ -51,9 +51,9 @@ def test_tanh_tfvals_fp32() raises:
     #################################################
     # TF results
     # use `tf.print(tf.math.tanh(numpy.float32(x)))`
-    var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var tfvals_stack = Array[Scalar[dtype], 4](uninitialized=True)
     var tfvals_fp32 = Span(tfvals_stack)
-    tfvals_fp32.unsafe_ptr().store[width=4](
+    tfvals_fp32.unsafe_ptr().unsafe_store[width=4](
         0, SIMD[dtype, 4](-0.850603521, -1, -1, -0.612388909)
     )
 
@@ -78,9 +78,9 @@ def test_tanh_tfvals_fp64() raises:
 
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
-    var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var x_stack = Array[Scalar[dtype], 4](uninitialized=True)
     var x = Span(x_stack)
-    x.unsafe_ptr().store[width=4](
+    x.unsafe_ptr().unsafe_store[width=4](
         0,
         SIMD[dtype, 4](
             -1.2583316564559937,
@@ -90,7 +90,7 @@ def test_tanh_tfvals_fp64() raises:
         ),
     )
 
-    var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var y_stack = Array[Scalar[dtype], 4](uninitialized=True)
     var y = Span(y_stack)
     for i in range(4):
         y[i] = tanh(x[i])
@@ -98,9 +98,9 @@ def test_tanh_tfvals_fp64() raises:
     #################################################
     # TF results
     # use `tf.print(tf.math.tanh(numpy.float64(x)))`
-    var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var tfvals_stack = Array[Scalar[dtype], 4](uninitialized=True)
     var tfvals_fp64 = Span(tfvals_stack)
-    tfvals_fp64.unsafe_ptr().store[width=4](
+    tfvals_fp64.unsafe_ptr().unsafe_store[width=4](
         0,
         SIMD[dtype, 4](
             -0.85060351067231821,

@@ -138,6 +138,7 @@ struct UnsafeMaybeUninit[T: AnyType](
         comptime assert is_trivially_movable[Self.T]()
         self._array = move._array
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def init_from[
         MovableType: Movable
@@ -167,6 +168,7 @@ struct UnsafeMaybeUninit[T: AnyType](
         """
         return self.unsafe_ptr()[]
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def unsafe_assume_init_take[
         U: Movable, //
@@ -199,6 +201,7 @@ struct UnsafeMaybeUninit[T: AnyType](
         """
         return Pointer(to=self._array).unsafe_bitcast[Self.T]()
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def unsafe_assume_init_destroy[
         D: ImplicitlyDeletable

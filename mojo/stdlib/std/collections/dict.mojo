@@ -811,7 +811,7 @@ struct Dict[
         Example:
 
         ```mojo
-        var keys: InlineArray[String, 3] = ["a", "b", "c"]
+        var keys: Array[String, 3] = ["a", "b", "c"]
         var dict = Dict.fromkeys(keys, 0)
         print(dict)  # => {"a": 0, "b": 0, "c": 0}
         ```
@@ -2053,6 +2053,7 @@ struct StringDict[V: Movable](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     @always_inline
     def __getitem__(
         ref self, ref key: Self.key_type

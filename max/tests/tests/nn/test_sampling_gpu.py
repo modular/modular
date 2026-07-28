@@ -193,7 +193,7 @@ def test_typical_acceptance_sampler(device: Device) -> None:
     """Tests stochastic mode (accept with prob p_target)."""
     session = InferenceSession(devices=[device])
     graph = build_stochastic_acceptance_sampler_graph(
-        device=DeviceRef.from_device(device)
+        device=DeviceRef.from_device(device), draft_proposal="argmax"
     )
     model = session.load(graph)
 
@@ -247,6 +247,146 @@ def test_typical_acceptance_sampler(device: Device) -> None:
             *_make_inputs(1, vocab_size, draft_low, logits_low)
         )
         assert cast(Buffer, first_rejected).to_numpy()[0] == 0
+
+
+@pytest.mark.parametrize("device", [Accelerator(), CPU()])
+def test_stochastic_acceptance_recovered_is_committed_token(
+    device: Device,
+) -> None:
+    """Recovered is the committed token: draft where accepted, residual else.
+
+    Uses a balanced two-token target (``p(draft) = 0.5``) so both paths are hit
+    across seeds. Every accepted position must commit the draft token (the
+    fold); every rejected position draws from the residual ``max(0, p - q)``,
+    which removes the draft token's mass -- so a rejected position never
+    recovers the draft. Target-only recovery (the bug) instead recovers the
+    draft at ~half of both accepted and rejected positions.
+    """
+    session = InferenceSession(devices=[device])
+    model = session.load(
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.from_device(device), draft_proposal="argmax"
+        )
+    )
+
+    batch_size = 2
+    num_steps = 1
+    vocab_size = 4
+    draft_token, other_token = 0, 1
+
+    logits = np.full(
+        (batch_size * (num_steps + 1), vocab_size), -100.0, dtype=np.float32
+    )
+    logits[:, draft_token] = 0.0
+    logits[:, other_token] = 0.0
+    draft_tokens = np.full((batch_size, num_steps), draft_token, dtype=np.int64)
+
+    saw_accept = saw_reject = False
+    for seed in range(1, 33):
+        first_rejected, recovered, _ = model.execute(
+            *_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens,
+                logits,
+                np.ones(batch_size, dtype=np.float32),
+                seed=seed,
+            )
+        )
+        first_rejected_np = cast(Buffer, first_rejected).to_numpy()
+        recovered_np = cast(Buffer, recovered).to_numpy()
+        for b in range(batch_size):
+            if first_rejected_np[b] == num_steps:  # accepted
+                saw_accept = True
+                assert recovered_np[b, 0] == draft_token
+            else:  # rejected at position 0
+                saw_reject = True
+                assert recovered_np[b, 0] != draft_token
+    assert saw_accept and saw_reject
+
+
+def test_stochastic_acceptance_graph_requires_argmax_draft_proposal() -> None:
+    with pytest.raises(
+        ValueError, match="supports only argmax draft proposals"
+    ):
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.CPU(), draft_proposal=cast(Any, "sampled")
+        )
+
+
+@pytest.mark.parametrize("device", [Accelerator(), CPU()])
+def test_stochastic_acceptance_preserves_target_distribution(
+    device: Device,
+) -> None:
+    """The committed next token is distributed as the target softmax.
+
+    With a deterministic (argmax) draft the proposal ``q`` is one-hot, so
+    standard speculative sampling emits the draft token when accepted and a
+    residual ``(p_target - q)^+`` sample when rejected. Marginally the emitted
+    token must match ``p_target`` exactly. Target-only recovery (sampling the
+    full ``p_target`` on rejection) over-weights the draft token by
+    ``p(d)(1 - p(d))`` and fails both checks below.
+    """
+    session = InferenceSession(devices=[device])
+    model = session.load(
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.from_device(device), draft_proposal="argmax"
+        )
+    )
+
+    vocab_size = 6
+    num_steps = 1
+    batch_size = 8192
+    n_executes = 8
+    draft_token = 3  # deliberately a low-probability token -> frequent rejects
+
+    logits_pos0 = np.array([2.0, 1.0, 0.5, 0.0, -1.0, 1.5], dtype=np.float32)
+    target_probs = np.exp(logits_pos0) / np.exp(logits_pos0).sum()
+
+    # [batch * (num_steps + 1), vocab]: row 2b is the draft position, row
+    # 2b+1 the (unused-here) bonus position.
+    per_seq = np.stack([logits_pos0, np.zeros(vocab_size, np.float32)])
+    logits = np.tile(per_seq, (batch_size, 1)).astype(np.float32)
+    draft_tokens = np.full((batch_size, num_steps), draft_token, np.int64)
+
+    # With the fold, recovered[:, 0] is already the committed token per row
+    # (draft where accepted, residual sample where rejected).
+    committed: list[npt.NDArray[np.int64]] = []
+    recovered_when_rejected: list[npt.NDArray[np.int64]] = []
+    for seed in range(1, n_executes + 1):
+        first_rejected, recovered, _ = model.execute(
+            *_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens,
+                logits,
+                np.ones(batch_size, dtype=np.float32),
+                seed=seed,
+            )
+        )
+        recovered_np = cast(Buffer, recovered).to_numpy()[:, 0]
+        rejected_at0 = cast(Buffer, first_rejected).to_numpy() == 0
+        committed.append(recovered_np)
+        recovered_when_rejected.append(recovered_np[rejected_at0])
+
+    # Residual recovery can never resample the draft token it rejected.
+    all_recovered = np.concatenate(recovered_when_rejected)
+    assert all_recovered.size > 0
+    assert not np.any(all_recovered == draft_token)
+
+    counts = np.bincount(
+        np.concatenate(committed), minlength=vocab_size
+    ).astype(np.float64)
+    empirical = counts / counts.sum()
+    # 10-sigma margin: per-proportion std ~ sqrt(p(1-p)/N) ~ 2e-3 at N~65k.
+    assert np.max(np.abs(empirical - target_probs)) < 0.02
+
+    expected = target_probs * counts.sum()
+    chi2 = float(np.sum((counts - expected) ** 2 / expected))
+    # dof = vocab - 1 = 5; the 0.999 critical value is ~20.5.
+    assert chi2 < 20.5
 
 
 @pytest.mark.parametrize(
@@ -460,7 +600,7 @@ def test_stochastic_acceptance_sampler_mixed_per_row_params() -> None:
     device = Accelerator()
     session = InferenceSession(devices=[device])
     graph = build_stochastic_acceptance_sampler_graph(
-        device=DeviceRef.from_device(device)
+        device=DeviceRef.from_device(device), draft_proposal="argmax"
     )
     model = session.load(graph)
 
@@ -508,7 +648,7 @@ def test_stochastic_acceptance_sampler_greedy_is_seed_independent() -> None:
     device = Accelerator()
     session = InferenceSession(devices=[device])
     graph = build_stochastic_acceptance_sampler_graph(
-        device=DeviceRef.from_device(device)
+        device=DeviceRef.from_device(device), draft_proposal="argmax"
     )
     model = session.load(graph)
 
@@ -558,7 +698,7 @@ def test_stochastic_acceptance_sampler_bonus_token_uses_seed() -> None:
     device = Accelerator()
     session = InferenceSession(devices=[device])
     graph = build_stochastic_acceptance_sampler_graph(
-        device=DeviceRef.from_device(device)
+        device=DeviceRef.from_device(device), draft_proposal="argmax"
     )
     model = session.load(graph)
 

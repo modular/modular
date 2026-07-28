@@ -403,6 +403,12 @@ struct Struct_msa_attention_ragged_paged:
         # `num_rows` == total query tokens (== batch on decode, 1 token/seq).
         var num_rows = Int(q.dim_size[0]())
 
+        # A data-parallel replica with no assigned requests gets empty per-rank
+        # inputs. There is nothing to attend, and the routes below build a Q TMA
+        # descriptor, which rejects a zero global dim.
+        if num_rows == 0:
+            return
+
         # Non-owning DeviceBuffer views over the graph tensors.
         var out_lt = output.to_layout_tensor()
         var q_lt = q.to_layout_tensor()
@@ -413,11 +419,10 @@ struct Struct_msa_attention_ragged_paged:
             ctx, q_lt.ptr, num_rows * num_heads * head_dim, owning=False
         )
 
-        # Route purely on the runtime query length.  MAX speculative draft
-        # length is 4; `2/3/4` route to architecture-specific spec decode and
-        # `> 4` to prefill.  A short 2-4 prefill is correctly served by the
-        # decode-shaped sparse path.
-        comptime MAX_SPEC_DRAFT = 4
+        # Route purely on the runtime query length.  AMD currently supports
+        # speculative widths through 4; other architectures support through 8.
+        # Larger query lengths use prefill.
+        comptime MAX_SPEC_DRAFT = 4 if has_amd_gpu_accelerator() else 8
         var max_q_len = Int(kv_collection.max_seq_length)
 
         # Decode == one query token per sequence (`max_q_len == 1`).
@@ -497,7 +502,7 @@ struct Struct_msa_attention_ragged_paged:
                     ctx,
                 )
         elif 1 < max_q_len <= MAX_SPEC_DRAFT:
-            # ---- Sparse SPECULATIVE decode (`2 <= max_q_len <= 4`) ----
+            # ---- Sparse SPECULATIVE decode ------------------------------
             # Each draft token runs on its OWN CTA via the per-token decode
             # kernel (`spec_max_seq_len > 1` derives the spec mode in-entry =>
             # per_token_index + causal + the over-launched

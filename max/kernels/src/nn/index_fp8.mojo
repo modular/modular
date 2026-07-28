@@ -55,9 +55,9 @@ struct IndexSmemStorage[
         BN: Number of key rows staged in shared memory per block tile.
     """
 
-    var q_smem: InlineArray[Scalar[Self.dtype], Self.num_heads * Self.depth]
-    var k_smem: InlineArray[Scalar[Self.dtype], Self.BN * Self.depth]
-    var scratch: InlineArray[Scalar[DType.float32], Self.BN * 8]
+    var q_smem: Array[Scalar[Self.dtype], Self.num_heads * Self.depth]
+    var k_smem: Array[Scalar[Self.dtype], Self.BN * Self.depth]
+    var scratch: Array[Scalar[DType.float32], Self.BN * 8]
 
 
 @__name(t"fp8_index_{dtype}")
@@ -68,7 +68,7 @@ def fp8_index_kernel[
     QSLT: TensorLayout,
     k_operand_type: MHAOperand,
     ks_operand_type: MHAOperand,
-    block_tile_shape: InlineArray[Int, 2],
+    block_tile_shape: Array[Int, 2],
     VLLT: TensorLayout,
     num_heads: Int,
     depth: Int,
@@ -168,7 +168,9 @@ def fp8_index_kernel[
         address_space=AddressSpace.SHARED,
     ](k_smem.unsafe_ptr())
 
-    var k_smem_ptr = k_smem.unsafe_ptr()
+    var k_smem_ptr: UnsafePointer[
+        Scalar[dtype], origin_of(k_smem), address_space=AddressSpace.SHARED
+    ] = k_smem.unsafe_ptr()
 
     var q_ptr = q.ptr_at_offset(Index(start_of_seq + UInt32(seq_offset), 0, 0))
     var q_s_ptr = q_s.ptr_at_offset(Index(start_of_seq + UInt32(seq_offset), 0))
@@ -236,7 +238,9 @@ def fp8_index_kernel[
     # the tile shape per axis and silently stages NOTHING whenever
     # num_heads < 16 or depth // simd_width < 8 (e.g. depth == 64).
     comptime q_vecs = num_heads * depth // simd_width
-    var q_smem_dst = q_smem.unsafe_ptr()
+    var q_smem_dst: UnsafePointer[
+        Scalar[dtype], origin_of(q_smem), address_space=AddressSpace.SHARED
+    ] = q_smem.unsafe_ptr()
     for v in range(Int(tid), q_vecs, num_threads):
         q_smem_dst.store(
             v * simd_width, q_ptr.load[width=simd_width](v * simd_width)
@@ -436,7 +440,7 @@ def fp8_index[
             " is unvalidated below 16 heads; num_heads in {4, 8} requires the"
             " SM100 tensor-core path"
         )
-        comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
+        comptime block_tile_shape: Array[Int, 2] = [512, 128]
         comptime BM = block_tile_shape[0]
         comptime BN = block_tile_shape[1]
         comptime smem_use = size_of[

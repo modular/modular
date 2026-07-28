@@ -62,6 +62,20 @@ comptime logger = Logger()
 
 
 @always_inline
+def _ws_splitk_force_pin(fsk: Int) -> Int:
+    """Pins a `FA4_WS_SPLITK_FORCE` value to a validated WS split-K P.
+
+    Returns `fsk` when it is one of the validated even partition counts
+    {2, 4, 6, 8, 10, 16} (a superset of `SPLITK_CANDIDATES`, which is trimmed
+    for compile time), else 1 (single-CTA WS). Shared by the Layout-G and
+    Layout-E force routes so the pin set lives in one place.
+    """
+    return fsk if (
+        fsk == 2 or fsk == 4 or fsk == 6 or fsk == 8 or fsk == 10 or fsk == 16
+    ) else 1
+
+
+@always_inline
 def mha_sm100_dispatch[
     q_type: DType,
     KVType: MHAOperand,
@@ -187,7 +201,7 @@ def mha_sm100_dispatch[
         # (256 // 2), and 1Q single-CTA (128 // 1); 32 for the WS BM=32 config
         # (MMA_M=32 // 1).
         comptime BM_per_mma = fa4_config.MMA_M // fa4_config.cta_group()
-        comptime assert BM == 32 or BM == 128 or BM == 256
+        comptime assert BM == 32 or BM == 64 or BM == 128 or BM == 256
 
         # Batch the O store into one TMA per issuer: the box covers
         # `ceil(n_blocks/2)` swizzle-granularity blocks, so the single-issuer
@@ -284,14 +298,24 @@ def mha_sm100_dispatch[
             fold_chunks=k_fold_chunks,
             row_major=k_row_major,
         ](ctx)
-        comptime v_sub_BN = kv_sub_tile_rows(fa4_config.BN, KVType.page_size)
-        comptime v_row_major = fa4_config.v_row_major()
-        # WS shared sub-tile ring: V depth-tile box (256x64), one TMA per
-        # depth-tile. MUST match load_warp's `v_tma_op` BK + `v_fold_chunks`
-        # exactly (single source of truth via `v_box_cols()`). Folds to the
-        # full-depth V box for non-WS (which loads V whole).
-        comptime v_sub_cols = fa4_config.v_box_cols()
-        comptime v_fold_chunks = kv_tma_fold_chunks[
+        # V TMA box geometry per layout comes from `v_tma_box_rows()` /
+        # `v_tma_box_cols()` -- the one selector dispatch, kernel, and the
+        # `fa4_load` signature all route through (see their docstrings). Byte
+        # layout for Layout-E pinned by `test_ws_v_layout_e_probe.mojo`
+        # (CONTIGUOUS `mn = p*ov_depth + d`).
+        #
+        # `v_row_major` / `v_fold_chunks` stay inline scalar ternaries (NOT a
+        # `comptime if`/`else` branching the whole `create_tma_tile`): Mojo
+        # unifies a `var`'s type structurally across both branches, so two
+        # different `TMATensorTile` shapes assigned to `v_tma_op` in separate
+        # branches fail to parse. Layout-E forces them False/1 (Phase 1:
+        # correctness-only, no row-major page-dense fold).
+        comptime v_sub_BN = fa4_config.v_tma_box_rows(KVType.page_size)
+        comptime v_sub_cols = fa4_config.v_tma_box_cols()
+        comptime v_row_major = (
+            False if fa4_config.m_pack == 2 else fa4_config.v_row_major()
+        )
+        comptime v_fold_chunks = 1 if fa4_config.m_pack == 2 else kv_tma_fold_chunks[
             KVType.dtype,
             fa4_config.swizzle_mode,
             BK=v_sub_cols,
@@ -304,7 +328,8 @@ def mha_sm100_dispatch[
         # Producer/consumer agreement: if the P@V consumer reads the page-dense
         # (row-major) V layout, the producer MUST have actually folded it
         # (`v_fold_chunks >= 2`). `v_row_major()` mirrors this predicate, so a
-        # mismatch here means the two drifted.
+        # mismatch here means the two drifted. Trivially holds for Layout-E
+        # (`v_row_major` forced False).
         comptime assert (not v_row_major) or (
             v_fold_chunks > 1
         ), "v_row_major() implies the V row-major fold; predicate drift"
@@ -451,7 +476,7 @@ def mha_sm100_dispatch[
                 # --- ragged dispatch ---
                 comptime if ragged:
                     with_valid_length[NonNullPointer[DType.uint32]](
-                        {valid_length.as_immutable().as_unsafe_any_origin()}
+                        {valid_length.as_imm().as_unsafe_any_origin()}
                     )
                 else:
                     with_valid_length[NullPointer[DType.uint32]]({})
@@ -523,6 +548,17 @@ def mha_sm100_dispatch[
         comptime SPLITK_CANDIDATES = (
             [10, 4, 2] if splitk_mask_ok else List[Int]()
         )
+        # Layout-E (BM=64, m_pack=2) forks the candidate set to add P16: the
+        # B200 g16/seq=4 sweep (2026-07-23) measured P16 as the clear long-cache
+        # winner (+21% d128 / +34% d64 over P10 at cache 131072 by latency),
+        # which the shared [10,4,2] cannot express. Kept SEPARATE from
+        # SPLITK_CANDIDATES so 1Q / Layout-G compile time is unchanged (they stay
+        # 3 split-K kernels; Layout-E compiles 4). All four are even and admitted
+        # by FA4Config.supported() (the Layout-E route asserts supported()
+        # per-candidate in its scan). The scan is only entered when the
+        # Layout-E-geometry mask gate `ws_e_mask_ok` holds (mask != UNKNOWN_MASK),
+        # which is exactly the split-K mask requirement.
+        comptime WS_E_SPLITK_CANDIDATES = [16, 10, 4, 2]
 
         # The GPC fragmentation model (`clusters_per_wave`) covers B200 (148 SMs)
         # and B300 (160 SMs); its LUT folds at comptime keyed on
@@ -560,9 +596,16 @@ def mha_sm100_dispatch[
         # benchmark (Phase C3) and the reroute-pinned tests (C5) need. Read inside
         # this generic `def` so it elaborates with the consuming test/bench's
         # `-D FA4_FORCE_CONFIG=...` copts (same mechanism as softmax_warp's
-        # `FA4_1Q_SPLITK_WRITER`).  1 = force WS (bypass the prompt-len/grid test,
-        # still comptime-gated on `supported()`+`ws_mask_ok`); 2 = force the
-        # baseline 1Q/split-K/2Q carve (skip the WS route entirely).
+        # `FA4_1Q_SPLITK_WRITER`).  1 = force WS Layout-G (`BM=32`, bypass the
+        # prompt-len/grid test, still comptime-gated on
+        # `supported()`+`ws_mask_ok`); 2 = force the baseline 1Q/split-K/2Q
+        # carve (skip the WS route entirely); 3 = force WS Layout-E (`BM=64`,
+        # single-CTA unless `-D FA4_WS_SPLITK_FORCE=P` pins the cross-CTA split-K).
+        # Under 0 = auto, Layout-E is now auto-selected (Phase 4) between the
+        # Layout-G (BM=32) and 1Q rungs: for a prompt that single-tiles BM=64 but
+        # not BM=32 (`32 < group*max_prompt_len <= 64`), the ladder is
+        # BM=32 -> BM=64 -> 1Q(BM=128) -> 2Q(BM=256), picking the smallest tile
+        # that single-tiles the prompt (split-K then fills the SMs).
         comptime FA4_FORCE_CONFIG = get_defined_int["FA4_FORCE_CONFIG", 0]()
         # Warp-specialized BM=32 packed-TMEM datapath for very short prompts:
         # the BM=32 tile holds `group` q-heads x BM_eff seq positions under
@@ -582,6 +625,45 @@ def mha_sm100_dispatch[
         # carve so WS-eligible shapes (see the single-tile enablement) take WS
         # first; everything else falls through to the 1Q carve.
         comptime if config.depth == 128 or config.depth == 64:
+            # Layout-E (`with_bm(64)`) force-launch intercept: a DEDICATED force
+            # value (3) so Layout-G's existing FA4_FORCE_CONFIG={0,1,2} behavior
+            # stays byte-identical. `-D FA4_WS_SPLITK_FORCE=P` composes here to
+            # pin the Layout-E cross-CTA cluster split-K to P (Phase 3
+            # correctness-gate); the AUTO candidate scan / prompt-len heuristic
+            # is Phase 4. Falls through to the untouched Layout-G / auto-select
+            # logic below when unset or when Layout-E's `supported()` / mask gate
+            # reject the shape.
+            comptime if FA4_FORCE_CONFIG == 3:
+                comptime fa4_config_ws_e = fa4_config_2q.with_bm(64)
+                comptime ws_e_mask_ok = MaskType.nonfull_sets[
+                    fa4_config_ws_e.PairBM_eff(), fa4_config_ws_e.BN
+                ]()[0] != TileMaskStatus.UNKNOWN_MASK
+                comptime if fa4_config_ws_e.supported() and ws_e_mask_ok:
+                    # Pin P via the shared `_ws_splitk_force_pin` (validated
+                    # even counts {2,4,6,8,10,16}); 0/1/unsupported =>
+                    # single-CTA. The split-K combine is m_pack-generic (bpp =
+                    # ceil(m_pack/P)): for P > m_pack (== 2) only the first
+                    # m_pack partitions own a depth band, while all P partition
+                    # the KV and are reduced into the owning bands. Locally
+                    # named (`_ws_e_fsk`) to avoid shadowing the Layout-G
+                    # `FA4_WS_SPLITK_FORCE` binding read further below.
+                    comptime _ws_e_fsk = get_defined_int[
+                        "FA4_WS_SPLITK_FORCE", 0
+                    ]()
+                    comptime ws_e_P_force = _ws_splitk_force_pin(_ws_e_fsk)
+                    comptime if ws_e_P_force >= 2:
+                        comptime fa4_config_ws_e_splitk = (
+                            fa4_config_ws_e.with_splitk(ws_e_P_force)
+                        )
+                        comptime assert (
+                            fa4_config_ws_e_splitk.supported()
+                        ), fa4_config_ws_e_splitk.description()
+                        with_fa4_config[fa4_config_ws_e_splitk](
+                            StaticInt[ws_e_P_force]()
+                        )
+                    else:
+                        with_fa4_config[fa4_config_ws_e](StaticInt[1]())
+                    return
             comptime fa4_config_ws = fa4_config_2q.with_bm(32)
             # Cross-CTA cluster split-K over the WS BM=32 config: each partition
             # count P groups P single-CTA WS kernels in a launch cluster that
@@ -599,16 +681,10 @@ def mha_sm100_dispatch[
             comptime FA4_WS_SPLITK_FORCE = get_defined_int[
                 "FA4_WS_SPLITK_FORCE", 0
             ]()
-            # Pin the force knob to a supported WS split-K P (the even members of
-            # `SPLITK_CANDIDATES`); 0/1 -- and any unsupported value -- => single-CTA WS.
-            comptime ws_P_force = FA4_WS_SPLITK_FORCE if (
-                FA4_WS_SPLITK_FORCE == 2
-                or FA4_WS_SPLITK_FORCE == 4
-                or FA4_WS_SPLITK_FORCE == 6
-                or FA4_WS_SPLITK_FORCE == 8
-                or FA4_WS_SPLITK_FORCE == 10
-                or FA4_WS_SPLITK_FORCE == 16
-            ) else 1
+            # Pin the force knob to a validated WS split-K P via the shared
+            # `_ws_splitk_force_pin`; 0/1 and any unsupported value =>
+            # single-CTA WS.
+            comptime ws_P_force = _ws_splitk_force_pin(FA4_WS_SPLITK_FORCE)
             # WS is validated only for masks whose visible range is statically
             # known and contiguous (`nonfull_sets[0] != UNKNOWN_MASK`: Null,
             # Causal, Chunked, SlidingWindow). Materialized/And/Or masks report
@@ -724,6 +800,86 @@ def mha_sm100_dispatch[
                                 return
                         with_fa4_config[fa4_config_ws](StaticInt[1]())
                         return
+            # ---- Layout-E (BM=64, m_pack=2) production auto route (Phase 4) ----
+            # One rung DOWN the tile ladder from Layout-G: reached only when the
+            # prompt did NOT single-tile into BM=32 (the Layout-G auto route above
+            # returns whenever `BM_eff_g >= max_prompt_len`) and FA4_FORCE_CONFIG
+            # is 0 (auto). Routes BM=64 iff the prompt single-tiles into it
+            # (`BM_eff_e >= max_prompt_len`, i.e. 32 < group*seq <= 64), then fills
+            # the SMs with the cross-CTA split-K scan over WS_E_SPLITK_CANDIDATES.
+            # Falls through (no return) to the 1Q/2Q carve below when a bigger tile
+            # is needed. FORCE in {1,2,3} skip this via the `== 0` gate, so every
+            # forced bench/test cell and the Layout-G route stay byte-identical;
+            # FORCE==3 (force Layout-E) is already handled by the intercept above.
+            comptime fa4_config_ws_e = fa4_config_2q.with_bm(64)
+            comptime ws_e_mask_ok = MaskType.nonfull_sets[
+                fa4_config_ws_e.PairBM_eff(), fa4_config_ws_e.BN
+            ]()[0] != TileMaskStatus.UNKNOWN_MASK
+            comptime if (
+                fa4_config_ws_e.supported()
+                and ws_e_mask_ok
+                and FA4_FORCE_CONFIG == 0
+            ):
+                var max_num_prompt_tiles_ws_e: UInt32 = ceildiv(
+                    max_prompt_len_u32,
+                    UInt32(fa4_config_ws_e.PairBM_eff()),
+                )
+                var raw_grid_ws_e: UInt32 = (
+                    max_num_prompt_tiles_ws_e * num_heads_sched_2q * batch_size
+                )
+                if UInt32(fa4_config_ws_e.BM_eff()) >= max_prompt_len_u32:
+                    # Same largest-first wave-fit scan as the Layout-G / 1Q
+                    # routes, over the Layout-E candidate set. `ws_e_min_kpp` is
+                    # the min KV keys/partition to admit cluster size C, MEASURED
+                    # on B200 (g16, seq=4, 2026-07-23, latency-optimal): the d128
+                    # floors {C<10:512, C==10:1024, C>=16:4096} track the measured
+                    # winning P across the swept cache band, and
+                    # `* config.depth // 128` halves them at d64 (the measured
+                    # d64/d128 crossovers are an exact /2 -- half the per-partition
+                    # depth work amortizes with half the keys). Multiply-before
+                    # -divide avoids the 64 // 128 == 0 trap. depth in {64, 128}
+                    # here (the enclosing WS-block gate).
+                    #
+                    # KNOWN BOUNDED COSTS (finer P-sweep 2026-07-23; accepted as a
+                    # clean round-bucket ladder rather than fudged constants):
+                    # (1) The 512 floor flips C=4 on at max_cache_valid_length
+                    #     >= 2048, but the measured d128 P2->P4 latency crossover
+                    #     sits slightly above that, so a short-cache window runs P4
+                    #     where P2 is ~2.6-2.9% faster. This is win-forfeit, not a
+                    #     regression (Layout-E still beats the 1Q baseline 8-10%
+                    #     there). The only clean bump (C=4 floor 512->1024)
+                    #     overcorrects: it forces P2 where P4 is optimum near cache
+                    #     3072 for a ~7% LOSS, so the round bucket stays.
+                    # (2) In a narrow d128 window (~cache 2048-3072) the BM=64 tile
+                    #     itself trails the BM=128 1Q baseline that serves this
+                    #     shape today (worst ~+8% at cache 2048); no split-K P
+                    #     recovers it (best P is still ~+5% vs baseline). Accepted
+                    #     as a bounded pothole rather than widen the ladder with an
+                    #     occupancy guard.
+                    comptime for C in WS_E_SPLITK_CANDIDATES:
+                        comptime ws_e_splitk_cfg = fa4_config_ws_e.with_splitk(
+                            C
+                        )
+                        comptime assert (
+                            ws_e_splitk_cfg.supported()
+                        ), ws_e_splitk_cfg.description()
+                        comptime fits_wave = UInt32(
+                            clusters_per_wave[
+                                C, ctx.default_device_info.sm_count
+                            ]()
+                        )
+                        comptime ws_e_min_kpp = (
+                            512 if C < 10 else (1024 if C < 16 else 4096)
+                        ) * config.depth // 128
+                        if (
+                            UInt32(C)
+                            <= max_cache_valid_length // UInt32(ws_e_min_kpp)
+                            and raw_grid_ws_e <= fits_wave
+                        ):
+                            with_fa4_config[ws_e_splitk_cfg](StaticInt[C]())
+                            return
+                    with_fa4_config[fa4_config_ws_e](StaticInt[1]())
+                    return
         if max_prompt_len_u32 <= bm_eff_1q or raw_grid_2q <= grid_threshold:
             var max_num_prompt_tiles_1q: UInt32 = ceildiv(
                 max_prompt_len_u32, UInt32(fa4_config_1q.PairBM_eff())
@@ -733,10 +889,19 @@ def mha_sm100_dispatch[
             var raw_grid_1q: UInt32 = (
                 max_num_prompt_tiles_1q * num_heads_sched_2q * batch_size
             )
-            # Don't split a short KV into more partitions than there is K/V to go
-            # around (512 keys / partition, mirroring decode split-K's `//512`);
-            # avoids launching mostly-empty clusters.
-            var by_cache: UInt32 = max_cache_valid_length // UInt32(512)
+            # Don't split a short KV into more partitions than there is K/V to
+            # go around (min keys / partition); avoids mostly-empty clusters. A
+            # d64 partition does half the per-partition depth work of a d128 one,
+            # so it amortizes the cross-partition combine at half the keys (256
+            # vs 512) and can split 2x further -- the flat-512 floor
+            # under-parallelized d64 prefill. Scoped to d64
+            # (`256 if depth==64 else 512`, NOT a general `512*depth//128`) so
+            # only the measured depth changes; the other 1Q-legal depths in
+            # [64, 256] keep 512 pending their own sweep.
+            comptime one_q_min_kpp = 256 if config.depth == 64 else 512
+            var by_cache: UInt32 = max_cache_valid_length // UInt32(
+                one_q_min_kpp
+            )
             # Pick the LARGEST P (<= by_cache) whose `raw_grid_1q` size-`P`
             # clusters ALL fit in ONE wave given GPC fragmentation: only
             # `clusters_per_wave[P]` size-`P` clusters fit per device. Scan

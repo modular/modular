@@ -13,7 +13,6 @@
 # DOC: max/develop/basic-ops.mdx
 
 import max.experimental.functional as F
-from max.experimental import random
 from max.experimental.tensor import Tensor
 
 
@@ -23,7 +22,7 @@ def linear_layer(x: Tensor, weights: Tensor, bias: Tensor) -> Tensor:
 
 # input: (batch=2, features=4)
 x = Tensor([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
-weights = random.normal([4, 3])  # (features=4, output=3)
+weights = F.normal([4, 3])  # (features=4, output=3)
 bias = Tensor.zeros([3])
 
 output = linear_layer(x, weights, bias)

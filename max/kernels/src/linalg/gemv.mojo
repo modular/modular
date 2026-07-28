@@ -1655,8 +1655,8 @@ struct _MmaCpAsyncGmemLoaderA[
     var stage: Int
     var phase: UInt32
     var need_wait: Bool
-    var smem_offsets: InlineArray[Int, Self.vec_per_iter]
-    var preds: InlineArray[Bool, Self.vec_per_iter]
+    var smem_offsets: Array[Int, Self.vec_per_iter]
+    var preds: Array[Bool, Self.vec_per_iter]
 
     def __init__(
         out self,
@@ -1680,10 +1680,8 @@ struct _MmaCpAsyncGmemLoaderA[
         self.stage = 0
         self.phase = UInt32(1)
         self.need_wait = True
-        self.smem_offsets = InlineArray[Int, Self.vec_per_iter](
-            uninitialized=True
-        )
-        self.preds = InlineArray[Bool, Self.vec_per_iter](fill=False)
+        self.smem_offsets = Array[Int, Self.vec_per_iter](uninitialized=True)
+        self.preds = Array[Bool, Self.vec_per_iter](fill=False)
 
     def prepare(mut self):
         comptime for v in range(Self.vec_per_iter):
@@ -1799,8 +1797,8 @@ struct _MmaCpAsyncGmemLoaderB[
     var stage: Int
     var phase: UInt32
     var need_wait: Bool
-    var smem_offsets: InlineArray[Int, Self.vec_per_iter]
-    var preds: InlineArray[Bool, Self.vec_per_iter]
+    var smem_offsets: Array[Int, Self.vec_per_iter]
+    var preds: Array[Bool, Self.vec_per_iter]
 
     def __init__(
         out self,
@@ -1824,10 +1822,8 @@ struct _MmaCpAsyncGmemLoaderB[
         self.stage = 0
         self.phase = UInt32(1)
         self.need_wait = True
-        self.smem_offsets = InlineArray[Int, Self.vec_per_iter](
-            uninitialized=True
-        )
-        self.preds = InlineArray[Bool, Self.vec_per_iter](fill=False)
+        self.smem_offsets = Array[Int, Self.vec_per_iter](uninitialized=True)
+        self.preds = Array[Bool, Self.vec_per_iter](fill=False)
 
     def prepare(mut self):
         comptime for v in range(Self.vec_per_iter):
@@ -2086,8 +2082,8 @@ struct _MmaCpAsyncSmem[
     ]
     comptime Barriers = SMemArray[SharedMemBarrier, Self.stage_cnt * 2]
 
-    var a_storage: InlineArray[Scalar[Self.a_type], Self.SmemA.num_elements]
-    var b_storage: InlineArray[Scalar[Self.a_type], Self.SmemB.num_elements]
+    var a_storage: Array[Scalar[Self.a_type], Self.SmemA.num_elements]
+    var b_storage: Array[Scalar[Self.a_type], Self.SmemB.num_elements]
     var barrier_storage: Self.Barriers.Storage
 
     @always_inline

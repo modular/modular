@@ -13,7 +13,7 @@
 
 from layout import TileTensor, Idx, Coord, coord
 from std.math import ceildiv
-from std.collections import InlineArray
+from std.collections import Array
 
 from layout.tile_layout import (
     row_major,
@@ -29,7 +29,7 @@ def accessing_tensor_elements_example() raises:
     comptime rows = 4
     comptime columns = 8
     comptime layout = row_major[rows, columns]()
-    var storage = InlineArray[Float32, rows * columns](uninitialized=True)
+    var storage = Array[Float32, rows * columns](uninitialized=True)
     for i in range(rows * columns):
         storage[i] = Float32(i)
     var tensor = TileTensor(storage, layout)
@@ -77,7 +77,7 @@ def accessing_nested_tensor_elements_example() raises:
     comptime columns = 6
     comptime tiler = row_major[2, 3]()
     comptime layout = blocked_product(col_major[2, 2](), tiler)
-    var storage = InlineArray[Float32, rows * columns * 2](uninitialized=True)
+    var storage = Array[Float32, rows * columns * 2](uninitialized=True)
     for i in range(rows * columns):
         storage[i] = Float32(i)
     var tensor = TileTensor(storage, layout)
@@ -105,7 +105,7 @@ def tile_tensor_on_cpu_example() raises:
     comptime rows = 8
     comptime columns = 16
     comptime layout = row_major[rows, columns]()
-    var storage = InlineArray[Float32, rows * columns](fill=0.0)
+    var storage = Array[Float32, rows * columns](fill=0.0)
     var tensor = TileTensor(storage, layout)
     # end-layout-tensor-on-cpu-example
     assert_equal(tensor.num_elements(), rows * columns)
@@ -147,7 +147,7 @@ def tile_tensor_tile_example() raises:
 def layout_tensor_iterator_example() raises:
     # start-layout-tensor-iterator-example-1
     comptime buf_size = 128
-    var storage = InlineArray[Int16, buf_size](uninitialized=True)
+    var storage = Array[Int16, buf_size](uninitialized=True)
     for i in range(buf_size):
         storage[i] = Int16(i)
     comptime tile_m = 4
@@ -171,7 +171,7 @@ def layout_tensor_iterator_example2() raises:
     comptime cols = 8
     comptime size = rows * cols
     comptime tile_size = 2
-    var storage = InlineArray[Int32, size](uninitialized=True)
+    var storage = Array[Int32, size](uninitialized=True)
     for i in range(size):
         storage[i] = Int32(i)
 
@@ -205,7 +205,7 @@ def nested_tile_example() raises:
             Coord(Idx[grid_cols], Idx[frag_cols]),
         )
     )
-    var storage = InlineArray[Float32, total](uninitialized=True)
+    var storage = Array[Float32, total](uninitialized=True)
     for i in range(total):
         storage[i] = Float32(i)
     var tensor = TileTensor(storage, layout)
@@ -222,8 +222,8 @@ def nested_tile_example() raises:
 
 def copy_from_example() raises:
     # start-copy-from-example
-    var src_data: InlineArray[Int32, 4] = [1, 2, 3, 4]
-    var dst_data = InlineArray[Float32, 4](fill=0.0)
+    var src_data: Array[Int32, 4] = [1, 2, 3, 4]
+    var dst_data = Array[Float32, 4](fill=0.0)
 
     var src = TileTensor(src_data, row_major[2, 2]())
     var dst = TileTensor(dst_data, row_major[2, 2]())
@@ -236,7 +236,7 @@ def copy_from_example() raises:
 
 def split_static_example() raises:
     # start-split-static-example
-    var data = InlineArray[Int32, 16](uninitialized=True)
+    var data = Array[Int32, 16](uninitialized=True)
     for i in range(16):
         data[i] = Int32(i)
     var tensor = TileTensor(data, row_major[4, 4]())
@@ -251,7 +251,7 @@ def split_static_example() raises:
 
 def split_dynamic_example() raises:
     # start-split-dynamic-example
-    var data = InlineArray[Int32, 16](uninitialized=True)
+    var data = Array[Int32, 16](uninitialized=True)
     for i in range(16):
         data[i] = Int32(i)
     var tensor = TileTensor(data, row_major[8, 2]())

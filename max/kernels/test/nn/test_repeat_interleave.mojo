@@ -49,7 +49,7 @@ def test_repeat_interleave_1d(ctx: DeviceContext) raises:
     comptime rank = 1
     comptime type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
+    var input_stack = Array[Scalar[type], 4](uninitialized=True)
     var input = TileTensor(input_stack, row_major[4]())
 
     input[0] = 0
@@ -62,7 +62,7 @@ def test_repeat_interleave_1d(ctx: DeviceContext) raises:
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
+    var repeats_stack = Array[Scalar[type_repeats], 4](uninitialized=True)
     var repeats = TileTensor(repeats_stack, row_major[4,]())
 
     repeats[0] = 1
@@ -70,7 +70,7 @@ def test_repeat_interleave_1d(ctx: DeviceContext) raises:
     repeats[2] = 3
     repeats[3] = 4
 
-    var output_stack = InlineArray[Scalar[type], 10](uninitialized=True)
+    var output_stack = Array[Scalar[type], 10](uninitialized=True)
     var output = TileTensor(output_stack, row_major[10]())
 
     repeat_interleave(input, repeats, 0, output, ctx)
@@ -89,7 +89,7 @@ def test_repeat_interleave_1d_broadcast_repeats(ctx: DeviceContext) raises:
     comptime rank = 1
     comptime type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
+    var input_stack = Array[Scalar[type], 4](uninitialized=True)
     var input = TileTensor(input_stack, row_major[4]())
 
     input[0] = 0
@@ -102,12 +102,12 @@ def test_repeat_interleave_1d_broadcast_repeats(ctx: DeviceContext) raises:
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 1](uninitialized=True)
+    var repeats_stack = Array[Scalar[type_repeats], 1](uninitialized=True)
     var repeats = TileTensor(repeats_stack, row_major[1]())
 
     repeats[0] = 2
 
-    var output_stack = InlineArray[Scalar[type], 8](uninitialized=True)
+    var output_stack = Array[Scalar[type], 8](uninitialized=True)
     var output = TileTensor(output_stack, row_major[8]())
 
     repeat_interleave(input, repeats, 0, output, ctx)
@@ -126,7 +126,7 @@ def test_repeat_interleave_2d_axis_0(ctx: DeviceContext) raises:
     comptime rank = 2
     comptime type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
+    var input_stack = Array[Scalar[type], 4](uninitialized=True)
     var input = TileTensor(input_stack, row_major[2, 2]())
 
     input[0, 0] = 0
@@ -139,14 +139,14 @@ def test_repeat_interleave_2d_axis_0(ctx: DeviceContext) raises:
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
+    var repeats_stack = Array[Scalar[type_repeats], 4](uninitialized=True)
     var repeats = TileTensor(repeats_stack, row_major[2]())
 
     repeats[0] = 2
     repeats[1] = 3
 
     # Result is 2x5
-    var output_stack = InlineArray[Scalar[type], 10](uninitialized=True)
+    var output_stack = Array[Scalar[type], 10](uninitialized=True)
     var output = TileTensor(output_stack, row_major[5, 2]())
 
     repeat_interleave(input, repeats, 0, output, ctx)
@@ -171,7 +171,7 @@ def test_repeat_interleave_2d_axis_1(ctx: DeviceContext) raises:
     comptime rank = 2
     comptime type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
+    var input_stack = Array[Scalar[type], 4](uninitialized=True)
     var input = TileTensor(input_stack, row_major[2, 2]())
 
     input[0, 0] = 0
@@ -184,14 +184,14 @@ def test_repeat_interleave_2d_axis_1(ctx: DeviceContext) raises:
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
+    var repeats_stack = Array[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = TileTensor(repeats_stack, row_major[2]())
 
     repeats[0] = 2
     repeats[1] = 3
 
     # Result is 2x5
-    var output_stack = InlineArray[Scalar[type], 10](uninitialized=True)
+    var output_stack = Array[Scalar[type], 10](uninitialized=True)
     var output = TileTensor(output_stack, row_major[2, 5]())
 
     repeat_interleave(input, repeats, 1, output, ctx)
@@ -213,7 +213,7 @@ def test_repeat_interleave_3d(ctx: DeviceContext) raises:
     comptime rank = 3
     comptime type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 8](uninitialized=True)
+    var input_stack = Array[Scalar[type], 8](uninitialized=True)
     var input = TileTensor(input_stack, row_major[2, 2, 2]())
 
     input[0, 0, 0] = 0
@@ -231,14 +231,14 @@ def test_repeat_interleave_3d(ctx: DeviceContext) raises:
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
+    var repeats_stack = Array[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = TileTensor(repeats_stack, row_major[2]())
 
     repeats[0] = 2
     repeats[1] = 3
 
     # Result is 2x5
-    var output_stack = InlineArray[Scalar[type], 20](uninitialized=True)
+    var output_stack = Array[Scalar[type], 20](uninitialized=True)
     var output = TileTensor(output_stack, row_major[2, 5, 2]())
 
     repeat_interleave(input, repeats, 1, output, ctx)

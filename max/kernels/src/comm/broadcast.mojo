@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Multi-GPU broadcast kernel implementation."""
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.math import align_down, ceildiv
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu import (
@@ -60,7 +60,7 @@ def broadcast_multimem_kernel[
 ](
     output: TileTensor[dtype, Layout, MutAnyOrigin],
     input: TileTensor[dtype, Layout, ImmutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     root: Int,
 ):
@@ -102,8 +102,12 @@ def broadcast_multimem_kernel[
             comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
             # Get multicast output pointer and input pointer
-            var out_ptr = output.ptr.address_space_cast[AddressSpace.GLOBAL]()
-            var in_ptr = input.ptr.address_space_cast[_target_address_space]()
+            var out_ptr = output._storage.address_space_cast[
+                AddressSpace.GLOBAL
+            ]()
+            var in_ptr = input._storage.address_space_cast[
+                _target_address_space
+            ]()
 
             # Grid-strided loop to cover all elements (vectorized)
             for idx in range(global_tid, num_simd_vectors, stride):
@@ -173,7 +177,7 @@ def broadcast_pull_1stage_kernel[
 ](
     output: TileTensor[dtype, layout, MutAnyOrigin],
     input: TileTensor[dtype, layout, ImmutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
 ):
     """Single-stage pull broadcast kernel: each GPU reads root's input directly.
@@ -209,8 +213,10 @@ def broadcast_pull_1stage_kernel[
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
         comptime alignment = align_of[SIMD[dtype, simd_width]]()
-        var in_ptr = input.ptr.address_space_cast[_target_address_space]()
-        var out_ptr = output.ptr.address_space_cast[_target_address_space]()
+        var in_ptr = input._storage.address_space_cast[_target_address_space]()
+        var out_ptr = output._storage.address_space_cast[
+            _target_address_space
+        ]()
 
         var num_elements = input.num_elements()
         var num_simd_vectors = num_elements // simd_width
@@ -247,7 +253,7 @@ def broadcast_pull_2stage_kernel[
 ](
     result: TileTensor[dtype, OutputLayout, MutAnyOrigin],
     root_input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
     root: Int,
@@ -294,9 +300,9 @@ def broadcast_pull_2stage_kernel[
 
     # Get payload buffers from signal pointers (skip Signal header)
     # These are used as scratch space for the scatter-gather pattern
-    var payloads = InlineArray[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
+    var payloads = Array[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
 
     comptime for i in range(ngpus):
         payloads[i] = (
@@ -309,7 +315,9 @@ def broadcast_pull_2stage_kernel[
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
         var is_root = my_rank == root
-        var result_ptr = result.ptr.address_space_cast[_target_address_space]()
+        var result_ptr = result._storage.address_space_cast[
+            _target_address_space
+        ]()
 
         # Each GPU reads its chunk from root's input and writes to payload
         var my_chunk_start = my_rank * part_size
@@ -467,7 +475,7 @@ def broadcast[
 ](
     input_tensor: TileTensor[dtype, in_layout, in_origin],
     output_tensor: TileTensor[mut=True, dtype, in_layout, _],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,
@@ -583,7 +591,7 @@ def broadcast_2stage[
 ](
     input_tensor: TileTensor[dtype, in_layout, in_origin],
     output_tensor: TileTensor[mut=True, dtype, in_layout, _],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,
@@ -653,7 +661,7 @@ def broadcast_2stage[
 
     ctx.enqueue_function[kernel](
         output_tensor,
-        input_tensor.as_immut().ptr,
+        input_tensor.as_immut()._storage,
         rank_sigs,
         num_elements,
         my_rank,

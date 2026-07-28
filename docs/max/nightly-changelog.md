@@ -1,5 +1,5 @@
 ---
-title: Nightly (v26.5)
+title: MAX nightly
 ---
 
 This version is still a work in progress.
@@ -120,6 +120,10 @@ This version is still a work in progress.
   vision encoder now runs during prefill and its projected soft-token
   embeddings are merged into the target model, matching the non-MTP Gemma 4
   path.
+- Gemma 4 MTP speculative decoding now samples recovered tokens from the
+  residual distribution when stochastic acceptance rejects a draft token. This
+  preserves the target distribution for argmax draft proposals instead of
+  sampling recovery from the full target distribution.
 
 ## MAX framework
 
@@ -433,6 +437,17 @@ This version is still a work in progress.
   while still resident on device; a best-effort recency `touch` now keeps hot
   shared prefixes warm in an external tier such as dKV. Set
   `MODULAR_DKV_DISABLE_G0_TOUCH=1` to disable the refresh.
+- Added dKV external-tier health metrics so operators can alert on a dead or
+  degraded external KV cache. The `dkv` connector now surfaces its per-replica
+  connection state through `KVCacheMetrics`, and MAX exports three
+  OpenTelemetry gauges: `maxserve.dkv.connected_clients`,
+  `maxserve.dkv.total_clients`, and `maxserve.dkv.reconnect_attempts` (a
+  cumulative lifetime count reported as a gauge). Alert on
+  `connected_clients == 0` for a fully dead tier or
+  `connected_clients < total_clients` for a degraded one. The scheduler also
+  logs a `dKV degraded` clause while any replica client is disconnected.
+
+### Server metrics
 
 ### `max` CLI
 
@@ -600,6 +615,25 @@ This version is still a work in progress.
   narrows integers to 32/64-bit (the same shuffle-kernel limitation as the
   reduce migration).
 
+- The eager interpreter's `Select`/`where` op now runs through a pre-compiled
+  graph-compiler model instead of a hand-written Mojo binding. Dtype coverage
+  is unchanged: it still runs the full float, signed-int, unsigned-int, and
+  bool value set on both CPU and accelerators.
+
+- The eager interpreter's `layer_norm` and `rms_norm` ops now run through
+  pre-compiled graph-compiler models instead of hand-written Mojo bindings,
+  matching the matmul, elementwise, reduce, shape-rearrange, pooling, and
+  conv2d migrations. `epsilon`/`weight_offset` stay runtime operands, so one
+  compiled graph per `(device, dtype[, multiply_before_cast])` serves every
+  shape.
+
+- The eager interpreter's `group_norm` op now runs through a pre-compiled
+  graph-compiler model on GPU. CPU support has been removed:
+  `nn.normalization.group_norm`'s graph-compiler kernel is GPU-only (a
+  pre-existing limitation of the kernel itself, not new in this change), so
+  eager `group_norm` on CPU now raises `NotImplementedError` instead of
+  running through the old hand-written Mojo binding.
+
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
   machine's devices and drops a stamp. A later lazy eager process on the same
@@ -629,6 +663,14 @@ This version is still a work in progress.
   deprecated the `max.entrypoints.LLM` API and we'll introduce a new API
   for offline inference in a future release.
 
+- Added `max.graph.ops.allgather_rms_norm`, which fuses an all-gather across
+  devices with the RMSNorm that follows it into a single kernel launch,
+  avoiding the extra HBM round-trip of a standalone norm. It returns both the
+  normed tensor and the raw gathered tensor (the residual stream), which is
+  bit-identical to a plain `allgather`. The op dispatches to the fused kernel
+  or falls back to a standalone all-gather plus `rms_norm` depending on shape,
+  and is not enabled by default in any shipping pipeline.
+
 ### C API
 
 - Fixed `M_borrowTensorInto()` copying instead of borrowing a GPU input. When
@@ -643,6 +685,10 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- The `LayoutTensor.get_immutable()` method has been renamed to
+  `as_imm()`, matching the shorter `imm` spelling used across the
+  immutability API. The old name remains as a `@deprecated` alias and
+  will be removed in a future release.
 - GPU token sampling with `top_k >= 10` is now 2-4x faster. The softmax,
   temperature scaling, and min-p masking steps are fused into the top-k/top-p
   rejection-sampling kernel, eliminating an intermediate probability buffer
@@ -690,8 +736,23 @@ This version is still a work in progress.
   already-written and produced non-deterministic results.
 - The `layout` package is now bundled with MAX instead of Mojo.
 
+- Some standard library APIs related to accelerator programming have moved to
+  a new `max` Mojo package, including:
+
+  - `std.benchmark.Bench.bench_multicontext` ->
+    `max.benchmark.bench_multicontext`
+  - `std.benchmark.Bencher.iter_custom(DeviceContext)` ->
+    `max.benchmark.bencher_iter_custom`
+
 ## Breaking changes
 
+- `PipelineTokenizer.eos` (a single scalar token id) is replaced by
+  `PipelineTokenizer.eos_token_ids` (a set): the tokenizer's declared EOS
+  plus any additional terminators from the model config's `eos_token_id`
+  entries. The runtime previously assembled that full set privately while
+  the protocol exposed only the scalar, so consumers that needed every
+  terminator (for example, grammar backends for constrained decoding) had
+  no public way to get it.
 - MAX Serve now fails at startup when the device KV cache cannot hold a
   single request at the configured max sequence length. Previously this
   condition only logged a warning, and a request approaching the max
@@ -743,6 +804,13 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed KV-cache CLI flags replacing the entire `kv_cache` section of a
+  `--config-file` recipe instead of overriding just the named setting. For
+  example, passing `--kv-connector-config` alongside a recipe that sets
+  `kv_connector: tiered` used to silently reset `kv_connector` (and every
+  other unnamed `kv_cache` field) to its default, disabling the connector.
+  KV-cache flags now merge onto the recipe's values, so a partial override
+  changes only what it names.
 - Fixed MAX Serve container pods ignoring `SIGTERM` during the model
   cold-start window. The serving image ran Python directly as PID 1, and the
   Linux kernel silently discards a default-disposition signal sent to a
@@ -816,6 +884,10 @@ This version is still a work in progress.
   with a bfloat16 latent cache. Also enabled the sparse prefill kernel for
   GLM 5.2's tensor-parallel head shards (8/16/32 heads per device) over a
   bfloat16 latent cache; FP8 latent caches keep the decode-kernel routing.
+- Hugging Face weight and benchmark-dataset downloads now retry past a racy
+  `.incomplete` cache entry (a concurrent download or evicted cache deleting
+  the temp blob before `hf_hub_download` renames it), so a transient race no
+  longer fails with a `FileNotFoundError`.
 - Fixed MiniMax-M3 tool-call grammar enforcement silently disabling itself
   when the model emits more than one tool-call section in a single response.
   Enforcement used to switch off once the first section closed, so a second
@@ -916,3 +988,6 @@ This version is still a work in progress.
   filter when `groups > 1`, since the kernel cannot run without one.
 
 ## Mojo language
+
+For all the updates to the Mojo language, standard library, and tools,
+see the [Mojo release notes](https://mojolang.org/releases/).

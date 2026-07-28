@@ -63,8 +63,8 @@ def _graph_name(device: Device, dtype: DType) -> str:
 def _conv_graph(module: Module, device: Device, dtype: DType) -> None:
     """Adds one fully-symbolic NHWC/RSCF conv graph into *module* in-place.
 
-    The handler must pre-check dilation == 1 and groups == 1 before calling
-    the returned model -- see ``_handle_conv``'s docstring for why.
+    The handler must pre-check groups == 1 before calling the returned model
+    -- see ``_handle_conv``'s docstring for why.
 
     "c_pg" (filter in_channels/groups) is a symbol distinct from "c" (input
     channels) -- they are only equal when groups == 1, which is the only
@@ -134,11 +134,11 @@ gc_compile.register_family(_FAMILY)
 def conv_model(device: Device, dtype: DType) -> engine.Model:
     """Returns the conv Model for the given (device, dtype) (lazy by default).
 
-    Callers must pre-check ``dilation == (1, 1)`` and ``num_groups == 1``
-    before calling this and passing the returned model buffers -- this
-    function does not validate those (they are runtime tensor operands the
-    graph itself accepts for any value, but the underlying kernel only
-    actually supports the unit case; see ``_handle_conv``'s docstring).
+    Callers must pre-check ``num_groups == 1`` before calling this and
+    passing the returned model buffers -- this function does not validate
+    that (it is a runtime tensor operand the graph itself accepts for any
+    value, but the underlying kernel only supports groups == 1; see
+    ``_handle_conv``'s docstring).
 
     Args:
         device: The realized input's device.

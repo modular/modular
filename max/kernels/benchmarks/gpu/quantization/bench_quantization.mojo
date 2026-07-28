@@ -18,6 +18,7 @@ from std.sys import (
     get_defined_bool,
 )
 from std.math import ceildiv
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     BenchConfig,
@@ -148,7 +149,7 @@ def bench_1d1d_quantization[
                     num_cols_padded=cols,
                 )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     var bytes = ThroughputMeasure(
         BenchMetric.bytes,

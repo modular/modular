@@ -250,8 +250,8 @@ def run_one_case(
             c_ref_lt.as_unsafe_any_origin(),
             a_lt,
             b_lt,
-            a_scales=a_scales_lt.get_immutable().as_unsafe_any_origin(),
-            b_scales=b_scales_lt.get_immutable().as_unsafe_any_origin(),
+            a_scales=a_scales_lt.as_imm().as_unsafe_any_origin(),
+            b_scales=b_scales_lt.as_imm().as_unsafe_any_origin(),
             transpose_b=transpose_b,
             c_row_major=True,
         )

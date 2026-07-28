@@ -25,6 +25,10 @@ _TEST_SIZE = {
     "test_matmul_kernel_10.mojo": "large",
 }
 
+_EXTRA_DEPS = {
+    "test_matmul_kernel_10.mojo": ["//max:max_mojo"],
+}
+
 _GPU_MEMORY = {
     "test_matmul_int.mojo": "1",
 }
@@ -66,7 +70,7 @@ _GPU_MEMORY = {
             "//max:nn",
             "//max:quantization",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["**/*.mojo"],

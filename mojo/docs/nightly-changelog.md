@@ -10,6 +10,27 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- `where` clauses now accept an optional string-literal message, written
+  `where (condition, "message")`. The message is included in the compiler
+  diagnostic when the constraint fails, and is supported everywhere `where`
+  clauses are allowed: trailing function and struct constraints, struct
+  conditional-conformance clauses, and `alias`/`comptime` declarations.
+
+  ```mojo
+  def foo[sc: Int]() where (sc > 1, "scaling factor must be greater than 1"):
+      ...
+  ```
+
+  Calling `foo[0]()` now reports the message in the note:
+
+  ```plaintext
+  note: constraint declared here evaluated to False, expected '(sc > Int(1))':
+  scaling factor must be greater than 1
+  ```
+
+  The message must be a string literal; a non-literal message is
+  reported as an error.
+
 - Mojo supports an (internal only for now) feature known as *interior origins*,
   which allows collections to protect from a common class of memory unsafety
   problems. `List`, for example, now returns element references bound
@@ -55,8 +76,8 @@ This version is still a work in progress.
   keyword variadics, using Python style `**` syntax:
 
   ```mojo
-  def takes_them(**kwargs: Int): ...
-  def pass_them(**kwargs: Int):
+  def takes_them(var **kwargs: Int): ...
+  def pass_them(var **kwargs: Int):
     takes_them(**kwargs^)
   ```
 
@@ -103,6 +124,22 @@ This version is still a work in progress.
   As a temporary workaround, you can decorate fields with
   `@__allow_legacy_any_origin_fields` to ignore the compiler error, however this
   decorator is not stable and will eventually be removed.
+
+- Method `self` parameters must now have type `Self`. Custom `self` types are
+  now rejected unless the method is annotated with the (temporary)
+  `@__allow_legacy_custom_self_type` decorator. Switch to a `where` clause
+  instead.
+
+  ```mojo
+  struct Foo[T: AnyType]:
+      # ERROR:
+      def foo(self: Foo[Int]):
+          ...
+  # Migrate to
+  struct Foo[T: AnyType]:
+      def foo(self) where Self.T == Int:
+          ...
+  ```
 
 - Import resolution behavior has been made consistent. When resolving an import
   of a module or package, in any given directory the resolution in order of
@@ -172,6 +209,23 @@ This version is still a work in progress.
   can no longer be used as the name of a free function. Doing so now errors at
   the declaration instead of silently producing a function that could never be
   called.
+
+- A standalone module can no longer import its own name (e.g. `import util`
+  inside `util.mojo`). Such an import could only ever resolve to the module
+  itself, silently shadowing any same-named package on the search path, so it
+  is now an error. Modules inside packages are unaffected: importing the
+  enclosing package's name still resolves to the package.
+
+- A bare `**kwargs` is now an error; write `var **kwargs` (a fixit inserts it),
+  in function declarations and function types alike. `var` was already the only
+  supported convention — the sole exception to arguments defaulting to `imm`,
+  applied silently before — so semantics are unchanged.
+
+  ```mojo
+  def print_nicely(var **kwargs: Int):  # previously: `**kwargs: Int`
+      for item in kwargs.items():
+          print(item.key, "=", item.value)
+  ```
 
 - User-written structs must now explicitly declare closure-trait conformance
   in their inheritance list to satisfy a `def(...) -> ...` closure trait.
@@ -307,7 +361,10 @@ This version is still a work in progress.
   ```
 
   Using `@explicit_destroy` without an argument error string is now an error, as
-  it would have no effect or purpose.
+  it would have no effect or purpose. This applies to both `struct` and `trait`
+  declarations. A `trait` is already linear when it neither conforms to
+  `ImplicitlyDeletable` nor is `@explicit_destroy`, so the bare decorator on a
+  trait had no effect and should simply be removed.
 
   `@explicit_destroy("custom error")` can still be used to provide additional
   instruction to users when an instance cannot be deleted implicitly.
@@ -395,6 +452,9 @@ This version is still a work in progress.
   from a import * # <- decls here shadow those from b and from std.prelude
   ```
 
+- Error diagnostics on failed imports are now emitted per import site, as
+  opposed to once per module.
+
 ## Library stabilizations
 <!-- rumdl-disable MD013 -->
 
@@ -427,17 +487,96 @@ This version is still a work in progress.
 
 ## Library changes
 
-- `List.unsafe_ptr()` now returns a safe `Pointer` instead of an
-  `UnsafePointer`. The two share the same layout and convert implicitly, so
-  most code is unaffected. Code that called an unsafe-only pointer operation
+- Any integer scalar can now be constructed from an `Intable` value, not just
+  `Int`. This makes taking a pointer's address as an unsigned integer work
+  directly:
+
+  ```mojo
+  var x = 42
+  var p = Pointer(to=x)
+  var addr = UInt(p)  # previously required `UInt(Int(p))`
+  ```
+
+- `Bencher.iter()` now accepts a raising closure as a runtime argument, so a
+  benchmark whose body raises can pass a closure with an explicit capture list
+  instead of an `@parameter` closure. Prefer the unified closure form over the
+  deprecated `@parameter` one.
+
+  ```mojo
+  def bench_add(mut b: Bencher) raises:
+      var a = PythonObject(42)
+      var c = PythonObject(10)
+
+      @always_inline
+      def call_fn() raises {var a, var c}:
+          var r = a + c
+          keep(r)
+
+      b.iter(call_fn)
+  ```
+
+- `Error` is now `ImplicitlyCopyable`, so re-raising a caught error no longer
+  requires the transfer sigil:
+
+  ```mojo
+  try:
+      might_fail()
+  except e:
+      print("logging error:", e)
+      raise e  # previously an error: use `raise e^`
+  ```
+
+  A captured `StackTrace` is now reference counted, so copying an `Error` costs
+  a reference count increment rather than duplicating the trace. `raise e^`
+  still works and avoids the copy.
+
+- `PythonObject` arithmetic, comparison, and membership operators now dispatch
+  through CPython's abstract number, object, and sequence protocols (for
+  example `PyNumber_Add`, `PyObject_RichCompare`, and `PySequence_Contains`)
+  instead of a Python-level attribute lookup followed by a bound-method call.
+  Together with the non-mutating operators now borrowing their operand rather
+  than taking it by value, this is roughly 12x faster on the interop hot path
+  (a tight `a + b` or `a < b` loop). It also follows standard Python operator
+  semantics more closely, including reflected-operand fallback (`__radd__`,
+  `__rmul__`, and so on) and the standard error messages for unsupported
+  operations. An operation that no operand supports now raises `TypeError`,
+  where previously it could yield the `NotImplemented` object as a value, and
+  comparing mismatched types with `==` now returns `False` rather than a truthy
+  `NotImplemented`.
+
+- `InlineArray` has been renamed to `Array`. A temporary comptime alias exists
+  for adoption.
+
+- Many raw-pointer accessors across the standard library now return a safe
+  `Pointer` instead of an `UnsafePointer`:
+
+  - `List.unsafe_ptr()`, `InlineArray.unsafe_ptr()`, and
+    `UnsafeUnion.unsafe_ptr()`.
+  - The `unsafe_ptr()` accessors of `Span`, `StringSlice`, `String` (plus
+    `String.unsafe_ptr_mut()`), `StringLiteral`, and `CStringSlice`.
+  - `Allocation.unsafe_ptr()` and `OwnedPointer.unsafe_ptr()`.
+  - `PythonObject.unsafe_get_as_pointer()`,
+    `PythonObject.downcast_value_ptr()`, and
+    `PythonObject.unchecked_downcast_value_ptr()`.
+  - The AMD `sys.intrinsics.implicitarg_ptr()` intrinsic.
+
+  The two pointer types share the same layout and convert implicitly, so most
+  code is unaffected. Code that called an unsafe-only pointer operation
   directly on the result should switch to the ungated `unsafe_*` spelling, for
-  example `list.unsafe_ptr() + i` becomes `list.unsafe_ptr().unsafe_offset(i)`
-  and `list.unsafe_ptr()[i]` becomes `list.unsafe_ptr()[unsafe_offset=i]`.
-- `CStringSlice.unsafe_ptr()` now returns a safe `Pointer` instead of an
-  `UnsafePointer`. The two share the same layout and convert implicitly, so most
-  code is unaffected. Code that called an unsafe-only pointer operation directly
-  on the result should switch to the ungated `unsafe_*` spelling, for example
-  `ptr + i` becomes `ptr.unsafe_offset(i)`.
+  example `ptr + i` becomes `ptr.unsafe_offset(i)` and `ptr[i]` becomes
+  `ptr[unsafe_offset=i]`.
+- The `capture_sizes` field of `CompiledFunctionInfo` (`std.compile`) is now a
+  safe `Pointer[UInt64]` instead of an `UnsafePointer`. The two share the same
+  layout and convert implicitly, so most code is unaffected. Code that indexes
+  the field directly should bind it to an `UnsafePointer` variable first or use
+  the ungated `unsafe_*` spellings.
+
+- The `as_immutable()` method on `UnsafePointer` and the
+  `get_immutable()` method on `Span`, `StringSlice`, and `UnsafePointer`
+  have all been renamed to a single `as_imm()` method, embracing the
+  shorter `imm` spelling for a consistent immutability API. The old
+  names remain as `@deprecated` aliases and will be removed in a future
+  release.
 
 - Added
   [`runtime.initialize_runtime()`](/docs/std/runtime/asyncrt/initialize_runtime/),
@@ -522,6 +661,9 @@ This version is still a work in progress.
 
   t^.consume_elements[handler]()
   ```
+
+- `TypeList.size` is renamed to `TypeList.length`. `TypeList.size` remains as a
+  deprecated alias for `TypeList.length`; update `.size` reads to `.length`.
 
 - `InlineArray`'s second parameter is renamed from `size` to `length`.
   `InlineArray.size` remains as a deprecated alias for `InlineArray.length`;
@@ -653,6 +795,14 @@ This version is still a work in progress.
   associated `ReversedType` iterator instead of hard-coding its `__reversed__()`
   return type, so every range flavor (including the typed scalar ranges) can
   conform and return its own reversed iterator.
+
+- The `Int`-based and `Scalar`-based `range()` types have been unified into a
+  single `dtype`-parameterized family, now that `Int` is `Scalar[DType.int]`.
+  `range()` with `Int` arguments behaves exactly as before. As part of this,
+  `range(...).__len__()` always returns `Int`. An unsigned range whose element
+  count exceeds `Int.MAX` cannot be represented as an `Int`, so `__len__()`
+  asserts rather than silently clamping or wrapping; use `bounds()`, whose
+  upper bound is `None` in that case, for the size hint.
 
 - Added `copy_to_numpy_array` and `from_numpy_array` to the new `python.numpy`
   module for moving flat numeric data between Mojo `Span`/`List` and NumPy
@@ -1037,6 +1187,22 @@ This version is still a work in progress.
   pointer type, so callers no longer need to wrap safe pointers in
   `MutUnsafePointer` to move a value between them.
 
+- `Pointer` now supports subtracting two pointers to compute the signed
+  distance between them in elements of the pointee type, via the new
+  `offset_from()` method (analogous to Rust's `offset_from`). The `-`
+  operator does the same. Unlike the other pointer-arithmetic operators,
+  which produce a new pointer and stay gated behind an unsafe pointer type,
+  subtracting two pointers returns an `Int` distance and is available on
+  safe pointers too:
+
+  ```mojo
+  var ptr = alloc[Int32](4)
+  var end = ptr + 3
+  print(end - ptr)  # => 3
+  print(ptr.offset_from(end))  # => -3
+  ptr.free()
+  ```
+
 - `OwnedDLHandle.get_function` now returns a callable that keeps the owning
   handle alive while it runs, fixing a crash where the library could be
   `dlclose`d between symbol lookup and the call. Its parameter is now the
@@ -1076,6 +1242,8 @@ This version is still a work in progress.
   The same `contract=fast|off` item is also accepted in the `emission_option`
   of a `kgen.compile_offload` operation, to control contraction of an
   individual offload kernel.
+
+- Failed imports are no longer cached and may be retried, e.g., in the REPL.
 
 ## GPU programming
 
@@ -1193,6 +1361,14 @@ This version is still a work in progress.
     can attribute launch errors to their callers, and the closure overload now
     accepts (and honors) a `func_attribute` argument.
 
+- Some standard library APIs related to accelerator programming have moved to
+  a new `max` Mojo package, including:
+
+  - `std.benchmark.Bench.bench_multicontext` ->
+    `max.benchmark.bench_multicontext`
+  - `std.benchmark.Bencher.iter_custom(DeviceContext)` ->
+    `max.benchmark.bencher_iter_custom`
+
 - `AddressSpace` is now target-extensible rather than a fixed, portable enum.
   The built-in GPU spaces (`GENERIC`, `GLOBAL`, `SHARED`, `CONSTANT`, `LOCAL`,
   `SHARED_CLUSTER`, `BUFFER_RESOURCE`) are unchanged, but accessing any other
@@ -1209,6 +1385,11 @@ This version is still a work in progress.
 - The `layout` package is now bundled with MAX instead of Mojo.
 
 ## Removed
+
+- Removed the deprecated `DeviceContext.compile_function_experimental()` and
+  `DeviceContext.enqueue_function_experimental()` methods, along with overloads
+  that passed the kernel twice. Use `DeviceContext.compile_function[func]()`
+  and `DeviceContext.enqueue_function[func]()` instead.
 
 - Removed the `UInt`-returning GPU indexing accessors (`thread_idx_uint`,
   `block_idx_uint`, `block_dim_uint`, `grid_dim_uint`, `global_idx_uint`,
@@ -1236,6 +1417,13 @@ This version is still a work in progress.
 
 ## Fixed
 
+- Code completion now reports the correct completion kind for names bound by a
+  `from module import name` statement that hasn't been resolved yet. Structs,
+  traits, and functions imported this way previously completed with no kind at
+  all. Additionally, a renamed binding (`from module import name as
+  other_name`) no longer disappears from the completion list when another
+  binding to the same declaration is in scope.
+
 - Code folding in VSCode now works for Mojo files. `mojo-lsp-server` no longer
   advertises folding-range support, which only produced docstring ranges and
   caused VSCode to disable its built-in indentation-based folding — leaving
@@ -1251,6 +1439,22 @@ This version is still a work in progress.
 
 - `base64.b16decode` now raises on invalid input instead of silently producing
   corrupt output.
+
+- A capturing closure taking `**kwargs` no longer fails to compile ("no
+  matching method in call to '_insert'"): the synthetic `__call__` wrapper now
+  forwards the kwargs dict to the implementation as a `**` splat instead of as
+  a single keyword value. The same fix covers a plain `**kwargs` function
+  bound into a closure-typed value. Together with the call-combination fix
+  below, closures mixing `*args`, named keyword-only arguments, and `**kwargs`
+  all work as values.
+
+- A call may now combine a `*` unpack, literal keyword arguments, and a `**`
+  splat, as in Python: `f(*args, **kwargs^)` forwards both packed variadics
+  directly to a callee taking `*args` and `**kwargs`, and
+  `f(1, named=2, **kwargs^)` binds the literal keyword to its own named
+  parameter alongside the splat. The reverse splat order
+  (`f(**kwargs, *args)`) is rejected, matching Python, as is combining a `**`
+  splat with other keyword arguments bound for the same `**kwargs`.
 
 - [#6784](https://github.com/modular/modular/issues/6784),
   [#6434](https://github.com/modular/modular/issues/6434) - `math.sqrt` on
@@ -1376,6 +1580,10 @@ This version is still a work in progress.
   `util.mojo` exists on the search path, making the module unimportable with
   no diagnostic.
 
+- [#6485](https://github.com/modular/modular/issues/6485) - `Optional[T]` and
+  `Variant[...]` no longer corrupt data for payload types that include a
+  `Bool` field. The fix changes how unions are lowered to LLVM.
+
 - Struct extensions are no longer imported onto structs which happen to share a
   name with their intended struct, when the extensions' intended struct is
   shadowed by another:
@@ -1387,3 +1595,24 @@ This version is still a work in progress.
 
   Previously in the above example, the extensions defined by `pkg_a` would be
   imported and callable on the unrelated `Foo` struct imported from `pkg_b`.
+
+- Importing a package whose name is a prefix of another package when split by
+  dots no longer works:
+
+  ```mojo
+  # Used to import e.g., package_with.dots if it presented as a package:
+  #   package_with.dots/
+  #   └── __init__.mojo
+
+  import package_with # now errors
+  ```
+
+- Importing escaped-identifier packages & modules whose names contain dots now
+  works reliably.
+
+  ```mojo
+  from `package.with.dots`.`module.with.dots` import foo
+  ```
+
+  `mojo doc` and file-in-package builds also now use the whole dotted name for
+  such packages, rather than truncating it at the first dot.

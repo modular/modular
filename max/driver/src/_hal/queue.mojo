@@ -23,7 +23,7 @@ from .memory import _enqueue_copy
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable, _EventInner
 from .device import DeviceSpec
 from .status import STATUS_SUCCESS, HALError
-from std.collections import InlineArray, OptionalReg
+from std.collections import Array, OptionalReg
 from std.memory import (
     ArcPointer,
     OpaquePointer,
@@ -354,7 +354,7 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         comptime if n == 0:
             return
 
-        var handles = InlineArray[EventHandle, n](uninitialized=True)
+        var handles = Array[EventHandle, n](uninitialized=True)
         comptime for i in range(n):
             handles[i] = events[i]._handle()
         self._raw[].wait_for_events(

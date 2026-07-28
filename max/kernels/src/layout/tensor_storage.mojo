@@ -570,6 +570,198 @@ def _copy_from[
 
 
 @always_inline
+def _elementwise_binary_out_with_broadcast[
+    DstLayoutType: TensorLayout,
+    dst_origin: MutOrigin,
+    LhsLayoutType: TensorLayout,
+    lhs_mut: Bool,
+    lhs_origin: Origin[mut=lhs_mut],
+    RhsLayoutType: TensorLayout,
+    rhs_mut: Bool,
+    rhs_origin: Origin[mut=rhs_mut],
+    //,
+    dtype: DType,
+    width: Int,
+    dst_address_space: AddressSpace,
+    lhs_address_space: AddressSpace,
+    rhs_address_space: AddressSpace,
+    DstStorage: TensorStorage,
+    LhsStorage: TensorStorage,
+    RhsStorage: TensorStorage,
+](
+    dst: Tuple[
+        DstStorage.StorageType[dtype, dst_origin, dst_address_space],
+        DstLayoutType,
+    ],
+    lhs: Tuple[
+        LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+        LhsLayoutType,
+    ],
+    rhs: Tuple[
+        RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+        RhsLayoutType,
+    ],
+    func: Some[
+        def(SIMD[dtype, width], SIMD[dtype, width]) -> (SIMD[dtype, width])
+    ],
+):
+    """Shared loop backing out-of-place `TensorOps` elementwise binary ops.
+
+    Applies `func` between elements of `lhs` and `rhs` with limited
+    broadcasting support, writing results into `dst`. Each operand is loaded
+    or stored through its own storage policy. Expressed entirely in terms of
+    each policy's `load`, `store`, and `unsafe_cast`.
+
+    Parameters:
+        DstLayoutType: The layout type of the destination storage.
+        dst_origin: The origin of the destination storage.
+        LhsLayoutType: The layout type of the left-hand storage operand.
+        lhs_mut: The mutability of the left-hand storage operand.
+        lhs_origin: The origin of the left-hand storage operand.
+        RhsLayoutType: The layout type of the right-hand storage operand.
+        rhs_mut: The mutability of the right-hand storage operand.
+        rhs_origin: The origin of the right-hand storage operand.
+        dtype: The dtype of all three tensors' elements.
+        width: The number of scalar elements per logical element. Must equal
+            all three policies' `element_size`.
+        dst_address_space: The address space of the destination storage.
+        lhs_address_space: The address space of the left-hand storage
+            operand.
+        rhs_address_space: The address space of the right-hand storage
+            operand.
+        DstStorage: The storage policy of the destination.
+        LhsStorage: The storage policy of the left-hand operand.
+        RhsStorage: The storage policy of the right-hand operand.
+
+    Args:
+        dst: A tuple of the destination storage and its layout.
+        lhs: A tuple of the left-hand storage operand and its layout.
+        rhs: A tuple of the right-hand storage operand and its layout.
+        func: A binary function that takes one element from each of `lhs`
+            and `rhs` and returns the result written to `dst`.
+
+    Notes:
+
+    - `dst` and `lhs` must have the same rank and matching static shapes.
+    - Currently supports only rank-2 tensors or tensors of the same rank.
+    - For tensors of the same rank, shapes must match exactly.
+    - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
+        match the corresponding dimension of the rank-2 tensor.
+    """
+    ref dst_storage = dst[0]
+    ref dst_layout = dst[1]
+    ref lhs_layout = lhs[1]
+    ref rhs_layout = rhs[1]
+
+    # Immutable views for loading: `load` requires an immutable-origin handle
+    # while operands may be mutable.
+    var lhs_storage = LhsStorage.unsafe_cast[
+        dtype,
+        lhs_origin.unsafe_mut_cast[False](),
+        lhs_address_space,
+    ](lhs[0])
+    var rhs_storage = RhsStorage.unsafe_cast[
+        dtype,
+        rhs_origin.unsafe_mut_cast[False](),
+        rhs_address_space,
+    ](rhs[0])
+
+    comptime assert (
+        width == DstStorage.element_size
+        and width == LhsStorage.element_size
+        and width == RhsStorage.element_size
+    ), "elementwise binary operations require matching logical element size"
+
+    comptime dst_rank = type_of(dst_layout).rank
+    comptime lhs_rank = type_of(lhs_layout).rank
+    comptime rhs_rank = type_of(rhs_layout).rank
+    comptime dst_shape[i: Int] = type_of(dst_layout).static_shape[i]
+    comptime lhs_shape[i: Int] = type_of(lhs_layout).static_shape[i]
+    comptime rhs_shape[i: Int] = type_of(rhs_layout).static_shape[i]
+
+    comptime assert dst_rank == lhs_rank, (
+        "_elementwise_binary_out_with_broadcast requires dst and lhs to"
+        " have the same rank"
+    )
+    comptime for axis in range(type_of(dst_layout).rank):
+        comptime assert dst_shape[axis] == lhs_shape[axis], (
+            "_elementwise_binary_out_with_broadcast requires dst and lhs"
+            " shapes to match"
+        )
+
+    comptime if dst_rank == rhs_rank:
+        comptime for axis in range(type_of(dst_layout).rank):
+            comptime assert rhs_shape[axis] == dst_shape[axis], (
+                "_elementwise_binary_out_with_broadcast requires shape to"
+                " be the same for tensors of the same rank"
+            )
+
+    comptime assert type_of(dst_layout).all_dims_known, (
+        "_elementwise_binary_out_with_broadcast must operate on tensors"
+        " of statically known layouts"
+    )
+    comptime assert type_of(lhs_layout).all_dims_known, (
+        "_elementwise_binary_out_with_broadcast must operate on tensors"
+        " of statically known layouts"
+    )
+    comptime assert rhs_rank <= dst_rank, (
+        "_elementwise_binary_out_with_broadcast must operate on a rhs of"
+        " equal or lower rank than dst"
+    )
+
+    # TODO(KERN-812): Support numpy like broadcasting and relax rank-2
+    # constrain.
+    comptime assert (
+        dst_rank == 2 or dst_rank == rhs_rank
+    ), "Only supports rank-2 tensor, or same rank"
+
+    comptime alignment = align_of[SIMD[dtype, width]]() if is_gpu() else 1
+
+    comptime if rhs_rank == 1:
+        comptime assert rhs_shape[0] == dst_shape[0], (
+            "_elementwise_binary_out_with_broadcast 1d tensor operand must"
+            " have a dim that matches the tensors"
+        )
+
+        comptime for i in range(type_of(dst_layout).static_product):
+            comptime rhs_size = type_of(rhs_layout).static_product
+
+            var dst_idx = dst_layout(Idx[i])
+            var lhs_idx = lhs_layout(Idx[i])
+            var rhs_idx = rhs_layout(Idx[i % rhs_size])
+
+            DstStorage.store[alignment=alignment](
+                dst_storage,
+                dst_idx,
+                func(
+                    LhsStorage.load[width=width, alignment=alignment](
+                        lhs_storage, lhs_idx
+                    ),
+                    RhsStorage.load[width=width, alignment=alignment](
+                        rhs_storage, rhs_idx
+                    ),
+                ),
+            )
+    else:
+        comptime for i in range(type_of(dst_layout).static_product):
+            var dst_idx = dst_layout(Idx[i])
+            var lhs_idx = lhs_layout(Idx[i])
+            var rhs_idx = rhs_layout(Idx[i])
+            DstStorage.store[alignment=alignment](
+                dst_storage,
+                dst_idx,
+                func(
+                    LhsStorage.load[width=width, alignment=alignment](
+                        lhs_storage, lhs_idx
+                    ),
+                    RhsStorage.load[width=width, alignment=alignment](
+                        rhs_storage, rhs_idx
+                    ),
+                ),
+            )
+
+
+@always_inline
 def _elementwise_binary_with_broadcast[
     SelfLayoutType: TensorLayout,
     self_origin: MutOrigin,
@@ -596,44 +788,12 @@ def _elementwise_binary_with_broadcast[
         def(SIMD[dtype, width], SIMD[dtype, width]) -> (SIMD[dtype, width])
     ],
 ):
-    """Shared loop backing every `TensorOps` elementwise binary operation.
+    """Shared loop backing in-place `TensorOps` elementwise binary ops.
 
     Applies `func` between elements of `storage` and `other` with limited
-    broadcasting support, in place on `storage`. The right-hand operand is
-    loaded through its (possibly different) storage policy (`OtherStorage`)
-    while the destination is read and written through `DstStorage`. Expressed
-    entirely in terms of each policy's `load`, `store`, and `unsafe_cast`.
-
-    Parameters:
-        SelfLayoutType: The layout type of the destination storage.
-        self_origin: The origin of the destination storage.
-        OtherLayoutType: The layout type of the right-hand storage operand.
-        other_mut: The mutability of the right-hand storage operand.
-        other_origin: The origin of the right-hand storage operand.
-        dtype: The dtype of both tensors' elements.
-        width: The number of scalar elements per logical element. Must equal
-            both policies' `element_size`.
-        self_address_space: The address space of the destination storage.
-        other_address_space: The address space of the right-hand storage
-            operand.
-        DstStorage: The storage policy of the destination.
-        OtherStorage: The storage policy of the right-hand operand.
-
-    Args:
-        storage: A tuple of the destination storage (modified in place) and
-            its layout.
-        other: A tuple of the right-hand storage operand and its layout.
-        func: A binary function that takes two elements (one from each
-            tensor) and returns a single element as the result of the
-            operation.
-
-    Notes:
-
-    - Currently supports only rank-2 tensors or tensors of the same rank.
-    - For tensors of the same rank, shapes must match exactly.
-    - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
-        match the corresponding dimension of the rank-2 tensor.
-    - The operation is optimized based on the memory layout of both tensors.
+    broadcasting support, in place on `storage`. Kept separate from the
+    out-of-place helper so `storage` is not passed twice under distinct
+    mutable argument identities (which exclusivity rejects).
     """
     ref dst_storage = storage[0]
     ref self_layout = storage[1]
@@ -669,12 +829,12 @@ def _elementwise_binary_with_broadcast[
             )
 
     comptime assert type_of(self_layout).all_dims_known, (
-        "_elementwise_binary_with_broadcast must operates on tensors"
-        " of statically know layouts"
+        "_elementwise_binary_with_broadcast must operate on tensors"
+        " of statically known layouts"
     )
     comptime assert other_rank <= self_rank, (
-        "_elementwise_binary_with_broadcast must operates on tensor of"
-        " equal of lower rank"
+        "_elementwise_binary_with_broadcast must operate on tensor of"
+        " equal or lower rank"
     )
 
     # TODO(KERN-812): Support numpy like broadcasting and relax rank-2
@@ -727,17 +887,110 @@ def _elementwise_binary_with_broadcast[
             )
 
 
+@always_inline
+def _elementwise_unary_out[
+    DstLayoutType: TensorLayout,
+    dst_origin: MutOrigin,
+    SrcLayoutType: TensorLayout,
+    src_mut: Bool,
+    src_origin: Origin[mut=src_mut],
+    //,
+    dtype: DType,
+    width: Int,
+    dst_address_space: AddressSpace,
+    src_address_space: AddressSpace,
+    DstStorage: TensorStorage,
+    SrcStorage: TensorStorage,
+](
+    dst: Tuple[
+        DstStorage.StorageType[dtype, dst_origin, dst_address_space],
+        DstLayoutType,
+    ],
+    src: Tuple[
+        SrcStorage.StorageType[dtype, src_origin, src_address_space],
+        SrcLayoutType,
+    ],
+    func: Some[def(SIMD[dtype, width]) -> (SIMD[dtype, width])],
+):
+    """Shared loop backing out-of-place `TensorOps` elementwise unary ops.
+
+    Applies `func` to each element of `src` and writes the result into `dst`.
+    Each operand is accessed through its own storage policy.
+
+    Parameters:
+        DstLayoutType: The layout type of the destination storage.
+        dst_origin: The origin of the destination storage.
+        SrcLayoutType: The layout type of the source storage.
+        src_mut: The mutability of the source storage.
+        src_origin: The origin of the source storage.
+        dtype: The dtype of both tensors' elements.
+        width: The number of scalar elements per logical element. Must equal
+            both policies' `element_size`.
+        dst_address_space: The address space of the destination storage.
+        src_address_space: The address space of the source storage.
+        DstStorage: The storage policy of the destination.
+        SrcStorage: The storage policy of the source.
+
+    Args:
+        dst: A tuple of the destination storage and its layout.
+        src: A tuple of the source storage and its layout.
+        func: A unary function applied to each logical element of `src`.
+    """
+    ref dst_storage = dst[0]
+    ref dst_layout = dst[1]
+    ref src_layout = src[1]
+
+    var src_storage = SrcStorage.unsafe_cast[
+        dtype,
+        src_origin.unsafe_mut_cast[False](),
+        src_address_space,
+    ](src[0])
+
+    comptime assert (
+        width == DstStorage.element_size and width == SrcStorage.element_size
+    ), "elementwise unary operations require matching logical element size"
+
+    comptime assert (
+        type_of(dst_layout).all_dims_known
+        and type_of(src_layout).all_dims_known
+    ), (
+        "_elementwise_unary_out must operate on tensors of statically known"
+        " layouts"
+    )
+
+    comptime assert (
+        type_of(dst_layout).static_product == type_of(src_layout).static_product
+    ), "_elementwise_unary_out requires matching total element count"
+
+    comptime alignment = align_of[SIMD[dtype, width]]() if is_gpu() else 1
+
+    comptime for i in range(type_of(dst_layout).static_product):
+        var dst_idx = dst_layout(Idx[i])
+        var src_idx = src_layout(Idx[i])
+        DstStorage.store[alignment=alignment](
+            dst_storage,
+            dst_idx,
+            func(
+                SrcStorage.load[width=width, alignment=alignment](
+                    src_storage, src_idx
+                )
+            ),
+        )
+
+
 trait TensorOps(TensorStorage):
-    """Extends `TensorStorage` with in-place elementwise arithmetic.
+    """Extends `TensorStorage` with elementwise arithmetic.
 
     A conforming type provides the same non-owning storage handle as
-    `TensorStorage`, plus a family of in-place elementwise binary operations.
-    Each operation takes its operands as `(storage, layout)` tuples, so the
-    layout describing a handle travels alongside it.
+    `TensorStorage`, plus families of in-place (`i*`) and out-of-place
+    elementwise operations. Binary and out-of-place unary operations take
+    their operands as `(storage, layout)` tuples, so the layout describing a
+    handle travels alongside it. Out-of-place operations are keyword-only
+    with `dst` first.
     """
 
     @staticmethod
-    def add[
+    def iadd[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -782,7 +1035,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def mul[
+    def imul[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -827,7 +1080,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def sub[
+    def isub[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -872,7 +1125,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def floordiv[
+    def ifloordiv[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -917,7 +1170,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def truediv[
+    def itruediv[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -962,7 +1215,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def min[
+    def imin[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1007,7 +1260,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def max[
+    def imax[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1052,7 +1305,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def abs[
+    def iabs[
         dtype: DType, //
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
@@ -1072,7 +1325,7 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def recip[
+    def irecip[
         dtype: DType, //
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
@@ -1094,8 +1347,11 @@ trait TensorOps(TensorStorage):
         ...
 
     @staticmethod
-    def exp[
-        dtype: DType, //, scale: Scalar[dtype]
+    def iexp[
+        dtype: DType,
+        scale_dtype: DType = dtype,
+        //,
+        scale: Scalar[scale_dtype],
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
         layout: Some[TensorLayout],
@@ -1110,12 +1366,605 @@ trait TensorOps(TensorStorage):
         Parameters:
             dtype: The element data type of the storage. Must be a
                 floating-point type.
+            scale_dtype: The data type of the scale factor. Defaults to
+                `dtype`; the scale is cast to `dtype` before the
+                multiplication.
             scale: The compile-time factor each element is multiplied by
                 before exponentiation.
 
         Args:
             storage: The storage to modify in place.
             layout: The layout describing the storage's elements.
+        """
+        ...
+
+    @staticmethod
+    def add[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Adds `lhs` and `rhs` elementwise, writing into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+    @staticmethod
+    def mul[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Multiplies `lhs` by `rhs` elementwise, writing into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+    @staticmethod
+    def sub[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Subtracts `rhs` from `lhs` elementwise, writing into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+    @staticmethod
+    def floordiv[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Floor-divides `lhs` by `rhs` elementwise, writing into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+    @staticmethod
+    def truediv[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """True-divides `lhs` by `rhs` elementwise, writing into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+    @staticmethod
+    def min[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Takes the elementwise minimum of `lhs` and `rhs`, writing into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+    @staticmethod
+    def max[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Takes the elementwise maximum of `lhs` and `rhs`, writing into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+    @staticmethod
+    def abs[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        SrcLayoutType: TensorLayout,
+        src_mut: Bool,
+        src_origin: Origin[mut=src_mut],
+        src_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        SrcStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        src: Tuple[
+            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcLayoutType,
+        ],
+    ):
+        """Takes the elementwise absolute value of `src`, writing into `dst`.
+
+        For unsigned dtypes this is the identity.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            SrcLayoutType: The layout type of the source storage.
+            src_mut: The mutability of the source storage.
+            src_origin: The origin of the source storage.
+            src_address_space: The address space of the source storage.
+            dtype: The element data type of both storages.
+            SrcStorage: The storage policy of the source. May differ from
+                `Self` as long as the two policies have the same logical
+                element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            src: A tuple of the source storage and its layout.
+        """
+        ...
+
+    @staticmethod
+    def recip[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        SrcLayoutType: TensorLayout,
+        src_mut: Bool,
+        src_origin: Origin[mut=src_mut],
+        src_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        SrcStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        src: Tuple[
+            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcLayoutType,
+        ],
+    ):
+        """Writes the reciprocal of each element of `src` into `dst`.
+
+        Elements equal to zero produce infinity, following IEEE 754 division
+        semantics.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            SrcLayoutType: The layout type of the source storage.
+            src_mut: The mutability of the source storage.
+            src_origin: The origin of the source storage.
+            src_address_space: The address space of the source storage.
+            dtype: The element data type of both storages.
+            SrcStorage: The storage policy of the source. May differ from
+                `Self` as long as the two policies have the same logical
+                element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            src: A tuple of the source storage and its layout.
+        """
+        ...
+
+    @staticmethod
+    def exp[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        SrcLayoutType: TensorLayout,
+        src_mut: Bool,
+        src_origin: Origin[mut=src_mut],
+        src_address_space: AddressSpace,
+        dtype: DType,
+        SrcStorage: TensorStorage,
+        scale_dtype: DType = dtype,
+        //,
+        scale: Scalar[scale_dtype] = 1,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        src: Tuple[
+            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcLayoutType,
+        ],
+    ):
+        """Writes `exp(scale * x)` for each element `x` of `src` into `dst`.
+
+        The scale factor is applied before exponentiation so that scaled
+        exponentials (for example softmax logit scaling) fuse into a single
+        pass over the elements. Pass a scale of `1` for a plain exponential.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            SrcLayoutType: The layout type of the source storage.
+            src_mut: The mutability of the source storage.
+            src_origin: The origin of the source storage.
+            src_address_space: The address space of the source storage.
+            dtype: The element data type of both storages. Must be a
+                floating-point type.
+            SrcStorage: The storage policy of the source. May differ from
+                `Self` as long as the two policies have the same logical
+                element size.
+            scale_dtype: The data type of the scale factor. Defaults to
+                `dtype`; the scale is cast to `dtype` before the
+                multiplication.
+            scale: The compile-time factor each element is multiplied by
+                before exponentiation.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            src: A tuple of the source storage and its layout.
         """
         ...
 
@@ -1515,7 +2364,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other)
 
     @staticmethod
-    def add[
+    def iadd[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1572,7 +2421,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, add)
 
     @staticmethod
-    def mul[
+    def imul[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1629,7 +2478,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, mul)
 
     @staticmethod
-    def sub[
+    def isub[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1686,7 +2535,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, sub)
 
     @staticmethod
-    def floordiv[
+    def ifloordiv[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1743,7 +2592,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, floordiv)
 
     @staticmethod
-    def truediv[
+    def itruediv[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1800,7 +2649,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, truediv)
 
     @staticmethod
-    def min[
+    def imin[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1857,7 +2706,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, min_fn)
 
     @staticmethod
-    def max[
+    def imax[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -1957,7 +2806,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             )
 
     @staticmethod
-    def abs[
+    def iabs[
         dtype: DType, //
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
@@ -1982,7 +2831,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         Self._elementwise_unary(storage, layout, abs_fn)
 
     @staticmethod
-    def recip[
+    def irecip[
         dtype: DType, //
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
@@ -2012,8 +2861,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         Self._elementwise_unary(storage, layout, recip_fn)
 
     @staticmethod
-    def exp[
-        dtype: DType, //, scale: Scalar[dtype]
+    def iexp[
+        dtype: DType,
+        scale_dtype: DType = dtype,
+        //,
+        scale: Scalar[scale_dtype],
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
         layout: Some[TensorLayout],
@@ -2028,6 +2880,9 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         Parameters:
             dtype: The element data type of the storage. Must be a
                 floating-point type.
+            scale_dtype: The data type of the scale factor. Defaults to
+                `dtype`; the scale is cast to `dtype` before the
+                multiplication.
             scale: The compile-time factor each element is multiplied by
                 before exponentiation.
 
@@ -2047,8 +2902,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
 
         # The loop is inlined rather than routed through `_elementwise_unary`:
         # a closure defined in a function with a dependent-typed value
-        # parameter (`scale: Scalar[dtype]`) fails parameter resolution during
-        # elaboration when passed as a function value.
+        # parameter (`scale: Scalar[scale_dtype]`) fails parameter resolution
+        # during elaboration when passed as a function value.
         comptime for i in range(type_of(layout).static_product):
             var idx = layout(Idx[i])
             storage.bitcast[Scalar[dtype]]().store(
@@ -2057,7 +2912,746 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
                     storage.bitcast[Scalar[dtype]]().load[
                         width=Self.element_width
                     ](idx)
-                    * scale
+                    * scale.cast[dtype]()
+                ),
+            )
+
+    @staticmethod
+    def add[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `add` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def add_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return left + right
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, add_fn)
+
+    @staticmethod
+    def mul[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `mul` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def mul_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return left * right
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, mul_fn)
+
+    @staticmethod
+    def sub[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `sub` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def sub_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return left - right
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, sub_fn)
+
+    @staticmethod
+    def floordiv[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `floordiv` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def floordiv_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return left // right
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, floordiv_fn)
+
+    @staticmethod
+    def truediv[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `truediv` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def truediv_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return left / right
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, truediv_fn)
+
+    @staticmethod
+    def min[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `min` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def min_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return min(left, right)
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, min_fn)
+
+    @staticmethod
+    def max[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `max` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def max_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return max(left, right)
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, max_fn)
+
+    @staticmethod
+    def abs[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        SrcLayoutType: TensorLayout,
+        src_mut: Bool,
+        src_origin: Origin[mut=src_mut],
+        src_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        SrcStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        src: Tuple[
+            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `abs` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            SrcLayoutType: The layout type of the source storage.
+            src_mut: The mutability of the source storage.
+            src_origin: The origin of the source storage.
+            src_address_space: The address space of the source storage.
+            dtype: The element data type of both storages.
+            SrcStorage: The storage policy of the source. May differ from
+                `Self` as long as the two policies have the same logical
+                element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            src: A tuple of the source storage and its layout.
+        """
+
+        @always_inline
+        def abs_fn(val: SIMD[dtype, Self.element_size]) -> type_of(val):
+            return abs(val)
+
+        _elementwise_unary_out[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            src_address_space=src_address_space,
+            DstStorage=Self,
+        ](dst, src, abs_fn)
+
+    @staticmethod
+    def recip[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        SrcLayoutType: TensorLayout,
+        src_mut: Bool,
+        src_origin: Origin[mut=src_mut],
+        src_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        SrcStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        src: Tuple[
+            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `recip` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            SrcLayoutType: The layout type of the source storage.
+            src_mut: The mutability of the source storage.
+            src_origin: The origin of the source storage.
+            src_address_space: The address space of the source storage.
+            dtype: The element data type of both storages.
+            SrcStorage: The storage policy of the source. May differ from
+                `Self` as long as the two policies have the same logical
+                element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            src: A tuple of the source storage and its layout.
+        """
+        comptime assert (
+            dtype.is_floating_point()
+        ), "recip requires a floating-point dtype"
+
+        @always_inline
+        def recip_fn(val: SIMD[dtype, Self.element_size]) -> type_of(val):
+            return 1 / val
+
+        _elementwise_unary_out[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            src_address_space=src_address_space,
+            DstStorage=Self,
+        ](dst, src, recip_fn)
+
+    @staticmethod
+    def exp[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        SrcLayoutType: TensorLayout,
+        src_mut: Bool,
+        src_origin: Origin[mut=src_mut],
+        src_address_space: AddressSpace,
+        dtype: DType,
+        SrcStorage: TensorStorage,
+        scale_dtype: DType = dtype,
+        //,
+        scale: Scalar[scale_dtype] = 1,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        src: Tuple[
+            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcLayoutType,
+        ],
+    ):
+        """Writes `exp(scale * x)` for each element `x` of `src` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            SrcLayoutType: The layout type of the source storage.
+            src_mut: The mutability of the source storage.
+            src_origin: The origin of the source storage.
+            src_address_space: The address space of the source storage.
+            dtype: The element data type of both storages. Must be a
+                floating-point type.
+            SrcStorage: The storage policy of the source. May differ from
+                `Self` as long as the two policies have the same logical
+                element size.
+            scale_dtype: The data type of the scale factor. Defaults to
+                `dtype`; the scale is cast to `dtype` before the
+                multiplication.
+            scale: The compile-time factor each element is multiplied by
+                before exponentiation.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            src: A tuple of the source storage and its layout.
+        """
+        comptime assert (
+            dtype.is_floating_point()
+        ), "exp requires a floating-point dtype"
+
+        comptime assert (
+            DstLayoutType.all_dims_known and SrcLayoutType.all_dims_known
+        ), "exp must operate on tensors of statically known layouts"
+
+        comptime assert (
+            DstLayoutType.static_product == SrcLayoutType.static_product
+        ), "exp requires matching total element count"
+
+        comptime assert (
+            Self.element_size == SrcStorage.element_size
+        ), "elementwise unary operations require matching logical element size"
+
+        ref dst_storage = dst[0]
+        ref dst_layout = dst[1]
+        ref src_layout = src[1]
+        var src_storage = SrcStorage.unsafe_cast[
+            dtype,
+            src_origin.unsafe_mut_cast[False](),
+            src_address_space,
+        ](src[0])
+
+        comptime width = Self.element_size
+        comptime alignment = align_of[SIMD[dtype, width]]() if is_gpu() else 1
+
+        # Inlined rather than routed through `_elementwise_unary_out`: a
+        # closure defined in a function with a dependent-typed value
+        # parameter (`scale: Scalar[scale_dtype]`) fails parameter resolution
+        # during elaboration when passed as a function value.
+        comptime for i in range(type_of(dst_layout).static_product):
+            var dst_idx = dst_layout(Idx[i])
+            var src_idx = src_layout(Idx[i])
+            Self.store[alignment=alignment](
+                dst_storage,
+                dst_idx,
+                exp(
+                    SrcStorage.load[width=width, alignment=alignment](
+                        src_storage, src_idx
+                    )
+                    * scale.cast[dtype]()
                 ),
             )
 
@@ -2570,7 +4164,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other)
 
     @staticmethod
-    def add[
+    def iadd[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -2627,7 +4221,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, add)
 
     @staticmethod
-    def mul[
+    def imul[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -2684,7 +4278,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, mul)
 
     @staticmethod
-    def sub[
+    def isub[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -2741,7 +4335,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, sub)
 
     @staticmethod
-    def floordiv[
+    def ifloordiv[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -2798,7 +4392,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, floordiv)
 
     @staticmethod
-    def truediv[
+    def itruediv[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -2855,7 +4449,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, truediv)
 
     @staticmethod
-    def min[
+    def imin[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -2912,7 +4506,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ](storage, other, min_fn)
 
     @staticmethod
-    def max[
+    def imax[
         SelfLayoutType: TensorLayout,
         self_origin: MutOrigin,
         self_address_space: AddressSpace,
@@ -3018,7 +4612,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             )
 
     @staticmethod
-    def abs[
+    def iabs[
         dtype: DType, //
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
@@ -3045,7 +4639,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         Self._elementwise_unary(storage, layout, abs_fn)
 
     @staticmethod
-    def recip[
+    def irecip[
         dtype: DType, //
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
@@ -3076,8 +4670,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         Self._elementwise_unary(storage, layout, recip_fn)
 
     @staticmethod
-    def exp[
-        dtype: DType, //, scale: Scalar[dtype]
+    def iexp[
+        dtype: DType,
+        scale_dtype: DType = dtype,
+        //,
+        scale: Scalar[scale_dtype],
     ](
         storage: Self.StorageType[mut=True, dtype, ...],
         layout: Some[TensorLayout],
@@ -3094,6 +4691,9 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         Parameters:
             dtype: The element data type of the storage. Must be a
                 floating-point type.
+            scale_dtype: The data type of the scale factor. Defaults to
+                `dtype`; the scale is cast to `dtype` before the
+                multiplication.
             scale: The compile-time factor each element is multiplied by
                 before exponentiation.
 
@@ -3113,8 +4713,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
 
         # The loop is inlined rather than routed through `_elementwise_unary`:
         # a closure defined in a function with a dependent-typed value
-        # parameter (`scale: Scalar[dtype]`) fails parameter resolution during
-        # elaboration when passed as a function value.
+        # parameter (`scale: Scalar[scale_dtype]`) fails parameter resolution
+        # during elaboration when passed as a function value.
         comptime for i in range(type_of(layout).static_product):
             var idx = layout(Idx[i])
             _device_leaf_ptr(storage).store(
@@ -3123,7 +4723,748 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
                     _device_leaf_ptr(storage).load[width=Self.element_width](
                         idx
                     )
-                    * scale
+                    * scale.cast[dtype]()
+                ),
+            )
+
+    @staticmethod
+    def add[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `add` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def add_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return left + right
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, add_fn)
+
+    @staticmethod
+    def mul[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `mul` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def mul_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return left * right
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, mul_fn)
+
+    @staticmethod
+    def sub[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `sub` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def sub_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return left - right
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, sub_fn)
+
+    @staticmethod
+    def floordiv[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `floordiv` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def floordiv_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return left // right
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, floordiv_fn)
+
+    @staticmethod
+    def truediv[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `truediv` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def truediv_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return left / right
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, truediv_fn)
+
+    @staticmethod
+    def min[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `min` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def min_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return min(left, right)
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, min_fn)
+
+    @staticmethod
+    def max[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        LhsLayoutType: TensorLayout,
+        lhs_mut: Bool,
+        lhs_origin: Origin[mut=lhs_mut],
+        lhs_address_space: AddressSpace,
+        RhsLayoutType: TensorLayout,
+        rhs_mut: Bool,
+        rhs_origin: Origin[mut=rhs_mut],
+        rhs_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        LhsStorage: TensorStorage,
+        RhsStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        lhs: Tuple[
+            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsLayoutType,
+        ],
+        rhs: Tuple[
+            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `max` into `dst`.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            LhsLayoutType: The layout type of the left-hand storage operand.
+            lhs_mut: The mutability of the left-hand storage operand.
+            lhs_origin: The origin of the left-hand storage operand.
+            lhs_address_space: The address space of the left-hand storage
+                operand.
+            RhsLayoutType: The layout type of the right-hand storage operand.
+            rhs_mut: The mutability of the right-hand storage operand.
+            rhs_origin: The origin of the right-hand storage operand.
+            rhs_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of all three storages.
+            LhsStorage: The storage policy of the left-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+            RhsStorage: The storage policy of the right-hand operand. May
+                differ from `Self` as long as the policies have the same
+                logical element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            lhs: A tuple of the left-hand storage operand and its layout.
+            rhs: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def max_fn(
+            left: SIMD[dtype, Self.element_size], right: type_of(left)
+        ) -> type_of(left):
+            return max(left, right)
+
+        _elementwise_binary_out_with_broadcast[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            lhs_address_space=lhs_address_space,
+            rhs_address_space=rhs_address_space,
+            DstStorage=Self,
+        ](dst, lhs, rhs, max_fn)
+
+    @staticmethod
+    def abs[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        SrcLayoutType: TensorLayout,
+        src_mut: Bool,
+        src_origin: Origin[mut=src_mut],
+        src_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        SrcStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        src: Tuple[
+            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `abs` into `dst`. Device-only when `Self` or `SrcStorage` reinterprets a device pointer.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            SrcLayoutType: The layout type of the source storage.
+            src_mut: The mutability of the source storage.
+            src_origin: The origin of the source storage.
+            src_address_space: The address space of the source storage.
+            dtype: The element data type of both storages.
+            SrcStorage: The storage policy of the source. May differ from
+                `Self` as long as the two policies have the same logical
+                element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            src: A tuple of the source storage and its layout.
+        """
+
+        @always_inline
+        def abs_fn(val: SIMD[dtype, Self.element_size]) -> type_of(val):
+            return abs(val)
+
+        _elementwise_unary_out[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            src_address_space=src_address_space,
+            DstStorage=Self,
+        ](dst, src, abs_fn)
+
+    @staticmethod
+    def recip[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        SrcLayoutType: TensorLayout,
+        src_mut: Bool,
+        src_origin: Origin[mut=src_mut],
+        src_address_space: AddressSpace,
+        //,
+        dtype: DType,
+        SrcStorage: TensorStorage,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        src: Tuple[
+            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcLayoutType,
+        ],
+    ):
+        """Out-of-place elementwise `recip` into `dst`. Device-only when `Self` or `SrcStorage` reinterprets a device pointer.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            SrcLayoutType: The layout type of the source storage.
+            src_mut: The mutability of the source storage.
+            src_origin: The origin of the source storage.
+            src_address_space: The address space of the source storage.
+            dtype: The element data type of both storages.
+            SrcStorage: The storage policy of the source. May differ from
+                `Self` as long as the two policies have the same logical
+                element size.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            src: A tuple of the source storage and its layout.
+        """
+        comptime assert (
+            dtype.is_floating_point()
+        ), "recip requires a floating-point dtype"
+
+        @always_inline
+        def recip_fn(val: SIMD[dtype, Self.element_size]) -> type_of(val):
+            return 1 / val
+
+        _elementwise_unary_out[
+            width=Self.element_size,
+            dst_address_space=dst_address_space,
+            src_address_space=src_address_space,
+            DstStorage=Self,
+        ](dst, src, recip_fn)
+
+    @staticmethod
+    def exp[
+        DstLayoutType: TensorLayout,
+        dst_origin: MutOrigin,
+        dst_address_space: AddressSpace,
+        SrcLayoutType: TensorLayout,
+        src_mut: Bool,
+        src_origin: Origin[mut=src_mut],
+        src_address_space: AddressSpace,
+        dtype: DType,
+        SrcStorage: TensorStorage,
+        scale_dtype: DType = dtype,
+        //,
+        scale: Scalar[scale_dtype] = 1,
+    ](
+        *,
+        dst: Tuple[
+            Self.StorageType[dtype, dst_origin, dst_address_space],
+            DstLayoutType,
+        ],
+        src: Tuple[
+            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcLayoutType,
+        ],
+    ):
+        """Writes `exp(scale * x)` for each element `x` of `src` into `dst`. Device-only when `Self` or `SrcStorage` reinterprets a device pointer.
+
+        Parameters:
+            DstLayoutType: The layout type of the destination storage.
+            dst_origin: The origin of the destination storage.
+            dst_address_space: The address space of the destination storage.
+            SrcLayoutType: The layout type of the source storage.
+            src_mut: The mutability of the source storage.
+            src_origin: The origin of the source storage.
+            src_address_space: The address space of the source storage.
+            dtype: The element data type of both storages. Must be a
+                floating-point type.
+            SrcStorage: The storage policy of the source. May differ from
+                `Self` as long as the two policies have the same logical
+                element size.
+            scale_dtype: The data type of the scale factor. Defaults to
+                `dtype`; the scale is cast to `dtype` before the
+                multiplication.
+            scale: The compile-time factor each element is multiplied by
+                before exponentiation.
+
+        Args:
+            dst: A tuple of the destination storage and its layout.
+            src: A tuple of the source storage and its layout.
+        """
+        comptime assert (
+            dtype.is_floating_point()
+        ), "exp requires a floating-point dtype"
+
+        comptime assert (
+            DstLayoutType.all_dims_known and SrcLayoutType.all_dims_known
+        ), "exp must operate on tensors of statically known layouts"
+
+        comptime assert (
+            DstLayoutType.static_product == SrcLayoutType.static_product
+        ), "exp requires matching total element count"
+
+        comptime assert (
+            Self.element_size == SrcStorage.element_size
+        ), "elementwise unary operations require matching logical element size"
+
+        ref dst_storage = dst[0]
+        ref dst_layout = dst[1]
+        ref src_layout = src[1]
+        var src_storage = SrcStorage.unsafe_cast[
+            dtype,
+            src_origin.unsafe_mut_cast[False](),
+            src_address_space,
+        ](src[0])
+
+        comptime width = Self.element_size
+        comptime alignment = align_of[SIMD[dtype, width]]() if is_gpu() else 1
+
+        # Inlined rather than routed through `_elementwise_unary_out`: a
+        # closure defined in a function with a dependent-typed value
+        # parameter (`scale: Scalar[scale_dtype]`) fails parameter resolution
+        # during elaboration when passed as a function value.
+        comptime for i in range(type_of(dst_layout).static_product):
+            var dst_idx = dst_layout(Idx[i])
+            var src_idx = src_layout(Idx[i])
+            # Store through the device leaf pointer, matching `iexp`. Calling
+            # `Self.store` here fails to infer `address_space` from the
+            # tuple-projected destination handle.
+            _device_leaf_ptr(dst_storage).store(
+                dst_idx,
+                exp(
+                    SrcStorage.load[width=width, alignment=alignment](
+                        src_storage, src_idx
+                    )
+                    * scale.cast[dtype]()
                 ),
             )
 

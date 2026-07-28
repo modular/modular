@@ -111,13 +111,13 @@ def pack_ptrs_array[
 ](
     _ptrs: TileTensor[DType.uint64, ptrs_layout, ...],
     my_rank: Int32,
-    out result: InlineArray[
+    out result: Array[
         UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
     ],
 ):
     """Pack the pointers into an inline array.
 
-    Reads device addresses from `_ptrs` and produces an `InlineArray` of
+    Reads device addresses from `_ptrs` and produces an `Array` of
     `UnsafePointer[Scalar[ptr_type]]` entries to pass to an EP kernel. When
     `local_rank_only` is set, every entry is filled with the address at
     `my_rank` instead of one address per rank.
@@ -136,7 +136,7 @@ def pack_ptrs_array[
         my_rank: Rank index of the calling device within the communicator.
     """
     comptime assert _ptrs.flat_rank == 1, "Pointers must be a 1D tensor."
-    var ptr_arr = InlineArray[
+    var ptr_arr = Array[
         UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
     ](uninitialized=True)
 

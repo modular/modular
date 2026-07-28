@@ -306,7 +306,7 @@ def realpath[
     var fspath = path.__fspath__()
     var returned_path_ptr = libc_realpath(
         fspath.as_c_string_slice().unsafe_ptr(),
-        string.unsafe_ptr_mut().bitcast[c_char](),
+        string.unsafe_ptr_mut().unsafe_bitcast[c_char](),
     )
     if not returned_path_ptr:
         raise Error("realpath failed to resolve: ", get_errno())
@@ -679,7 +679,7 @@ def _is_shell_special_variable(byte: Byte) -> Bool:
     Returns:
         True if the byte is a special shell variable and False otherwise.
     """
-    comptime shell_variables: InlineArray[Int, 17] = [
+    comptime shell_variables: Array[Int, 17] = [
         ord("*"),
         ord("#"),
         ord("$"),

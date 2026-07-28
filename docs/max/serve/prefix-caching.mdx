@@ -45,8 +45,10 @@ not provide additional benefit in the following cases:
 
 Prefix caching works by storing the key-value (KV) cache for a prefix and
 applying it to future prompts that include the same prefix, reducing redundant
-computation. It's built on PagedAttention, which MAX uses by default to manage
-the KV cache. The following flags control prefix caching behavior:
+computation. It's built on
+[PagedAttention](https://handbook.modular.com/inference-optimization/pagedattention/),
+which MAX uses by default to manage the KV cache. The following flags control
+prefix caching behavior:
 
 - `--enable-prefix-caching`: enables prefix caching. This is on by default, so
   you only need it to re-enable caching after disabling it. Use
@@ -126,3 +128,5 @@ benchmarking, see the
   use our benchmarking script to measure the performance of MAX.
 - [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
   Learn how to deploy MAX pipelines to cloud.
+- [Read the LLM Inference Handbook](https://handbook.modular.com/inference-optimization/prefix-caching/):
+  Learn more about prefix caching.

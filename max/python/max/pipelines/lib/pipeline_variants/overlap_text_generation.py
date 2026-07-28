@@ -111,6 +111,7 @@ from max.nn.kv_cache import (
     KVCacheInputsInterface,
     KVCacheInputsPerDevice,
     MultiKVCacheInputs,
+    spec_decode_cache_slack,
 )
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import (
@@ -156,7 +157,6 @@ from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .utils import (
     StructuredOutputHelper,
-    get_eos_tokens,
     update_context_and_prepare_responses,
     update_spec_decode_context_and_prepare_responses,
 )
@@ -1514,8 +1514,6 @@ class OverlapTextGenerationPipeline(
         self,
         pipeline_config: PipelineConfig,
         pipeline_model: type[PipelineModel[Any]],
-        # TODO: This should be removed.
-        eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
         tokenizer: PipelineTokenizer[
             TextGenerationContextType,
@@ -1533,8 +1531,6 @@ class OverlapTextGenerationPipeline(
         Args:
             pipeline_config: Configuration for the pipeline and runtime behavior.
             pipeline_model: Concrete model implementation to use for execution.
-            eos_token_id: Default EOS token id used when HF config does not supply
-                one or to seed the EOS set.
             weight_adapters: Mapping from weights format to adapter implementation.
             tokenizer: Tokenizer implementation used to build contexts and decode.
             memory_plan: Memory plan from the registry containing max_batch_size
@@ -1567,8 +1563,6 @@ class OverlapTextGenerationPipeline(
                 "OverlapTextGenerationPipeline does not support CPU models."
             )
         self._tokenizer = tokenizer
-
-        self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
         # -1 sentinel disables in_reasoning_phase tracking.
         self._think_start_token_id: int = -1
@@ -1877,20 +1871,8 @@ class OverlapTextGenerationPipeline(
         headroom, so capture never reserves more pages than were allocated.
         """
         params = self._kv_manager.params
-        spec_slack = 0
-        if params.num_draft_tokens > 0:
-            # Worst-case slack, matching `_compute_seq_len`: drafts verified
-            # and written next batch (2x), the prior overlap batch's drafts
-            # assumed accepted (1x), the DFlash block-draft slot, and the
-            # FUTURE_TOKEN placeholder.
-            block_draft_extra = (
-                1
-                if params.num_draft_tokens_per_step == params.num_draft_tokens
-                else 0
-            )
-            spec_slack = 3 * params.num_draft_tokens + block_draft_extra + 1
         return min(
-            self._pipeline_model.max_seq_len + spec_slack,
+            self._pipeline_model.max_seq_len + spec_decode_cache_slack(params),
             self._kv_manager._total_num_pages * params.page_size,
         )
 
@@ -2082,6 +2064,16 @@ class OverlapTextGenerationPipeline(
                         kv_cache_inputs=kv_cache_inputs,
                         return_n_logits=return_n_logits,
                     )
+                )
+
+            # Warmup packs ``.buffers`` without going through the prep phase's
+            # vision drive (or ``execute()``), so the vision-merge inputs the
+            # compiled graph unconditionally declares must be finalized here
+            # with the model's empties.
+            if self._encoder_cache is not None:
+                assert isinstance(self._pipeline_model, SupportsVisionEncoding)
+                self._encoder_cache.finalize_vision_inputs(
+                    self._pipeline_model, model_inputs, self._devices, None
                 )
 
             if self._spec_decode_state is not None:
@@ -2477,16 +2469,17 @@ class OverlapTextGenerationPipeline(
 
         if self._encoder_cache is not None:
             assert isinstance(self._pipeline_model, SupportsVisionEncoding)
-            vision = self._encoder_cache.run_vision_encode(
+            vision_result = self._encoder_cache.run_vision_encode(
                 self._pipeline_model,
                 as_vision_context_batches(inputs.batches),
                 self._devices,
             )
-            if vision is not None:
-                (
-                    model_inputs.vision_embeddings,
-                    model_inputs.vision_scatter_indices,
-                ) = vision
+            self._encoder_cache.finalize_vision_inputs(
+                self._pipeline_model,
+                model_inputs,
+                self._devices,
+                vision_result,
+            )
 
         if debug_verify_replay_enabled:
             # Reuse non-KV buffers from replay inputs and only swap the

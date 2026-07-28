@@ -25,24 +25,9 @@ EXTRA_DEPS = {
         "//max:builtin_kernels",
         "//max:extensibility",
     ],
-    "group_norm_ops": [
-        "//max:extensibility",
-        "//max:nn",
-    ],
-    "layer_norm_ops": [
-        "//max:nn",
-        "//max:extensibility",
-    ],
     "misc_ops": [
         "//max:builtin_kernels",
         "//max:extensibility",
-    ],
-    "rms_norm_ops": [
-        "//max:nn",
-        "//max:extensibility",
-    ],
-    "select_ops": [
-        "//max:builtin_kernels",
     ],
 }
 

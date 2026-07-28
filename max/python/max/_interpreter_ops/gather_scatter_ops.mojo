@@ -286,7 +286,7 @@ def gather_nd_op[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: InlineArray[Int, MAX_RANK],
+    indexed_strides: Array[Int, MAX_RANK],
     ctx: DeviceContext,
 ) raises:
     var total = batch_size * indices_outer_size * suffix_size
@@ -312,7 +312,7 @@ def gather_nd_op[
         )
 
         # Unrolled loop over index_depth (max MAX_RANK=5) to avoid
-        # dynamic loop and InlineArray capture in GPU kernels.
+        # dynamic loop and Array capture in GPU kernels.
         if index_depth >= 1:
             in_offset += Int(indices_ptr[idx_base]) * s0
         if index_depth >= 2:
@@ -367,7 +367,7 @@ def gather_nd_dispatcher(
     var ctx = _get_ctx(device_context_ptr)
 
     var inner_rank = Int(py=len(input_inner_shape))
-    var indexed_strides = InlineArray[Int, MAX_RANK](fill=0)
+    var indexed_strides = Array[Int, MAX_RANK](fill=0)
     var stride = 1
     for j in range(inner_rank - 1, -1, -1):
         indexed_strides[j] = stride
@@ -418,7 +418,7 @@ struct _GatherNdBody[idx_dtype: DType](Dispatchable):
     var index_depth: Int
     var suffix_size: Int
     var input_data_stride: Int
-    var indexed_strides: InlineArray[Int, MAX_RANK]
+    var indexed_strides: Array[Int, MAX_RANK]
     var ctx: DeviceContext
 
     def __init__(
@@ -431,7 +431,7 @@ struct _GatherNdBody[idx_dtype: DType](Dispatchable):
         index_depth: Int,
         suffix_size: Int,
         input_data_stride: Int,
-        indexed_strides: InlineArray[Int, MAX_RANK],
+        indexed_strides: Array[Int, MAX_RANK],
         ctx: DeviceContext,
     ):
         self.out_addr = out_addr
@@ -472,7 +472,7 @@ def _gather_nd_dispatch_integer[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: InlineArray[Int, MAX_RANK],
+    indexed_strides: Array[Int, MAX_RANK],
     ctx: DeviceContext,
 ) raises:
     dispatch_dtype(
@@ -1412,7 +1412,7 @@ def scatter_nd_op[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: InlineArray[Int, MAX_RANK],
+    indexed_strides: Array[Int, MAX_RANK],
     ctx: DeviceContext,
 ) raises:
     """Scatter updates into output at N-dimensional index positions (overwrite).
@@ -1510,7 +1510,7 @@ def scatter_nd_dispatcher(
     var ctx = _get_ctx(device_context_ptr)
 
     var inner_rank = Int(py=len(input_inner_shape))
-    var indexed_strides = InlineArray[Int, MAX_RANK](fill=0)
+    var indexed_strides = Array[Int, MAX_RANK](fill=0)
     var stride = 1
     for j in range(inner_rank - 1, -1, -1):
         indexed_strides[j] = stride
@@ -1561,7 +1561,7 @@ struct _ScatterNdBody[idx_dtype: DType](Dispatchable):
     var index_depth: Int
     var suffix_size: Int
     var input_data_stride: Int
-    var indexed_strides: InlineArray[Int, MAX_RANK]
+    var indexed_strides: Array[Int, MAX_RANK]
     var ctx: DeviceContext
 
     def __init__(
@@ -1574,7 +1574,7 @@ struct _ScatterNdBody[idx_dtype: DType](Dispatchable):
         index_depth: Int,
         suffix_size: Int,
         input_data_stride: Int,
-        indexed_strides: InlineArray[Int, MAX_RANK],
+        indexed_strides: Array[Int, MAX_RANK],
         ctx: DeviceContext,
     ):
         self.out_addr = out_addr
@@ -1615,7 +1615,7 @@ def _scatter_nd_dispatch_integer[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: InlineArray[Int, MAX_RANK],
+    indexed_strides: Array[Int, MAX_RANK],
     ctx: DeviceContext,
 ) raises:
     dispatch_dtype(
@@ -1656,7 +1656,7 @@ def scatter_nd_add_op[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: InlineArray[Int, MAX_RANK],
+    indexed_strides: Array[Int, MAX_RANK],
 ) raises:
     """Scatter-add updates into output at N-dimensional index positions.
 
@@ -1747,7 +1747,7 @@ def scatter_nd_add_dispatcher(
     var idx_addr = Int(py=indices_buffer._data_ptr())
 
     var inner_rank = Int(py=len(input_inner_shape))
-    var indexed_strides = InlineArray[Int, MAX_RANK](fill=0)
+    var indexed_strides = Array[Int, MAX_RANK](fill=0)
     var stride = 1
     for j in range(inner_rank - 1, -1, -1):
         indexed_strides[j] = stride
@@ -1796,7 +1796,7 @@ struct _ScatterNdAddBody[idx_dtype: DType](Dispatchable):
     var index_depth: Int
     var suffix_size: Int
     var input_data_stride: Int
-    var indexed_strides: InlineArray[Int, MAX_RANK]
+    var indexed_strides: Array[Int, MAX_RANK]
 
     def __init__(
         out self,
@@ -1808,7 +1808,7 @@ struct _ScatterNdAddBody[idx_dtype: DType](Dispatchable):
         index_depth: Int,
         suffix_size: Int,
         input_data_stride: Int,
-        indexed_strides: InlineArray[Int, MAX_RANK],
+        indexed_strides: Array[Int, MAX_RANK],
     ):
         self.out_addr = out_addr
         self.upd_addr = upd_addr
@@ -1846,7 +1846,7 @@ def _scatter_nd_add_dispatch_integer[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: InlineArray[Int, MAX_RANK],
+    indexed_strides: Array[Int, MAX_RANK],
 ) raises:
     dispatch_dtype(
         _ScatterNdAddBody[d](
@@ -1884,7 +1884,7 @@ def scatter_nd_max_op[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: InlineArray[Int, MAX_RANK],
+    indexed_strides: Array[Int, MAX_RANK],
 ) raises:
     """Scatter-max updates into output at N-dimensional index positions.
 
@@ -1974,7 +1974,7 @@ def scatter_nd_max_dispatcher(
     var idx_addr = Int(py=indices_buffer._data_ptr())
 
     var inner_rank = Int(py=len(input_inner_shape))
-    var indexed_strides = InlineArray[Int, MAX_RANK](fill=0)
+    var indexed_strides = Array[Int, MAX_RANK](fill=0)
     var stride = 1
     for j in range(inner_rank - 1, -1, -1):
         indexed_strides[j] = stride
@@ -2023,7 +2023,7 @@ struct _ScatterNdMaxBody[idx_dtype: DType](Dispatchable):
     var index_depth: Int
     var suffix_size: Int
     var input_data_stride: Int
-    var indexed_strides: InlineArray[Int, MAX_RANK]
+    var indexed_strides: Array[Int, MAX_RANK]
 
     def __init__(
         out self,
@@ -2035,7 +2035,7 @@ struct _ScatterNdMaxBody[idx_dtype: DType](Dispatchable):
         index_depth: Int,
         suffix_size: Int,
         input_data_stride: Int,
-        indexed_strides: InlineArray[Int, MAX_RANK],
+        indexed_strides: Array[Int, MAX_RANK],
     ):
         self.out_addr = out_addr
         self.upd_addr = upd_addr
@@ -2073,7 +2073,7 @@ def _scatter_nd_max_dispatch_integer[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: InlineArray[Int, MAX_RANK],
+    indexed_strides: Array[Int, MAX_RANK],
 ) raises:
     dispatch_dtype(
         _ScatterNdMaxBody[d](
@@ -2111,7 +2111,7 @@ def scatter_nd_min_op[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: InlineArray[Int, MAX_RANK],
+    indexed_strides: Array[Int, MAX_RANK],
 ) raises:
     """Scatter-min updates into output at N-dimensional index positions.
 
@@ -2201,7 +2201,7 @@ def scatter_nd_min_dispatcher(
     var idx_addr = Int(py=indices_buffer._data_ptr())
 
     var inner_rank = Int(py=len(input_inner_shape))
-    var indexed_strides = InlineArray[Int, MAX_RANK](fill=0)
+    var indexed_strides = Array[Int, MAX_RANK](fill=0)
     var stride = 1
     for j in range(inner_rank - 1, -1, -1):
         indexed_strides[j] = stride
@@ -2250,7 +2250,7 @@ struct _ScatterNdMinBody[idx_dtype: DType](Dispatchable):
     var index_depth: Int
     var suffix_size: Int
     var input_data_stride: Int
-    var indexed_strides: InlineArray[Int, MAX_RANK]
+    var indexed_strides: Array[Int, MAX_RANK]
 
     def __init__(
         out self,
@@ -2262,7 +2262,7 @@ struct _ScatterNdMinBody[idx_dtype: DType](Dispatchable):
         index_depth: Int,
         suffix_size: Int,
         input_data_stride: Int,
-        indexed_strides: InlineArray[Int, MAX_RANK],
+        indexed_strides: Array[Int, MAX_RANK],
     ):
         self.out_addr = out_addr
         self.upd_addr = upd_addr
@@ -2300,7 +2300,7 @@ def _scatter_nd_min_dispatch_integer[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: InlineArray[Int, MAX_RANK],
+    indexed_strides: Array[Int, MAX_RANK],
 ) raises:
     dispatch_dtype(
         _ScatterNdMinBody[d](
@@ -2338,7 +2338,7 @@ def scatter_nd_mul_op[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: InlineArray[Int, MAX_RANK],
+    indexed_strides: Array[Int, MAX_RANK],
 ) raises:
     """Scatter-mul updates into output at N-dimensional index positions.
 
@@ -2428,7 +2428,7 @@ def scatter_nd_mul_dispatcher(
     var idx_addr = Int(py=indices_buffer._data_ptr())
 
     var inner_rank = Int(py=len(input_inner_shape))
-    var indexed_strides = InlineArray[Int, MAX_RANK](fill=0)
+    var indexed_strides = Array[Int, MAX_RANK](fill=0)
     var stride = 1
     for j in range(inner_rank - 1, -1, -1):
         indexed_strides[j] = stride
@@ -2477,7 +2477,7 @@ struct _ScatterNdMulBody[idx_dtype: DType](Dispatchable):
     var index_depth: Int
     var suffix_size: Int
     var input_data_stride: Int
-    var indexed_strides: InlineArray[Int, MAX_RANK]
+    var indexed_strides: Array[Int, MAX_RANK]
 
     def __init__(
         out self,
@@ -2489,7 +2489,7 @@ struct _ScatterNdMulBody[idx_dtype: DType](Dispatchable):
         index_depth: Int,
         suffix_size: Int,
         input_data_stride: Int,
-        indexed_strides: InlineArray[Int, MAX_RANK],
+        indexed_strides: Array[Int, MAX_RANK],
     ):
         self.out_addr = out_addr
         self.upd_addr = upd_addr
@@ -2527,7 +2527,7 @@ def _scatter_nd_mul_dispatch_integer[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: InlineArray[Int, MAX_RANK],
+    indexed_strides: Array[Int, MAX_RANK],
 ) raises:
     dispatch_dtype(
         _ScatterNdMulBody[d](
