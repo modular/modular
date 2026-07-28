@@ -16,17 +16,15 @@
 from __future__ import annotations
 
 import ctypes
-import dataclasses
-import itertools
 import logging
 import os
 import random
 import socket
 import time
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Literal, TypeVar
+from typing import Literal
 from uuid import uuid4
 
 import msgspec
@@ -38,8 +36,6 @@ from .cache_manager import PagedKVCacheManager
 logger = logging.getLogger("max.pipelines")
 
 NixlBackendType = Literal["ucx", "libfabric"]
-
-_ShardT = TypeVar("_ShardT")
 
 _NIXL_BACKEND_ENV_VAR = "MODULAR_NIXL_TRANSFER_BACKEND"
 _SUPPORTED_BACKENDS: set[NixlBackendType] = {"ucx", "libfabric"}
@@ -213,6 +209,31 @@ def _validate_tensor_shape(
     return bytes_per_page, elts_per_page
 
 
+def _build_group_descriptors(
+    base_addrs: Sequence[int],
+    bytes_per_group: Sequence[int],
+    page_idxs: Sequence[int],
+    device_id: int,
+) -> list[tuple[int, int, int]]:
+    """Build NIXL ``(addr, size, device)`` descriptors for all groups.
+
+    For each group ``g`` and page index ``i``, emits
+    ``(base_addrs[g] + i * bytes_per_group[g], bytes_per_group[g], device_id)``,
+    iterating group-major then page-index (the order the paired src/dst
+    descriptor lists rely on).
+
+    Each group uses its OWN base address and per-page stride, so groups with
+    different ``bytes_per_page`` never share addressing -- the invariant that
+    guards against the draft-KV stride-mismatch class (SERVOPT-1456).
+    """
+    descs: list[tuple[int, int, int]] = []
+    for group_idx, bpp in enumerate(bytes_per_group):
+        base = base_addrs[group_idx]
+        for idx in page_idxs:
+            descs.append((base + idx * bpp, bpp, device_id))
+    return descs
+
+
 class TensorAgentMetadata(
     msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
 ):
@@ -227,15 +248,14 @@ class TensorAgentMetadata(
     metadata: bytes
     """Metadata for this agent."""
 
-    base_addr: int
-    """Base memory address for this tensor."""
+    base_addrs: list[int]
+    """Base memory address per NIXL group for this shard, indexed by group.
+    ``base_addrs[g]`` is the base of group ``g`` (e.g. values, scales, or a
+    per-child cache). Parallel to the engine's ``bytes_per_group``; there is
+    no special "main" group."""
 
     device_id: int
     """Device ID for this tensor."""
-
-    extra_base_addrs: list[int] = []
-    """Base memory addresses for extra tensor groups (e.g., draft KV in
-    speculative decoding). One entry per extra group beyond the main group."""
 
 
 @dataclass
@@ -252,11 +272,10 @@ class TensorAgent:
     agent_name: str
     """Name of this agent."""
 
-    tensor: Buffer
-    """Tensor for this agent."""
-
-    base_addr: int
-    """Base memory address for this tensor."""
+    base_addrs: list[int]
+    """Base memory address per NIXL group for this shard, indexed by group.
+    Parallel to ``reg_dlists`` and to the engine's ``bytes_per_group``; there
+    is no special "main" group."""
 
     backend: int
     """NIXL backend handle (UCX or libfabric)."""
@@ -267,43 +286,29 @@ class TensorAgent:
     agent_metadata: bytes
     """Metadata for this agent."""
 
-    reg_dlist: nixl.RegistrationDescriptorList
-    """Registration descriptor list for this tensor."""
-
-    extra_base_addrs: list[int] = dataclasses.field(default_factory=list)
-    """Base memory addresses for extra groups (e.g., draft KV in spec-decode).
-    Parallel to the extra_reg_dlists list."""
-
-    extra_reg_dlists: list[nixl.RegistrationDescriptorList] = dataclasses.field(
-        default_factory=list
-    )
-    """Registration descriptor lists for extra groups."""
+    reg_dlists: list[nixl.RegistrationDescriptorList]
+    """Registration descriptor list per NIXL group, parallel to ``base_addrs``."""
 
     @classmethod
     def create_agent(
         cls,
         agent_name: str,
         listen_port: int,
-        tensor: Buffer,
-        total_num_pages: int,
-        elts_per_page: int,
+        tensors: Sequence[Buffer],
         memory_type: nixl.MemoryType,
         backend_type: NixlBackendType = "ucx",
-        extra_tensors: Sequence[Buffer] | None = None,
     ) -> TensorAgent:
-        """Creates and registers a NIXL agent for the given tensor.
+        """Creates and registers a NIXL agent for a shard's per-group buffers.
 
         Args:
             agent_name: Unique name for this agent.
             listen_port: TCP port for the NIXL listener.
-            tensor: GPU/CPU buffer to register.
-            total_num_pages: Total KV cache pages in the tensor.
-            elts_per_page: Elements per page for the main group.
+            tensors: This shard's buffers, one per NIXL group, group-major
+                (e.g. ``[main_values, main_scales, draft_values,
+                draft_scales]``). All must share the same device. Must be
+                non-empty.
             memory_type: NIXL memory segment type (DRAM or VRAM).
             backend_type: NIXL transport backend (``"ucx"`` or ``"libfabric"``).
-            extra_tensors: Additional buffers to register as extra groups (e.g.,
-                draft KV in speculative decoding). Must share the same device as
-                ``tensor``.
         """
         # Pre-load the UCX plugin's GPU runtime dependencies with RTLD_GLOBAL
         # before the NIXL plugin manager dlopens the plugin. Must run in this
@@ -323,9 +328,6 @@ class TensorAgent:
             ),
         )
 
-        # Reshape tensor to 2D view
-        tensor_2d = tensor.view(tensor.dtype, (total_num_pages, elts_per_page))
-
         # Check backend availability.
         # Upstream NIXL plugin names are uppercase (UCX, LIBFABRIC); the
         # Modular-facing API (MODULAR_NIXL_TRANSFER_BACKEND) keeps lowercase
@@ -338,8 +340,8 @@ class TensorAgent:
                 f"{agent_name}. Available plugins: {available}"
             )
 
-        # Configure and create backend
-        device = tensor.device
+        # All groups for one shard live on the same device.
+        device = tensors[0].device
         backend_params = agent.get_plugin_params(upstream_backend_type)[0]
         if not device.is_host:
             backend_params["gpu_device_id"] = str(device.id)
@@ -349,48 +351,23 @@ class TensorAgent:
             init_params=backend_params,
         )
 
-        # Register main memory
-        base_addr = tensor._data_ptr()
-        num_bytes = tensor.num_elements * tensor.dtype.size_in_bytes
-
-        descs = [(base_addr, num_bytes, device.id, "")]
-        reg_dlist = nixl.RegistrationDescriptorList(
-            type=memory_type, descs=descs
-        )
-
-        status = agent.register_memory(reg_dlist, [backend])
-        if status != nixl.Status.SUCCESS:
-            raise ValueError(
-                f"Failed to register memory for {agent_name}: {status}"
+        # Register one memory region per group, uniformly.
+        base_addrs: list[int] = []
+        reg_dlists: list[nixl.RegistrationDescriptorList] = []
+        for tensor in tensors:
+            base_addr = tensor._data_ptr()
+            num_bytes = tensor.num_elements * tensor.dtype.size_in_bytes
+            reg_dlist = nixl.RegistrationDescriptorList(
+                type=memory_type,
+                descs=[(base_addr, num_bytes, device.id, "")],
             )
-
-        # Register extra groups (e.g., draft KV cache for speculative decoding)
-        extra_base_addrs: list[int] = []
-        extra_reg_dlists: list[nixl.RegistrationDescriptorList] = []
-        if extra_tensors:
-            for extra_tensor in extra_tensors:
-                extra_base_addr = extra_tensor._data_ptr()
-                extra_num_bytes = (
-                    extra_tensor.num_elements * extra_tensor.dtype.size_in_bytes
+            status = agent.register_memory(reg_dlist, [backend])
+            if status != nixl.Status.SUCCESS:
+                raise ValueError(
+                    f"Failed to register memory for {agent_name}: {status}"
                 )
-                extra_descs = [
-                    (
-                        extra_base_addr,
-                        extra_num_bytes,
-                        extra_tensor.device.id,
-                        "",
-                    )
-                ]
-                extra_reg_dlist = nixl.RegistrationDescriptorList(
-                    type=memory_type, descs=extra_descs
-                )
-                extra_status = agent.register_memory(extra_reg_dlist, [backend])
-                if extra_status != nixl.Status.SUCCESS:
-                    raise ValueError(
-                        f"Failed to register extra memory for {agent_name}: {extra_status}"
-                    )
-                extra_base_addrs.append(extra_base_addr)
-                extra_reg_dlists.append(extra_reg_dlist)
+            base_addrs.append(base_addr)
+            reg_dlists.append(reg_dlist)
 
         # Get metadata after registration
         agent_metadata = agent.get_local_metadata()
@@ -399,14 +376,11 @@ class TensorAgent:
         return TensorAgent(
             agent=agent,
             agent_name=agent_name,
-            tensor=tensor_2d,
-            base_addr=base_addr,
+            base_addrs=base_addrs,
             backend=backend,
             device_id=device.id,
             agent_metadata=agent_metadata,
-            reg_dlist=reg_dlist,
-            extra_base_addrs=extra_base_addrs,
-            extra_reg_dlists=extra_reg_dlists,
+            reg_dlists=reg_dlists,
         )
 
     def to_metadata(self) -> TensorAgentMetadata:
@@ -414,9 +388,8 @@ class TensorAgent:
         return TensorAgentMetadata(
             agent_name=self.agent_name,
             metadata=self.agent_metadata,
-            base_addr=self.base_addr,
+            base_addrs=self.base_addrs,
             device_id=self.device_id,
-            extra_base_addrs=self.extra_base_addrs,
         )
 
 
@@ -477,27 +450,113 @@ def resolve_peer_view(
         f"local=(dp={local_dp},tp={local_tp},replicate={local_replicate}) "
         f"remote=(dp={remote_dp},tp={remote_tp},replicate={remote_replicate}). "
         f"Heterogeneous DP/TP is only supported when exactly one side "
-        f"has replicate_kv_across_tp=True (MLA) with TP>1 and its "
-        f"DP*TP matches the other side's DP."
+        f"has replicate_kv_across_tp=True (e.g. MLA) with TP>1 and its "
+        f"DP*TP matches the other side's DP. Both-TP>1 and sharded TP "
+        f"reshards are not supported."
     )
 
 
-class KVTransferEngineMetadata(
+# ---------------------------------------------------------------------------
+# Topology resolver (pure, NIXL-free)
+#
+# These functions turn a resolved ``_PeerView`` plus the two engines' ``[dp][tp]``
+# shapes into *index plans*: which (local, remote) agent pairs to wire at
+# connect time, and which (source, destination) shards to pair for a single
+# transfer. They hold no ``self`` and touch no NIXL objects, so they are
+# directly CPU-unit-testable. :class:`TransferEngine` maps the returned indices
+# onto its live ``TensorAgent`` grid and makes the NIXL calls.
+# ---------------------------------------------------------------------------
+
+
+def _effective_grid(
+    dp: int, tp: int, flatten: bool
+) -> list[list[tuple[int, int]]]:
+    """View a ``[dp][tp]`` grid as ``[effective_dp][effective_tp]`` (physical) indices.
+
+    When ``flatten`` is True the natural ``[dp][tp]`` is reinterpreted as
+    ``[dp*tp][1]`` -- each TP shard becomes its own single-shard replica.
+    Every entry is the physical ``(replica, shard)`` coordinate.
+    """
+    if flatten:
+        return [[(r, s)] for r in range(dp) for s in range(tp)]
+    return [[(r, s) for s in range(tp)] for r in range(dp)]
+
+
+def connect_pairing(
+    view: _PeerView,
+    local_dp: int,
+    local_tp: int,
+    remote_dp: int,
+    remote_tp: int,
+) -> list[tuple[int, int, int, int]]:
+    """Plan the connect/disconnect/cleanup wiring for a peer.
+
+    Returns physical index quads ``(local_replica, local_shard,
+    remote_replica, remote_shard)`` in the order the NIXL metadata
+    load/invalidate must iterate: the full cartesian product of local x remote
+    effective replicas, zipping shards within each replica pair. Applies the
+    peer view's flatten flags so heterogeneous shapes line up under ``zip``.
+    """
+    local_grid = _effective_grid(local_dp, local_tp, view.flatten_local)
+    remote_grid = _effective_grid(remote_dp, remote_tp, view.flatten_remote)
+    assert len(local_grid) == len(remote_grid) == view.effective_dp
+    pairs: list[tuple[int, int, int, int]] = []
+    for local_replica in local_grid:
+        for remote_replica in remote_grid:
+            for (lr, ls), (rr, rs) in zip(
+                local_replica, remote_replica, strict=True
+            ):
+                pairs.append((lr, ls, rr, rs))
+    return pairs
+
+
+def transfer_shard_pairing(
+    flatten_source: bool,
+    source_tp: int,
+    dest_tp: int,
+) -> list[tuple[int, int]]:
+    """Plan the (source_shard, dest_shard) pairs for one transfer.
+
+    The source side may be collapsed to a single shard (``flatten_source`` --
+    an MLA-replicated source, where any shard's copy suffices and shard 0 saves
+    bandwidth). The destination always spans all its shards (each owns distinct
+    GPU memory). When the source is a single shard but the destination has many
+    (DP-source -> TP-dest), the source is fanned out so every destination shard
+    is paired.
+
+    The caller reads ``local_shards_used`` off whichever side is local: the
+    source shards for a send, the destination shards for a read.
+    """
+    if flatten_source:
+        # TODO(SERVOPT-1337): always picking shard 0 hotspots one NIC/PCIe
+        # path; rotate (round-robin or hashed) to spread load across shards.
+        source_shards = [0]
+    else:
+        source_shards = list(range(source_tp))
+
+    dest_shards = list(range(dest_tp))
+
+    if len(source_shards) == 1 and len(dest_shards) > 1:
+        source_shards = source_shards * len(dest_shards)
+
+    return list(zip(source_shards, dest_shards, strict=True))
+
+
+class TransferEngineMetadata(
     msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
 ):
-    """Metadata associated with a transfer engine.
+    """Transport-only metadata for a :class:`TransferEngine`.
+
+    Carries just the fields a generic NIXL transport needs to connect to a
+    peer: the engine name, memory type, hostname, and per-shard agent
+    metadata. KV/topology-specific fields live on
+    :class:`KVTransferEngineMetadata`.
 
     This is safe to send between threads/processes.
     """
 
     name: str
     """Base name of the transfer engine."""
-
-    total_num_pages: int
-    """Total number of pages in each tensor."""
-
-    bytes_per_page: int
-    """Bytes per page for each tensor."""
 
     memory_type: nixl.MemoryType
     """Memory type of the transfer engine."""
@@ -508,8 +567,26 @@ class KVTransferEngineMetadata(
     agents_meta: list[list[TensorAgentMetadata]]
     """Metadata for each replica's agents: [replica][tp_shard]."""
 
+
+class KVTransferEngineMetadata(TransferEngineMetadata):
+    """Metadata associated with a KV cache transfer engine.
+
+    Extends the transport-only :class:`TransferEngineMetadata` with the
+    KV-cache/topology fields (page geometry and TP replication).
+
+    This is safe to send between threads/processes.
+    """
+
+    total_num_pages: int
+    """Total number of pages in each tensor."""
+
+    bytes_per_page: int
+    """Bytes per page for each tensor."""
+
+    # Wire key is the field name; renaming it breaks decode against peers on an
+    # older build, so add a `msgspec.field(name=...)` alias if DI ever does rolling deploys.
     replicate_kv_across_tp: bool = False
-    """True iff KV buffers are identical across TP ranks (e.g. MLA with
+    """True iff buffers are identical across TP ranks (e.g. MLA KV with
     num_kv_heads=1). When both sides declare different (dp, tp) but one
     replicates, the engine can reinterpret the replicating side as
     ``[dp*tp][1]`` to let a prefill worker at (DP=m, TP=n) connect to a
@@ -568,25 +645,34 @@ class TransferReqData(
     has picked a subset of shards."""
 
 
-class KVTransferEngine:
-    """KVCache Transfer Engine with support for Data Parallelism (DP) and Tensor Parallelism (TP).
+class TransferEngine:
+    """NIXL transfer engine that owns the NIXL plumbing.
 
-    The engine accepts a 2D list of tensors: list[list[Buffer]] where the outer list
-    represents DP replicas and the inner list represents TP shards within each replica.
+    - Agent lifecycle (create, connect, disconnect, cleanup)
+    - Memory registration / deregistration
+    - Descriptor list construction for (buffer, offset, size) ranges
+    - Send / read transfer initiation and completion tracking
+      (``initiate_send_transfer``, ``initiate_read_transfer``,
+      ``is_complete``, ``cleanup_transfer``, ``sync_and_release``)
 
-    The TransferEngine communicates with other TransferEngines in other threads
-    or processes. However, individual TransferEngines themselves are not
-    thread-safe. It is intended to be used by MAX's single-threaded scheduler.
+    This base still carries KV-cache topology today -- the ``[dp][tp]``
+    ``tensor_agents`` grid, page geometry, and ``.metadata`` returns
+    :class:`KVTransferEngineMetadata`; :class:`KVTransferEngine` is a thin
+    construction subclass on top. Making the transport KV-agnostic (so it is
+    testable without KV scaffolding) is tracked in MXSERV-313.
+
+    ``TransferEngine`` is not thread-safe and is intended to be driven by
+    MAX's single-threaded scheduler.
     """
 
     name: str
-    """Name of transfer engine / nixl agent."""
+    """Name of this engine / NIXL agent group."""
 
     tensor_agents: list[list[TensorAgent]]
     """2D list of TensorAgent objects: [replica][tp_shard]."""
 
     total_num_pages: int
-    """Total number of pages in each tensor (same across all replicas)."""
+    """Total number of pages in each tensor."""
 
     bytes_per_page: int
     """Total bytes per page across all groups. For single-group engines this
@@ -599,7 +685,7 @@ class KVTransferEngine:
     speculative decoding)."""
 
     memory_type: nixl.MemoryType
-    """Type of memory being managed (e.g. DRAM)."""
+    """Type of memory being managed."""
 
     remote_connections: dict[str, KVTransferEngineMetadata]
     """Map of remote engine names to their metadata."""
@@ -619,169 +705,30 @@ class KVTransferEngine:
     tp: int
     """Number of TP shards per replica."""
 
-    replicate_kv_across_tp: bool
-    """Whether KV is replicated across TP ranks (MLA)."""
-
     def __init__(
         self,
         name: str,
-        tensors: Sequence[Sequence[Buffer]],
+        tensor_agents: list[list[TensorAgent]],
         *,
         total_num_pages: int,
+        bytes_per_page: int,
+        bytes_per_group: list[int],
+        memory_type: nixl.MemoryType,
+        dp: int,
+        tp: int,
+        backend_type: NixlBackendType,
         replicate_kv_across_tp: bool = False,
-        extra_tensor_groups: Sequence[Sequence[Sequence[Buffer]]] | None = None,
     ) -> None:
-        """Initialize the transfer engine.
-
-        Args:
-            name: Unique name for this engine.
-            tensors: Main group tensors as ``[replica][tp_shard]``.
-            total_num_pages: Total KV cache pages per tensor.
-            replicate_kv_across_tp: Whether KV is replicated across TP ranks.
-            extra_tensor_groups: Additional tensor groups (e.g., draft KV for
-                speculative decoding). Each entry has the same ``[replica][tp_shard]``
-                structure as ``tensors``. All tensors in each group must have
-                the same shape within that group, but groups may differ in shape.
-        """
-        if total_num_pages <= 0:
-            raise ValueError(
-                f"Total number of pages {total_num_pages} must be greater than 0"
-            )
-
-        # Validate 2D structure
-        if not tensors:
-            raise ValueError("tensors must contain at least one replica")
-
-        if not all(replica_tensors for replica_tensors in tensors):
-            raise ValueError("Each replica must contain at least one tensor")
-
-        # Validate all replicas have same number of TP shards
-        self.tp = len(tensors[0])
-        for replica_idx, replica_tensors in enumerate(tensors):
-            if len(replica_tensors) != self.tp:
-                raise ValueError(
-                    f"All replicas must have the same number of tensors. "
-                    f"Replica 0 has {self.tp} tensors, "
-                    f"but replica {replica_idx} has {len(replica_tensors)} tensors"
-                )
-
-        self.dp = len(tensors)
-        self.replicate_kv_across_tp = replicate_kv_across_tp and self.tp > 1
-
-        backend_type = _get_nixl_backend_type()
-
-        # Validate main group across replicas
-        bytes_per_page_list = []
-        elts_per_page_list = []
-        memory_types = []
-
-        for replica_tensors in tensors:
-            _validate_device_type([t.device for t in replica_tensors])
-            bytes_per_page, elts_per_page = _validate_tensor_shape(
-                replica_tensors,
-                total_num_pages,
-            )
-            bytes_per_page_list.append(bytes_per_page)
-            elts_per_page_list.append(elts_per_page)
-
-            is_cpu = replica_tensors[0].device.is_host
-            memory_type = (
-                nixl.MemoryType.DRAM if is_cpu else nixl.MemoryType.VRAM
-            )
-            memory_types.append(memory_type)
-
-        # Validate all replicas have same bytes_per_page and memory_type
-        if len(set(bytes_per_page_list)) != 1:
-            raise ValueError(
-                f"All replicas must have the same bytes_per_page. "
-                f"Found: {bytes_per_page_list}"
-            )
-
-        if len(set(memory_types)) != 1:
-            raise ValueError(
-                f"All replicas must have the same memory type. "
-                f"Found: {memory_types}"
-            )
-
-        # Validate extra groups and compute their bytes_per_page
-        extra_groups: list[Sequence[Sequence[Buffer]]] = (
-            list(extra_tensor_groups) if extra_tensor_groups else []
-        )
-        extra_bpp_list: list[int] = []  # [group_idx] → bytes_per_page
-        extra_elts_list: list[int] = []  # [group_idx] → elts_per_page
-
-        for group_idx, group_tensors in enumerate(extra_groups):
-            if len(group_tensors) != self.dp:
-                raise ValueError(
-                    f"Extra group {group_idx} must have {self.dp} replicas, "
-                    f"but has {len(group_tensors)}"
-                )
-            group_bpp_list = []
-            group_elts_list = []
-            for replica_idx, replica_tensors in enumerate(group_tensors):
-                if len(replica_tensors) != self.tp:
-                    raise ValueError(
-                        f"Extra group {group_idx} replica {replica_idx} must "
-                        f"have {self.tp} TP shards, but has {len(replica_tensors)}"
-                    )
-                gbpp, gelts = _validate_tensor_shape(
-                    replica_tensors, total_num_pages
-                )
-                group_bpp_list.append(gbpp)
-                group_elts_list.append(gelts)
-            if len(set(group_bpp_list)) != 1:
-                raise ValueError(
-                    f"Extra group {group_idx}: all replicas must have the same "
-                    f"bytes_per_page. Found: {group_bpp_list}"
-                )
-            extra_bpp_list.append(group_bpp_list[0])
-            extra_elts_list.append(group_elts_list[0])
-
-        # Set memory type and total pages
-        self.total_num_pages = total_num_pages
-        main_bpp = bytes_per_page_list[0]
-        self.bytes_per_group = [main_bpp, *extra_bpp_list]
-        self.bytes_per_page = sum(self.bytes_per_group)
-        self.memory_type = memory_types[0]
-        elts_per_page = elts_per_page_list[0]
-
-        # Create agents for each tensor in 2D structure
         self.name = name
-        self.tensor_agents = []
-        for replica_idx, replica_tensors in enumerate(tensors):
-            replica_agents = []
-            for tp_idx, tensor in enumerate(replica_tensors):
-                # Gather corresponding extra-group tensors for this shard
-                shard_extra_tensors = [
-                    list(extra_groups[g][replica_idx])[tp_idx]
-                    for g in range(len(extra_groups))
-                ]
-                tensor_agent = TensorAgent.create_agent(
-                    agent_name=f"{name}_{replica_idx}_{tp_idx}",
-                    listen_port=available_port(),
-                    tensor=tensor,
-                    total_num_pages=total_num_pages,
-                    elts_per_page=elts_per_page,
-                    memory_type=self.memory_type,
-                    backend_type=backend_type,
-                    extra_tensors=shard_extra_tensors
-                    if shard_extra_tensors
-                    else None,
-                )
-                replica_agents.append(tensor_agent)
-            self.tensor_agents.append(replica_agents)
-
-        logger.info(
-            "NIXL memory registration complete for %s (%s backend): "
-            "%d agent(s) (dp=%d, tp=%d), %d bytes per agent (%d group(s)).",
-            self.name,
-            backend_type,
-            self.dp * self.tp,
-            self.dp,
-            self.tp,
-            self.bytes_per_page * total_num_pages,
-            len(self.bytes_per_group),
-        )
+        self.tensor_agents = tensor_agents
+        self.total_num_pages = total_num_pages
+        self.bytes_per_page = bytes_per_page
+        self.bytes_per_group = bytes_per_group
+        self.memory_type = memory_type
+        self.dp = dp
+        self.tp = tp
+        self._backend_type = backend_type
+        self.replicate_kv_across_tp = replicate_kv_across_tp
 
         # Remote connections
         self.remote_connections: dict[str, KVTransferEngineMetadata] = {}
@@ -790,77 +737,18 @@ class KVTransferEngine:
         self._peer_views: dict[str, _PeerView] = {}
 
         # Map of agents to completed transfers
-        self.completed_recv_transfers = defaultdict(lambda: defaultdict(int))
+        self.completed_recv_transfers: dict[str, dict[str, int]] = defaultdict(
+            lambda: defaultdict(int)
+        )
 
         # Map of remote agent names to their engine names
-        self.remote_agent_to_engine = {}
+        self.remote_agent_to_engine: dict[str, str] = {}
 
         # All send transfers - maps transfer_name to list of (tensor_idx, transfer_id) tuples
-        self.inflight_send_transfers = {}
+        self.inflight_send_transfers: dict[str, TransferReqData] = {}
 
         # All read transfers - maps transfer_name to TransferReqData
         self.inflight_read_transfers: dict[str, TransferReqData] = {}
-
-    @classmethod
-    def from_paged_kv_cache(
-        cls, name: str, kv_cache: PagedKVCacheManager
-    ) -> KVTransferEngine:
-        """Construct an engine wired to a ``PagedKVCacheManager``.
-
-        Pulls the per-replica device buffers, sets ``total_num_pages``, and
-        derives ``replicate_kv_across_tp`` from the cache params. Equivalent to
-        constructing the engine manually but consolidates the boilerplate that
-        prefill/decode schedulers share.
-
-        For models with multiple KV caches (e.g., speculative decoding with a
-        separate target and draft KV), each child cache is registered as its
-        own NIXL group so that heterogeneous buffer shapes (e.g., 61-layer MLA
-        target vs. 1-layer Eagle draft) are validated and transferred
-        independently.
-        """
-        from max.nn.kv_cache.cache_params import MultiKVCacheBuffer
-
-        cache_params = kv_cache.params
-        dp = cache_params.data_parallel_degree
-        total_num_pages = kv_cache.get_num_pages(replica_idx=0) + 1
-
-        device_buffers = [
-            kv_cache.get_device_buffer(replica_idx) for replica_idx in range(dp)
-        ]
-
-        tensors: list[list[Buffer]] = []
-        extra_tensor_groups: list[list[list[Buffer]]] = []
-        child_keys: list[str] = []
-
-        # Collect per-replica buffers. MultiKVCacheBuffer replicas are split
-        # into per-child NIXL groups so each group is shape-homogeneous.
-        # KVCacheBuffer replicas go into a single group as before.
-        for r, buf in enumerate(device_buffers):
-            if isinstance(buf, MultiKVCacheBuffer):
-                if r == 0:
-                    child_keys = list(buf.children.keys())
-                    extra_tensor_groups = [[] for _ in child_keys[1:]]
-                # Main group: this replica's buffers for the first child
-                tensors.append(list(buf.children[child_keys[0]].all_buffers))
-                # Extra groups: one entry per remaining child
-                for g, key in enumerate(child_keys[1:]):
-                    extra_tensor_groups[g].append(
-                        list(buf.children[key].all_buffers)
-                    )
-            else:
-                # Single-cache replica: flat buffer list
-                tensors.append(list(buf.all_buffers))
-
-        return cls(
-            name=name,
-            tensors=tensors,
-            # Need to add 1 for the null block
-            total_num_pages=total_num_pages,
-            replicate_kv_across_tp=cache_params.replicates_kv_across_tp,
-            extra_tensor_groups=extra_tensor_groups
-            if extra_tensor_groups
-            else None,
-        )
 
     @property
     def metadata(self) -> KVTransferEngineMetadata:
@@ -916,67 +804,19 @@ class KVTransferEngine:
             remote_replicate=remote.replicate_kv_across_tp,
         )
 
-    def _pick_transfer_shards(
-        self,
-        replica_agents: Sequence[_ShardT],
-        flatten: bool,
-        tp_shard_limit: int | None,
-    ) -> list[_ShardT]:
-        """Select which TP shards of a single replica participate in a transfer.
+    def _iter_peer_agents(
+        self, remote: KVTransferEngineMetadata, view: _PeerView
+    ) -> Iterator[tuple[TensorAgent, TensorAgentMetadata]]:
+        """Yield ``(local agent, remote agent-meta)`` pairs for a peer.
 
-        Under ``flatten``, MLA KV is replicated across TP so shard 0 carries
-        the full payload. Otherwise honor ``tp_shard_limit`` if set.
+        Maps the resolver's physical index quads onto the live agent grids, in
+        the order connect / disconnect / cleanup must iterate. Sharing this one
+        iterator is what makes teardown mirror ``connect()``.
         """
-        if flatten:
-            return [replica_agents[0]]
-        agents = list(replica_agents)
-        if tp_shard_limit is not None:
-            agents = agents[:tp_shard_limit]
-        return agents
-
-    def _effective_local_agents(self, flatten: bool) -> list[list[TensorAgent]]:
-        """Return ``tensor_agents`` viewed as ``[effective_dp][effective_tp]`` for a peer.
-
-        When ``flatten`` is True, the natural ``[dp][tp]`` is reinterpreted
-        as ``[dp*tp][1]`` — each TP shard becomes its own single-shard
-        replica. Otherwise returns the natural layout unchanged.
-        """
-        if flatten:
-            return [
-                [self.tensor_agents[r][s]]
-                for r in range(self.dp)
-                for s in range(self.tp)
-            ]
-        return [list(replica) for replica in self.tensor_agents]
-
-    def _effective_remote_meta(
-        self, remote: KVTransferEngineMetadata, flatten: bool
-    ) -> list[list[TensorAgentMetadata]]:
-        """Mirror of ``_effective_local_agents`` for a remote peer."""
-        if flatten:
-            return [
-                [agent_meta]
-                for replica_agents in remote.agents_meta
-                for agent_meta in replica_agents
-            ]
-        return [list(replica) for replica in remote.agents_meta]
-
-    def _effective_agents_for_peer(
-        self,
-        remote: KVTransferEngineMetadata,
-        view: _PeerView | None,
-    ) -> tuple[list[list[TensorAgent]], list[list[TensorAgentMetadata]]]:
-        """Return the (local, remote) agent grids to iterate against a peer.
-
-        Applies the peer view's flatten flags to align heterogeneous shapes;
-        falls back to the natural ``[dp][tp]`` layout when ``view`` is None.
-        """
-        flatten_local = view.flatten_local if view is not None else False
-        flatten_remote = view.flatten_remote if view is not None else False
-        return (
-            self._effective_local_agents(flatten_local),
-            self._effective_remote_meta(remote, flatten_remote),
-        )
+        rdp = len(remote.agents_meta)
+        rtp = len(remote.agents_meta[0]) if remote.agents_meta else 0
+        for lr, ls, rr, rs in connect_pairing(view, self.dp, self.tp, rdp, rtp):
+            yield self.tensor_agents[lr][ls], remote.agents_meta[rr][rs]
 
     def connect(self, remote: KVTransferEngineMetadata) -> None:
         """Connect to a remote engine (all replicas).
@@ -1029,38 +869,23 @@ class KVTransferEngine:
                     remote.hostname,
                 )
 
-        # Connect pairwise in the effective view, flattening [dp][tp] to
-        # [dp*tp][1] on whichever side the peer view calls for.
-        local_effective, remote_effective = self._effective_agents_for_peer(
-            remote, view
-        )
-        assert (
-            len(local_effective) == len(remote_effective) == view.effective_dp
-        )
-        for local_agents, remote_agents_meta in itertools.product(
-            local_effective, remote_effective
-        ):
-            # Connect each TP shard within the replica
-            for local_ta, remote_agent_meta in zip(
-                local_agents,
-                remote_agents_meta,
-                strict=True,
-            ):
-                loaded_bytes = local_ta.agent.load_remote_metadata(
-                    remote_agent_meta.metadata
+        # Load remote metadata for every wired (local, remote) agent pair.
+        for local_ta, remote_agent_meta in self._iter_peer_agents(remote, view):
+            loaded_bytes = local_ta.agent.load_remote_metadata(
+                remote_agent_meta.metadata
+            )
+            try:
+                loaded_remote_name = loaded_bytes.decode()
+            except UnicodeDecodeError as e:
+                raise ValueError(
+                    f"Metadata loading failed. "
+                    f"Expected string, found {loaded_bytes!r}"
+                ) from e
+            if loaded_remote_name != remote_agent_meta.agent_name:
+                raise ValueError(
+                    f"Metadata loading failed. "
+                    f"Expected {remote_agent_meta.agent_name}, got {loaded_remote_name}"
                 )
-                try:
-                    loaded_remote_name = loaded_bytes.decode()
-                except UnicodeDecodeError as e:
-                    raise ValueError(
-                        f"Metadata loading failed. "
-                        f"Expected string, found {loaded_bytes!r}"
-                    ) from e
-                if loaded_remote_name != remote_agent_meta.agent_name:
-                    raise ValueError(
-                        f"Metadata loading failed. "
-                        f"Expected {remote_agent_meta.agent_name}, got {loaded_remote_name}"
-                    )
 
         self.remote_connections[remote.name] = remote
         self._peer_views[remote.name] = view
@@ -1089,6 +914,12 @@ class KVTransferEngine:
                 f"Remote connection '{name}' not found; cannot disconnect"
             )
         view = self._peer_views.pop(name, None)
+        # Defensive: connect() populates _peer_views and remote_connections
+        # together, so this is unreachable today. If they ever desync,
+        # recompute (rather than assuming non-flattened) so a flattened peer's
+        # teardown still mirrors connect()'s pairing.
+        if view is None:
+            view = self._compute_peer_view(remote)
 
         # Release inflight send transfers targeting this remote.
         stale_sends = [
@@ -1138,35 +969,28 @@ class KVTransferEngine:
                         exc_info=True,
                     )
 
-        # Teardown must mirror the connect() iteration.
-        local_eff, remote_eff = self._effective_agents_for_peer(remote, view)
-
-        for local_agents, remote_agents_meta in itertools.product(
-            local_eff, remote_eff
-        ):
-            for local_ta, remote_agent_meta in zip(
-                local_agents, remote_agents_meta, strict=True
-            ):
-                try:
-                    status = local_ta.agent.invalidate_remote_metadata(
-                        remote_agent_meta.agent_name
-                    )
-                    if status != nixl.Status.SUCCESS:
-                        logger.warning(
-                            "invalidate_remote_metadata returned %s for"
-                            " agent '%s' during disconnect of '%s'",
-                            status,
-                            remote_agent_meta.agent_name,
-                            name,
-                        )
-                except Exception:
+        # Teardown iterates the same pairs as connect() (shared iterator).
+        for local_ta, remote_agent_meta in self._iter_peer_agents(remote, view):
+            try:
+                status = local_ta.agent.invalidate_remote_metadata(
+                    remote_agent_meta.agent_name
+                )
+                if status != nixl.Status.SUCCESS:
                     logger.warning(
-                        "Failed to invalidate metadata for agent '%s'"
-                        " during disconnect of '%s'",
+                        "invalidate_remote_metadata returned %s for"
+                        " agent '%s' during disconnect of '%s'",
+                        status,
                         remote_agent_meta.agent_name,
                         name,
-                        exc_info=True,
                     )
+            except Exception:
+                logger.warning(
+                    "Failed to invalidate metadata for agent '%s'"
+                    " during disconnect of '%s'",
+                    remote_agent_meta.agent_name,
+                    name,
+                    exc_info=True,
+                )
 
         # Clean up agent-to-engine mapping entries for this remote.
         stale_agent_names = [
@@ -1189,7 +1013,6 @@ class KVTransferEngine:
         dst_idxs: list[int],
         src_replica_idx: int,
         dst_replica_idx: int,
-        tp_shard_limit: int | None = None,
     ) -> TransferReqData:
         """Initiate a transfer from current engine to remote engine.
 
@@ -1201,10 +1024,6 @@ class KVTransferEngine:
             dst_idxs: List of indices of the destination pages in the remote engine.
             src_replica_idx: Index of the source replica to transfer from.
             dst_replica_idx: Index of the destination replica to transfer to.
-            tp_shard_limit: Maximum number of TP shards to transfer. When set,
-                only the first ``tp_shard_limit`` shards participate in the
-                transfer. Useful for MLA models where KV data is identical
-                across shards.
         """
         if not (0 <= src_replica_idx < self.dp):
             raise ValueError(
@@ -1250,59 +1069,38 @@ class KVTransferEngine:
         transfer_name = str(uuid4())
         transfer_ids = []
 
-        # Source: pick which physical shard(s) source the bytes.
-        # flatten_local picks shard 0 (MLA-replicated source saves bandwidth).
-        # TODO(SERVOPT-1337): rotate shards to spread NIC/PCIe load.
-        src_agents = self._pick_transfer_shards(
-            self.tensor_agents[src_replica_idx],
-            view.flatten_local,
-            tp_shard_limit,
+        # Plan (source_shard, dest_shard) pairs. flatten_local collapses the
+        # MLA-replicated source to shard 0 (any shard's copy suffices, saves
+        # bandwidth); the destination always spans all its TP shards since each
+        # owns distinct GPU memory. The source is the local side here.
+        local_replica_agents = self.tensor_agents[src_replica_idx]
+        remote_replica_agents_meta = remote.agents_meta[dst_replica_idx]
+        shard_pairs = transfer_shard_pairing(
+            flatten_source=view.flatten_local,
+            source_tp=len(local_replica_agents),
+            dest_tp=len(remote_replica_agents_meta),
         )
-        # Destination: always write to all TP shards on the chosen replica.
-        # Each remote TP shard owns its own GPU memory and must receive a
-        # copy. flatten_remote affects connect-time pairing only.
-        remote_replica_agents_meta = list(remote.agents_meta[dst_replica_idx])
-        if tp_shard_limit is not None:
-            remote_replica_agents_meta = remote_replica_agents_meta[
-                :tp_shard_limit
-            ]
-        # Fan out when src is one shard but dst has many (DP-prefill →
-        # TP-decode): repeat the src so the loop pairs shard 0 with each
-        # remote shard. All N transfers originate on the same source GPU.
-        if len(src_agents) == 1 and len(remote_replica_agents_meta) > 1:
-            src_agents = src_agents * len(remote_replica_agents_meta)
-            local_shards_used = [0] * len(remote_replica_agents_meta)
-        else:
-            local_shards_used = list(range(len(src_agents)))
+        local_shards_used = [src_shard for src_shard, _ in shard_pairs]
 
-        for tp_idx, ta in enumerate(src_agents):
-            remote_agent_meta = remote_replica_agents_meta[tp_idx]
+        for src_shard, dst_shard in shard_pairs:
+            ta = local_replica_agents[src_shard]
+            remote_agent_meta = remote_replica_agents_meta[dst_shard]
 
-            # Build descriptors for each group (main + extras).
+            # Build descriptors for each group.
             # Each group uses its own base address and bytes_per_page; all
             # groups share the same logical page indices.
-            src_base_addrs = [ta.base_addr, *ta.extra_base_addrs]
-            dst_base_addrs = [
-                remote_agent_meta.base_addr,
-                *remote_agent_meta.extra_base_addrs,
-            ]
+            src_base_addrs = ta.base_addrs
+            dst_base_addrs = remote_agent_meta.base_addrs
 
-            descs_src: list[tuple[int, int, int]] = []
-            descs_dst: list[tuple[int, int, int]] = []
-            for group_idx, bpp in enumerate(self.bytes_per_group):
-                s_base = src_base_addrs[group_idx]
-                d_base = dst_base_addrs[group_idx]
-                for src_idx, dst_idx in zip(src_idxs, dst_idxs, strict=True):
-                    descs_src.append(
-                        (s_base + src_idx * bpp, bpp, ta.device_id)
-                    )
-                    descs_dst.append(
-                        (
-                            d_base + dst_idx * bpp,
-                            bpp,
-                            remote_agent_meta.device_id,
-                        )
-                    )
+            descs_src = _build_group_descriptors(
+                src_base_addrs, self.bytes_per_group, src_idxs, ta.device_id
+            )
+            descs_dst = _build_group_descriptors(
+                dst_base_addrs,
+                self.bytes_per_group,
+                dst_idxs,
+                remote_agent_meta.device_id,
+            )
 
             transfer_dlist_src = nixl.TransferDescriptorList(
                 type=self.memory_type, descs=descs_src
@@ -1325,7 +1123,7 @@ class KVTransferEngine:
 
             if status not in [nixl.Status.SUCCESS, nixl.Status.IN_PROG]:
                 raise ValueError(
-                    f"Transfer request failed with status {status} for TP shard {tp_idx}"
+                    f"Transfer request failed with status {status} for TP shard {src_shard}"
                 )
 
             transfer_ids.append(transfer_id)
@@ -1352,7 +1150,6 @@ class KVTransferEngine:
         dst_idxs: list[int],
         src_replica_idx: int,
         dst_replica_idx: int,
-        tp_shard_limit: int | None = None,
     ) -> TransferReqData:
         """Initiate a READ transfer from remote engine to current engine.
 
@@ -1365,7 +1162,6 @@ class KVTransferEngine:
             dst_idxs: Page indices in the current engine (destination).
             src_replica_idx: Replica index in the remote engine.
             dst_replica_idx: Replica index in the current engine.
-            tp_shard_limit: If set, only the first N TP shards transfer.
         """
         if not (0 <= dst_replica_idx < self.dp):
             raise ValueError(
@@ -1405,28 +1201,18 @@ class KVTransferEngine:
         transfer_name = str(uuid4())
         transfer_ids = []
 
-        # Local (destination): always use all TP shards on the chosen
-        # replica. Each shard owns its own GPU memory and must land the
-        # incoming bytes. flatten_local affects connect-time pairing only.
-        dst_agents = list(self.tensor_agents[dst_replica_idx])
-        if tp_shard_limit is not None:
-            dst_agents = dst_agents[:tp_shard_limit]
-        # Remote (source): flatten_remote picks shard 0 when the source is
-        # MLA-replicated (any shard's copy works, saves bandwidth).
-        # TODO(SERVOPT-1337): rotate shards to spread NIC/PCIe load.
-        remote_replica_agents_meta = self._pick_transfer_shards(
-            remote.agents_meta[src_replica_idx],
-            view.flatten_remote,
-            tp_shard_limit,
+        # Plan (source_shard, dest_shard) pairs. Here the remote is the source
+        # (flatten_remote collapses an MLA-replicated remote to shard 0) and the
+        # local engine is the destination, always spanning all its TP shards.
+        local_replica_agents = self.tensor_agents[dst_replica_idx]
+        remote_replica_agents_meta = remote.agents_meta[src_replica_idx]
+        shard_pairs = transfer_shard_pairing(
+            flatten_source=view.flatten_remote,
+            source_tp=len(remote_replica_agents_meta),
+            dest_tp=len(local_replica_agents),
         )
-        # Fan out when remote-source is one shard but local-dest has many
-        # (DP-source → TP-dest read): repeat the remote source so each
-        # local shard pulls a copy from the same remote GPU.
-        if len(remote_replica_agents_meta) == 1 and len(dst_agents) > 1:
-            remote_replica_agents_meta = remote_replica_agents_meta * len(
-                dst_agents
-            )
-        local_shards_used = list(range(len(dst_agents)))
+        # Local is the destination for a read.
+        local_shards_used = [dst_shard for _, dst_shard in shard_pairs]
 
         # Determine per-group bytes_per_page for the remote (source) engine.
         # If the remote advertises bytes_per_group, use it; otherwise fall back
@@ -1437,37 +1223,26 @@ class KVTransferEngine:
             else [remote.bytes_per_page]
         )
 
-        for tp_idx, ta in enumerate(dst_agents):
-            remote_agent_meta = remote_replica_agents_meta[tp_idx]
+        for remote_shard, dst_shard in shard_pairs:
+            ta = local_replica_agents[dst_shard]
+            remote_agent_meta = remote_replica_agents_meta[remote_shard]
 
-            # Build descriptors for each group (main + extras).
-            local_base_addrs = [ta.base_addr, *ta.extra_base_addrs]
-            remote_base_addrs_list = [
-                remote_agent_meta.base_addr,
-                *remote_agent_meta.extra_base_addrs,
+            # Build descriptors for each group. Local uses this engine's
+            # bytes_per_group; remote uses the peer's advertised strides,
+            # falling back to local for any group the peer doesn't advertise.
+            effective_remote_bpg = [
+                remote_bpg[g] if g < len(remote_bpg) else bpp
+                for g, bpp in enumerate(self.bytes_per_group)
             ]
-
-            descs_local: list[tuple[int, int, int]] = []
-            descs_remote: list[tuple[int, int, int]] = []
-            for group_idx, bpp in enumerate(self.bytes_per_group):
-                l_base = local_base_addrs[group_idx]
-                r_base = remote_base_addrs_list[group_idx]
-                r_bpp = (
-                    remote_bpg[group_idx]
-                    if group_idx < len(remote_bpg)
-                    else bpp
-                )
-                for dst_idx, src_idx in zip(dst_idxs, src_idxs, strict=True):
-                    descs_local.append(
-                        (l_base + dst_idx * bpp, bpp, ta.device_id)
-                    )
-                    descs_remote.append(
-                        (
-                            r_base + src_idx * r_bpp,
-                            r_bpp,
-                            remote_agent_meta.device_id,
-                        )
-                    )
+            descs_local = _build_group_descriptors(
+                ta.base_addrs, self.bytes_per_group, dst_idxs, ta.device_id
+            )
+            descs_remote = _build_group_descriptors(
+                remote_agent_meta.base_addrs,
+                effective_remote_bpg,
+                src_idxs,
+                remote_agent_meta.device_id,
+            )
 
             local_dlist = nixl.TransferDescriptorList(
                 type=self.memory_type, descs=descs_local
@@ -1487,7 +1262,7 @@ class KVTransferEngine:
 
             if status not in [nixl.Status.SUCCESS, nixl.Status.IN_PROG]:
                 raise ValueError(
-                    f"Read transfer request failed with status {status} for TP shard {tp_idx}"
+                    f"Read transfer request failed with status {status} for TP shard {dst_shard}"
                 )
 
             transfer_ids.append(transfer_id)
@@ -1772,36 +1547,256 @@ class KVTransferEngine:
         # peer view so heterogeneous flatten shapes line up under zip.
         for remote_name in self.remote_connections:
             remote = self.remote_connections[remote_name]
-            local_eff, remote_eff = self._effective_agents_for_peer(
-                remote, self._peer_views.get(remote_name)
-            )
-            for local_agents, remote_agents_meta in itertools.product(
-                local_eff, remote_eff
+            view = self._peer_views.get(remote_name)
+            # Defensive: connect() populates _peer_views and remote_connections
+            # together, so this is unreachable today. If they ever desync,
+            # recompute (rather than assuming non-flattened) so a flattened
+            # peer's teardown still mirrors connect()'s pairing.
+            if view is None:
+                view = self._compute_peer_view(remote)
+            for local_ta, remote_agent_meta in self._iter_peer_agents(
+                remote, view
             ):
-                for local_ta, remote_agent_meta in zip(
-                    local_agents, remote_agents_meta, strict=True
-                ):
-                    status = local_ta.agent.invalidate_remote_metadata(
-                        remote_agent_meta.agent_name
-                    )
-                    if status != nixl.Status.SUCCESS:
-                        raise ValueError(
-                            f"Failed to invalidate metadata: {status}"
-                        )
+                status = local_ta.agent.invalidate_remote_metadata(
+                    remote_agent_meta.agent_name
+                )
+                if status != nixl.Status.SUCCESS:
+                    raise ValueError(f"Failed to invalidate metadata: {status}")
 
         # Deregister NIXL memory for all tensors (all replicas, all groups)
         for replica_agents in self.tensor_agents:
             for ta in replica_agents:
-                # Deregister primary tensor
-                status = ta.agent.deregister_memory(ta.reg_dlist, [ta.backend])
-                if status != nixl.Status.SUCCESS:
-                    raise ValueError(f"Failed to deregister memory: {status}")
-                # Deregister extra groups
-                for extra_reg_dlist in ta.extra_reg_dlists:
-                    status = ta.agent.deregister_memory(
-                        extra_reg_dlist, [ta.backend]
-                    )
+                for reg_dlist in ta.reg_dlists:
+                    status = ta.agent.deregister_memory(reg_dlist, [ta.backend])
                     if status != nixl.Status.SUCCESS:
                         raise ValueError(
-                            f"Failed to deregister extra memory: {status}"
+                            f"Failed to deregister memory: {status}"
                         )
+
+
+class KVTransferEngine(TransferEngine):
+    """KVCache Transfer Engine with support for Data Parallelism (DP) and Tensor Parallelism (TP).
+
+    The engine accepts a 2D list of tensors: list[list[Buffer]] where the outer list
+    represents DP replicas and the inner list represents TP shards within each replica.
+
+    ``KVTransferEngine`` is a thin layer on top of :class:`TransferEngine`: it
+    validates the KV buffer grid, builds the per-shard NIXL groups, and derives
+    ``replicate_kv_across_tp`` before delegating all NIXL transport to the base.
+
+    The TransferEngine communicates with other TransferEngines in other threads
+    or processes. However, individual TransferEngines themselves are not
+    thread-safe. It is intended to be used by MAX's single-threaded scheduler.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        tensors: Sequence[Sequence[Buffer]],
+        *,
+        total_num_pages: int,
+        replicate_kv_across_tp: bool = False,
+        extra_tensor_groups: Sequence[Sequence[Sequence[Buffer]]] | None = None,
+    ) -> None:
+        """Initialize the transfer engine.
+
+        Args:
+            name: Unique name for this engine.
+            tensors: Main group tensors as ``[replica][tp_shard]``.
+            total_num_pages: Total KV cache pages per tensor.
+            replicate_kv_across_tp: Whether KV is replicated across TP ranks.
+            extra_tensor_groups: Additional tensor groups (e.g., draft KV for
+                speculative decoding). Each entry has the same ``[replica][tp_shard]``
+                structure as ``tensors``. All tensors in each group must have
+                the same shape within that group, but groups may differ in shape.
+        """
+        if total_num_pages <= 0:
+            raise ValueError(
+                f"Total number of pages {total_num_pages} must be greater than 0"
+            )
+
+        # Validate 2D structure
+        if not tensors:
+            raise ValueError("tensors must contain at least one replica")
+
+        if not all(replica_tensors for replica_tensors in tensors):
+            raise ValueError("Each replica must contain at least one tensor")
+
+        # Validate all replicas have same number of TP shards
+        dp = len(tensors)
+        tp = len(tensors[0])
+        for replica_idx, replica_tensors in enumerate(tensors):
+            if len(replica_tensors) != tp:
+                raise ValueError(
+                    f"All replicas must have the same number of tensors. "
+                    f"Replica 0 has {tp} tensors, "
+                    f"but replica {replica_idx} has {len(replica_tensors)} tensors"
+                )
+
+        # Assemble the uniform group grid: all_groups[group_idx][replica_idx]
+        # = [shard0, shard1, ...]. The main group is group 0; each extra tensor
+        # group follows. From here on every NIXL group is treated uniformly.
+        extra_groups: list[Sequence[Sequence[Buffer]]] = (
+            list(extra_tensor_groups) if extra_tensor_groups else []
+        )
+        all_groups: list[list[list[Buffer]]] = [
+            [list(replica_tensors) for replica_tensors in tensors]
+        ]
+        for group_idx, group_tensors in enumerate(extra_groups):
+            if len(group_tensors) != dp:
+                raise ValueError(
+                    f"Extra group {group_idx} must have {dp} replicas, "
+                    f"but has {len(group_tensors)}"
+                )
+            all_groups.append(
+                [list(replica_tensors) for replica_tensors in group_tensors]
+            )
+
+        num_groups = len(all_groups)
+        effective_replicate = replicate_kv_across_tp and tp > 1
+
+        backend_type = _get_nixl_backend_type()
+
+        # Validate every group across replicas and compute per-group bytes/page.
+        bytes_per_group: list[int] = []  # [group_idx] → bytes_per_page
+        memory_types: list[nixl.MemoryType] = []
+        for group_idx, group_replicas in enumerate(all_groups):
+            group_bpp_list: list[int] = []
+            for replica_idx, replica_shards in enumerate(group_replicas):
+                if len(replica_shards) != tp:
+                    raise ValueError(
+                        f"Group {group_idx} replica {replica_idx} has "
+                        f"{len(replica_shards)} TP shards, but expected {tp}. "
+                        "All groups and replicas must share the same TP degree."
+                    )
+                _validate_device_type([t.device for t in replica_shards])
+                gbpp, _ = _validate_tensor_shape(
+                    replica_shards, total_num_pages
+                )
+                group_bpp_list.append(gbpp)
+
+                is_cpu = replica_shards[0].device.is_host
+                memory_types.append(
+                    nixl.MemoryType.DRAM if is_cpu else nixl.MemoryType.VRAM
+                )
+            if len(set(group_bpp_list)) != 1:
+                raise ValueError(
+                    f"All replicas must have the same bytes_per_page. "
+                    f"Group {group_idx} found: {group_bpp_list}"
+                )
+            bytes_per_group.append(group_bpp_list[0])
+
+        if len(set(memory_types)) != 1:
+            raise ValueError(
+                f"All groups/replicas must have the same memory type. "
+                f"Found: {set(memory_types)}"
+            )
+
+        bytes_per_page = sum(bytes_per_group)
+        memory_type = memory_types[0]
+
+        # Create one agent per (replica, shard), registering every group's
+        # buffer for that shard uniformly (group-major).
+        tensor_agents: list[list[TensorAgent]] = []
+        for replica_idx in range(dp):
+            replica_agents = []
+            for tp_idx in range(tp):
+                shard_tensors = [
+                    all_groups[g][replica_idx][tp_idx]
+                    for g in range(num_groups)
+                ]
+                tensor_agent = TensorAgent.create_agent(
+                    agent_name=f"{name}_{replica_idx}_{tp_idx}",
+                    listen_port=available_port(),
+                    tensors=shard_tensors,
+                    memory_type=memory_type,
+                    backend_type=backend_type,
+                )
+                replica_agents.append(tensor_agent)
+            tensor_agents.append(replica_agents)
+
+        super().__init__(
+            name=name,
+            tensor_agents=tensor_agents,
+            total_num_pages=total_num_pages,
+            bytes_per_page=bytes_per_page,
+            bytes_per_group=bytes_per_group,
+            memory_type=memory_type,
+            dp=dp,
+            tp=tp,
+            backend_type=backend_type,
+            replicate_kv_across_tp=effective_replicate,
+        )
+
+        logger.info(
+            "NIXL memory registration complete for %s (%s backend): "
+            "%d agent(s) (dp=%d, tp=%d), %d bytes per agent (%d group(s)).",
+            self.name,
+            backend_type,
+            self.dp * self.tp,
+            self.dp,
+            self.tp,
+            self.bytes_per_page * total_num_pages,
+            len(self.bytes_per_group),
+        )
+
+    @classmethod
+    def from_paged_kv_cache(
+        cls, name: str, kv_cache: PagedKVCacheManager
+    ) -> KVTransferEngine:
+        """Construct an engine wired to a ``PagedKVCacheManager``.
+
+        Pulls the per-replica device buffers, sets ``total_num_pages``, and
+        derives ``replicate_kv_across_tp`` from the cache params. Equivalent to
+        constructing the engine manually but consolidates the boilerplate that
+        prefill/decode schedulers share.
+
+        For models with multiple KV caches (e.g., speculative decoding with a
+        separate target and draft KV), each child cache is registered as its
+        own NIXL group so that heterogeneous buffer shapes (e.g., 61-layer MLA
+        target vs. 1-layer Eagle draft) are validated and transferred
+        independently.
+        """
+        from max.nn.kv_cache.cache_params import MultiKVCacheBuffer
+
+        cache_params = kv_cache.params
+        dp = cache_params.data_parallel_degree
+        total_num_pages = kv_cache.get_num_pages(replica_idx=0) + 1
+
+        device_buffers = [
+            kv_cache.get_device_buffer(replica_idx) for replica_idx in range(dp)
+        ]
+
+        tensors: list[list[Buffer]] = []
+        extra_tensor_groups: list[list[list[Buffer]]] = []
+        child_keys: list[str] = []
+
+        # Collect per-replica buffers. MultiKVCacheBuffer replicas are split
+        # into per-child NIXL groups so each group is shape-homogeneous.
+        # KVCacheBuffer replicas go into a single group as before.
+        for r, buf in enumerate(device_buffers):
+            if isinstance(buf, MultiKVCacheBuffer):
+                if r == 0:
+                    child_keys = list(buf.children.keys())
+                    extra_tensor_groups = [[] for _ in child_keys[1:]]
+                # Main group: this replica's buffers for the first child
+                tensors.append(list(buf.children[child_keys[0]].all_buffers))
+                # Extra groups: one entry per remaining child
+                for g, key in enumerate(child_keys[1:]):
+                    extra_tensor_groups[g].append(
+                        list(buf.children[key].all_buffers)
+                    )
+            else:
+                # Single-cache replica: flat buffer list
+                tensors.append(list(buf.all_buffers))
+
+        return cls(
+            name=name,
+            tensors=tensors,
+            # Need to add 1 for the null block
+            total_num_pages=total_num_pages,
+            replicate_kv_across_tp=cache_params.replicates_kv_across_tp,
+            extra_tensor_groups=extra_tensor_groups
+            if extra_tensor_groups
+            else None,
+        )
