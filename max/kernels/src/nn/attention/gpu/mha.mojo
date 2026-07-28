@@ -6753,22 +6753,22 @@ def _naive_attention_with_transpose[
     # Q, K, V transposed
     var qt_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=q.size())
-    ).into_deletable()
+    ).into_managed()
     var kt_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=k.size())
-    ).into_deletable()
+    ).into_managed()
     var vt_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=v.size())
-    ).into_deletable()
+    ).into_managed()
     # Score = softmax(Q * K)
     var score_size = batch_size * num_heads * seq_len * num_keys
     var score_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=score_size)
-    ).into_deletable()
+    ).into_managed()
     # O = Score * V. It's transposed and will be transposed back to output.
     var ot_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=output.size())
-    ).into_deletable()
+    ).into_managed()
 
     var qt_ptr: UnsafePointer[
         Scalar[dtype], origin_of(qt_alloc)
@@ -6905,11 +6905,11 @@ def _naive_attention_with_transpose[
 
     transpose(output_tt, ot, o_perm.ptr)
 
-    dealloc(qt_alloc^.into_allocation())
-    dealloc(kt_alloc^.into_allocation())
-    dealloc(vt_alloc^.into_allocation())
-    dealloc(score_alloc^.into_allocation())
-    dealloc(ot_alloc^.into_allocation())
+    dealloc(qt_alloc^)
+    dealloc(kt_alloc^)
+    dealloc(vt_alloc^)
+    dealloc(score_alloc^)
+    dealloc(ot_alloc^)
 
 
 def _naive_attention[
@@ -6942,7 +6942,7 @@ def _naive_attention[
     var score_size = batch_size * num_heads * seq_len * num_keys
     var score_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=score_size)
-    ).into_deletable()
+    ).into_managed()
     var score_ptr: UnsafePointer[
         Scalar[dtype], origin_of(score_alloc)
     ] = score_alloc.unsafe_ptr()
@@ -7019,4 +7019,4 @@ def _naive_attention[
     )
     batched_matmul[transpose_b=False](output_tt, score, v_tt)
 
-    dealloc(score_alloc^.into_allocation())
+    dealloc(score_alloc^)

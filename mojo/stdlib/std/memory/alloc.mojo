@@ -31,8 +31,8 @@ paths — either by passing it to `dealloc` or by taking the raw pointer with
   `unsafe_with_layout` to deallocate.
 
 For automatic cleanup, an `Allocation` can be converted into a
-`DeletableAllocation[T]` with `into_deletable()`. Unlike the two explicitly
-destroyed handles, a `DeletableAllocation` implements `ImplicitlyDeletable`: it
+`ManagedAllocation[T]` with `into_managed()`. Unlike the two explicitly
+destroyed handles, a `ManagedAllocation` implements `ImplicitlyDeletable`: it
 deallocates its storage in its destructor, which Mojo runs automatically after
 the value's last use (ASAP destruction), so no explicit `dealloc` is needed.
 Like `dealloc`, this frees the storage without running the destructors of any
@@ -183,6 +183,18 @@ struct Allocation[T: AnyType](
         self._alloc = _alloc^
         self._layout = _layout
 
+    @implicit
+    def __init__(
+        out self,
+        var managed: ManagedAllocation[Self.T],
+    ):
+        """Implicitly convert a `ManagedAllocation` into an `Allocation`.
+
+        Args:
+            managed: The `ManagedAllocation` to convert.
+        """
+        self = managed^._into_allocation()
+
     def unsafe_leak(
         deinit self,
     ) -> Pointer[Self.T, MutUntrackedOrigin]:
@@ -262,39 +274,39 @@ struct Allocation[T: AnyType](
         """
         return self._alloc^
 
-    def into_deletable(deinit self) -> DeletableAllocation[Self.T]:
-        """Consumes the `Allocation` and wraps it in a `DeletableAllocation`.
+    def into_managed(deinit self) -> ManagedAllocation[Self.T]:
+        """Consumes the `Allocation` and wraps it in a `ManagedAllocation`.
 
         This converts the explicitly destroyed handle into a self-freeing
-        one. The returned `DeletableAllocation` deallocates the storage in
+        one. The returned `ManagedAllocation` deallocates the storage in
         its destructor, which Mojo runs automatically after the value's last use
         (ASAP destruction), so — unlike `Allocation` — it does not need to be
         passed to `dealloc`. Use this when you want automatic deallocation
         instead of explicit destruction.
 
-        Converting to a `DeletableAllocation` does not destroy any values
+        Converting to a `ManagedAllocation` does not destroy any values
         you have initialized in the storage: no element destructors are run,
-        either by this conversion or when the `DeletableAllocation` is later
+        either by this conversion or when the `ManagedAllocation` is later
         destroyed. If the elements need their destructors run, destroy them
         yourself (for example with `unsafe_destroy_n`) before the
-        `DeletableAllocation` is destroyed.
+        `ManagedAllocation` is destroyed.
 
         Returns:
-            A `DeletableAllocation` owning this storage.
+            A `ManagedAllocation` owning this storage.
 
         Example:
 
         ```mojo
         from std.memory.alloc import alloc, Layout
 
-        var deletable = alloc(Layout[String](count=4)).into_deletable()
-        deletable.unsafe_ptr().unsafe_write("hello")
+        var managed = alloc(Layout[String](count=4)).into_managed()
+        managed.unsafe_ptr().unsafe_write("hello")
 
         # Even though the allocation is automatically cleaned up, destructors
         # must still be manually run!
-        std.memory.unsafe_destroy_n(deletable.unsafe_ptr(), 1)
+        std.memory.unsafe_destroy_n(managed.unsafe_ptr(), 1)
 
-        # No `dealloc` needed: `deletable` frees its storage when destroyed.
+        # No `dealloc` needed: `managed` frees its storage when destroyed.
         ```
         """
         return {self^}
@@ -321,20 +333,20 @@ struct Allocation[T: AnyType](
         self.write_to(writer)
 
 
-struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
+struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
     """An owning handle to a heap allocation of `T` that frees itself.
 
-    A `DeletableAllocation` wraps an `Allocation` and deallocates the storage in
+    A `ManagedAllocation` wraps an `Allocation` and deallocates the storage in
     its destructor. It is the self-freeing counterpart to `Allocation`: where
     `Allocation` is non-`ImplicitlyDeletable` and must be passed to `dealloc` on
-    every path, a `DeletableAllocation` deallocates its storage automatically.
+    every path, a `ManagedAllocation` deallocates its storage automatically.
     Mojo runs the destructor after the value's last use, following its "as soon
     as possible" (ASAP) destruction policy — including on error paths, where the
     destructor runs as the stack unwinds.
 
     This trades the compile-time leak-proofing of `Allocation` for ergonomics:
     there is no need to thread an explicit `dealloc` through every control-flow
-    path. Create one from an `Allocation` with `into_deletable()` (or by passing
+    path. Create one from an `Allocation` with `into_managed()` (or by passing
     the `Allocation` to the constructor), and recover the underlying
     `Allocation` — taking back manual responsibility for deallocation — with
     `into_allocation()`.
@@ -342,7 +354,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
     Like `dealloc`, the destructor frees the storage but does not run the
     destructors of any elements written into it. If the elements need their
     destructors run, destroy them yourself (for example with
-    `unsafe_destroy_n`) before the `DeletableAllocation` is destroyed.
+    `unsafe_destroy_n`) before the `ManagedAllocation` is destroyed.
 
     Parameters:
         T: The type of the elements stored in the allocation.
@@ -352,11 +364,11 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
     ```mojo
     from std.memory.alloc import alloc, Layout
 
-    var deletable = alloc(Layout[Int32](count=4)).into_deletable()
-    var ptr = deletable.unsafe_ptr()
+    var managed = alloc(Layout[Int32](count=4)).into_managed()
+    var ptr = managed.unsafe_ptr()
     for i in range(4):
         ptr.unsafe_offset(i).unsafe_write(i)
-    # `deletable` frees its storage when it is destroyed (after its last use).
+    # `managed` frees its storage when it is destroyed (after its last use).
     ```
     """
 
@@ -364,10 +376,10 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
     """The wrapped `Allocation` that owns the storage."""
 
     def __init__(out self, var allocation: Allocation[Self.T], /):
-        """Initializes a `DeletableAllocation` that owns `allocation`.
+        """Initializes a `ManagedAllocation` that owns `allocation`.
 
-        This is the constructor form of `Allocation.into_deletable()`. The new
-        `DeletableAllocation` assumes responsibility for deallocating the
+        This is the constructor form of `Allocation.into_managed()`. The new
+        `ManagedAllocation` assumes responsibility for deallocating the
         storage and frees it automatically when it is destroyed, after its last
         use.
 
@@ -387,18 +399,8 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
         """
         dealloc(self._alloc^)
 
-    def into_allocation(deinit self) -> Allocation[Self.T]:
-        """Consumes the `DeletableAllocation` and returns its `Allocation`.
-
-        This converts the self-freeing handle back into the explicitly
-        destroyed `Allocation` it wraps, undoing `into_deletable()`. The storage
-        is no longer freed automatically: the returned `Allocation` is an
-        `@explicit_destroy` type that must be destroyed manually on every path,
-        either by passing it to `dealloc` or by calling `unsafe_leak()`.
-
-        Returns:
-            The `Allocation` that owns the storage.
-        """
+    def _into_allocation(deinit self) -> Allocation[Self.T]:
+        """Return the underlying `Allocation`."""
         return self._alloc^
 
     def unsafe_ptr(
@@ -406,7 +408,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
     ) -> Pointer[Self.T, origin_of(self)]:
         """Returns a pointer to the allocated storage without consuming `self`.
 
-        The returned pointer borrows from `self`, so the `DeletableAllocation`
+        The returned pointer borrows from `self`, so the `ManagedAllocation`
         retains ownership of the storage and frees it automatically when it is
         destroyed.
 
@@ -424,7 +426,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
     def unsafe_span(ref self) -> Span[Self.T, origin_of(self._alloc._alloc)]:
         """Returns a span over the allocated storage without consuming `self`.
 
-        The returned span borrows from `self`, so the `DeletableAllocation`
+        The returned span borrows from `self`, so the `ManagedAllocation`
         retains ownership of the storage. The span covers `layout.count()`
         elements.
 

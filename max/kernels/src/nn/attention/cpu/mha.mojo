@@ -50,7 +50,7 @@ from linalg.matmul.cpu.apple_accelerate import (
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
 from std.memory import alloc, dealloc, unsafe_memset_zero, stack_allocation
-from std.memory.alloc import DeletableAllocation, Layout as AllocLayout
+from std.memory.alloc import ManagedAllocation, Layout as AllocLayout
 from nn.attention.mha_mask import MHAMask
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -761,9 +761,7 @@ struct _FlashAttention[
                 Span(sum_vals_storage), row_major[Self._config.block_m]()
             )
 
-            var packed_alloc = Optional[
-                DeletableAllocation[Scalar[Self.dtype]]
-            ]()
+            var packed_alloc = Optional[ManagedAllocation[Scalar[Self.dtype]]]()
             var packed_ptr = type_of(
                 packed_alloc.value().unsafe_ptr()
             ).unsafe_dangling()
@@ -774,7 +772,7 @@ struct _FlashAttention[
                         count=packed_size,
                         alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
                     )
-                ).into_deletable()
+                ).into_managed()
                 packed_ptr = packed_alloc.unsafe_value().unsafe_ptr()
 
             var q_seq_stride = num_heads * depth_dim
@@ -950,9 +948,9 @@ struct _FlashAttention[
             # NOTE: passing `dealloc[Scalar[Self.dtype]]` directly crashes the
             # when the dtype is parametric; wrap it in a local function as a workaround.
             def _dealloc_packed(
-                var packed: DeletableAllocation[Scalar[Self.dtype]],
+                var packed: ManagedAllocation[Scalar[Self.dtype]],
             ):
-                dealloc(packed^.into_allocation())
+                dealloc(packed^)
 
             packed_alloc^.deinit_with(_dealloc_packed)
 

@@ -15,7 +15,8 @@ from std.memory import unsafe_destroy_n
 from std.memory.alloc import (
     alloc,
     dealloc,
-    DeletableAllocation,
+    Allocation,
+    ManagedAllocation,
     ThinAllocation,
     Layout,
 )
@@ -170,11 +171,11 @@ def test_deletable_allocation_into_allocation_round_trip() raises:
     var allocation = alloc(layout)
     var alloc_addr = Int(allocation.unsafe_ptr())
 
-    # Allocation -> DeletableAllocation -> Allocation (address stays stable).
-    var deletable = allocation^.into_deletable()
+    # Allocation -> ManagedAllocation -> Allocation (address stays stable).
+    var deletable = allocation^.into_managed()
     var deletable_addr = Int(deletable.unsafe_ptr())
 
-    var recovered = deletable^.into_allocation()
+    var recovered = Allocation(deletable^)
     var recovered_addr = Int(recovered.unsafe_ptr())
 
     # `into_allocation` hands back an non-implicitly-deletable handle: dealloc
@@ -186,7 +187,7 @@ def test_deletable_allocation_into_allocation_round_trip() raises:
 
 
 def test_deletable_allocation_layout_matches() raises:
-    var deletable = DeletableAllocation(alloc(Layout[Int32](count=7)))
+    var deletable = ManagedAllocation(alloc(Layout[Int32](count=7)))
     assert_equal(deletable.layout().count(), 7)
     assert_equal(deletable.layout().alignment(), align_of[Int32]())
 
@@ -194,7 +195,7 @@ def test_deletable_allocation_layout_matches() raises:
 def test_deletable_allocation_auto_deallocs_at_last_use() raises:
     var total = 0
     for i in range(3):
-        var deletable = alloc(Layout[Int](count=1)).into_deletable()
+        var deletable = alloc(Layout[Int](count=1)).into_managed()
         deletable.unsafe_ptr().unsafe_write(i)
         total += deletable.unsafe_ptr()[]
     assert_equal(total, 0 + 1 + 2)
@@ -203,7 +204,7 @@ def test_deletable_allocation_auto_deallocs_at_last_use() raises:
 def test_deletable_allocation_del_does_not_run_pointee_destructors() raises:
     var deleted = False
     var obs = ObservableDel(Pointer(to=deleted).as_unsafe_any_origin())
-    var deletable = alloc(Layout[type_of(obs)](count=1)).into_deletable()
+    var deletable = alloc(Layout[type_of(obs)](count=1)).into_managed()
     deletable.unsafe_ptr().unsafe_write(obs^)
     _ = deletable^
     assert_false(deleted)

@@ -108,10 +108,10 @@ def nan_check_count[
         # CPU path: vectorized scan using elementwise with atomic accumulators.
         var nan_acc = alloc(
             AllocLayout[Scalar[DType.int32]](count=1)
-        ).into_deletable()
+        ).into_managed()
         var inf_acc = alloc(
             AllocLayout[Scalar[DType.int32]](count=1)
-        ).into_deletable()
+        ).into_managed()
 
         var nan_acc_ptr = nan_acc.unsafe_ptr()
         var inf_acc_ptr = inf_acc.unsafe_ptr()
