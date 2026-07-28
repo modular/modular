@@ -169,6 +169,21 @@ const M::Telemetry::LocalIDs &M::Telemetry::createLocalIDs() {
   return ids;
 }
 
+bool M::Telemetry::isTelemetryEnabled(Config &settings) {
+  return settings.getValueAsBool("telemetry.enabled",
+#ifdef MODULAR_PRODUCTION
+                                 true
+#else
+                                 false
+#endif // MODULAR_PRODUCTION
+  );
+}
+
+bool M::Telemetry::isCrashReportingEnabled(Config &settings) {
+  return settings.getValueAsBool("crash_reporting.enabled",
+                                 isTelemetryEnabled(settings));
+}
+
 static size_t getMaxProcessors(const HostMachineInfo &hostInfo) {
   auto limitsOr = CPULimits::get();
   if (!limitsOr.isError()) {
@@ -309,17 +324,7 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
 
   attrs.SetAttribute("modular.employee", isModularEmployee());
 
-  // Check if telemetry is enabled. Note that currently users have to opt out
-  // of telemetry, so it is enabled unless the user explicitly disables.
-  bool enabled = settings.getValueAsBool("telemetry.enabled",
-#ifdef MODULAR_PRODUCTION
-                                         true);
-#else
-                                         false);
-#endif // MODULAR_PRODUCTION
-
-  bool crashReportingEnabled =
-      settings.getValueAsBool("crash_reporting.enabled", false);
+  bool enabled = isTelemetryEnabled(settings);
 
   // Get telemetry level.
   auto level = settings.getValue("telemetry.level");
@@ -479,15 +484,18 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
   eventLoggerProvider =
       opentelemetry::sdk::logs::EventLoggerProviderFactory::Create();
 
-  // Emit program invocation event so we can track invocation counts for
-  // crash rate calculation (crashes / invocations). Only emitted when crash
-  // reporting is enabled, since we only receive crash reports in that case.
-  if (!programNameStr.empty() && crashReportingEnabled) {
+  // Emit the once-per-process program.initialized event: the usage-lane record
+  // of this session, used for adoption counts and as the failure-rate
+  // denominator. It reports whether the crash lane was on rather than being
+  // gated on it, so a session that opted out of crash reporting still counts
+  // toward adoption while the failure-rate mart excludes it — a session that
+  // could not have reported a crash must never read as a crash-free one.
+  if (!programNameStr.empty() && enabled) {
     auto logger = getLogger("program");
     llvm::StringMap<Logs::AttributeValue> eventAttrs;
+    eventAttrs["crash_reporting.enabled"] = isCrashReportingEnabled(settings);
     if (!subCommandStr.empty())
       eventAttrs["program.sub_command"] = subCommandStr;
-    logger->emitL0Event("program.crash_reporting_enabled_invocation",
-                        eventAttrs);
+    logger->emitL0Event("program.initialized", eventAttrs);
   }
 }
