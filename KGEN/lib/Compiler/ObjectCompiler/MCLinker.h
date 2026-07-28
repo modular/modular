@@ -78,8 +78,8 @@ struct MCInfo {
   std::optional<int> splitIdx;
 
   /// llvm::GlobalVariable name to the renamed llvm::GlobalVariable name, this
-  /// is to handle llvm inserted private symbol after splitting the module.
-  llvm::StringMap<const std::string> renamedPrivateSymbol;
+  /// is to handle llvm inserted local symbols after splitting the module.
+  llvm::StringMap<const std::string> renamedLocalSymbols;
 };
 
 struct SymbolAndMCInfo {
