@@ -1115,7 +1115,7 @@ struct StaticReshape:
         )
 
         return {
-            view_buffer.ptr,
+            view_buffer._storage,
             rebind[IndexList[output_rank]](
                 coord_to_index_list(view_buffer.layout.shape_coord())
             ),
@@ -1370,7 +1370,7 @@ struct Slice:
         )
 
         result = {
-            view_buffer.ptr,
+            view_buffer._storage,
             rebind[IndexList[rank]](
                 coord_to_index_list(view_buffer.layout.shape_coord())
             ),

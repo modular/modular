@@ -39,6 +39,7 @@ from layout import (
     Coord,
     Idx,
     IntTuple,
+    PointerStorage,
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
@@ -1213,7 +1214,7 @@ def _apple_int8_w8a8_dispatch[
 ](
     c_tt: TileTensor[mut=True, c_type, ...],
     a_tt: TileTensor[DType.bfloat16, ...],
-    b_tt: TileTensor[DType.int8, ...],
+    b_tt: TileTensor[DType.int8, Storage=PointerStorage[], ...],
     bs_tt: TileTensor[DType.float32, ...],
     bias_tt: TileTensor[c_type, ...],
     context: DeviceContext,
@@ -1300,7 +1301,7 @@ struct Struct_matmul_int8_w8a8_apple:
         # path ignores it). Reuse `b_scale` as the dummy source (same dtype is
         # not required -- it is never read -- but a valid 1-elem view is).
         var dummy_bias = TileTensor(
-            c_tt.ptr, row_major(Coord(Int64(1)))
+            c_tt._storage, row_major(Coord(Int64(1)))
         ).as_immut()
         _apple_int8_w8a8_dispatch[c_type, has_bias=False, target=target](
             c_tt,

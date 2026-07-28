@@ -599,7 +599,7 @@ struct DistributedBroadcast:
                 outputs[index]
                 .to_tile_tensor[DType.int64]()
                 .make_dynamic[DType.int64]()
-                .ptr,
+                ._storage,
                 in_buf.layout,
             )
             broadcast[num_devices](
@@ -1115,7 +1115,7 @@ struct DistributedAllGatherRMSNorm:
                 # (natural concat order) so the norm runs over the whole tensor.
                 var cols_rt = Int(sum_buf.dim[rank - 1]())
                 var base = rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                    sum_buf.ptr
+                    sum_buf._storage
                 )
                 comptime OutViewType = type_of(
                     TileTensor(base, row_major(cols_rt, cols_rt))

@@ -782,10 +782,10 @@ def causal_conv1d_channel_first_fwd_gpu[
 
     # Safety check for null pointers
     if (
-        Int(x.ptr) == 0
-        or Int(output.ptr) == 0
-        or Int(weight.ptr) == 0
-        or Int(bias.ptr) == 0
+        Int(x._storage) == 0
+        or Int(output._storage) == 0
+        or Int(weight._storage) == 0
+        or Int(bias._storage) == 0
     ):
         return
 
@@ -1339,10 +1339,10 @@ def causal_conv1d_channel_last_fwd_gpu[
 
     # Safety check for null pointers
     if (
-        Int(x.ptr) == 0
-        or Int(output.ptr) == 0
-        or Int(weight.ptr) == 0
-        or Int(bias.ptr) == 0
+        Int(x._storage) == 0
+        or Int(output._storage) == 0
+        or Int(weight._storage) == 0
+        or Int(bias._storage) == 0
     ):
         return
 
@@ -1363,7 +1363,9 @@ def causal_conv1d_channel_last_fwd_gpu[
         var cur_bias: Scalar[output_dtype] = Scalar[output_dtype](
             bias.raw_load(c_idx)
         )
-        var W = (weight.ptr + c_idx * Int(weight_c_stride)).load[width=kWidth]()
+        var W = (weight._storage + c_idx * Int(weight_c_stride)).load[
+            width=kWidth
+        ]()
         var prev_chunk_col: Int = (seq_start - 1) // kNElts
         var prev_input_chunk: SIMD[x_dtype, kNElts] = 0
         if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
@@ -1548,7 +1550,9 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
         if c_idx >= nChannels:
             break
 
-        var W = (weight.ptr + c_idx * Int(weight_c_stride)).load[width=kWidth]()
+        var W = (weight._storage + c_idx * Int(weight_c_stride)).load[
+            width=kWidth
+        ]()
         var prev_chunk_col: Int = (seq_start - 1) // kNElts
         var prev_input_chunk: SIMD[x_dtype, kNElts] = 0
         if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
@@ -1798,10 +1802,10 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
 
     # Safety check for null pointers
     if (
-        Int(x.ptr) == 0
-        or Int(output.ptr) == 0
-        or Int(weight.ptr) == 0
-        or Int(bias.ptr) == 0
+        Int(x._storage) == 0
+        or Int(output._storage) == 0
+        or Int(weight._storage) == 0
+        or Int(bias._storage) == 0
     ):
         return
 
@@ -2537,10 +2541,10 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
 
     # Safety check for null pointers
     if (
-        Int(x.ptr) == 0
-        or Int(output.ptr) == 0
-        or Int(weight.ptr) == 0
-        or Int(bias.ptr) == 0
+        Int(x._storage) == 0
+        or Int(output._storage) == 0
+        or Int(weight._storage) == 0
+        or Int(bias._storage) == 0
     ):
         return
 

@@ -2999,15 +2999,15 @@ struct TPoolPatchMerger:
 
         nn_tpool_patch_merger[dtype](
             TileTensor(
-                out_tt.ptr.unsafe_origin_cast[MutAnyOrigin](),
+                out_tt._storage.unsafe_origin_cast[MutAnyOrigin](),
                 out_tt.layout,
             ),
             TileTensor(
-                in_tt.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
+                in_tt._storage.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
                 in_tt.layout,
             ),
             TileTensor(
-                grid_tt.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
+                grid_tt._storage.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
                 grid_tt.layout,
             ),
             Int(kH),
