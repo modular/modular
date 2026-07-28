@@ -377,7 +377,7 @@ def wait_for_comms(ngpus: Int):
 def allreduce[
     dtype: DType,
     in_layout: TensorLayout,
-    in_origin: Origin[mut=False],
+    in_origin: ImmOrigin,
     rank_sigs_origin: Origin[mut=True],
     out_layout: TensorLayout,
     out_origin: MutOrigin,
@@ -505,7 +505,7 @@ def is_broadcast_available() -> Bool:
 def allgather[
     dtype: DType,
     in_layout: TensorLayout,
-    in_origin: Origin[mut=False],
+    in_origin: ImmOrigin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
     //,

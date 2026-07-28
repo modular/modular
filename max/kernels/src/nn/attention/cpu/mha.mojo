@@ -546,7 +546,7 @@ struct _FlashAttentionConfig[
 struct _FlashAttention[
     dtype: DType,
     rank: Int,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
     input_q_ptr_fn: def(IndexList[rank]) capturing -> UnsafePointer[
@@ -964,7 +964,7 @@ def _flash_attention[
     dtype: DType,
     rank: Int,
     mask_rank: Int,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
     input_k_fn: def[simd_width: Int, rank: Int](
@@ -1070,7 +1070,7 @@ def flash_attention[
     dtype: DType,
     rank: Int,
     mask_rank: Int,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
     input_k_fn: def[simd_width: Int, rank: Int](
@@ -1326,7 +1326,7 @@ def flash_attention_split_kv[
 def _flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
     mask_fn: def[simd_width: SIMDLength, mask_rank: Int](
@@ -1397,7 +1397,7 @@ def _flash_attention_kv_cache[
 def _flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
     input_q_ptr_fn: def(IndexList[4]) capturing -> UnsafePointer[
@@ -1489,7 +1489,7 @@ def _flash_attention_kv_cache[
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
 ](
@@ -1543,7 +1543,7 @@ def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
     mask_t: MHAMask,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
 ](
@@ -1602,7 +1602,7 @@ def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
     mask_t: MHAMask,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
 ](

@@ -162,8 +162,8 @@ from layout import lt_to_tt
 @fieldwise_init
 struct Naive2dConvolution[
     output_origin: Origin[mut=True],
-    input_origin: Origin[mut=False],
-    filter_origin: Origin[mut=False],
+    input_origin: ImmOrigin,
+    filter_origin: ImmOrigin,
     //,
     output_type: DType,
     input_type: DType,
@@ -438,8 +438,8 @@ def _reduce_output[
 @fieldwise_init
 struct ConvDirectNHWC[
     conv_attr_rank: Int,
-    input_origin: Origin[mut=False],
-    filter_origin: Origin[mut=False],
+    input_origin: ImmOrigin,
+    filter_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
     input_layout: Layout,
