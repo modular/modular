@@ -1499,7 +1499,7 @@ struct String(
         """
 
         return Span(
-            unsafe_ptr=UnsafePointer(
+            unsafe_ptr=Pointer(
                 to=self.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
                     "bytes", origin_of(self)
                 ]()
@@ -1532,7 +1532,7 @@ struct String(
               overall string.
         """
         return Span(
-            unsafe_ptr=UnsafePointer(
+            unsafe_ptr=Pointer(
                 to=self.unsafe_ptr_mut()._get_ref_with_unsafe_interior_origin[
                     "bytes", origin_of(self)
                 ]()

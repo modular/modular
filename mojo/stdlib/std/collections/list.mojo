@@ -1464,7 +1464,7 @@ struct List[T: Movable, /](
         """
         var start, end = slice.indices(len(self))
         return Span[Self.T, origin_of(self)._get_owned_interior["element"]](
-            unsafe_ptr=UnsafePointer(
+            unsafe_ptr=Pointer(
                 to=self.unsafe_ptr()
                 .unsafe_offset(start)
                 ._get_ref_with_unsafe_interior_origin[
