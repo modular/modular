@@ -86,7 +86,7 @@
   },
   {
     "source": "/max/api/kernels/(.*)",
-    "dest": "/api/mojo/{0}",
+    "dest": "/api/kernels/{0}",
     "status": 302
   },
   {
