@@ -193,6 +193,11 @@ def test_fn_typed_parameter():
     print(call_with_enclosing[7]())
     # CHECK: 17
 
+    # The capture list may be elided: capturing nothing, the lambda is thin and
+    # still binds to the thin fn-typed parameter.
+    print(call_with[lambda (x: Int) -> Int: x * 4]())
+    # CHECK: 40
+
 
 # The parameter can be on a struct rather than a function -- including as the
 # struct parameter's default value.

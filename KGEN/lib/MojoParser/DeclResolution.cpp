@@ -1706,28 +1706,17 @@ static FnTypeGeneratorType finalizeResolvedFnOp(
   return signature;
 }
 
-/// Resolves a parsed `lambda` expression into the anonymous closure it
-/// desugars to. The capture list and return type are required (no elision):
+/// Resolve a parsed `lambda` expr into an anonymous closure. The capture list
+/// and return type may both be elided. An omitted capture list captures any
+/// free variables the body uses by `imm`, so it is thin (no captured state)
+/// when the body captures nothing. An omitted return type defaults to `None`
+/// (like for `def`), so the body must be `None`-typed.
 ///
-/// lambda    ::=  "lambda" [param_signature] "(" [argument_list] ")"
-///                [effects] capture_list "->" expression ":" expression
+/// lambda    ::=  "lambda" [param_signature] ["(" [argument_list] ")"]
+///                [effects] [capture_list] ["->" expression] ":" expression
 AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
                                                IREmitter &emitter,
                                                ExprDest &dest) {
-  if (!node->hasExplicitCaptureList) {
-    emitter.emitError(node->getLoc(),
-                      "lambda requires an explicit capture list (e.g. '{}' or "
-                      "'{imm}'); an elided capture list defaulting to "
-                      "'{imm}' is not supported yet");
-    return {};
-  }
-  if (!node->resultArg.typeExpr) {
-    emitter.emitError(node->getLoc(),
-                      "lambda requires an explicit '->' return type; "
-                      "return-type inference is not supported yet");
-    return {};
-  }
-
   // Build the synthetic anonymous `def` the lambda desugars to.
   SMLoc loc = node->getLoc();
   ASTDecl &parentScope = emitter.declScope;
@@ -1808,6 +1797,10 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
   }
   if (node->captureAllByConvention)
     shared.setDefaultCaptureForScope(decl, *node->captureAllByConvention);
+  else if (!node->hasExplicitCaptureList)
+    // An omitted capture list defaults to capturing free variables by `imm`;
+    // a body that captures nothing then yields a thin closure (empty storage).
+    shared.setDefaultCaptureForScope(decl, CaptureConvention::kConventionRead);
 
   // 4. Reconstitute and type-check the signature. This also adds the param/arg
   //    decls and the FnOp's block arguments.

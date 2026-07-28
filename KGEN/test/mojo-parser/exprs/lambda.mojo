@@ -225,3 +225,83 @@ comptime inc = lambda (x: Int) {} -> Int: x + 1
 
 def withComptimeBound() -> Int:
     return inc(1)
+
+
+# // -----
+
+# COM: Elided return type defaults to `None`, like a `def` with no `->`.
+
+# CHECK-DAG: lit.struct.decl @"withElidedReturn()::`lambda_0::__storage"
+# CHECK-DAG: lit.struct.decl @"withElidedReturn()::`lambda_1::__storage"
+# CHECK-DAG: lit.struct.field lst : !lit.ref<{{.*}}, mut {{.*}}>
+# CHECK: lit.fn @"`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}} capturing -> !kgen.none
+# CHECK: lit.fn @"`lambda_1(){{.*}}"{{.*}} capturing -> !kgen.none
+# CHECK: lit.call @{{.*}}List{{.*}}append
+
+
+def withElidedReturn():
+    var f = lambda (x: Int) {}: None
+    var lst = [1]
+    var g = lambda {mut}: lst.append(2)
+
+
+# // -----
+
+# COM: Omitted capture list defaults to `{imm}`: free variables are imm-captured (an
+# COM: immutable ref); with no free variables the closure is thin, like an explicit `{}`.
+# COM: `multi` imm-captures several free variables at once. (Structs emit in reverse
+# COM: order, hence CHECK-DAG.)
+
+# CHECK-DAG: lit.struct.decl @"withOmittedCaptures()::`lambda_0::__storage"({{.*}}) register_passable_trivial attributes {synthetic}
+# CHECK-DAG: lit.struct.decl @"withOmittedCaptures()::`lambda_1::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {synthetic}
+# CHECK-DAG: lit.struct.decl @"withOmittedCaptures()::`lambda_2::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {synthetic}
+# CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, imm {{.*}}>
+# CHECK-DAG: lit.struct.field w : !lit.ref<{{.*}}, imm {{.*}}>
+# CHECK: lit.call @{{.*}}::@"withOmittedCaptures()::`lambda_2::__storage"::@"__init__({{.*}},{{.*}})"{{.*}}("z": {{.*}}, "w": {{.*}} ref, |
+
+
+def withOmittedCaptures():
+    var thin = lambda (x: Int) -> Int: x + 1
+    var z = 3
+    var w = 4
+    var reads = lambda (x: Int) -> Int: x + z
+    var multi = lambda (x: Int) -> Int: x + z + w
+
+
+# // -----
+
+# COM: Everything together, with elision: parameter + owned arg + effects, an omitted
+# COM: capture list (`z` imm-captured) and an omitted return type (`None`). The body is a
+# COM: `None`-returning call that reads the captured `z`.
+
+# CHECK: lit.struct.decl @"withEverythingAndWithElision()::`lambda_0::__storage"
+# CHECK: lit.struct.field z : !lit.ref<{{.*}}, imm {{.*}}>
+# CHECK: lit.fn @"`lambda_0[::SIMD[::DType(int), ::SIMDLength(1)]](::SIMD[::DType(int), ::SIMDLength(1)]${{.*}}"<{{.*}}N: !Int{{[0-9]*}}>{{.*}}!lit.ref<none, {{.*}}> byref_result{{.*}} throws|capturing -> {{.*}}
+
+
+def noop(v: Int):
+    pass
+
+
+def withEverythingAndWithElision():
+    var z = 3
+    var f = lambda [N: Int](var x: Int) raises: noop(z + N + x)
+
+
+# // -----
+
+# COM: The comptime fold composes with elision: with the capture list omitted and
+# COM: nothing captured, the lambda is thin, so it promotes and the alias folds to
+# COM: the promoted function's literal -- exactly like the explicit-`{}` fold
+# COM: (cf. withComptimeBound). No `__storage` struct exists for it.
+
+# CHECK-DAG: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}}-> !{{.*}}Int{{[0-9]*}}
+# CHECK-DAG: lit.alias.decl {{.*}}func.literal{{.*}}func.symbol<@{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}>
+# CHECK-NOT: __storage
+
+
+comptime inc_elided = lambda (x: Int) -> Int: x + 1
+
+
+def withComptimeBoundElided() -> Int:
+    return inc_elided(1)
