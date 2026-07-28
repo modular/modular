@@ -119,7 +119,8 @@ at every layer, then reads the comparison to localize the divergence:
   cache) and the harness (tokenizer and chat template).
 
 Review each finding and confirm the fix, the same way you steer the bring-up
-itself.
+itself. To run the same per-layer comparison yourself, see
+[Layer comparison](/max/develop/layer-comparison/).
 
 ## How agent-driven model bring-up works
 
@@ -177,6 +178,10 @@ serve and deploy it:
 - [Evaluate model accuracy](https://github.com/modular/skills/blob/main/eval-model/SKILL.md):
   Use the `eval-model` skill to benchmark your served model on standard datasets
   and compare the scores against the original model.
+- [Logit comparison](/max/develop/logit-comparison/) and
+  [Layer comparison](/max/develop/layer-comparison/): Validate the architecture
+  yourself, measuring logit similarity and localizing the first layer that
+  diverges from the reference.
 - [Model bring-up workflow](/max/develop/model-bringup-workflow/): Read the
   detailed manual bring-up steps to better understand graph compilation, memory
   sizing, and weight remapping.

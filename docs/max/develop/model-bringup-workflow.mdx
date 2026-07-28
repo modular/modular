@@ -438,9 +438,12 @@ worked examples.
 
 Once your architecture loads and generates text, verify its forward pass
 numerically against a PyTorch reference. See
-[Logit comparison](/max/develop/logit-comparison) for the full workflow, or use
-the [`debug-model`](/max/develop/model-bringup-skills/#debug-output-divergences)
-skill to run that per-layer comparison with an AI coding agent.
+[Logit comparison](/max/develop/logit-comparison) for quick verification and
+[Layer comparison](/max/develop/layer-comparison) to localize the first layer
+that diverges when the logits don't match. To run that per-layer comparison with
+an AI coding agent, use the
+[`debug-model`](/max/develop/model-bringup-skills/#debug-output-divergences)
+skill.
 
 Once the forward pass matches, confirm the model's task accuracy holds across a
 full benchmark with the

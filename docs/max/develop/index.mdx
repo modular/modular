@@ -148,7 +148,8 @@ optionally contribute it back to MAX so everybody can use it.
 
 ### Test locally
 
-Use the `--custom-architectures` flag to serve a model with your local
+Use the `--custom-architectures` flag to
+[serve a model](/max/develop/serve-custom-model-architectures/) with your local
 architecture implementation.
 
 ```bash
@@ -156,8 +157,8 @@ max serve --model your-org/your-model \
   --custom-architectures path/to/your/architecture
 ```
 
-For details, see
-[Serve custom model architectures](/max/develop/serve-custom-model-architectures/).
+Once you can serve your model, you can validate its output using [logit
+comparison](/max/develop/logit-comparison/).
 
 ### Contribute to MAX
 
