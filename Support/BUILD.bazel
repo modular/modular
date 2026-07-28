@@ -437,18 +437,13 @@ modular_cc_library(
 
 # Sources of the always-linked profiler shim (:Profiling below): the Range
 # API forwarder/loader (RangeShim.cpp) plus the Tracy GPU-profiling TUs. The
-# profiler implementation — Range.cpp (state machine) and RangeKineto.cpp
-# (libkineto backend) — is excluded: it compiles only into the runtime-loaded
-# :MAXProfilerPlugin, so no host binary carries libkineto or its stubs.
+# profiler implementation compiles only into the runtime-loaded plugin
+# (//max/internal/profiler:MAXProfilerPlugin), so no host
+# binary carries libkineto or its stubs.
 PROFILING_SHIM_SRCS = glob(
     ["lib/Profiling/internal/*.cpp"],
     # For OSS
     allow_empty = True,
-    exclude = [
-        "lib/Profiling/internal/PluginEntry.cpp",
-        "lib/Profiling/internal/Range.cpp",
-        "lib/Profiling/internal/RangeKineto.cpp",
-    ],
 )
 
 PROFILING_HDRS = glob(
@@ -510,10 +505,11 @@ PROFILING_DEPS = [
 
 # The Range profiling API, as an always-linked static shim: per-DSO hot-path
 # gates plus a dlopen loader that forwards to the profiler plugin
-# (:MAXProfilerPlugin) when present at runtime and degrades to no-ops
-# otherwise. Statics being per consuming DSO is by design — the plugin keeps
-# every registered copy's gates coherent (see RangeShim.cpp) — so there is no
-# shared-library variant and no DT_NEEDED on the plugin or any GPU library.
+# (//max/internal/profiler:MAXProfilerPlugin) when present at runtime and
+# degrades to no-ops otherwise. Statics being per consuming DSO is by design
+# — the plugin keeps every registered copy's gates coherent (see
+# RangeShim.cpp) — so there is no shared-library variant and no DT_NEEDED on
+# the plugin or any GPU library.
 modular_cc_library(
     name = "Profiling",
     srcs = PROFILING_SHIM_SRCS,
@@ -525,69 +521,17 @@ modular_cc_library(
     deps = PROFILING_DEPS,
 )
 
-# The profiler implementation: state machine, trace post-processing, and the
-# backend function table — everything except the libkineto/CUDA calls
-# themselves. Split from :MAXProfilerPlugin so the unit tests
-# (//Support/unittests/internal/Profiling) can exercise the state machine
-# backendless on any platform. Never link this together with :Profiling into
-# one binary: both define the M::Profiling symbols (the plugin is loaded
-# RTLD_LOCAL with hidden visibility, so the two never meet at runtime).
+# Header-only view of the profiling API for the plugin implementation
+# (//max/internal/profiler), which compiles against Range.h/PluginABI.h but
+# must NOT link the shim — the plugin defines the same M::Profiling symbols,
+# and pulling both archives into its link would leave symbol resolution to
+# archive order.
 modular_cc_library(
-    name = "ProfilerCore",
-    srcs = [
-        "lib/Profiling/internal/Range.cpp",
-        "lib/Profiling/internal/RangeBackend.h",
-    ],
+    name = "ProfilingHeaders",
     hdrs = PROFILING_HDRS,
     defines = PROFILING_DEFINES,
-    # The plugin (same package) plus its unit tests; nothing else may link
-    # the implementation — hosts get the shim.
-    visibility = ["//Support/unittests/internal/Profiling:__pkg__"],
+    visibility = ["//max/internal/profiler:__pkg__"],
     deps = PROFILING_DEPS,
-)
-
-# The runtime-loaded profiler plugin: ProfilerCore plus the
-# libkineto/CUPTI backend (RangeKineto.cpp) and the C entry point
-# (PluginEntry.cpp). This is the ONLY target that links libkineto, and it
-# links the CUDA / cudart / CUPTI dlopen trampolines statically
-# (*_stub_static), so the resulting libMAXProfilerPlugin.so is one
-# self-contained file with no vendor DT_NEEDED entries — drop it next to a
-# deployment (or point MODULAR_PROFILER_PLUGIN at it) and the always-linked
-# :Profiling shim finds it. Internal-only: never packaged into wheels; the
-# python profiler tests carry it as a data dependency.
-#
-# Tracy and libkineto are mutually exclusive CUPTI consumers, so this is
-# gated to Linux x86_64 with Tracy disabled; the shim additionally compiles
-# its loader out under TRACY_ENABLE.
-modular_shared_library(
-    name = "MAXProfilerPlugin",
-    srcs = [
-        "lib/Profiling/internal/PluginEntry.cpp",
-        "lib/Profiling/internal/RangeBackend.h",
-        "lib/Profiling/internal/RangeKineto.cpp",
-    ],
-    # Only the M_profilerPluginGetAPI entry point is exported (its explicit
-    # visibility attribute); everything else, including the statically linked
-    # libkineto, stays local to the DSO.
-    linkopts = ["-Wl,--exclude-libs,ALL"],
-    output_name = "MAXProfilerPlugin",
-    target_compatible_with = select({
-        "//:linux_x86_64_no_tracy": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    visibility = ["//visibility:public"],
-    deps = [
-        ":ProfilerCore",
-        # The stubs provide cuCtxGetCurrent (RangeKineto.cpp's CUDA-context
-        # probe) and libkineto's CUPTI/cudart symbols via on-demand dlopen of
-        # the real vendor libraries, so the plugin carries no hard NEEDED
-        # entry on any of them.
-        "//bazel/third-party:libcuda_stub_static",
-        "//bazel/third-party:libcudart_stub_static",
-        "//bazel/third-party:libcupti_stub_static",
-        "@libkineto",
-        "@libkineto//:libkineto_headers",
-    ],
 )
 
 modular_cc_library(
