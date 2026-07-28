@@ -255,6 +255,16 @@ class KVCacheMemoryGroup:
             raise ValueError("KVCacheMemoryGroup must have at least one buffer")
         for buffer in self.buffers:
             _validate_is_2d_uint8_buffer(buffer)
+        first_shape = self.buffers[0].shape
+        for i, buffer in enumerate(self.buffers):
+            if buffer.shape != first_shape:
+                raise ValueError(
+                    f"All buffers in a KVCacheMemoryGroup must share a shape, "
+                    f"but shard {i} has shape {buffer.shape} vs shard 0's "
+                    f"{first_shape}. bytes_per_page/total_num_pages are read "
+                    f"off shard 0 and would silently report the wrong value "
+                    f"for a mismatched shard."
+                )
         if self.replicated and len(self.buffers) <= 1:
             raise ValueError(
                 "replicated=True requires at least 2 TP-shard buffers"

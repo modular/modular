@@ -229,6 +229,29 @@ def _build_group_descriptors(
     return descs
 
 
+def _resolve_remote_bytes_per_group(
+    local_bytes_per_group: Sequence[int],
+    remote_bytes_per_group: Sequence[int],
+) -> list[int]:
+    """Return the remote engine's per-group byte stride for a read transfer.
+
+    Raises unless the remote advertises exactly as many groups as the local
+    engine has: connect() already enforces this (a full ``bytes_per_group``
+    equality check), so this is defense-in-depth, not the primary guard --
+    fewer groups means there is no way to infer the remote's stride for a
+    group it never advertised, and more groups would silently assume a
+    positional-prefix correspondence that was never validated.
+    """
+    if list(remote_bytes_per_group) != list(local_bytes_per_group):
+        raise ValueError(
+            f"Remote advertises bytes_per_group={list(remote_bytes_per_group)} "
+            f"but the local engine has {list(local_bytes_per_group)}. "
+            "Refusing to guess the remote's stride for a group it never "
+            "advertised."
+        )
+    return list(remote_bytes_per_group)
+
+
 class TensorAgentMetadata(
     msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
 ):
@@ -604,12 +627,11 @@ class KVTransferEngineMetadata(TransferEngineMetadata):
     bytes_per_page: int
     """Bytes per page for each tensor."""
 
-    bytes_per_group: list[int] = []
-    """Bytes per page for each tensor group. The first entry is the main
-    group; subsequent entries correspond to extra groups (e.g., draft KV in
-    speculative decoding). When non-empty, ``bytes_per_page`` equals
-    ``sum(bytes_per_group)``; when empty, the engine is single-group and
-    ``bytes_per_page`` holds the only group's value."""
+    bytes_per_group: list[int]
+    """Bytes per page for each tensor group, one entry per NIXL group. The
+    first entry is the main group; subsequent entries correspond to extra
+    groups (e.g., draft KV in speculative decoding). ``bytes_per_page``
+    equals ``sum(bytes_per_group)``."""
 
     replicated_per_group: list[bool] = []
     """Per-group TP replication, parallel to ``bytes_per_group``. ``True``
@@ -835,6 +857,32 @@ class TransferEngine:
             remote_replicate=remote.replicated_per_group,
         )
 
+    def _strategy_for_teardown(
+        self, name: str, remote: KVTransferEngineMetadata, *, pop: bool
+    ) -> list[_TransferStrategy]:
+        """Look up the per-peer strategy recorded at ``connect()``, for teardown.
+
+        Defensive: connect() populates ``_transfer_strategies`` and
+        ``remote_connections`` together, so a miss is unreachable today. If
+        they ever desync, recompute (rather than assuming DIRECT) so a
+        broadcast peer's teardown still mirrors connect()'s pairing.
+        """
+        strategy = (
+            self._transfer_strategies.pop(name, None)
+            if pop
+            else self._transfer_strategies.get(name)
+        )
+        if strategy is None:
+            logger.warning(
+                "Transfer strategy missing for remote %r during teardown "
+                "(connect() should populate it together with "
+                "remote_connections); recomputing from current metadata "
+                "instead.",
+                name,
+            )
+            strategy = self._compute_transfer_strategy(remote)
+        return strategy
+
     def _iter_peer_agents(
         self,
         remote: KVTransferEngineMetadata,
@@ -872,12 +920,10 @@ class TransferEngine:
                 f"Bytes per page mismatch: {self.bytes_per_page} != {remote.bytes_per_page}"
             )
 
-        # Validate per-group breakdown when both sides advertise it
-        remote_bpg = remote.bytes_per_group
-        if remote_bpg and self.bytes_per_group != remote_bpg:
+        if self.bytes_per_group != remote.bytes_per_group:
             raise ValueError(
                 f"Per-group bytes-per-page mismatch: "
-                f"local={self.bytes_per_group} remote={remote_bpg}"
+                f"local={self.bytes_per_group} remote={remote.bytes_per_group}"
             )
 
         # Check if the relevant transport env vars are set. You can get away
@@ -953,13 +999,7 @@ class TransferEngine:
             raise ValueError(
                 f"Remote connection '{name}' not found; cannot disconnect"
             )
-        strategy = self._transfer_strategies.pop(name, None)
-        # Defensive: connect() populates _transfer_strategies and
-        # remote_connections together, so this is unreachable today. If they
-        # ever desync, recompute (rather than assuming DIRECT) so a broadcast
-        # peer's teardown still mirrors connect()'s pairing.
-        if strategy is None:
-            strategy = self._compute_transfer_strategy(remote)
+        strategy = self._strategy_for_teardown(name, remote, pop=True)
 
         # Release inflight send transfers targeting this remote.
         stale_sends = [
@@ -1259,12 +1299,9 @@ class TransferEngine:
         local_shards_used = [dst_shard for _, dst_shard in shard_pairs]
 
         # Determine per-group bytes_per_page for the remote (source) engine.
-        # If the remote advertises bytes_per_group, use it; otherwise fall back
-        # to treating bytes_per_page as a single group.
-        remote_bpg = (
-            remote.bytes_per_group
-            if remote.bytes_per_group
-            else [remote.bytes_per_page]
+        # This is a loop invariant -- computed once, not per shard pair.
+        remote_bpg = _resolve_remote_bytes_per_group(
+            self.bytes_per_group, remote.bytes_per_group
         )
 
         for remote_shard, dst_shard in shard_pairs:
@@ -1272,18 +1309,13 @@ class TransferEngine:
             remote_agent_meta = remote_replica_agents_meta[remote_shard]
 
             # Build descriptors for each group. Local uses this engine's
-            # bytes_per_group; remote uses the peer's advertised strides,
-            # falling back to local for any group the peer doesn't advertise.
-            effective_remote_bpg = [
-                remote_bpg[g] if g < len(remote_bpg) else bpp
-                for g, bpp in enumerate(self.bytes_per_group)
-            ]
+            # bytes_per_group; remote uses the peer's advertised strides.
             descs_local = _build_group_descriptors(
                 ta.base_addrs, self.bytes_per_group, dst_idxs, ta.device_id
             )
             descs_remote = _build_group_descriptors(
                 remote_agent_meta.base_addrs,
-                effective_remote_bpg,
+                remote_bpg,
                 src_idxs,
                 remote_agent_meta.device_id,
             )
@@ -1591,13 +1623,9 @@ class TransferEngine:
         # per-group strategy so teardown mirrors connect()'s exact pairing.
         for remote_name in self.remote_connections:
             remote = self.remote_connections[remote_name]
-            strategy = self._transfer_strategies.get(remote_name)
-            # Defensive: connect() populates _transfer_strategies and
-            # remote_connections together, so this is unreachable today. If
-            # they ever desync, recompute (rather than assuming DIRECT) so a
-            # broadcast peer's teardown still mirrors connect()'s pairing.
-            if strategy is None:
-                strategy = self._compute_transfer_strategy(remote)
+            strategy = self._strategy_for_teardown(
+                remote_name, remote, pop=False
+            )
             for local_ta, remote_agent_meta in self._iter_peer_agents(
                 remote, strategy
             ):
@@ -1669,11 +1697,18 @@ class KVTransferEngine(TransferEngine):
         # including the null block), so read it off the authored groups rather
         # than accepting a redundant argument. Every group must agree on it.
         total_num_pages = memory[0][0].total_num_pages
+        num_groups_r0 = len(memory[0])
 
         for r, replica_groups in enumerate(memory):
             if not replica_groups:
                 raise ValueError(
                     "Each replica must contain at least one tensor"
+                )
+            if len(replica_groups) != num_groups_r0:
+                raise ValueError(
+                    f"Replica {r} produced {len(replica_groups)} NIXL "
+                    f"groups but replica 0 had {num_groups_r0}. "
+                    "Replicas must have a consistent buffer structure."
                 )
             for group in replica_groups:
                 if group.total_num_pages != total_num_pages:
@@ -1688,12 +1723,12 @@ class KVTransferEngine(TransferEngine):
         # A logical cache is consistently replicated across DP replicas, so a
         # given group index must agree on ``replicated`` across replicas. This
         # is a real structural invariant (unlike "all groups agree"), so keep a
-        # narrow check for it.
+        # narrow check for it. Every replica is already confirmed above to
+        # have exactly num_groups_r0 groups, so indexing memory[0][g] here
+        # never goes out of bounds.
         for r, replica_groups in enumerate(memory):
             for g, group in enumerate(replica_groups):
-                if g < len(memory[0]) and (
-                    group.replicated != memory[0][g].replicated
-                ):
+                if group.replicated != memory[0][g].replicated:
                     raise ValueError(
                         f"Group {g} of replica {r} has replicated="
                         f"{group.replicated} but replica 0 has "
@@ -1703,18 +1738,12 @@ class KVTransferEngine(TransferEngine):
                     )
 
         # Build all_groups[group_idx][replica_idx] = [shard0, shard1, ...]
-        # directly from the authored groups (no shape re-inference).
-        num_groups_r0 = len(memory[0])
+        # directly from the authored groups (no shape re-inference). Group
+        # count consistency was already validated above.
         all_groups: list[list[list[Buffer]]] = [
             [] for _ in range(num_groups_r0)
         ]
-        for r, replica_groups in enumerate(memory):
-            if len(replica_groups) != num_groups_r0:
-                raise ValueError(
-                    f"Replica {r} produced {len(replica_groups)} NIXL "
-                    f"groups but replica 0 had {num_groups_r0}. "
-                    "Replicas must have a consistent buffer structure."
-                )
+        for replica_groups in memory:
             for g, group in enumerate(replica_groups):
                 all_groups[g].append(group.buffers)
 
