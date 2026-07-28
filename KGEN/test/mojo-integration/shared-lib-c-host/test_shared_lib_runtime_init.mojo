@@ -19,7 +19,7 @@
 # CHECK: sum1=499500
 # CHECK: sum2=499500
 
-from std.algorithm import parallelize
+from max.algorithm import parallelize
 from std.runtime import initialize_runtime
 
 
