@@ -258,7 +258,6 @@ modular_py_test(
     deps = [
         ":transfer_engine_test_helpers",
         "//max/python/max/driver",
-        "//max/python/max/nn",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/tests/nixl:nixl_plugin_env",
         requirement("numpy"),
