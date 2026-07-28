@@ -30,6 +30,7 @@ class FuncTypeGeneratorType;
 
 namespace M::KGEN::LIT {
 struct ParsedArgument;
+enum class CaptureConvention : uint8_t;
 class SRValue;
 
 /// The IREmitter depends on ExprNode to provide a location and emit IR for
@@ -694,6 +695,59 @@ struct FunctionTypeNode final : public ExprNode {
   static bool classof(const ExprNode *node) {
     return node->kind == kFunctionType;
   }
+  SMLoc getLoc() const override { return baseLoc; }
+  SourceRange getRange() const override { return {baseLoc, endLoc}; }
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
+  void print(mlir::raw_indented_ostream &os) const override;
+};
+
+/// A `lambda` expression: a closure literal whose body is a single expression.
+/// Parsed syntactically here; the closure is constructed at emit time. Field
+/// order mirrors the parsed grammar, which follows nested-`def` closures:
+///
+/// lambda [parsedParams] (parsedArgs) <effects> {captures} -> resultArg : body
+struct LambdaNode final : public ExprNode {
+  LambdaNode(SMLoc baseLoc, ArrayRef<ParsedArgument> parsedParams,
+             ArrayRef<ParsedArgument> parsedArgs,
+             const ParsedArgument &resultArg, FnEffects effects,
+             const ExprNode *thrownTypeExpr,
+             ArrayRef<std::tuple<StringRef, CaptureConvention, SMLoc>> captures,
+             bool hasExplicitCaptureList,
+             std::optional<CaptureConvention> captureAllByConvention,
+             const ExprNode *body, SMLoc endLoc)
+      : ExprNode(kLambda), baseLoc(baseLoc), parsedParams(parsedParams),
+        parsedArgs(parsedArgs), resultArg(resultArg), effects(effects),
+        thrownTypeExpr(thrownTypeExpr), captures(captures),
+        hasExplicitCaptureList(hasExplicitCaptureList),
+        captureAllByConvention(captureAllByConvention), body(body),
+        endLoc(endLoc) {}
+
+  SMLoc baseLoc;
+  ArrayRef<ParsedArgument> parsedParams; // [parameter_list]
+  ArrayRef<ParsedArgument> parsedArgs;   // (argument_list)
+  const ParsedArgument &resultArg;       // -> result_type (default if elided)
+  FnEffects effects;                     // raises, async, etc.
+  const ExprNode *thrownTypeExpr;        // explicit `raises T`, else null
+  // The capture list `{...}` decomposes into two parts that are NOT mutually
+  // exclusive and may both be set by a single list (e.g. `{mut, x}`):
+  //
+  //   `captures`              — explicitly named captures, one (name,
+  //                             convention, loc) per entry (`{imm x, mut y}`;
+  //                             a bare name defaults to `imm`, so `{y}` is
+  //                             `{imm y}`).
+  //   `captureAllByConvention` — the default convention from a bare convention
+  //                             with no name (`{mut}`/`{imm}`), applied to all
+  //                             *implicitly* captured variables.
+  //
+  // When both are present, the named entries act as per-variable overrides on
+  // top of the default (`{mut, x}` = capture everything `mut`, but `x` `imm`).
+  ArrayRef<std::tuple<StringRef, CaptureConvention, SMLoc>> captures;
+  bool hasExplicitCaptureList; // whether a `{...}` was written at all
+  std::optional<CaptureConvention> captureAllByConvention;
+  const ExprNode *body; // the single body expression
+  SMLoc endLoc;
+
+  static bool classof(const ExprNode *node) { return node->kind == kLambda; }
   SMLoc getLoc() const override { return baseLoc; }
   SourceRange getRange() const override { return {baseLoc, endLoc}; }
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;

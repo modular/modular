@@ -42,6 +42,9 @@ class StructFieldOp;
 class TraitDeclOp;
 class ExtensionDeclOp;
 struct ParsedArgument;
+struct LambdaNode;
+class IREmitter;
+class ExprDest;
 class BaseDLValue;
 
 //===----------------------------------------------------------------------===//
@@ -236,6 +239,11 @@ public:
   /// resolved to its shortest, most public path). Supported only for a prebuilt
   /// (bytecode) `std`; see the definition for why.
   std::optional<std::string> findUniqueStdlibImportFor(StringRef name);
+
+  /// Build the closure value for a `lambda` expression at emit time, by
+  /// resolving the synthetic anonymous `def` it desugars to. Null on error.
+  AnyValue resolveAnonymousClosure(const LambdaNode *node, IREmitter &emitter,
+                                   ExprDest &dest);
 
   /// DeclResolution is an inherently recursive process - this return the
   /// current declaration that is being worked on.
@@ -452,6 +460,10 @@ private:
   /// The declaration context used when pretty-printing parameter references in
   /// diagnostics.
   ASTDecl *diagnosticDeclContext = nullptr;
+
+  /// Monotonic counter used to give each `lambda`'s synthetic anonymous `def` a
+  /// unique name (see resolveAnonymousClosure).
+  unsigned anonymousClosureCounter = 0;
 
   /// Allow access to private fields.
   friend SharedState;

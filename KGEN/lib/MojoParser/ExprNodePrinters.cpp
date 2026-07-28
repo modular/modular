@@ -77,6 +77,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "ChainedCmp";
   case ExprNode::kFunctionType:
     return "FunctionType";
+  case ExprNode::kLambda:
+    return "Lambda";
   case ExprNode::kGetMValueAsLitRef:
     return "GetMValueAsLitRef";
   case ExprNode::kGetLitRefAsMValue:
@@ -553,6 +555,37 @@ void ParsedConstraint::print(raw_indented_ostream &os) const {
 void ParsedConstraint::dump() const {
   raw_indented_ostream os(llvm::errs());
   print(os);
+}
+
+void LambdaNode::print(raw_indented_ostream &os) const {
+  os << "Lambda {\n";
+  os << "params: [\n";
+  os.indent();
+  for (const ParsedArgument &param : parsedParams)
+    param.print(os);
+  os.unindent() << "]\n";
+
+  os << "args: [\n";
+  os.indent();
+  for (const ParsedArgument &arg : parsedArgs)
+    arg.print(os);
+  os.unindent() << "]\n";
+
+  os << "result: [\n";
+  os.indent();
+  resultArg.print(os);
+  os.unindent() << "]\n";
+
+  os << "effects: " << stringifyFnEffects(effects.getImpl()) << "\n";
+  os << "captures: " << captures.size()
+     << (hasExplicitCaptureList ? " (explicit)\n" : "\n");
+  os << "body: ";
+  if (body)
+    body->print(os);
+  else
+    os << "<none>\n";
+
+  os.unindent() << "}\n";
 }
 
 void FunctionTypeNode::print(raw_indented_ostream &os) const {
