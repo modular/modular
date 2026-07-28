@@ -611,6 +611,23 @@ struct Array[T: AnyType, length: Int](
     # ===------------------------------------------------------------------===#
 
     @always_inline
+    def __getitem__(ref self, idx: Int) -> ref[self] Self.T:
+        """Gets a reference to the element at the given index.
+
+        Args:
+            idx: The index to access (0 to len-1).
+
+        Returns:
+            A reference to the element at the specified index.
+
+        Notes:
+            This method provides array-style indexing access to elements in the
+            Array. The index is bounds-checked at runtime.
+        """
+        check_bounds(idx, len(self))
+        return self._unchecked_get(idx)
+
+    @always_inline
     def __getitem__(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
         """Gets a reference to the element at the given index.
 
