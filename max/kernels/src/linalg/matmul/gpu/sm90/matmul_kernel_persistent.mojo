@@ -21,6 +21,7 @@ groups that iterate over a persistent tile schedule assigned by a
 `TileScheduler`.
 """
 
+from std.memory import UnsafePointer
 from std.math import ceildiv
 from std.sys import size_of
 
@@ -76,11 +77,19 @@ __extension HopperMatmulSM90Kernel:
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
-        ref smem = external_memory[
+        ref smem = UnsafePointer[
             Scalar[DType.uint8],
+            MutUntrackedOrigin,
             address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]().bitcast[Self.SMem]()[]
+        ](
+            external_memory[
+                Scalar[DType.uint8],
+                address_space=AddressSpace.SHARED,
+                alignment=128,
+            ]()
+        ).bitcast[
+            Self.SMem
+        ]()[]
 
         # Common initialization
         var (
@@ -200,11 +209,19 @@ __extension HopperMatmulSM90Kernel:
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
-        ref smem = external_memory[
+        ref smem = UnsafePointer[
             Scalar[DType.uint8],
+            MutUntrackedOrigin,
             address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]().bitcast[Self.SMem]()[]
+        ](
+            external_memory[
+                Scalar[DType.uint8],
+                address_space=AddressSpace.SHARED,
+                alignment=128,
+            ]()
+        ).bitcast[
+            Self.SMem
+        ]()[]
 
         # Common initialization
         var (

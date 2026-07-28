@@ -14,6 +14,7 @@
 Implements blockwise scaled FP8 matrix multiplication kernels targeting the
 NVIDIA SM100 (Blackwell) architecture using 1D A-scales and 2D B-scales.
 """
+from std.memory import UnsafePointer
 from std.collections import Optional
 from std.math import ceildiv, gcd
 from std.math.uutils import umod, ufloordiv
@@ -200,12 +201,16 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime B_SCALING_BLOCK_K = K // b_scales_k
     comptime A_SCALING_BLOCK = K // a_scales_k
 
-    a_smem = external_memory[
-        Scalar[a_type],
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-        name="tmem_test_dynamic_shared_memory",
-    ]().as_unsafe_any_origin()
+    a_smem = UnsafePointer[
+        Scalar[a_type], MutUntrackedOrigin, address_space=AddressSpace.SHARED
+    ](
+        external_memory[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+            name="tmem_test_dynamic_shared_memory",
+        ]()
+    ).as_unsafe_any_origin()
 
     comptime a_size = tile_layout_k_major_typed[
         a_type, BM, BK, swizzle_mode=a_swizzle

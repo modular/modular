@@ -170,11 +170,15 @@ def warp_split_k_reduction[
 ):
     comptime c_frag_size = c_layout.shape[1].value()
 
-    var smem = external_memory[
-        Scalar[c_type],
-        address_space=AddressSpace.SHARED,
-        alignment=align_of[SIMD[c_type, c_frag_size]](),
-    ]()
+    var smem = UnsafePointer[
+        Scalar[c_type], MutUntrackedOrigin, address_space=AddressSpace.SHARED
+    ](
+        external_memory[
+            Scalar[c_type],
+            address_space=AddressSpace.SHARED,
+            alignment=align_of[SIMD[c_type, c_frag_size]](),
+        ]()
+    )
 
     warp_split_k_reduction[
         BM, BN, num_threads_per_warp_k_part, num_warp_k_partitions
@@ -782,11 +786,15 @@ def multistage_gemm_kernel[
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
     comptime alignment = align_of[SIMD[a_type, simd_size]]()
-    var a_smem = external_memory[
-        Scalar[a_type],
-        address_space=AddressSpace.SHARED,
-        alignment=alignment,
-    ]()
+    var a_smem = UnsafePointer[
+        Scalar[a_type], MutUntrackedOrigin, address_space=AddressSpace.SHARED
+    ](
+        external_memory[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            alignment=alignment,
+        ]()
+    )
     comptime a_smem_size: Int = num_pipeline_stages * BM * BK
     comptime IteratorTypeA = LayoutTensorIter[
         a_type,
