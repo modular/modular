@@ -107,7 +107,7 @@ std::string mergeConformsToConstraints(ArrayRef<ConstraintAttr> constraints,
 //===----------------------------------------------------------------------===//
 
 /// Return the user-facing keyword for the given argument convention
-/// ("read", "deinit", "mut", "var", "ref", or "out").
+/// ("imm", "deinit", "mut", "var", "ref", or "out").
 StringRef getConventionString(ArgumentConvention conv);
 
 /// Render one parameter into `os` (name[: type][ & Trait...][ = default]).

@@ -108,7 +108,7 @@ inline StreamT &operator<<(StreamT &os, FnEffects effects) {
 // ArgConvention
 //===----------------------------------------------------------------------===//
 
-/// Return a string like "read" or "mut".
+/// Return a string like "imm" or "mut".
 const char *getUserSyntax(ArgConvention convention);
 
 } // namespace M::KGEN
