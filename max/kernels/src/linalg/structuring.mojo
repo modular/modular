@@ -203,12 +203,14 @@ struct NVIDIASharedMemoryBasePtr[
             Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED
         ]
     ):
-        return external_memory[
-            Int8,
-            address_space=AddressSpace.SHARED,
-            alignment=Self.memory_alignment,
-            name=Self.name,
-        ]()
+        return UnsafePointer(
+            external_memory[
+                Int8,
+                address_space=AddressSpace.SHARED,
+                alignment=Self.memory_alignment,
+                name=Self.name,
+            ]()
+        )
 
 
 struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
