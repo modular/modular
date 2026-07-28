@@ -342,5 +342,22 @@ def test_coord_to_device_type_mixed_static_dynamic() raises:
     buf.free()
 
 
+def test_unsafe_device_type_converts_to_safe_pointer_param() raises:
+    # A `DeviceBuffer`'s `device_type` is an `UnsafePointer`, but a GPU kernel
+    # may declare a safe `Pointer` entry param and still match at the enqueue
+    # boundary, since the safe and unsafe flavors share an identical runtime
+    # representation. The broadening is additive: existing `UnsafePointer`
+    # params keep matching, and mutability narrowing is still honored.
+    comptime assert UnsafePointer[
+        Int, MutAnyOrigin
+    ]._is_convertible_to_device_type[Pointer[Int, MutAnyOrigin]]()
+    comptime assert UnsafePointer[
+        Int, MutAnyOrigin
+    ]._is_convertible_to_device_type[Pointer[Int, ImmutAnyOrigin]]()
+    comptime assert UnsafePointer[
+        Int, MutAnyOrigin
+    ]._is_convertible_to_device_type[UnsafePointer[Int, MutAnyOrigin]]()
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
