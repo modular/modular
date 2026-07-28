@@ -797,7 +797,7 @@ def test_alloc_free_single_zst() raises:
     var layout = std.memory.alloc.Layout[ZST](count=1)
     var ptr = alloc(layout).unsafe_leak()
 
-    assert_equal(0, len(ptr[0]))  # dereference the pointer
+    assert_equal(0, len(ptr[]))  # dereference the pointer
 
     std.memory.alloc.dealloc(
         std.memory.alloc.ThinAllocation(
@@ -815,8 +815,8 @@ def test_alloc_free_many_zst() raises:
     var layout = std.memory.alloc.Layout[ZST](count=Int.MAX)
     var ptr = alloc(layout).unsafe_leak()
 
-    assert_equal(0, len(ptr[0]))  # dereference the pointer
-    assert_equal(0, len(ptr[Int.MAX]))
+    assert_equal(0, len(ptr[]))  # dereference the pointer
+    assert_equal(0, len(ptr.unsafe_offset(Int.MAX)[]))
 
     std.memory.alloc.dealloc(
         std.memory.alloc.ThinAllocation(

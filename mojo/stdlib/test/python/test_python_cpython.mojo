@@ -370,7 +370,7 @@ def _test_capsule_api(cpy: CPython) raises:
     # lifetime, so the pointer remains valid for the `PyCapsule_GetPointer`
     # lookups after `PyCapsule_New` returns.
     var capsule = cpy.PyCapsule_New(
-        capsule_impl_ptr.bitcast[NoneType]().unsafe_origin_cast[
+        capsule_impl_ptr.unsafe_bitcast[NoneType]().unsafe_origin_cast[
             MutUntrackedOrigin
         ](),
         "some_name",

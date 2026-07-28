@@ -372,7 +372,9 @@ def _get_global_handle[
         return ptr[]
 
     # Otherwise, we have not initialized the handle yet.
-    var handle_ptr = alloc(AllocLayout[Handle[backend]].single()).unsafe_leak()
+    var handle_ptr = UnsafePointer(
+        alloc(AllocLayout[Handle[backend]].single()).unsafe_leak()
+    )
     handle_ptr.unsafe_write(Handle[backend]())
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(HANDLE_NAME),
