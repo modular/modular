@@ -28,11 +28,13 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
             Float32,
             address_space=AddressSpace.SHARED,
         ]()
-        var dynamic_sram = external_memory[
-            Float32,
-            address_space=AddressSpace.SHARED,
-            alignment=align_of[Float32](),
-        ]()
+        var dynamic_sram = UnsafePointer(
+            external_memory[
+                Float32,
+                address_space=AddressSpace.SHARED,
+                alignment=align_of[Float32](),
+            ]()
+        )
         dynamic_sram[thread_idx.x] = Float32(thread_idx.x)
         sram[thread_idx.x] = Float32(thread_idx.x)
         barrier()

@@ -199,9 +199,11 @@ def qk_smoke_kernel[
     """SS .ws MMA: C [32,64] = A [32,576] x B [64,576]^T (FP8 e4m3)."""
 
     # ---- Dynamic SMEM ----
-    var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
-    ]()
+    var smem_base = UnsafePointer(
+        external_memory[
+            UInt8, address_space=AddressSpace.SHARED, alignment=128
+        ]()
+    )
     var a_smem_ptr = (smem_base + QK_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + QK_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
 
@@ -367,9 +369,11 @@ def pv_smoke_kernel[
 ):
     """SS .ws MMA: C [32,512] = A [32,64] x B [512,64] (mn-major B, FP8)."""
 
-    var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
-    ]()
+    var smem_base = UnsafePointer(
+        external_memory[
+            UInt8, address_space=AddressSpace.SHARED, alignment=128
+        ]()
+    )
     var a_smem_ptr = (smem_base + PV_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + PV_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
 

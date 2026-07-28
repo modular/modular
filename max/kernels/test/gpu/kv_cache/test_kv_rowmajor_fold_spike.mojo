@@ -180,12 +180,14 @@ def _rowmajor_fold_spike_kernel[
     # FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES at launch). The base is
     # 1024 B-aligned so every 1 KB swizzle-atom offset is itself 1024 B-aligned
     # (matching the per-atom swizzle tile). The tiny barrier stays static.
-    var smem_base = external_memory[
-        Scalar[dtype],
-        address_space=AddressSpace.SHARED,
-        alignment=1024,
-        name="rowmajor_fold_spike_smem",
-    ]()
+    var smem_base = UnsafePointer(
+        external_memory[
+            Scalar[dtype],
+            address_space=AddressSpace.SHARED,
+            alignment=1024,
+            name="rowmajor_fold_spike_smem",
+        ]()
+    )
     var smem_ref = smem_base
     var smem_test = smem_base + smem_elems
 

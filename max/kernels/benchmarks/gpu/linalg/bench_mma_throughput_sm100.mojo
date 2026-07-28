@@ -281,12 +281,14 @@ def mma_throughput_kernel[
             UntrackedOrigin[mut=True],
         ]
     ](
-        external_memory[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-            name="mma_throughput_dynamic_shared_memory",
-        ]()
+        UnsafePointer(
+            external_memory[
+                Scalar[a_type],
+                address_space=AddressSpace.SHARED,
+                alignment=128,
+                name="mma_throughput_dynamic_shared_memory",
+            ]()
+        )
     )
     comptime a_smem_tile_t = LayoutTensor[
         a_type,

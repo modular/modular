@@ -246,12 +246,14 @@ def qk_mma_kernel[
             UntrackedOrigin[mut=True],
         ]
     ](
-        external_memory[
-            Scalar[ab_type],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-            name="qk_spike_dynamic_smem",
-        ]()
+        UnsafePointer(
+            external_memory[
+                Scalar[ab_type],
+                address_space=AddressSpace.SHARED,
+                alignment=128,
+                name="qk_spike_dynamic_smem",
+            ]()
+        )
     )
     comptime q_smem_tile_t = LayoutTensor[
         ab_type,

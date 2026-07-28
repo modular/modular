@@ -151,12 +151,14 @@ def tma_umma_kernel_ss[
             UntrackedOrigin[mut=True],
         ]
     ](
-        external_memory[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-            name="tmem_test_dynamic_shared_memory",
-        ]()
+        UnsafePointer(
+            external_memory[
+                Scalar[a_type],
+                address_space=AddressSpace.SHARED,
+                alignment=128,
+                name="tmem_test_dynamic_shared_memory",
+            ]()
+        )
     )
     comptime a_smem_tile_t = LayoutTensor[
         a_type,
@@ -414,12 +416,14 @@ def tma_umma_kernel_ts_fp8[
             UntrackedOrigin[mut=True],
         ]
     ](
-        external_memory[
-            Scalar[b_type],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-            name="tmem_test_dynamic_shared_memory",
-        ]()
+        UnsafePointer(
+            external_memory[
+                Scalar[b_type],
+                address_space=AddressSpace.SHARED,
+                alignment=128,
+                name="tmem_test_dynamic_shared_memory",
+            ]()
+        )
     )
     comptime b_smem_tile_t = LayoutTensor[
         b_type,

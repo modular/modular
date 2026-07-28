@@ -48,12 +48,14 @@ def matrixMulKernel(
             address_space=AddressSpace.SHARED,
         ]
     ](
-        external_memory[
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="shared_dynamic_memory",
-        ]()
+        UnsafePointer(
+            external_memory[
+                Scalar[DType.float32],
+                address_space=AddressSpace.SHARED,
+                alignment=16,
+                name="shared_dynamic_memory",
+            ]()
+        )
     )
     var Nds = Mds + 32 * 32  # Use max size for allocation
 

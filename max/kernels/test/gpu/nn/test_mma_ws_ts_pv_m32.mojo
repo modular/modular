@@ -72,6 +72,7 @@ Shapes: MMA_M=32, BN=256 keys (64/partition), bf16, MMA_K=16, num_k_mmas =
                  single-shot -- the BN=256/depth=128 target regime.
 """
 
+from std.memory import UnsafePointer
 from std.memory import bitcast
 from std.random import randn, seed
 from std.sys import size_of
@@ -236,9 +237,11 @@ def pv_ts_batched_kernel[
     ]
 
     # ---- Dynamic SMEM: `num_d_tiles` mn-major V regions + metadata ----
-    var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
-    ]()
+    var smem_base = UnsafePointer(
+        external_memory[
+            UInt8, address_space=AddressSpace.SHARED, alignment=128
+        ]()
+    )
     var v_smem_ptr = smem_base.bitcast[Scalar[OP_TYPE]]()
 
     var metadata_ptr = (smem_base + v_bytes).bitcast[UInt32]()
