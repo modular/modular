@@ -422,6 +422,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
     CeilDivable,
     Ceilable,
     Comparable,
+    ConvertibleFromPython,
     CoordLike,
     Defaultable,
     DevicePassable,
@@ -947,7 +948,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
             self = bitcast[Self.dtype, Self.size](from_bits)
 
     @always_inline
-    def __init__(out self: Scalar[Self.dtype], *, py: PythonObject) raises:
+    def __init__(out self: Self, *, py: PythonObject) raises:
         """Initialize a SIMD value from a PythonObject.
 
         Args:
