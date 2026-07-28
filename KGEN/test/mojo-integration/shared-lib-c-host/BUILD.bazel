@@ -14,6 +14,9 @@ lit_tests(
     name = "test",
     srcs = glob(["*.mojo"]),
     data = [":c_host"],
-    mojo_deps = ["@mojo//:std"],
+    mojo_deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
     tools = ["//KGEN/tools/mojo"],
 )
