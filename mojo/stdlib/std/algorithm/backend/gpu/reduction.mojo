@@ -570,13 +570,11 @@ def twophase_reduce_kernel[
 ](
     shape: IndexList[rank],
     init: StaticTuple[Scalar[dtype], num_reductions],
-    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
-    # `Pointer`.
-    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
-    # to `UnsafePointer` (their `device_type`) and matches the declared param
-    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
-    partials: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
-    counters: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    # GPU kernel entry params backed by device buffers. `MutAnyOrigin` reflects
+    # that device memory has no tracked Mojo origin; the safe `Pointer` matches
+    # the buffers' `UnsafePointer` `device_type` at the enqueue boundary.
+    partials: Pointer[Scalar[accum_type], MutAnyOrigin],
+    counters: Pointer[Scalar[DType.int32], MutAnyOrigin],
     blocks_per_row: Int,
 ):
     """GPU kernel for reductions when there are too few rows to saturate the

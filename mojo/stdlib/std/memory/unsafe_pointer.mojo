@@ -1217,12 +1217,18 @@ struct Pointer[
                 Self._OriginCastType[MutUntrackedOrigin],
                 Self._OriginCastType[ImmutAnyOrigin],
                 Self._OriginCastType[ImmUntrackedOrigin],
+                Self._SafeOriginCastType[MutAnyOrigin],
+                Self._SafeOriginCastType[MutUntrackedOrigin],
+                Self._SafeOriginCastType[ImmutAnyOrigin],
+                Self._SafeOriginCastType[ImmUntrackedOrigin],
             ]().contains[U]()
         else:
             return TypeList.of[
                 Self,
                 Self._OriginCastType[ImmutAnyOrigin],
                 Self._OriginCastType[ImmUntrackedOrigin],
+                Self._SafeOriginCastType[ImmutAnyOrigin],
+                Self._SafeOriginCastType[ImmUntrackedOrigin],
             ]().contains[U]()
 
     def _to_device_type(
@@ -1243,7 +1249,7 @@ struct Pointer[
             This name of the type.
         """
         return String(
-            "UnsafePointer[",
+            "Pointer[" if Self._safe else "UnsafePointer[",
             reflect[Self.T].name(),
             ", mut=",
             Self.mut,
@@ -2337,6 +2343,19 @@ struct Pointer[
         target_origin,
         address_space=Self.address_space,
         _safe=Self._safe,
+    ]
+
+    # Same as `_OriginCastType` but forced to the safe (`Pointer`) flavor. Used
+    # by `_is_convertible_to_device_type` so a kernel may declare a safe
+    # `Pointer` entry param and still accept a device buffer whose `device_type`
+    # is an `UnsafePointer` (identical runtime representation).
+    comptime _SafeOriginCastType[
+        target_mut: Bool, //, target_origin: Origin[mut=target_mut]
+    ] = Pointer[
+        Self.T,
+        target_origin,
+        address_space=Self.address_space,
+        _safe=True,
     ]
 
     @always_inline("nodebug")
