@@ -43,14 +43,22 @@ This version is still a work in progress.
   valid when `expr` is `None`-typed. These are fixed defaults, not inference (a
   non-`None` body still needs an explicit `-> T`).
 
-  A thin (capture-free) `lambda` is a compile-time function value. Binding it to
-  a `comptime` behaves like `comptime f = some_def`: it compiles to one
-  function, and each use of the bound name *refers* to that single function;
-  calling such a `lambda` in a comptime initializer folds its result to a
-  constant. It can likewise be passed as a `thin` function-typed parameter (for
-  example `[f: def(x: Int) thin -> Int]`), at a call site or as a default value,
-  just as a `def` can be passed by name. A capturing `lambda` is a runtime value
-  and is rejected in these positions.
+  A thin (capture-free) `lambda` is a function value, exactly like a `def`
+  referenced by name. As such it:
+
+  - binds to a `comptime`;
+  - passes as a `thin` function-typed parameter;
+  - decays to a `thin` function pointer in runtime positions.
+
+  Referencing an enclosing function or struct parameter keeps it thin. Any
+  other `lambda` is a closure instance — a runtime value with no function type,
+  so it does none of the above:
+
+  - one that captures;
+  - one that writes an `{imm}`/`{mut}` capture convention, even capturing
+    nothing;
+  - one with unbound parameters of its own (`lambda [N: Int](…)`), bound at
+    each call.
 
 - Mojo supports an (internal only for now) feature known as *interior origins*,
   which allows collections to protect from a common class of memory unsafety
