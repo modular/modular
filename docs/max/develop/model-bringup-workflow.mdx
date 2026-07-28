@@ -242,8 +242,8 @@ Store the result as a
 [`KVCacheParams`](/max/api/python/generated/max.nn.kv_cache.KVCacheParams/) in a
 `kv_params` field on your config class and return it from `get_kv_params()`.
 Then pass it to each
-[`AttentionWithRope`](/max/api/python/generated/max.nn.AttentionWithRope/) layer
-at construction time:
+[`AttentionWithRope`](/max/api/python/generated/max.nn.attention.AttentionWithRope/)
+layer at construction time:
 
 ```python title="model.py"
 self.attn = AttentionWithRope(

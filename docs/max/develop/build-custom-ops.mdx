@@ -119,7 +119,7 @@ struct AddOne:
 ```
 
 The struct must include the
-[`@extensibility.register()`](/max/api/mojo-decorators/extensibility-register)
+[`@extensibility.register()`](/max/api/kernels/extensibility/decorators/register/)
 decorator, which registers the custom op with MAX. The `add_one` name we set
 here is the name we'll use to add the op to our Python graph in the next
 section.
@@ -186,7 +186,7 @@ the [next example](#example-2-write-device-specific-kernels).)
 
 If you don't annotate output shapes manually in the Python graph, you must tell
 the compiler how to infer them by registering a shape function with
-[`@extensibility.register_shape_function()`](/max/api/mojo-decorators/extensibility-register):
+[`@extensibility.register_shape_function()`](/max/api/kernels/extensibility/decorators/register_shape_function/):
 
 ```mojo title="kernels/add_one.mojo"
 @extensibility.register_shape_function("add_one")

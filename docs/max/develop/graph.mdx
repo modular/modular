@@ -144,7 +144,7 @@ see the API separation:
 |                          | Explicit graph construction                                                 | Eager execution                                                                              |
 |--------------------------|-----------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
 | **Primary data object**  | [`max.graph.TensorValue`](/max/api/python/generated/max.graph.TensorValue/) | [`max.experimental.tensor.Tensor`](/max/api/python/generated/max.experimental.tensor.Tensor) |
-| **Built-in operations**  | [`max.graph.ops`](/max/api/python/graph/ops)                                | [`max.experimental.functional`](/max/api/python/experimental.functional)                     |
+| **Built-in operations**  | [`max.graph.ops`](/max/api/python/graph.ops/)                               | [`max.experimental.functional`](/max/api/python/experimental.functional)                     |
 | **Python operators**     | `+`, `-`, `*`, `/`, `@` on `TensorValue`                                    | `+`, `-`, `*`, `/`, `@` on `Tensor`                                                          |
 | **`Module` abstraction** | [`max.nn.Module`](/max/api/python/generated/max.nn.Module)                  | [`max.experimental.nn.Module`](/max/api/python/generated/max.experimental.nn.Module)         |
 
