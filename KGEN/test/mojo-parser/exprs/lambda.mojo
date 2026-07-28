@@ -5,20 +5,24 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values -split-input-file | FileCheck %s
 
-# A lambda desugars to a synthetic anonymous closure constructed at emit time.
-# These tests check the constructed IR; lambda.mojo (mojo-integration) checks
-# that it also executes.
+# A lambda desugars to a synthetic anonymous def constructed at emit time: a
+# thin (capture-free, non-parametric) lambda promotes to a plain function whose
+# value the use site binds like a `def` referenced by name, while a capturing
+# or parametric lambda constructs a closure instance. These tests check the
+# constructed IR; lambda.mojo (mojo-integration) checks that it also executes.
 
-# COM: Non-capturing lambda: empty capture list, explicit return type.
+# COM: Non-capturing lambda: empty capture list, explicit return type. Thin, so
+# COM: it promotes to a plain function (no storage struct, no closure instance)
+# COM: and the var binds its function value -- as `var f = some_def` does.
 
-# The synthetic closure is named `lambda_<n>, scope-qualified under its
-# enclosing function, and marked synthetic. Its storage carries no captures.
-# CHECK-DAG: lit.struct.decl @"withNoCapture()::`lambda_0::__storage"({{.*}}) register_passable_trivial attributes {synthetic}
-# The lambda expression instantiates that scope-qualified storage.
-# CHECK-DAG: lit.call @{{.*}}::@"withNoCapture()::`lambda_0::__storage"::@"__init__
+# The var holds the promoted function's value, not a closure instance (the
+# NOT precedes the matches: storage structs print before the enclosing fn).
+# CHECK-NOT: @"{{.*}}`lambda_0::__storage"
+# CHECK: kgen.create_closure[{{.*}}("x": !Int) -> !{{.*}}Int{{[0-9]*}}>: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"]()
 
-# The body (x + 1) is lifted into the closure's __call__, also synthetic.
-# CHECK: lit.fn @"`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"[{{.*}}](%{{.*}}: {{.*}} read_mem, |, %x: {{.*}}) capturing -> {{.*}} attributes {{{.*}}sourceName = "`lambda_0"{{.*}}synthetic}
+# The synthetic def is named `lambda_<n> and promoted to module scope; its body
+# (x + 1) is a plain thin function's -- no capture machinery.
+# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"(%x: !Int) -> !{{.*}}Int{{[0-9]*}} attributes {{{.*}}sourceName = "`lambda_0"{{.*}}synthetic}
 # CHECK: kgen.param.constant{{.*}}<{{{.*}}1}>
 # CHECK: lit.call tail @{{.*}}::@"__add__{{.*}}"{{.*}}(%x, %{{.*}})
 # CHECK: lit.return
@@ -124,10 +128,9 @@ def withParameter():
 # // -----
 
 # COM: Effects: `raises` (after the argument list, before the capture list) makes the
-# COM: lifted __call__ throwing, with the throws ABI (byref error + bool return).
+# COM: promoted function throwing, with the throws ABI (byref error + bool return).
 
-# CHECK: lit.struct.decl @"withEffect()::`lambda_0::__storage"
-# CHECK: lit.fn @"`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}}byref_error{{.*}} throws|capturing -> {{.*}}
+# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}}byref_error{{.*}} throws -> {{.*}}
 
 
 def withEffect():
@@ -136,8 +139,7 @@ def withEffect():
 
 # // -----
 
-# CHECK: lit.struct.decl @"withReadArg()::`lambda_0::__storage"
-# CHECK: lit.fn @"`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}}, %x: !Int{{[0-9]*}}) capturing -> {{.*}}
+# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}}(%x: !Int{{[0-9]*}}) -> {{.*}}
 
 
 def withReadArg():
@@ -146,8 +148,8 @@ def withReadArg():
 
 # // -----
 
-# CHECK: lit.struct.decl @"withMutArg()::`lambda_0::__storage"
-# CHECK: , %x: !lit.ref<{{.*}}> mut) capturing -> {{.*}}
+# CHECK: lit.fn @"{{.*}}`lambda_0(
+# CHECK-SAME: %x: !lit.ref<{{.*}}> mut) -> {{.*}}
 
 
 def withMutArg():
@@ -156,8 +158,8 @@ def withMutArg():
 
 # // -----
 
-# CHECK: lit.struct.decl @"withVarArg()::`lambda_0::__storage"
-# CHECK: , %x: !lit.ref<{{.*}}> owned_in_mem) capturing -> {{.*}}
+# CHECK: lit.fn @"{{.*}}`lambda_0(
+# CHECK-SAME: %x: !lit.ref<{{.*}}> owned_in_mem) -> {{.*}}
 
 
 def withVarArg():
@@ -177,14 +179,18 @@ def withRefArg():
 # // -----
 
 # COM: Variadic arguments: `*args` is a positional pack; `**kwargs` packs into
-# COM: an `OwnedKwargsDict` and is splat-forwarded through the closure wrapper.
+# COM: an `OwnedKwargsDict`. All three are thin -- a pack's implicit origin
+# COM: parameters bind at the reference, as for a named variadic `def` -- so all
+# COM: three promote to plain functions.
 
-# CHECK-DAG: lit.struct.decl @"withVariadics()::`lambda_0::__storage"
-# CHECK-DAG: lit.fn @"{{.*}}`lambda_0[{{.*}}](::SIMD[::DType(int), ::SIMDLength(1)]*){{.*}}"
-# CHECK-DAG: lit.struct.decl @"withVariadics()::`lambda_1::__storage"
-# CHECK-DAG: lit.fn @"{{.*}}`lambda_1(kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**){{.*}}"
-# CHECK-DAG: lit.struct.decl @"withVariadics()::`lambda_2::__storage"
-# CHECK-DAG: lit.fn @"{{.*}}`lambda_2[{{.*}}](::SIMD[::DType(int), ::SIMDLength(1)]*,kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**){{.*}}"
+# No storage struct for any of them, and each promoted fn takes the pack
+# directly (a closure instance would take its storage first and be `capturing`).
+# CHECK-NOT: @"withVariadics()::`lambda_0::__storage"
+# CHECK-NOT: @"withVariadics()::`lambda_1::__storage"
+# CHECK-NOT: @"withVariadics()::`lambda_2::__storage"
+# CHECK-DAG: lit.fn @"{{.*}}`lambda_0[{{.*}}](::SIMD[::DType(int), ::SIMDLength(1)]*){{.*}}"{{.*}}vararg) -> !{{.*}}Int{{[0-9]*}}
+# CHECK-DAG: lit.fn @"{{.*}}`lambda_1(kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**){{.*}}"{{.*}}vararg) -> !{{.*}}Int{{[0-9]*}}
+# CHECK-DAG: lit.fn @"{{.*}}`lambda_2[{{.*}}](::SIMD[::DType(int), ::SIMDLength(1)]*,kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**){{.*}}"{{.*}}vararg) -> !{{.*}}Int{{[0-9]*}}
 
 
 def withVariadics():
@@ -229,13 +235,14 @@ def withComptimeBound() -> Int:
 
 # // -----
 
-# COM: Elided return type defaults to `None`, like a `def` with no `->`.
+# COM: Elided return type defaults to `None`, like a `def` with no `->`. `f` is
+# COM: thin (promotes, no storage); `g` captures `lst`, so it stays a closure.
 
-# CHECK-DAG: lit.struct.decl @"withElidedReturn()::`lambda_0::__storage"
+# CHECK-NOT: @"withElidedReturn()::`lambda_0::__storage"
 # CHECK-DAG: lit.struct.decl @"withElidedReturn()::`lambda_1::__storage"
 # CHECK-DAG: lit.struct.field lst : !lit.ref<{{.*}}, mut {{.*}}>
-# CHECK: lit.fn @"`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}} capturing -> !kgen.none
-# CHECK: lit.fn @"`lambda_1(){{.*}}"{{.*}} capturing -> !kgen.none
+# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"(%x: !Int) -> !kgen.none
+# CHECK: lit.fn @"{{.*}}`lambda_1(){{.*}}"{{.*}} capturing -> !kgen.none
 # CHECK: lit.call @{{.*}}List{{.*}}append
 
 
@@ -248,16 +255,17 @@ def withElidedReturn():
 # // -----
 
 # COM: Omitted capture list defaults to `{imm}`: free variables are imm-captured (an
-# COM: immutable ref); with no free variables the closure is thin, like an explicit `{}`.
-# COM: `multi` imm-captures several free variables at once. (Structs emit in reverse
-# COM: order, hence CHECK-DAG.)
+# COM: immutable ref); with no free variables the lambda is thin, like an explicit `{}`,
+# COM: and promotes to a plain function (no storage struct). `multi` imm-captures
+# COM: several free variables at once. (Structs emit in reverse order, hence CHECK-DAG.)
 
-# CHECK-DAG: lit.struct.decl @"withOmittedCaptures()::`lambda_0::__storage"({{.*}}) register_passable_trivial attributes {synthetic}
+# CHECK-NOT: @"{{.*}}`lambda_0::__storage"
 # CHECK-DAG: lit.struct.decl @"withOmittedCaptures()::`lambda_1::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {synthetic}
 # CHECK-DAG: lit.struct.decl @"withOmittedCaptures()::`lambda_2::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {synthetic}
 # CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, imm {{.*}}>
 # CHECK-DAG: lit.struct.field w : !lit.ref<{{.*}}, imm {{.*}}>
 # CHECK: lit.call @{{.*}}::@"withOmittedCaptures()::`lambda_2::__storage"::@"__init__({{.*}},{{.*}})"{{.*}}("z": {{.*}}, "w": {{.*}} ref, |
+# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"(%x: !Int)
 
 
 def withOmittedCaptures():
@@ -305,3 +313,36 @@ comptime inc_elided = lambda (x: Int) -> Int: x + 1
 
 def withComptimeBoundElided() -> Int:
     return inc_elided(1)
+# // -----
+
+# COM: A thin lambda decays into a typed `thin` fn-pointer slot, as a `def`
+# COM: name does: the var's element type is the fn generator, both the
+# COM: initializer and a REbinding assign the promoted function's value, and
+# COM: the call through the var is indirect.
+
+# CHECK: lit.var.decl "f" var : !lit.ref<!lit.generator<("x": !Int) -> !{{.*}}Int{{[0-9]*}}>
+# CHECK: kgen.create_closure[{{.*}}: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"]()
+# CHECK: kgen.create_closure[{{.*}}: @{{.*}}::@"{{.*}}`lambda_1(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"]()
+# CHECK: lit.call_indirect
+
+
+def typedDecay() -> Int:
+    var f: def(x: Int) thin -> Int = lambda (x: Int) -> Int: x + 1
+    f = lambda (x: Int) -> Int: x * 3
+    return f(2)
+
+
+# // -----
+
+# COM: A thin lambda referencing an ENCLOSING parameter still decays: the
+# COM: reference is bound, not free -- promotion prepends the parameter and the
+# COM: use site binds it, exactly as a stateless nested `def` using `N` does.
+# COM: (Only a lambda's OWN unbound parameters keep the closure-instance form.)
+
+# CHECK: kgen.create_closure[{{.*}}@"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"<:!Int N>]()
+# CHECK: lit.call_indirect
+
+
+def paramBound[N: Int]() -> Int:
+    var f: def(x: Int) thin -> Int = lambda (x: Int) -> Int: x + N
+    return f(1)

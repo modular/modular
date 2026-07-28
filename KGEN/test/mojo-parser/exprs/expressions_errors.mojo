@@ -786,6 +786,24 @@ def testLambdaCapturingCallParam() raises:
 def testLambdaCapturingDefaultParam[F: def(x: Int) thin -> Int = lambda (x: Int) {mut} -> Int: x + 1]():
   pass
 
+# A written capture CONVENTION (`{imm}`/`{mut}`) reifies a closure instance
+# even when it captures nothing, so it does not decay -- unlike a written `{}`,
+# which is explicitly thin and decays like the elided form.
+def testLambdaCapturingNoRuntimeDecay() raises:
+  var z = 10
+  # expected-error @+1 {{cannot implicitly convert}}
+  var f: def(x: Int) thin -> Int = lambda (x: Int) {imm z} -> Int: x + z
+  # expected-error @+1 {{cannot implicitly convert}}
+  var g: def(x: Int) thin -> Int = lambda (x: Int) {imm} -> Int: x + 1
+
+# A lambda with unbound parameters of its OWN is not a single runtime value;
+# it keeps the closure-instance form (which binds parameters at the call), so
+# it does not decay either. An enclosing-parameter REFERENCE is different --
+# bound at promotion -- and does decay (positive case in exprs/lambda.mojo).
+def testLambdaParametricNoRuntimeDecay() raises:
+  # expected-error @+1 {{cannot implicitly convert}}
+  var f: def(x: Int) thin -> Int = lambda [N: Int](x: Int) {} -> Int: x + N
+
 ##===----------------------------------------------------------------------===##
 # References and Transfer
 ##===----------------------------------------------------------------------===##
