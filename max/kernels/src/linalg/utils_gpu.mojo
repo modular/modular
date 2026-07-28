@@ -587,7 +587,7 @@ def create_hilbert_lut(
     """
     var num_blocks = grid_x * grid_y
     # Allocate temporary host buffer.
-    var host = alloc(AllocLayout[UInt32](count=num_blocks)).into_deletable()
+    var host = alloc(AllocLayout[UInt32](count=num_blocks)).into_managed()
 
     # Next power-of-two square dimension enclosing the rectangle.
     var dim_pow2 = 1
@@ -626,7 +626,7 @@ def create_hilbert_lut(
     # Allocate device buffer and copy.
     var device_buf = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
     ctx.enqueue_copy(device_buf, host.unsafe_span())
-    dealloc(host^.into_allocation())
+    dealloc(host^)
     return device_buf
 
 

@@ -453,7 +453,7 @@ def fused_token_sampling_cpu[
         out_vals_shape[input.rank - 1] = bound_max_k
         var out_vals_alloc = alloc(
             AllocLayout[Scalar[dtype]](count=out_vals_shape.flattened_length())
-        ).into_deletable()
+        ).into_managed()
         var out_vals_ptr: UnsafePointer[
             Scalar[dtype], origin_of(out_vals_alloc)
         ] = out_vals_alloc.unsafe_ptr()
@@ -473,7 +473,7 @@ def fused_token_sampling_cpu[
             seed,
         )
 
-        dealloc(out_vals_alloc^.into_allocation())
+        dealloc(out_vals_alloc^)
 
 
 def _top_k_sampling[

@@ -714,7 +714,7 @@ def matmul[
             AllocLayout[Scalar[scratch_type]](
                 count=scratch_m * scratch_n, alignment=scratch_align
             )
-        ).into_deletable()
+        ).into_managed()
         var scratch_ptr: UnsafePointer[
             Scalar[scratch_type], origin_of(scratch_alloc)
         ] = scratch_alloc.unsafe_ptr()

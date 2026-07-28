@@ -147,7 +147,7 @@ def _topp_minp_sampling[
 
     var sorted_probs_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=batch_size * vocab_size)
-    ).into_deletable()
+    ).into_managed()
     var sorted_probs_ptr: UnsafePointer[
         Scalar[dtype], origin_of(sorted_probs_alloc)
     ] = sorted_probs_alloc.unsafe_ptr()
@@ -158,7 +158,7 @@ def _topp_minp_sampling[
 
     var sorted_ids_alloc = alloc(
         AllocLayout[Scalar[out_idx_type]](count=batch_size * vocab_size)
-    ).into_deletable()
+    ).into_managed()
     var sorted_ids_ptr: UnsafePointer[
         Scalar[out_idx_type], origin_of(sorted_ids_alloc)
     ] = sorted_ids_alloc.unsafe_ptr()
@@ -239,8 +239,8 @@ def _topp_minp_sampling[
                     out_token_ids[batch, 0] = sid
                     break
 
-    dealloc(sorted_ids_alloc^.into_allocation())
-    dealloc(sorted_probs_alloc^.into_allocation())
+    dealloc(sorted_ids_alloc^)
+    dealloc(sorted_probs_alloc^)
 
 
 @always_inline

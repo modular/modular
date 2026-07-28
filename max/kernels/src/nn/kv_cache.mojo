@@ -447,7 +447,7 @@ def _matmul_common[
     comptime if is_cpu[target]():
         var c_alloc = alloc(
             AllocLayout[Scalar[dtype]](count=BS * SEQ_LEN * N)
-        ).into_deletable()
+        ).into_managed()
         var c_ptr: UnsafePointer[
             Scalar[dtype], origin_of(c_alloc)
         ] = c_alloc.unsafe_ptr()
@@ -462,7 +462,7 @@ def _matmul_common[
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
 
-        dealloc(c_alloc^.into_allocation())
+        dealloc(c_alloc^)
     else:
         # Allocate a device-local scratch for the matmul accumulator; the
         # epilogue lambda reads from it and scatters Q/K/V to the real
@@ -2657,7 +2657,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     var n_blocks = kv_collection.blocks.num_elements()
     var blocks_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=n_blocks)
-    ).into_deletable()
+    ).into_managed()
     var blocks_ptr: UnsafePointer[
         Scalar[dtype], origin_of(blocks_alloc)
     ] = blocks_alloc.unsafe_ptr()
@@ -2670,7 +2670,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
     var cache_lengths_alloc = alloc(
         AllocLayout[UInt32](count=n_cache_lengths)
-    ).into_deletable()
+    ).into_managed()
     var cache_lengths_ptr: UnsafePointer[
         UInt32, origin_of(cache_lengths_alloc)
     ] = cache_lengths_alloc.unsafe_ptr()
@@ -2689,7 +2689,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     var n_lookup_table = kv_collection.lookup_table.num_elements()
     var lookup_table_alloc = alloc(
         AllocLayout[UInt32](count=n_lookup_table)
-    ).into_deletable()
+    ).into_managed()
     var lookup_table_ptr: UnsafePointer[
         UInt32, origin_of(lookup_table_alloc)
     ] = lookup_table_alloc.unsafe_ptr()
@@ -2717,7 +2717,7 @@ def print_kv_cache_cont_batch_generic_gpu[
 
     var valid_lengths_host_alloc = alloc(
         AllocLayout[UInt32](count=valid_lengths.size())
-    ).into_deletable()
+    ).into_managed()
     var valid_lengths_host_ptr: UnsafePointer[
         UInt32, origin_of(valid_lengths_host_alloc)
     ] = valid_lengths_host_alloc.unsafe_ptr()
@@ -2757,10 +2757,10 @@ def print_kv_cache_cont_batch_generic_gpu[
         is_print_compact,
     )
 
-    dealloc(blocks_alloc^.into_allocation())
-    dealloc(cache_lengths_alloc^.into_allocation())
-    dealloc(lookup_table_alloc^.into_allocation())
-    dealloc(valid_lengths_host_alloc^.into_allocation())
+    dealloc(blocks_alloc^)
+    dealloc(cache_lengths_alloc^)
+    dealloc(lookup_table_alloc^)
+    dealloc(valid_lengths_host_alloc^)
 
 
 def print_kv_cache_paged_generic_gpu[
@@ -2787,7 +2787,7 @@ def print_kv_cache_paged_generic_gpu[
     var n_blocks = kv_collection.blocks.num_elements()
     var blocks_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=n_blocks)
-    ).into_deletable()
+    ).into_managed()
     var blocks_ptr: UnsafePointer[
         Scalar[dtype], origin_of(blocks_alloc)
     ] = blocks_alloc.unsafe_ptr()
@@ -2800,7 +2800,7 @@ def print_kv_cache_paged_generic_gpu[
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
     var cache_lengths_alloc = alloc(
         AllocLayout[UInt32](count=n_cache_lengths)
-    ).into_deletable()
+    ).into_managed()
     var cache_lengths_ptr: UnsafePointer[
         UInt32, origin_of(cache_lengths_alloc)
     ] = cache_lengths_alloc.unsafe_ptr()
@@ -2819,7 +2819,7 @@ def print_kv_cache_paged_generic_gpu[
     var n_lookup_table = kv_collection.lookup_table.num_elements()
     var lookup_table_alloc = alloc(
         AllocLayout[UInt32](count=n_lookup_table)
-    ).into_deletable()
+    ).into_managed()
     var lookup_table_ptr: UnsafePointer[
         UInt32, origin_of(lookup_table_alloc)
     ] = lookup_table_alloc.unsafe_ptr()
@@ -2857,7 +2857,7 @@ def print_kv_cache_paged_generic_gpu[
     )
     var valid_lengths_host_alloc = alloc(
         AllocLayout[UInt32](count=valid_lengths.size())
-    ).into_deletable()
+    ).into_managed()
     var valid_lengths_host_ptr: UnsafePointer[
         UInt32, origin_of(valid_lengths_host_alloc)
     ] = valid_lengths_host_alloc.unsafe_ptr()
@@ -2897,10 +2897,10 @@ def print_kv_cache_paged_generic_gpu[
         is_print_compact,
     )
 
-    dealloc(blocks_alloc^.into_allocation())
-    dealloc(cache_lengths_alloc^.into_allocation())
-    dealloc(lookup_table_alloc^.into_allocation())
-    dealloc(valid_lengths_host_alloc^.into_allocation())
+    dealloc(blocks_alloc^)
+    dealloc(cache_lengths_alloc^)
+    dealloc(lookup_table_alloc^)
+    dealloc(valid_lengths_host_alloc^)
 
 
 # ===-----------------------------------------------------------------------===#
