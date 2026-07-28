@@ -487,6 +487,24 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Bencher.iter()` now accepts a raising closure as a runtime argument, so a
+  benchmark whose body raises can pass a closure with an explicit capture list
+  instead of an `@parameter` closure. Prefer the unified closure form over the
+  deprecated `@parameter` one.
+
+  ```mojo
+  def bench_add(mut b: Bencher) raises:
+      var a = PythonObject(42)
+      var c = PythonObject(10)
+
+      @always_inline
+      def call_fn() raises {var a, var c}:
+          var r = a + c
+          keep(r)
+
+      b.iter(call_fn)
+  ```
+
 - `PythonObject` arithmetic, comparison, and membership operators now dispatch
   through CPython's abstract number, object, and sequence protocols (for
   example `PyNumber_Add`, `PyObject_RichCompare`, and `PySequence_Contains`)

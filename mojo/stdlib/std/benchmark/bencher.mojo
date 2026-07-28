@@ -1439,6 +1439,11 @@ struct Bencher(RegisterPassable):
 
         self.iter(unified_closure)
 
+    # TODO(MOCO-4470): Collapse this overload and the raising one below into a
+    # single `iter[E: AnyType, //, IterFn: def() raises E](f: IterFn) raises E`
+    # once a non-raising argument can bind `E` to the empty error type. Today
+    # `raises E` is unconditionally raising, so the merged form would force
+    # every non-raising caller to handle an error.
     def iter[IterFn: def()](mut self, f: IterFn):
         """Returns the total elapsed time by running a target closure a
         particular number of times.
@@ -1448,6 +1453,26 @@ struct Bencher(RegisterPassable):
 
         Args:
             f: The closure to benchmark.
+        """
+
+        var start = std.time.perf_counter_ns()
+        for _ in range(self.num_iters):
+            f()
+        var stop = std.time.perf_counter_ns()
+        self.elapsed = Int(stop - start)
+
+    def iter[IterFn: def() raises](mut self, f: IterFn) raises:
+        """Returns the total elapsed time by running a raising target closure a
+        particular number of times.
+
+        Parameters:
+            IterFn: Type of the closure to benchmark.
+
+        Args:
+            f: The closure to benchmark.
+
+        Raises:
+            If the closure raises.
         """
 
         var start = std.time.perf_counter_ns()
@@ -1538,8 +1563,8 @@ struct Bencher(RegisterPassable):
             If the operation fails.
         """
 
-        var start = std.time.perf_counter_ns()
-        for _ in range(self.num_iters):
+        @always_inline
+        def unified_closure() raises {}:
             iter_fn()
-        var stop = std.time.perf_counter_ns()
-        self.elapsed = Int(stop - start)
+
+        self.iter(unified_closure)

@@ -27,6 +27,7 @@ from std.testing import (
     TestSuite,
     assert_equal,
     assert_not_equal,
+    assert_raises,
     assert_true,
     assert_false,
 )
@@ -227,6 +228,46 @@ def test_bencher_iter_unified() raises:
 
     bencher.iter(increment)
     assert_equal(count, 3)
+
+
+def test_bencher_iter_unified_raising() raises:
+    """Tests Bencher.iter with a raising unified closure."""
+    var bencher = Bencher(3)
+
+    var count = 0
+    var data = [1, 2, 3]
+
+    @always_inline
+    def increment() raises {
+        mut count,
+        var data^,
+    }:
+        count += len(data)
+
+    # `data` is owned by the closure, so it stays alive for the whole measured
+    # loop; an implicit by-reference capture would not keep it alive.
+    bencher.iter(increment)
+    assert_equal(count, 9)
+
+
+def test_bencher_iter_unified_raising_propagates() raises:
+    """Tests Bencher.iter propagating an error out of a unified closure."""
+    var bencher = Bencher(3)
+
+    var count = 0
+
+    @always_inline
+    def fail_on_second() raises {
+        mut count,
+    }:
+        count += 1
+        if count == 2:
+            raise Error("boom")
+
+    with assert_raises(contains="boom"):
+        bencher.iter(fail_on_second)
+
+    assert_equal(count, 2)
 
 
 def test_bencher_iter_preproc_unified() raises:
