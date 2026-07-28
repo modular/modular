@@ -131,11 +131,13 @@ def repack_Q4_0_for_sm8x[
     )
 
     # We keep 128x2 Q4_0 GGUF blocks in smem
-    var smem = external_memory[
-        UInt8,
-        address_space=AddressSpace.SHARED,
-        alignment=align_of[UInt8](),
-    ]()
+    var smem = UnsafePointer(
+        external_memory[
+            UInt8,
+            address_space=AddressSpace.SHARED,
+            alignment=align_of[UInt8](),
+        ]()
+    )
     var qb_smem = LayoutTensor[
         DType.uint8,
         Layout.row_major(BN, 2 * group_bytes),

@@ -127,9 +127,11 @@ def tma_reduction_kernel[
     d_data: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
 ):
-    var shmem = external_memory[
-        Scalar[dtype], address_space=AddressSpace.SHARED, alignment=128
-    ]()
+    var shmem = UnsafePointer(
+        external_memory[
+            Scalar[dtype], address_space=AddressSpace.SHARED, alignment=128
+        ]()
+    )
     # Calculate elements offset for this block (row).
     var block_offset = block_idx.x
 

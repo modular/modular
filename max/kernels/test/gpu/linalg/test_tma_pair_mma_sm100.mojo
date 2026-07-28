@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.memory import UnsafePointer
 from std.math import align_up
 from std.math.uutils import ufloordiv, umod
 from std.sys import size_of
@@ -111,9 +112,9 @@ def tma_umma_kernel_pair_cta[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    var smem = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var smem = UnsafePointer(
+        external_memory[UInt8, address_space=AddressSpace.SHARED, alignment=8]()
+    )
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[a_type]()
     comptime b_smem_bytes = b_smem_layout.size() * size_of[b_type]()

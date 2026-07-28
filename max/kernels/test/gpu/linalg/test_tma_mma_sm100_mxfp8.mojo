@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.memory import UnsafePointer
 from std.sys import size_of, argv
 from std.gpu import (
     WARP_SIZE,
@@ -138,9 +139,9 @@ def block_scaled_mxfp8_kernel[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    var smem = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var smem = UnsafePointer(
+        external_memory[UInt8, address_space=AddressSpace.SHARED, alignment=8]()
+    )
     var a_smem = smem.bitcast[Scalar[a_type]]()
 
     comptime a_smem_tile_t = LayoutTensor[

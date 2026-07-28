@@ -35,11 +35,13 @@ def shared_memory_kernel(
     var block_size = block_dim.x
 
     # Get a pointer to shared memory for the indices and values
-    var shared_data = external_memory[
-        Float32,
-        address_space=AddressSpace.SHARED,
-        alignment=align_of[Float32](),
-    ]()
+    var shared_data = UnsafePointer(
+        external_memory[
+            Float32,
+            address_space=AddressSpace.SHARED,
+            alignment=align_of[Float32](),
+        ]()
+    )
 
     # Load data into shared memory
     if tid < len:

@@ -253,9 +253,11 @@ def ss_qk_partial_kernel[
     """
 
     # ---- Dynamic SMEM ----
-    var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
-    ]()
+    var smem_base = UnsafePointer(
+        external_memory[
+            UInt8, address_space=AddressSpace.SHARED, alignment=128
+        ]()
+    )
     var a_smem_ptr = (smem_base + QK_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + QK_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
 
@@ -469,9 +471,11 @@ def ss_qk_multistage_kernel[
     `k == 0 or jj == 1` scale-predicate branch and the absolute-offset path
     with k_start>0.
     """
-    var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
-    ]()
+    var smem_base = UnsafePointer(
+        external_memory[
+            UInt8, address_space=AddressSpace.SHARED, alignment=128
+        ]()
+    )
     var a_smem_ptr = (smem_base + QK_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + QK_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
 
@@ -1318,9 +1322,11 @@ def ss_nonws_partial_kernel[
     """
 
     # ---- Dynamic SMEM ----
-    var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
-    ]()
+    var smem_base = UnsafePointer(
+        external_memory[
+            UInt8, address_space=AddressSpace.SHARED, alignment=128
+        ]()
+    )
     var a_smem_ptr = (smem_base + NW_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + NW_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
 
@@ -1923,9 +1929,11 @@ def ts_partial_kernel[
     (16 strips) + fold B descriptor (BK=256) are identical to
     `dense_mma_ws_ts_kernel`; only the MMA call differs.
     """
-    var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
-    ]()
+    var smem_base = UnsafePointer(
+        external_memory[
+            UInt8, address_space=AddressSpace.SHARED, alignment=128
+        ]()
+    )
 
     var q_smem_ptr = smem_base.bitcast[Scalar[TS_OP_TYPE]]()
     var q_smem_tile = LayoutTensor[

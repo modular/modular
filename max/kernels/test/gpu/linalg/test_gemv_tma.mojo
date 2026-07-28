@@ -93,12 +93,14 @@ def gemv_tma_kernel[
             UntrackedOrigin[mut=True],
         ]
     ](
-        external_memory[
-            Scalar[dtype],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-            name="tmem_A_dynamic_shared_memory",
-        ]()
+        UnsafePointer(
+            external_memory[
+                Scalar[dtype],
+                address_space=AddressSpace.SHARED,
+                alignment=128,
+                name="tmem_A_dynamic_shared_memory",
+            ]()
+        )
     )
 
     comptime a_size = a_smem_layout.size()

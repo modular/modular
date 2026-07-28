@@ -66,6 +66,7 @@ T>=2 each WG streams >= 1 real key). Cases (each x depth in {64, 128}):
                      equal-per-WG-max cases would mask)
 """
 
+from std.memory import UnsafePointer
 from std.math import exp2, recip, isnan
 from std.random import randn, seed
 from std.sys import size_of
@@ -166,9 +167,11 @@ def combine_kernel[
 
     # ---- Dynamic SMEM carve ----
     # [stage0 | stage1 | maxsum0 | maxsum1 | l2_stage | l2_maxsum | o_smem | meta]
-    var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
-    ]()
+    var smem_base = UnsafePointer(
+        external_memory[
+            UInt8, address_space=AddressSpace.SHARED, alignment=128
+        ]()
+    )
     var f32_base = smem_base.bitcast[Scalar[ACC_TYPE]]()
     var stage0 = f32_base
     var stage1 = stage0 + STAGE

@@ -226,9 +226,11 @@ def dense_mma_ws_ts_kernel[
     """
 
     # ---- Dynamic shared memory base pointer ----
-    var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
-    ]()
+    var smem_base = UnsafePointer(
+        external_memory[
+            UInt8, address_space=AddressSpace.SHARED, alignment=128
+        ]()
+    )
 
     # ---- Q SMEM region ----
     var q_smem_ptr = smem_base.bitcast[Scalar[OP_TYPE]]()
@@ -505,9 +507,11 @@ def sparse_mma_ws_ts_kernel[
     comptime p_cols = mma_n
 
     # ---- Dynamic shared memory base pointer ----
-    var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
-    ]()
+    var smem_base = UnsafePointer(
+        external_memory[
+            UInt8, address_space=AddressSpace.SHARED, alignment=128
+        ]()
+    )
 
     # ---- Q SMEM region ----
     var q_smem_ptr = smem_base.bitcast[Scalar[op_type]]()
