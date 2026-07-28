@@ -1596,7 +1596,11 @@ class OverlapTextGenerationPipeline(
         )
         self.vocab_size = self._structured_output.vocab_size
 
-        session = InferenceSession(devices=[*self._devices])
+        session = InferenceSession(
+            devices=[*self._devices],
+            precompiled_mefs=pipeline_config.runtime.precompiled_mefs,
+            export_mefs=pipeline_config.runtime.export_mefs,
+        )
         self.session = session
 
         # Configure session with pipeline settings.

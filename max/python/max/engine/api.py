@@ -74,6 +74,8 @@ from max.graph import Graph, Module
 from max.profiler import traced
 from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
 
+from ._precompiled_mefs import MefStore
+
 # Manually define dlpack compatible types since MyPy isn't aware that ndarray
 
 # implements the protocol
@@ -723,6 +725,15 @@ class InferenceSession:
         custom_extensions: The extensions to load for the model. Supports
             paths to a ``.mojoc``/``.mojopkg`` custom ops library or a
             ``.mojo`` source file.
+        precompiled_mefs: A directory of compiled-graph artifacts written by an
+            earlier session's ``export_mefs``. Every graph this session loads is
+            initialized from its artifact instead of being compiled, which lets
+            the compiling and the executing run happen on different machines.
+            Raises if a graph does not match the artifact recorded for it.
+        export_mefs: A directory to write a compiled-graph artifact into for
+            every graph this session loads, alongside a manifest describing
+            them. Pass the same directory as another session's
+            ``precompiled_mefs`` to reuse them. Mutually exclusive with it.
     """
 
     _impl: _InferenceSession
@@ -743,7 +754,22 @@ class InferenceSession:
         num_threads: int | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
+        precompiled_mefs: str | Path | None = None,
+        export_mefs: str | Path | None = None,
     ) -> None:
+        if precompiled_mefs is not None and export_mefs is not None:
+            raise ValueError(
+                "pass at most one of precompiled_mefs and export_mefs: a "
+                "session either reuses artifacts or produces them"
+            )
+        # Taken at construction rather than settable later because the store
+        # tracks its position through the graphs this session loads.
+        self._mef_store: MefStore | None = None
+        if precompiled_mefs is not None:
+            self._mef_store = MefStore.for_import(precompiled_mefs)
+        elif export_mefs is not None:
+            self._mef_store = MefStore.for_export(export_mefs)
+
         self.num_threads = num_threads
 
         # Process the provided iterable `devices`.
@@ -934,6 +960,23 @@ class InferenceSession:
         Raises:
             RuntimeError: If the path provided is invalid.
         """
+        # Reuse or produce artifacts when the session was constructed to, so a
+        # caller need not hold an accelerator to compile. See
+        # `_precompiled_mefs`.
+        store = self._mef_store
+        if store is not None and isinstance(model, Graph):
+            if store.exporting:
+                compiled = self.compile(
+                    model,
+                    custom_extensions=custom_extensions,
+                    tile_based_fusion=tile_based_fusion,
+                )
+                compiled.export_mef(store.claim_export(model))
+                store.write_manifest()
+            else:
+                compiled = self.compile(store.claim_import(model))
+            return self.init_all(compiled, weights_registry=weights_registry)
+
         compiled = self.compile(
             model,
             custom_extensions=custom_extensions,
