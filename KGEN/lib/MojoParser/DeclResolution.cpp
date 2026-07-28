@@ -1730,18 +1730,31 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
 
   // Build the synthetic anonymous `def` the lambda desugars to.
   SMLoc loc = node->getLoc();
-  if (!emitter.builder) {
-    // A builderless emitter is a compile-time/parameter context; lambdas are
-    // not yet supported there.
-    emitter.emitError(node->getLoc(),
-                      "a `lambda` expression is not yet supported as a "
-                      "compile-time value (for example, a `comptime` or "
-                      "`alias` initializer)");
-    return {};
-  }
-  OpBuilder &builder = *emitter.builder;
-  MLIRContext *ctx = builder.getContext();
   ASTDecl &parentScope = emitter.declScope;
+
+  // A null `emitter.builder` is exactly a parameter context.
+  bool insideParamContext = !emitter.builder;
+  OpBuilder paramBuilder(shared.getContext());
+  if (insideParamContext) {
+    // A compile-time lambda value cannot capture runtime vars.
+    // (Implicit captures are dealt with after body analysis.)
+    if (!node->captures.empty() || node->captureAllByConvention) {
+      emitter.emitErrorForDynamicValueInParameter(
+          node, "cannot use a capturing lambda");
+      return {};
+    }
+    // Anchor the synthetic def at the nearest enclosing decl op (a `def`,
+    // struct, alias, ...) -- the param-list scope isn't an op, so walk up.
+    ASTDecl *anchor = parentScope.getNearestDeclOfType<ASTDeclInterface>();
+    if (!anchor) {
+      emitter.emitErrorForDynamicValueInParameter(
+          node, "cannot use a lambda expression");
+      return {};
+    }
+    paramBuilder.setInsertionPoint(anchor->getIfOperation());
+  }
+  OpBuilder &builder = insideParamContext ? paramBuilder : *emitter.builder;
+  MLIRContext *ctx = builder.getContext();
   Location mlirLoc = shared.translateLocation(loc);
 
   // 1. Provisional FnOp with a placeholder `() -> Error` signature, so
@@ -1883,6 +1896,31 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
 
   // 7. Collect captures over the resolved body and materialize the closure.
   BodyCaptures bodyCaptures = collectBodyCaptures(shared, decl, funcOp);
+
+  if (insideParamContext) {
+    // A captured runtime variable makes the lambda dynamic, so reject it.
+    if (!bodyCaptures.values.empty()) {
+      // Same diagnostic as the explicit-capture reject above.
+      emitter.emitErrorForDynamicValueInParameter(
+          node, "cannot use a capturing lambda");
+      return {};
+    }
+    resolveAllWithin(decl);
+    shared.closureEmitter->promoteClosure(decl, bodyCaptures.paramRefs);
+    // Two folds, keyed on whether enclosing parameters were baked in. With
+    // parameters (comptime _values_, not runtime captures -- e.g.
+    // `comptime add[N: Int] = lambda (x: Int) {} -> Int: x + N`),
+    // `promoteClosure` leaves a bound func-literal generator as the decl's IR
+    // value; fold to it.
+    if (CValue boundLiteral = decl.getIfIRValue())
+      return emitter.emitResult(AnyValue(boundLiteral), node, dest);
+    // With no parameters baked in, no such value is left, so build the promoted
+    // function's own func-literal here -- the value a `def` reference yields.
+    PValue literal(
+        funcOp.getFuncLiteralGenerator(shared.getEvaluationContext()));
+    return emitter.emitResult(AnyValue(literal), node, dest);
+  }
+
   MLValue instance = emitClosureInstance(bodyCaptures.values, decl, shared,
                                          bodyCaptures.paramRefs);
   if (!instance)

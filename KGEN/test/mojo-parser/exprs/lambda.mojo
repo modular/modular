@@ -207,3 +207,21 @@ def withVariadics():
 def withEverything():
     var z = 3
     var f = lambda [N: Int](var x: Int) raises {mut} -> Int: x + N + z
+
+
+# // -----
+
+# COM: A thin lambda bound to a `comptime` promotes to a free function (no
+# COM: storage struct), and the alias folds to that function's literal -- as
+# COM: `comptime f = some_def` does. Check the promoted fn's definition and the
+# COM: alias's reference to it (`{{.*}}` absorbs the promotion mangling suffix).
+
+# CHECK-DAG: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}}-> !{{.*}}Int{{[0-9]*}}
+# CHECK-DAG: lit.alias.decl {{.*}}func.literal{{.*}}func.symbol<@{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}>
+
+
+comptime inc = lambda (x: Int) {} -> Int: x + 1
+
+
+def withComptimeBound() -> Int:
+    return inc(1)
