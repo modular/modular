@@ -50,18 +50,13 @@ comptime TEST_TABLE = Table(
 
 
 def dispatch[static_n: Int, static_k: Int](m: Int) raises -> Int:
-    @always_inline
-    def rule_eq_nk(config: TestConfig) {} -> Bool:
-        return config.n == static_n and config.k == static_k
-
-    comptime nk_indices = TEST_TABLE.query_index(rule=rule_eq_nk)
-
-    @always_inline
-    def get_m(config: TestConfig) {} -> Int:
-        return config.m
+    comptime nk_indices = TEST_TABLE.query_index(
+        rule=lambda (config: TestConfig) -> Bool: config.n == static_n
+        and config.k == static_k
+    )
 
     comptime m_values = TEST_TABLE.query_values[Int, domain=nk_indices](
-        rule=get_m
+        rule=lambda (config: TestConfig) -> Int: config.m
     )
     comptime assert len(m_values) == 3
     comptime assert m_values[0] == 1
@@ -69,14 +64,9 @@ def dispatch[static_n: Int, static_k: Int](m: Int) raises -> Int:
     comptime assert m_values[2] == 16
 
     comptime for static_m in m_values:
-
-        @always_inline
-        def rule_eq_m(config: TestConfig) {} -> Bool:
-            return config.m == static_m
-
         if m <= static_m:
             comptime indices = TEST_TABLE.query_index[domain=nk_indices](
-                rule=rule_eq_m
+                rule=lambda (config: TestConfig) -> Bool: config.m == static_m
             )
             comptime assert len(indices) == 1
             comptime entry = TEST_TABLE.configs[indices[0]]
@@ -91,9 +81,7 @@ def main() raises:
     assert dispatch[128, 256](3) == 64
     assert dispatch[128, 256](17) == -1
 
-    @always_inline
-    def rule_tile_128(config: TestConfig) {} -> Bool:
-        return config.tile == 128
-
-    comptime matching = TEST_TABLE.find(rule=rule_tile_128)
+    comptime matching = TEST_TABLE.find(
+        rule=lambda (config: TestConfig) -> Bool: config.tile == 128
+    )
     comptime assert len(matching) == 1

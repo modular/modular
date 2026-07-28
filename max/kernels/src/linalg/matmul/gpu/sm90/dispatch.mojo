@@ -663,20 +663,15 @@ def matmul_dispatch_sm90_fp8[
     def _search[
         T: Table[TuningConfigSM90], domain: List[Int] = List[Int]()
     ]() raises -> Int:
-        @always_inline
-        def get_m(x: TuningConfigSM90) {} -> Int:
-            return x.M
-
-        comptime m_values = T.query_values[Int, domain=domain](rule=get_m)
+        comptime m_values = T.query_values[Int, domain=domain](
+            rule=lambda (x: TuningConfigSM90) -> Int: x.M
+        )
 
         comptime for static_m in m_values:
-
-            @always_inline
-            def rule_eq_m(x: TuningConfigSM90) {} -> Bool:
-                return x.M == static_m
-
             if m <= static_m:
-                comptime idx_list = T.query_index[domain=domain](rule=rule_eq_m)
+                comptime idx_list = T.query_index[domain=domain](
+                    rule=lambda (x: TuningConfigSM90) -> Bool: x.M == static_m
+                )
 
                 comptime if idx_list:
                     comptime entry = T.configs[idx_list[0]]
@@ -695,13 +690,11 @@ def matmul_dispatch_sm90_fp8[
         or (static_N == 13312 and static_K == 16384)
         or (static_N == 16384 and static_K == 6656)
     ):
-
-        @always_inline
-        def rule_eq_nk(x: TuningConfigSM90) {} -> Bool:
-            return x.K == static_K and x.N == static_N
-
         # First, filter by static params N and K
-        comptime nk_idx_list = llama_405b_fp8_table.query_index(rule=rule_eq_nk)
+        comptime nk_idx_list = llama_405b_fp8_table.query_index(
+            rule=lambda (x: TuningConfigSM90) -> Bool: x.K == static_K
+            and x.N == static_N
+        )
         # Search the table for matching values of M within domain
         if _search[llama_405b_fp8_table, domain=nk_idx_list]() == DISPATCH_HIT:
             return DISPATCH_HIT
@@ -1035,20 +1028,15 @@ def matmul_dispatch_sm90_bf16_fp32[
         T: Table[TuningConfigSM90],
         domain: List[Int] = List[Int](),
     ]() raises -> Int:
-        @always_inline
-        def get_m(x: TuningConfigSM90) {} -> Int:
-            return x.M
-
-        comptime m_values = T.query_values[Int, domain=domain](rule=get_m)
+        comptime m_values = T.query_values[Int, domain=domain](
+            rule=lambda (x: TuningConfigSM90) -> Int: x.M
+        )
 
         comptime for static_m in m_values:
-
-            @always_inline
-            def rule_eq_m(x: TuningConfigSM90) {} -> Bool:
-                return x.M == static_m
-
             if m <= static_m:
-                comptime idx_list = T.query_index[domain=domain](rule=rule_eq_m)
+                comptime idx_list = T.query_index[domain=domain](
+                    rule=lambda (x: TuningConfigSM90) -> Bool: x.M == static_m
+                )
 
                 comptime if idx_list:
                     comptime entry = T.configs[idx_list[0]]

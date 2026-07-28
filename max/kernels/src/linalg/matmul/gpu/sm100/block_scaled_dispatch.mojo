@@ -183,11 +183,10 @@ def heuristic_and_outliers_dispatch[
         _get_tuning_list_sm100_mxfp8(), "mxfp8_heuristic_outliers"
     )
 
-    @always_inline
-    def rule(x: TuningConfigSM100) {} -> Bool:
-        return x.K == static_K and x.N == static_N
-
-    comptime outlier_configs = outliers.find(rule=rule)
+    comptime outlier_configs = outliers.find(
+        rule=lambda (x: TuningConfigSM100) -> Bool: x.K == static_K
+        and x.N == static_N
+    )
 
     comptime for tuning_config in outlier_configs:
         if m >= tuning_config.M and m < tuning_config.M_end:
