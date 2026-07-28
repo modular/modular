@@ -495,6 +495,7 @@ This version is still a work in progress.
   var x = 42
   var p = Pointer(to=x)
   var addr = UInt(p)  # previously required `UInt(Int(p))`
+  ```
 
 - `Bencher.iter()` now accepts a raising closure as a runtime argument, so a
   benchmark whose body raises can pass a closure with an explicit capture list
@@ -513,6 +514,21 @@ This version is still a work in progress.
 
       b.iter(call_fn)
   ```
+
+- `Error` is now `ImplicitlyCopyable`, so re-raising a caught error no longer
+  requires the transfer sigil:
+
+  ```mojo
+  try:
+      might_fail()
+  except e:
+      print("logging error:", e)
+      raise e  # previously an error: use `raise e^`
+  ```
+
+  A captured `StackTrace` is now reference counted, so copying an `Error` costs
+  a reference count increment rather than duplicating the trace. `raise e^`
+  still works and avoids the copy.
 
 - `PythonObject` arithmetic, comparison, and membership operators now dispatch
   through CPython's abstract number, object, and sequence protocols (for

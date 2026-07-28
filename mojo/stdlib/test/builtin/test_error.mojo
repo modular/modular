@@ -35,6 +35,26 @@ def test_from_and_to_string() raises:
     assert_equal(repr(Error("err")), "Error('err')")
 
 
+def test_error_reraise() raises:
+    # `Error` is implicitly copyable, so re-raising doesn't need `raise e^`.
+    try:
+        try:
+            raise_an_error()
+        except e:
+            raise e
+    except e:
+        assert_equal(String(e), "MojoError: This is an error!")
+
+
+def test_error_implicit_copy() raises:
+    def consume(var error: Error) -> String:
+        return String(error)
+
+    var error = Error("copy me")
+    assert_equal(consume(error), "copy me")
+    assert_equal(String(error), "copy me")
+
+
 def test_error_write_to() raises:
     check_write_to(Error("err"), expected="err", is_repr=False)
     check_write_to(Error("err"), expected="Error('err')", is_repr=True)

@@ -33,7 +33,7 @@ def main():
             except e:
                 if "invalid" in String(e):
                     print("except  => fatal:", e)
-                    raise e^
+                    raise e
                 print("except  => handled:", e)
             else:
                 print("else    => success:", result)
