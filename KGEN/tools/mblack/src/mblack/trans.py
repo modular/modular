@@ -34,7 +34,6 @@ from mblib2to3.pgen2 import token
 from mblib2to3.pytree import Leaf, Node
 from mypy_extensions import trait
 
-from mblack.brackets import BracketMatchError
 from mblack.comments import contains_pragma_comment
 from mblack.lines import Line, append_leaves
 from mblack.mode import Feature
@@ -863,15 +862,7 @@ class StringParenStripper(StringTransformer):
 
         new_line = line.clone()
         new_line.comments = line.comments.copy()
-        try:
-            append_leaves(new_line, line, LL[: string_idx - 1])
-        except BracketMatchError:
-            # HACK: I believe there is currently a bug somewhere in
-            # right_hand_split() that is causing brackets to not be tracked
-            # properly by a shared BracketTracker.
-            append_leaves(
-                new_line, line, LL[: string_idx - 1], preformatted=True
-            )
+        append_leaves(new_line, line, LL[: string_idx - 1])
 
         string_leaf = Leaf(token.STRING, LL[string_idx].value)
         LL[string_idx - 1].remove()
@@ -1124,6 +1115,14 @@ class BaseStringSplitter(StringTransformer):
         if LL[0].type != token.STRING:
             return None
 
+        # A `where (cond, "msg")` clause's message must remain a bare string
+        # literal at parse time. Wrapping it in an extra atom (`("msg")`)
+        # invalidates the source. See KGEN/lib/MojoParser/Signatures.cpp
+        # around the "message in a 'where' clause must be a string literal"
+        # diagnostic and KGEN/test/mojo-parser/decls/where_message_parse_errors.mojo.
+        if _is_where_clause_tuple_element(LL[0]):
+            return None
+
         # If the string is surrounded by commas (or is the first/last child)...
         prev_sibling = LL[0].prev_sibling
         next_sibling = LL[0].next_sibling
@@ -1143,6 +1142,26 @@ class BaseStringSplitter(StringTransformer):
             return 0
 
         return None
+
+
+def _is_where_clause_tuple_element(leaf: Leaf) -> bool:
+    """Return True if `leaf` sits inside a `where (cond, "msg")` clause's tuple.
+
+    The parser requires the message argument to be a bare `StringLiteralNode`,
+    so `StringParenWrapper` must not wrap it in an extra atom. Detect the shape
+    ``where_clause -> atom -> testlist_gexp -> STRING`` conservatively --
+    we skip wrapping for any string that lives directly inside a where-clause
+    tuple, not just position 1, since adjacent-literal concatenation (which
+    the parser also accepts) is the fallback authors already use.
+    """
+    parent = leaf.parent
+    if parent is None or parent.type != syms.testlist_gexp:
+        return False
+    atom = parent.parent
+    if atom is None or atom.type != syms.atom:
+        return False
+    where = atom.parent
+    return where is not None and where.type == syms.where_clause
 
 
 def iter_fexpr_spans(s: str) -> Iterator[tuple[int, int]]:
