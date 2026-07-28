@@ -16,10 +16,12 @@ modular_py_test(
         ],
     ),
     deps = [
+        "//max/python/max:_core",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/kv_cache",
+        requirement("msgspec"),
     ],
 )
 
