@@ -4885,9 +4885,9 @@ comptime _DeviceGraphPtr[
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
 ] = _CPointer[_DeviceGraphCpp, origin]
 
-comptime _CString[
-    origin: Origin[mut=False] = UntrackedOrigin[mut=False]
-] = Optional[CStringSlice[origin]]
+comptime _CString[origin: ImmOrigin = ImmUntrackedOrigin] = Optional[
+    CStringSlice[origin]
+]
 
 comptime _DumpPath = Variant[Bool, Path, StaticString, def() capturing -> Path]
 

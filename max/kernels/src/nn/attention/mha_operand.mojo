@@ -1013,8 +1013,8 @@ def _null_scale_tile_tensor[
 
 
 struct LayoutTensorMHAOperand[
-    origin: Origin[mut=False],
-    scale_origin: Origin[mut=False],
+    origin: ImmOrigin,
+    scale_origin: ImmOrigin,
     //,
     dtype_: DType,
     buffer_layout: TensorLayout,
@@ -1395,8 +1395,8 @@ struct LayoutTensorMHAOperand[
 
 
 struct RaggedMHAOperand[
-    origin: Origin[mut=False],
-    cache_origin: Origin[mut=False],
+    origin: ImmOrigin,
+    cache_origin: ImmOrigin,
     //,
     dtype_: DType,
     layout: TensorLayout,

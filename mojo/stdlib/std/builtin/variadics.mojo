@@ -1241,7 +1241,7 @@ struct VariadicList[
 
     comptime _EltPointerType = Pointer[Self.element_type, Self.origin]
     # FIXME: This should be the origin of the container, not UntrackedOrigin.
-    var _value: Span[Self._EltPointerType, UntrackedOrigin[mut=False]]
+    var _value: Span[Self._EltPointerType, ImmUntrackedOrigin]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -1273,8 +1273,8 @@ struct VariadicList[
         # the first element.
         var array_up = Pointer(
             to=Pointer(_mlir_value=value)[]
-        ).unsafe_origin_cast[UntrackedOrigin[mut=False]]()
-        var elt_ptr = Pointer[_, UntrackedOrigin[mut=False]](
+        ).unsafe_origin_cast[ImmUntrackedOrigin]()
+        var elt_ptr = Pointer[_, ImmUntrackedOrigin](
             _mlir_value=__mlir_op.`pop.array.gep`(
                 array_up._get_kgen_pointer(),
                 Int(0).__mlir_index__(),

@@ -1636,7 +1636,7 @@ struct SlidingWindowNonCausalMask[window_size: Int](
 # ===-----------------------------------------------------------------------===#
 
 
-struct CausalPaddingMask[layout_: Layout, origin_: Origin[mut=False]](
+struct CausalPaddingMask[layout_: Layout, origin_: ImmOrigin](
     MHAMask, TrivialRegisterPassable
 ):
     """Causal mask combined with padding: a position (seq_id, head, q, k) is
@@ -1917,9 +1917,9 @@ def naively_get_first_nonempty_mask_col[
     return kv_row
 
 
-struct MaterializedMask[
-    dtype_: DType, layout_: Layout, origin_: Origin[mut=False]
-](MHAMask, TrivialRegisterPassable):
+struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
+    MHAMask, TrivialRegisterPassable
+):
     """Mask that's backed by a materialized tensor.
 
     Parameters:

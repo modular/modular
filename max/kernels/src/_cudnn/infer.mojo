@@ -1689,12 +1689,10 @@ struct cudnnSoftmaxAlgorithm_t(
 
 def cudnnGetErrorString(
     status: cudnnStatus_t,
-) raises -> UnsafePointer[Int8, UntrackedOrigin[mut=False]]:
+) raises -> UnsafePointer[Int8, ImmUntrackedOrigin]:
     return _get_dylib_function[
         "cudnnGetErrorString",
-        def(
-            type_of(status),
-        ) thin -> UnsafePointer[Int8, UntrackedOrigin[mut=False]],
+        def(type_of(status),) thin -> UnsafePointer[Int8, ImmUntrackedOrigin],
     ]()(status)
 
 

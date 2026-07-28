@@ -1405,7 +1405,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
 @doc_hidden
 struct _DeviceGraphBuilderEnqueuer[
     arena_origin: ImmOrigin,
-    builder_origin: Origin[mut=False],
+    builder_origin: ImmOrigin,
 ](_FunctionEnqueuer):
     """Transient `_FunctionEnqueuer` pairing a `DeviceGraphBuilder` borrow
     with the dependency list for a single node addition.

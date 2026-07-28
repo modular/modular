@@ -155,8 +155,8 @@ def posix_spawnp[
     return external_call["posix_spawnp", c_int](
         pid,
         file,
-        _CPointer[NoneType, UntrackedOrigin[mut=False]](),
-        _CPointer[NoneType, UntrackedOrigin[mut=False]](),
+        _CPointer[NoneType, ImmUntrackedOrigin](),
+        _CPointer[NoneType, ImmUntrackedOrigin](),
         argv,
         envp,
     )
@@ -180,7 +180,7 @@ def _get_environ() -> (
         # a pointer to the `environ` variable.
         return external_call[
             "_NSGetEnviron",
-            _CPointer[_EnvpType, UntrackedOrigin[mut=False]],
+            _CPointer[_EnvpType, ImmUntrackedOrigin],
         ]().value()[]
     elif CompilationTarget.is_linux():
         # On Linux, look up `environ` via dlsym(RTLD_DEFAULT, "environ").
