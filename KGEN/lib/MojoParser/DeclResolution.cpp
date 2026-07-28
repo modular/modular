@@ -1706,6 +1706,193 @@ static FnTypeGeneratorType finalizeResolvedFnOp(
   return signature;
 }
 
+/// Resolves a parsed `lambda` expression into the anonymous closure it
+/// desugars to. The capture list and return type are required (no elision):
+///
+/// lambda    ::=  "lambda" [param_signature] "(" [argument_list] ")"
+///                [effects] capture_list "->" expression ":" expression
+AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
+                                               IREmitter &emitter,
+                                               ExprDest &dest) {
+  if (!node->hasExplicitCaptureList) {
+    emitter.emitError(node->getLoc(),
+                      "lambda requires an explicit capture list (e.g. '{}' or "
+                      "'{imm}'); an elided capture list defaulting to "
+                      "'{imm}' is not supported yet");
+    return {};
+  }
+  if (!node->resultArg.typeExpr) {
+    emitter.emitError(node->getLoc(),
+                      "lambda requires an explicit '->' return type; "
+                      "return-type inference is not supported yet");
+    return {};
+  }
+
+  // Build the synthetic anonymous `def` the lambda desugars to.
+  SMLoc loc = node->getLoc();
+  if (!emitter.builder) {
+    // A builderless emitter is a compile-time/parameter context; lambdas are
+    // not yet supported there.
+    emitter.emitError(node->getLoc(),
+                      "a `lambda` expression is not yet supported as a "
+                      "compile-time value (for example, a `comptime` or "
+                      "`alias` initializer)");
+    return {};
+  }
+  OpBuilder &builder = *emitter.builder;
+  MLIRContext *ctx = builder.getContext();
+  ASTDecl &parentScope = emitter.declScope;
+  Location mlirLoc = shared.translateLocation(loc);
+
+  // 1. Provisional FnOp with a placeholder `() -> Error` signature, so
+  //    signature type-checking has an IR anchor.
+  auto errorType = builder.getType<TypeCheckErrorType>();
+  auto functionType = FunctionType::get(ctx, ArrayRef<Type>(), {errorType});
+  SmallVector<PogMetadataAttr> argPogs(
+      functionType.getNumInputs(),
+      PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
+  auto provisionalSig = GeneratorType::get(
+      {},
+      FuncType::get(functionType,
+                    FnMetadataAttr::get(ctx, 0, OriginSetAttr::get(ctx, {}),
+                                        false,
+                                        /*definesInteriorOrigins=*/false),
+                    PogListAttr::get(ctx, argPogs)),
+      PogListAttr::get(ctx));
+  StringAttr emptyStr = StringAttr::get(ctx, "");
+  StringAttr baseName = StringAttr::get(
+      ctx, ("`lambda_" + Twine(anonymousClosureCounter++)).str());
+  FnOp funcOp =
+      FnOp::create(builder, mlirLoc, emptyStr, emptyStr, provisionalSig);
+  funcOp->removeAttr("sym_name");
+  funcOp->setAttr("sym_namex", emptyStr);
+  funcOp.setSourceNameAttr(baseName);
+  {
+    auto endBuilder = OpBuilder::atBlockEnd(funcOp.getBody());
+    EndFnOp::create(endBuilder, funcOp.getLoc(), /*unresolved=*/true);
+  }
+
+  // 2. Decls: one for the closure, plus a signature scope. Neither is listed
+  //    in the enclosing scope's name table, and the synthetic base name begins
+  //    with a backtick. A lambda is anonymous: the unlisted decl means no name
+  //    in user source resolves to it, and the leading backtick (which no user
+  //    identifier can contain -- backtick-quoted identifiers strip their
+  //    backticks) means user source cannot even spell the symbol it emits, so
+  //    user code can neither reference the closure nor collide with it.
+  ASTDecl &decl = addFullyResolvedDecl(funcOp.getOperation(), StringAttr(), loc,
+                                       &parentScope);
+  ASTDecl &sigDecl = addFullyResolvedDecl(funcOp.getOperation(), StringAttr(),
+                                          loc, &parentScope);
+
+  // 3. Set up captures before type-checking: emit copies/casts for named
+  //    captures, and record the default-all convention so free variables in
+  //    the body are captured rather than seen as unknown declarations.
+  for (auto [name, capture, location] : node->captures) {
+    IREmitter capEmitter(*decl.getParentDecl(), OpBuilder(funcOp));
+    if (!ClosureEmitter::addCaptureValue(decl, location, name, capture,
+                                         capEmitter, &sigDecl))
+      return {};
+  }
+  if (node->captureAllByConvention)
+    shared.setDefaultCaptureForScope(decl, *node->captureAllByConvention);
+
+  // 4. Reconstitute and type-check the signature. This also adds the param/arg
+  //    decls and the FnOp's block arguments.
+  ParsedParamList parsedParamList;
+  parsedParamList.params = llvm::to_vector(node->parsedParams);
+  std::optional<TypeCheckedParamList> paramListOrError =
+      TypeCheckedParamList::create(parsedParamList, sigDecl);
+  if (!paramListOrError)
+    return {};
+  TypeCheckedParamList &paramList = *paramListOrError;
+
+  ParsedArgumentList argList;
+  argList.parsedArgs = llvm::to_vector(node->parsedArgs);
+  argList.resultArg = node->resultArg;
+  argList.effects = node->effects;
+  argList.thrownTypeExpr = const_cast<ExprNode *>(node->thrownTypeExpr);
+
+  TypeCheckedFnSignature tcSignature(paramList, argList, /*originExpr=*/nullptr,
+                                     &decl, baseName);
+
+  // Move the param/arg decls from the signature scope into the closure decl so
+  // the body resolves them as locals.
+  decl.takeDecls(sigDecl);
+
+  // 5. Build the generator signature and write the signature attributes onto
+  //    the FnOp (shared with resolveSignature via finalizeResolvedFnOp), then
+  //    register the symbol. The closure-param-capture constraints output is
+  //    unused here: the lambda materializes its instance directly via
+  //    emitClosureInstance.
+  SmallVector<ConstraintAttr> closureExternalRefConstraints;
+  FnTypeGeneratorType signature =
+      finalizeResolvedFnOp(shared, funcOp, decl, tcSignature, paramList,
+                           baseName, closureExternalRefConstraints);
+  if (!signature)
+    return {};
+  for (ParsedArgument &arg : tcSignature.argList.parsedArgs)
+    if (arg.isErroneous)
+      return {};
+  (void)finalizeFuncSignature(funcOp, decl);
+
+  shared.setLocationDebugScope(funcOp);
+  for (auto [parsedArg, bbArg] : llvm::zip(tcSignature.argList.parsedArgs,
+                                           funcOp.getBody()->getArguments()))
+    bbArg.setLoc(shared.diags.translateLocation(parsedArg.loc));
+
+  // 6. Synthesize the `return EXPR` body. Push the closure's debug scope so the
+  //    body's ops carry the closure subprogram (not the enclosing function's),
+  //    then pop before the closure instance is materialized in the enclosing
+  //    scope.
+  Block &body = *funcOp.getBody();
+  auto endFn = cast<EndFnOp>(body.front());
+  {
+    DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+    if (shared.diBuilder) {
+      diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
+      endFn->setLoc(shared.translateLocation(loc));
+    }
+    endFn.setUnresolved(false);
+
+    IREmitter bodyEmitter(decl, OpBuilder(&body.front()));
+    ASTType userResultType = funcOp.getUserResultType();
+    ExprDest resultDest(userResultType, EC_ReturnValue);
+    if (signature.hasMemoryOnlyResult())
+      resultDest =
+          ExprDest(MLValue(funcOp.getArguments().back()), EC_ReturnValue);
+    AnyValue resultValue = bodyEmitter.emitExpr(node->body, resultDest);
+    if (!resultValue) {
+      resultDest.resetForError(bodyEmitter);
+      return {};
+    }
+    Value resultVal;
+    if (!signature.hasMemoryOnlyResult()) {
+      resultVal =
+          bodyEmitter.emitSRValue({resultValue, node->body}, EC_ReturnValue,
+                                  funcOp.getMLIRResultType());
+      if (!resultVal)
+        return {};
+    }
+    // Scope the return location to the closure subprogram (the scope guard is
+    // active here), matching the body ops emitted above.
+    Location returnLoc = shared.translateLocation(loc);
+    if (shared.diBuilder)
+      returnLoc = shared.diBuilder->createScopedLoc(returnLoc);
+    bodyEmitter.emitNormalReturn(returnLoc, resultVal, /*emitEndFunc=*/false);
+  }
+
+  // 7. Collect captures over the resolved body and materialize the closure.
+  BodyCaptures bodyCaptures = collectBodyCaptures(shared, decl, funcOp);
+  MLValue instance = emitClosureInstance(bodyCaptures.values, decl, shared,
+                                         bodyCaptures.paramRefs);
+  if (!instance)
+    return {};
+
+  // 8. Emit the closure value into the expression destination (handles
+  //    conversion to the expected closure-trait type at the use site).
+  return emitter.emitResult(AnyValue(instance), node, dest);
+}
+
 /// funcdef   ::=  [decorators] "def" identifier [param_signature]
 ///                "(" [argument_list] ")" ["->" expression] ":" suite
 LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
@@ -1965,7 +2152,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   // Finally now that the full signature has been resolved, build our IR.
   // Handle argument effects, build the ASTDecls for the arguments, and write
-  // the finalized signature attributes onto the FnOp.
+  // the finalized signature attributes onto the FnOp (shared with the lambda
+  // desugaring via finalizeResolvedFnOp).
   SmallVector<ConstraintAttr> closureExternalRefConstraints;
   FnTypeGeneratorType signature =
       finalizeResolvedFnOp(shared, funcOp, decl, tcSignature, paramList,

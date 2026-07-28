@@ -575,6 +575,12 @@ def doIsNot(a: Int, b: Int) raises:
   if a is not b:
     pass
 
+def testInExpr(x: Int, y: Int) raises:
+  # expected-error @+1 {{'Int' does not implement the '__contains__' method}}
+  _ = x in y
+  # expected-error @+1 {{'Int' does not implement the '__contains__' method}}
+  _ = x not in y
+
 ##===----------------------------------------------------------------------===##
 # Computed Properties and Subscripts
 ##===----------------------------------------------------------------------===##
@@ -633,25 +639,69 @@ def type_subscript(t0 : t):
 # expected-error @below {{types are not subscriptable}}
   t[]
 
-
-
 ##===----------------------------------------------------------------------===##
-# lambda not supported yet
+# lambda errors: for now the capture list and return type must both be written
+# explicitly (eliding either is not yet supported), and arguments must be
+# parenthesized and typed. Successful construction is covered by the positive
+# test (mojo-parser/exprs/lambda.mojo).
 ##===----------------------------------------------------------------------===##
 
-def testLambda() raises:
-  # expected-error @+1 {{lambda expressions are not supported; define a nested function with 'def'}}
-  _ = lambda x, y: x+y
+# Unparenthesized (Python-style) arguments are guided to the parenthesized form.
+def testLambdaUnparenthesizedArgs() raises:
+  # expected-error @+1 {{unparenthesized lambda arguments are not supported}}
+  _ = lambda x, y: x + y
 
-def testLambda2() raises:
-  # expected-error @+1 {{lambda expressions are not supported; define a nested function with 'def'}}
+# Adding types to unparenthesized arguments does not help.
+def testLambdaTypedArgWithoutParens() raises:
+  # expected-error @+1 {{unparenthesized lambda arguments are not supported}}
+  _ = lambda x: Int: x + 1
+
+# A parenthesized but untyped arg keeps its own clear error (shown with an
+# explicit `{}`/`-> Int` so the untyped arg is what is rejected).
+def testLambdaParenthesizedUntypedArg() raises:
+  # expected-error @+1 {{argument type must be specified}}
+  _ = lambda (x) {} -> Int: x
+
+def testLambdaParenArgsEffects() raises:
+  # expected-error @+1 {{lambda requires an explicit capture list}}
   _ = lambda (x: Int, y: Float64) raises: x+y
 
-def testInExpr(x: Int, y: Int) raises:
-  # expected-error @+1 {{'Int' does not implement the '__contains__' method}}
-  _ = x in y
-  # expected-error @+1 {{'Int' does not implement the '__contains__' method}}
-  _ = x not in y
+def testLambdaParam() raises:
+  # expected-error @+1 {{lambda requires an explicit capture list}}
+  _ = lambda [y: Int](x: Int) -> Int: x + y
+
+def testLambdaZeroArg() raises:
+  # expected-error @+1 {{lambda requires an explicit capture list}}
+  _ = lambda: 5
+
+# Explicit capture list but no return type: rejected (no inference yet).
+def testLambdaNoReturnType() raises:
+  # expected-error @+1 {{return-type inference is not supported yet}}
+  _ = lambda (x: Int) {}: x + 1
+
+# A lambda is not yet supported as a compile-time value.
+def testLambdaComptimeValue() raises:
+  # expected-error @+1 {{not yet supported as a compile-time value}}
+  comptime inc = lambda (x: Int) {} -> Int: x + 1
+
+# A specific capture list names some outer vars but not others; a used-but-unnamed
+# outer var has no capture convention (and there's no capture-all), so it is rejected.
+def testLambdaUnnamedUsedCapture() raises:
+  var a = 1
+  var b = 2
+  # expected-error @+1 {{Could not infer capture convention of the captured value b}}
+  _ = lambda (x: Int) {imm a} -> Int: x + a + b
+
+# An `imm` capture is immutable, so calling a mutating method on it is rejected.
+struct IntList:
+  def __init__(out self): pass
+  # expected-note @+1 {{function declared here}}
+  def append(mut self, value: Int): pass
+
+def testLambdaReadCaptureMutated() raises:
+  var lst = IntList()
+  # expected-error @+1 {{invalid use of mutating method on rvalue of type 'IntList'}}
+  _ = lambda (x: Int) {imm lst} -> None: lst.append(x)
 
 ##===----------------------------------------------------------------------===##
 # References and Transfer

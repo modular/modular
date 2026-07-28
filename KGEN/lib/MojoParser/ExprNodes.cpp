@@ -4910,6 +4910,10 @@ AnyValue ChainedCmpOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
       emitNextCmp(emitter, 1, lastCmpExpr, e1RV, false, dest), this, dest);
 }
 
+AnyValue LambdaNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
+  return emitter.getDeclResolver().resolveAnonymousClosure(this, emitter, dest);
+}
+
 AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   // Parameters declared within the function type must be visible. Create a
   // dummy declaration.

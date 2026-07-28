@@ -1384,37 +1384,64 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   return success();
 }
 
-/// lambda_expr ::= "lambda" [parameter_list] argument_list ":" expression
+/// lambda_expr ::= "lambda" [parameter_list] [argument_list] [effects]
+///                 [capture_list] ["->" result_type] ":" expression
+///
+/// The signature is parsed in the same order as a nested-`def` closure:
+/// parameters, then the argument list with its trailing effects, then the
+/// capture list, then the result type. This produces a LambdaNode; the closure
+/// itself is constructed at emit time (LambdaNode::emitIR).
 ParseResult ExprParser::parseLambda(ExprNode *&result) {
   SMLoc lambdaLoc = consumeToken(Token::kw_lambda).getLoc();
 
-  ParsedArgumentList parsedSignature;
+  ParsedParamList paramList;
+  ParsedArgumentList fnSignature;
+  ParsedCaptureList captureList;
 
-  // Mojo supports naked parameters without type annotations for compatibility
-  // with Python, but also supports parenthesized ones.  We can only support
-  // type annotations in parentheses since we'd otherwise have ambiguity with
-  // the ":" in the lambda expression.
-  if (getToken().is(Token::colon)) {
-    // Nothing to parse.
-  } else {
-    // Parse general parenthesized argument list if a paren is present,
-    // otherwise a bare identifier list.
-    auto kind = getToken().is(Token::l_paren) ? ArgListKind::kArgList
-                                              : ArgListKind::kBareLambdaArgList;
-    if (parsedSignature.parseArgumentListAndEffects(*this, kind))
+  // Parameter list `[...]`, if present.
+  if (paramList.parseParametersIfPresent(*this, ArgListKind::kParamList))
+    return failure();
+
+  // Argument list `(...)` plus trailing effects. A type is only unambiguous
+  // inside parentheses (else the body's ":" is ambiguous), so bare args are
+  // rejected elsewhere with guidance. A no-arg lambda (`lambda: expr`) has
+  // nothing to parse here.
+  if (getToken().is(Token::l_paren)) {
+    if (fnSignature.parseArgumentListAndEffects(*this, ArgListKind::kArgList))
       return failure();
+  } else if (getToken().is(Token::identifier)) {
+    // Python-style unparenthesized args (`lambda x, y: ...`) are not supported.
+    emitError(getToken().getLoc(),
+              "unparenthesized lambda arguments are not supported; write them "
+              "in parentheses, with types, e.g. "
+              "`lambda (x: Int, y: Int) {} -> Int: x + y`");
+    return failure();
   }
 
+  // Capture list `{...}`, if present (no-op otherwise).
+  if (captureList.parseCaptureList(*this))
+    return failure();
+
+  // Result type `-> T`, if present (no-op otherwise).
+  fnSignature.parseResultIfPresent(*this, stmtIndent);
+
+  // Body: a single expression after `:`.
+  SMLoc endLoc = getToken().getEndLoc();
   ExprNode *bodyExpr = nullptr;
   if (parseToken(Token::colon, "expected ':' in lambda expression") ||
       ParserBase::parseExpression(bodyExpr, stmtIndent))
     return failure();
 
-  // Ok, we have a syntactically correct lambda, but we still don't support
-  // them yet.
-  emitError(lambdaLoc, "lambda expressions are not supported; define a nested "
-                       "function with 'def'");
-  return failure();
+  result = alloc<LambdaNode>(
+      lambdaLoc, copyArrayRef<ParsedArgument>(paramList.params),
+      copyArrayRef<ParsedArgument>(fnSignature.parsedArgs),
+      copyArrayRef<ParsedArgument>(fnSignature.resultArg)[0],
+      fnSignature.effects, fnSignature.thrownTypeExpr,
+      copyArrayRef<std::tuple<StringRef, CaptureConvention, SMLoc>>(
+          captureList.parsedCaptures),
+      captureList.hasExplicitCaptureList, captureList.captureAllByConvention,
+      bodyExpr, endLoc);
+  return success();
 }
 
 ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
