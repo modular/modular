@@ -10,6 +10,8 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- mojo now rejects overloads with only arg convention (imm/mut) being different.
+
 - `where` clauses now accept an optional string-literal message, written
   `where (condition, "message")`. The message is included in the compiler
   diagnostic when the constraint fails, and is supported everywhere `where`
