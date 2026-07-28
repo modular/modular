@@ -42,12 +42,12 @@ The following steps show when the weight adapter runs within the
 entire weight loading flow:
 
 1. The pipeline calls
-   [`weights_format()`](/max/api/python/generated/max.graph.weights.format/#max.graph.weights.format.weights_format)
+   [`weights_format()`](/max/api/python/generated/max.graph.weights.weights_format/#max.graph.weights.weights_format))
    to detect the checkpoint format from the weight file extensions.
 2. The pipeline retrieves the
    [registered weight adapter](#registering-the-weight-adapter).
 3. The pipeline calls
-   [`load_weights()`](/max/api/python/generated/max.graph.weights/#max.graph.weights.load_weights)
+   [`load_weights()`](/max/api/python/generated/max.graph.weights.load_weights/#max.graph.weights.load_weights)
    to load the checkpoint into a `Weights` object.
 4. The pipeline constructs your
    [pipeline model](/max/api/python/generated/max.pipelines.PipelineModel/) with
