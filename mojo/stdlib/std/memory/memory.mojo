@@ -415,6 +415,11 @@ def _memset_impl(ptr: Pointer[mut=True, Byte, ...], value: Byte, count: Int):
 def unsafe_memset(ptr: Pointer[mut=True, ...], value: Byte, count: Int):
     """Fills memory with the given value.
 
+    For memory in the generic address space, prefer the safe, bounds-carrying
+    `Span.fill()` (for example, `my_span.fill(value)` on a `Span[Byte]`). This
+    raw entry point remains for pointers in non-generic address spaces (for
+    example, GPU shared or local memory), which `Span` cannot yet represent.
+
     Args:
         ptr: Pointer to the beginning of the memory block to fill.
         value: The value to fill with.
@@ -444,6 +449,11 @@ def memset(ptr: Pointer[mut=True, ...], value: Byte, count: Int):
 @always_inline
 def unsafe_memset_zero(ptr: Pointer[mut=True, ...], count: Int):
     """Fills memory with zeros.
+
+    For memory in the generic address space, prefer the safe, bounds-carrying
+    `Span.fill(0)`. This raw entry point remains for pointers in non-generic
+    address spaces (for example, GPU shared or local memory), which `Span`
+    cannot yet represent.
 
     Args:
         ptr: Pointer to the beginning of the memory block to fill.
