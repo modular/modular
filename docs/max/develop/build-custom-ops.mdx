@@ -198,7 +198,7 @@ def add_one_shape(x: InputTensor) -> IndexList[x.rank]:
 Let's now look at the corresponding
 [`custom_ops/addition.py`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/addition.py)
 file where we load the `add_one` custom op into a graph using
-[`ops.custom()`](/max/api/python/graph.ops#max.graph.ops.custom).
+[`ops.custom()`](/api/python/graph.ops#max.graph.ops.custom).
 
 Here's the code that specifies the path to the Mojo custom op and adds it to the
 graph. The path passed to `custom_extensions` must be a Mojo package directory:
@@ -238,14 +238,14 @@ graph = Graph(
 )
 ```
 
-The [`Graph()`](/max/api/python/generated/max.graph.Graph) takes an input tensor
+The [`Graph()`](/api/python/generated/max.graph.Graph) takes an input tensor
 with five rows and ten columns, runs the custom `add_one` operation on it, and
 returns the result.
 
 That's basically it. We created a custom op and added it to a graph!
 
 Now we can run an inference, using
-[`InferenceSession`](/max/api/python/generated/max.engine.InferenceSession). We
+[`InferenceSession`](/api/python/generated/max.engine.InferenceSession). We
 start by loading the graph onto the selected `device` (see above; either a CPU
 or GPU "accelerator"):
 
@@ -275,7 +275,7 @@ assert isinstance(result, Buffer)
 result = result.to(CPU())
 ```
 
-Notice that the [`Buffer`](/max/api/python/generated/max.driver.Buffer) is
+Notice that the [`Buffer`](/api/python/generated/max.driver.Buffer) is
 initially resident on the host (CPU), so we move it to the accelerator to be
 ready for use with the graph on that device (if the device is the host CPU and
 not an accelerator, the `to()` function is a no-op). Likewise, after we get

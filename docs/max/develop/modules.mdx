@@ -5,9 +5,9 @@ description: Learn how to compose modules, write custom modules with explicit we
   load checkpoint data, and construct a model graph.
 ---
 
-A [`Module`](/max/api/python/generated/max.nn.Module/#max.nn.Module) defines
+A [`Module`](/api/python/generated/max.nn.Module/#max.nn.Module) defines
 your model's layers, weights, and forward computation. A
-[`Graph`](/max/api/python/generated/max.graph.Graph/#max.graph.Graph) captures
+[`Graph`](/api/python/generated/max.graph.Graph/#max.graph.Graph) captures
 that computation as a static data structure the compiler can optimize. You need
 both to build a runnable model.
 
@@ -39,19 +39,19 @@ As a result, you define MAX modules using symbolic value placeholders that
 represent tensors and weights rather than working with real data. This
 programming pattern relies on the following key APIs:
 
-- [`Graph`](/max/api/python/generated/max.graph.Graph/#max.graph.Graph):
+- [`Graph`](/api/python/generated/max.graph.Graph/#max.graph.Graph):
   A data structure that represents your model's computation. It stores
   what operations to perform on tensors and in what order. You can only
   run the computation after you compile the graph into an executable
   model.
-- [`TensorValue`](/max/api/python/generated/max.graph.TensorValue/):
+- [`TensorValue`](/api/python/generated/max.graph.TensorValue/):
   A symbolic value that stands in for a tensor during graph
   construction.
-- [`Weight`](/max/api/python/generated/max.graph.Weight/): A symbolic
+- [`Weight`](/api/python/generated/max.graph.Weight/): A symbolic
   value that stands in for a learned model parameter during graph
   construction. Unlike `TensorValue`, a `Weight` maps to *known* data
   loaded from a checkpoint.
-- [`ops`](/max/api/python/graph.ops/): Operations that consume and return
+- [`ops`](/api/python/graph.ops/): Operations that consume and return
   `TensorValue` objects.
 
 :::note
@@ -67,10 +67,10 @@ overview](/max/develop/graph).
 
 A module declares which layers and weights it contains, then defines how data
 flows through them. In most cases, you can compose a module entirely with
-prebuilt modules, such as [`Linear`](/max/api/python/generated/max.nn.Linear/),
-[`Embedding`](/max/api/python/generated/max.nn.Embedding/),
-[`RMSNorm`](/max/api/python/generated/max.nn.RMSNorm/),
-[`LayerNorm`](/max/api/python/generated/max.nn.LayerNorm/), and others. When
+prebuilt modules, such as [`Linear`](/api/python/generated/max.nn.Linear/),
+[`Embedding`](/api/python/generated/max.nn.Embedding/),
+[`RMSNorm`](/api/python/generated/max.nn.RMSNorm/),
+[`LayerNorm`](/api/python/generated/max.nn.LayerNorm/), and others. When
 your architecture needs a component none of these provide, you write a custom
 layer; see [Write a custom layer](/max/develop/layers/).
 
@@ -106,7 +106,7 @@ Each built-in module has its own constructor signature: `Linear` takes input
 and output dimensions, `Embedding` takes vocabulary size and hidden dimension,
 `RMSNorm` takes a single normalization dimension, and so on. When you declare a
 built-in module in the `__init__()` method, consult the
-[`max.nn`](/max/api/python/nn) API reference for the specific parameters each
+[`max.nn`](/api/python/nn) API reference for the specific parameters each
 module expects.
 
 ### The `__call__()` method
@@ -125,7 +125,7 @@ section below, [Turn a module into a graph](#turn-a-module-into-a-graph).
 
 When you want to stack multiple modules in a straight chain with no
 intermediate operations, use
-[`Sequential`](/max/api/python/generated/max.nn.Sequential/). It stores an
+[`Sequential`](/api/python/generated/max.nn.Sequential/). It stores an
 ordered sequence of modules and chains their `__call__()` methods
 automatically. The output of each module feeds directly into the next. For
 example:
@@ -197,7 +197,7 @@ following section.
 
 Once your module represents all the layers in your model, you can load the
 pretrained weights using
-[`load_state_dict()`](/max/api/python/generated/max.nn.Module/#max.nn.Module.load_state_dict).
+[`load_state_dict()`](/api/python/generated/max.nn.Module/#max.nn.Module.load_state_dict).
 This method accepts a dictionary that maps weight names to tensor values.
 
 ```python
@@ -308,13 +308,13 @@ result = runnable_model(input_data)
 print(result[0].to_numpy())
 ```
 
-[`InferenceSession.compile()`](/max/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.compile)
+[`InferenceSession.compile()`](/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.compile)
 compiles a graph into a
-[`CompiledModel`](/max/api/python/generated/max.engine.CompiledModel/) artifact,
+[`CompiledModel`](/api/python/generated/max.engine.CompiledModel/) artifact,
 which holds the compiled code but isn't directly executable.
-[`InferenceSession.init()`](/max/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.init)
+[`InferenceSession.init()`](/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.init)
 then binds the artifact to weights and returns an executable
-[`Model`](/max/api/python/generated/max.engine.Model/). It accepts a
+[`Model`](/api/python/generated/max.engine.Model/). It accepts a
 `weights_registry`, or a dictionary that maps weight names to tensor data.
 
 You should have already passed this dictionary to `load_state_dict()`, which

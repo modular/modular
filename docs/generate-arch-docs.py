@@ -287,7 +287,7 @@ def sync_sidebars_json(
         raise RuntimeError('sidebars.json: Python category "items" not a list')
 
     new_doc_ids = [
-        f"max/api/python/pipelines.architectures.{d}" for d in sorted(dir_names)
+        f"api/python/pipelines.architectures.{d}" for d in sorted(dir_names)
     ]
 
     arch_cat: dict[str, object] | None = None
@@ -326,7 +326,7 @@ def sync_sidebars_json(
             "label": "architectures",
             "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.architectures",
+                "id": "api/python/pipelines.architectures",
             },
             "items": new_doc_ids,
         }

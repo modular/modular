@@ -17,7 +17,7 @@ determine where time actually goes — none of that is visible from the output.
 This tutorial uses a matrix multiplication kernel as the teaching vehicle. You
 won't end up with a production matmul — MAX already contains leading-edge
 implementations you can use with the
-[`max.graph`](/max/api/python/generated/max.graph.Graph) API — but you'll work
+[`max.graph`](/api/python/generated/max.graph.Graph) API — but you'll work
 through optimization strategies that apply to any GPU custom op you write in
 Mojo.
 
@@ -101,7 +101,7 @@ download the code and run the benchmark script:
 ## Introduction
 
 MAX models are built as computational graphs using the
-[`Graph`](/max/api/python/generated/max.graph.Graph) API. MAX contains within
+[`Graph`](/api/python/generated/max.graph.Graph) API. MAX contains within
 it a powerful graph compiler that can take these graphs and optimize them for
 best performance on a wide range of hardware.
 

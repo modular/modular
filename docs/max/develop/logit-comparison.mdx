@@ -118,15 +118,15 @@ used to select each generated token across five generation steps. It then
 reports the metrics so you can compare them against your thresholds.
 
 The script uses
-[`PipelineArgs`](/max/api/python/generated/max.pipelines.PipelineArgs/) to load
-your architecture from
-[`PIPELINE_REGISTRY`](/max/api/python/generated/max.pipelines.lib.registry.PIPELINE_REGISTRY/),
+[`PipelineArgs`](/api/python/generated/max.pipelines.PipelineArgs/) to load your
+architecture from
+[`PIPELINE_REGISTRY`](/api/python/generated/max.pipelines.lib.registry.PIPELINE_REGISTRY/),
 then sends a
-[`TextGenerationRequest`](/max/api/python/generated/max.pipelines.modeling.types.TextGenerationRequest/)
+[`TextGenerationRequest`](/api/python/generated/max.pipelines.modeling.types.TextGenerationRequest/)
 per prompt. To capture each step's logits, the request's
-[`SamplingParams`](/max/api/python/generated/max.pipelines.context.SamplingParams/)
+[`SamplingParams`](/api/python/generated/max.pipelines.context.SamplingParams/)
 attaches a
-[`LogitsProcessor`](/max/api/python/generated/max.pipelines.context.LogitsProcessor/)
+[`LogitsProcessor`](/api/python/generated/max.pipelines.context.LogitsProcessor/)
 that the pipeline calls before sampling.
 
 :::note
