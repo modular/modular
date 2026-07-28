@@ -24,6 +24,38 @@ defaults: &defaults
   IS_SMALL_BN: false
   BATCH_SIZE: 1
 params:
+# Gemma-4-31B-IT-NVFP4 (hidden 5376, intermediate 21504) MLP, decode M=1.
+# The small-M fallback picks k_group_size by K-iteration parity and never
+# tries the legal, faster kg=3 for gate_up's 21 K-iterations.
+- <<: *defaults
+  M: 1
+  M_END: 2
+  N: 5376
+  K: 21504
+  MMA_M: 256
+  MMA_N: 16
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 8
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  IS_SMALL_BN: true
+- <<: *defaults
+  M: 1
+  M_END: 2
+  N: 43008
+  K: 5376
+  MMA_M: 128
+  MMA_N: 8
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 8
+  K_GROUP_SIZE: 3
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  IS_SMALL_BN: true
 - <<: *defaults
   M: 1
   M_END: 17
