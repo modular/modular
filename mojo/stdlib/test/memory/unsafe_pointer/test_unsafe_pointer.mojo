@@ -188,6 +188,15 @@ def test_explicit_copy_of_pointer_address() raises:
     _ = local
 
 
+def test_address_as_integer_scalar() raises:
+    var local = 1
+    var ptr = UnsafePointer[Int](to=local)
+    assert_equal(UInt(ptr), UInt(Int(ptr)))
+    assert_equal(UInt64(ptr), UInt64(Int(ptr)))
+    assert_equal(Int64(ptr), Int64(Int(ptr)))
+    _ = local
+
+
 def test_bitcast() raises:
     var local = 1
     var ptr = UnsafePointer[Int](to=local)

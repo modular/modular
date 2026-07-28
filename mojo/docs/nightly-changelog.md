@@ -487,6 +487,15 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Any integer scalar can now be constructed from an `Intable` value, not just
+  `Int`. This makes taking a pointer's address as an unsigned integer work
+  directly:
+
+  ```mojo
+  var x = 42
+  var p = Pointer(to=x)
+  var addr = UInt(p)  # previously required `UInt(Int(p))`
+
 - `Bencher.iter()` now accepts a raising closure as a runtime argument, so a
   benchmark whose body raises can pass a closure with an explicit capture list
   instead of an `@parameter` closure. Prefer the unified closure form over the
