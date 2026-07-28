@@ -181,6 +181,48 @@ kgen.generator @lifetime_union<x: !lit.origin<false>, y: !lit.origin<false>>() {
     {#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "field0"> : !lit.origin<false>,
       #lit.origin.subtree<#kgen.param.decl.ref<"x"> : !lit.origin<false>> : !lit.origin<false>}>
 
+  // Field subtree absorbed into a wider parent subtree.
+  // CHECK-NEXT: kgen.param.declare field_subtree_in_parent: origin<false> = <#lit.origin.subtree<#kgen.param.decl.ref<"x"> : !lit.origin<false>>>
+  kgen.param.declare field_subtree_in_parent: !lit.origin<false> = <
+    {#lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "f"> : !lit.origin<false>> : !lit.origin<false>,
+      #lit.origin.subtree<#kgen.param.decl.ref<"x"> : !lit.origin<false>> : !lit.origin<false>}>
+
+  // Narrower field subtree must not absorb the wider parent subtree
+  // (over-absorption): union(x.f~, x~) collapses to x~, not x.f~.
+  // CHECK-NEXT: kgen.param.declare no_over_absorb: origin<false> = <#lit.origin.subtree<#kgen.param.decl.ref<"x"> : !lit.origin<false>>>
+  kgen.param.declare no_over_absorb: !lit.origin<false> = <
+    {#lit.origin.subtree<#kgen.param.decl.ref<"x"> : !lit.origin<false>> : !lit.origin<false>,
+      #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "f"> : !lit.origin<false>> : !lit.origin<false>}>
+
+  // Sibling field subtrees must stay a union.
+  // CHECK-NEXT: kgen.param.declare sibling_subtrees: origin<false> = <{#lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "a"> : !lit.origin<false>>, #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "b"> : !lit.origin<false>>}>
+  kgen.param.declare sibling_subtrees: !lit.origin<false> = <
+    {#lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "a"> : !lit.origin<false>> : !lit.origin<false>,
+      #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "b"> : !lit.origin<false>> : !lit.origin<false>}>
+
+  // Multi-level nesting: x.y.z is contained in x~ and in x.y~.
+  // CHECK-NEXT: kgen.param.declare nested_in_root: origin<false> = <#lit.origin.subtree<#kgen.param.decl.ref<"x"> : !lit.origin<false>>>
+  kgen.param.declare nested_in_root: !lit.origin<false> = <
+    {#lit.origin.field<#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "y"> : !lit.origin<false>, "z"> : !lit.origin<false>,
+      #lit.origin.subtree<#kgen.param.decl.ref<"x"> : !lit.origin<false>> : !lit.origin<false>}>
+  // CHECK-NEXT: kgen.param.declare nested_in_mid: origin<false> = <#lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "y"> : !lit.origin<false>>>
+  kgen.param.declare nested_in_mid: !lit.origin<false> = <
+    {#lit.origin.field<#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "y"> : !lit.origin<false>, "z"> : !lit.origin<false>,
+      #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "y"> : !lit.origin<false>> : !lit.origin<false>}>
+  // CHECK-NEXT: kgen.param.declare nested_subtree_in_mid: origin<false> = <#lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "y"> : !lit.origin<false>>>
+  kgen.param.declare nested_subtree_in_mid: !lit.origin<false> = <
+    {#lit.origin.subtree<#lit.origin.field<#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "y"> : !lit.origin<false>, "z"> : !lit.origin<false>> : !lit.origin<false>,
+      #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "y"> : !lit.origin<false>> : !lit.origin<false>}>
+
+  // Mixed mutability: {imm x, mut a~, mut a.z} must still absorb a.z into a~
+  // even though members are wrapped in mutcasts for the imm result type.
+  // CHECK-NEXT: <{x, (mutcast mut #lit.origin.subtree<#kgen.param.decl.ref<"a"> : !lit.origin<true>>)}>
+  kgen.param.constant: origin<false> = <|{
+    imm x,
+    mut #lit.origin.subtree<#kgen.param.decl.ref<"a"> : !lit.origin<true>>,
+    mut #lit.origin.field<#kgen.param.decl.ref<"a"> : !lit.origin<true>, "z">
+  }|>
+
   kgen.return
 }
 
