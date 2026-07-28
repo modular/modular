@@ -2224,7 +2224,11 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
       auto existingResTy =
           ASTType(existingFunc.getFuncTypeGenerator().getUserResultType());
       if (!resTy.isEqualCanon(existingResTy))
-        errorMessage = " cannot overload on return type only";
+        errorMessage = ", cannot overload on return type";
+      else if (!llvm::equal(
+                   existingFunc.getFuncTypeGenerator().getArgConventions(),
+                   signature.getArgConventions()))
+        errorMessage = ", cannot overload on argument conventions";
       else
         errorMessage = " with identical signature";
     }

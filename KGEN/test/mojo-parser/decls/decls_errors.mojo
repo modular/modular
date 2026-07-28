@@ -493,7 +493,7 @@ def fn_redecl(): pass
 
 # expected-note @+1 {{previous definition here}}
 def fn_redecl2() raises -> Int: pass
-# expected-error @+1 {{redefinition of function 'fn_redecl2' cannot overload on return type only}}
+# expected-error @+1 {{redefinition of function 'fn_redecl2', cannot overload on return type}}
 def fn_redecl2() -> FloatDyn: pass
 
 # expected-note @below {{candidate declared here}}
@@ -544,7 +544,7 @@ struct OverloadedKwArgs(Movable where False):
     def __getitem__(self, idx: Int) -> Int:
         return self.vals[idx]
 
-    # expected-error @below {{redefinition of function '__getitem__' cannot overload on return type only}}
+    # expected-error @below {{redefinition of function '__getitem__', cannot overload on return type}}
     def __getitem__(self, idx: Int) -> Bool:
         return self.vals[idx] > 0
 
@@ -722,11 +722,14 @@ struct SpecialFunctions(Movable where False):
   def __add__(self):
     pass
 
-  # This is ok, SpecialFunctions may be a reference semantic struct like Object.
-  # Issue #7573: Cannot have LValue or RValue overloads of special methods
+  # Issue #7573: an LValue/RValue pair of a special method differs only in
+  # argument conventions, so the declarations collide instead of forming an
+  # overload set.
+  # expected-note @+1 {{previous definition here}}
   def __iadd__(a: SpecialFunctions, b: SpecialFunctions): pass
 
-  # expected-error @+1 {{'__iadd__' result type must be elided (or None)}}
+  # expected-error @+2 {{'__iadd__' result type must be elided (or None)}}
+  # expected-error @+1 {{redefinition of function '__iadd__', cannot overload on return type}}
   def __iadd__(mut self, rhs: SpecialFunctions) -> SpecialFunctions: pass
 
   def failures(self):
@@ -761,7 +764,7 @@ struct WrongType(RegisterPassable):
   # TODO: Should err.
   def __init__(out self, *, copy: Int): pass
 
-  # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
+  # expected-error @+2 {{redefinition of function '__init__', cannot overload on return type}}
   # expected-error @+1 {{'RegisterPassable' types must not declare explicit move constructors; values of these types have no identity, and the compiler can freely move them between registers}}
   def __init__(out self, *, deinit move: Self): pass
 
@@ -831,7 +834,7 @@ struct InvalidMember(TrivialRegisterPassable):
   var x: __mlir_type.index
   # expected-error @+1 {{'RegisterPassable' types must not declare explicit move constructors; values of these types have no identity, and the compiler can freely move them between registers}}
   def __init__(out self, *, deinit move: Self): pass
-  # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
+  # expected-error @+2 {{redefinition of function '__init__', cannot overload on return type}}
   # expected-error @+1 {{trivial types must not declare explicit copy constructors; they are trivially copyable}}
   def __init__(out self, *, copy: Self): pass
   # expected-error @+2 {{trivial types must not declare '__del__' methods; they are trivially destroyable}}
@@ -1366,3 +1369,15 @@ def pack_error[Trait: type_of(AnyType), //, *element_types: Trait]():
 
 # expected-error @+1 {{cannot construct a value with parametric type: 'Origin[mut=_]'}}
 comptime A: Origin = AnyOrigin
+
+
+# Argument conventions are not part of the mangled name, so they cannot
+# distinguish two otherwise-identical signatures.
+# expected-note @+1 {{previous definition here}}
+def overload_on_arg_conv(mut x: Int):
+    pass
+
+
+# expected-error @+1 {{redefinition of function 'overload_on_arg_conv', cannot overload on argument conventions}}
+def overload_on_arg_conv(imm x: Int):
+    pass
