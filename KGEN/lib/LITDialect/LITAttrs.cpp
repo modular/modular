@@ -293,17 +293,26 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
   // wider subtree view and re-canonicalize.
   if (!subtreeOrigins.empty()) {
     for (TypedAttr operand : operandSet) {
-      // Ignore the subtree origin itself.
-      if (auto subtree = sugarDynCast<OriginSubtreeAttr>(operand))
-        continue;
-
+      // Walk up the list of fields and indirect origins, checking to see if we
+      // have a subtree that contains the whole thing, e.g. we want to know that
+      // x.y.z is contained within x~ and x.y~.  'subtree' origins will contain
+      // the origins for which we have a subtree in the set (it contains their
+      // bases).
       bool isAbsorbed = false;
       operand.walk([&](TypedAttr subOperand) {
-        if (subtreeOrigins.contains(subOperand)) {
-          isAbsorbed = true;
-          return WalkResult::interrupt();
+        // If this suboperand isn't contained within a subtree, ignore it.
+        if (!subtreeOrigins.contains(subOperand))
+          return WalkResult::advance();
+
+        // If "operand" it itself a subtree x.y.z~ then don't stop just because
+        // we found x.y.z.  However, do stop if we see a x.y~ also in the set.
+        if (auto subtree = sugarDynCast<OriginSubtreeAttr>(operand)) {
+          if (subtree.getBase() == subOperand)
+            return WalkResult::advance();
         }
-        return WalkResult::advance();
+
+        isAbsorbed = true;
+        return WalkResult::interrupt();
       });
       if (isAbsorbed) {
         operandSet.remove(operand);
@@ -330,6 +339,8 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> origins) {
   // In the empty case, the origin is immutable.
   if (origins.empty())
     return OriginUnionAttr::get(OriginType::get(ctx, /*mutable=*/false));
+  if (origins.size() == 1)
+    return origins.front();
 
   // Determine the overall mutability of the union, as the intersection of the
   // mutabilities of the members.
