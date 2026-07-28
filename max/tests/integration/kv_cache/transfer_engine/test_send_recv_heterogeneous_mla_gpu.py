@@ -31,10 +31,9 @@ Uses 4 GPUs total (2 for sender, 2 for receiver).
 import multiprocessing as mp
 
 import numpy as np
-from _transfer_engine_helpers import kv_memory, view_2d_uint8
+from _transfer_engine_helpers import kv_group, kv_memory
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
-from max.nn.kv_cache.cache_params import ReplicatedKVCacheMemory
 from max.pipelines.kv_cache import KVTransferEngine
 
 
@@ -73,15 +72,14 @@ def sender_routine(
     shard0 = paged(total_bytes, page_values=[100, 101], accelerator_idx=0)
     shard1 = paged(total_bytes, page_values=[200, 201], accelerator_idx=1)
 
-    # ReplicatedKVCacheMemory: one unit covers all TP shards (MLA pattern).
-    replicated_unit = ReplicatedKVCacheMemory(
-        buffer=view_2d_uint8(shard0, total_num_pages),
-        peers=[view_2d_uint8(shard1, total_num_pages)],
+    # Replicated MLA group: one group covers all TP shards.
+    replicated_group = kv_group(
+        [shard0, shard1], total_num_pages, replicated=True
     )
 
     engine = KVTransferEngine(
         "sender_engine",
-        [[replicated_unit]],
+        [[replicated_group]],
         total_num_pages=total_num_pages,
     )
 

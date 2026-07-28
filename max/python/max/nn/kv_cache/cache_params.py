@@ -122,6 +122,22 @@ def _validate_is_2d_uint8_buffer(buffer: Buffer) -> None:
         raise ValueError("KVCacheMemory buffer must have dtype uint8")
 
 
+def _view_as_uint8_pages(buffer: Buffer) -> Buffer:
+    """Re-view a KV buffer as a 2-D ``[num_pages, bytes_per_page]`` uint8 array.
+
+    The original dtype and per-page element count are folded into a flat
+    per-page byte stride so the offload engine and transfer engine can treat
+    every cache uniformly regardless of dtype or shape.
+    """
+    return buffer.view(
+        dtype=DType.uint8,
+        shape=[
+            buffer.shape[0],
+            buffer.num_elements * buffer.dtype.size_in_bytes // buffer.shape[0],
+        ],
+    )
+
+
 @dataclass
 class KVCacheMemory:
     """A single KV cache shard as a 2-D ``uint8`` view.
@@ -215,6 +231,46 @@ class ReplicatedKVCacheMemory(KVCacheMemory):
         return [self.buffer, *self.peers]
 
 
+@dataclass
+class KVCacheMemoryGroup:
+    """One producer-authored NIXL group for the transfer engine.
+
+    A group is exactly one logical ``(child, kind)`` tensor — e.g. a cache's
+    ``values`` or its ``scales`` — carrying every TP-shard view of that tensor.
+    ``buffers`` are the same 2-D ``[num_pages, bytes_per_page]`` ``uint8`` views
+    that :meth:`KVCacheBuffer.to_memory` emits, one per TP shard; for a
+    replicated cache (MLA) they are the rank-0 shard followed by its peers.
+
+    Authoring the group boundary on the producer side replaces the transfer
+    engine's old shape-comparison grouping, which could silently merge two
+    distinct kinds that happened to share a ``bytes_per_page``. ``replicated``
+    rides on the group so replication becomes a per-group property.
+    """
+
+    replicated: bool
+    buffers: list[Buffer]
+
+    def __post_init__(self) -> None:
+        if len(self.buffers) == 0:
+            raise ValueError("KVCacheMemoryGroup must have at least one buffer")
+        for buffer in self.buffers:
+            _validate_is_2d_uint8_buffer(buffer)
+        if self.replicated and len(self.buffers) <= 1:
+            raise ValueError(
+                "replicated=True requires at least 2 TP-shard buffers"
+            )
+
+    @property
+    def bytes_per_page(self) -> int:
+        """Returns the per-page byte stride shared by every shard."""
+        return self.buffers[0].shape[1]
+
+    @property
+    def total_num_pages(self) -> int:
+        """Returns the total number of pages (including the null block)."""
+        return self.buffers[0].shape[0]
+
+
 @runtime_checkable
 class KVCacheBufferInterface(Protocol):
     """Interface for a KV cache buffer (single leaf or a tree of leaves)."""
@@ -231,6 +287,10 @@ class KVCacheBufferInterface(Protocol):
 
     def to_memory(self) -> list[KVCacheMemory]:
         """Returns the offload-ready KV cache memory units."""
+        ...
+
+    def to_memory_groups(self) -> list[KVCacheMemoryGroup]:
+        """Returns the transfer-engine NIXL groups, one per ``(child, kind)``."""
         ...
 
 
@@ -265,6 +325,18 @@ class MultiKVCacheBuffer(KVCacheBufferInterface):
         for child in self.children.values():
             memories.extend(child.to_memory())
         return memories
+
+    def to_memory_groups(self) -> list[KVCacheMemoryGroup]:
+        """Returns the NIXL groups for all children, one per leaf ``(child, kind)``.
+
+        Children are aggregated child-major (mirroring :meth:`to_memory`), so a
+        nested tree — e.g. speculative-decode ``target``/``draft`` or
+        ``dense``/``sparse`` hybrids — yields one group per leaf cache per kind.
+        """
+        groups: list[KVCacheMemoryGroup] = []
+        for child in self.children.values():
+            groups.extend(child.to_memory_groups())
+        return groups
 
 
 @dataclass
@@ -404,16 +476,7 @@ class KVCacheBuffer(KVCacheBufferInterface):
         if self.scales is not None:
             shard_lists.append(self.scales)
         for shards in shard_lists:
-            viewed = [
-                b.view(
-                    dtype=DType.uint8,
-                    shape=[
-                        b.shape[0],
-                        b.num_elements * b.dtype.size_in_bytes // b.shape[0],
-                    ],
-                )
-                for b in shards
-            ]
+            viewed = [_view_as_uint8_pages(b) for b in shards]
             if self.replicates_kv_across_tp:
                 result.append(
                     ReplicatedKVCacheMemory(buffer=viewed[0], peers=viewed[1:])
@@ -421,6 +484,33 @@ class KVCacheBuffer(KVCacheBufferInterface):
             else:
                 result.extend(KVCacheMemory(buffer=v) for v in viewed)
         return result
+
+    def to_memory_groups(self) -> list[KVCacheMemoryGroup]:
+        """Convert to producer-authored NIXL groups, one per kind.
+
+        Emits a ``values`` group holding all its TP-shard views and, for a
+        quantized cache, a separate ``scales`` group. ``replicated`` is taken
+        from :attr:`replicates_kv_across_tp`. This is the group-preserving
+        analog of :meth:`to_memory`: it authors one group per kind rather than
+        one unit per shard, so the transfer engine never has to re-infer the
+        group boundary by comparing buffer shapes.
+
+        Returns:
+            One :class:`KVCacheMemoryGroup` per buffer kind (values, and scales
+            if present).
+        """
+        groups: list[KVCacheMemoryGroup] = []
+        shard_lists: list[list[Buffer]] = [self.values]
+        if self.scales is not None:
+            shard_lists.append(self.scales)
+        for shards in shard_lists:
+            groups.append(
+                KVCacheMemoryGroup(
+                    replicated=self.replicates_kv_across_tp,
+                    buffers=[_view_as_uint8_pages(b) for b in shards],
+                )
+            )
+        return groups
 
 
 @dataclass

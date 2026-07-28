@@ -16,7 +16,7 @@ import time
 
 import numpy as np
 import pytest
-from _transfer_engine_helpers import kv_memory
+from _transfer_engine_helpers import kv_group
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import KVTransferEngine
@@ -49,7 +49,7 @@ def transfer_routine_sender(
     # DP=1, TP=2
     engine_1 = KVTransferEngine(
         "engine_1",
-        [[kv_memory(t, total_num_pages) for t in tensors_1]],
+        [kv_group(tensors_1, total_num_pages)],
         total_num_pages=total_num_pages,
     )
 
@@ -114,7 +114,7 @@ def transfer_routine_receiver(
     # DP=1, TP=2
     engine_2 = KVTransferEngine(
         "engine_2",
-        [[kv_memory(t, total_num_pages) for t in tensors_2]],
+        [kv_group(tensors_2, total_num_pages)],
         total_num_pages=total_num_pages,
     )
 

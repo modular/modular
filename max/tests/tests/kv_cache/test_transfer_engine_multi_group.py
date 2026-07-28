@@ -15,8 +15,8 @@
 
 Covers two things, using CPU buffers only (no NIXL/GPU objects required):
 
-- ``_unit_shard_groups``: how typed ``to_memory()`` units are grouped into
-  shape-homogeneous NIXL groups (one per child x kind).
+- ``to_memory_groups``: how a KV cache buffer authors one NIXL group per
+  logical ``(child, kind)`` tensor (values, scales, or a nested child cache).
 - ``KVTransferEngine.__init__`` structural-validation guards, which raise
   before any NIXL registration.
 """
@@ -28,9 +28,8 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.nn.kv_cache.cache_params import (
     KVCacheBuffer,
-    KVCacheMemory,
+    KVCacheMemoryGroup,
     MultiKVCacheBuffer,
-    ReplicatedKVCacheMemory,
 )
 
 
@@ -83,56 +82,91 @@ def _hetero_multi(*, num_pages: int = 8, tp: int = 2) -> MultiKVCacheBuffer:
 
 
 # ---------------------------------------------------------------------------
-# _unit_shard_groups: units -> shape-homogeneous NIXL groups
+# to_memory_groups: one authored NIXL group per (child, kind)
 # ---------------------------------------------------------------------------
 
 
-def test_unit_shard_groups_sharded() -> None:
+def test_to_memory_groups_sharded() -> None:
     """Non-replicated single cache: one group holding all TP shards."""
-    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
-        _unit_shard_groups,
-    )
-
-    groups = _unit_shard_groups(_kv(64).to_memory())
+    groups = _kv(64).to_memory_groups()
     assert len(groups) == 1
-    assert len(groups[0]) == 2  # 2 TP shards
+    assert not groups[0].replicated
+    assert len(groups[0].buffers) == 2  # 2 TP shards
+    # bfloat16: 64 elts/page * 2 bytes = 128 bytes/page.
+    assert groups[0].bytes_per_page == 128
+    assert groups[0].total_num_pages == 8
 
 
-def test_unit_shard_groups_replicated() -> None:
-    """Replicated cache: one group whose shard list is [buffer, *peers]."""
-    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
-        _unit_shard_groups,
-    )
-
-    groups = _unit_shard_groups(_kv(64, tp=3, replicated=True).to_memory())
+def test_to_memory_groups_replicated() -> None:
+    """Replicated cache: one group whose buffers are [rank0, *peers]."""
+    groups = _kv(64, tp=3, replicated=True).to_memory_groups()
     assert len(groups) == 1
-    assert len(groups[0]) == 3  # buffer + 2 peers
+    assert groups[0].replicated
+    assert len(groups[0].buffers) == 3  # rank-0 shard + 2 peers
 
 
-def test_unit_shard_groups_quantized() -> None:
+def test_to_memory_groups_quantized() -> None:
     """Quantized cache: values and scales become separate NIXL groups."""
-    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
-        _unit_shard_groups,
-    )
-
-    groups = _unit_shard_groups(
-        _kv(64, dtype=DType.uint8, scale_elts=4).to_memory()
-    )
+    groups = _kv(64, dtype=DType.uint8, scale_elts=4).to_memory_groups()
     assert len(groups) == 2  # values group + scales group
-    assert len(groups[0]) == 2 and len(groups[1]) == 2
+    values, scales = groups
+    assert len(values.buffers) == 2 and len(scales.buffers) == 2
+    # uint8 values: 64 bytes/page; float32 scales: 4 elts * 4 bytes = 16.
+    assert values.bytes_per_page == 64
+    assert scales.bytes_per_page == 16
 
 
-def test_unit_shard_groups_multi_child_heterogeneous() -> None:
+def test_to_memory_groups_multi_child_heterogeneous() -> None:
     """Multi-child cache with different shapes: one group per child."""
-    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
-        _unit_shard_groups,
-    )
-
-    groups = _unit_shard_groups(_hetero_multi().to_memory())
+    groups = _hetero_multi().to_memory_groups()
     assert len(groups) == 2  # one group per child
-    assert len(groups[0]) == 2 and len(groups[1]) == 2
+    assert len(groups[0].buffers) == 2 and len(groups[1].buffers) == 2
     # Different per-page byte sizes -> kept in separate groups.
-    assert groups[0][0].shape[1] != groups[1][0].shape[1]
+    assert groups[0].bytes_per_page != groups[1].bytes_per_page
+
+
+def test_to_memory_groups_nested_quantized_child_count() -> None:
+    """A nested tree yields one group per leaf (child, kind).
+
+    Mirrors the DISTINF-383 nested-tree case authored-side: a quantized
+    ``target`` (values + scales) beside a non-quantized ``draft`` (values only)
+    produces three groups, in child-major then kind order.
+    """
+    tree = MultiKVCacheBuffer(
+        children={
+            "target": _kv(64, dtype=DType.uint8, scale_elts=4),
+            "draft": _kv(8),
+        }
+    )
+    groups = tree.to_memory_groups()
+    assert len(groups) == 3  # target values, target scales, draft values
+    assert [g.bytes_per_page for g in groups] == [64, 16, 16]
+    assert all(not g.replicated for g in groups)
+
+
+# ---------------------------------------------------------------------------
+# from_paged memory build (guards the re-flatten regression)
+# ---------------------------------------------------------------------------
+
+
+def test_per_replica_groups_keep_children_separate() -> None:
+    """``[buf.to_memory_groups() ...]`` keeps a MultiKVCacheBuffer's children
+    as separate authored groups.
+
+    Guards against regressing to a flattened ``all_buffers`` layout (the
+    multi-cache heterogeneous-shape crash). CPU-only: exercises the build step
+    without constructing an engine (which needs NIXL).
+    """
+    memory = [
+        buf.to_memory_groups()
+        for buf in [_hetero_multi(num_pages=4), _hetero_multi(num_pages=4)]
+    ]
+
+    assert len(memory) == 2
+    assert all(isinstance(g, KVCacheMemoryGroup) for g in memory[0])
+    # Children stay in separate groups with different bytes_per_page.
+    assert len(memory[0]) == 2
+    assert memory[0][0].bytes_per_page != memory[0][1].bytes_per_page
 
 
 # ---------------------------------------------------------------------------
@@ -140,31 +174,93 @@ def test_unit_shard_groups_multi_child_heterogeneous() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _mem(elts_per_page: int = 64, *, num_pages: int = 4) -> KVCacheMemory:
-    """A sharded (non-replicated) transport memory unit, uint8 view."""
-    return KVCacheMemory(buffer=_cpu_buf(num_pages, elts_per_page, DType.uint8))
-
-
-def test_mixed_replication_within_engine_detected() -> None:
-    """Units that disagree on replication kind are rejected."""
-    from max.pipelines.kv_cache import KVTransferEngine
-
-    replicated = ReplicatedKVCacheMemory(
-        buffer=_cpu_buf(4, 64, DType.uint8),
-        peers=[_cpu_buf(4, 64, DType.uint8)],
+def _group(
+    elts_per_page: int = 64,
+    *,
+    num_pages: int = 4,
+    tp: int = 2,
+    replicated: bool = False,
+) -> KVCacheMemoryGroup:
+    """A transport NIXL group of ``tp`` uint8-view TP shards."""
+    return KVCacheMemoryGroup(
+        replicated=replicated,
+        buffers=[
+            _cpu_buf(num_pages, elts_per_page, DType.uint8) for _ in range(tp)
+        ],
     )
 
-    with pytest.raises(ValueError, match="same replication kind"):
-        KVTransferEngine("engine", [[replicated, _mem()]], total_num_pages=4)
+
+# ---------------------------------------------------------------------------
+# Per-group replication derivation (replicate_kv_across_tp = "every group replicated")
+# ---------------------------------------------------------------------------
+#
+# Replication is per-group, so mixed replication within one engine is now
+# representable (no blanket "same replication kind" assertion). The engine-wide
+# replicate_kv_across_tp feeds only the flatten routing decision in resolve_peer_view,
+# so it is True only when EVERY group is replicated. These exercise the pure
+# derivation helper directly -- no NIXL registration required.
+
+
+def test_derive_replicate_kv_across_tp_mixed_allowed() -> None:
+    """A sharded + replicated mix is allowed and derives False.
+
+    Previously this raised a "same replication kind" ValueError. With per-group
+    replication it constructs (uniform-topology transfers work); the engine-wide
+    flag is False because not every group is replicated. Heterogeneous-topology
+    routing for a mix is deferred to MXSERV-290.
+    """
+    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
+        _derive_replicate_kv_across_tp,
+    )
+
+    replicated = _group(replicated=True)
+    sharded = _group()
+    assert _derive_replicate_kv_across_tp([[replicated, sharded]]) is False
+
+
+def test_derive_replicate_kv_across_tp_all_replicated() -> None:
+    """All-replicated (MLA) derives True so the flatten path still fires."""
+    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
+        _derive_replicate_kv_across_tp,
+    )
+
+    memory = [[_group(replicated=True), _group(replicated=True)]]
+    assert _derive_replicate_kv_across_tp(memory) is True
+
+
+def test_derive_replicate_kv_across_tp_all_sharded() -> None:
+    """All-sharded derives False."""
+    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
+        _derive_replicate_kv_across_tp,
+    )
+
+    memory = [[_group(), _group()]]
+    assert _derive_replicate_kv_across_tp(memory) is False
+
+
+def test_inconsistent_replication_across_replicas_raises() -> None:
+    """A group index must agree on ``replicated`` across DP replicas.
+
+    Unlike "all groups agree" (dropped), a logical cache is consistently
+    replicated across replicas, so replica 1's group 0 disagreeing with replica
+    0's group 0 is rejected. This raises before any NIXL registration, so it is
+    CPU-testable.
+    """
+    from max.pipelines.kv_cache import KVTransferEngine
+
+    replica0 = [_group(replicated=True)]
+    replica1 = [_group()]  # same group index, different replication kind
+    with pytest.raises(ValueError, match="consistently across DP replicas"):
+        KVTransferEngine("engine", [replica0, replica1], total_num_pages=4)
 
 
 def test_replicas_with_different_group_counts_raises() -> None:
-    """Replicas that produce different NIXL group counts are rejected."""
+    """Replicas that provide different NIXL group counts are rejected."""
     from max.pipelines.kv_cache import KVTransferEngine
 
-    # Replica 0: two differently-shaped units -> 2 groups; replica 1: 1 group.
-    replica0 = [_mem(64), _mem(16)]
-    replica1 = [_mem(64)]
+    # Replica 0: two groups; replica 1: one group.
+    replica0 = [_group(64), _group(16)]
+    replica1 = [_group(64)]
 
     with pytest.raises(ValueError, match="consistent buffer structure"):
         KVTransferEngine("engine", [replica0, replica1], total_num_pages=4)
@@ -222,7 +318,7 @@ def test_build_group_descriptors_uses_own_stride_per_group() -> None:
 def test_validate_tensor_shape_rejects_mismatched_shards() -> None:
     """Shards of one group must share a shape (subsumes elt-count + dtype).
 
-    ``to_memory()`` emits 2-D uint8 views (``[total_num_pages,
+    ``to_memory_groups()`` emits 2-D uint8 views (``[total_num_pages,
     bytes_per_page]``), so shape-equality is the single invariant a NIXL group
     needs: a differing page count or per-page stride across shards is rejected
     outright rather than silently producing a mismatched transfer descriptor.
@@ -241,35 +337,3 @@ def test_validate_tensor_shape_rejects_mismatched_shards() -> None:
     wider = _cpu_buf(17, 48, DType.uint8)
     with pytest.raises(ValueError, match="same shape"):
         _validate_tensor_shape([good, wider])
-
-
-# ---------------------------------------------------------------------------
-# from_paged_kv_cache memory build (guards the re-flatten regression)
-# ---------------------------------------------------------------------------
-
-
-def test_per_replica_memory_keeps_children_separate() -> None:
-    """from_paged maps each replica buffer through ``to_memory()``, keeping a
-    MultiKVCacheBuffer's children as separate typed groups.
-
-    Guards against regressing to a flattened ``all_buffers`` layout (the
-    multi-cache heterogeneous-shape crash). CPU-only: exercises the build step
-    without constructing an engine (which needs NIXL).
-    """
-    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
-        _per_replica_memory,
-        _unit_shard_groups,
-    )
-
-    # dp = 2 replicas.
-    memory = _per_replica_memory(
-        [_hetero_multi(num_pages=4), _hetero_multi(num_pages=4)]
-    )
-
-    assert len(memory) == 2
-    # Typed to_memory() units, not raw Buffers from a flattened all_buffers.
-    assert all(isinstance(u, KVCacheMemory) for u in memory[0])
-    # Children stay in separate groups with different bytes_per_page.
-    groups = _unit_shard_groups(memory[0])
-    assert len(groups) == 2
-    assert groups[0][0].shape[1] != groups[1][0].shape[1]

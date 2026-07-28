@@ -13,9 +13,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from max.driver import Buffer
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import KVCacheMemory
+from max.nn.kv_cache.cache_params import KVCacheMemoryGroup
 
 
 def view_2d_uint8(buf: Buffer, total_num_pages: int) -> Buffer:
@@ -26,6 +28,23 @@ def view_2d_uint8(buf: Buffer, total_num_pages: int) -> Buffer:
     return buf.view(DType.uint8, [total_num_pages, bytes_per_page])
 
 
-def kv_memory(buf: Buffer, total_num_pages: int) -> KVCacheMemory:
-    """Wraps a raw buffer as a 2-D uint8 ``KVCacheMemory`` unit."""
-    return KVCacheMemory(buffer=view_2d_uint8(buf, total_num_pages))
+def kv_memory(buf: Buffer, total_num_pages: int) -> KVCacheMemoryGroup:
+    """Wraps a single raw buffer as a one-shard, non-replicated NIXL group."""
+    return kv_group([buf], total_num_pages)
+
+
+def kv_group(
+    bufs: Sequence[Buffer],
+    total_num_pages: int,
+    *,
+    replicated: bool = False,
+) -> KVCacheMemoryGroup:
+    """Wraps raw TP-shard buffers as one authored NIXL group.
+
+    Every buffer must share a shape after the uint8 page-view; the group carries
+    all shards of one logical ``(child, kind)`` tensor.
+    """
+    return KVCacheMemoryGroup(
+        replicated=replicated,
+        buffers=[view_2d_uint8(b, total_num_pages) for b in bufs],
+    )
