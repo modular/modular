@@ -1052,11 +1052,13 @@ def quantize_dynamic_scaled_async_fp4_kernel[
             address_space=AddressSpace.SHARED,
         ]
     ](
-        external_memory[
-            Scalar[input_dtype],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]()
+        UnsafePointer(
+            external_memory[
+                Scalar[input_dtype],
+                address_space=AddressSpace.SHARED,
+                alignment=128,
+            ]()
+        )
     )
 
     comptime input_smem_tile_size = _idx_product[

@@ -2197,11 +2197,13 @@ def gemm_mma_cpasync_kernel[
     comptime SmemType = _MmaCpAsyncSmem[
         a_type, tile_m, tile_n, tile_k, stage_cnt
     ]
-    ref smem = external_memory[
-        Scalar[DType.uint8],
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ]().bitcast[SmemType]()[]
+    ref smem = UnsafePointer(
+        external_memory[
+            Scalar[DType.uint8],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+        ]()
+    ).bitcast[SmemType]()[]
     var smem_a = smem.a_tiles()
     var smem_b = smem.b_tiles()
     var smem_barrier = smem.barriers()
