@@ -636,25 +636,6 @@ struct Pointer[
     ):
         self = {_mlir_value = other._mlir_value}
 
-    # Explicit spelling of the cast above. Writing `UnsafePointer(p)` instead
-    # resolves to the mutable-to-immutable cast, silently dropping `mut`, so
-    # callers pinning a safe pointer back to unsafe would otherwise have to
-    # restate `T`, `origin` and `address_space` to keep the origin intact.
-    # TODO: Remove when the `_safe` parameter is removed from this type.
-    @always_inline("builtin")
-    @doc_hidden
-    def __init__(
-        *,
-        unsafe_from: Pointer[...],
-        out self: Pointer[
-            unsafe_from.T,
-            unsafe_from.origin,
-            address_space=unsafe_from.address_space,
-            _safe=Self._safe,
-        ],
-    ):
-        self = {_mlir_value = unsafe_from._mlir_value}
-
     def __init__[
         U: ImplicitlyDeletable, //
     ](
