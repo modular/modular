@@ -224,7 +224,7 @@ modular_py_test(
     srcs = ["lsp_smoke_kernels_main.py"],
     args = [
         "--scan-root-file",
-        "$(rootpath //max/kernels/src:BUILD.bazel)",
+        "$(rootpath //max/kernels/src:index.md)",
         # `data` below stages each package's raw `:srcs` at the same runfiles
         # path as its mojo_deps-precompiled `.mojoc`, which makes
         # `resolveModulePath` treat that path as "inside a package" and skip
@@ -232,7 +232,7 @@ modular_py_test(
         # Passing the shared parent directory here too gives it a non-package
         # root to find each package under instead.
         "--extra-import-root",
-        "$(rootpath //max/kernels/src:BUILD.bazel)",
+        "$(rootpath //max/kernels/src:index.md)",
     ] + [
         arg
         for f in _KERNELS_NO_RUN_LIST
@@ -243,7 +243,7 @@ modular_py_test(
     ],
     data = [
         "//KGEN/tools/kgen",
-        "//max/kernels/src:BUILD.bazel",
+        "//max/kernels/src:index.md",
     ] + [
         "//max/kernels/src/%s:srcs" % pkg
         for pkg in _KERNEL_PACKAGES
