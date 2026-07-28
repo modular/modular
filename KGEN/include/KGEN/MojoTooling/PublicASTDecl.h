@@ -452,7 +452,7 @@ public:
   ///    "kind": "argument",
   ///    "name": string,
   ///    "description": string,
-  ///    "convention": string, // "read", "mut", "var"
+  ///    "convention": string, // "imm", "mut", "var"
   ///    "type": string,
   ///    "path": string,
   ///    "passingKind": string,
