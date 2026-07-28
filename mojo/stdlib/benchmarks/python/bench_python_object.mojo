@@ -25,12 +25,11 @@ so the timing is robust regardless of which thread the `std.benchmark` harness
 runs the closure on. The acquire/release happens once per run, outside the
 measured loop, so it does not perturb the per-call numbers.
 
-Every operand is kept alive by a cheap, pure read placed *after* `b.iter`. A
-by-reference `@parameter` capture is not a use, so an operand whose last
-textual use precedes `b.iter` is destroyed before the measured closure ever
-runs and the closure then operates on a freed `PyObject`. Small integers
-survive that only because CPython interns them as immortal; a `list` or `str`
-operand segfaults.
+Operands go in an explicit capture list, which keeps them alive for as long as
+the closure is. The implicit by-reference capture of an `@parameter` closure
+does not: it is not a use, so an operand whose last use precedes `b.iter` is
+destroyed before the measured closure runs, leaving the closure to operate on a
+freed `PyObject`.
 """
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
@@ -48,14 +47,12 @@ def bench_getattr(mut b: Bencher) raises:
         var obj = PythonObject(42)
 
         @always_inline
-        @parameter
-        def call_fn() raises:
+        def call_fn() raises {var obj}:
             for _ in range(LOOP_SIZE):
                 var r = obj.__getattr__("numerator")
                 keep(r)
 
-        b.iter[call_fn]()
-        _ = obj is obj  # Keep `obj` alive across the measured call.
+        b.iter(call_fn)
 
 
 @parameter
@@ -66,15 +63,12 @@ def bench_op_add(mut b: Bencher) raises:
         var c = PythonObject(10)
 
         @always_inline
-        @parameter
-        def call_fn() raises:
+        def call_fn() raises {var a, var c}:
             for _ in range(LOOP_SIZE):
                 var r = a + c
                 keep(r)
 
-        b.iter[call_fn]()
-        _ = a is a  # Keep the operands alive across the measured call.
-        _ = c is c
+        b.iter(call_fn)
 
 
 @parameter
@@ -88,14 +82,11 @@ def bench_op_iadd(mut b: Bencher) raises:
         var c = PythonObject(0)
 
         @always_inline
-        @parameter
-        def call_fn() raises:
+        def call_fn() raises {mut a, var c}:
             for _ in range(LOOP_SIZE):
                 a += c
 
-        b.iter[call_fn]()
-        _ = a is a  # Keep the operands alive across the measured call.
-        _ = c is c
+        b.iter(call_fn)
 
 
 @parameter
@@ -106,15 +97,12 @@ def bench_op_lt(mut b: Bencher) raises:
         var c = PythonObject(10)
 
         @always_inline
-        @parameter
-        def call_fn() raises:
+        def call_fn() raises {var a, var c}:
             for _ in range(LOOP_SIZE):
                 var r = a < c
                 keep(r)
 
-        b.iter[call_fn]()
-        _ = a is a  # Keep the operands alive across the measured call.
-        _ = c is c
+        b.iter(call_fn)
 
 
 @parameter
@@ -125,15 +113,12 @@ def bench_op_in(mut b: Bencher) raises:
         var needle = PythonObject(5)
 
         @always_inline
-        @parameter
-        def call_fn() raises:
+        def call_fn() raises {var lst, var needle}:
             for _ in range(LOOP_SIZE):
                 var r = needle in lst
                 keep(r)
 
-        b.iter[call_fn]()
-        _ = lst is lst  # Keep the operands alive across the measured call.
-        _ = needle is needle
+        b.iter(call_fn)
 
 
 def main() raises:
