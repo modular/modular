@@ -1050,7 +1050,8 @@ struct _Global[
         #   with the ABI destination result pointer already set to `ptr`?
         var ptr = OwnedPointer(Self.init_fn())
 
-        return ptr^.steal_data().bitcast[NoneType]()
+        var storage = ptr^.unsafe_take_allocation().unsafe_leak()
+        return storage.unsafe_bitcast[NoneType]()
 
     @staticmethod
     def _deinit_wrapper(

@@ -287,7 +287,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         #   in a global variable (yet).
         return Self._unsafe_add_functions(
             module,
-            functions.steal_data().unsafe_origin_cast[MutUntrackedOrigin](),
+            functions.unsafe_take_allocation().unsafe_leak(),
         )
 
     @staticmethod

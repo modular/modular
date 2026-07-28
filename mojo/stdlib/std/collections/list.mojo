@@ -27,7 +27,13 @@ from std.collections._asan_annotations import (
 from std.os import abort
 from std.sys import size_of
 
-from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
+from std.memory.alloc import (
+    alloc,
+    dealloc,
+    Allocation,
+    ThinAllocation,
+    Layout,
+)
 from std.memory import (
     Pointer,
     unsafe_destroy_n,
@@ -1360,31 +1366,58 @@ struct List[T: Movable, /](
         self._len = 0
         self._annotate_shrink(old_size)
 
-    def steal_data(mut self) -> UnsafePointer[Self.T, MutUntrackedOrigin]:
-        """Take ownership of the underlying pointer from the list.
+    def unsafe_take_allocation(mut self) -> Allocation[Self.T]:
+        """Take ownership of the underlying storage from the list.
 
         Returns:
-            The underlying data.
+            The `Allocation` that owns the list's backing storage, carrying the
+            `Layout` it was allocated with.
+
+        Safety:
+
+        The list's elements are handed over still initialized, and deallocating
+        the storage does not run their destructors. Destroy any initialized
+        elements yourself (for example with `unsafe_destroy_n`) before
+        deallocating if `T` needs it.
+
+        A list that never allocated has no storage to hand over, so the
+        returned `Allocation` wraps a dangling pointer and a `Layout` with a
+        `count` of zero. Check `layout().count()` before deallocating it.
 
         Examples:
 
         ```mojo
         from std.collections import List
+        from std.memory.alloc import dealloc
 
         list: List[Int64] = [1, 2, 3, 4]
-        ptr = list.steal_data() # list is no longer available
+        var allocation = list.unsafe_take_allocation() # list is now empty
+        var ptr = allocation.unsafe_ptr()
         for idx in range(4):
-            print(ptr[idx], end=" ")
+            print(ptr[unsafe_offset=idx], end=" ")
         print() # Output: 1 2 3 4
-        # Free the pointer data
+        # Free the storage.
+        dealloc(allocation^)
         ```
         """
         self._annotate_delete()
+        var layout = Layout[Self.T](count=self._capacity)
         var ptr = self._data
         self._data = Self._PointerType.unsafe_dangling()
         self._len = 0
         self._capacity = 0
-        return ptr
+        return ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(
+            layout
+        )
+
+    @deprecated(use=unsafe_take_allocation)
+    def steal_data(mut self) -> UnsafePointer[Self.T, MutUntrackedOrigin]:
+        """Take ownership of the underlying pointer from the list.
+
+        Returns:
+            The underlying data.
+        """
+        return self.unsafe_take_allocation().unsafe_leak()
 
     def __getitem__(
         self, slice: StridedSlice
