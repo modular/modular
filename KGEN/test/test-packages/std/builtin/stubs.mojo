@@ -40,6 +40,7 @@ comptime UntrackedOrigin[*, mut: Bool] = Origin[
         `>`,
     ],
 ]()
+comptime ImmUntrackedOrigin = UntrackedOrigin[mut=False]
 comptime ImmStaticOrigin = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.origin.field<`,
@@ -1034,7 +1035,7 @@ struct _VariadicListIter[
     //,
     elt_type: AnyType,
     elt_origin: Origin[mut=elt_is_mutable],
-    list_origin: Origin[mut=False],
+    list_origin: ImmOrigin,
     is_owned: Bool,
 ](RegisterPassable):
     """Iterator for VariadicList.
@@ -1079,13 +1080,13 @@ struct VariadicList[
 ](RegisterPassable):
     comptime _EltPointerType = Pointer[Self.element_type, Self.origin]
     # FIXME: This should be the origin of the container, not UntrackedOrigin.
-    var value: Span[Self._EltPointerType, UntrackedOrigin[mut=False]]
+    var value: Span[Self._EltPointerType, ImmUntrackedOrigin]
 
     # TODO: the origin of the vardecl is captured in the Self.origin set
     # by the compiler to make sure the container outlives all its elements.
     @implicit
     def __init__[
-        size: __mlir_type.index, container_origin: Origin[mut=False]
+        size: __mlir_type.index, container_origin: ImmOrigin
     ](
         out self,
         value: Pointer[
@@ -1096,7 +1097,7 @@ struct VariadicList[
         # Convert the !lit.ref to an UnsafePointer, then cast to a pointer to
         # the first element.
         var array_up = UnsafePointer(to=Pointer(value)[])
-        var elt_ptr = UnsafePointer[_, UntrackedOrigin[mut=False]](
+        var elt_ptr = UnsafePointer[_, ImmUntrackedOrigin](
             __mlir_op.`pop.array.gep`(
                 array_up._get_kgen_pointer(),
                 Int(0).__mlir_index__(),
@@ -1106,7 +1107,7 @@ struct VariadicList[
         self.value = Span(unsafe_ptr=elt_ptr, length=Int(mlir_value=size_tmp))
 
     def __getitem__[
-        self_origin: Origin[mut=False]
+        self_origin: ImmOrigin
     ](ref[self_origin] self, idx: Int) -> ref[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
