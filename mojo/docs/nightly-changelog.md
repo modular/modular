@@ -695,6 +695,16 @@ This version is still a work in progress.
   print(s[0])     # error: use of invalidated interior reference
   ```
 
+- Added
+  `BitSet.test_range[bit_value: Bool, *, lo: Int = 0, hi: Int = Self.size]`,
+  which allows users to efficiently test that bit ranges are an expected value.
+
+- Added a new `BitSet` constructor which takes
+  `resized_from: BitSet[other_size]` as a keyword argument. This constructor
+  debug asserts that there are no set bits above `self`, but will zero-extend
+  if `resized_from` is smaller. There is a companion overload which takes a
+  `truncate_set_bits: ()` kwarg and instead truncates.
+
 - Added `Tuple.consume_elements`, which moves each element out of a tuple into a
   caller-provided closure one at a time. Destructuring such as `a, b = t^`
   copies each element, so it cannot take apart a tuple whose elements are
