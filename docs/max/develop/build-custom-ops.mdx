@@ -119,7 +119,7 @@ struct AddOne:
 ```
 
 The struct must include the
-[`@extensibility.register()`](/max/api/kernels/extensibility/decorators/register/)
+[`@extensibility.register()`](/api/mojo/extensibility/decorators/register/)
 decorator, which registers the custom op with MAX. The `add_one` name we set
 here is the name we'll use to add the op to our Python graph in the next
 section.
@@ -136,12 +136,11 @@ parameter](https://mojolang.org/docs/manual/parameters/#parameterized-functions)
 (either `"cpu"` or `"gpu"`; we'll use this in the next example).
 
 - The runtime arguments include the op's inputs and outputs, which take the form
-of
-[`InputTensor`](/max/api/kernels/extensibility/managed_tensor_slice/#inputtensor)
+of [`InputTensor`](/api/mojo/extensibility/managed_tensor_slice/#inputtensor)
 and
-[`OutputTensor`](/max/api/kernels/extensibility/managed_tensor_slice/#outputtensor),
+[`OutputTensor`](/api/mojo/extensibility/managed_tensor_slice/#outputtensor),
 respectively. These are specialized versions of the
-[`ManagedTensorSlice`](/max/api/kernels/extensibility/managed_tensor_slice/ManagedTensorSlice)
+[`ManagedTensorSlice`](/api/mojo/extensibility/managed_tensor_slice/ManagedTensorSlice)
 type, which represents a tensor of a specific rank and datatype whose memory is
 managed outside of the operation.
 
@@ -171,7 +170,7 @@ struct AddOne:
 ```
 
 We call `elementwise_add_one()` using
-[`foreach()`](/max/api/kernels/extensibility/managed_tensor_slice/foreach/),
+[`foreach()`](/api/mojo/extensibility/managed_tensor_slice/foreach/),
 which distributes an elementwise computation in parallel across all elements in
 the output tensor. At compile time, `foreach()` optimizes the computation for
 the hardware its running on, optimally distributing parallel workloads to make
@@ -186,7 +185,7 @@ the [next example](#example-2-write-device-specific-kernels).)
 
 If you don't annotate output shapes manually in the Python graph, you must tell
 the compiler how to infer them by registering a shape function with
-[`@extensibility.register_shape_function()`](/max/api/kernels/extensibility/decorators/register_shape_function/):
+[`@extensibility.register_shape_function()`](/api/mojo/extensibility/decorators/register_shape_function/):
 
 ```mojo title="kernels/add_one.mojo"
 @extensibility.register_shape_function("add_one")
@@ -290,7 +289,7 @@ pixi run python addition.py
 
 ## Example 2: Write device-specific kernels
 
-[`foreach()`](/max/api/kernels/extensibility/managed_tensor_slice/foreach/)
+[`foreach()`](/api/mojo/extensibility/managed_tensor_slice/foreach/)
 is a device-independent abstraction designed for elementwise computation: it
 handles hardware dispatch and achieves excellent performance for that class of
 operation. When you need direct control over thread dispatch, block sizes, or
@@ -298,7 +297,7 @@ GPU-specific memory patterns, you write separate code paths for CPU and GPU
 using Mojo's `comptime if` and the GPU thread model.
 
 The `add_one` custom op above uses
-[`foreach()`](/max/api/kernels/extensibility/managed_tensor_slice/foreach/)
+[`foreach()`](/api/mojo/extensibility/managed_tensor_slice/foreach/)
 to run our custom op computation. This function is a device-independent
 abstraction to perform calculations on each element of a tensor, and it offers
 great out-of-the-box performance for a range of CPUs and GPUs. However, there
