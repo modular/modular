@@ -390,6 +390,9 @@ struct DeviceContext(
 
         Returns:
             The unique device ID as an `Int64`.
+
+        Raises:
+            If there's an error retrieving the device ID.
         """
         return self._device[].id
 
@@ -2679,11 +2682,11 @@ struct DeviceFunction[
             var translated_arg_offset = translated_arg_offsets[i]
             if translated_arg_offset >= 0:
                 comptime actual_arg_type = Ts[i]
-                var first_word_addr = UnsafePointer(
+                var first_word_addr = Pointer(
                     to=translated_args.unsafe_ptr()[
                         unsafe_offset=translated_arg_offset + extra_align
                     ]
-                ).bitcast[NoneType]()
+                ).unsafe_bitcast[NoneType]()
                 args[i]._to_device_type(device_type_encoder, first_word_addr)
                 dense_args_addrs[
                     translated_arg_idx
