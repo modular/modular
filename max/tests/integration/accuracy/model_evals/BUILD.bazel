@@ -82,18 +82,12 @@ modular_py_binary(
     name = "aa_omniscience_eval",
     testonly = True,
     srcs = ["aa_omniscience_eval.py"],
-    # AA-Omniscience-Public carries an image column; the datasets loader decodes
-    # it via Pillow at runtime even though nothing here imports it statically.
-    ignore_extra_deps = [
-        requirement("pillow"),
-    ],
     imports = ["."],
     main = "aa_omniscience_eval.py",
     deps = [
         ":eval_common",
         requirement("click"),
         requirement("datasets"),
-        requirement("pillow"),
     ],
 )
 

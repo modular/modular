@@ -167,8 +167,8 @@ def infer(
 ) -> dict[str, Any]:
     """Runs one factual question then letter-grades the answer via self-judge."""
     prompt_index, sample = item
-    question = sample.get("question", "")
-    reference = sample.get("answer", sample.get("ground_truth", ""))
+    question = sample["question"]
+    reference = sample["answer"]
     resp = client.chat.completions.create(
         **build_chat_kwargs(
             model, [{"role": "user", "content": question}], params
@@ -336,7 +336,9 @@ def main(
     indexed_dataset = select_rows(
         list(
             load_dataset(
-                "ArtificialAnalysis/AA-Omniscience-Public", split="train"
+                "ArtificialAnalysis/AA-Omniscience-Public",
+                data_files="AA-Omniscience_dataset_public.csv",
+                split="train",
             )
         ),
         sample_size,
