@@ -235,16 +235,6 @@ struct Bool(
         """
         return select[Int](self, 1, 0)
 
-    @always_inline("builtin")
-    def __as_int__(self) -> Int:
-        """Implicitly convert to an integral representation of the value,
-        wherever an `Int` is expected.
-
-        Returns:
-            The integral representation of the value.
-        """
-        return self.__int__()
-
     @always_inline("nodebug")
     def __float__(self) -> Float64:
         """Convert this Bool to a float.
