@@ -1424,6 +1424,12 @@ This version is still a work in progress.
   other_name`) no longer disappears from the completion list when another
   binding to the same declaration is in scope.
 
+- `debug_assert` generates less code, so builds with `-D ASSERT=all` compile
+  faster. Calls with no message arguments no longer allocate a 2048-byte message
+  buffer in the caller's frame, which previously grew with the number of asserts
+  and could push GPU kernels past the stack frame limit. A no-message assert
+  failure now reports `assertion failed` instead of an empty message.
+
 - Code folding in VSCode now works for Mojo files. `mojo-lsp-server` no longer
   advertises folding-range support, which only produced docstring ranges and
   caused VSCode to disable its built-in indentation-based folding — leaving
