@@ -627,17 +627,38 @@ struct SIMD[dtype: DType, size: SIMDLength](
         comptime res = SIMD[Self.dtype, Self.size](0)
         self = res
 
+    # The target dtype is a defaulted parameter rather than `Self.dtype` so that
+    # this overload stays out of the way of the `Floatable` constructor below:
+    # spelled with `Self.dtype`, `Float64(x)` for an `Intable` and `Floatable`
+    # `x` becomes ambiguous.
     @always_inline("nodebug")
-    def __init__[T: Intable](out self: Int, value: T):
-        """Initialize from an intable value.
+    def __init__[
+        T: Intable, target_dtype: DType = DType.int
+    ](out self: Scalar[target_dtype], value: T):
+        """Initialize an integer scalar from an intable value.
 
         Parameters:
             T: The Intable type.
+            target_dtype: The dtype of the scalar to construct.
 
         Args:
             value: The value to initialize from.
+
+        Constraints:
+            The target dtype must be integral.
+
+        Example:
+
+        ```mojo
+        var x = 42
+        var p = Pointer(to=x)
+        print(UInt(p))  # the address of `x`
+        ```
         """
-        self = value.__int__()
+        comptime assert (
+            target_dtype.is_integral()
+        ), "constructing from an `Intable` value requires an integral dtype"
+        self = Scalar[target_dtype](value.__int__())
 
     @always_inline("nodebug")
     def __init__[T: IntableRaising](out self: Int, value: T) raises:
