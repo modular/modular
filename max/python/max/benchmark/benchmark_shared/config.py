@@ -35,6 +35,7 @@ DEFAULT_BENCHMARK_SEED = 0x5EED  # spells "SEED" (= 24301)
 
 BaseBackend = Literal[
     "atom",
+    "mach",
     "mcloud",
     "modular",
     "sglang",
@@ -45,6 +46,7 @@ BaseBackend = Literal[
 Backend = Literal[
     "atom",
     "atom-chat",
+    "mach",
     "mcloud",
     "modular",
     "modular-chat",
@@ -75,6 +77,8 @@ CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
     "vllm-chat": "/reset_prefix_cache",
     "sglang": "/flush_cache",
     "sglang-chat": "/flush_cache",
+    # mach deliberately omitted: the Mammoth orchestrator fronting it has no
+    # way to fan a cache-reset call over its gRPC connection to the engine.
 }
 
 BenchmarkTask = Literal[
@@ -380,7 +384,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     # Backend and API configuration (serving-specific)
     backend: Backend = Field(
         default="modular",
-        description="Backend to use for benchmarking. Choices: modular, modular-chat, sglang, sglang-chat, trtllm, trtllm-chat, vllm, vllm-chat",
+        description="Backend to use for benchmarking. Choices: atom, atom-chat, mach, mcloud, modular, modular-chat, sglang, sglang-chat, trtllm, trtllm-chat, vllm, vllm-chat",
         json_schema_extra={
             "group": "Backend and API Configuration",
             "group_description": "Configuration for backend selection and API endpoints",
