@@ -2674,7 +2674,7 @@ struct DeviceFunction[
                 comptime actual_arg_type = Ts[i]
                 var first_word_addr = UnsafePointer(
                     to=translated_args.unsafe_ptr()[
-                        translated_arg_offset + extra_align
+                        unsafe_offset=translated_arg_offset + extra_align
                     ]
                 ).bitcast[NoneType]()
                 args[i]._to_device_type(device_type_encoder, first_word_addr)
