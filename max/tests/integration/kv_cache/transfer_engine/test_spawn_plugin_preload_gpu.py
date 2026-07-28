@@ -44,6 +44,8 @@ def _construct_engine_in_child(result_queue: mp.Queue) -> None:  # type: ignore[
     # main-process RTLD_GLOBAL preload is NOT in effect here. Importing inside
     # the child mirrors the real serve worker, which is also spawn-ed.
     try:
+        from max.dtype import DType
+        from max.nn.kv_cache.cache_params import KVCacheMemory
         from max.pipelines.kv_cache import KVTransferEngine
 
         device = Accelerator(0)
@@ -55,9 +57,15 @@ def _construct_engine_in_child(result_queue: mp.Queue) -> None:  # type: ignore[
         # KVTransferEngine.__init__ -> create_agent -> get_plugin_params("UCX")
         # which is the line that raises NIXL_ERR_NOT_FOUND if the plugin's CUDA
         # deps were not pre-loaded RTLD_GLOBAL in this process.
+        bytes_per_page = (
+            blocks.num_elements * blocks.dtype.size_in_bytes // total_num_pages
+        )
+        unit = KVCacheMemory(
+            buffer=blocks.view(DType.uint8, [total_num_pages, bytes_per_page])
+        )
         engine = KVTransferEngine(
             "spawn_preload_engine",
-            [[blocks]],
+            [[unit]],
             total_num_pages=total_num_pages,
         )
         engine.cleanup()

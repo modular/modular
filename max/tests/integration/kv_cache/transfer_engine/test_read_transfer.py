@@ -21,6 +21,7 @@ from threading import Thread
 
 import numpy as np
 import pytest
+from _transfer_engine_helpers import kv_memory
 from max.driver import CPU, Device
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import (
@@ -75,12 +76,12 @@ def test_read_transfer_completion_from_both_engines(device: Device) -> None:
 
     engine_1 = KVTransferEngine(
         "engine_1",
-        [[blocks_1]],
+        [[kv_memory(blocks_1, total_num_pages)]],
         total_num_pages=total_num_pages,
     )
     engine_2 = KVTransferEngine(
         "engine_2",
-        [[blocks_2]],
+        [[kv_memory(blocks_2, total_num_pages)]],
         total_num_pages=total_num_pages,
     )
 

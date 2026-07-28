@@ -24,8 +24,15 @@ import time
 from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from max.nn.kv_cache.cache_params import (
+        KVCacheBufferInterface,
+        KVCacheMemory,
+        ReplicatedKVCacheMemory,
+    )
 
 import msgspec
 from max._core import nixl
@@ -174,39 +181,30 @@ def _validate_device_type(devices: Sequence[Device]) -> None:
         )
 
 
-def _validate_tensor_shape(
-    tensors: Sequence[Buffer], total_num_pages: int
-) -> tuple[int, int]:
-    # Validate all tensors have the same shape
+def _validate_tensor_shape(tensors: Sequence[Buffer]) -> int:
+    """Return the per-page byte size shared by every shard of a NIXL group.
+
+    Each buffer is the 2-D ``uint8`` view that ``to_memory()`` produced, with
+    ``shape == [total_num_pages, bytes_per_page]``.  The per-page stride is
+    therefore just ``shape[1]`` -- the producer already folded the null block
+    into ``shape[0]`` and divided the byte count by the *allocated* page count,
+    so there is nothing to recompute here (and no separately-threaded
+    ``total_num_pages`` to keep in sync).
+
+    Every shard of a group must have an identical shape; for these uint8 views
+    shape-equality subsumes the old per-element-count and dtype checks.
+    """
     first_tensor = tensors[0]
-    if len(tensors) > 1:
-        first_shape = first_tensor.num_elements
-        first_dtype = first_tensor.dtype
-
-        for i, tensor in enumerate(tensors[1:], 1):
-            if tensor.num_elements != first_shape:
-                raise ValueError(
-                    f"All tensors must have the same shape. Tensor 0 has {first_shape} elements, but Tensor {i} has {tensor.num_elements} elements"
-                )
-            if tensor.dtype != first_dtype:
-                raise ValueError(
-                    f"All tensors must have the same dtype. Tensor 0 has {first_dtype}, but Tensor {i} has {tensor.dtype}"
-                )
-
-    for i, tensor in enumerate(tensors):
-        if tensor.num_elements % total_num_pages != 0:
+    first_shape = tuple(first_tensor.shape)
+    for i, tensor in enumerate(tensors[1:], 1):
+        if tuple(tensor.shape) != first_shape:
             raise ValueError(
-                f"Tensor {i} num elements {tensor.num_elements} must be divisible by total number of pages {total_num_pages}"
+                f"All tensors must have the same shape. Tensor 0 has shape "
+                f"{first_shape}, but Tensor {i} has shape {tuple(tensor.shape)}"
             )
 
-    # Calculate bytes per page
-    bytes_per_page = (
-        first_tensor.num_elements
-        * first_tensor.dtype.size_in_bytes
-        // total_num_pages
-    )
-    elts_per_page = first_tensor.num_elements // total_num_pages
-    return bytes_per_page, elts_per_page
+    # shape == [total_num_pages, bytes_per_page]; the stride is dim 1.
+    return first_shape[1]
 
 
 def _build_group_descriptors(
@@ -1574,15 +1572,101 @@ class TransferEngine:
                         )
 
 
+def _unit_shard_groups(
+    units: Sequence[KVCacheMemory | ReplicatedKVCacheMemory],
+) -> list[list[Buffer]]:
+    """Convert one replica's flat ``to_memory()`` unit list into per-kind shard lists.
+
+    Each returned list is a ``[shard0, shard1, ...]`` raw-buffer list for a
+    single NIXL group: one kind (values or scales) of one cache.  A multi-child
+    cache (e.g. spec-decode target+draft) yields one group per child per kind,
+    since ``to_memory()`` concatenates children child-major.
+
+    - Replicated units (``ReplicatedKVCacheMemory``): one unit per kind,
+      each covering all TP shards → shard list ``[buffer, *peers]``.
+    - Non-replicated units (``KVCacheMemory``): one unit per TP shard per
+      kind.  Units are grouped by their ``buffer.shape`` (dim-1 encodes
+      ``bytes_per_page``) so values and scales end up in separate groups.
+
+    .. warning::
+        **Stopgap**: the shape-comparison grouping for non-replicated units has
+        a latent mis-merge risk: if two distinct kinds (e.g. values and scales
+        from different children) share the same ``bytes_per_page``, their shards
+        would be silently merged into one NIXL group.  The robust fix is a
+        producer-side group-preserving ``to_memory()`` variant that embeds the
+        group boundary in ``cache_params.py`` — pending discussion with
+        Brian Zhang before implementation.
+    """
+    from max.nn.kv_cache.cache_params import (
+        KVCacheMemory,
+        ReplicatedKVCacheMemory,
+    )
+
+    if not units:
+        return []
+
+    if isinstance(units[0], ReplicatedKVCacheMemory):
+        # One unit per kind, each covering all TP shards.
+        replicated_units = [
+            u for u in units if isinstance(u, ReplicatedKVCacheMemory)
+        ]
+        assert len(replicated_units) == len(units), (
+            "Mixed replicated/non-replicated units within a single replica"
+        )
+        return [[u.buffer, *u.peers] for u in replicated_units]
+
+    # Non-replicated: one KVCacheMemory per shard per kind.
+    # Group consecutive units by buffer shape so values and scales
+    # (which have different bytes_per_page after the uint8 view)
+    # end up in separate NIXL groups.
+    groups: list[list[Buffer]] = []
+    current_group: list[Buffer] = []
+    current_shape: tuple[int, ...] | None = None
+    for unit in units:
+        assert isinstance(unit, KVCacheMemory)
+        shape = tuple(unit.buffer.shape)
+        if shape != current_shape:
+            if current_group:
+                groups.append(current_group)
+            current_group = [unit.buffer]
+            current_shape = shape
+        else:
+            current_group.append(unit.buffer)
+    if current_group:
+        groups.append(current_group)
+    return groups
+
+
+def _per_replica_memory(
+    device_buffers: Sequence[KVCacheBufferInterface],
+) -> list[list[KVCacheMemory]]:
+    """Map each replica's device buffer to its typed ``to_memory()`` units.
+
+    Split out from ``from_paged_kv_cache`` so the build step is CPU-testable
+    without constructing an engine (which needs NIXL/GPU). Using ``to_memory()``
+    per buffer keeps a ``MultiKVCacheBuffer``'s children as separate typed units
+    -- guarding against a regression to a flattened ``all_buffers`` layout that
+    would mix heterogeneous child shapes into one group.
+    """
+    return [buf.to_memory() for buf in device_buffers]
+
+
 class KVTransferEngine(TransferEngine):
     """KVCache Transfer Engine with support for Data Parallelism (DP) and Tensor Parallelism (TP).
 
-    The engine accepts a 2D list of tensors: list[list[Buffer]] where the outer list
-    represents DP replicas and the inner list represents TP shards within each replica.
+    The engine accepts per-replica typed memory units
+    (``KVCacheMemory`` / ``ReplicatedKVCacheMemory``) and derives the NIXL
+    group structure internally.  The outer list is indexed by DP replica; the
+    inner list is the flat ``to_memory()`` unit list for that replica.
 
-    ``KVTransferEngine`` is a thin layer on top of :class:`TransferEngine`: it
-    validates the KV buffer grid, builds the per-shard NIXL groups, and derives
-    ``replicate_kv_across_tp`` before delegating all NIXL transport to the base.
+    ``KVTransferEngine`` is a thin layer on top of :class:`TransferEngine` that adds:
+
+    - Validation of tensor shapes and device types
+    - NIXL group construction from typed memory units
+    - Derivation of ``replicate_kv_across_tp`` from unit types (no caller plumbing needed)
+    - ``from_paged_kv_cache()`` convenience constructor
+
+    All NIXL transport operations are delegated to :class:`TransferEngine`.
 
     The TransferEngine communicates with other TransferEngines in other threads
     or processes. However, individual TransferEngines themselves are not
@@ -1592,67 +1676,103 @@ class KVTransferEngine(TransferEngine):
     def __init__(
         self,
         name: str,
-        tensors: Sequence[Sequence[Buffer]],
+        memory: Sequence[Sequence[KVCacheMemory | ReplicatedKVCacheMemory]],
         *,
         total_num_pages: int,
-        replicate_kv_across_tp: bool = False,
-        extra_tensor_groups: Sequence[Sequence[Sequence[Buffer]]] | None = None,
     ) -> None:
-        """Initialize the transfer engine.
+        """Initialize the transfer engine from typed memory units.
 
         Args:
             name: Unique name for this engine.
-            tensors: Main group tensors as ``[replica][tp_shard]``.
-            total_num_pages: Total KV cache pages per tensor.
-            replicate_kv_across_tp: Whether KV is replicated across TP ranks.
-            extra_tensor_groups: Additional tensor groups (e.g., draft KV for
-                speculative decoding). Each entry has the same ``[replica][tp_shard]``
-                structure as ``tensors``. All tensors in each group must have
-                the same shape within that group, but groups may differ in shape.
+            memory: Per-replica unit lists as ``[replica][unit]``.  Each unit
+                is a ``KVCacheMemory`` (non-replicated TP shard) or
+                ``ReplicatedKVCacheMemory`` (MLA — one unit covers all TP
+                shards).  The inner list is the flat ``to_memory()`` output for
+                that replica.  All replicas must have the same unit count and
+                consistent replication kind.
+            total_num_pages: Total KV cache pages per tensor (including the
+                null block, i.e. ``get_num_pages() + 1``).  Each unit's
+                ``buffer.shape[0]`` must equal this value.
         """
+        from max.nn.kv_cache.cache_params import ReplicatedKVCacheMemory
+
         if total_num_pages <= 0:
             raise ValueError(
                 f"Total number of pages {total_num_pages} must be greater than 0"
             )
 
-        # Validate 2D structure
-        if not tensors:
+        if not memory:
             raise ValueError("tensors must contain at least one replica")
 
-        if not all(replica_tensors for replica_tensors in tensors):
-            raise ValueError("Each replica must contain at least one tensor")
-
-        # Validate all replicas have same number of TP shards
-        dp = len(tensors)
-        tp = len(tensors[0])
-        for replica_idx, replica_tensors in enumerate(tensors):
-            if len(replica_tensors) != tp:
+        for r, replica_units in enumerate(memory):
+            if not replica_units:
                 raise ValueError(
-                    f"All replicas must have the same number of tensors. "
-                    f"Replica 0 has {tp} tensors, "
-                    f"but replica {replica_idx} has {len(replica_tensors)} tensors"
+                    "Each replica must contain at least one tensor"
                 )
+            for u in replica_units:
+                if u.total_num_pages != total_num_pages:
+                    raise ValueError(
+                        f"Replica {r} unit has total_num_pages="
+                        f"{u.total_num_pages} but expected {total_num_pages}"
+                    )
 
-        # Assemble the uniform group grid: all_groups[group_idx][replica_idx]
-        # = [shard0, shard1, ...]. The main group is group 0; each extra tensor
-        # group follows. From here on every NIXL group is treated uniformly.
-        extra_groups: list[Sequence[Sequence[Buffer]]] = (
-            list(extra_tensor_groups) if extra_tensor_groups else []
-        )
-        all_groups: list[list[list[Buffer]]] = [
-            [list(replica_tensors) for replica_tensors in tensors]
-        ]
-        for group_idx, group_tensors in enumerate(extra_groups):
-            if len(group_tensors) != dp:
-                raise ValueError(
-                    f"Extra group {group_idx} must have {dp} replicas, "
-                    f"but has {len(group_tensors)}"
-                )
-            all_groups.append(
-                [list(replica_tensors) for replica_tensors in group_tensors]
+        dp = len(memory)
+
+        # Derive replicate_kv_across_tp from the first replica's first unit.
+        # ReplicatedKVCacheMemory is only emitted when replicates_kv_across_tp=True
+        # AND len(values) > 1, which is exactly the condition that
+        # cache_params.replicates_kv_across_tp encodes.
+        first_unit = memory[0][0]
+        replicate_kv_across_tp = isinstance(first_unit, ReplicatedKVCacheMemory)
+
+        # Assert no mixed replication kinds within the engine.
+        # All units across all replicas must agree on whether they are replicated.
+        for r, replica_units in enumerate(memory):
+            for i, unit in enumerate(replica_units):
+                unit_is_replicated = isinstance(unit, ReplicatedKVCacheMemory)
+                if unit_is_replicated != replicate_kv_across_tp:
+                    raise ValueError(
+                        "All KV cache units must have the same replication "
+                        "kind (replicated vs. sharded). Mixed replication "
+                        f"within one engine is not supported "
+                        f"(replica {r}, unit {i} differs from replica 0, unit 0)."
+                    )
+
+        # Build all_groups[group_idx][replica_idx] = [shard0, shard1, ...]
+        # by applying the shape-comparison grouping to each replica's unit list.
+        all_groups: list[list[list[Buffer]]] = []
+        for r, replica_units in enumerate(memory):
+            replica_shard_groups = _unit_shard_groups(replica_units)
+            if r == 0:
+                for shard_list in replica_shard_groups:
+                    all_groups.append([shard_list])
+            else:
+                if len(replica_shard_groups) != len(all_groups):
+                    raise ValueError(
+                        f"Replica {r} produced {len(replica_shard_groups)} NIXL "
+                        f"groups but replica 0 had {len(all_groups)}. "
+                        "Replicas must have a consistent buffer structure."
+                    )
+                for g, shard_list in enumerate(replica_shard_groups):
+                    all_groups[g].append(shard_list)
+
+        # From here on every NIXL group is treated uniformly — there is no
+        # special "main" group. ``all_groups[g][r]`` is the shard list for
+        # group ``g`` of replica ``r``; groups may differ in shape/bytes but
+        # every replica of a given group must agree.
+        if not all_groups:
+            raise ValueError(
+                "memory must contain at least one NIXL group "
+                "(e.g. values/scales or a child cache)"
             )
 
         num_groups = len(all_groups)
+        # TP degree is the shard count of group 0, replica 0; every group and
+        # replica must match it.
+        tp = len(all_groups[0][0])
+        if tp == 0:
+            raise ValueError("Each replica must contain at least one tensor")
+
         effective_replicate = replicate_kv_across_tp and tp > 1
 
         backend_type = _get_nixl_backend_type()
@@ -1670,9 +1790,7 @@ class KVTransferEngine(TransferEngine):
                         "All groups and replicas must share the same TP degree."
                     )
                 _validate_device_type([t.device for t in replica_shards])
-                gbpp, _ = _validate_tensor_shape(
-                    replica_shards, total_num_pages
-                )
+                gbpp = _validate_tensor_shape(replica_shards)
                 group_bpp_list.append(gbpp)
 
                 is_cpu = replica_shards[0].device.is_host
@@ -1746,57 +1864,28 @@ class KVTransferEngine(TransferEngine):
     ) -> KVTransferEngine:
         """Construct an engine wired to a ``PagedKVCacheManager``.
 
-        Pulls the per-replica device buffers, sets ``total_num_pages``, and
-        derives ``replicate_kv_across_tp`` from the cache params. Equivalent to
-        constructing the engine manually but consolidates the boilerplate that
-        prefill/decode schedulers share.
+        Calls ``KVCacheBuffer.to_memory()`` on each replica's device buffer to
+        obtain typed memory units, then passes them to the constructor which
+        derives the NIXL group structure and ``replicate_kv_across_tp`` automatically.
 
         For models with multiple KV caches (e.g., speculative decoding with a
-        separate target and draft KV), each child cache is registered as its
-        own NIXL group so that heterogeneous buffer shapes (e.g., 61-layer MLA
-        target vs. 1-layer Eagle draft) are validated and transferred
-        independently.
+        separate target and draft KV), each child cache contributes its own
+        units so that heterogeneous buffer shapes (e.g., 61-layer MLA target
+        vs. 1-layer Eagle draft) are registered as independent NIXL groups.
+
+        Quantized caches (values + scales): ``to_memory()`` emits separate
+        ``KVCacheMemory`` units for values and scales.  Each unit becomes its
+        own NIXL group (one group per child x kind).  For non-quantized caches
+        this collapses to one group per child, which is byte-identical to the
+        previous ``all_buffers`` path.
         """
-        from max.nn.kv_cache.cache_params import MultiKVCacheBuffer
-
-        cache_params = kv_cache.params
-        dp = cache_params.data_parallel_degree
+        dp = kv_cache.params.data_parallel_degree
+        # +1 for the null block.
         total_num_pages = kv_cache.get_num_pages(replica_idx=0) + 1
-
-        device_buffers = [
-            kv_cache.get_device_buffer(replica_idx) for replica_idx in range(dp)
-        ]
-
-        tensors: list[list[Buffer]] = []
-        extra_tensor_groups: list[list[list[Buffer]]] = []
-        child_keys: list[str] = []
-
-        # Collect per-replica buffers. MultiKVCacheBuffer replicas are split
-        # into per-child NIXL groups so each group is shape-homogeneous.
-        # KVCacheBuffer replicas go into a single group as before.
-        for r, buf in enumerate(device_buffers):
-            if isinstance(buf, MultiKVCacheBuffer):
-                if r == 0:
-                    child_keys = list(buf.children.keys())
-                    extra_tensor_groups = [[] for _ in child_keys[1:]]
-                # Main group: this replica's buffers for the first child
-                tensors.append(list(buf.children[child_keys[0]].all_buffers))
-                # Extra groups: one entry per remaining child
-                for g, key in enumerate(child_keys[1:]):
-                    extra_tensor_groups[g].append(
-                        list(buf.children[key].all_buffers)
-                    )
-            else:
-                # Single-cache replica: flat buffer list
-                tensors.append(list(buf.all_buffers))
+        device_buffers = [kv_cache.get_device_buffer(r) for r in range(dp)]
 
         return cls(
             name=name,
-            tensors=tensors,
-            # Need to add 1 for the null block
+            memory=_per_replica_memory(device_buffers),
             total_num_pages=total_num_pages,
-            replicate_kv_across_tp=cache_params.replicates_kv_across_tp,
-            extra_tensor_groups=extra_tensor_groups
-            if extra_tensor_groups
-            else None,
         )

@@ -24,6 +24,7 @@ import multiprocessing as mp
 import time
 
 import numpy as np
+from _transfer_engine_helpers import kv_memory
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import KVTransferEngine
@@ -71,7 +72,10 @@ def transfer_routine_sender(
     # Create engine with DP=2, TP=2
     engine = KVTransferEngine(
         "sender_engine",
-        [replica_0_tensors, replica_1_tensors],
+        [
+            [kv_memory(t, total_num_pages) for t in replica_0_tensors],
+            [kv_memory(t, total_num_pages) for t in replica_1_tensors],
+        ],
         total_num_pages=total_num_pages,
     )
 
@@ -171,7 +175,10 @@ def transfer_routine_receiver(
     # Create engine with DP=2, TP=2
     engine = KVTransferEngine(
         "receiver_engine",
-        [replica_0_tensors, replica_1_tensors],
+        [
+            [kv_memory(t, total_num_pages) for t in replica_0_tensors],
+            [kv_memory(t, total_num_pages) for t in replica_1_tensors],
+        ],
         total_num_pages=total_num_pages,
     )
 

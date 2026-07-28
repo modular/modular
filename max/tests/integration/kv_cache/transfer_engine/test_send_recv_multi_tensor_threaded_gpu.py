@@ -16,6 +16,7 @@ from threading import Thread
 
 import numpy as np
 import pytest
+from _transfer_engine_helpers import kv_memory
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import (
@@ -48,7 +49,7 @@ def transfer_routine_sender(
     # DP=1, TP=2 (2 GPUs in one replica)
     engine_1 = KVTransferEngine(
         "engine_1",
-        [tensors_1],
+        [[kv_memory(t, total_num_pages) for t in tensors_1]],
         total_num_pages=total_num_pages,
     )
 
@@ -111,7 +112,7 @@ def transfer_routine_receiver(
     # DP=1, TP=2 (2 GPUs in one replica)
     engine_2 = KVTransferEngine(
         "engine_2",
-        [tensors_2],
+        [[kv_memory(t, total_num_pages) for t in tensors_2]],
         total_num_pages=total_num_pages,
     )
 

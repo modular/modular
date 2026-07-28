@@ -20,6 +20,7 @@ from threading import Thread
 
 import numpy as np
 import pytest
+from _transfer_engine_helpers import kv_memory
 from max.driver import CPU, Device
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import (
@@ -66,12 +67,12 @@ def test_send_recv_basic(device: Device) -> None:
     # DP=1, TP=1
     engine_1 = KVTransferEngine(
         "engine_1",
-        [[blocks_1]],  # Wrap single tensor in 2D list
+        [[kv_memory(blocks_1, total_num_pages)]],
         total_num_pages=total_num_pages,
     )
     engine_2 = KVTransferEngine(
         "engine_2",
-        [[blocks_2]],  # Wrap single tensor in 2D list
+        [[kv_memory(blocks_2, total_num_pages)]],
         total_num_pages=total_num_pages,
     )
 
