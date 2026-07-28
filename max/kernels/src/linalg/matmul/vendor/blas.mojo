@@ -212,7 +212,12 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     """
 
     comptime resolved_backend = _resolve_backend[Self.backend]()
-    comptime _cublas_type = Optional[OpaquePointer[AnyOrigin[mut=True]]]
+    # TODO(MSTDL-2941): Restore `OpaquePointer` here once the generated
+    # cuBLAS typedefs use safe pointers. The flavors must match because
+    # implicit conversion does not lift through `Optional`.
+    comptime _cublas_type = Optional[
+        UnsafePointer[NoneType, AnyOrigin[mut=True]]
+    ]
     comptime _rocblas_type = _rocblas.Handle
     comptime _hipblaslt_type = hipblasLtHandle_t
     comptime type = Variant[
@@ -367,7 +372,7 @@ def _get_global_handle[
 ](ctx: DeviceContext) raises -> Handle[backend]:
     var HANDLE_NAME = String(t"LINALG_VENDOR_BLAS_{backend}_{ctx.id()}")
     if global_ptr := _get_global_or_null(HANDLE_NAME):
-        var ptr = global_ptr.value().bitcast[Handle[backend]]()
+        var ptr = global_ptr.value().unsafe_bitcast[Handle[backend]]()
         _attach_handle_to_stream(ctx, ptr[])
         return ptr[]
 
@@ -956,6 +961,9 @@ def _rocblas_matmul[
         var a_lead = Int32(a.dynamic_stride(0))
         var b_lead = Int32(b.dynamic_stride(0))
         var c_lead = Int32(c.layout.stride[0]().value())
+        # TODO(MSTDL-2941): Inline this again once a call-result arg
+        # converts to a safe Optional pointer param (MOCO-4334).
+        var c_void = _ffi_void_ptr(c.ptr)
         return _rocblas.check_error(
             rocblas_gemm_ex(
                 handle,
@@ -972,10 +980,10 @@ def _rocblas_matmul[
                 _rocblas.DataType(a_type),
                 a_lead,
                 UnsafePointer(to=beta).bitcast[NoneType](),
-                _ffi_void_ptr(c.ptr),
+                c_void,
                 _rocblas.DataType(c_type),
                 c_lead,
-                _ffi_void_ptr(c.ptr),
+                c_void,
                 _rocblas.DataType(c_type),
                 c_lead,
                 compute_type,
@@ -985,6 +993,7 @@ def _rocblas_matmul[
             )
         )
     # Default column-major.
+    var c_void = _ffi_void_ptr(c.ptr)
     _rocblas.check_error(
         rocblas_gemm_ex(
             handle,
@@ -1001,10 +1010,10 @@ def _rocblas_matmul[
             _rocblas.DataType(b_type),
             Int32(N) if transpose_b else Int32(K),
             UnsafePointer(to=beta).bitcast[NoneType](),
-            _ffi_void_ptr(c.ptr),
+            c_void,
             _rocblas.DataType(c_type),
             Int32(M),
-            _ffi_void_ptr(c.ptr),
+            c_void,
             _rocblas.DataType(c_type),
             Int32(M),
             compute_type,
@@ -1395,6 +1404,7 @@ def _cublasLt_matmul[
         workspace_size
     )
 
+    var d_void = _ffi_void_ptr(d.ptr)
     if c_row_major:
         check_cublas_error(
             cublasLtMatmul(
@@ -1414,7 +1424,7 @@ def _cublasLt_matmul[
                 .as_unsafe_any_origin(),  # beta
                 None,  # _c
                 _cdesc,  # _cdesc
-                _ffi_void_ptr(d.ptr),  # _d
+                d_void,  # _d
                 _ddesc,  # _ddesc
                 UnsafePointer(to=heuristic_result.algo)
                 .as_imm()
@@ -1446,7 +1456,7 @@ def _cublasLt_matmul[
                 .as_unsafe_any_origin(),  # beta
                 None,  # _c
                 _cdesc,  # _cdesc
-                _ffi_void_ptr(d.ptr),  # _d
+                d_void,  # _d
                 _ddesc,  # _ddesc
                 UnsafePointer(to=heuristic_result.algo)
                 .as_imm()
@@ -1728,6 +1738,7 @@ def _hipblasLt_matmul[
     var workspace_size = heuristicResult.workspaceSize
     var workspace = ctx.enqueue_create_buffer[DType.uint8](workspace_size)
 
+    var d_void = _ffi_void_ptr(d.ptr)
     if c_row_major:
         _check_hipblas_error(
             hipblasLtMatmul(
@@ -1739,9 +1750,9 @@ def _hipblasLt_matmul[
                 _ffi_void_ptr(a.ptr),
                 _bdesc,
                 UnsafePointer(to=beta).bitcast[NoneType](),
-                _ffi_void_ptr(d.ptr),
+                d_void,
                 _ddesc,
-                _ffi_void_ptr(d.ptr),
+                d_void,
                 _ddesc,
                 UnsafePointer(to=heuristicResult.algo),
                 workspace.unsafe_ptr().bitcast[NoneType](),
@@ -1760,9 +1771,9 @@ def _hipblasLt_matmul[
                 _ffi_void_ptr(b.ptr),
                 _bdesc,
                 UnsafePointer(to=beta).bitcast[NoneType](),
-                _ffi_void_ptr(d.ptr),
+                d_void,
                 _ddesc,
-                _ffi_void_ptr(d.ptr),
+                d_void,
                 _ddesc,
                 UnsafePointer(to=heuristicResult.algo),
                 workspace.unsafe_ptr().bitcast[NoneType](),

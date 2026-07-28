@@ -2174,7 +2174,7 @@ struct DeviceContext(
     def _from_unsafe_cpp_handle(
         handle: OpaquePointer[MutUntrackedOrigin],
     ) -> DeviceContext:
-        return handle.bitcast[DeviceContext]()[]
+        return handle.unsafe_bitcast[DeviceContext]()[]
 
     def is_compatible(self) -> Bool:
         """Returns True if this device is compatible with MAX.
@@ -2663,9 +2663,9 @@ struct DeviceFunction[
                 var sz = Int(self._inner[]._capture_sizes[i])
                 unsafe_memcpy(
                     dest=blob.unsafe_offset(blob_off),
-                    src=dense_args_addrs[num_translated_args + i].bitcast[
-                        Byte
-                    ](),
+                    src=dense_args_addrs[
+                        num_translated_args + i
+                    ].unsafe_bitcast[Byte](),
                     count=sz,
                 )
                 dense_args_addrs[num_translated_args + i] = (
@@ -2706,13 +2706,10 @@ struct DeviceFunction[
         # dropping it faults the launch.
         var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
         if len(attributes) > 0:
-            var attributes_ptr: UnsafePointer[
-                attributes.T, origin_of(attributes)
-            ] = attributes.unsafe_ptr()
             attr_ptr = OptionalReg(
-                attributes_ptr.bitcast[NoneType]().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ]()
+                attributes.unsafe_ptr()
+                .unsafe_bitcast[NoneType]()
+                .unsafe_origin_cast[MutUntrackedOrigin]()
             )
 
         ctx._hal_stream()[].execute(
@@ -2853,7 +2850,7 @@ struct DeviceFunction[
                 var sz = Int(self._inner[]._capture_sizes[i])
                 unsafe_memcpy(
                     dest=blob.unsafe_offset(blob_off),
-                    src=dense_args_addrs[num_args + i].bitcast[Byte](),
+                    src=dense_args_addrs[num_args + i].unsafe_bitcast[Byte](),
                     count=sz,
                 )
                 dense_args_addrs[num_args + i] = (
@@ -2869,13 +2866,10 @@ struct DeviceFunction[
         # dropping it faults the launch.
         var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
         if len(attributes) > 0:
-            var attributes_ptr: UnsafePointer[
-                attributes.T, origin_of(attributes)
-            ] = attributes.unsafe_ptr()
             attr_ptr = OptionalReg(
-                attributes_ptr.bitcast[NoneType]().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ]()
+                attributes.unsafe_ptr()
+                .unsafe_bitcast[NoneType]()
+                .unsafe_origin_cast[MutUntrackedOrigin]()
             )
 
         ctx._hal_stream()[].execute(
@@ -3009,7 +3003,7 @@ struct DeviceFunction[
                 var sz = Int(self._inner[]._capture_sizes[i])
                 unsafe_memcpy(
                     dest=blob.unsafe_offset(blob_off),
-                    src=dense_args_addrs[num_args + i].bitcast[Byte](),
+                    src=dense_args_addrs[num_args + i].unsafe_bitcast[Byte](),
                     count=sz,
                 )
                 dense_args_addrs[num_args + i] = (
@@ -3194,13 +3188,10 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         # dropping it faults the launch.
         var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
         if len(attributes) > 0:
-            var attributes_ptr: UnsafePointer[
-                attributes.T, origin_of(attributes)
-            ] = attributes.unsafe_ptr()
             attr_ptr = OptionalReg(
-                attributes_ptr.bitcast[NoneType]().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ]()
+                attributes.unsafe_ptr()
+                .unsafe_bitcast[NoneType]()
+                .unsafe_origin_cast[MutUntrackedOrigin]()
             )
 
         ctx._hal_stream()[].execute(

@@ -370,7 +370,7 @@ struct Element[
         return Element(element_data, runtime_layout)
 
     @always_inline("nodebug")
-    def store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], ...]):
+    def store(self, ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...]):
         """Stores element data to memory according to the specified layout.
 
         This method performs a layout-aware store operation, writing data to memory
@@ -442,7 +442,9 @@ struct Element[
                 )
 
     @always_inline("nodebug")
-    def masked_store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], ...]):
+    def masked_store(
+        self, ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...]
+    ):
         """Stores element data to memory with masking for partial stores.
 
         This method performs a layout-aware store operation with boundary checking.

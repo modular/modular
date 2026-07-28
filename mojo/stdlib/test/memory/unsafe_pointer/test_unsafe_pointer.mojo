@@ -38,11 +38,11 @@ from std.testing import (
 # ---------------------------------------------------------------------------- #
 
 
-def _mutable_pointer(p: MutUnsafePointer[Int, ...]) raises:
+def _mutable_pointer(p: MutPointer[Int, ...]) raises:
     assert_equal(p[], 42)
 
 
-def _immutable_pointer(p: ImmUnsafePointer[Int, ...]) raises:
+def _immutable_pointer(p: ImmPointer[Int, ...]) raises:
     assert_equal(p[], 42)
 
 

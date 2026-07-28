@@ -1223,7 +1223,9 @@ struct RawDriver(Movable):
             )
         return String(
             CStringSlice(
-                unsafe_from_ptr=value.unsafe_assume_init_ref().bitcast[Int8]()
+                unsafe_from_ptr=value.unsafe_assume_init_ref().unsafe_bitcast[
+                    Int8
+                ]()
             )
         )
 
