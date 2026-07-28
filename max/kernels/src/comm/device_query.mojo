@@ -192,12 +192,9 @@ def dispatch_select_comm_config[
         return default_entry
 
     # get all static num_bytes values in table within the search space
-    def rule_get_num_bytes(x: tuning_table.type) {} -> Int:
-        return x.get_num_bytes()
-
     comptime all_num_bytes_values = tuning_table.query_values[
         Int, domain=search_domain
-    ](rule=rule_get_num_bytes)
+    ](rule=lambda (x: tuning_table.type) -> Int: x.get_num_bytes())
 
     comptime for nb in all_num_bytes_values:
 
