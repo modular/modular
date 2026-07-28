@@ -2084,11 +2084,13 @@ def mla_decoding_single_batch[
     # The entire query block (BM x depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
     comptime q_smem_size = BM * depth
-    var q_smem = external_memory[
-        Scalar[q_type],
-        address_space=AddressSpace.SHARED,
-        alignment=alignment,
-    ]()
+    var q_smem = UnsafePointer(
+        external_memory[
+            Scalar[q_type],
+            address_space=AddressSpace.SHARED,
+            alignment=alignment,
+        ]()
+    )
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
@@ -3915,11 +3917,13 @@ def mla_prefill_single_batch[
     # The entire query block (BM x q_depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
     comptime q_smem_size = BM * q_depth
-    var q_smem = external_memory[
-        Scalar[q_type],
-        address_space=AddressSpace.SHARED,
-        alignment=alignment,
-    ]()
+    var q_smem = UnsafePointer(
+        external_memory[
+            Scalar[q_type],
+            address_space=AddressSpace.SHARED,
+            alignment=alignment,
+        ]()
+    )
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),

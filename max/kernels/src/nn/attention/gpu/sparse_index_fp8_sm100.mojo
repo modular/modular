@@ -206,12 +206,14 @@ def _fp8_index_body[
 
     comptime k_elems = BM_key * depth
     comptime q_elems = MMA_N * depth
-    var smem = external_memory[
-        Scalar[dtype],
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-        name="fp8_index_sm100_smem",
-    ]()
+    var smem = UnsafePointer(
+        external_memory[
+            Scalar[dtype],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+            name="fp8_index_sm100_smem",
+        ]()
+    )
     var k_smem = smem
     var q_smem = smem + k_elems
     var qs_smem = (smem + k_elems + q_elems).bitcast[Float32]()

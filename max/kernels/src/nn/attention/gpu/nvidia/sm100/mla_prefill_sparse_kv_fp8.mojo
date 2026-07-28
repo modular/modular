@@ -987,9 +987,11 @@ struct MLAPrefillSparseFP8[
             k_tma_op_fp8.prefetch_descriptor()
             v_tma_op_fp8.prefetch_descriptor()
 
-        ref smem_fp8 = external_memory[
-            UInt8, address_space=AddressSpace.SHARED, alignment=128
-        ]().bitcast[MLASparseSharedMemoryFP8[Self.config, scale_block_size]]()[]
+        ref smem_fp8 = UnsafePointer(
+            external_memory[
+                UInt8, address_space=AddressSpace.SHARED, alignment=128
+            ]()
+        ).bitcast[MLASparseSharedMemoryFP8[Self.config, scale_block_size]]()[]
         ref smem = smem_fp8.base
         ref qkvo_union = smem.qkvo_union
 

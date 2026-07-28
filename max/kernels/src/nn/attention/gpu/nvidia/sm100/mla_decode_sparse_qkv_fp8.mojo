@@ -39,6 +39,7 @@ SMEM layout (FP8, N = num_kv_stages, typically 4):
 """
 
 from std.collections import OptionalReg
+from std.memory import UnsafePointer
 from std.math import ceildiv, clamp
 from std.math.constants import log2e
 from std.sys import size_of
@@ -347,12 +348,14 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                     _pdl_early_exit_all_q()
                 return
 
-        q_smem = external_memory[
-            Scalar[Self.fp8_type],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-            name="mha_dynamic_shared_memory",
-        ]()
+        q_smem = UnsafePointer(
+            external_memory[
+                Scalar[Self.fp8_type],
+                address_space=AddressSpace.SHARED,
+                alignment=128,
+                name="mha_dynamic_shared_memory",
+            ]()
+        )
 
         var kv_smem = q_smem + Self.BlockElems * Self.NumQKBlocks
 
