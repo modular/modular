@@ -1496,6 +1496,26 @@ struct List[T: Movable, /](
     @__unsafe_nested_origins_read_only
     @always_inline
     def __getitem__(
+        ref self, idx: Int
+    ) -> ref[self.unsafe_get(index(idx))] Self.T:
+        """Gets the list element at the given index.
+
+        Unlike when subscripting using slices negative indices are
+        considered out of bounds. They will be checked in the same situations
+        as "off the end" indexing.
+
+        Args:
+            idx: The index of the element.
+
+        Returns:
+            A reference to the element at the given index.
+        """
+        check_bounds(idx, len(self))
+        return self.unsafe_get(index(idx))
+
+    @__unsafe_nested_origins_read_only
+    @always_inline
+    def __getitem__(
         ref self, idx: Some[Indexer]
     ) -> ref[self.unsafe_get(index(idx))] Self.T:
         """Gets the list element at the given index.

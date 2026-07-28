@@ -315,6 +315,19 @@ struct Span[
     # ===------------------------------------------------------------------===#
 
     @always_inline
+    def __getitem__(self, idx: Int) -> ref[Self.origin] Self.T:
+        """Gets the span element at the given index.
+
+        Args:
+            idx: The index of the element.
+
+        Returns:
+            A reference to the element at the given index.
+        """
+        check_bounds(idx, len(self))
+        return self._data[unsafe_offset=idx]
+
+    @always_inline
     def __getitem__(self, idx: Some[Indexer]) -> ref[Self.origin] Self.T:
         """Gets the span element at the given index.
 
