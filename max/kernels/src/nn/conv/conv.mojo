@@ -848,7 +848,7 @@ struct ConvDirectNHWC[
         comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Base input offsets.
-        var input_base_stack = InlineArray[Int32, micro_kernel_height](
+        var input_base_stack = Array[Int32, micro_kernel_height](
             uninitialized=True
         )
         var input_base_offsets = TileTensor(
@@ -1924,7 +1924,7 @@ struct ConvDirectNHWC[
         comptime output_tile_layout = Layout.row_major(
             micro_kernel_height, micro_kernel_width * simd_size
         )
-        var output_tile_stack = InlineArray[
+        var output_tile_stack = Array[
             Scalar[Self.output_type], output_tile_layout.size()
         ](uninitialized=True)
         var output_micro_tile = LayoutTensor[
@@ -4258,12 +4258,12 @@ struct CachedMIOpenMeta[conv_rank: Int](Movable):
     # Cache key fields
     var is_set: Bool
     var input_dtype: Optional[DType]
-    var input_shape: InlineArray[UInt64, Self.tensor_rank]
-    var filter_shape: InlineArray[UInt64, Self.tensor_rank]
-    var output_shape: InlineArray[UInt64, Self.tensor_rank]
-    var padding: InlineArray[Int32, Self.conv_rank]
-    var stride: InlineArray[Int32, Self.conv_rank]
-    var dilation: InlineArray[Int32, Self.conv_rank]
+    var input_shape: Array[UInt64, Self.tensor_rank]
+    var filter_shape: Array[UInt64, Self.tensor_rank]
+    var output_shape: Array[UInt64, Self.tensor_rank]
+    var padding: Array[Int32, Self.conv_rank]
+    var stride: Array[Int32, Self.conv_rank]
+    var dilation: Array[Int32, Self.conv_rank]
 
     def __init__(out self) raises:
         self.handle = MIOpenHandle()
@@ -4304,12 +4304,12 @@ struct CachedMIOpenMeta[conv_rank: Int](Movable):
 
         self.is_set = False
         self.input_dtype = None
-        self.input_shape = InlineArray[UInt64, Self.tensor_rank](fill=0)
-        self.filter_shape = InlineArray[UInt64, Self.tensor_rank](fill=0)
-        self.output_shape = InlineArray[UInt64, Self.tensor_rank](fill=0)
-        self.padding = InlineArray[Int32, Self.conv_rank](fill=0)
-        self.stride = InlineArray[Int32, Self.conv_rank](fill=0)
-        self.dilation = InlineArray[Int32, Self.conv_rank](fill=0)
+        self.input_shape = Array[UInt64, Self.tensor_rank](fill=0)
+        self.filter_shape = Array[UInt64, Self.tensor_rank](fill=0)
+        self.output_shape = Array[UInt64, Self.tensor_rank](fill=0)
+        self.padding = Array[Int32, Self.conv_rank](fill=0)
+        self.stride = Array[Int32, Self.conv_rank](fill=0)
+        self.dilation = Array[Int32, Self.conv_rank](fill=0)
 
 
 def _get_cached_miopen_meta[
@@ -4373,7 +4373,7 @@ def _conv_miopen[
     var filter_size = filter.num_elements()
     var filter_frsc_buf = ctx.enqueue_create_buffer[filter_type](filter_size)
     var filter_frsc_ptr = filter_frsc_buf.unsafe_ptr()
-    var filter_shape = InlineArray[UInt64, tensor_rank](fill=0)
+    var filter_shape = Array[UInt64, tensor_rank](fill=0)
 
     comptime if filter_is_fcrs:
         comptime assert conv_rank == 2, "FCRS requires 2D convolution"
@@ -4478,9 +4478,9 @@ def _conv_miopen[
     @always_inline
     def image_shape_from_tensor(
         tensor: TileTensor,
-    ) -> InlineArray[UInt64, tensor_rank]:
+    ) -> Array[UInt64, tensor_rank]:
         # Convert to channels first format.
-        var shape = InlineArray[UInt64, tensor_rank](fill=0)
+        var shape = Array[UInt64, tensor_rank](fill=0)
         shape[0] = UInt64(tensor.dim[0]())
         shape[1] = UInt64(tensor.dim[tensor_rank - 1]())
         comptime for i in range(conv_rank):
@@ -4493,8 +4493,8 @@ def _conv_miopen[
     @always_inline
     def int32_array_from_list[
         name: StaticString
-    ](list: IndexList[conv_rank],) raises -> InlineArray[Int32, conv_rank]:
-        var array = InlineArray[Int32, conv_rank](fill=0)
+    ](list: IndexList[conv_rank],) raises -> Array[Int32, conv_rank]:
+        var array = Array[Int32, conv_rank](fill=0)
         for i in range(conv_rank):
             array[i] = Int32(list[i])
             if Int(array[i]) != list[i]:
@@ -4520,12 +4520,12 @@ def _conv_miopen[
 
         @always_inline
         def strides_from_shape(
-            shape: InlineArray[UInt64, tensor_rank]
-        ) -> InlineArray[UInt64, tensor_rank]:
+            shape: Array[UInt64, tensor_rank]
+        ) -> Array[UInt64, tensor_rank]:
             # For logical image (NCHW) or filter (FCRS) shapes, the innermost physical
             # stride is the channels dimension (C) with all other channels expanding
             # out from that.
-            var strides = InlineArray[UInt64, tensor_rank](fill=0)
+            var strides = Array[UInt64, tensor_rank](fill=0)
             var product = shape[1]
             comptime for i in reversed(range(2, tensor_rank)):
                 strides[i] = product

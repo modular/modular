@@ -17,13 +17,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
 from max.pipelines.context import (
     TextContext,
     TextGenerationContextType,
     TextGenerationOutput,
 )
-from max.pipelines.context.tokens import TokenBuffer
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import (
     BatchType,
@@ -59,8 +57,12 @@ class DPBatchPadder:
         kv_manager: The KV cache manager used to claim and allocate
             dummy entries.
         max_length: The maximum sequence length for dummy contexts.
-        model_name: The model name passed to dummy `TextContext` instances.
+        model_name: The model name passed to dummy context instances.
         pipeline: The pipeline used to release dummy entries.
+        context_type: The architecture's concrete context class used to
+            construct dummies. VLM batches require every context to be a
+            `TextAndVisionContext`, so padding dummies must match the
+            architecture's registered context type.
     """
 
     def __init__(
@@ -73,11 +75,13 @@ class DPBatchPadder:
         pipeline: Pipeline[
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
+        context_type: type[TextContext] = TextContext,
     ) -> None:
         self._kv_manager = kv_manager
         self._max_length = max_length
         self._model_name = model_name
         self._pipeline = pipeline
+        self._context_type = context_type
 
     # ------------------------------------------------------------------
     # Public API
@@ -155,11 +159,9 @@ class DPBatchPadder:
         """
         dummies: list[Any] = []
         for _ in range(count):
-            ctx = TextContext(
+            ctx = self._context_type.new_padding_context(
                 max_length=self._max_length,
-                tokens=TokenBuffer(np.zeros(1, dtype=np.int64)),
                 model_name=self._model_name,
-                _is_padding_ctx=True,
             )
             ctx.update(0)
             self._kv_manager.alloc_dummy(

@@ -159,10 +159,10 @@ struct SHMEMUniqueID(ImplicitlyCopyable):
     """Unique ID that must be identical across all threads and nodes to establish
     communication."""
 
-    var data: InlineArray[Byte, 128]
+    var data: Array[Byte, 128]
 
     def __init__(out self):
-        self.data = InlineArray[Byte, 128](fill=0)
+        self.data = Array[Byte, 128](fill=0)
 
     def __init__(out self, *, copy: Self):
         self.data = copy.data.copy()

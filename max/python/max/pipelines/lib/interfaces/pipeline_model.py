@@ -17,13 +17,11 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
 
-import numpy as np
-import numpy.typing as npt
 from max.driver import (
     Buffer,
     Device,
@@ -198,15 +196,16 @@ class ModelInputs:
     lora: LoRAInputs | None = None
     """Per-batch LoRA adapter buffers, or ``None`` when LoRA is disabled."""
 
-    vision_embeddings: list[Buffer] | None = None
-    """Assembled per-device vision embeddings for this step, set by the
-    pipeline from the ``VisionEncoderCache`` (an input, like
-    :attr:`kv_cache_inputs`). ``None`` on text-only / no-vision steps, where
-    the model uses its own empties."""
+    vision_embeddings: list[Buffer] = field(default_factory=list)
+    """Per-device vision-merge embedding inputs for the language graph, set
+    by the pipeline's vision seam (``finalize_vision_inputs``) on every
+    prepared batch of a vision-capable model: the assembled embeddings when
+    this step encoded images, the model's cached zero-row empties otherwise.
+    Stays empty for text-only architectures."""
 
-    vision_scatter_indices: npt.NDArray[np.int32] | None = None
-    """Scatter (merge) indices for :attr:`vision_embeddings`, set by the
-    pipeline alongside it; the model copies them to device."""
+    vision_scatter_indices: list[Buffer] = field(default_factory=list)
+    """Per-device merge (scatter) indices for :attr:`vision_embeddings`,
+    with the same lifecycle."""
 
     hidden_states: Buffer | list[Buffer] | None = None
     """Hidden states for a variable number of tokens per sequence.

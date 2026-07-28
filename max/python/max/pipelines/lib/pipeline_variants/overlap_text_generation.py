@@ -2066,6 +2066,16 @@ class OverlapTextGenerationPipeline(
                     )
                 )
 
+            # Warmup packs ``.buffers`` without going through the prep phase's
+            # vision drive (or ``execute()``), so the vision-merge inputs the
+            # compiled graph unconditionally declares must be finalized here
+            # with the model's empties.
+            if self._encoder_cache is not None:
+                assert isinstance(self._pipeline_model, SupportsVisionEncoding)
+                self._encoder_cache.finalize_vision_inputs(
+                    self._pipeline_model, model_inputs, self._devices, None
+                )
+
             if self._spec_decode_state is not None:
                 assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
                 draft_tokens = Buffer.from_numpy(
@@ -2459,16 +2469,17 @@ class OverlapTextGenerationPipeline(
 
         if self._encoder_cache is not None:
             assert isinstance(self._pipeline_model, SupportsVisionEncoding)
-            vision = self._encoder_cache.run_vision_encode(
+            vision_result = self._encoder_cache.run_vision_encode(
                 self._pipeline_model,
                 as_vision_context_batches(inputs.batches),
                 self._devices,
             )
-            if vision is not None:
-                (
-                    model_inputs.vision_embeddings,
-                    model_inputs.vision_scatter_indices,
-                ) = vision
+            self._encoder_cache.finalize_vision_inputs(
+                self._pipeline_model,
+                model_inputs,
+                self._devices,
+                vision_result,
+            )
 
         if debug_verify_replay_enabled:
             # Reuse non-KV buffers from replay inputs and only swap the

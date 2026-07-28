@@ -2270,7 +2270,8 @@ struct Grouped1D1DMatmulKernel[
                                                 AddressSpace.GLOBAL
                                             ](),
                                             (
-                                                sfb_smem_tile.ptr + smem_offset
+                                                sfb_smem_tile._storage
+                                                + smem_offset
                                             ).address_space_cast[
                                                 AddressSpace.SHARED
                                             ](),
@@ -2315,7 +2316,8 @@ struct Grouped1D1DMatmulKernel[
                                         )
 
                                         var atom_dst = TileTensor(
-                                            sfb_smem_tile.ptr + smem_offset,
+                                            sfb_smem_tile._storage
+                                            + smem_offset,
                                             row_major[
                                                 Self.SFB_TMA_ROWS, ROW_STRIDE
                                             ](),
@@ -2344,7 +2346,7 @@ struct Grouped1D1DMatmulKernel[
                                                     MutAnyOrigin,
                                                     address_space=AddressSpace.SHARED,
                                                 ]
-                                            ](atom_dst.ptr),
+                                            ](atom_dst._storage),
                                             atom_dst.layout,
                                         )
                                         sfb_tma_op.async_copy_4d[
@@ -2570,8 +2572,8 @@ struct Grouped1D1DMatmulKernel[
             # the register while the store is still in flight. Same
             # batched-stores-then-one-wait shape as
             # TmemFragments.store() + wait_store().
-            var _sfb_st_vals = InlineArray[
-                InlineArray[Scalar[DType.uint32], 1],
+            var _sfb_st_vals = Array[
+                Array[Scalar[DType.uint32], 1],
                 Self.config.num_sf_k_tiles,
             ](uninitialized=True)
 
@@ -2819,11 +2821,11 @@ struct Grouped1D1DMatmulKernel[
 
                 # Peer CTA slice using TileTensor pattern (ptr + layout)
                 var a_peer_tt = type_of(a_tt)(
-                    a_tt.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tt._storage + peer_m_rank * Self.a_tma_load_size,
                     a_tt.layout,
                 )
                 var b_peer_tt = type_of(b_tt)(
-                    b_tt.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tt._storage + peer_rank_m * Self.b_tma_load_size,
                     b_tt.layout,
                 )
 
@@ -2880,7 +2882,7 @@ struct Grouped1D1DMatmulKernel[
                                 MutAnyOrigin,
                                 address_space=AddressSpace.SHARED,
                             ]
-                        ](sfa_tt.ptr),
+                        ](sfa_tt._storage),
                         sfa_tt.layout,
                     )
                     sfa_tma_op.async_copy_4d[Self.cta_group](
@@ -2912,7 +2914,7 @@ struct Grouped1D1DMatmulKernel[
                                     MutAnyOrigin,
                                     address_space=AddressSpace.SHARED,
                                 ]
-                            ](sfb_tt.ptr),
+                            ](sfb_tt._storage),
                             sfb_tt.layout,
                         )
                         sfb_tma_op.async_copy_4d[Self.cta_group](
@@ -3233,11 +3235,9 @@ struct Grouped1D1DMatmulKernel[
             # MXFP8 cross-warp amax staging: 32 fp32 slots indexed
             # warp * 8 + token. Reuses the c_tiles SMEM, idle in this
             # path (no bf16 scatter).
-            var amax_smem = c_tiles[0].ptr.bitcast[Float32]()
+            var amax_smem = c_tiles[0]._storage.bitcast[Float32]()
 
-            comptime PartialType = InlineArray[
-                Scalar[Self.accum_type], rep_frag_size
-            ]
+            comptime PartialType = Array[Scalar[Self.accum_type], rep_frag_size]
             var lane_row_is_even = (lane_row & UInt32(1)) == UInt32(0)
 
             comptime for loop_stage in range(num_stages):
@@ -3250,9 +3250,9 @@ struct Grouped1D1DMatmulKernel[
                     )
 
                 var upper_ip = rebind[PartialType](frags_ip.upper).copy()
-                var lower_ip = InlineArray[
-                    Scalar[Self.accum_type], rep_frag_size
-                ](uninitialized=True)
+                var lower_ip = Array[Scalar[Self.accum_type], rep_frag_size](
+                    uninitialized=True
+                )
                 comptime if is_lower_frag_required:
                     lower_ip = rebind[PartialType](frags_ip.lower).copy()
 
@@ -3296,7 +3296,7 @@ struct Grouped1D1DMatmulKernel[
                 # writer downstream.
                 # Storage: per repeat, 8 SwiGLU values per thread.
                 comptime n_swiglu_per_repeat = 8 if is_lower_frag_required else 4
-                var sw_ip = InlineArray[
+                var sw_ip = Array[
                     Scalar[Self.accum_type],
                     n_swiglu_per_repeat * repeats,
                 ](uninitialized=True)
@@ -3577,11 +3577,9 @@ struct Grouped1D1DMatmulKernel[
         # GMEM); the GMEM round trip is replaced by a SMEM round trip. bf16
         # SMEM matches the unfused kernel's BF16-from-GMEM read pattern
         # exactly, so swiglu_match_bf16 precision is automatic.
-        var smem_bf16_ptr = c_tiles[0].ptr.bitcast[BFloat16]()
+        var smem_bf16_ptr = c_tiles[0]._storage.bitcast[BFloat16]()
 
-        comptime PartialType = InlineArray[
-            Scalar[Self.accum_type], rep_frag_size
-        ]
+        comptime PartialType = Array[Scalar[Self.accum_type], rep_frag_size]
 
         var tid_within_epi = UInt32(warp_id_v) * UInt32(WARP_SIZE) + UInt32(
             lane_v
@@ -3642,9 +3640,9 @@ struct Grouped1D1DMatmulKernel[
                 )
 
             var upper_partial = rebind[PartialType](frags.upper).copy()
-            var lower_partial = InlineArray[
-                Scalar[Self.accum_type], rep_frag_size
-            ](uninitialized=True)
+            var lower_partial = Array[Scalar[Self.accum_type], rep_frag_size](
+                uninitialized=True
+            )
             comptime if is_lower_frag_required:
                 lower_partial = rebind[PartialType](frags.lower).copy()
 

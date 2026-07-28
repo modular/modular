@@ -66,14 +66,22 @@ _EXPECT_CRASH = [
     for src in _FILECHECK_TESTS
 ]
 
+# `test_list.mojo` is large (~1300 lines) and heavily templated, so emitting
+# full DWARF for it is the dominant compile cost (~3x the CPU of `line-tables`).
+# Under asan on aarch64 that tips the compile past the 15-minute remote-executor
+# action timeout (`x-buildbuddy-platform.default-timeout`). asan finds bugs from
+# runtime instrumentation, not debug info, and `line-tables` still symbolizes
+# reports to file:line, so use the lighter level under asan for this file only.
+_ASAN_LINE_TABLES_ONLY = ["test_list.mojo"]
+
 [
     mojo_test(
         name = src + ".test",
         srcs = [src],
-        copts = [
-            "--debug-level",
-            "full",
-        ],
+        copts = ["--debug-level"] + (select({
+            "//:asan": ["line-tables"],
+            "//conditions:default": ["full"],
+        }) if src in _ASAN_LINE_TABLES_ONLY else ["full"]),
         data = [src],  # NOTE: some tests attempt to read their source files
         deps = [
             "@mojo//:std",

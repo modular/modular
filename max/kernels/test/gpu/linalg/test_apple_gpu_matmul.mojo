@@ -342,7 +342,7 @@ def test_morton_decode_2d() raises:
     var pass_ = True
 
     # Expected (tile_m, tile_n) pairs for flat indices 0..15.
-    var exp_m: InlineArray[UInt32, 16] = [
+    var exp_m: Array[UInt32, 16] = [
         UInt32(0),
         0,
         1,
@@ -360,7 +360,7 @@ def test_morton_decode_2d() raises:
         3,
         3,
     ]
-    var exp_n: InlineArray[UInt32, 16] = [
+    var exp_n: Array[UInt32, 16] = [
         UInt32(0),
         1,
         0,
@@ -414,7 +414,7 @@ def test_morton_decode_2d_rect() raises:
     # 2x16 grid (log2_m=1, log2_n=4): square core 2x2, sweep 4 hi-bit
     # chunks along N. Every flat in [0, 32) must hit a unique (m, n) in
     # [0, 2) x [0, 16).
-    var seen_2x16 = InlineArray[Bool, 32](fill=False)
+    var seen_2x16 = Array[Bool, 32](fill=False)
     for i in range(32):
         var got = _MM.morton_decode_2d_rect(UInt32(i), UInt32(1), UInt32(4))
         var m = Int(got[0])
@@ -447,7 +447,7 @@ def test_morton_decode_2d_rect() raises:
 
     # 16x2 grid (log2_m=4, log2_n=1): tall analogue. Should cover all
     # (m, n) in [0, 16) x [0, 2).
-    var seen_16x2 = InlineArray[Bool, 32](fill=False)
+    var seen_16x2 = Array[Bool, 32](fill=False)
     for i in range(32):
         var got = _MM.morton_decode_2d_rect(UInt32(i), UInt32(4), UInt32(1))
         var m = Int(got[0])

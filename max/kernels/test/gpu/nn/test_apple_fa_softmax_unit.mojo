@@ -66,8 +66,8 @@ def _softmax_unit_kernel(
     comptime OutMma = MmaOpApple[DType.float32, DType.float32, 1, DEPTH_MMAS]
 
     # Online-softmax state as the kernel declares it (no-sink), seeded m=-inf, l=0.
-    var sm_m = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(-3.0e38))
-    var sm_l = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(0))
+    var sm_m = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(-3.0e38))
+    var sm_l = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(0))
 
     var output = OutMma.zero_accum()
 

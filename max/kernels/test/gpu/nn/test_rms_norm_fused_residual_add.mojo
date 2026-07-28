@@ -104,7 +104,7 @@ def run_rms_norm_fused_residual_add_gpu[
     @always_inline
     @parameter
     def input_fn[
-        width: Int, _rank: Int
+        width: Int, _rank: Int, alignment: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
         return data_buf.raw_load[width=width](idx)

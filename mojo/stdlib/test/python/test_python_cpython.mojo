@@ -326,7 +326,7 @@ def _test_module_object_api(cpy: CPython) raises:
     assert_true(mod)
     assert_true(cpy.PyModule_GetDict(mod))
 
-    var funcs = InlineArray[PyMethodDef, 1](fill={})
+    var funcs = Array[PyMethodDef, 1](fill={})
     # returns 0 on success, -1 on failure
     assert_equal(
         cpy.PyModule_AddFunctions(

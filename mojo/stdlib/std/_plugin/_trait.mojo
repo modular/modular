@@ -133,7 +133,7 @@ trait PluginHooks:
     @staticmethod
     def debug_assert_emit_fn[
         O: Origin
-    ](message: UnsafePointer[Byte, O], length: Int, loc: SourceLocation):
+    ](message: Pointer[Byte, O], length: Int, loc: SourceLocation):
         """Assertion-message emitter for targets without a usable `_printf`.
 
         Parameters:

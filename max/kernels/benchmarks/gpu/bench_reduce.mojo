@@ -15,6 +15,7 @@ from std.sys import align_of, get_defined_int, get_defined_string, simd_width_of
 from std.sys.info import _TargetType
 
 from std.algorithm.backend.gpu.reduction import reduce_launch
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -135,7 +136,7 @@ def run_reduce[
                 reduce_dim=axis,
             ](shape, StaticTuple[_, num_reductions](init), ctx)
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     m.bench_function[bench_func](
         BenchId(

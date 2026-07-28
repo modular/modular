@@ -62,7 +62,7 @@ You can use constraints in the following contexts:
 The constraint system works with *symbolic* propositions.
 
 ```mojo
-def first[size: Int](array: InlineArray[_, size]) -> array.T where size > 0:
+def first[size: Int](array: Array[_, size]) -> array.T where size > 0:
   ...
 ```
 
@@ -151,12 +151,12 @@ knowledge you've explicitly introduced in the calling scope.
 
 ```mojo
 # A function that wants a non-empty list.
-def print_first[size: Int](l: InlineArray[Int, size]) where size >= 1:
+def print_first[size: Int](l: Array[Int, size]) where size >= 1:
     ...
 
 
 # A wrapper that wants a size >= 2 list.
-def print_first_two[size: Int](l: InlineArray[Int, size]) where size >= 2:
+def print_first_two[size: Int](l: Array[Int, size]) where size >= 2:
      # Error: invalid call to 'print_first': lacking evidence to prove
      # correctness
     print_first[size](l)

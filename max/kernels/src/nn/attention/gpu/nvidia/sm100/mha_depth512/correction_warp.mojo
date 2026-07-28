@@ -141,8 +141,8 @@ def depth512_correction[
     @always_inline
     def rescale_o(o_tmem: TmemAddress, c_pair: SIMD[DType.float32, 2]):
         """Double-buffered TMEM load/scale/store over o_cols columns."""
-        var o_b0: InlineArray[Scalar[accum_type], batch_size]
-        var o_b1: InlineArray[Scalar[accum_type], batch_size]
+        var o_b0: Array[Scalar[accum_type], batch_size]
+        var o_b1: Array[Scalar[accum_type], batch_size]
         o_b0 = tcgen05_ld[
             datapaths=32,
             bits=32,
@@ -164,7 +164,7 @@ def depth512_correction[
                 pack=False,
                 width=batch_size,
             ]((o_tmem + b1_offset).addr)
-            var o_b0_scaled = InlineArray[Scalar[accum_type], batch_size](
+            var o_b0_scaled = Array[Scalar[accum_type], batch_size](
                 uninitialized=True
             )
 
@@ -194,7 +194,7 @@ def depth512_correction[
                     pack=False,
                     width=batch_size,
                 ]((o_tmem + b0_offset1).addr)
-            var o_b1_scaled = InlineArray[Scalar[accum_type], batch_size](
+            var o_b1_scaled = Array[Scalar[accum_type], batch_size](
                 uninitialized=True
             )
 
@@ -217,9 +217,9 @@ def depth512_correction[
 
         comptime if load_remainder > 0:
             comptime offset = 2 * batch_size * load_iters
-            var o_b0_scaled_rem = InlineArray[
-                Scalar[accum_type], load_remainder
-            ](uninitialized=True)
+            var o_b0_scaled_rem = Array[Scalar[accum_type], load_remainder](
+                uninitialized=True
+            )
 
             comptime for _i in range(0, load_remainder, 2):
                 var pair = mul_ftz(

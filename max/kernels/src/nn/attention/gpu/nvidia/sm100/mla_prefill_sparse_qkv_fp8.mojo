@@ -199,9 +199,9 @@ struct MLASparseSharedMemoryQKVFP8[config: MLASparseConfig]:
     # FP8 operands. Q is persistent; KV/P are double-buffered for the QK(k) /
     # PV(k-1) one-block software-pipeline overlap. O (bf16) reuses the KV
     # region at the epilogue (all MMAs done -> KV free).
-    var q: InlineArray[Scalar[FP8_TYPE], Self.Q_SIZE]
-    var kv: InlineArray[Scalar[FP8_TYPE], Self.num_mbars * Self.KV_STAGE_SIZE]
-    var p: InlineArray[Scalar[FP8_TYPE], Self.num_mbars * Self.P_STAGE_SIZE]
+    var q: Array[Scalar[FP8_TYPE], Self.Q_SIZE]
+    var kv: Array[Scalar[FP8_TYPE], Self.num_mbars * Self.KV_STAGE_SIZE]
+    var p: Array[Scalar[FP8_TYPE], Self.num_mbars * Self.P_STAGE_SIZE]
     # Separate V (cg2).  Placed right after `p` so (a) q/kv/p keep their exact
     # HEAD byte offsets -- the SW64 MMA operands q/kv/p require 1024B
     # (swizzle-atom) base alignment, so they must NOT shift (a +384B shift of `p`
@@ -209,45 +209,45 @@ struct MLASparseSharedMemoryQKVFP8[config: MLASparseConfig]:
     # (q/kv/p are all 1024B-multiple sized).  At cg1 it is a 128B-multiple dummy;
     # it only shifts the scalar/barrier arrays after it, which are field-pointer
     # addressed and alignment-insensitive.  O (bf16) reuses the `kv` region.
-    var v: InlineArray[Scalar[FP8_TYPE], Self.num_mbars * Self.V_STAGE_SIZE]
+    var v: Array[Scalar[FP8_TYPE], Self.num_mbars * Self.V_STAGE_SIZE]
 
     # Physical gather rows for each in-flight KV block (K producer).
-    var d_indices: InlineArray[Int32, Self.num_mbars * Self.B_TOPK]
+    var d_indices: Array[Int32, Self.num_mbars * Self.B_TOPK]
     # Separate V-producer gather rows (cg2: all B_TOPK keys; size 1 at cg1).
-    var d_indices_v: InlineArray[
+    var d_indices_v: Array[
         Int32, Self.num_mbars * (Self.B_TOPK if Self.is_cg2 else 1)
     ]
 
-    var rowwise_max: InlineArray[Float32, WARPGROUP_SIZE]
-    var rowwise_sum: InlineArray[Float32, WARPGROUP_SIZE]
-    var is_k_valid: InlineArray[UInt8, Self.num_mbars * Self.MASK_BYTES_PER_BUF]
-    var tmem_addr: InlineArray[UInt32, 1]
+    var rowwise_max: Array[Float32, WARPGROUP_SIZE]
+    var rowwise_sum: Array[Float32, WARPGROUP_SIZE]
+    var is_k_valid: Array[UInt8, Self.num_mbars * Self.MASK_BYTES_PER_BUF]
+    var tmem_addr: Array[UInt32, 1]
 
-    var prologue_q: InlineArray[SharedMemBarrier, 1]
+    var prologue_q: Array[SharedMemBarrier, 1]
     # QK^T MMA done (S slot in TMEM ready for WG0).  Sized to the S-TMEM
     # ring depth (NUM_S_SLOTS), NOT num_mbars -- decoupled from the KV SMEM
     # staging depth so the MMA warp can advance independently of it.
-    var qk_done: InlineArray[SharedMemBarrier, Self.NUM_S_SLOTS]
+    var qk_done: Array[SharedMemBarrier, Self.NUM_S_SLOTS]
     # PV MMA done (O accumulated for the block).
-    var sv_done: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var sv_done: Array[SharedMemBarrier, Self.num_mbars]
     # K gather landed (local TMA transaction barrier).  At cg1 the MMA waits
     # this directly; at cg2 WG1 waits it, then arrives the cross-CTA k_ready.
-    var kv_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var kv_ready: Array[SharedMemBarrier, Self.num_mbars]
     # WG0 released an S-TMEM ring slot (see NUM_S_SLOTS above).
-    var p_free: InlineArray[SharedMemBarrier, Self.NUM_S_SLOTS]
+    var p_free: Array[SharedMemBarrier, Self.NUM_S_SLOTS]
     # WG0 wrote FP8 P + rescaled O (SV may proceed).
-    var so_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
-    var k_valid_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
-    var k_valid_free: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var so_ready: Array[SharedMemBarrier, Self.num_mbars]
+    var k_valid_ready: Array[SharedMemBarrier, Self.num_mbars]
+    var k_valid_free: Array[SharedMemBarrier, Self.num_mbars]
 
     # cg2-only cluster handshake barriers (size 1 at cg1, unused there).  The
     # 2SM MMA on the leader (CTA0) reads BOTH CTAs' K/V/Q SMEM, so each CTA's
     # producer arrives the leader's cross-CTA barrier (init cta_group) after its
     # own local TMA lands.
     comptime CG2_MBARS = Self.num_mbars if Self.is_cg2 else 1
-    var k_ready: InlineArray[SharedMemBarrier, Self.CG2_MBARS]
-    var v_ready: InlineArray[SharedMemBarrier, Self.CG2_MBARS]
-    var v_tma_done: InlineArray[SharedMemBarrier, Self.CG2_MBARS]
+    var k_ready: Array[SharedMemBarrier, Self.CG2_MBARS]
+    var v_ready: Array[SharedMemBarrier, Self.CG2_MBARS]
+    var v_tma_done: Array[SharedMemBarrier, Self.CG2_MBARS]
 
 
 struct MLAPrefillSparseQKVFP8[
@@ -284,6 +284,9 @@ struct MLAPrefillSparseQKVFP8[
     comptime B_TOPK_PER_CTA = Self.config.B_TOPK // Self.config.cta_group
     # tcgen05.commit multicast mask: signal both CTAs in the pair at cg2.
     comptime CTA_MASK: UInt16 = 0b11 if Self.is_cg2 else 0b1
+
+    comptime PV_BK = 64
+    comptime NUM_PV_KHALVES = Self.B_TOPK // Self.PV_BK
 
     comptime NUM_SV_ATOMS = 2
     comptime SV_ATOM_MMA_N = Self.config.v_depth // Self.NUM_SV_ATOMS  # 256
@@ -340,13 +343,15 @@ struct MLAPrefillSparseQKVFP8[
         transpose_b=True,
         cta_group=Self.config.cta_group,
     ]
-    # PV per atom: A=P[64,64] k-major, B=V[256,64] mn-major -> O[64,256].
+    # PV per atom, per K-half: A=P[64,PV_BK] k-major, B=V[256,PV_BK] mn-major
+    # -> O[64,256].  BK is always PV_BK (64, one SW64 atom), never B_TOPK
+    # directly -- see NUM_PV_KHALVES above.
     comptime PVAcc = SM100TensorAccumulator[
         FP8_TYPE,
         Self.accum_dtype,
         MMA_M=Self.PADDED_HEADS,
         MMA_N=Self.SV_ATOM_MMA_N,
-        BK=Self.B_TOPK,
+        BK=Self.PV_BK,
         a_tmem=False,
         mma_kind=UMMAKind.KIND_F8F6F4,
         swizzle_a=SW64,
@@ -354,12 +359,19 @@ struct MLAPrefillSparseQKVFP8[
         transpose_b=False,
         cta_group=Self.config.cta_group,
     ]
-    # Byte offset between the two V atoms in the (per-CTA) V buffer: atom `a`
-    # occupies V_BMN_PER_ATOM depth-cols x B_TOPK keys of the k-major SW64 tile
-    # the mn-major PV descriptor reads (cg1: 256*64=16384; cg2: 128*128=16384).
-    comptime V_ATOM_BYTE_OFFSET = (Self.V_BMN_PER_ATOM * Self.B_TOPK) * size_of[
+    # Byte offset between the two V atoms WITHIN one K-half's region of the
+    # (per-CTA) V buffer: atom `a` occupies V_BMN_PER_ATOM depth-cols x
+    # PV_BK keys of the k-major SW64 tile the mn-major PV descriptor reads
+    # (cg1: 256*64=16384; cg2: 128*64=8192).
+    comptime V_ATOM_BYTE_OFFSET = (Self.V_BMN_PER_ATOM * Self.PV_BK) * size_of[
         FP8_TYPE
     ]()
+    # Byte/element strides between consecutive K-halves in the P and V
+    # buffers (each K-half is a self-contained tile of the SAME shape a
+    # single-K-half kernel (B_TOPK==PV_BK, e.g. cg1 today) would produce,
+    # stacked back to back -- see `_write_p_fp8` / `_load_v_fp8`).
+    comptime P_KHALF_STRIDE = Self.PADDED_HEADS_PER_CTA * Self.PV_BK
+    comptime V_KHALF_STRIDE = Self.V_SMEM_COLS_PER_CTA * Self.PV_BK
 
     comptime Common = MLAPrefillSparseCommon[
         Self.KVLUTType, Self.output_dtype, Self.config
@@ -368,10 +380,17 @@ struct MLAPrefillSparseQKVFP8[
     # ------------------------------------------------------------------
     # FP8 SW64 k-major P write (softmax exp2 numerators -> P SMEM).
     # Mirrors the decode `write_fp8_row_to_smem_chunked`
-    # (make_ldmatrix_swizzle[fp8, row_size=B_TOPK, lvw=4] address pattern that
-    # the PV A descriptor `smem_descriptor[BK=B_TOPK, SW64, k-major]` reads).
+    # (make_ldmatrix_swizzle[fp8, row_size=PV_BK, lvw=4] address pattern that
+    # the PV A descriptor `smem_descriptor[BK=PV_BK, SW64, k-major]` reads).
     # Writes 16 FP8 per STS.128 (4 uint32).  `query`/`key_base` come from WG0's
-    # ws-packed S-TMEM read: query = idx%64, key-half = idx//64.
+    # ws-packed S-TMEM read: query = idx%64, key-half = idx//64 (the "key-half"
+    # thread-group split, which always spans P_PER_THREAD=B_TOPK/2 columns).
+    # At cg1 (B_TOPK==PV_BK==64) `key_base` is < PV_BK for both groups, so
+    # `half_idx` is always 0 and this reduces to the single-tile write
+    # unchanged.  At cg2 (B_TOPK=2*PV_BK) the two thread-groups' key_base
+    # values (0, PV_BK) land EXACTLY on the PV K-half boundary, so each group
+    # writes one whole, independently-swizzled PV_BK-wide half-tile -- the
+    # SAME physical layout `_mma`'s per-K-half BK=PV_BK descriptor reads.
     # ------------------------------------------------------------------
     @always_inline
     @staticmethod
@@ -384,17 +403,20 @@ struct MLAPrefillSparseQKVFP8[
             address_space=AddressSpace.SHARED,
             ...,
         ],
-        nums: InlineArray[Scalar[DType.float32], n],
+        nums: Array[Scalar[DType.float32], n],
         query: UInt32,
         key_base: UInt32,
     ):
         comptime P_SW = make_ldmatrix_swizzle[
-            FP8_TYPE, row_size=Self.B_TOPK, log2_vector_width=4
+            FP8_TYPE, row_size=Self.PV_BK, log2_vector_width=4
         ]()
+        var half_idx = key_base / UInt32(Self.PV_BK)
+        var local_key_base = key_base % UInt32(Self.PV_BK)
+        var p_half_smem = p_smem + Int(half_idx) * Self.P_KHALF_STRIDE
         comptime for g in range(n // 16):
             comptime col_offset = g * 16
             var logical = Int(
-                query * UInt32(Self.B_TOPK) + key_base + UInt32(col_offset)
+                query * UInt32(Self.PV_BK) + local_key_base + UInt32(col_offset)
             )
             var phys = P_SW(logical)
             var packed = SIMD[DType.uint32, 4](0)
@@ -406,7 +428,7 @@ struct MLAPrefillSparseQKVFP8[
                     nums[g * 16 + sub * 4 + 3],
                 )
                 packed[sub] = bitcast[DType.uint32, 1](f4.cast[FP8_TYPE]())
-            st_shared_v4_b32(p_smem, phys, packed)
+            st_shared_v4_b32(p_half_smem, phys, packed)
 
     # ------------------------------------------------------------------
     # KV producer (WG1): compute physical gather rows, gather4 the FP8 SW64 KV
@@ -549,10 +571,17 @@ struct MLAPrefillSparseQKVFP8[
         named_barrier[Int32(WARPGROUP_SIZE)](4)
 
         # Placement mirrors the K gather (k-major SW64: col-group `v_cg` at
-        # `v_cg*BN*box_w`, 4-row chunk at `chunk*4*box_w`).  The source col-group
-        # for output col-group `v_cg` selects this CTA's depth slice of atom
-        # `v_cg // CG_PER_ATOM_LOCAL`: global atom start `atom*CG_PER_ATOM_GLOBAL`
-        # + this CTA's within-atom offset `cta_id*CG_PER_ATOM_LOCAL` + `j`.
+        # `v_cg*PV_BK*box_w`, 4-row chunk at `local_c*4*box_w`), but the
+        # B_TOPK topk rows are additionally split into NUM_PV_KHALVES
+        # PV_BK-row halves, each stacked at `V_KHALF_STRIDE` -- the SAME
+        # physical layout `_mma`'s per-K-half BK=PV_BK descriptor reads (see
+        # the `PV_BK`/`NUM_PV_KHALVES` comment on the struct).  At cg1
+        # (B_TOPK==PV_BK) NUM_PV_KHALVES==1 and this reduces to the
+        # single-tile layout unchanged (khalf==0, local_c==c always).  The
+        # source col-group for output col-group `v_cg` selects this CTA's
+        # depth slice of atom `v_cg // CG_PER_ATOM_LOCAL`: global atom start
+        # `atom*CG_PER_ATOM_GLOBAL` + this CTA's within-atom offset
+        # `cta_id*CG_PER_ATOM_LOCAL` + `j`.
         comptime BN = Self.B_TOPK
         comptime box_w = Self.kv_gather_box
         comptime CG_PER_ATOM_GLOBAL = Self.SV_ATOM_MMA_N // box_w
@@ -561,9 +590,12 @@ struct MLAPrefillSparseQKVFP8[
         comptime NUM_CHUNKS = BN // 4
         comptime NUM_PROD_WARPS = WARPGROUP_SIZE // WARP_SIZE  # 4
         comptime CHUNKS_PER_WARP = NUM_CHUNKS // NUM_PROD_WARPS
+        comptime CHUNKS_PER_KHALF = Self.PV_BK // 4
         if elect_one_sync():
             comptime for lc in range(CHUNKS_PER_WARP):
                 var c = local_warp_idx * UInt32(CHUNKS_PER_WARP) + UInt32(lc)
+                var khalf = c / UInt32(CHUNKS_PER_KHALF)
+                var local_c = c % UInt32(CHUNKS_PER_KHALF)
                 var base_i = c * UInt32(4)
                 var r0 = d_indices_buf[base_i]
                 var r1 = d_indices_buf[base_i + 1]
@@ -578,7 +610,10 @@ struct MLAPrefillSparseQKVFP8[
                         + UInt32(j)
                     )
                     var dst = TileTensor(
-                        v_smem_buf + Int(c) * 4 * box_w + v_cg * BN * box_w,
+                        v_smem_buf
+                        + Int(khalf) * Self.V_KHALF_STRIDE
+                        + Int(local_c) * 4 * box_w
+                        + v_cg * Self.PV_BK * box_w,
                         row_major[4, box_w](),
                     )
                     kv_tma_op.async_copy_gather4[cta_group=1](
@@ -1133,12 +1168,6 @@ struct MLAPrefillSparseQKVFP8[
                 comptime if Self.is_cg2:
                     v_ready[pbuf].wait(pphase)
                 tcgen05_fence_after()
-                var p_desc = smem_descriptor[
-                    BMN=Self.PADDED_HEADS_PER_CTA,
-                    BK=Self.B_TOPK,
-                    swizzle_mode=SW64,
-                    is_k_major=True,
-                ](p_ptr + pbuf * UInt32(Self.SMemType.P_STAGE_SIZE))
                 # cg1 reads V mn-major from the shared K buffer; cg2 from the
                 # separate per-CTA V buffer.
                 var v_base = (
@@ -1146,27 +1175,44 @@ struct MLAPrefillSparseQKVFP8[
                 ) if Self.is_cg2 else (
                     kv_ptr + pbuf * UInt32(Self.SMemType.KV_STAGE_SIZE)
                 )
-                var v_desc = smem_descriptor[
-                    BMN=Self.V_BMN_PER_ATOM,
-                    BK=Self.B_TOPK,
-                    swizzle_mode=SW64,
-                    is_k_major=False,
-                ](v_base)
+                var p_base = p_ptr + pbuf * UInt32(Self.SMemType.P_STAGE_SIZE)
                 var c_scale_sv: UInt32 = 0 if k == 1 else 1
-                Self.PVAcc.mma(
-                    p_desc,
-                    v_desc,
-                    UInt32(Self.O_TMEM_ADDR),
-                    c_scale=c_scale_sv,
-                    elect=e,
-                )
-                Self.PVAcc.mma(
-                    p_desc,
-                    v_desc + UInt32(Self.V_ATOM_BYTE_OFFSET),
-                    UInt32(Self.O_TMEM_ADDR_ATOM2),
-                    c_scale=c_scale_sv,
-                    elect=e,
-                )
+                # K-axis split: NUM_PV_KHALVES independent BK=PV_BK sub-MMAs
+                # per atom, each reading its own self-contained P/V half-tile
+                # (see `_write_p_fp8`/`_load_v_fp8`) and accumulating into the
+                # SAME O TMEM address.  At cg1 NUM_PV_KHALVES==1, so this loop
+                # is a single comptime-unrolled iteration -- byte-identical
+                # codegen to the pre-split single-BK=B_TOPK MMA.
+                comptime for khalf in range(Self.NUM_PV_KHALVES):
+                    var p_desc = smem_descriptor[
+                        BMN=Self.PADDED_HEADS_PER_CTA,
+                        BK=Self.PV_BK,
+                        swizzle_mode=SW64,
+                        is_k_major=True,
+                    ](p_base + UInt32(khalf * Self.P_KHALF_STRIDE))
+                    var v_desc = smem_descriptor[
+                        BMN=Self.V_BMN_PER_ATOM,
+                        BK=Self.PV_BK,
+                        swizzle_mode=SW64,
+                        is_k_major=False,
+                    ](v_base + UInt32(khalf * Self.V_KHALF_STRIDE))
+                    # khalf 0 obeys the block's accum_init (c_scale_sv);
+                    # khalf 1+ always accumulate onto khalf 0's partial sum.
+                    var c_scale: UInt32 = c_scale_sv if khalf == 0 else 1
+                    Self.PVAcc.mma(
+                        p_desc,
+                        v_desc,
+                        UInt32(Self.O_TMEM_ADDR),
+                        c_scale=c_scale,
+                        elect=e,
+                    )
+                    Self.PVAcc.mma(
+                        p_desc,
+                        v_desc + UInt32(Self.V_ATOM_BYTE_OFFSET),
+                        UInt32(Self.O_TMEM_ADDR_ATOM2),
+                        c_scale=c_scale,
+                        elect=e,
+                    )
                 mma_arrive_multicast[cta_group=Self.config.cta_group](
                     sv_done[pbuf].unsafe_ptr(), Self.CTA_MASK
                 )
@@ -1310,7 +1356,7 @@ struct MLAPrefillSparseQKVFP8[
             mi = new_max
             li = mul_ftz(li, scale_for_old)
 
-            var nums = InlineArray[Scalar[DType.float32], P_PER_THREAD](
+            var nums = Array[Scalar[DType.float32], P_PER_THREAD](
                 uninitialized=True
             )
             # +P_FP8_BIAS lifts P out of the e4m3 subnormal floor; it scales
@@ -1331,7 +1377,7 @@ struct MLAPrefillSparseQKVFP8[
                 var prev_phase = ((k - 1) / UInt32(Self.config.num_mbars)) & 1
                 sv_done_ptr[prev_buf].wait(prev_phase)
 
-            var o_chunk_prefetch = InlineArray[
+            var o_chunk_prefetch = Array[
                 Scalar[DType.float32], O_RESCALE_CHUNK
             ](uninitialized=True)
             if k > 0 and should_scale_o:
@@ -1356,9 +1402,9 @@ struct MLAPrefillSparseQKVFP8[
 
             if k > 0 and should_scale_o:
                 tcgen05_load_wait()
-                var o_scaled_0 = InlineArray[
-                    Scalar[DType.float32], O_RESCALE_CHUNK
-                ](uninitialized=True)
+                var o_scaled_0 = Array[Scalar[DType.float32], O_RESCALE_CHUNK](
+                    uninitialized=True
+                )
                 comptime for j in range(O_RESCALE_CHUNK):
                     o_scaled_0[j] = mul_ftz(o_chunk_prefetch[j], scale_for_old)
                 tcgen05_st[
@@ -1377,7 +1423,7 @@ struct MLAPrefillSparseQKVFP8[
                         + UInt32(chunk_idx * O_RESCALE_CHUNK)
                     )
                     tcgen05_load_wait()
-                    var o_scaled = InlineArray[
+                    var o_scaled = Array[
                         Scalar[DType.float32], O_RESCALE_CHUNK
                     ](uninitialized=True)
                     comptime for j in range(O_RESCALE_CHUNK):

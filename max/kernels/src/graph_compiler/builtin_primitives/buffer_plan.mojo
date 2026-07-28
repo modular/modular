@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import BitSet, InlineArray
+from std.collections import BitSet, Array
 
 
 def _compute_unshareable[
     N: Int,
-](can_share: InlineArray[Int, N * N], out result: BitSet[N]):
+](can_share: Array[Int, N * N], out result: BitSet[N]):
     """Compute which allocations cannot share memory with any other allocation.
 
     An allocation i is unshareable if no other allocation j has a
@@ -35,13 +35,13 @@ def _compute_unshareable[
 
 def _compute_shareable_rows[
     N: Int,
-](can_share: InlineArray[Int, N * N], out result: InlineArray[BitSet[N], N]):
+](can_share: Array[Int, N * N], out result: Array[BitSet[N], N]):
     """Compute per-allocation sharing bitsets from the sharing matrix.
 
     result[i].test(j) == True iff can_share[i * N + j] == 1, i.e. allocations
     i and j have non-overlapping lifetimes and may share a memory block.
     """
-    result = InlineArray[BitSet[N], N](uninitialized=True)
+    result = Array[BitSet[N], N](uninitialized=True)
     for i in range(N):
         var row: BitSet[N] = {}
         for j in range(N):
@@ -50,8 +50,8 @@ def _compute_shareable_rows[
         result[i] = row^
 
 
-def _maximum(alignments: InlineArray[Int, _]) -> Int:
-    """Return the maximum value in an InlineArray of Ints."""
+def _maximum(alignments: Array[Int, _]) -> Int:
+    """Return the maximum value in an Array of Ints."""
     var result = 0
     for align in alignments:
         result = max(result, align)
@@ -126,8 +126,8 @@ struct MemoryBlock[N: Int](Copyable, Movable):
 struct BufferPlanState[
     num_allocs: Int,
     //,
-    alignments: InlineArray[Int, num_allocs],
-    can_share: InlineArray[Int, num_allocs * num_allocs],
+    alignments: Array[Int, num_allocs],
+    can_share: Array[Int, num_allocs * num_allocs],
 ](Movable):
     # Computed at comptime: which allocations interfere with all others and
     # therefore can never share a memory block with any other allocation.
@@ -146,7 +146,7 @@ struct BufferPlanState[
     var allocated: Int
 
     # Computed allocation offsets for all allocations.
-    var offsets: InlineArray[Int, Self.num_allocs]
+    var offsets: Array[Int, Self.num_allocs]
     var pool_size: Int
     # Sum of all allocation sizes passed to allocate_greedy.
     var requested: Int
@@ -154,7 +154,7 @@ struct BufferPlanState[
     var num_reused: Int
 
     # The set of per-allocation shareable bitsets.
-    var shareable_sets: InlineArray[BitSet[Self.num_allocs], Self.num_allocs]
+    var shareable_sets: Array[BitSet[Self.num_allocs], Self.num_allocs]
 
     def __init__(
         out self,
@@ -172,12 +172,12 @@ struct BufferPlanState[
         self.pool_size = 0
         self.requested = 0
         self.num_reused = 0
-        self.offsets = InlineArray[Int, Self.num_allocs](fill=0)
+        self.offsets = Array[Int, Self.num_allocs](fill=0)
 
     @always_inline
     def take_results(
         deinit self,
-    ) -> Tuple[Int, InlineArray[Int, Self.num_allocs]]:
+    ) -> Tuple[Int, Array[Int, Self.num_allocs]]:
         assert self.allocated == Self.num_allocs
         return self.pool_size, self.offsets
 
@@ -257,7 +257,7 @@ struct BufferPlanState[
             self.allocate_new_block(result_idx, alloc_size)
 
     @always_inline
-    def allocate_greedy[start: Int = 0](mut self, sizes: InlineArray[Int, _]):
+    def allocate_greedy[start: Int = 0](mut self, sizes: Array[Int, _]):
         comptime if not Self.enable_sharing:
             # No allocations can be shared; skip the greedy search entirely.
             for i, size in enumerate(sizes):

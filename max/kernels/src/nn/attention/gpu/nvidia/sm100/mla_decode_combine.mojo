@@ -315,7 +315,7 @@ def mla_combine_kernel[
     ).as_imm()
 
     # Prefetch first split's data into registers
-    var datas = InlineArray[SIMD[output_type, vec_size], elems_per_thread](
+    var datas = Array[SIMD[output_type, vec_size], elems_per_thread](
         uninitialized=True
     )
 
@@ -340,7 +340,7 @@ def mla_combine_kernel[
     # Load LSE values into registers (multiple per lane for >32 splits)
     # and track whether any split is empty (LSE=-inf) for the fast-path
     # check.
-    var local_lse = InlineArray[Float32, num_lse_per_thread](
+    var local_lse = Array[Float32, num_lse_per_thread](
         fill=min_or_neg_inf[DType.float32]()
     )
 
@@ -416,7 +416,7 @@ def mla_combine_kernel[
     # =========================================================================
     # Step 3: Weighted accumulation with prefetching (compile-time unrolled)
     # =========================================================================
-    var result = InlineArray[SIMD[DType.float32, vec_size], elems_per_thread](
+    var result = Array[SIMD[DType.float32, vec_size], elems_per_thread](
         fill=SIMD[DType.float32, vec_size](0.0)
     )
 
@@ -757,7 +757,7 @@ def mla_combine_kernel_split_parallel[
     #   warp_l = sum_over_seen_splits(exp2(lse_i - warp_m))
     # Final output = result / warp_l
     # =========================================================================
-    var result = InlineArray[SIMD[DType.float32, vec_size], elems_per_thread](
+    var result = Array[SIMD[DType.float32, vec_size], elems_per_thread](
         fill=SIMD[DType.float32, vec_size](0.0)
     )
     var warp_m = Float32(NEG_INF)

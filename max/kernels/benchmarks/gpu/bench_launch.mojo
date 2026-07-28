@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.gpu.host import DeviceContext, Dim
 from layout import *
@@ -53,7 +54,7 @@ def bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext) raises:
                 grid_dim=Dim(1), block_dim=Dim(1)
             )
 
-        b.iter_custom[launch](ctx)
+        bencher_iter_custom[launch](b, ctx)
 
     m.bench_function[bench_empty_launch](BenchId("bench_empty_launch"))
 

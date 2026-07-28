@@ -117,7 +117,7 @@ def _get_batch_dims[
 
 comptime _slice_types[
     stride_types: TypeList[Trait=CoordLike, ...], n_dims: Int
-] = stride_types.slice[stride_types.size - n_dims]
+] = stride_types.slice[stride_types.length - n_dims]
 
 
 comptime _shape_types_to_3d_get_first_dim[
@@ -134,7 +134,7 @@ comptime _shape_types_to_3d[
     TypeList.of[
         _shape_types_to_3d_get_first_dim[
             DType.int64,
-            *_slice_types[shape_types.reverse(), shape_types.size - 2](),
+            *_slice_types[shape_types.reverse(), shape_types.length - 2](),
         ]
     ].values,
     _slice_types[shape_types, 2]().values,

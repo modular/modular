@@ -354,7 +354,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    def dict(**kwargs: PythonObject) raises -> PythonObject:
+    def dict(var **kwargs: PythonObject) raises -> PythonObject:
         """Construct an Python dictionary from keyword arguments.
 
         Args:

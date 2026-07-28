@@ -23,7 +23,7 @@
 # is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.
 # ===----------------------------------------------------------------------=== #
-from std.collections import InlineArray
+from std.collections import Array
 from std.sys.info import size_of
 
 from std.memory import bitcast
@@ -75,7 +75,7 @@ struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type](
     comptime cache_bits = 64 if Self.CarrierDType == DType.uint32 else 128
     comptime min_k = -31 if Self.CarrierDType == DType.uint32 else -292
     comptime max_k = 46 if Self.CarrierDType == DType.uint32 else 326
-    comptime divide_magic_number: InlineArray[UInt32, 2] = [6554, 656]
+    comptime divide_magic_number: Array[UInt32, 2] = [6554, 656]
     comptime n_max = (
         (
             Scalar[Self.CarrierDType](2)
@@ -171,7 +171,7 @@ def _write_float[
             var frac = f32 - int_part.cast[DType.float32]()
 
             # Write integer part.
-            var digits = InlineArray[Byte, 12](fill=0)
+            var digits = Array[Byte, 12](fill=0)
             var pos = 11
             if int_part == 0:
                 pos = 10
@@ -194,7 +194,7 @@ def _write_float[
             writer.write(".")
 
             # Write fractional part (up to 6 digits).
-            var frac_digits = InlineArray[Byte, 7](fill=0)
+            var frac_digits = Array[Byte, 7](fill=0)
             var frac_len = 0
             if frac < 1e-7:
                 frac_digits[0] = Byte(ord("0"))
@@ -257,7 +257,7 @@ def _write_float[
         # overhead here compared to snprintf.
         var orig_sig = sig
         var abs_exp = abs(exp)
-        var digits = InlineArray[Byte, 21](uninitialized=True)
+        var digits = Array[Byte, 21](uninitialized=True)
         var idx = 0
         while sig > 0:
             digits[idx] = (sig % 10).cast[DType.uint8]()
@@ -288,7 +288,7 @@ def _write_float[
             # Pad exponent with a 0 if less than two digits
             if exp < 10:
                 writer.write("0")
-            var exp_digits = InlineArray[Byte, 10](uninitialized=True)
+            var exp_digits = Array[Byte, 10](uninitialized=True)
             var exp_idx = 0
             while exp > 0:
                 exp_digits[exp_idx] = Byte(exp % 10)
@@ -725,7 +725,7 @@ def _check_divisibility_and_divide_by_pow10[
     CarrierDType: DType,
     //,
     carrier_bits: Int,
-    divide_magic_number: InlineArray[UInt32, 2],
+    divide_magic_number: Array[UInt32, 2],
 ](mut n: Scalar[CarrierDType], N: Int) -> Bool:
     # Make sure the computation for max_n does not overflow.
     assert N + 1 <= _floor_log10_pow2(carrier_bits)
@@ -884,7 +884,7 @@ def _is_left_endpoint_integer_shorter_interval[
 
 
 # fmt: off
-comptime cache_f32: InlineArray[UInt64, 78] = [
+comptime cache_f32: Array[UInt64, 78] = [
     0x81CEB32C4B43FCF5, 0xA2425FF75E14FC32,
     0xCAD2F7F5359A3B3F, 0xFD87B5F28300CA0E,
     0x9E74D1B791E07E49, 0xC612062576589DDB,
@@ -927,7 +927,7 @@ comptime cache_f32: InlineArray[UInt64, 78] = [
 ]
 # fmt: on
 
-comptime cache_f64: InlineArray[UInt128, 619] = [
+comptime cache_f64: Array[UInt128, 619] = [
     _UInt128(0xFF77B1FCBEBCDC4F, 0x25E8E89C13BB0F7B),
     _UInt128(0x9FAACF3DF73609B1, 0x77B191618C54E9AD),
     _UInt128(0xC795830D75038C1D, 0xD59DF5B9EF6A2418),
@@ -1549,7 +1549,7 @@ comptime cache_f64: InlineArray[UInt128, 619] = [
     _UInt128(0xF70867153AA2DB38, 0xB8CBEE4FC66D1EA8),
 ]
 
-comptime float8_e5m2_to_str: InlineArray[StaticString, 256] = [
+comptime float8_e5m2_to_str: Array[StaticString, 256] = [
     "0.0",
     "1.52587890625e-05",
     "3.0517578125e-05",
@@ -1808,7 +1808,7 @@ comptime float8_e5m2_to_str: InlineArray[StaticString, 256] = [
     "nan",
 ]
 
-comptime float8_e4m3fn_to_str: InlineArray[StaticString, 256] = [
+comptime float8_e4m3fn_to_str: Array[StaticString, 256] = [
     "0.0",
     "0.001953125",
     "0.00390625",
@@ -2067,7 +2067,7 @@ comptime float8_e4m3fn_to_str: InlineArray[StaticString, 256] = [
     "nan",
 ]
 
-comptime float8_e5m2fnuz_to_str: InlineArray[StaticString, 256] = [
+comptime float8_e5m2fnuz_to_str: Array[StaticString, 256] = [
     "0.0",
     "7.62939453125e-06",
     "1.52587890625e-05",
@@ -2326,7 +2326,7 @@ comptime float8_e5m2fnuz_to_str: InlineArray[StaticString, 256] = [
     "-57344.0",
 ]
 
-comptime float8_e4m3fnuz_to_str: InlineArray[StaticString, 256] = [
+comptime float8_e4m3fnuz_to_str: Array[StaticString, 256] = [
     "0.0",
     "0.0009765625",
     "0.001953125",

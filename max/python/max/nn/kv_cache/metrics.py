@@ -15,6 +15,17 @@ from dataclasses import dataclass
 from typing_extensions import Self
 
 
+def dkv_tier_degraded(connected_clients: int, total_clients: int) -> bool:
+    """Returns whether a dKV tier is present but not fully connected.
+
+    True when at least one dKV client exists and fewer than all of them are
+    connected to the external tier, which is the state an operator alerts on for
+    a dead or degraded dKV deployment. Shared by KVCacheMetrics.dkv_degraded and
+    the scheduler's per-batch log so the two cannot fall out of sync.
+    """
+    return total_clients > 0 and connected_clients < total_clients
+
+
 @dataclass
 class KVCacheMetrics:
     """Metrics for the KV cache.
@@ -68,6 +79,16 @@ class KVCacheMetrics:
     """NIXL reads from co-located (default) block store."""
     nixl_read_blocks_remote: int = 0
     """NIXL reads from non-default (remote) block stores."""
+
+    # dKV external-tier health. These are a level and a lifetime-cumulative
+    # counter read live from the connector rather than per-batch transfer
+    # deltas, so they export as gauges and reset_metrics does not clear them.
+    dkv_connected_clients: int = 0
+    """Number of dKV connector clients currently connected to the external tier."""
+    dkv_total_clients: int = 0
+    """Total number of dKV connector clients, one per data-parallel replica."""
+    dkv_reconnect_attempts: int = 0
+    """Cumulative dKV reconnect attempts across all clients over the process lifetime."""
 
     @property
     def prompt_tokens(self) -> int:
@@ -146,6 +167,17 @@ class KVCacheMetrics:
             return 0.0
         return self.nixl_read_blocks_remote / total
 
+    @property
+    def dkv_degraded(self) -> bool:
+        """Whether a dKV tier is present but not every client is connected.
+
+        Delegates to the module-level dkv_tier_degraded so this predicate has a
+        single definition shared with the scheduler's per-batch log.
+        """
+        return dkv_tier_degraded(
+            self.dkv_connected_clients, self.dkv_total_clients
+        )
+
     def __add__(self, other: Self) -> Self:
         """Combine two KVCacheMetrics by summing their respective fields.
 
@@ -190,4 +222,9 @@ class KVCacheMetrics:
             + other.nixl_read_blocks_local,
             nixl_read_blocks_remote=self.nixl_read_blocks_remote
             + other.nixl_read_blocks_remote,
+            dkv_connected_clients=self.dkv_connected_clients
+            + other.dkv_connected_clients,
+            dkv_total_clients=self.dkv_total_clients + other.dkv_total_clients,
+            dkv_reconnect_attempts=self.dkv_reconnect_attempts
+            + other.dkv_reconnect_attempts,
         )

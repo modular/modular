@@ -457,6 +457,11 @@ def fa4_mma[
             # kernel terminal `cluster_sync()` still runs after this return.
             if total_iters_runtime == 0:
                 return
+        # All-masked row (valid_length 0): total_iters == 0, so the
+        # `- (3 - num_q)` below underflows and the MMA warp spins, hanging the
+        # pipeline. Split-K is guarded above; guard the non-split path here.
+        if total_iters_runtime == 0:
+            return
         var iter_count: UInt32 = total_iters_runtime - UInt32(3 - num_q)
 
         # Release the KV slot at `release_idx`, advance to the next stage,
@@ -942,6 +947,11 @@ def fa4_mma[
             # kernel terminal `cluster_sync()` still runs after this return.
             if total_iters_runtime == 0:
                 return
+        # All-masked row (valid_length 0): total_iters == 0, so the
+        # `- (3 - num_q)` below underflows and the MMA warp spins, hanging the
+        # pipeline. Split-K is guarded above; guard the non-split path here.
+        if total_iters_runtime == 0:
+            return
         var iter_count: UInt32 = total_iters_runtime - UInt32(3 - num_q)
 
         # Q_0 @ K_0' (2Q) / Q @ K_e[0]' (1Q), staged over num_qk_stages

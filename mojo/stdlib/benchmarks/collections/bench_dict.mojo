@@ -56,14 +56,12 @@ def bench_dict_insert[size: Int](mut b: Bencher) raises:
     var items = make_dict[size]()
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {mut items}:
         for _ in range(10_000):
             for key in range(size, size + 10):
                 items[key] = Int(random_si64(0, Int64(size)))
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -75,15 +73,13 @@ def bench_dict_lookup[size: Int](mut b: Bencher) raises:
     var items = make_dict[size]()
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm items}:
         for _ in range(10_000):
             for key in range(10):
                 var res = items[key]
                 keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -95,15 +91,13 @@ def bench_dict_contains[size: Int](mut b: Bencher) raises:
     var items = make_dict[size]()
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm items}:
         for _ in range(100_000):
             for key in range(10):
                 var res = key in items
                 keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -115,15 +109,13 @@ def bench_dict_lookup_miss[size: Int](mut b: Bencher) raises:
     var items = make_dict[size]()
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm items}:
         for _ in range(10_000):
             for key in range(size, size + 10):
                 var res = black_box(key) in items
                 keep(res)
 
-    b.iter[call_fn]()
-    _ = items
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -135,16 +127,14 @@ def bench_dict_insert_delete[size: Int](mut b: Bencher) raises:
     var items = make_dict[size]()
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {mut items}:
         for i in range(10_000):
             var key = black_box(size + i)
             items[key] = i
             var result = items.pop(key, 0)
             keep(result)
 
-    b.iter[call_fn]()
-    _ = items
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -156,13 +146,11 @@ def bench_dict_iter[size: Int](mut b: Bencher) raises:
     var items = make_dict[size]()
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm items}:
         for key in black_box(items):
             keep(key)
 
-    b.iter[call_fn]()
-    _ = items
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#

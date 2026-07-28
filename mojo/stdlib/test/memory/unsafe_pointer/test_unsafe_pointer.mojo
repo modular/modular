@@ -188,6 +188,15 @@ def test_explicit_copy_of_pointer_address() raises:
     _ = local
 
 
+def test_address_as_integer_scalar() raises:
+    var local = 1
+    var ptr = UnsafePointer[Int](to=local)
+    assert_equal(UInt(ptr), UInt(Int(ptr)))
+    assert_equal(UInt64(ptr), UInt64(Int(ptr)))
+    assert_equal(Int64(ptr), Int64(Int(ptr)))
+    _ = local
+
+
 def test_bitcast() raises:
     var local = 1
     var ptr = UnsafePointer[Int](to=local)
@@ -593,6 +602,31 @@ def test_unsafe_mut_cast() raises:
     assert_true(_mutable.mut)
 
 
+def test_unsafe_from() raises:
+    var x = 42
+    var safe = Pointer(to=x)
+
+    # Unlike `UnsafePointer(safe)`, which resolves to the mutable-to-immutable
+    # cast, this keeps the origin -- and so the mutability -- intact.
+    var unsafe = UnsafePointer(unsafe_from=safe)
+    assert_true(unsafe.mut)
+    assert_true(type_of(unsafe)._is_unsafe)
+    assert_equal(Int(unsafe), Int(safe))
+
+    var back = Pointer(unsafe_from=unsafe)
+    assert_true(back.mut)
+    assert_false(type_of(back)._is_unsafe)
+    assert_equal(Int(back), Int(safe))
+
+
+def test_unsafe_from_address_space() raises:
+    var x = Int32(7)
+    var ptr = Pointer(to=x).unsafe_address_space_cast[AddressSpace.GENERIC]()
+    var unsafe = UnsafePointer(unsafe_from=ptr)
+    assert_equal(type_of(unsafe).address_space, AddressSpace.GENERIC)
+    assert_equal(unsafe[], Int32(7))
+
+
 def _ref_to[origin: ImmOrigin](ref[origin] to: String):
     pass
 
@@ -755,7 +789,7 @@ def test_optional_unsafe_pointer_llvm_lowering() raises:
 
 
 def test_alloc_free_single_zst() raises:
-    comptime ZST = InlineArray[Int, 0]
+    comptime ZST = Array[Int, 0]
     comptime assert (
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."
@@ -773,7 +807,7 @@ def test_alloc_free_single_zst() raises:
 
 
 def test_alloc_free_many_zst() raises:
-    comptime ZST = InlineArray[Int, 0]
+    comptime ZST = Array[Int, 0]
     comptime assert (
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."

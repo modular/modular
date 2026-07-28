@@ -24,6 +24,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist
+    "gpu/comm/bench_allgather_rmsnorm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # No multi-GPU Metal machines exist
     "gpu/comm/bench_allreduce.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "gpu/comm/bench_allreduce_residual_rmsnorm.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -202,6 +206,7 @@ _CPU_TESTS = glob(
             "//max:comm",
             "//max:internal_utils",
             "//max:layout",
+            "//max:max_mojo",
             "//max:nn",
             "//max:shmem",
             "//max:structured_kernels",
@@ -260,6 +265,7 @@ mojo_binary(
         "//max:comm",
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "//max:shmem",
         "//max:structured_kernels",
@@ -296,6 +302,7 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "@mojo//:std",
     ],
@@ -317,6 +324,7 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "@mojo//:std",
     ],
@@ -337,6 +345,7 @@ mojo_test(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:layout",
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

@@ -383,17 +383,17 @@ def test_write_repr_to() raises:
 
 
 def test_inline_array_triviality() raises:
-    assert_true(is_trivially_deletable[InlineArray[Int, 1]]())
-    assert_true(is_trivially_copyable[InlineArray[Int, 1]]())
-    assert_true(is_trivially_movable[InlineArray[Int, 1]]())
+    assert_true(is_trivially_deletable[Array[Int, 1]]())
+    assert_true(is_trivially_copyable[Array[Int, 1]]())
+    assert_true(is_trivially_movable[Array[Int, 1]]())
 
-    assert_false(is_trivially_deletable[InlineArray[String, 1]]())
-    assert_false(is_trivially_copyable[InlineArray[String, 1]]())
-    assert_true(is_trivially_movable[InlineArray[String, 1]]())
+    assert_false(is_trivially_deletable[Array[String, 1]]())
+    assert_false(is_trivially_copyable[Array[String, 1]]())
+    assert_true(is_trivially_movable[Array[String, 1]]())
 
 
-def _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:
-    var arr = InlineArray[Int32, 4](fill=0)
+def _return_array[copy: Bool = False]() -> Array[Int32, 4]:
+    var arr = Array[Int32, 4](fill=0)
 
     comptime if copy:
         return arr.copy()
@@ -417,7 +417,7 @@ def test_inline_array_copy_and_move_llvm_ir() raises:
 
 
 def test_inline_array_iter() raises:
-    var arr: InlineArray[Int, 3] = [0, 1, 2]
+    var arr: Array[Int, 3] = [0, 1, 2]
     var s = 0
     for el in arr:
         s += el
@@ -429,7 +429,7 @@ def test_inline_array_iter() raises:
 
 
 def test_inline_array_iter_mut() raises:
-    var arr: InlineArray[Int, 3] = [0, 1, 2]
+    var arr: Array[Int, 3] = [0, 1, 2]
     for ref el in arr:
         el += 1
 
@@ -476,45 +476,45 @@ struct LinearNonMovable(ImplicitlyDeletable where False, Movable where False):
 
 
 def test_inline_array_eq() raises:
-    var a: InlineArray[Int, 3] = [1, 2, 3]
-    var b: InlineArray[Int, 3] = [1, 2, 3]
-    var c: InlineArray[Int, 3] = [1, 2, 4]
+    var a: Array[Int, 3] = [1, 2, 3]
+    var b: Array[Int, 3] = [1, 2, 3]
+    var c: Array[Int, 3] = [1, 2, 4]
 
     assert_true(a == b)
     assert_false(a == c)
     assert_false(a != b)
     assert_true(a != c)
 
-    var x: InlineArray[Int, 1] = [42]
-    var y: InlineArray[Int, 1] = [42]
-    var z: InlineArray[Int, 1] = [0]
+    var x: Array[Int, 1] = [42]
+    var y: Array[Int, 1] = [42]
+    var z: Array[Int, 1] = [0]
     assert_true(x == y)
     assert_true(x != z)
 
-    var s1: InlineArray[String, 2] = ["hello", "world"]
-    var s2: InlineArray[String, 2] = ["hello", "world"]
-    var s3: InlineArray[String, 2] = ["hello", "mojo"]
+    var s1: Array[String, 2] = ["hello", "world"]
+    var s2: Array[String, 2] = ["hello", "world"]
+    var s3: Array[String, 2] = ["hello", "mojo"]
     assert_true(s1 == s2)
     assert_true(s1 != s3)
 
     # Test arrays of different lengths.
-    var d: InlineArray[Int, 4] = [1, 2, 3, 4]
-    var e: InlineArray[Int, 4] = [1, 2, 3, 4]
-    var f: InlineArray[Int, 4] = [1, 2, 3, 5]
+    var d: Array[Int, 4] = [1, 2, 3, 4]
+    var e: Array[Int, 4] = [1, 2, 3, 4]
+    var f: Array[Int, 4] = [1, 2, 3, 5]
     assert_true(d == e)
     assert_true(d != f)
 
-    var g: InlineArray[Int, 5] = [10, 20, 30, 40, 50]
-    var h: InlineArray[Int, 5] = [10, 20, 30, 40, 50]
-    var i: InlineArray[Int, 5] = [10, 20, 99, 40, 50]
+    var g: Array[Int, 5] = [10, 20, 30, 40, 50]
+    var h: Array[Int, 5] = [10, 20, 30, 40, 50]
+    var i: Array[Int, 5] = [10, 20, 99, 40, 50]
     assert_true(g == h)
     assert_true(g != i)
 
 
 def test_inline_array_hash() raises:
-    var a: InlineArray[Int, 3] = [1, 2, 3]
-    var b: InlineArray[Int, 3] = [1, 2, 3]
-    var c: InlineArray[Int, 3] = [1, 2, 4]
+    var a: Array[Int, 3] = [1, 2, 3]
+    var b: Array[Int, 3] = [1, 2, 3]
+    var c: Array[Int, 3] = [1, 2, 4]
 
     # Equal arrays must have equal hashes.
     assert_equal(hash(a), hash(b))
@@ -524,48 +524,44 @@ def test_inline_array_hash() raises:
 
 
 def test_inline_array_conditional_conformances() raises:
-    assert_true(conforms_to(InlineArray[Int, 3], Writable))
-    assert_true(conforms_to(InlineArray[Int, 3], Equatable))
-    assert_true(conforms_to(InlineArray[Int, 3], Hashable))
-    assert_true(conforms_to(InlineArray[Int, 3], Copyable))
-    assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyCopyable))
-    assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyDeletable))
+    assert_true(conforms_to(Array[Int, 3], Writable))
+    assert_true(conforms_to(Array[Int, 3], Equatable))
+    assert_true(conforms_to(Array[Int, 3], Hashable))
+    assert_true(conforms_to(Array[Int, 3], Copyable))
+    assert_true(conforms_to(Array[Int, 3], ImplicitlyCopyable))
+    assert_true(conforms_to(Array[Int, 3], ImplicitlyDeletable))
     # An array of explicitly-destroyed elements is not implicitly deletable.
-    assert_false(
-        conforms_to(InlineArray[ExplicitDestroy, 3], ImplicitlyDeletable)
-    )
-    assert_false(conforms_to(InlineArray[NonWritable, 3], Writable))
+    assert_false(conforms_to(Array[ExplicitDestroy, 3], ImplicitlyDeletable))
+    assert_false(conforms_to(Array[NonWritable, 3], Writable))
     # Owned iteration requires `Movable & ImplicitlyDeletable` elements, but
     # not `Copyable`: a consuming iterator moves elements out rather than
     # copying them.
-    assert_true(conforms_to(InlineArray[Int, 3], IterableOwned))
+    assert_true(conforms_to(Array[Int, 3], IterableOwned))
     # `MoveOnly[Int]` is movable and implicitly deletable but not copyable.
-    assert_true(conforms_to(InlineArray[MoveOnly[Int], 2], IterableOwned))
+    assert_true(conforms_to(Array[MoveOnly[Int], 2], IterableOwned))
     # `ExplicitDestroy` is not implicitly deletable, so the consuming iterator
     # cannot destroy any unconsumed elements.
-    assert_false(conforms_to(InlineArray[ExplicitDestroy, 3], IterableOwned))
+    assert_false(conforms_to(Array[ExplicitDestroy, 3], IterableOwned))
 
     # The element bound is `AnyType`, so a non-`Movable` element type is
     # accepted, and the array's `Movable` conformance follows the element.
-    assert_true(conforms_to(InlineArray[Int, 3], Movable))
-    assert_false(conforms_to(InlineArray[NonMovable, 3], Movable))
-    assert_true(conforms_to(InlineArray[NonMovable, 3], ImplicitlyDeletable))
+    assert_true(conforms_to(Array[Int, 3], Movable))
+    assert_false(conforms_to(Array[NonMovable, 3], Movable))
+    assert_true(conforms_to(Array[NonMovable, 3], ImplicitlyDeletable))
     # A fully linear element (neither `Movable` nor `ImplicitlyDeletable`)
     # yields an array that is likewise neither.
-    assert_false(conforms_to(InlineArray[LinearNonMovable, 3], Movable))
-    assert_false(
-        conforms_to(InlineArray[LinearNonMovable, 3], ImplicitlyDeletable)
-    )
+    assert_false(conforms_to(Array[LinearNonMovable, 3], Movable))
+    assert_false(conforms_to(Array[LinearNonMovable, 3], ImplicitlyDeletable))
 
 
 def test_inline_array_iter_bounds() raises:
-    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var arr: Array[Int, 3] = [1, 2, 3]
     _test_inline_array_iter_bounds(iter(arr), len(arr))
     _test_inline_array_iter_bounds(reversed(arr), len(arr))
 
 
 def test_inline_array_iter_owned() raises:
-    var arr: InlineArray[Int, 3] = [10, 20, 30]
+    var arr: Array[Int, 3] = [10, 20, 30]
     var result = List[Int]()
     for elem in arr^:
         result.append(elem)
@@ -579,7 +575,7 @@ def test_inline_array_iter_owned() raises:
 def test_inline_array_iter_owned_move_only() raises:
     # Consuming iteration only requires `Movable & ImplicitlyDeletable`, not
     # `Copyable`: each element is moved out of the array, not copied.
-    var arr: InlineArray[MoveOnly[Int], 3] = [
+    var arr: Array[MoveOnly[Int], 3] = [
         MoveOnly[Int](0),
         MoveOnly[Int](1),
         MoveOnly[Int](2),
@@ -594,20 +590,20 @@ def test_inline_array_iter_owned_move_only() raises:
 
 def test_inline_array_iter_owned_destroys_elements_if_not_consumed() raises:
     # Verify that creating and immediately dropping the iterator doesn't crash.
-    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var arr: Array[Int, 3] = [1, 2, 3]
     var _ = arr^.__iter__()
 
 
 def test_inline_array_iter_owned_destroys_elements_if_partially_consumed() raises:
     # Verify partial consumption followed by dropping doesn't crash.
-    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var arr: Array[Int, 3] = [1, 2, 3]
     var it = arr^.__iter__()
     _ = it.__next__()  # consume one element
     _ = it^  # drop iterator with remaining elements
 
 
 def test_inline_array_iter_owned_bounds() raises:
-    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var arr: Array[Int, 3] = [1, 2, 3]
     var it = arr^.__iter__()
     assert_equal(it.bounds()[0], 3)
     _ = it.__next__()
@@ -620,10 +616,10 @@ def test_inline_array_iter_owned_bounds() raises:
 
 def test_inline_array_move_only() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `InlineArray[T: Movable, size]`.
-    assert_false(conforms_to(InlineArray[MoveOnly[Int], 2], Copyable))
+    # conformance path of `Array[T: Movable, size]`.
+    assert_false(conforms_to(Array[MoveOnly[Int], 2], Copyable))
 
-    var arr: InlineArray[MoveOnly[Int], 3] = [
+    var arr: Array[MoveOnly[Int], 3] = [
         MoveOnly[Int](0),
         MoveOnly[Int](1),
         MoveOnly[Int](2),
@@ -639,22 +635,22 @@ def test_inline_array_move_only() raises:
 
 def test_inline_array_literal_size_inference() raises:
     # The array length is inferred from the element count of the literal.
-    var arr: InlineArray[Int, _] = [1, 2, 3]
+    var arr: Array[Int, _] = [1, 2, 3]
     comptime assert type_of(arr).length == 3
     assert_equal(arr[0], 1)
     assert_equal(arr[1], 2)
     assert_equal(arr[2], 3)
 
-    var single: InlineArray[Int, _] = [42]
+    var single: Array[Int, _] = [42]
     comptime assert type_of(single).length == 1
     assert_equal(single[0], 42)
 
-    var strings: InlineArray[String, _] = ["hi", "hello"]
+    var strings: Array[String, _] = ["hi", "hello"]
     comptime assert type_of(strings).length == 2
     assert_equal(strings[0], "hi")
     assert_equal(strings[1], "hello")
 
-    var move_only: InlineArray[MoveOnly[Int], _] = [
+    var move_only: Array[MoveOnly[Int], _] = [
         MoveOnly[Int](0),
         MoveOnly[Int](1),
     ]
@@ -664,7 +660,7 @@ def test_inline_array_literal_size_inference() raises:
 
 
 def test_inline_array_with_explicit_destroy_type() raises:
-    var arr: InlineArray[ExplicitDestroy, 3] = [
+    var arr: Array[ExplicitDestroy, 3] = [
         ExplicitDestroy(0),
         ExplicitDestroy(1),
         ExplicitDestroy(2),

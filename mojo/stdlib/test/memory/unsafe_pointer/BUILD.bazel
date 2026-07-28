@@ -12,10 +12,19 @@ _EXPECT_CRASH = [
     "test_unsafe_from_address_overflow.mojo",
 ]
 
-# PointerRewriter (the pass under test) is Metal/AIR-only.
-_APPLE_GPU_ONLY = [
-    "test_gpu_shared_address_space_cast_bitcast.mojo",
-]
+_GPU_CONSTRAINTS = {
+    # PointerRewriter (the pass under test) is Metal/AIR-only.
+    "test_gpu_shared_address_space_cast_bitcast.mojo": select({
+        "//:apple_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # Metal `SHARED` pointers are as wide as `Int`, so the width guard under
+    # test is compiled out and there is no assert left to trip.
+    "test_unsafe_from_address_overflow.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+}
 
 [
     mojo_test(
@@ -50,12 +59,7 @@ _APPLE_GPU_ONLY = [
         ],
         expect_crash = src in _EXPECT_CRASH,
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"] + (
-            select({
-                "//:apple_gpu": [],
-                "//conditions:default": ["@platforms//:incompatible"],
-            }) if src in _APPLE_GPU_ONLY else []
-        ),
+        target_compatible_with = ["//:has_gpu"] + _GPU_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:std",
             "@mojo//:test_utils",

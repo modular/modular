@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Provides a fixed-size array implementation with compile-time size checking.
 
-The `InlineArray` type represents a fixed-size sequence of homogeneous elements
+The `Array` type represents a fixed-size sequence of homogeneous elements
 where the size is determined at compile time. It provides efficient memory
-layout and bounds checking while maintaining type safety.  The `InlineArray`
+layout and bounds checking while maintaining type safety.  The `Array`
 type is part of the `prelude` module and therefore does not need to be imported
 in order to use it.
 
@@ -22,13 +22,13 @@ Examples:
 
 ```mojo
 # Create an array of 3 integers
-var arr: InlineArray[Int, 3] = [1, 2, 3]
+var arr: Array[Int, 3] = [1, 2, 3]
 
 # Access elements
 print(arr[0])  # Prints 1
 
 # Fill with a value
-var filled = InlineArray[Int, 5](fill=42)
+var filled = Array[Int, 5](fill=42)
 ```
 """
 
@@ -521,12 +521,12 @@ struct Array[T: AnyType, length: Int](
         # Move each element into the array storage.
         comptime for i in range(Self.length):
             # Safety: We own the elements in the variadic list.
-            # TODO(MOCO-4058): The `where conforms_to(Self.T, Movable)` clause
-            # narrows the `elems` pack element to `T(Movable)`, but
-            # `self.unsafe_ptr()` keeps the struct's `T` bound, so the two views
-            # don't unify at `unsafe_write_move_from`. Reconcile the source
-            # pointer's element view; drop the bitcast once the compiler
-            # propagates `where`-clause evidence to the field type.
+            # The `where conforms_to(Self.T, Movable)` clause narrows the
+            # `elems` pack element to `T(Movable)`, but `self.unsafe_ptr()`
+            # keeps the struct's `T` bound, so the two views don't unify at
+            # `unsafe_write_move_from`. Reconcile the source pointer's element
+            # view. (MOCO-4058 fixed the `where`-evidence gap for parametric
+            # overloads, but not this pack-element-vs-field-type case.)
             ptr.unsafe_write_move_from(
                 Pointer(to=elems[i]).unsafe_bitcast[Self.T]()
             )
@@ -549,13 +549,6 @@ struct Array[T: AnyType, length: Int](
         var copy = arr.copy()  # Creates new array [1, 2, 3]
         ```
         """
-
-        # TODO(MOCO-4058): The `where conforms_to(Self.T, Copyable)`
-        # clause above should make the downcasts below redundant, but the
-        # compiler does not narrow `Self.T`'s bound from `Movable`
-        # to `Copyable` when resolving downstream parametric overloads (e.g.
-        # `Pointer.init_pointee_copy[T: Copyable]`). Drop the downcasts
-        # once the compiler propagates `where`-clause evidence.
         comptime if is_trivially_copyable[Self.T]():
             self._array = copy._array
         else:
@@ -932,16 +925,7 @@ struct Array[T: AnyType, length: Int](
         comptime assert conforms_to(
             Self.T, Copyable
         ), "Array iteration requires the element to be `Copyable`."
-        # TODO(MOCO-4326): Remove rebind
-        return {
-            0,
-            rebind[
-                Pointer[
-                    Array[downcast[Self.T, Copyable], Self.length],
-                    origin_of(self),
-                ]
-            ](Pointer(to=self)),
-        }
+        return {0, Pointer(to=self)}
 
     # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
     def __reversed__(

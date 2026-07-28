@@ -203,7 +203,7 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
 
 # Explicit 1D TileTensor layout that lets the compiler prove flat_rank == 1,
 # bypassing the LTToTTLayout comptime alias chain where the compiler can't
-# simplify TypeList[_Flattened[...]].size to 1.
+# simplify TypeList[_Flattened[...]].length to 1.
 comptime _1d_tt_layout = InternalLayout[
     shape_types=Coord[Int64].element_types,
     stride_types=Coord[ComptimeInt[1]].element_types,
@@ -397,11 +397,11 @@ struct PagedRowIndices[
     comptime num_pages: Int = Self.BN // Self.eff_page
     comptime cta_group = 2 if Self.pair_cta else 1
 
-    var rows: InlineArray[UInt32, Self.num_pages]
+    var rows: Array[UInt32, Self.num_pages]
 
     @always_inline
     def __init__(out self):
-        self.rows = InlineArray[UInt32, Self.num_pages](uninitialized=True)
+        self.rows = Array[UInt32, Self.num_pages](uninitialized=True)
 
     @always_inline
     def get_row(self, offset: UInt32) -> UInt32:

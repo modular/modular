@@ -18,7 +18,6 @@ from __future__ import annotations
 import atexit
 import json
 import logging
-import tempfile
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from max.config import ConfigFileModel
@@ -28,7 +27,7 @@ from max.graph.quantization import QuantizationEncoding
 from max.nn.comm import Signals
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
-from max.pipelines.kv_cache.config import KVCacheConfig, KVConnectorConfig
+from max.pipelines.kv_cache.config import KVCacheConfig
 from max.pipelines.lib.interfaces import (
     ArchConfig,
     ArchConfigWithKVCache,
@@ -118,28 +117,6 @@ def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
         if isinstance(candidate, type) and issubclass(candidate, BaseModel):
             return candidate
     return None
-
-
-# FIXME: This method seems like a major hack...
-# Can this be moved to the KVCacheConfig post init?
-def _resolve_kvconnector_config(kv: KVCacheConfig) -> None:
-    """Validates KV connector configuration and applies defaults."""
-    connector = kv.kv_connector
-    if connector is None:
-        return
-
-    # Ensure a config object exists for connectors that need one.
-    cfg = kv.kv_connector_config or KVConnectorConfig()
-
-    if connector in (KVConnectorType.tiered, KVConnectorType.rust_tiered):
-        if cfg.disk_offload_dir is None:
-            cfg.disk_offload_dir = tempfile.mkdtemp(prefix="max_kv_tiered_")
-            logger.info(
-                f"Tiered connector: auto-created disk offload dir "
-                f"{cfg.disk_offload_dir}"
-            )
-
-    kv.kv_connector_config = cfg
 
 
 def _is_disable_parser_sentinel(value: str | None) -> bool:
@@ -634,11 +611,16 @@ class PipelineConfig(ConfigFileModel):
                         **non_default_kwargs,
                     )
 
-        # Apply KV cache config to main model
+        # Merge CLI kv-cache flags onto the model's existing kv_cache (which
+        # may hold --config-file values) rather than replacing it: a fresh
+        # KVCacheConfig would reset unset fields to defaults, silently dropping
+        # the recipe's device_memory_utilization.
         if kv_cache_kwargs and "main" in self.models:
-            self.models = self.models.with_override(
-                "main", kv_cache=KVCacheConfig(**kv_cache_kwargs)
+            existing_kv = self.models["main"].kv_cache
+            merged_kv = KVCacheConfig(
+                **{**existing_kv.model_dump(), **kv_cache_kwargs}
             )
+            self.models = self.models.with_override("main", kv_cache=merged_kv)
 
         # Extract draft model kwargs and add via with_override
         draft_kwargs = PipelineConfig._extract_kwargs_for_config(
@@ -1196,13 +1178,9 @@ class PipelineConfig(ConfigFileModel):
         # the stale pre-override architecture. See SERVOPT regression from
         # PipelineConfig/registry decoupling (#88511).
 
-        # Validate KV connector configuration
-        _resolve_kvconnector_config(self.model.kv_cache)
-
         # By this point, we should have a valid model_path.
 
         if self.draft_model:
-            _resolve_kvconnector_config(self.draft_model.kv_cache)
             self._validate_speculative_model_configs(
                 target_arch=arch, draft_arch=draft_arch
             )

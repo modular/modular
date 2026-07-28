@@ -2783,7 +2783,7 @@ def _calc_initial_buffer_size_int32(n0: Int) -> Int:
     # See https://commaok.xyz/post/lookup_tables/ and
     # https://lemire.me/blog/2021/06/03/computing-the-number-of-digits-of-an-integer-even-faster/
     # for a description.
-    comptime lookup_table: InlineArray[Int, 32] = [
+    comptime lookup_table: Array[Int, 32] = [
         4294967296,
         8589934582,
         8589934582,

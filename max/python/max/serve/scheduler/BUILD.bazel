@@ -7,6 +7,7 @@ modular_py_library(
     srcs = glob(["**/*.py"]),
     deps = [
         "//max/python/max/driver",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/kv_cache",
@@ -22,6 +23,5 @@ modular_py_library(
         "//max/python/max/serve/worker_interface",
         "//max/python/max/support",
         requirement("msgspec"),
-        requirement("numpy"),
     ],
 )

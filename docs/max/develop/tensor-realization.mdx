@@ -78,7 +78,7 @@ class MyLayer(Module):
 
 Built-in layers like
 [`Linear`](/max/api/python/generated/max.experimental.nn.Linear/) and
-[`RotaryEmbedding`](/max/api/python/generated/max.experimental.nn.RotaryEmbedding/)
+[`RotaryEmbedding`](/max/api/python/generated/max.experimental.nn.rope.RotaryEmbedding/)
 already apply `F.functional` to their `forward()` methods, which is why they
 perform well. Because of this, you don't typically need to use `F.functional`
 yourself.

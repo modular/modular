@@ -1205,9 +1205,7 @@ def transpose_strided[
         ctx: The context to execute the work on.
     """
     # Compute row-major strides for input.
-    var input_strides_arr = InlineArray[Scalar[DType.int], rank](
-        uninitialized=True
-    )
+    var input_strides_arr = Array[Scalar[DType.int], rank](uninitialized=True)
     input_strides_arr[rank - 1] = 1
     comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2
@@ -1216,7 +1214,7 @@ def transpose_strided[
         ](Int(input.dim[axis + 1]()))
 
     # Permute input strides.
-    var permuted_strides_arr = InlineArray[Scalar[DType.int], rank](
+    var permuted_strides_arr = Array[Scalar[DType.int], rank](
         uninitialized=True
     )
     _permute_data[rank, DType.int](
@@ -1226,9 +1224,7 @@ def transpose_strided[
     )
 
     # Compute row-major strides for output.
-    var output_strides_arr = InlineArray[Scalar[DType.int], rank](
-        uninitialized=True
-    )
+    var output_strides_arr = Array[Scalar[DType.int], rank](uninitialized=True)
     output_strides_arr[rank - 1] = 1
     comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2

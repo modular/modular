@@ -124,7 +124,7 @@ def fa4_correction[
                 pack=False,
                 width=batch_size,
             ]((o_tmem + b1_offset).addr)
-            var o_b0_scaled = InlineArray[Scalar[accum_type], batch_size](
+            var o_b0_scaled = Array[Scalar[accum_type], batch_size](
                 uninitialized=True
             )
 
@@ -148,7 +148,7 @@ def fa4_correction[
                     pack=False,
                     width=batch_size,
                 ]((o_tmem + b0_offset1).addr)
-            var o_b1_scaled = InlineArray[Scalar[accum_type], batch_size](
+            var o_b1_scaled = Array[Scalar[accum_type], batch_size](
                 uninitialized=True
             )
 
@@ -165,9 +165,9 @@ def fa4_correction[
 
         comptime if load_remainder > 0:
             comptime offset = 2 * batch_size * load_iters
-            var o_b0_scaled_rem = InlineArray[
-                Scalar[accum_type], load_remainder
-            ](uninitialized=True)
+            var o_b0_scaled_rem = Array[Scalar[accum_type], load_remainder](
+                uninitialized=True
+            )
 
             comptime for _i in range(0, load_remainder, 2):
                 var pair = mul_ftz(
@@ -261,6 +261,11 @@ def fa4_correction[
         # softmax stages a neutral identity; terminal `cluster_sync()` still runs.
         if total_iters_runtime == 0:
             return
+    # All-masked row (valid_length 0): total_iters == 0, so `c0_iters` underflows
+    # and this warp waits on a tile the producer never posts. Split-K is guarded
+    # above; guard the non-split path here.
+    if total_iters_runtime == 0:
+        return
     var c0_iters: UInt32
     var c1_iters: UInt32
     comptime if num_q == 1:

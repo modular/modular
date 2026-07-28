@@ -123,7 +123,7 @@ struct Pipe:
         Raises:
             Error: If the pipe could not be created or configured.
         """
-        var pipe_fds = InlineArray[c_int, 2](fill=0)
+        var pipe_fds = Array[c_int, 2](fill=0)
         if pipe(pipe_fds.unsafe_ptr()) < 0:
             raise Error("Failed to create pipe")
 

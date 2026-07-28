@@ -83,7 +83,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
             Coord(n_outer_idx, tile_n_k_idx[1], Idx[0])
         )
 
-        var a_vals = InlineArray[SIMD[c_local.dtype, a_col_size], kernel_rows](
+        var a_vals = Array[SIMD[c_local.dtype, a_col_size], kernel_rows](
             uninitialized=True
         )
 

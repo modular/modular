@@ -21,6 +21,7 @@ from std.sys import (
 )
 
 from std.algorithm.functional import elementwise
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -123,7 +124,7 @@ def run_elementwise[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     var num_bytes = 2 * N * size_of[dtype]()
     m.bench_function[bench_func](

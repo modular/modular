@@ -16,7 +16,7 @@ bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_cc", version = "0.2.18")
 bazel_dep(name = "rules_nodejs", version = "6.7.3")
-bazel_dep(name = "rules_mojo", version = "0.6.0")
+bazel_dep(name = "rules_mojo")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
@@ -48,10 +48,10 @@ archive_override(
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-iYH7inOkUT80gV8O1W48V57rqOzoHg/8eS+4O7H0wBk=",
-    strip_prefix = "rules_mojo-ef3cecd075982a6ece98bbb84ae71e1b7754be0a",
+    integrity = "sha256-feQyfpQxe9TFkuN4xdOzZ1QHr898WiZao6I7IMbApuw=",
+    strip_prefix = "rules_mojo-03c6ac252de49be7e8d1206fe1c2e0cfdda6e275",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/ef3cecd075982a6ece98bbb84ae71e1b7754be0a.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/03c6ac252de49be7e8d1206fe1c2e0cfdda6e275.tar.gz",
     ],
 )
 
@@ -375,8 +375,8 @@ genrule(
 )
 """,
     # commit: https://github.com/modularml/NVSHMEM/commit/b6dd5d0955d731a3a9ba031febadb2f1aab910da
-    sha256 = "69da31cbc1abea9b58b7787bc44db50ef21884d433f1455fe0c31ce1d3e97383",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.7.0/69da31cbc1abea9b58b7787bc44db50ef21884d433f1455fe0c31ce1d3e97383/nvshmem.tar.gz",
+    sha256 = "1a5457d699fe86e81fc5728acd11fc49abb83ab11ffb72b5d89ddaadd5e98e4b",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.7.0/1a5457d699fe86e81fc5728acd11fc49abb83ab11ffb72b5d89ddaadd5e98e4b/nvshmem.tar.gz",
 )
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")

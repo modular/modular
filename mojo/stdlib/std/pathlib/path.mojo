@@ -60,7 +60,7 @@ def cwd() raises -> Path:
     ```
     """
     comptime MAX_CWD_BUFFER_SIZE = 1024
-    var buf = InlineArray[c_char, MAX_CWD_BUFFER_SIZE](uninitialized=True)
+    var buf = Array[c_char, MAX_CWD_BUFFER_SIZE](uninitialized=True)
 
     var ptr = buf.unsafe_ptr()
     var res = external_call["getcwd", _CPointer[c_char, origin_of(buf)]](

@@ -23,6 +23,7 @@ from max.pipelines.context import (
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
     OverlapTextGenerationPipeline,
     PipelineConfig,
     TextGenerationPipeline,
@@ -287,12 +288,19 @@ def load_text_generation_scheduler(
         scheduler_config.data_parallel_degree > 1
         and pipeline_config.runtime.device_graph_capture
     ):
+        # Padding dummies must match the architecture's concrete context
+        # type — for VLMs the overlap pipeline narrows every batched context
+        # to TextAndVisionContext, so plain-TextContext dummies would crash
+        # the first padded batch.
+        context_type = PIPELINE_REGISTRY.retrieve_context_type(pipeline_config)
+        assert issubclass(context_type, TextContext)
         dp_padder = DPBatchPadder(
             dp_size=scheduler_config.data_parallel_degree,
             kv_manager=kv_manager,
             max_length=pipeline._pipeline_model.max_seq_len,
             model_name=pipeline_config.model.model_name,
             pipeline=pipeline,
+            context_type=context_type,
         )
 
     # Return Scheduler

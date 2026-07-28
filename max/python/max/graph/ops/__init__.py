@@ -60,6 +60,7 @@ from . import (
     reducescatter,
 )
 from .allgather import allgather
+from .allgather_rms_norm import allgather_rms_norm
 from .argsort import argsort
 from .band_part import band_part
 from .bottom_k import bottom_k

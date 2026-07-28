@@ -298,8 +298,8 @@ struct LayoutTensor[
     ```mojo
     from layout import Layout, LayoutTensor
 
-    # Create tensor on CPU using InlineArray to allocate storage space.
-    var storage = InlineArray[Float32, 5 * 4](uninitialized=True)
+    # Create tensor on CPU using Array to allocate storage space.
+    var storage = Array[Float32, 5 * 4](uninitialized=True)
     var tensor_5x4 = LayoutTensor[DType.float32, Layout.row_major(5, 4)](storage)
     ```
     """
@@ -5420,8 +5420,8 @@ struct LayoutTensor[
         ```mojo
         from layout import LayoutTensor, Layout
 
-        var src_storage = InlineArray[Float32, 2 * 3](uninitialized=True)
-        var dst_storage = InlineArray[Float32, 3 * 2](uninitialized=True)
+        var src_storage = Array[Float32, 2 * 3](uninitialized=True)
+        var dst_storage = Array[Float32, 3 * 2](uninitialized=True)
         var src = LayoutTensor[
             DType.float32,
             Layout([2, 3]),
@@ -5787,7 +5787,7 @@ struct LayoutTensor[
         from layout import Layout, LayoutTensor
 
         def main() raises:
-            var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
+            var storage = Array[Float32, 3 * 4](uninitialized=True)
             var tensor = LayoutTensor[
                 DType.float32,
                 Layout([3, 4]),
@@ -5851,7 +5851,7 @@ struct LayoutTensor[
         from layout import Layout, LayoutTensor
 
         def main() raises:
-            var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
+            var storage = Array[Float32, 2 * 3](uninitialized=True)
             var tensor = LayoutTensor[
                 DType.float32,
                 Layout([2, 3]),

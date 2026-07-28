@@ -28,6 +28,7 @@ from std.sys import (
     size_of,
 )
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -234,10 +235,10 @@ def bench_dispatch[
         @parameter
         def run_dispatch_async(ctx: DeviceContext) raises:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-            var recv_buf_ptrs: InlineArray[
-                UnsafePointer[UInt8, MutAnyOrigin], 1
-            ] = [recv_buf.as_unsafe_any_origin()]
-            var recv_count_ptrs: InlineArray[
+            var recv_buf_ptrs: Array[UnsafePointer[UInt8, MutAnyOrigin], 1] = [
+                recv_buf.as_unsafe_any_origin()
+            ]
+            var recv_count_ptrs: Array[
                 UnsafePointer[UInt64, MutAnyOrigin], 1
             ] = [recv_count.as_unsafe_any_origin()]
 
@@ -293,7 +294,7 @@ def bench_dispatch[
             def kernel_launch(ctx: DeviceContext) raises:
                 run_func()
 
-            b.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](b, ctx)
 
         var input_id_parts = String(
             "n_tokens_per_rank=",

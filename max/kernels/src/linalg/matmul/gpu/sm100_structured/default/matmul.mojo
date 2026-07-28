@@ -274,7 +274,8 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     # Epilogue tensor TMA descriptor (2D only; 1D uses cp.async.bulk).
     # 2D bias: epilogue tensor is 2D (M, N) in GMEM.
     #   When AB_swapped, the CTA's M/N swap, so the tile becomes (MMA_N, BM).
-    # When no epilogue tensor or 1D, c_device.ptr is used as a valid placeholder;
+    # When no epilogue tensor or 1D, c_device._storage is used as a valid
+    # placeholder;
     # the descriptor is never accessed by the kernel.
     comptime epi_load_tma_tile_rows = MMA_N if config.AB_swapped else BM
     comptime epi_load_tma_tile_cols = BM if config.AB_swapped else config.output_tile_shape[
@@ -289,11 +290,11 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     var epi_load_tma_cols: Int
     comptime if config.use_tma_epilogue_load and not epilogue_is_1d:
         var epi_tt = epilogue_tensor.value()
-        epi_load_tma_ptr = rebind[MutPtr](epi_tt.ptr)
+        epi_load_tma_ptr = rebind[MutPtr](epi_tt._storage)
         epi_load_tma_rows = Int(epi_tt.dim(0))
         epi_load_tma_cols = Int(epi_tt.dim(1))
     else:
-        epi_load_tma_ptr = rebind[MutPtr](c_device.ptr)
+        epi_load_tma_ptr = rebind[MutPtr](c_device._storage)
         epi_load_tma_rows = epi_load_tma_tile_rows
         epi_load_tma_cols = epi_load_tma_tile_cols
 
@@ -313,9 +314,9 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     comptime ImmutPtr = UnsafePointer[Scalar[c_type], ImmutAnyOrigin]
     var bias_1d_ptr: ImmutPtr
     comptime if epilogue_is_1d:
-        bias_1d_ptr = rebind[ImmutPtr](epilogue_tensor.value().ptr)
+        bias_1d_ptr = rebind[ImmutPtr](epilogue_tensor.value()._storage)
     else:
-        bias_1d_ptr = rebind[ImmutPtr](c_device.ptr)
+        bias_1d_ptr = rebind[ImmutPtr](c_device._storage)
     var bias_1d_tile = KernelType.Bias1DTile(
         bias_1d_ptr,
         KernelType.Bias1DTileLayout,
@@ -347,10 +348,10 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     else:
         workspace = {}
 
-    # This is wrapped in an InlineArray to match reduce-scatter friendly kernel interface
-    var c_tma_ops: InlineArray[type_of(c_tma_op), 1] = [c_tma_op]
+    # This is wrapped in an Array to match reduce-scatter friendly kernel interface
+    var c_tma_ops: Array[type_of(c_tma_op), 1] = [c_tma_op]
     var rank_sigs: Optional[
-        InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
+        Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
     ] = None
 
     ctx.enqueue_function[kernel](

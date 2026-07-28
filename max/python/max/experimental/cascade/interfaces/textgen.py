@@ -20,9 +20,10 @@ interface without either depending on concrete pipeline implementations.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator
 from typing import TypeAlias
 
+from max.experimental.cascade.core import pipeline_method
 from pydantic import BaseModel
 
 
@@ -89,13 +90,37 @@ ChatMessages: TypeAlias = list[dict[str, str]]
 
 
 class TextGenInterface(ABC):
-    """Standard interface for a text-generation model."""
+    """Standard interface for a text-generation model.
+
+    The composable primitive is :meth:`open_text_stream`, which returns the
+    detokenized text as a streaming worker handle. A composing pipeline (for
+    example the serving-layer OpenAI chat wrapper) can forward that handle to
+    another worker so post-processing runs worker-to-worker without routing
+    every token through the orchestrator. :meth:`generate_text` is a thin
+    default that just materializes the handle for direct consumption.
+    """
 
     @abstractmethod
-    def generate_text(
+    async def open_text_stream(
+        self,
+        req: GenerateRequest,
+        prompt: str | ChatMessages,
+    ) -> AsyncIterable[str]:
+        """Open a streaming text-generation handle for a text or chat prompt.
+
+        Returns a worker stream handle (not a materialized iterator) so a
+        composing pipeline can hand it to another worker. Must be called within
+        an active pipeline scope (for example from a ``@pipeline_method``); the
+        returned handle stays valid for that scope's lifetime.
+        """
+        ...
+
+    @pipeline_method
+    async def generate_text(
         self,
         req: GenerateRequest,
         prompt: str | ChatMessages,
     ) -> AsyncIterator[str]:
-        """Generate a streaming text response to a text prompt."""
-        ...
+        """Generate a streaming text response to a text or chat prompt."""
+        async for text in await self.open_text_stream(req, prompt):
+            yield text

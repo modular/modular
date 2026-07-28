@@ -74,7 +74,7 @@ struct TString[
 
         # Alternate writing NUL terminated string-literal part, followed
         # by the interpolated replacement field.
-        comptime for i in range(Self.Ts.size):
+        comptime for i in range(Self.Ts.length):
             var length = write_string()
             offset += length + 1
             self._values[i].write_to(writer)

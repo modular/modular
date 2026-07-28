@@ -1141,10 +1141,10 @@ def _index_list_to_static_coord[
     Returns:
         A `Coord` with the given element types.
     """
-    comptime assert values.size == element_types.size, "rank mismatch"
+    comptime assert values.size == element_types.length, "rank mismatch"
     var result = Coord[*element_types]()
 
-    comptime for i in range(element_types.size):
+    comptime for i in range(element_types.length):
         comptime if not result.element_types[i].is_static_value:
             result[i] = rebind[result.element_types[i]](
                 Scalar[result.element_types[i].DTYPE](values[i])
@@ -2301,9 +2301,14 @@ struct ManagedTensorSlice[
         for i in range(Self.rank):
             shape.append(self.shape()[i])
 
+        # Pin the argument to a concrete-origin optional pointer so this call
+        # stays origin-exact across the `_serialize` safe-Pointer flip.
+        var serialize_ptr = OptionalPointer[Scalar[Self.dtype], ImmutAnyOrigin](
+            self._ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin]()
+        )
         # TODO(1937): make this work with all valid strides
         _serialize[serialize_fn=serialize, serialize_end_line=False](
-            self._ptr, shape
+            serialize_ptr, shape
         )
 
         writer.write("){")

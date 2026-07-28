@@ -15,6 +15,7 @@ from std.random import randn
 from std.sys import simd_width_of, size_of
 
 from std.algorithm.functional import elementwise
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -69,7 +70,7 @@ def bench_add[
                 add, Coord(shape), ctx
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     b.bench_with_input[type_of(shape), bench_func](
         BenchId("add", String(shape)),

@@ -589,7 +589,7 @@ struct TileScheduler[
     ) -> TileTensor[accum_type, Self.WorkspaceTileLayout, MutAnyOrigin]:
         var offset = reduction_tile_idx * UInt32(Self.BM) * UInt32(Self.MMA_N)
         return TileTensor[accum_type, Self.WorkspaceTileLayout, MutAnyOrigin](
-            reduction_workspace.ptr + Int(offset),
+            reduction_workspace._storage + Int(offset),
             row_major[Self.BM, Self.MMA_N](),
         )
 
@@ -600,12 +600,10 @@ struct TileScheduler[
 
     @always_inline
     @staticmethod
-    def _get_widths_per_stage[
-        max_width: Int
-    ]() -> Tuple[InlineArray[Int, 4], Int]:
+    def _get_widths_per_stage[max_width: Int]() -> Tuple[Array[Int, 4], Int]:
         """helper functions to decompose MMA_N into widths that are powers of two
         """
-        var arr = InlineArray[Int, 4](uninitialized=True)
+        var arr = Array[Int, 4](uninitialized=True)
         var current_width = Self.ROW_SIZE
         var first_width: Int
         var second_width: Int
@@ -627,7 +625,7 @@ struct TileScheduler[
         tile_layout: TensorLayout,
         /,
         *,
-        widths: InlineArray[Int, 4],
+        widths: Array[Int, 4],
         curr_stage: Int,
     ](
         tensor: TileTensor[accum_type, tile_layout, MutAnyOrigin],
@@ -644,9 +642,7 @@ struct TileScheduler[
         MutAnyOrigin,
     ]:
         @parameter
-        def _get_current_width(
-            widths: InlineArray[Int, 4], curr_stage: Int
-        ) -> Int:
+        def _get_current_width(widths: Array[Int, 4], curr_stage: Int) -> Int:
             var width = 0
             for i in range(curr_stage):
                 width += widths[i]
@@ -663,7 +659,7 @@ struct TileScheduler[
             ],
             MutAnyOrigin,
         ](
-            tensor.ptr + current_width,
+            tensor._storage + current_width,
             _strided_layout[
                 tile_layout.static_shape[0],
                 widths[curr_stage],

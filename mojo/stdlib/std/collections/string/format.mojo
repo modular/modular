@@ -134,8 +134,8 @@ def _comptime_list_to_span[
 ]() -> Span[T, ImmStaticOrigin]:
     """Convert a comptime list to a runtime span of static constant origin."""
 
-    def list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
-        var array = InlineArray[T, len(list)](uninitialized=True)
+    def list_to_array[list: List[T]]() -> Array[T, len(list)]:
+        var array = Array[T, len(list)](uninitialized=True)
 
         comptime for i in range(len(list)):
             Pointer(to=array[i]).unsafe_write(materialize[list[i].copy()]())
@@ -334,7 +334,7 @@ struct _FormatUtils:
         var raised_manual_index = Optional[Int](None)
         var raised_automatic_index = Optional[Int](None)
         var raised_kwarg_field = Optional[StringSlice[FormatOrigin]](None)
-        comptime n_args = Ts.size
+        comptime n_args = Ts.length
         comptime `}` = UInt8(ord("}"))
         comptime `{` = UInt8(ord("{"))
         comptime l_err = "there is a single curly { left unclosed or unescaped"
@@ -608,7 +608,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
         # alias a_value = UInt8(ord("a")) # TODO
 
         def _format(idx: Int) {imm self, imm args, mut writer}:
-            comptime for i in range(Ts.size):
+            comptime for i in range(Ts.length):
                 if i == idx:
                     var flag = self.conversion_flag
                     var empty = flag == 0

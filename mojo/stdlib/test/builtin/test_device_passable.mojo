@@ -241,11 +241,11 @@ def test_encode_fields_dispatches_static_tuple_field() raises:
     buf.free()
 
 
-# `InlineArray[ScaledInt, N].device_type` is `InlineArray[Int, N]`, so the
+# `Array[ScaledInt, N].device_type` is `Array[Int, N]`, so the
 # encoded buffer is read back through that device type.
 def test_encode_array_dispatches_device_passable_element() raises:
-    var arr: InlineArray[ScaledInt, 2] = [ScaledInt(raw=4), ScaledInt(raw=5)]
-    var buf = alloc[InlineArray[Int, 2]](1)
+    var arr: Array[ScaledInt, 2] = [ScaledInt(raw=4), ScaledInt(raw=5)]
+    var buf = alloc[Array[Int, 2]](1)
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_array(arr, buf.unsafe_bitcast[NoneType]())
     # Each element is `DevicePassable`, so `ScaledInt._to_device_type` runs and
@@ -256,8 +256,8 @@ def test_encode_array_dispatches_device_passable_element() raises:
 
 
 def test_inline_array_to_device_type_dispatches_elements() raises:
-    var arr: InlineArray[ScaledInt, 2] = [ScaledInt(raw=6), ScaledInt(raw=7)]
-    var buf = alloc[InlineArray[Int, 2]](1)
+    var arr: Array[ScaledInt, 2] = [ScaledInt(raw=6), ScaledInt(raw=7)]
+    var buf = alloc[Array[Int, 2]](1)
     var encoder = DefaultDeviceTypeEncoder()
     # `_to_device_type` now encodes element-wise instead of bit-copying.
     arr._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
@@ -267,8 +267,8 @@ def test_inline_array_to_device_type_dispatches_elements() raises:
 
 
 def test_encode_array_identity_scalar() raises:
-    var arr: InlineArray[Int, 3] = [10, 20, 30]
-    var buf = alloc[InlineArray[Int, 3]](1)
+    var arr: Array[Int, 3] = [10, 20, 30]
+    var buf = alloc[Array[Int, 3]](1)
     var encoder = DefaultDeviceTypeEncoder()
     # `Int` is `DevicePassable` with an identity `device_type`, so element-wise
     # encoding reproduces the values unchanged.

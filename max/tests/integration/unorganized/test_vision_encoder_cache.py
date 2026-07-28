@@ -21,7 +21,7 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.driver import Buffer, Device
+from max.driver import CPU, Buffer, Device
 from max.pipelines.context import (
     GenerationStatus,
     GrammarEnforcementSnapshot,
@@ -35,6 +35,7 @@ from max.pipelines.context import (
 )
 from max.pipelines.context.context import TokenBuffer
 from max.pipelines.context.eos_tracking import EOSTracker
+from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
 from max.pipelines.lib.vision_encoder_cache import (
     SupportsVisionEncoding,
     VisionEncoderCache,
@@ -131,6 +132,10 @@ class FakeContext:
         if self._next_images_override is not None:
             return self._next_images_override
         return self.images
+
+    @property
+    def next_images_in_window(self) -> list[ImageMetadata]:
+        return self.next_images
 
     def compute_image_aligned_idx(self, idx: int) -> int:
         return idx
@@ -383,6 +388,39 @@ def test_no_eviction_when_all_referenced() -> None:
     assert cache.lookup(0x1) is not None
     assert cache.lookup(0x2) is not None
     assert cache.lookup(0x3) is not None
+
+
+def test_release_evicts_over_capacity_entries() -> None:
+    # A 3-image request over-fills a 2-entry cache (insert never fails when
+    # every resident entry is ref-held). Completing the request must shrink
+    # occupancy back to capacity immediately, not at the next cache miss.
+    cache = _make_cache_sized(2)
+    req = RequestID("r1")
+    for h in (0x1, 0x2, 0x3):
+        cache.insert(h, [_make_buffer(1)], 1)
+        cache.acquire(req, h)
+    cache.release_request(req)
+    assert len(cache._cache) == 2
+    # LRU order respected: the oldest zero-ref entry was the one dropped.
+    assert cache.lookup(0x1) is None
+    assert cache.lookup(0x2) is not None
+    assert cache.lookup(0x3) is not None
+
+
+def test_release_drain_skips_entries_held_by_other_requests() -> None:
+    cache = _make_cache_sized(1)
+    r1 = RequestID("r1")
+    r2 = RequestID("r2")
+    cache.insert(0x1, [_make_buffer(1)], 1)
+    cache.acquire(r1, 0x1)
+    cache.acquire(r2, 0x1)
+    cache.insert(0x2, [_make_buffer(1)], 1)
+    cache.acquire(r1, 0x2)
+    cache.release_request(r1)
+    # 0x1 is still ref-held by r2 and must survive even though it is the
+    # LRU entry; the zero-ref over-capacity entry 0x2 is the one drained.
+    assert cache.lookup(0x1) is not None
+    assert cache.lookup(0x2) is None
 
 
 def test_acquire_increments_ref() -> None:
@@ -1181,22 +1219,35 @@ def test_pop_metrics_none_for_text_only() -> None:
 
 def test_pop_metrics_counts_hits_and_misses() -> None:
     cache = _make_cache()
-    cache.insert(0xA, [_make_buffer(5)], 5)  # pre-cache image A -> hit
+    cache.insert(0xA, [_make_buffer(2)], 2)  # pre-cache image A -> hit
     ctx = FakeContext(
         request_id=RequestID("r1"),
         images=[
-            _make_image_meta(0, 5, image_hash=0xA),  # cached hit, 5 tokens
-            _make_image_meta(5, 12, image_hash=0xB),  # miss, 7 tokens, 1 patch
+            _make_image_meta(0, 2, image_hash=0xA),  # cached hit, 2 tokens
+            _make_image_meta(2, 5, image_hash=0xB),  # miss, 3 tokens, 1 patch
         ],
+        image_token_indices=np.array([0, 1, 2, 3, 4], dtype=np.int32),
+        processed_length=0,
+        active_length=8,
     )
-    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    batch = _as_vlm_batch([ctx])
+    uncached = cache.get_uncached_contexts(batch)
+    cache.prepare_vision_outputs(
+        context_batch=batch,
+        uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
+        vision_embeds=[_make_buffer(3)],
+        per_image_token_counts=[3],
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0)],
+    )
     m = cache.pop_metrics()
     assert m is not None
     assert m.num_images_total == 2
     assert m.num_images_cached == 1
     assert m.num_images_encoded == 1
     assert m.num_patches_encoded == 1  # only the miss is encoded
-    assert m.num_tokens_encoded == 7  # 12 - 5
+    assert m.num_tokens_encoded == 3  # 5 - 2
     assert m.cache_hit_rate == 0.5
     # pop resets the accumulator.
     assert cache.pop_metrics() is None
@@ -1207,8 +1258,21 @@ def test_pop_metrics_disabled_cache_counts_all_as_encoded() -> None:
     ctx = FakeContext(
         request_id=RequestID("r1"),
         images=[_make_image_meta(0, 5, image_hash=0xA)],
+        image_token_indices=np.array([0, 1, 2, 3, 4], dtype=np.int32),
+        processed_length=0,
+        active_length=8,
     )
-    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    batch = _as_vlm_batch([ctx])
+    uncached = cache.get_uncached_contexts(batch)
+    cache.prepare_vision_outputs(
+        context_batch=batch,
+        uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
+        vision_embeds=[_make_buffer(5)],
+        per_image_token_counts=[5],
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0)],
+    )
     m = cache.pop_metrics()
     assert m is not None
     assert m.num_images_total == 1
@@ -1701,7 +1765,7 @@ def test_assemble_missing_active_image_still_raises() -> None:
         processed_length=0,  # in the active window, not prior
         active_length=3,
     )
-    with pytest.raises(AssertionError, match="Active image"):
+    with pytest.raises(AssertionError, match="Active in-window image"):
         cache.prepare_vision_outputs(
             context_batch=_as_vlm_batch([ctx]),
             uncached_contexts=_as_vlm_batch([ctx]),
@@ -1711,3 +1775,95 @@ def test_assemble_missing_active_image_still_raises() -> None:
             n_devices=1,
             empty_embeddings=[_make_buffer(0, hidden)],
         )
+
+
+class _FakeVisionModel:
+    """The ``SupportsVisionEncoding`` surface ``finalize_vision_inputs`` uses."""
+
+    def __init__(self, hidden: int = 4) -> None:
+        self._hidden = hidden
+        self._empties: list[Buffer] | None = None
+
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> None:
+        return None
+
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: None,
+    ) -> VisionEncodeResult:
+        return VisionEncodeResult(
+            embeddings=self.empty_vision_embeddings(devices)
+        )
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        if self._empties is None:
+            self._empties = [_make_buffer(0, self._hidden) for _ in devices]
+        return self._empties
+
+
+def test_finalize_vision_inputs_sets_empties() -> None:
+    """``vision_result=None`` (decode / text-only / graph-capture warmup)
+    sets the base vision fields to the model's empty embeddings and
+    zero-length indices, making them packable into ``.buffers``."""
+    cache = _make_cache()
+    model = _FakeVisionModel()
+    inputs = ModelInputs()
+    devices: list[Device] = [CPU()]
+
+    cache.finalize_vision_inputs(model, inputs, devices, None)
+
+    assert len(inputs.vision_embeddings) == 1
+    assert inputs.vision_embeddings[0].shape[0] == 0
+    assert len(inputs.vision_scatter_indices) == 1
+    assert tuple(inputs.vision_scatter_indices[0].shape) == (0,)
+
+    # The empty index buffers are cached across steps (decode hot path).
+    first = inputs.vision_scatter_indices[0]
+    cache.finalize_vision_inputs(model, inputs, devices, None)
+    assert inputs.vision_scatter_indices[0] is first
+
+
+def test_finalize_vision_inputs_sets_real_embeddings() -> None:
+    """A vision-encode result sets the assembled embeddings and copies the
+    merge indices to per-device buffers."""
+    cache = _make_cache()
+    model = _FakeVisionModel()
+    inputs = ModelInputs()
+    devices: list[Device] = [CPU()]
+    embeds = [_make_buffer(3, 4)]
+    scatter = np.array([0, 1, 2], dtype=np.int32)
+
+    cache.finalize_vision_inputs(model, inputs, devices, (embeds, scatter))
+
+    assert inputs.vision_embeddings is embeds
+    assert len(inputs.vision_scatter_indices) == 1
+    np.testing.assert_array_equal(
+        inputs.vision_scatter_indices[0].to_numpy(), scatter
+    )
+
+
+def test_finalize_vision_inputs_empty_scatter_uses_empties() -> None:
+    """A vision result with zero merge indices falls back to the cached
+    zero-length index buffers instead of staging an empty copy."""
+    cache = _make_cache()
+    model = _FakeVisionModel()
+    inputs = ModelInputs()
+    devices: list[Device] = [CPU()]
+    embeds = model.empty_vision_embeddings(devices)
+
+    cache.finalize_vision_inputs(
+        model, inputs, devices, (embeds, np.empty(0, dtype=np.int32))
+    )
+
+    assert inputs.vision_embeddings is embeds
+    assert tuple(inputs.vision_scatter_indices[0].shape) == (0,)

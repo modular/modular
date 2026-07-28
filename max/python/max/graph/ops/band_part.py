@@ -32,40 +32,49 @@ def band_part(
 ) -> TensorValue:
     """Masks out everything except a diagonal band of an input matrix.
 
-    Copies a tensor setting everything outside the central diagonal band of the
-    matrices to zero, where all but the last two axes are effectively batches,
-    and the last two axes define sub matrices.
-
-    Assumes the input has dimensions [I, J, ..., M, N], then the output tensor
-    has the same shape as the input, and the values are given by
+    Copies the tensor, setting everything outside the central diagonal band of
+    each matrix to zero. All but the last two axes are treated as batches, and
+    the last two axes define the matrices.
 
     .. code-block:: python
 
-        out[i, j, ..., m, n] = in_band(m, n) * input[i, j,  ..., m, n].
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
-    with the indicator function:
+        device = DeviceRef.CPU()
+        with Graph("band_part") as graph:
+            x = ops.constant(
+                [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
+                DType.float32,
+                device=device,
+            )
+            # Keep the main diagonal and one sub-diagonal, producing
+            # [[1, 0, 0], [1, 1, 0], [0, 1, 1]].
+            graph.output(ops.band_part(x, num_lower=1, num_upper=0))
 
-    .. code-block:: python
-
-        in_band(m, n) = ((num_lower is None || (m - n) <= num_lower)) &&
-                        (num_upper is None || (n - m) <= num_upper))
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
 
     Args:
         x: The input tensor to mask.
         num_lower: The number of diagonal bands to include below the central
-            diagonal. If None, include the entire lower triangle.
+            diagonal. If ``None`` or ``-1``, includes the entire lower
+            triangle. Defaults to ``None``.
         num_upper: The number of diagonal bands to include above the central
-            diagonal. If None, include the entire upper triangle.
-        exclude: If true, invert the selection of elements to mask. Elements
-            in the band are set to zero.
+            diagonal. If ``None`` or ``-1``, includes the entire upper
+            triangle. Defaults to ``None``.
+        exclude: Whether to invert the selection, zeroing out the elements in
+            the band instead. Defaults to ``False``.
 
     Returns:
-        A symbolic tensor value with the configured selection masked out
-        to 0 values, and the remaining values copied from the input tensor.
+        A ``TensorValue`` representing ``x`` with the masked-out elements set to
+        zero and the remaining elements copied from ``x``. It has the same shape
+        and dtype as ``x``.
 
     Raises:
-        ValueError: If the input tensor rank is less than 2, or if num_lower/num_upper
-            are out of bounds for statically known dimensions.
+        ValueError: If the input tensor rank is less than 2, or if ``num_lower``
+            or ``num_upper`` are out of bounds for statically known dimensions.
     """
     x = TensorValue(x)
     num_lower = -1 if num_lower is None else num_lower

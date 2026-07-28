@@ -229,7 +229,7 @@ struct _Accumulator[
             var transfer_count = min(
                 c_bound[1] - tile_n_idx, Self.num_cols * Self.simd_width
             )
-            var row_ptrs = InlineArray[
+            var row_ptrs = Array[
                 UnsafePointer[Scalar[Self.dtype], AnyOrigin[mut=c_ptr.mut]],
                 Self.num_rows,
             ](uninitialized=True)
@@ -860,7 +860,7 @@ struct _Accumulator[
         @parameter
         @always_inline
         def micro_kernel[num_lanes: Int](offset: Int):
-            var a_vecs = InlineArray[SIMD[a_type, num_lanes], Self.num_rows](
+            var a_vecs = Array[SIMD[a_type, num_lanes], Self.num_rows](
                 uninitialized=True
             )
 
@@ -919,7 +919,7 @@ struct _Accumulator[
         @parameter
         @always_inline
         def micro_kernel[num_lanes: Int](offset: Int):
-            var a_vecs = InlineArray[SIMD[a_type, num_lanes], Self.num_rows](
+            var a_vecs = Array[SIMD[a_type, num_lanes], Self.num_rows](
                 uninitialized=True
             )
 

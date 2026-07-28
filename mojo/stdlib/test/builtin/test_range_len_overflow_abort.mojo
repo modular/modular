@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -11,23 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-import max.experimental.torch
-import numpy as np
-import torch
-from max.dtype import DType
-from max.graph import ops
-
-
-@max.experimental.torch.graph_op
-def max_grayscale(pic: max.graph.TensorValue):  # noqa: ANN201
-    scaled = pic.cast(DType.float32) * np.array([0.21, 0.71, 0.07])
-    grayscaled = ops.sum(scaled, axis=-1).cast(pic.dtype)
-    return ops.squeeze(grayscaled, axis=-1)
+#
+# `range(...).__len__()` asserts when an unsigned count exceeds `Int.MAX`. The
+# assert aborts, so verify it with FileCheck rather than a regular unit test.
+#
+# ===----------------------------------------------------------------------=== #
 
 
-@torch.compile
-def grayscale(pic: torch.Tensor):  # noqa: ANN201
-    output = pic.new_empty(pic.shape[:-1])
-    max_grayscale(output, pic)
-    return output
+# CHECK-LABEL: test_range_len_overflow_aborts
+def main():
+    print("== test_range_len_overflow_aborts")
+    # CHECK: range length exceeds Int.MAX
+    var n = range(UInt(0), UInt.MAX).__len__()
+    # CHECK-NOT: is never reached
+    print("is never reached", n)
