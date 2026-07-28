@@ -580,7 +580,9 @@ struct Pointer[
 
     @always_inline("builtin")
     @implicit
-    def __init__(
+    def __init__[
+        __disambig: NoneType = None,
+    ](
         other: Pointer,
         out self: Pointer[
             other.T,
@@ -590,6 +592,11 @@ struct Pointer[
         ],
     ):
         """Implicitly casts a mutable pointer to immutable.
+
+        Parameters:
+            __disambig: A dummy parameter to disambiguate the safe and unsafe
+              pointer constructors. To be removed when the `_safe` parameter is
+              removed from this type.
 
         Args:
             other: The mutable pointer to cast from.
@@ -618,9 +625,7 @@ struct Pointer[
     @always_inline("builtin")
     @doc_hidden
     @implicit
-    def __init__[
-        __disambig: NoneType = None,
-    ](
+    def __init__(
         other: Pointer[...],
         out self: Pointer[
             other.T,
