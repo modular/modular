@@ -891,7 +891,7 @@ LogicalResult ParamInf::inferFromDefaults() {
     if (paramFinder.hasReferences(value))
       return success();
 
-    auto argType = evaluator.getReboundType(declaredParamTypes[idx]);
+    ASTType argType = evaluator.getReboundType(declaredParamTypes[idx]);
     FailureOr<TypedAttr> paramVal = inferAndEmitOneParam(
         {value, getGivenBindings().getExpr()}, argType, idx);
     if (failed(paramVal))
@@ -949,6 +949,10 @@ LogicalResult ParamInf::inferFromDefaults() {
         IREmitter emitter(getDeclScope(), EC_TypeParamValue);
 
         paramType = cast<LIT::StructType>(evaluator.getReboundType(paramType));
+        // Make sure the origin type is fully resolved before instantiating it.
+        if (paramFinder.hasReferences(paramType))
+          continue;
+
         auto origin = // Get the Origin value.
             evaluator.getReboundAttribute(paramType.getParamValues()[1]);
 
