@@ -410,54 +410,6 @@ class DebugConfig:
     @op_log_level.setter
     def op_log_level(self, arg: str, /) -> None: ...
     @property
-    def profiling_enabled(self) -> bool:
-        """
-        A boolean master switch for the libkineto-backed HTA/Dynolog profiler. Defaults to ``False``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_ENABLED`` environment variable. Currently a no-op; takes effect once ``session.profiling.start()`` drives trace collection.
-        """
-
-    @profiling_enabled.setter
-    def profiling_enabled(self, arg: bool, /) -> None: ...
-    @property
-    def profiling_output_path(self) -> str:
-        """
-        Where to write the Chrome-trace JSON. Accepts a file path; supports ``{pid}`` and ``{rank}`` template substitution and directory mode (existing-directory paths auto-generate ``trace_rank<rank>_<pid>_<unix-ts>_<seq>.json`` inside). An empty value lets ``Range.cpp`` fall back to its built-in default. Mirrored by ``MODULAR_MAX_DEBUG_PROFILING_OUTPUT_PATH``.
-        """
-
-    @profiling_output_path.setter
-    def profiling_output_path(self, arg: str, /) -> None: ...
-    @property
-    def profiling_dynolog_enabled(self) -> bool:
-        """
-        Opt a daemon-mode process out of Dynolog registration. Only has an effect when the process is launched with ``KINETO_USE_DAEMON=1`` -- that env var is what turns on-demand capture on (libkineto keys its IPC client on it), registering the PID at device creation so ``dyno gputrace`` works with no other setup. This knob then defaults to ``True`` and is the off switch. Mirrored by ``MODULAR_MAX_DEBUG_PROFILING_DYNOLOG_ENABLED``.
-        """
-
-    @profiling_dynolog_enabled.setter
-    def profiling_dynolog_enabled(self, arg: bool, /) -> None: ...
-    @property
-    def profiling_warmup_steps(self) -> int:
-        """
-        Number of ``model.execute()`` iterations to skip before active trace recording begins. Defaults to ``0``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_WARMUP_STEPS`` environment variable. Currently a no-op; takes effect once ``session.profiling.start()`` drives trace collection.
-        """
-
-    @profiling_warmup_steps.setter
-    def profiling_warmup_steps(self, arg: int, /) -> None: ...
-    @property
-    def profiling_active_steps(self) -> int:
-        """
-        Number of ``model.execute()`` iterations to record once warmup completes. Defaults to ``10``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_ACTIVE_STEPS`` environment variable. Currently a no-op; takes effect once ``session.profiling.start()`` drives trace collection.
-        """
-
-    @profiling_active_steps.setter
-    def profiling_active_steps(self, arg: int, /) -> None: ...
-    @property
-    def profiling_periodic_flush_seconds(self) -> int:
-        """
-        Cadence (in seconds) at which in-flight trace chunks are flushed to disk. Defaults to ``60``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_PERIODIC_FLUSH_SECONDS`` environment variable. Currently a no-op; today the trace is written synchronously when profiling stops.
-        """
-
-    @profiling_periodic_flush_seconds.setter
-    def profiling_periodic_flush_seconds(self, arg: int, /) -> None: ...
-    @property
     def assert_level(self) -> str:
         r"""
         A string that sets the Mojo assertion level for compiled kernels. One of ``\'\'``, ``'none'``, ``'warn'``, ``'safe'``, ``'all'``. Higher levels enable more runtime checks (e.g. LayoutTensor bounds) at a performance cost. Takes effect at model build time.

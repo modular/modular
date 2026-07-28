@@ -622,47 +622,6 @@ class PipelineArgs(ConfigFileModel):
         description="Whether to enable GPU profiling of the model.",
     )
 
-    profiling_enabled: bool = Field(
-        default=False,
-        description=(
-            "Master switch for the libkineto-backed HTA/Dynolog profiler."
-        ),
-    )
-
-    profiling_output_path: str | None = Field(
-        default=None,
-        description=("Where to write the Chrome-trace JSON."),
-    )
-
-    profiling_dynolog_enabled: bool = Field(
-        default=True,
-        description=(
-            "Whether to listen for Dynolog IPC on-demand-profile requests."
-        ),
-    )
-
-    profiling_warmup_steps: int = Field(
-        default=0,
-        ge=0,
-        description=(
-            "Number of Model::execute() iterations to skip before recording."
-        ),
-    )
-
-    profiling_active_steps: int = Field(
-        default=10,
-        ge=1,
-        description=("Number of Model::execute() iterations to record."),
-    )
-
-    profiling_periodic_flush_seconds: int = Field(
-        default=60,
-        ge=1,
-        description=(
-            "Periodically flush in-flight trace chunks to disk every N seconds."
-        ),
-    )
-
     # ------------------------------------------------------------------ #
     # Sub-config objects (kept cohesive)
     # ------------------------------------------------------------------ #
@@ -875,12 +834,6 @@ class PipelineArgs(ConfigFileModel):
             sample_on_host=sampling.sample_on_host,
             # ProfilingConfig fields
             gpu_profiling=profiling.gpu_profiling,
-            profiling_enabled=profiling.profiling_enabled,
-            profiling_output_path=profiling.profiling_output_path,
-            profiling_dynolog_enabled=profiling.profiling_dynolog_enabled,
-            profiling_warmup_steps=profiling.profiling_warmup_steps,
-            profiling_active_steps=profiling.profiling_active_steps,
-            profiling_periodic_flush_seconds=profiling.profiling_periodic_flush_seconds,
             # sub-configs
             lora=pipeline_config.lora.model_copy(deep=True)
             if pipeline_config.lora

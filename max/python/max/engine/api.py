@@ -19,12 +19,10 @@ import os
 import signal
 import sys
 import threading
-from collections.abc import Iterable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
-from types import TracebackType
 from typing import Any, BinaryIO, Literal, cast
 from unittest import mock
 
@@ -38,33 +36,6 @@ from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.engine import read as _read
 from max._core.mlrt import AsyncValue as _AsyncValue
-from max._core.profiler import (
-    kineto_disable as _kineto_disable,
-)
-from max._core.profiler import (
-    kineto_enable as _kineto_enable,
-)
-from max._core.profiler import (
-    kineto_is_enabled as _kineto_is_enabled,
-)
-from max._core.profiler import (
-    kineto_is_recording as _kineto_is_recording,
-)
-from max._core.profiler import (
-    kineto_last_trace_error as _kineto_last_trace_error,
-)
-from max._core.profiler import (
-    kineto_range_begin as _kineto_range_begin,
-)
-from max._core.profiler import (
-    kineto_range_end as _kineto_range_end,
-)
-from max._core.profiler import (
-    kineto_state as _kineto_state,
-)
-from max._core.profiler import (
-    kineto_wait_for_trace as _kineto_wait_for_trace,
-)
 from max._core.profiler import (
     set_gpu_profiling_state,
 )
@@ -492,210 +463,6 @@ def read(source: str | os.PathLike[str] | BinaryIO) -> CompiledModel:
     return CompiledModel(compiled=artifact, expected_weights=None)
 
 
-class ProfilingError(Exception):
-    """Raised when the libkineto profiler fails to serialize its trace.
-
-    The most common causes are an unwritable
-    :attr:`InferenceSession.debug.profiling_output_path`, a missing parent
-    directory, or libkineto failing to flush its in-memory ring buffer (the
-    underlying I/O error appears on libkineto's stderr).  For write
-    failures, the exception message includes the resolved output path so
-    the failure can be diagnosed without rerunning the workload.
-
-    Raised by :meth:`InferenceSession.profiling.wait_for_trace`.
-    """
-
-
-class _ProfilingNamespace:
-    """Runtime control surface for the libkineto-backed MAX profiler.
-
-    Exposes the on-demand profiling lifecycle (start, stop, wait, state)
-    that produces HTA-compatible Chrome trace JSON. Configuration lives on
-    the ``ProfilingConfig`` model in
-    ``max.pipelines.lib.config.profiling_config`` (e.g.
-    ``profiling_output_path``).
-
-    .. note::
-
-       libkineto's profiler state is **process-global**. Calling
-       :meth:`start` on one ``InferenceSession`` enables the profiler for the
-       whole process, including any other live sessions.  Single-host
-       tensor-parallel serving is one process driving multiple devices, so
-       one :meth:`start` covers every device.  In a multi-process multi-rank
-       deployment (one OS process per rank, e.g. an MPI-launched run),
-       enabling all ranks means calling :meth:`start` on each rank's own
-       session.  Use a ``{rank}``-templated
-       :attr:`~InferenceSession.debug.profiling_output_path` so the per-rank
-       traces don't collide.
-
-       For the same reason, ``with session.profiling:`` blocks **must not be
-       nested**: an inner ``__exit__`` will call :meth:`stop` and disable the
-       profiler for any enclosing scope.
-
-    This namespace is created automatically as ``session.profiling`` and
-    should not be instantiated by user code.
-
-    Example:
-
-    .. code-block:: python
-
-        session = InferenceSession(devices=[Accelerator()])
-        model = session.load(my_graph)
-        session.profiling.start()
-        model.execute(input_data)
-        session.profiling.stop()
-        session.profiling.wait_for_trace()
-    """
-
-    def start(self) -> None:
-        """Enable libkineto and begin recording.
-
-        Subscribes to CUPTI activity callbacks. Idempotent — calling
-        :meth:`start` while already enabled is a no-op.
-
-        On builds without libkineto (it is linked only in
-        ``--config=kineto`` builds on Linux x86_64) or hosts without a
-        live CUDA primary context, this is a safe no-op:
-        ``state`` will still report ``"warmup"`` but no trace file is
-        written by the matching :meth:`stop`.
-        """
-        _kineto_enable()
-
-    def stop(self) -> None:
-        """Disable libkineto and flush the trace.
-
-        Unregisters CUPTI callbacks and finalizes the trace file; use
-        :meth:`wait_for_trace` if you need to ensure serialization is
-        complete before reading it.
-
-        This method does not raise on a serialization failure — the error is
-        recorded and surfaced by :meth:`wait_for_trace`, so call that to
-        observe whether the trace was written.
-        """
-        _kineto_disable()
-
-    def wait_for_trace(self) -> None:
-        """Block until the most recent :meth:`stop` finishes serializing.
-
-        Raises:
-            ProfilingError: If libkineto could not write the trace file —
-                most commonly an unwritable
-                :attr:`InferenceSession.debug.profiling_output_path` or a
-                missing parent directory.  For write failures, the
-                exception message includes the resolved output path.
-        """
-        _kineto_wait_for_trace()
-        err = _kineto_last_trace_error()
-        if err:
-            raise ProfilingError(err)
-
-    @property
-    def state(self) -> Literal["idle", "warmup", "active", "flushing"]:
-        """Current profiler state.
-
-        Returns:
-            One of ``"idle"``, ``"warmup"``, ``"active"``, or ``"flushing"``.
-        """
-        return cast(
-            Literal["idle", "warmup", "active", "flushing"], _kineto_state()
-        )
-
-    @property
-    def is_enabled(self) -> bool:
-        """``True`` between :meth:`start` and :meth:`stop`.
-
-        Equivalent to ``state in {"warmup", "active"}``; ``False`` in
-        ``"idle"`` and ``"flushing"``.  Reflects only this session API's
-        enable intent — it stays ``False`` during Dynolog daemon-driven
-        on-demand traces, when :meth:`range` annotations do record; gate
-        hot-path annotation work on :attr:`is_recording` instead.
-
-        Cheap relative to constructing a trace name you would otherwise skip,
-        but still crosses the Python/C++ FFI boundary on every call — cache
-        the result if you need it inside a tight loop.
-        """
-        return _kineto_is_enabled()
-
-    @property
-    def is_recording(self) -> bool:
-        """``True`` while a trace is live and :meth:`range` spans record.
-
-        Covers traces of either origin — :meth:`start` via this API or a
-        Dynolog daemon-driven on-demand request — so it is the right gate
-        for eliding expensive range-name construction on the hot path:
-        unlike :attr:`is_enabled`, it does not opt the caller out of
-        daemon-trace annotation.  A single relaxed atomic load behind the
-        FFI boundary.
-        """
-        return _kineto_is_recording()
-
-    @contextmanager
-    def range(self, name: str, color: int = 0) -> Iterator[None]:
-        """Annotate a semantic CPU range in the trace.
-
-        Opens a named span on the calling thread for the duration of the
-        ``with`` block. The span is recorded by libkineto as a Chrome-trace
-        CPU activity and correlated to the GPU kernels launched inside it,
-        so it shows up as a labeled bar above the kernel timeline in
-        Perfetto/HTA. Use it to mark application-level phases — the
-        runtime already records every kernel launch automatically:
-
-        .. code-block:: python
-
-            session.profiling.start()
-            with session.profiling.range("prefill"):
-                model.execute(input_data)
-            session.profiling.stop()
-
-        Ranges may be nested. When the profiler is not recording, the
-        underlying begin/end calls reduce to a single predicted branch in
-        the runtime, so leaving these annotations in production code is
-        safe; only the Python-side overhead of entering a context manager
-        remains.
-
-        Args:
-            name: Label shown on the span in the trace viewer.
-            color: Reserved for a future color hint; currently not carried
-                into the trace (libkineto activities have no color channel).
-        """
-        _kineto_range_begin(name, color)
-        try:
-            yield
-        finally:
-            _kineto_range_end()
-
-    def __enter__(self) -> _ProfilingNamespace:
-        """Enter a profiling context: equivalent to calling :meth:`start`.
-
-        Lets callers write::
-
-            with session.profiling:
-                model.execute(input_data)
-
-        and have :meth:`stop` invoked automatically on scope exit, even if
-        the body raises.  The returned object is the namespace itself, so
-        ``state`` / ``is_enabled`` remain accessible from inside the block.
-        """
-        self.start()
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        """Exit the profiling context: calls :meth:`stop`.
-
-        Does NOT wait for the trace to serialize — callers that need the
-        file on disk before reading it should call :meth:`wait_for_trace`
-        after the ``with`` block.  This matches the rule that ``stop()``
-        and ``wait_for_trace()`` are split so callers can interleave other
-        cleanup between them.
-        """
-        self.stop()
-
-
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
 
@@ -742,11 +509,6 @@ class InferenceSession:
     # ``session.debug`` return the same underlying object, and any
     # ``MODULAR_DEBUG`` env-var parsing happens exactly once (at import).
     debug: DebugConfig = _InferenceSession.debug
-    # libkineto's profiler state is process-global (see _ProfilingNamespace
-    # docstring), so a single shared instance — matching ``debug`` above —
-    # accurately reflects that scope. The namespace carries no per-session
-    # state.
-    profiling: _ProfilingNamespace = _ProfilingNamespace()
 
     def __init__(
         self,
