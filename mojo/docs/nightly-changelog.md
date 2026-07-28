@@ -37,6 +37,15 @@ This version is still a work in progress.
   a `def` signature — for example `lambda (x: Int) {} -> Int: x + 1`. For now
   the capture list `{…}` and the return type must both be written explicitly.
 
+  A thin (capture-free) `lambda` is a compile-time function value. Binding it to
+  a `comptime` behaves like `comptime f = some_def`: it compiles to one
+  function, and each use of the bound name *refers* to that single function;
+  calling such a `lambda` in a comptime initializer folds its result to a
+  constant. It can likewise be passed as a `thin` function-typed parameter (for
+  example `[f: def(x: Int) thin -> Int]`), at a call site or as a default value,
+  just as a `def` can be passed by name. A capturing `lambda` is a runtime value
+  and is rejected in these positions.
+
 - Mojo supports an (internal only for now) feature known as *interior origins*,
   which allows collections to protect from a common class of memory unsafety
   problems. `List`, for example, now returns element references bound
