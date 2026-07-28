@@ -516,8 +516,7 @@ TEST(Telemetry, Resources) {
 
 /// This test verifies that when a TelemetryContext is created with a
 /// programName and crash reporting enabled, the "program.name" resource
-/// attribute is present and a "program.crash_reporting_enabled_invocation"
-/// event is emitted at L0.
+/// attribute is present and a "program.initialized" event is emitted at L0.
 TEST(Telemetry, DISABLED_ProgramInvocation) {
   LogFileSetup logFileSetup("logs");
   TempFile tmpFile = logFileSetup.getLogFile("log", "0");
@@ -540,23 +539,27 @@ TEST(Telemetry, DISABLED_ProgramInvocation) {
         bool eventFound = false;
         bool programNameFound = false;
         bool subCommandFound = false;
+        bool crashReportingAttested = false;
         iterateMessages(mbuf->getBuffer(), [&](StringRef message) {
-          if (getEventName(message) !=
-              "program.crash_reporting_enabled_invocation")
+          if (getEventName(message) != "program.initialized")
             return;
           eventFound = true;
           programNameFound = message.contains("program.name: test-program");
           subCommandFound =
               message.contains("program.sub_command: test-sub-command");
+          // The ostream exporter renders bool attributes numerically.
+          crashReportingAttested =
+              message.contains("crash_reporting.enabled: 1");
         });
 
-        EXPECT_TRUE(eventFound)
-            << "expected to find "
-               "program.crash_reporting_enabled_invocation event";
+        EXPECT_TRUE(eventFound) << "expected to find program.initialized event";
         EXPECT_TRUE(programNameFound)
             << "expected to find program.name resource attribute";
         EXPECT_TRUE(subCommandFound)
             << "expected to find program.sub_command event attribute";
+        EXPECT_TRUE(crashReportingAttested)
+            << "expected crash_reporting.enabled=true attesting that this "
+               "session belongs in the failure-rate denominator";
       });
   EXPECT_FALSE(err.isError()) << err.getError();
 }
@@ -745,8 +748,10 @@ TEST(Telemetry, FireAndForgetLogRecordExporterForceFlushDrainsInFlight) {
       << "ForceFlush returned before the in-flight export completed";
 }
 
-/// This test verifies that the invocation event is NOT emitted when crash
-/// reporting is disabled.
+/// This test verifies that the program.initialized event is still emitted when
+/// crash reporting is explicitly disabled, carrying
+/// crash_reporting.enabled=false so the session counts toward adoption but is
+/// excluded from the failure-rate denominator downstream.
 TEST(Telemetry, DISABLED_ProgramInvocationNoCrashReporting) {
   LogFileSetup logFileSetup("logs");
   TempFile tmpFile = logFileSetup.getLogFile("log", "0");
@@ -766,15 +771,22 @@ TEST(Telemetry, DISABLED_ProgramInvocationNoCrashReporting) {
         std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
 
         bool eventFound = false;
+        bool crashReportingDisabled = false;
         iterateMessages(mbuf->getBuffer(), [&](StringRef message) {
-          if (getEventName(message) ==
-              "program.crash_reporting_enabled_invocation")
-            eventFound = true;
+          if (getEventName(message) != "program.initialized")
+            return;
+          eventFound = true;
+          // The ostream exporter renders bool attributes numerically.
+          crashReportingDisabled =
+              message.contains("crash_reporting.enabled: 0");
         });
 
-        EXPECT_FALSE(eventFound)
-            << "invocation event should not be emitted when crash reporting "
-               "is disabled";
+        EXPECT_TRUE(eventFound)
+            << "program.initialized should still be emitted for adoption when "
+               "only crash reporting is disabled";
+        EXPECT_TRUE(crashReportingDisabled)
+            << "expected crash_reporting.enabled=false so the failure-rate "
+               "denominator excludes this session";
       });
   EXPECT_FALSE(err.isError()) << err.getError();
 }

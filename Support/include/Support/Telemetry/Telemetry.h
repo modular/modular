@@ -160,7 +160,7 @@ private:
 /// Export call on a detached thread so emit never blocks on the delegate's
 /// HTTP/network I/O, at the cost of losing visibility into whether the
 /// export eventually succeeded. Intended for low-volume diagnostic events
-/// (e.g. `program.crash_reporting_enabled_invocation`) where emit-time
+/// (e.g. `program.initialized`) where emit-time
 /// latency is the primary concern and per-record delivery guarantees are
 /// not; do NOT route high-volume or delivery-critical telemetry through
 /// this wrapper — pair the synchronous delegate with a
@@ -341,6 +341,14 @@ struct LocalIDs {
 /// and usage telemetry lanes rely on this to carry the same IDs.
 const LocalIDs &createLocalIDs();
 
+/// Reports whether the usage telemetry lane is enabled,
+/// Users opt out, so this defaults to enabled for production builds.
+bool isTelemetryEnabled(Config &settings);
+
+/// Reports whether the crash reporting lane is enabled,
+/// Users opt out, so this defaults to isTelemetryEnabled.
+bool isCrashReportingEnabled(Config &settings);
+
 /// A TelemetryContext provides access to instruments (e.g. Counter, Histogram)
 /// to instrument the code and generate metrics. These metrics will be exported
 /// by the TelemetryContext based on the options passed to it during creation.
@@ -362,10 +370,11 @@ public:
 
   /// Set up a TelemetryContext from a Config object. If programName is
   /// non-empty, it is recorded as the "program.name" resource attribute. When
-  /// crash reporting is also enabled, a
-  /// "program.crash_reporting_enabled_invocation" event is emitted at L0.
+  /// crash reporting is also enabled (its default follows the
+  /// telemetry.enabled setting), a "program.initialized" event is emitted at
+  /// L0 once per process.
   /// If subCommand is non-empty (e.g. "run", "build", "debug"), it is
-  /// included as the "program.sub_command" attribute on the invocation event.
+  /// included as the "program.sub_command" attribute on that event.
   TelemetryContext(Config &settings, StringRef programName = "",
                    StringRef subCommand = "");
 

@@ -43,13 +43,7 @@ ErrorOr<ContextRef> createContextImpl(StringRef programName,
     return settingsOr.takeError();
   Config settings = std::move(*settingsOr);
 
-  bool crashReportingEnabled =
-      settings.getValueAsBool("crash_reporting.enabled",
-#ifdef MODULAR_PRODUCTION
-                              true);
-#else
-                              false);
-#endif // MODULAR_PRODUCTION
+  bool crashReportingEnabled = Telemetry::isCrashReportingEnabled(settings);
 
   // Enable crash logging, if appropriate.
   if (!isProductionBuild() && !crashReportingEnabled)
