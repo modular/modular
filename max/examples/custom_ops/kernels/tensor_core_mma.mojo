@@ -114,7 +114,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                 # Copy with transpose: element at (i,j) in original KxN goes to (j,i) in transposed NxK
                 for i in range(K):  # rows of original KxN matrix
                     for j in range(N):  # cols of original KxN matrix
-                        b_transposed_ptr[j * K + i] = b_tt.ptr[i * N + j]
+                        b_transposed_ptr[j * K + i] = b_tt._storage[i * N + j]
 
                 b_ptr_to_use = b_transposed_ptr.as_unsafe_any_origin()
             else:
@@ -136,7 +136,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
             gpu_ctx.enqueue_memset(
                 DeviceBuffer[output.dtype](
                     gpu_ctx,
-                    out_tt.ptr,
+                    out_tt._storage,
                     M * N,
                     owning=False,
                 ),
