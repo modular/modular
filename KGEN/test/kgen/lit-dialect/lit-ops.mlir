@@ -133,6 +133,54 @@ lit.fn @ref_upcast<life: origin<true>>(
     : !lit.ref<!lit.struct<@MyStruct>, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
 }
 
+// MOCO-4453: erased accessor style — upcast a member field origin to the
+// owner's subtree (Pointer[U, origin_of(self).subtree] from self._memory...).
+lit.fn @ref_upcast_field_to_subtree<life: origin<true>>(
+    %ref1: !lit.ref<index, mut #lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "_memory">>)
+ -> !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>> {
+  // CHECK: %0 = lit.ref.upcast %ref1
+  %ref2 = lit.ref.upcast %ref1
+    : !lit.ref<index, mut #lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "_memory">>
+    -> !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
+  kgen.return %ref2
+    : !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
+}
+
+// Field subtree upcasts into a wider parent subtree.
+lit.fn @ref_upcast_field_subtree_to_parent<life: origin<true>>(
+    %ref1: !lit.ref<index, mut #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "f"> : !lit.origin<true>>>)
+ -> !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>> {
+  // CHECK: %0 = lit.ref.upcast %ref1
+  %ref2 = lit.ref.upcast %ref1
+    : !lit.ref<index, mut #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "f"> : !lit.origin<true>>>
+    -> !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
+  kgen.return %ref2
+    : !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
+}
+
+// Multi-level: x.y.z upcasts to x.y~ and to x~.
+lit.fn @ref_upcast_nested_to_mid_subtree<life: origin<true>>(
+    %ref1: !lit.ref<index, mut #lit.origin.field<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "y"> : !lit.origin<true>, "z">>)
+ -> !lit.ref<index, mut #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "y"> : !lit.origin<true>>> {
+  // CHECK: %0 = lit.ref.upcast %ref1
+  %ref2 = lit.ref.upcast %ref1
+    : !lit.ref<index, mut #lit.origin.field<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "y"> : !lit.origin<true>, "z">>
+    -> !lit.ref<index, mut #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "y"> : !lit.origin<true>>>
+  kgen.return %ref2
+    : !lit.ref<index, mut #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "y"> : !lit.origin<true>>>
+}
+
+lit.fn @ref_upcast_nested_to_root_subtree<life: origin<true>>(
+    %ref1: !lit.ref<index, mut #lit.origin.field<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "y"> : !lit.origin<true>, "z">>)
+ -> !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>> {
+  // CHECK: %0 = lit.ref.upcast %ref1
+  %ref2 = lit.ref.upcast %ref1
+    : !lit.ref<index, mut #lit.origin.field<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "y"> : !lit.origin<true>, "z">>
+    -> !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
+  kgen.return %ref2
+    : !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
+}
+
 lit.fn @ref_pointer<life: origin<true>, ilife: origin<false>>
      (%ref1: !lit.ref<@MyStruct, mut life>) {
   // CHECK: %0 = lit.ref.to_pointer %ref1 : <!lit.struct<@MyStruct>, mut life>

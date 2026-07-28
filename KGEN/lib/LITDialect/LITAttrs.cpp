@@ -285,7 +285,11 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
       operandSet.insert(operand);
     }
 
-    if (auto subtree = sugarDynCast<OriginSubtreeAttr>(operand))
+    // Look through mutcasts: mixed-mutability unions wrap members in
+    // OriginMutCastAttr (e.g. {imm x, mut y~}), and absorption must still
+    // see the underlying subtree.
+    if (auto subtree = dyn_cast<OriginSubtreeAttr>(
+            OriginType::stripMutCastAndRebind(operand)))
       subtreeOrigins.insert(subtree.getBase());
   }
 
@@ -298,6 +302,8 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
       // x.y.z is contained within x~ and x.y~.  'subtree' origins will contain
       // the origins for which we have a subtree in the set (it contains their
       // bases).
+      auto operandAsSubtree = dyn_cast<OriginSubtreeAttr>(
+          OriginType::stripMutCastAndRebind(operand));
       bool isAbsorbed = false;
       operand.walk([&](TypedAttr subOperand) {
         // If this suboperand isn't contained within a subtree, ignore it.
@@ -306,10 +312,8 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
 
         // If "operand" it itself a subtree x.y.z~ then don't stop just because
         // we found x.y.z.  However, do stop if we see a x.y~ also in the set.
-        if (auto subtree = sugarDynCast<OriginSubtreeAttr>(operand)) {
-          if (subtree.getBase() == subOperand)
-            return WalkResult::advance();
-        }
+        if (operandAsSubtree && operandAsSubtree.getBase() == subOperand)
+          return WalkResult::advance();
 
         isAbsorbed = true;
         return WalkResult::interrupt();

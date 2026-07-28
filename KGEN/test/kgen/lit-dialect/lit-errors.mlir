@@ -316,3 +316,28 @@ lit.fn @ref_upcast_not_wider<a: origin<true>, b: origin<true>>(
     -> !lit.ref<index, mut b>
   lit.end_fn
 }
+
+// -----
+
+// Parent subtree is not an upcast of a narrower field subtree destination
+// (origin_of(self.f).subtree does not contain origin_of(self).subtree).
+lit.fn @ref_upcast_parent_subtree_to_field_subtree<life: origin<true>>(
+    %ref1: !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>) {
+  // expected-error @below {{result origin is not an upcast of the source origin}}
+  %ref2 = lit.ref.upcast %ref1
+    : !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
+    -> !lit.ref<index, mut #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "f"> : !lit.origin<true>>>
+  lit.end_fn
+}
+
+// -----
+
+// Sibling field subtrees are not upcasts of each other.
+lit.fn @ref_upcast_sibling_subtrees<life: origin<true>>(
+    %ref1: !lit.ref<index, mut #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "a"> : !lit.origin<true>>>) {
+  // expected-error @below {{result origin is not an upcast of the source origin}}
+  %ref2 = lit.ref.upcast %ref1
+    : !lit.ref<index, mut #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "a"> : !lit.origin<true>>>
+    -> !lit.ref<index, mut #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "b"> : !lit.origin<true>>>
+  lit.end_fn
+}
