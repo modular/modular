@@ -44,11 +44,14 @@ filegroup(
 # staged locations.
 mojo_overlay_srcs(
     name = "std_srcs_hal",
-    # The Metal launch path (`_device_context_metal`) and the Metal
-    # native-handle accessors (`_metal`) are imported only by the default
-    # `device_context`, which the overlay replaces. They are orphaned under the
-    # HAL backend, so drop them from the staged tree rather than compile them.
+    # The Metal launch path (`_device_context_metal`), the Metal native-handle
+    # accessors (`_metal`), and the AsyncRT extensions (`_device_context_extras`)
+    # are imported only by the default `device_context`, which the overlay
+    # replaces -- the HAL `DeviceContext` carries its own equivalents of those
+    # extensions. They are orphaned under the HAL backend, so drop them from the
+    # staged tree rather than compile them.
     base_exclude = [
+        "std/gpu/host/_device_context_extras.mojo",
         "std/gpu/host/_device_context_metal.mojo",
         "std/gpu/host/_metal.mojo",
     ],
