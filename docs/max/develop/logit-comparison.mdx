@@ -11,7 +11,7 @@ absolute error, cosine distance, and KL divergence.
 
 :::note
 
-The reference model is typically the Hugging Face Transformers implementation
+The reference model is typically the Transformers implementation
 on PyTorch.
 
 :::
@@ -31,6 +31,10 @@ introduce small, insignificant numerical differences in logits. Instead,
 measure against thresholds that account for the expected numerical variation.
 While we provide threshold suggestions, you should decide what counts as
 significant for your own use case.
+
+If the calculations do not meet your thresholds, compare the output tensors of
+*individual layers* between your MAX model and the reference model. For more
+information, see [Layer comparison](/max/develop/layer-comparison/).
 
 ### Mean absolute error
 
@@ -309,7 +313,7 @@ model passes your validation criteria.
 Use these related resources next:
 
 - To investigate why a model doesn't meet your similarity thresholds, see
-  [Debug MAX model accuracy](https://github.com/modular/modular/blob/main/max/docs/accuracy-debugging.md).
+  [Layer comparison](/max/develop/layer-comparison/).
 - To learn about the stricter validation methods MAX requires for model
   contribution, see
   [Contributing new model architectures](https://github.com/modular/modular/blob/main/max/docs/contributing-models.md).

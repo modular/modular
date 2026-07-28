@@ -89,8 +89,28 @@
             "max/develop/read-model-config",
             "max/develop/weight-adapters",
             "max/develop/pipelines",
-            "max/develop/logit-comparison",
             "max/graph/quantize"
+          ]
+        },
+        {
+          "label": "Validation",
+          "type": "category",
+          "collapsed": true,
+          "items": [
+            "max/develop/logit-comparison",
+            "max/develop/layer-comparison"
+          ]
+        },
+        {
+          "label": "Debugging",
+          "type": "category",
+          "collapsed": true,
+          "items": [
+            "max/develop/debugging",
+            "max/develop/debugging-accuracy",
+            "max/develop/debugging-tracing",
+            "max/develop/debugging-gpu",
+            "max/develop/debugging-errors"
           ]
         },
         {
@@ -128,18 +148,6 @@
             "max/develop/broadcasting",
             "max/develop/indexing",
             "max/develop/tensor-realization"
-          ]
-        },
-        {
-          "label": "Debugging",
-          "type": "category",
-          "collapsed": true,
-          "items": [
-            "max/develop/debugging",
-            "max/develop/debugging-accuracy",
-            "max/develop/debugging-tracing",
-            "max/develop/debugging-gpu",
-            "max/develop/debugging-errors"
           ]
         },
         "max/gpu-system-profiling"
