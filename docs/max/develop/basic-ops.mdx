@@ -413,21 +413,21 @@ Tanh: Tensor([ -0.964 -0.7616       0
 
 ## Generate random tensors
 
-The [`max.experimental.random`](/max/api/python/experimental.random) module
-provides functions for creating tensors with random values.
-[`random.uniform()`](/max/api/python/generated/max.experimental.random.uniform)
+The [`max.experimental.functional`](/max/api/python/experimental.functional/)
+module provides functions for creating tensors with random values.
+[`F.uniform()`](/max/api/python/experimental.functional/#max.experimental.functional.uniform)
 generates values uniformly distributed over a range;
-[`random.normal()`](/max/api/python/generated/max.experimental.random.normal)
+[`F.normal()`](/max/api/python/experimental.functional/#max.experimental.functional.normal)
 generates values from a Gaussian distribution with the specified mean and
 standard deviation. Values vary each run:
 
 {/* @sync: ../../code/develop/basic-ops/random_basic.py */}
 
 ```python
-from max.experimental import random
+import max.experimental.functional as F
 
-uniform_tensor = random.uniform([3, 3], range=(0.0, 1.0))
-normal_tensor  = random.normal([3, 3], mean=0.0, std=1.0)
+uniform_tensor = F.uniform([3, 3], range=(0.0, 1.0))
+normal_tensor  = F.normal([3, 3], mean=0.0, std=1.0)
 
 print("Uniform distribution:")
 print(uniform_tensor)
@@ -451,7 +451,6 @@ standard ones don't fit:
 
 ```python
 import max.experimental.functional as F
-from max.experimental import random
 from max.experimental.tensor import Tensor
 
 
@@ -461,7 +460,7 @@ def linear_layer(x: Tensor, weights: Tensor, bias: Tensor) -> Tensor:
 
 # input: (batch=2, features=4)
 x       = Tensor([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
-weights = random.normal([4, 3])  # (features=4, output=3)
+weights = F.normal([4, 3])  # (features=4, output=3)
 bias    = Tensor.zeros([3])
 
 output = linear_layer(x, weights, bias)

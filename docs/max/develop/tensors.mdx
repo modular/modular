@@ -149,17 +149,18 @@ TensorType(dtype=float32, shape=[Dim(3), Dim(4)], device=cpu:0): [1.0, 1.0, 1.0,
 TensorType(dtype=float32, shape=[Dim(2), Dim(3)], device=cpu:0): [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 ```
 
-For random data, you can use one of several functions from the
-[`random`](/max/api/python/experimental.random) module, such as
-[`random.normal()`](/max/api/python/generated/max.experimental.random.normal):
+For random data, you can use one of several functions from
+[`max.experimental.functional`](/max/api/python/experimental.functional/), such
+as
+[`F.normal()`](/max/api/python/experimental.functional/#max.experimental.functional.normal):
 
 {/* @sync: ../../code/develop/tensors/create_random.py */}
 
 ```python
-from max.experimental import random
+import max.experimental.functional as F
 
 # Random values from a normal distribution
-random_tensor = random.normal([3, 3])
+random_tensor = F.normal([3, 3])
 print(random_tensor)
 ```
 
@@ -173,7 +174,9 @@ You can adjust the mean and standard deviation of the normal distribution to
 create tensors with different values:
 
 ```python
-random_tensor = random.normal([3, 3], mean=0.0, std=1.0)
+import max.experimental.functional as F
+
+random_tensor = F.normal([3, 3], mean=0.0, std=1.0)
 print(random_tensor)
 ```
 

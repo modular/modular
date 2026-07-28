@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: max/develop/basic-ops.mdx
 
-from max.experimental import random
+import max.experimental.functional as F
 
-uniform_tensor = random.uniform([3, 3], range=(0.0, 1.0))
-normal_tensor = random.normal([3, 3], mean=0.0, std=1.0)
+uniform_tensor = F.uniform([3, 3], range=(0.0, 1.0))
+normal_tensor = F.normal([3, 3], mean=0.0, std=1.0)
 
 print("Uniform distribution:")
 print(uniform_tensor)
