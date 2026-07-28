@@ -2401,7 +2401,7 @@ struct DeviceFunction[
             UInt64, ImmUntrackedOrigin
         ] = info.capture_sizes
         for i in range(snap_num_captures):
-            snap_capture_sizes[i] = info_capture_sizes[i]
+            snap_capture_sizes.unsafe_store(i, info_capture_sizes[i])
         var attr_code = OptionalReg[Int32](None)
         var attr_value = Int32(0)
         if func_attribute:
@@ -2662,14 +2662,16 @@ struct DeviceFunction[
                 blob_off = align_up(blob_off, 16)
                 var sz = Int(self._inner[]._capture_sizes[i])
                 unsafe_memcpy(
-                    dest=blob + blob_off,
+                    dest=blob.unsafe_offset(blob_off),
                     src=dense_args_addrs[num_translated_args + i].bitcast[
                         Byte
                     ](),
                     count=sz,
                 )
                 dense_args_addrs[num_translated_args + i] = (
-                    (blob + blob_off).bitcast[NoneType]().as_unsafe_any_origin()
+                    blob.unsafe_offset(blob_off)
+                    .unsafe_bitcast[NoneType]()
+                    .as_unsafe_any_origin()
                 )
                 blob_off += sz
             capture_blob = Optional(blob)
@@ -2850,12 +2852,14 @@ struct DeviceFunction[
                 blob_off = align_up(blob_off, 16)
                 var sz = Int(self._inner[]._capture_sizes[i])
                 unsafe_memcpy(
-                    dest=blob + blob_off,
+                    dest=blob.unsafe_offset(blob_off),
                     src=dense_args_addrs[num_args + i].bitcast[Byte](),
                     count=sz,
                 )
                 dense_args_addrs[num_args + i] = (
-                    (blob + blob_off).bitcast[NoneType]().as_unsafe_any_origin()
+                    blob.unsafe_offset(blob_off)
+                    .unsafe_bitcast[NoneType]()
+                    .as_unsafe_any_origin()
                 )
                 blob_off += sz
             capture_blob = Optional(blob)
@@ -3004,12 +3008,14 @@ struct DeviceFunction[
                 blob_off = align_up(blob_off, 16)
                 var sz = Int(self._inner[]._capture_sizes[i])
                 unsafe_memcpy(
-                    dest=blob + blob_off,
+                    dest=blob.unsafe_offset(blob_off),
                     src=dense_args_addrs[num_args + i].bitcast[Byte](),
                     count=sz,
                 )
                 dense_args_addrs[num_args + i] = (
-                    (blob + blob_off).bitcast[NoneType]().as_unsafe_any_origin()
+                    blob.unsafe_offset(blob_off)
+                    .unsafe_bitcast[NoneType]()
+                    .as_unsafe_any_origin()
                 )
                 blob_off += sz
             capture_blob = Optional(blob)

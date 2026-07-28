@@ -1902,15 +1902,15 @@ struct Dict[
         ).unsafe_leak()
         unsafe_memset(relocated_set, 0, old_capacity)
         for i in range(len(relocations)):
-            slot_map[relocations[i][0]] = Int32(relocations[i][1])
-            relocated_set[relocations[i][0]] = 1
+            slot_map.unsafe_store(relocations[i][0], Int32(relocations[i][1]))
+            relocated_set.unsafe_store(relocations[i][0], UInt8(1))
 
         # Rebuild _order preserving insertion order, skipping stale entries
         self._order = List[Int32](capacity=self._table._len)
         for i in range(len(old_order)):
             var old_slot = Int(old_order[i])
-            if relocated_set[old_slot] != 0:
-                self._order.append(slot_map[old_slot])
+            if relocated_set.unsafe_load(old_slot) != 0:
+                self._order.append(slot_map.unsafe_load(old_slot))
 
         assert (
             len(self._order) == self._table._len

@@ -575,7 +575,8 @@ This version is still a work in progress.
     `UnsafeUnion.unsafe_ptr()`.
   - The `unsafe_ptr()` accessors of `Span`, `StringSlice`, `String` (plus
     `String.unsafe_ptr_mut()`), `StringLiteral`, and `CStringSlice`.
-  - `Allocation.unsafe_ptr()` and `OwnedPointer.unsafe_ptr()`.
+  - `Allocation.unsafe_ptr()`, `Allocation.unsafe_leak()`, and
+    `OwnedPointer.unsafe_ptr()`.
   - `PythonObject.unsafe_get_as_pointer()`,
     `PythonObject.downcast_value_ptr()`, and
     `PythonObject.unchecked_downcast_value_ptr()`.

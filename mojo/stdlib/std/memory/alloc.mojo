@@ -185,7 +185,7 @@ struct Allocation[T: AnyType](
 
     def unsafe_leak(
         deinit self,
-    ) -> UnsafePointer[Self.T, MutUntrackedOrigin]:
+    ) -> Pointer[Self.T, MutUntrackedOrigin]:
         """Consumes the `Allocation` and returns its raw owning pointer.
 
         `Allocation` is an explicitly destroyed type: it is never deallocated
@@ -594,7 +594,7 @@ struct ThinAllocation[T: AnyType](
 
 def _alloc_bytes(
     layout: Layout[Byte],
-) -> UnsafePointer[Byte, MutUntrackedOrigin]:
+) -> Pointer[Byte, MutUntrackedOrigin]:
     var pointer = _malloc[Byte](layout.count(), alignment=layout.alignment())
     if unlikely(not pointer):
         abort("alloc failed: returned a null pointer")
