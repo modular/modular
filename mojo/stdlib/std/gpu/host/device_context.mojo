@@ -65,7 +65,7 @@ from std.builtin.device_passable import (
     DeviceTypeEncoder,
 )
 from std.compile.compile import CompiledFunctionInfo
-from std.reflection import get_linkage_name, reflect, reflect_fn
+from std.reflection import reflect, reflect_fn
 from std.gpu.host.compile import (
     _compile_code,
     _cross_compilation,
@@ -2975,7 +2975,7 @@ struct DeviceFunction[
         var effective_argc = num_args
 
         # NOTE: Manual short buffer optimization. We could use a
-        # Variant[List, InlineArray] instead, but it would look a lot more
+        # Variant[List, Array] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: Pointer[
             OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
@@ -3111,7 +3111,7 @@ struct DeviceFunction[
     def _validate_arguments[
         *Ts: DevicePassable,
         num_args: Int,
-    ]() -> Tuple[Int, InlineArray[Int, num_args]]:
+    ]() -> Tuple[Int, Array[Int, num_args]]:
         comptime declared_num_args = Self.declared_arg_types.length
 
         comptime assert (
@@ -3122,9 +3122,7 @@ struct DeviceFunction[
         # calculate the offset into a contiguous memory area which will
         # be used to remap the passed arguments into the device dtypes.
         var tmp_arg_offset = 0
-        var translated_arg_offsets = InlineArray[Int, num_args](
-            uninitialized=True
-        )
+        var translated_arg_offsets = Array[Int, num_args](uninitialized=True)
         var num_translated_args = 0
 
         comptime for i in range(num_args):
@@ -3236,7 +3234,7 @@ struct DeviceFunction[
         # Space to store the arguments to the kernel that have been converted
         # from host dtype to device dtype. Shared by both the Metal and the
         # default branch below.
-        var translated_args = InlineArray[Byte, args_size](uninitialized=True)
+        var translated_args = Array[Byte, args_size](uninitialized=True)
         var start_addr = Int(translated_args.unsafe_ptr())
         var extra_align = align_up(start_addr, 8) - start_addr
 
@@ -3252,7 +3250,7 @@ struct DeviceFunction[
                 self._copy_to_constant_memory(constant_memory[i])
 
         # NOTE: Manual short buffer optimization. We could use a
-        # Variant[List, InlineArray] instead, but it would look a lot more
+        # Variant[List, Array] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: Pointer[
             OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
@@ -3642,82 +3640,6 @@ struct DeviceExternalFunction:
 
     @always_inline
     @parameter
-    def _call_with_pack[
-        *Ts: AnyType,
-    ](
-        imm self,
-        ctx: Some[_FunctionEnqueuer],
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
-    ) raises:
-        """Launches the device function with the specified arguments and configuration.
-
-        Parameters:
-            Ts: Types of the arguments to pass to the device function.
-
-        Args:
-            ctx: The enqueuer to launch the function on.
-            args: Arguments to pass to the device function.
-            grid_dim: Grid dimensions for the kernel launch.
-            block_dim: Block dimensions for the kernel launch.
-            cluster_dim: Optional cluster dimensions for multi-GPU execution.
-            shared_mem_bytes: Optional amount of shared memory to allocate.
-            attributes: Optional list of additional launch attributes.
-            constant_memory: Optional list of constant memory mappings.
-            location: Source location for the function call.
-
-        Raises:
-            If the function launch fails.
-        """
-        comptime num_args = Ts.length
-
-        var dense_args_addrs = InlineArray[
-            OpaquePointer[MutAnyOrigin], num_args
-        ](uninitialized=True)
-
-        comptime for i in range(num_args):
-            # TODO(MSTDL-1904): Validate the safety of this.
-            dense_args_addrs[i] = (
-                Pointer(to=args[i])
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
-
-        if cluster_dim:
-            attributes.append(
-                LaunchAttribute.from_cluster_dim(cluster_dim.value())
-            )
-
-        if constant_memory:
-            for i in range(len(constant_memory)):
-                self._copy_to_constant_memory(constant_memory[i])
-
-        # External functions carry no argument-size metadata, so no per-arg
-        # sizes are passed to the enqueuer (matching the previous direct call).
-        var no_arg_sizes = OptionalPointer[UInt64, MutAnyOrigin](None)
-        _checked(
-            ctx.enqueue(
-                self._handle,
-                grid_dim,
-                block_dim,
-                shared_mem_bytes.or_else(0),
-                attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
-                len(attributes),
-                dense_args_addrs.unsafe_ptr().as_unsafe_any_origin(),
-                UInt32(num_args),
-                no_arg_sizes,
-            ),
-            location=location.or_else(call_location()),
-        )
-
-    @always_inline
     def get_attribute(self, attr: Attribute) raises -> Int:
         """Retrieves a specific attribute of this device function.
 
@@ -4267,6 +4189,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Raises:
             If the operation fails.
         """
+        self._check_supports_default_compile_function()
+
         assert (
             not func_attribute
             or func_attribute.value().attribute
@@ -4342,6 +4266,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Raises:
             If the operation fails.
         """
+        self._check_supports_default_compile_function()
+
         assert (
             not func_attribute
             or func_attribute.value().attribute
@@ -4425,79 +4351,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             function_name=function_name^,
             asm=asm^,
             func_attribute=func_attribute,
-        )
-
-    @parameter
-    @always_inline
-    def enqueue_function[
-        *Ts: DevicePassable
-    ](
-        self,
-        f: DeviceFunction,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
-    ) raises:
-        """Enqueues a pre-compiled checked function for execution on this device.
-
-        This overload requires a `DeviceFunction` that was compiled with
-        type checking enabled (via `compile_function`). The function
-        will verify that the argument types match the declared types at
-        compile time.
-
-        Parameters:
-            Ts: Argument dtypes.
-
-        Args:
-            f: The compiled function to execute.
-            args: Arguments to pass to the function.
-            grid_dim: Dimensions of the compute grid, made up of thread
-                blocks.
-            block_dim: Dimensions of each thread block in the grid.
-            cluster_dim: Dimensions of clusters (if the thread blocks are
-                grouped into clusters).
-            shared_mem_bytes: Amount of shared memory per thread block.
-            attributes: Launch attributes.
-            constant_memory: Constant memory mapping.
-            location: Source location for the function call.
-
-        ```mojo
-        from std.gpu.host import DeviceContext
-
-        def kernel(x: Int):
-            print("Value:", x)
-
-        with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compiled_func, 42, grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        Raises:
-            If the operation fails.
-        """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](
-            block_dim, location=call_location()
-        )
-
-        f._call_with_pack_checked(
-            self,
-            *args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location.or_else(call_location()),
         )
 
     @always_inline
@@ -6704,7 +6557,7 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
     recognizes this type and synthesizes it from the per-device contexts
     discovered on the operation, so kernels can index into it like a
     homogeneous array without the compiler having to introspect a generic
-    `InlineArray` parameter.
+    `Array` parameter.
 
     Parameters:
         length: The number of `DeviceContext` values in the collection.
@@ -6718,14 +6571,12 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
     """The number of `DeviceContext` values in the collection. Deprecated
     alias for `length`."""
 
-    var device_contexts: InlineArray[DeviceContext, Self.length]
+    var device_contexts: Array[DeviceContext, Self.length]
     """The underlying storage for the per-device contexts."""
 
     @always_inline
-    def __init__(
-        out self, device_contexts: InlineArray[DeviceContext, Self.length]
-    ):
-        """Initialize from an `InlineArray` of `DeviceContext` values.
+    def __init__(out self, device_contexts: Array[DeviceContext, Self.length]):
+        """Initialize from an `Array` of `DeviceContext` values.
 
         Args:
             device_contexts: The per-device contexts to store.
@@ -6746,7 +6597,7 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
         constructor: it synthesizes `DeviceContextArray[length=N](ctx0,
         ctx1, ..., ctxN-1)` directly from the per-device contexts attached
         to the kernel, so the wrapper avoids forcing callers to assemble an
-        `InlineArray` themselves.
+        `Array` themselves.
 
         Parameters:
             __literal_size__: The number of contexts in the literal, inferred
@@ -6761,7 +6612,7 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
         assert (
             len(device_contexts) == Self.length
         ), "mismatch in the number of elements"
-        self.device_contexts = InlineArray[
+        self.device_contexts = Array[
             DeviceContext, __literal_size__
         ]._from_variadic(*device_contexts^)
 
@@ -6800,20 +6651,20 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
 
     def filter_gpu_contexts[
         num_gpu_devices: Int
-    ](self) raises -> InlineArray[DeviceContext, num_gpu_devices]:
+    ](self) raises -> Array[DeviceContext, num_gpu_devices]:
         """Filters CPU contexts out and returns the GPU contexts in order.
 
         Some kernels receive a `DeviceContextArray` that mixes GPU contexts
         with CPU contexts carrying host-side pointers. Most kernels only
         want the GPU contexts in launch order, packed into a fixed-size
-        `InlineArray`.
+        `Array`.
 
         Parameters:
             num_gpu_devices: The expected number of GPU contexts. Used as
-                the size of the returned `InlineArray`.
+                the size of the returned `Array`.
 
         Returns:
-            An `InlineArray` of size `num_gpu_devices` containing the GPU
+            An `Array` of size `num_gpu_devices` containing the GPU
             contexts in their original order.
 
         Raises:
@@ -6822,7 +6673,7 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
         """
         # Validate the count up front. Passing a partially-filled staging
         # array to `unsafe_assume_initialized=` would still be UB at the
-        # eventual destruction of the returned `InlineArray`.
+        # eventual destruction of the returned `Array`.
         var gpu_count = 0
         for i in range(Self.length):
             if self[i].api() != "cpu":
@@ -6834,16 +6685,16 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
         # `__del__` is a no-op, so the staging array is safe to drop even
         # with uninitialized slots in scope (e.g. on an early raise). The
         # `unsafe_assume_initialized=` constructor then moves every slot
-        # into a fully-initialized `InlineArray[DeviceContext]`.
-        var staging = InlineArray[
-            UnsafeMaybeUninit[DeviceContext], num_gpu_devices
-        ](uninitialized=True)
+        # into a fully-initialized `Array[DeviceContext]`.
+        var staging = Array[UnsafeMaybeUninit[DeviceContext], num_gpu_devices](
+            uninitialized=True
+        )
         var dev_idx = 0
         for i in range(Self.length):
             if self[i].api() != "cpu":
                 staging[dev_idx].init_from(DeviceContext(copy=self[i]))
                 dev_idx += 1
-        return InlineArray[DeviceContext, num_gpu_devices](
+        return Array[DeviceContext, num_gpu_devices](
             unsafe_assume_initialized=staging^
         )
 

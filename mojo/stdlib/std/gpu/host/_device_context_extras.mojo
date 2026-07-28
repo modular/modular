@@ -14,10 +14,11 @@
 from std.ffi import external_call, CStringSlice, c_size_t
 from std.builtin.device_passable import DevicePassable
 from std.collections.optional import OptionalReg
-from std.reflection import call_location, SourceLocation
+from std.reflection import get_linkage_name, call_location, SourceLocation
 from std.sys.compile import DebugLevel, OptimizationLevel
+from std.sys import size_of
 
-from std.gpu.host.compile import _compile_code
+from std.gpu.host.compile import _compile_code, get_gpu_target
 
 from . import (
     Dim,
@@ -31,12 +32,14 @@ from .device_context import (
     DeviceContext,
     DeviceBuffer,
     DeviceFunction,
+    DeviceExternalFunction,
     _checked,
     _CString,
     _DumpPath,
     _check_dim,
     _DeviceFunctionPtr,
     _DeviceContextPtr,
+    _FunctionEnqueuer,
 )
 
 
@@ -190,7 +193,90 @@ __extension DeviceFunction:
         self._handle = result
 
 
+__extension DeviceExternalFunction:
+    @always_inline
+    @parameter
+    def _call_with_pack[
+        *Ts: AnyType,
+    ](
+        imm self,
+        ctx: Some[_FunctionEnqueuer],
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Launches the device function with the specified arguments and configuration.
+
+        Parameters:
+            Ts: Types of the arguments to pass to the device function.
+
+        Args:
+            self: The DeviceExternalFunction.
+            ctx: The enqueuer to launch the function on.
+            args: Arguments to pass to the device function.
+            grid_dim: Grid dimensions for the kernel launch.
+            block_dim: Block dimensions for the kernel launch.
+            cluster_dim: Optional cluster dimensions for multi-GPU execution.
+            shared_mem_bytes: Optional amount of shared memory to allocate.
+            attributes: Optional list of additional launch attributes.
+            constant_memory: Optional list of constant memory mappings.
+            location: Source location for the function call.
+
+        Raises:
+            If the function launch fails.
+        """
+        comptime num_args = Ts.length
+
+        var dense_args_addrs = InlineArray[
+            OpaquePointer[MutAnyOrigin], num_args
+        ](uninitialized=True)
+
+        comptime for i in range(num_args):
+            # TODO(MSTDL-1904): Validate the safety of this.
+            dense_args_addrs[i] = (
+                Pointer(to=args[i])
+                .unsafe_bitcast[NoneType]()
+                .unsafe_mut_cast[True]()
+                .as_unsafe_any_origin()
+            )
+
+        if cluster_dim:
+            attributes.append(
+                LaunchAttribute.from_cluster_dim(cluster_dim.value())
+            )
+
+        if constant_memory:
+            for i in range(len(constant_memory)):
+                self._copy_to_constant_memory(constant_memory[i])
+
+        # External functions carry no argument-size metadata, so no per-arg
+        # sizes are passed to the enqueuer (matching the previous direct call).
+        var no_arg_sizes = OptionalPointer[UInt64, MutAnyOrigin](None)
+        _checked(
+            ctx.enqueue(
+                self._handle,
+                grid_dim,
+                block_dim,
+                shared_mem_bytes.or_else(0),
+                attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+                len(attributes),
+                dense_args_addrs.unsafe_ptr().as_unsafe_any_origin(),
+                UInt32(num_args),
+                no_arg_sizes,
+            ),
+            location=location.or_else(call_location()),
+        )
+
+
 __extension DeviceContext:
+    def _check_supports_default_compile_function(self):
+        pass
+
     @parameter
     @always_inline
     def enqueue_function[
@@ -308,6 +394,80 @@ __extension DeviceContext:
         ](func_attribute=inferred_func_attribute)
 
         gpu_kernel._call_with_pack_checked(
+            self,
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
+
+    @parameter
+    @always_inline
+    def enqueue_function[
+        *Ts: DevicePassable
+    ](
+        self,
+        f: DeviceFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Enqueues a pre-compiled checked function for execution on this device.
+
+        This overload requires a `DeviceFunction` that was compiled with
+        type checking enabled (via `compile_function`). The function
+        will verify that the argument types match the declared types at
+        compile time.
+
+        Parameters:
+            Ts: Argument dtypes.
+
+        Args:
+            self: The DeviceContext.
+            f: The compiled function to execute.
+            args: Arguments to pass to the function.
+            grid_dim: Dimensions of the compute grid, made up of thread
+                blocks.
+            block_dim: Dimensions of each thread block in the grid.
+            cluster_dim: Dimensions of clusters (if the thread blocks are
+                grouped into clusters).
+            shared_mem_bytes: Amount of shared memory per thread block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mapping.
+            location: Source location for the function call.
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+
+        def kernel(x: Int):
+            print("Value:", x)
+
+        with DeviceContext() as ctx:
+            var compiled_func = ctx.compile_function[kernel]()
+            ctx.enqueue_function(compiled_func, 42, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        Raises:
+            If the operation fails.
+        """
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+
+        f._call_with_pack_checked(
             self,
             *args,
             grid_dim=grid_dim,
