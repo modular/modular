@@ -269,7 +269,7 @@ struct _NaiveMatmulTileAdapter[
         ](row_major[1, 1]())
         # TODO(jtodd): comptime assert/where the epilogue address space
         var dst = TileTensor(
-            dst_local.ptr.address_space_cast[
+            dst_local._storage.address_space_cast[
                 Self.TileOperationType.src_address_space
             ]().unsafe_origin_cast[MutAnyOrigin](),
             row_major[1, 1](),
