@@ -83,11 +83,7 @@ def test[
         capacity=input_shape.flattened_length()
     )
     input_stack.resize(input_shape.flattened_length(), 0)
-    # TODO(MOCO-4334): a safe `Pointer` from `unsafe_ptr()` collapses to an
-    # immutable origin in the tensor ctor; pin to a mutable `UnsafePointer`.
-    var input_stack_ptr: UnsafePointer[
-        Scalar[dtype], origin_of(input_stack)
-    ] = input_stack.unsafe_ptr()
+    var input_stack_ptr = input_stack.unsafe_ptr()
     var input = TileTensor(input_stack_ptr, input_layout)
     _copy_values_to_tile_tensor(input, input_values)
 
@@ -97,11 +93,7 @@ def test[
         capacity=output_shape.flattened_length()
     )
     expected_stack.resize(output_shape.flattened_length(), 0)
-    # TODO(MOCO-4334): a safe `Pointer` from `unsafe_ptr()` collapses to an
-    # immutable origin in the tensor ctor; pin to a mutable `UnsafePointer`.
-    var expected_stack_ptr: UnsafePointer[
-        Scalar[dtype], origin_of(expected_stack)
-    ] = expected_stack.unsafe_ptr()
+    var expected_stack_ptr = expected_stack.unsafe_ptr()
     var expected = TileTensor(expected_stack_ptr, output_layout)
     _copy_values_to_tile_tensor(expected, expected_output)
 
@@ -110,11 +102,7 @@ def test[
         capacity=output_shape.flattened_length()
     )
     output_stack.resize(output_shape.flattened_length(), 0)
-    # TODO(MOCO-4334): a safe `Pointer` from `unsafe_ptr()` collapses to an
-    # immutable origin in the tensor ctor; pin to a mutable `UnsafePointer`.
-    var output_stack_ptr: UnsafePointer[
-        Scalar[dtype], origin_of(output_stack)
-    ] = output_stack.unsafe_ptr()
+    var output_stack_ptr = output_stack.unsafe_ptr()
     var output = TileTensor(output_stack_ptr, output_layout)
 
     fold[stride=stride, dilation=dilation, padding=padding, target="cpu"](
