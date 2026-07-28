@@ -34,8 +34,12 @@ This version is still a work in progress.
 - Support for `lambda` expressions: anonymous, single-expression closures that
   desugar to a nested `def`. As in Python, the body is a single expression with
   no `return`; unlike Python, the arguments are parenthesized and typed like in
-  a `def` signature — for example `lambda (x: Int) {} -> Int: x + 1`. For now
-  the capture list `{…}` and the return type must both be written explicitly.
+  a `def` signature — for example `lambda (x: Int) {} -> Int: x + 1`. The
+  capture list `{…}` and return type may each be elided: an omitted capture list
+  imm-captures the body's free variables (and is thin when there are none), and
+  an omitted return type defaults to `None` — so the bare `lambda: expr` is
+  valid when `expr` is `None`-typed. These are fixed defaults, not inference (a
+  non-`None` body still needs an explicit `-> T`).
 
   A thin (capture-free) `lambda` is a compile-time function value. Binding it to
   a `comptime` behaves like `comptime f = some_def`: it compiles to one
