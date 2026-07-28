@@ -1,12 +1,23 @@
-load("//bazel:api.bzl", "mojo_library")
+load("//bazel:api.bzl", "mojo_library", "pkg_files")
 
 package(default_visibility = ["//max:consumers"])
 
 mojo_library(
     name = "max",
     srcs = glob(["**/*.mojo"]),
+    docs_base_path = "mojo",
     deps = [
         "//max:machine",
         "@mojo//:std",
     ],
+)
+
+pkg_files(
+    name = "docs",
+    srcs = [":max.docs"],
+    prefix = "api/mojo",
+    renames = {
+        ":max.docs": "",
+    },
+    tags = ["manual"],
 )
