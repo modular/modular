@@ -37,6 +37,7 @@ from threading import Thread
 
 import numpy as np
 import pytest
+from _transfer_engine_helpers import kv_memory
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import (
     KVTransferEngine,
@@ -125,10 +126,14 @@ def test_send_recv_dram() -> None:
     blocks_2 = Buffer.from_numpy(np.arange(num_elts, dtype=np.int16) + 80)
 
     engine_1 = KVTransferEngine(
-        "engine_1", [[blocks_1]], total_num_pages=total_num_pages
+        "engine_1",
+        [[kv_memory(blocks_1, total_num_pages)]],
+        total_num_pages=total_num_pages,
     )
     engine_2 = KVTransferEngine(
-        "engine_2", [[blocks_2]], total_num_pages=total_num_pages
+        "engine_2",
+        [[kv_memory(blocks_2, total_num_pages)]],
+        total_num_pages=total_num_pages,
     )
 
     engine_1.connect(engine_2.metadata)
@@ -162,10 +167,14 @@ def test_read_transfer_dram() -> None:
     blocks_2 = Buffer.from_numpy(np.arange(num_elts, dtype=np.int16) + 80)
 
     engine_1 = KVTransferEngine(
-        "engine_1", [[blocks_1]], total_num_pages=total_num_pages
+        "engine_1",
+        [[kv_memory(blocks_1, total_num_pages)]],
+        total_num_pages=total_num_pages,
     )
     engine_2 = KVTransferEngine(
-        "engine_2", [[blocks_2]], total_num_pages=total_num_pages
+        "engine_2",
+        [[kv_memory(blocks_2, total_num_pages)]],
+        total_num_pages=total_num_pages,
     )
 
     engine_1.connect(engine_2.metadata)
@@ -212,15 +221,23 @@ def test_send_recv_multi_group_dram() -> None:
 
     engine_1 = KVTransferEngine(
         "engine_1",
-        [[main_1]],
+        [
+            [
+                kv_memory(main_1, total_num_pages),
+                kv_memory(draft_1, total_num_pages),
+            ]
+        ],
         total_num_pages=total_num_pages,
-        extra_tensor_groups=[[[draft_1]]],
     )
     engine_2 = KVTransferEngine(
         "engine_2",
-        [[main_2]],
+        [
+            [
+                kv_memory(main_2, total_num_pages),
+                kv_memory(draft_2, total_num_pages),
+            ]
+        ],
         total_num_pages=total_num_pages,
-        extra_tensor_groups=[[[draft_2]]],
     )
 
     engine_1.connect(engine_2.metadata)
@@ -289,15 +306,23 @@ def test_connect_rejects_group_bpp_mismatch_dram() -> None:
 
     engine_1 = KVTransferEngine(
         "engine_1",
-        [[main_1]],
+        [
+            [
+                kv_memory(main_1, total_num_pages),
+                kv_memory(draft_1, total_num_pages),
+            ]
+        ],
         total_num_pages=total_num_pages,
-        extra_tensor_groups=[[[draft_1]]],
     )
     engine_2 = KVTransferEngine(
         "engine_2",
-        [[main_2]],
+        [
+            [
+                kv_memory(main_2, total_num_pages),
+                kv_memory(draft_2, total_num_pages),
+            ]
+        ],
         total_num_pages=total_num_pages,
-        extra_tensor_groups=[[[draft_2]]],
     )
 
     with pytest.raises(ValueError, match="mismatch"):

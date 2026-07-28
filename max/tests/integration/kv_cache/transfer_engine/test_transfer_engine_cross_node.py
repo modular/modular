@@ -51,11 +51,23 @@ import numpy as np
 import zmq
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
+from max.dtype import DType
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     TransferReqData,
 )
+
+
+def _kv(buf: Buffer, total_num_pages: int) -> KVCacheMemory:
+    """Wrap a buffer as a 2-D uint8 ``KVCacheMemory`` unit."""
+    bytes_per_page = (
+        buf.num_elements * buf.dtype.size_in_bytes // total_num_pages
+    )
+    return KVCacheMemory(
+        buffer=buf.view(DType.uint8, [total_num_pages, bytes_per_page])
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -358,7 +370,9 @@ def main() -> None:
     sock = _setup_zmq(args.role, args.sender_addr)
     all_blocks = _allocate_device_buffers(args.role, cfg, args.device)
     engine = KVTransferEngine(
-        f"engine_{args.role}", [all_blocks], total_num_pages=cfg.num_pages
+        f"engine_{args.role}",
+        [[_kv(b, cfg.num_pages) for b in all_blocks]],
+        total_num_pages=cfg.num_pages,
     )
     # Phase 2: exchange NIXL engine metadata and activate the RDMA path.
     remote_md = _exchange_engine_metadata(args.role, sock, engine)
