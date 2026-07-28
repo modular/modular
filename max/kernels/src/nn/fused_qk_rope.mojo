@@ -16,7 +16,7 @@ from std.collections import OptionalReg
 from std.math import gcd
 from std.sys.info import _current_target, align_of, simd_width_of
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.utils.numerics import get_accum_type
 from std.complex import ComplexSIMD
 from std.gpu.host import DeviceContext, get_gpu_target

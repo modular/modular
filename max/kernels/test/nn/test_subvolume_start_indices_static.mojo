@@ -13,20 +13,20 @@
 """Equivalence check for the static-folding subvolume decomposition helper.
 
 `_get_start_indices_of_nth_subvolume_static` (in `nn.shapes`) is the
-static-divisor-folding counterpart of the stdlib
-`_get_start_indices_of_nth_subvolume` (in `std.algorithm.functional`): for a
+static-divisor-folding counterpart of
+`_get_start_indices_of_nth_subvolume` (in `max.algorithm.functional`): for a
 `Coord` whose outer dims are statically known, its per-element `divmod` folds to
 a magic-multiply + shift, but the *result* must stay bit-identical to the
-stdlib baseline for every shape and `subvolume_rank`.
+MAX algorithm baseline for every shape and `subvolume_rank`.
 
 This is a pure host-side check (no device launch): it compares the two
 functions' `IndexList` outputs directly. It covers `subvolume_rank` in
 {0, 1, 2}, ranks 2/3/4, over a sweep of flat indices, and runs each shape both
 as an all-static `Coord` (the fold fires) and an all-dynamic `Coord` (degrades
-to the runtime-divide path). All four must agree with the stdlib reference.
+to the runtime-divide path). All four must agree with the MAX reference.
 """
 
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume
+from max.algorithm.functional import _get_start_indices_of_nth_subvolume
 
 from layout import Coord, row_major
 from nn.shapes import _get_start_indices_of_nth_subvolume_static

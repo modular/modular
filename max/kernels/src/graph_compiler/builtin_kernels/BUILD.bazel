@@ -18,6 +18,7 @@ mojo_library(
         "//max:kv_cache",
         "//max:layout",
         "//max:linalg",
+        "//max:max_mojo",
         "//max:nn",
         "//max:quantization",
         "//max:shmem",

@@ -16,7 +16,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.python._cpython import GILAcquired, GILReleased
 from std.os import abort
 import std.math
-from std.algorithm.functional import parallelize
+from max.algorithm.functional import parallelize
 from std.sys.info import num_physical_cores
 
 

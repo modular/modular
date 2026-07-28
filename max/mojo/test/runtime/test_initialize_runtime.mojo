@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.algorithm import parallelize
+from max.algorithm import parallelize
 from std.runtime import initialize_runtime
 from std.runtime.asyncrt import parallelism_level
 from std.testing import assert_equal, assert_true, TestSuite

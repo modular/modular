@@ -12,6 +12,7 @@ mojo_library(
     validate_missing_docs = False,
     deps = [
         "//max:layout",
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

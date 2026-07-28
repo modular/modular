@@ -18,6 +18,7 @@ mojo_library(
     deps = [
         "//max:layout",
         "//max:linalg",
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

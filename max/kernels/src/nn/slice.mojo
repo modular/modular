@@ -14,7 +14,7 @@
 
 from std.math import clamp
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, TileTensor, coord_to_index_list
 from layout.coord import DynamicCoord

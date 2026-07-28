@@ -17,7 +17,7 @@ from std.math import align_down, ceildiv, iota
 from std.sys import align_of, bit_width_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target, is_apple_gpu
 
-from std.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
+from max.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
 from std.algorithm.functional import tile
 from std.atomic import Atomic
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target

@@ -18,7 +18,7 @@ from std.math import align_down, align_up, ceildiv, divmod
 from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
 
-from std.algorithm.functional import (
+from max.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     dual_elementwise,
     elementwise,

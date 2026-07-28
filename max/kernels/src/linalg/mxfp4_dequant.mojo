@@ -35,7 +35,7 @@ from layout import TensorStorage, TileTensor
 from layout.coord import Coord, Idx
 from layout.tile_layout import TensorLayout
 from .fp4_utils import cast_uint_to_fp4e2m1, MXFP4_SF_VECTOR_SIZE
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import Index, IndexList
 from std.sys.info import simd_width_of

@@ -10,22 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements CPU algorithm backend utilities including reduction, tiling, and parallelization."""
+"""Implements CPU algorithm backend utilities including map, tiling, and vectorization."""
 
-from .elementwise import _elementwise_impl_cpu
 from .map import map
-from .reduction import (
-    _reduce_along_inner_dimension,
-    _reduce_along_outer_dimension,
-    _reduce_generator_cpu,
-)
-from .parallelize import (
-    _get_num_workers,
-    parallelize,
-    parallelize_over_rows,
-    sync_parallelize,
-)
-from .stencil import _stencil_impl_cpu
+
 from ..tile import (
     BinaryTile1DTileUnitFunc,
     Dynamic1DTileUnitFunc,

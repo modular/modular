@@ -19,6 +19,10 @@ _LIT_TESTS = [
     "test_tile_tensor_split_static_non_divisible_fail.mojo",
 ]
 
+_EXTRA_DEPS = {
+    "test_tiled_matmul.mojo": ["//max:max_mojo"],
+}
+
 _EXTRA_CONSTRAINTS = {
     "test_tensor_masked.mojo": select({
         "//:asan": ["@platforms//:incompatible"],
@@ -35,7 +39,7 @@ _EXTRA_CONSTRAINTS = {
             "//max:layout",
             "@mojo//:std",
             "@mojo//:test_utils",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in _FILECHECK_TESTS
 ]

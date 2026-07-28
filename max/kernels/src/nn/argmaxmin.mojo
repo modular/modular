@@ -20,8 +20,8 @@
 from std.math import align_down, ceildiv, iota
 from std.sys.info import simd_width_of
 
-from std.algorithm import sync_parallelize
-from std.algorithm.functional import _get_num_workers
+from max.algorithm import sync_parallelize
+from max.algorithm.functional import _get_num_workers
 from std.gpu.host import DeviceContext
 from std.math.math import min as _min
 from layout import TileTensor

@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.algorithm import (
+from max.algorithm import (
     cumsum,
     mean,
     product,
     sum,
     variance,
 )
-from std.algorithm.reduction import _reduce_generator, max, min
+from max.algorithm.reduction import _reduce_generator, max, min
 from std.math.math import max as _max, min as _min
 from std.testing import TestSuite
 

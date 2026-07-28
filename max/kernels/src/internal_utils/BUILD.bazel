@@ -15,6 +15,7 @@ mojo_library(
     use_production_compiler_for_asan = True,
     validate_missing_docs = False,
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

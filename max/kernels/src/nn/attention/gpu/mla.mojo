@@ -46,9 +46,12 @@ from nn.attention.gpu.mha_decode_partition_heuristic import (
 import std.gpu.primitives.warp as warp
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.algorithm.functional import (
-    _elementwise_impl_gpu,
     tile_and_unswitch,
     unswitch,
+)
+
+from max.algorithm.functional import (
+    _elementwise_impl_gpu,
 )
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,

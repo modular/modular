@@ -16,6 +16,9 @@ from std.sys.info import num_physical_cores
 
 from std.algorithm import (
     map,
+)
+
+from max.algorithm import (
     parallelize,
     sync_parallelize,
     parallelize_over_rows,

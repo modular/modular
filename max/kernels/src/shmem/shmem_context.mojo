@@ -19,7 +19,7 @@ symmetric-heap buffers. Use `shmem_launch` to run a per-GPU function across
 all attached GPUs.
 """
 
-from std.algorithm import parallelize
+from max.algorithm import parallelize
 from std.collections.optional import OptionalReg
 from std.os import abort
 from std.builtin.device_passable import DevicePassable

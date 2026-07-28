@@ -16,7 +16,7 @@ from std.memory import alloc
 from std.random import rand, random_float64
 from std.sys import size_of
 
-from std.algorithm import sync_parallelize
+from max.algorithm import sync_parallelize
 from layout import (
     IntTuple,
     Layout,

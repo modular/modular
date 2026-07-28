@@ -15,10 +15,10 @@
 from std.math import ceildiv
 
 from std.utils.index import IndexList
+from std.algorithm.backend.vectorize import vectorize
 
 from .parallelize import _get_num_workers, sync_parallelize
-from ..vectorize import vectorize
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume
+from max.algorithm.functional import _get_start_indices_of_nth_subvolume
 
 
 # ===-----------------------------------------------------------------------===#

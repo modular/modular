@@ -6,6 +6,7 @@ mojo_library(
     name = "op_utils",
     srcs = glob(["op_utils/*.mojo"]),
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )
@@ -43,6 +44,7 @@ EXTRA_DEPS = {
         use_production_compiler_for_asan = True,
         deps = [
             ":op_utils",
+            "//max:max_mojo",
             "@mojo//:std",
         ] + EXTRA_DEPS.get(name, []),
     )

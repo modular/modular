@@ -55,7 +55,7 @@ Activation Support:
     - SiLU: Sigmoid Linear Unit activation (x * sigmoid(x))
 """
 
-from std.algorithm import sync_parallelize
+from max.algorithm import sync_parallelize
 from std.gpu.host import DeviceContext
 from std.gpu import (
     block_dim,

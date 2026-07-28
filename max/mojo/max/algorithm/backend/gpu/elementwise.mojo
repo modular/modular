@@ -47,7 +47,7 @@ from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from std.algorithm.backend.unswitch import unswitch
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume
+from max.algorithm.functional import _get_start_indices_of_nth_subvolume
 
 
 # ===-----------------------------------------------------------------------===#

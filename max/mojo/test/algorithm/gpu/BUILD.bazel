@@ -18,6 +18,7 @@ _APPLE_GPU_INCOMPATIBLE_TESTS = [
             "//conditions:default": [],
         }) if src in _APPLE_GPU_INCOMPATIBLE_TESTS else []),
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],

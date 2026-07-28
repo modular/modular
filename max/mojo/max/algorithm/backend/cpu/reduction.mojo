@@ -15,14 +15,16 @@
 from std.math import align_down, ceildiv
 from std.sys.info import simd_width_of
 
-from std.algorithm import sync_parallelize, vectorize
-from std.algorithm.functional import _get_num_workers
+from std.algorithm import vectorize
+
+from max.algorithm import sync_parallelize
+from max.algorithm.functional import _get_num_workers
 from std.math.math import min as _min
 
 from std.utils.index import IndexList, StaticTuple
 from std.utils.coord import Coord, coord_to_index_list
 
-from std.algorithm.reduction import _get_nd_indices_from_flat_index
+from max.algorithm.reduction import _get_nd_indices_from_flat_index
 
 
 # ===-----------------------------------------------------------------------===#

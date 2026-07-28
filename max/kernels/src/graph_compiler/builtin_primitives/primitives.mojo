@@ -16,8 +16,7 @@ from std.math import fma
 from std.ffi import external_call, c_size_t, _CPointer
 from std.sys import size_of, align_of
 
-import std.algorithm
-import std.algorithm.functional
+from max.algorithm.functional import elementwise
 
 from extensibility import StaticTensorSpec
 from extensibility import (
@@ -1954,7 +1953,7 @@ def foreach[
         var val = func[width, alignment](rebind[IndexList[tensor.rank]](idx))
         tensor._fused_store[element_alignment=alignment](index, val)
 
-    std.algorithm.functional.elementwise[
+    elementwise[
         simd_width,
         target=target,
         _trace_description=_trace_name,
@@ -2013,7 +2012,7 @@ def foreach[
         var val = func[width, alignment](idx)
         tensor._fused_store[element_alignment=alignment](index, val)
 
-    std.algorithm.functional.elementwise[
+    elementwise[
         simd_width=simd_width,
         target=target,
         _trace_description=_trace_name,
@@ -2126,7 +2125,7 @@ def foreach_fusion[
     # capturing` form did not.
     var adapter = _ElementwiseFusionAdapter[E](elem, tensor)
 
-    std.algorithm.functional.elementwise[
+    elementwise[
         simd_width=simd_width,
         target=target,
         _trace_description=_trace_name,
@@ -2267,7 +2266,7 @@ def foreach_fusion_tile[
 
     Analogous to `foreach_fusion`, but for tile-based fusion: instead of driving
     a per-element SIMD loop
-    via `std.algorithm.functional.elementwise`, this launches one GPU block per
+    via `max.algorithm.functional.elementwise`, this launches one GPU block per
     output tile and drives the fusion struct's tile `compute` over the output.
     The fusion struct manufactures each tile (loading its own inputs through a
     copier the driver supplies) and the driver stores the result via a store
@@ -2358,7 +2357,7 @@ def foreach_out_func[
         idx = rebind[IndexList[rank]](coord_to_index_list(index))
         out_func[_width](idx)
 
-    std.algorithm.functional.elementwise[
+    elementwise[
         simd_width,
         target=target,
         _trace_description=_trace_name,

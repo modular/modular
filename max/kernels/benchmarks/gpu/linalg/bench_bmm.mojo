@@ -21,7 +21,7 @@ from std.sys.info import has_amd_gpu_accelerator
 
 from layout import Coord, TileTensor, row_major, CoordLike, Idx
 import linalg.matmul.vendor.blas as vendor_blas
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,

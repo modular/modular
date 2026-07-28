@@ -13,7 +13,7 @@
 
 from std.sys import get_defined_dtype, get_defined_int, get_defined_string
 
-from std.algorithm.functional import stencil, stencil_gpu
+from max.algorithm.functional import stencil, stencil_gpu
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,

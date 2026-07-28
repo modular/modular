@@ -14,7 +14,7 @@
 from std.random import randn
 from std.sys import simd_width_of, size_of
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,

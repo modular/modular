@@ -15,7 +15,9 @@ from std.collections import Optional
 from std.math import inf, isnan, log, nan, sqrt
 from std.sys import simd_width_of
 
-from std.algorithm import elementwise, mean, sum, vectorize
+from std.algorithm import vectorize
+
+from max.algorithm import elementwise, mean, sum
 from std.algorithm.functional import unswitch
 from std.gpu.host import DeviceContext
 

@@ -1,0 +1,26 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+_EXTRA_DEPS = {
+    "test_initialize_runtime.mojo": ["//max:max_mojo"],
+}
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        deps = [
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ] + _EXTRA_DEPS.get(src, []),
+    )
+    for src in glob(
+        ["*.mojo"],
+        # exclude = _FILECHECK_TESTS + _LIT_TESTS,
+    )
+]

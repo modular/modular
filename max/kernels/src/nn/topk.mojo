@@ -19,8 +19,8 @@ from std.memory.alloc import Layout as AllocLayout
 from std.sys import align_of, simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from std.algorithm.functional import parallelize_over_rows
-from std.algorithm.reduction import _get_nd_indices_from_flat_index
+from max.algorithm.functional import parallelize_over_rows
+from max.algorithm.reduction import _get_nd_indices_from_flat_index
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,

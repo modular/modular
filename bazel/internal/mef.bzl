@@ -34,6 +34,7 @@ MOJO_DEPS = [
     "//max:state_space",
     "//max:structured_kernels",
     "//max:weights_registry",
+    "//max:max_mojo",
     "@mojo//:std",
 ]
 

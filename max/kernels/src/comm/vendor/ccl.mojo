@@ -20,7 +20,7 @@ availability probes.
 
 from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
 from std.pathlib import Path
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.utils import IndexList
 from std.ffi import _CPointer, _get_global_or_null, external_call
 from std.ffi import _find_dylib

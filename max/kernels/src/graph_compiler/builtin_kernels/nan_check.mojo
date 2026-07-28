@@ -24,7 +24,7 @@ inserted by the NanCheckPass compiler pass. The architecture is:
    diagnostic error if any are non-zero.
 """
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.gpu import barrier, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu

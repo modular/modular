@@ -25,7 +25,7 @@ from std.sys import (
     has_nvidia_gpu_accelerator,
 )
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.nvidia.tma import TensorMapSwizzle

@@ -58,7 +58,7 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext
 from std.gpu.primitives.warp import lane_group_sum
-from std.algorithm import sync_parallelize
+from max.algorithm import sync_parallelize
 from std.math import exp2
 from std.sys.info import align_of
 from std.utils.index import IndexList

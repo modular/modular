@@ -143,7 +143,7 @@ def initialize_runtime():
     Examples:
 
     ```mojo
-    from std.algorithm import parallelize
+    from max.algorithm import parallelize
     from std.runtime import initialize_runtime
 
 

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # Issue #23536
 
-from std.algorithm.functional import stencil
+from max.algorithm.functional import stencil
 from std.testing import TestSuite
 
 from std.utils import IndexList

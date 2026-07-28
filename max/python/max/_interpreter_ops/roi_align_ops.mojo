@@ -28,7 +28,7 @@ from std.sys.info import has_accelerator
 from std.utils.coord import Coord
 from std.utils.numerics import min_or_neg_inf
 
-from std.algorithm.functional import elementwise, IndexList
+from max.algorithm.functional import elementwise, IndexList
 
 
 from op_utils import (
