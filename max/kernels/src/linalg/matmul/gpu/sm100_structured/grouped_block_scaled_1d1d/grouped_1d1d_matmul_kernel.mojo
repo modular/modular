@@ -1509,11 +1509,19 @@ struct Grouped1D1DMatmulKernel[
         Self.validate_config()
 
         # ===== Shared Memory Setup =====
-        ref smem = external_memory[
+        ref smem = UnsafePointer[
             Scalar[DType.uint8],
+            MutUntrackedOrigin,
             address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ](
+            external_memory[
+                Scalar[DType.uint8],
+                address_space=AddressSpace.SHARED,
+                alignment=128,
+            ]()
+        ).bitcast[
+            Self.SmemType
+        ]()[]
 
         # Get typed tile arrays from SMEM
         var a_tiles = smem.a_tiles()
