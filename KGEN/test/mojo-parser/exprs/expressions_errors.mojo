@@ -679,11 +679,6 @@ def testLambdaNoReturnType() raises:
   # expected-error @+1 {{return-type inference is not supported yet}}
   _ = lambda (x: Int) {}: x + 1
 
-# A lambda is not yet supported as a compile-time value.
-def testLambdaComptimeValue() raises:
-  # expected-error @+1 {{not yet supported as a compile-time value}}
-  comptime inc = lambda (x: Int) {} -> Int: x + 1
-
 # A specific capture list names some outer vars but not others; a used-but-unnamed
 # outer var has no capture convention (and there's no capture-all), so it is rejected.
 def testLambdaUnnamedUsedCapture() raises:
@@ -702,6 +697,74 @@ def testLambdaReadCaptureMutated() raises:
   var lst = IntList()
   # expected-error @+1 {{invalid use of mutating method on rvalue of type 'IntList'}}
   _ = lambda (x: Int) {imm lst} -> None: lst.append(x)
+
+##===----------------------------------------------------------------------===##
+# Parameter-context lambdas: a thin lambda folds like a `def` reference; a
+# capturing lambda is a runtime value and is rejected up front.
+##===----------------------------------------------------------------------===##
+
+# An explicit capture list (a capture-all convention or a named capture) makes
+# the lambda a stateful runtime value, so binding it to a `comptime` is rejected
+# -- as a capturing `def` closure bound to a `comptime` is too.
+def testLambdaComptimeCapturing() raises:
+  var z = 10
+  # expected-error @+1 {{cannot use a capturing lambda in comptime initializer}}
+  comptime f = lambda (x: Int) {imm} -> Int: x + z
+
+def testLambdaComptimeNamedCapture() raises:
+  var z = 10
+  # expected-error @+1 {{cannot use a capturing lambda in comptime initializer}}
+  comptime f = lambda (x: Int) {imm z} -> Int: x + z
+
+# A capture spec reifies even with no free variable: a `{mut}` capture-all whose
+# body captures nothing is still a capturing (runtime) lambda, rejected up front.
+def testLambdaComptimeCapturingNoFreeVar() raises:
+  # expected-error @+1 {{cannot use a capturing lambda in comptime initializer}}
+  comptime f = lambda (x: Int) {mut} -> Int: x + 1
+
+# A thin lambda in a parameter position folds to a function literal, as a `def`
+# reference does. Against non-`thin` `def(x: Int) -> Int` (a trait, not a type)
+# it fails with the same error a `def` reference gets -- def-parity.
+# expected-note @+1 {{function declared here}}
+def takesFnParam[F: def(x: Int) -> Int]():
+  pass
+
+def testLambdaNonThinCallParam() raises:
+  # expected-error @+2 {{'takesFnParam' parameter 'F' has 'def(x: Int) -> Int' type}}
+  # expected-note @+1 {{a thin function cannot bind to a closure trait}}
+  takesFnParam[lambda (x: Int) {} -> Int: x + 1]()
+
+# A `def` reference is rejected identically -- def-parity, not a lambda-specific
+# limitation.
+def someIntFn(x: Int) -> Int:
+  return x + 1
+
+# expected-note @+1 {{function declared here}}
+def takesFnParam2[F: def(x: Int) -> Int]():
+  pass
+
+def testDefRefNonThinCallParam() raises:
+  # expected-error @+2 {{'takesFnParam2' parameter 'F' has 'def(x: Int) -> Int' type}}
+  # expected-note @+1 {{a thin function cannot bind to a closure trait; use 'type_of(someIntFn)'}}
+  takesFnParam2[someIntFn]()
+
+# expected-error @+1 {{value to 'def(x: Int) -> Int'}}
+def testLambdaNonThinDefaultParam[F: def(x: Int) -> Int = lambda (x: Int) {} -> Int: x + 1]():
+  pass
+
+# A capturing lambda is not a parameter value at all -- rejected up front in any
+# parameter context, including a `thin` one a thin lambda would otherwise satisfy.
+def takesThinFnParam[F: def(x: Int) thin -> Int]():
+  pass
+
+def testLambdaCapturingCallParam() raises:
+  var z = 10
+  # expected-error @+1 {{cannot use a capturing lambda in type parameter}}
+  takesThinFnParam[lambda (x: Int) {imm z} -> Int: x + z]()
+
+# expected-error @+1 {{cannot use a capturing lambda in default parameter}}
+def testLambdaCapturingDefaultParam[F: def(x: Int) thin -> Int = lambda (x: Int) {mut} -> Int: x + 1]():
+  pass
 
 ##===----------------------------------------------------------------------===##
 # References and Transfer
