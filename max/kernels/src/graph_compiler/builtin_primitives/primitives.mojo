@@ -514,12 +514,9 @@ def mgp_tensor_slice[
     input: OwnedTensor[dtype, rank],
     output_spec: IndexList[rank],
     start: OwnedTensor[DType.int64, 1],
-) -> OwnedTensor[dtype, rank]:
+    dev_context: DeviceContext,
+) raises -> OwnedTensor[dtype, rank]:
     var input_shape = input.shape()
-
-    # The slice shares the input's backing memory, so it retains the input's
-    # storage handle (copy) to keep it alive independently.
-    var storage = AnyAsyncValueRef(copy=input.storage)
 
     # Find k: the first non-size-1 input dimension (the sliced dimension).
     var k = rank
@@ -538,19 +535,39 @@ def mgp_tensor_slice[
     # rank-1 DynamicTensors of size 1 by TensorCreateOp::emitMojo.)
     var start_k = Int(start.unsafe_ptr()[0]) if k < rank else 0
 
-    # Compute the offset, normalizing negative start values.
-    if start_k >= 0:
-        var view = DynamicTensor[dtype, rank](
-            input.unsafe_ptr() + start_k * stride_k, output_spec
-        )
-        return OwnedTensor[dtype, rank](view, storage^)
-    else:
+    # Normalize a negative start and clamp into [0, dim_k], matching the
+    # clamping in `mo.slice`'s shape function; a start past the end yields an
+    # empty slice.
+    var elem_offset = 0
+    if k < rank:
         var dim_k = input_shape[k]
-        var normalized = max(0, dim_k + start_k)
-        var view = DynamicTensor[dtype, rank](
-            input.unsafe_ptr() + normalized * stride_k, output_spec
-        )
-        return OwnedTensor[dtype, rank](view, storage^)
+        var normalized = dim_k + start_k if start_k < 0 else start_k
+        elem_offset = min(max(normalized, 0), dim_k) * stride_k
+
+    var out_elems = 1
+    for i in range(rank):
+        out_elems *= output_spec[i]
+    comptime dtype_size = size_of[dtype]()
+
+    # Slice via the byte-buffer path so the slice is registered with the device
+    # runtime where required. The transient byte buffer retains the input's
+    # storage handle, which the slice then hands to the output tensor.
+    var base_bytes = OwnedByteBuffer(
+        MutByteBuffer(
+            input.unsafe_ptr().bitcast[Int8](), Index(input.bytecount())
+        ),
+        AnyAsyncValueRef(copy=input.storage),
+    )
+    var slice_bytes = mgp_buffer_slice(
+        base_bytes,
+        elem_offset * dtype_size,
+        out_elems * dtype_size,
+        dev_context,
+    )
+    var view = DynamicTensor[dtype, rank](
+        slice_bytes.unsafe_ptr().bitcast[Scalar[dtype]](), output_spec
+    )
+    return OwnedTensor[dtype, rank](view, slice_bytes.take_storage())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -664,11 +681,31 @@ def mgp_buffer_to_index(
 @register_internal("mgp.buffer.slice")
 @no_inline
 def mgp_buffer_slice(
-    buffer: OwnedByteBuffer, offset: Int, size: Int
-) -> OwnedByteBuffer:
-    # The slice shares the source's backing memory, so it retains the source's
-    # storage handle (copy) to keep it alive independently.
-    var view = MutByteBuffer(buffer.unsafe_ptr() + offset, Index(size))
+    buffer: OwnedByteBuffer, offset: Int, size: Int, dev_context: DeviceContext
+) raises -> OwnedByteBuffer:
+    """Returns a sub-buffer view of `buffer` at byte `offset` for `size` bytes.
+
+    The slice goes through `DeviceBuffer.create_sub_buffer` so backends whose
+    runtime only accepts registered pointers register it.
+    On other devices the returned address is simply `buffer + offset`.
+    The parent's storage handle is retained to keep the backing memory alive.
+
+    Args:
+        buffer: The parent buffer to slice.
+        offset: Byte offset of the slice within the parent.
+        size: Byte size of the slice.
+        dev_context: The device context the buffer is associated with.
+
+    Returns:
+        An `OwnedByteBuffer` viewing the sliced region and retaining the parent's
+        backing storage.
+
+    Raises:
+        If `[offset, offset + size)` does not fit within the parent buffer.
+    """
+    var parent = buffer.to_device_buffer(dev_context)
+    var sub = parent.create_sub_buffer[DType.int8](offset, size)
+    var view = MutByteBuffer(sub.unsafe_ptr(), Index(size))
     return OwnedByteBuffer(view, AnyAsyncValueRef(copy=buffer.storage))
 
 
@@ -681,7 +718,8 @@ def mgp_buffer_bulk_slice[
     base: OwnedByteBuffer,
     offsets: Array[Int, N],
     sizes: Array[Int, N],
-) -> Array[OwnedByteBuffer, N]:
+    dev_context: DeviceContext,
+) raises -> Array[OwnedByteBuffer, N]:
     """Bulk slice: produce N non-overlapping sub-buffers from a pool buffer.
 
     Parameters:
@@ -691,10 +729,14 @@ def mgp_buffer_bulk_slice[
         base: The pool buffer.
         offsets: Byte offset of each slice within the pool.
         sizes: Byte size of each slice.
+        dev_context: The device context the pool buffer is associated with.
 
     Returns:
         An Array of N OwnedByteBuffer slices into the pool, each retaining
         the pool's backing storage.
+
+    Raises:
+        If any slice does not fit within the pool buffer.
     """
     var result = Array[UnsafeMaybeUninit[OwnedByteBuffer], N](
         uninitialized=True
@@ -703,7 +745,9 @@ def mgp_buffer_bulk_slice[
     # Placement-initialize each uninitialized slot to avoid running the
     # destructor.
     for i in range(N):
-        result[i].init_from(mgp_buffer_slice(base, offsets[i], sizes[i]))
+        result[i].init_from(
+            mgp_buffer_slice(base, offsets[i], sizes[i], dev_context)
+        )
 
     return {unsafe_assume_initialized = result^}
 
