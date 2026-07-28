@@ -34,6 +34,7 @@ from max.nn.kv_cache.cache_params import (
 from max.pipelines.kv_cache import KVTransferEngine
 from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
     _build_group_descriptors,
+    _resolve_remote_bytes_per_group,
     _validate_tensor_shape,
 )
 
@@ -196,6 +197,29 @@ def _group(
 
 
 # ---------------------------------------------------------------------------
+# KVCacheMemoryGroup: all shards must agree on shape
+# ---------------------------------------------------------------------------
+
+
+def test_group_rejects_mismatched_shard_shape() -> None:
+    """``bytes_per_page``/``total_num_pages`` are read off shard 0, so every
+    shard must agree with it or those properties would silently report the
+    wrong value for a mismatched shard."""
+    good = _cpu_buf(4, 64, DType.uint8)
+    different_bytes_per_page = _cpu_buf(4, 32, DType.uint8)
+    with pytest.raises(ValueError, match="must share a shape"):
+        KVCacheMemoryGroup(
+            replicated=False, buffers=[good, different_bytes_per_page]
+        )
+
+    different_num_pages = _cpu_buf(8, 64, DType.uint8)
+    with pytest.raises(ValueError, match="must share a shape"):
+        KVCacheMemoryGroup(
+            replicated=False, buffers=[good, different_num_pages]
+        )
+
+
+# ---------------------------------------------------------------------------
 # Per-group replication
 # ---------------------------------------------------------------------------
 #
@@ -267,6 +291,38 @@ def test_build_group_descriptors_uses_own_stride_per_group() -> None:
         addr, size, _ = descs[off + i]
         assert addr == 0x5000 + k * 16
         assert size == 16
+
+
+# ---------------------------------------------------------------------------
+# _resolve_remote_bytes_per_group: a read transfer's remote-side stride list
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_remote_bytes_per_group_uses_remote_advertised_strides() -> (
+    None
+):
+    """Remote advertises an exactly matching per-group breakdown -- use it."""
+    assert _resolve_remote_bytes_per_group([100, 16], [100, 16]) == [100, 16]
+
+
+@pytest.mark.parametrize(
+    "remote_bpg",
+    [
+        [100],  # fewer groups than local
+        [],  # no per-group breakdown at all
+        [100, 16, 8],  # more groups than local
+        [100, 8],  # same count, but a differing stride value
+    ],
+)
+def test_resolve_remote_bytes_per_group_raises_on_mismatch(
+    remote_bpg: list[int],
+) -> None:
+    """Anything but an exact match must raise -- fewer groups means there is
+    no stride to infer for a group the remote never advertised; more groups
+    or a differing stride means assuming a positional correspondence
+    connect() never validated."""
+    with pytest.raises(ValueError, match="never advertised"):
+        _resolve_remote_bytes_per_group([100, 16], remote_bpg)
 
 
 # ---------------------------------------------------------------------------
