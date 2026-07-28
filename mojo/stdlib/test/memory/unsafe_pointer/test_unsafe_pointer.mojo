@@ -602,27 +602,27 @@ def test_unsafe_mut_cast() raises:
     assert_true(_mutable.mut)
 
 
-def test_unsafe_from() raises:
+def test_cross_safe_conversion() raises:
     var x = 42
     var safe = Pointer(to=x)
 
-    # Unlike `UnsafePointer(safe)`, which resolves to the mutable-to-immutable
-    # cast, this keeps the origin -- and so the mutability -- intact.
-    var unsafe = UnsafePointer(unsafe_from=safe)
+    # The conversion keeps the origin -- and so the mutability -- intact,
+    # rather than resolving to the mutable-to-immutable cast.
+    var unsafe = UnsafePointer(safe)
     assert_true(unsafe.mut)
     assert_true(type_of(unsafe)._is_unsafe)
     assert_equal(Int(unsafe), Int(safe))
 
-    var back = Pointer(unsafe_from=unsafe)
+    var back = Pointer(unsafe)
     assert_true(back.mut)
     assert_false(type_of(back)._is_unsafe)
     assert_equal(Int(back), Int(safe))
 
 
-def test_unsafe_from_address_space() raises:
+def test_cross_safe_conversion_address_space() raises:
     var x = Int32(7)
     var ptr = Pointer(to=x).unsafe_address_space_cast[AddressSpace.GENERIC]()
-    var unsafe = UnsafePointer(unsafe_from=ptr)
+    var unsafe = UnsafePointer(ptr)
     assert_equal(type_of(unsafe).address_space, AddressSpace.GENERIC)
     assert_equal(unsafe[], Int32(7))
 
