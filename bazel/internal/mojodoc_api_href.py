@@ -22,16 +22,20 @@ The ``hosted_on_mojolang`` flag chooses root-relative vs absolute, so that
 each href works regardless of where the rendered Markdown lives:
 
 - Mojolang-hosted (stdlib, layout): std/layout hrefs are root-relative;
-  cross-site kernel hrefs are absolute ``https://docs.modular.com/...``.
-- Docs.modular.com-hosted (other kernels): kernel hrefs are root-relative;
-  cross-site std/layout hrefs are absolute ``https://mojolang.org/...``."""
+  cross-site MAX Mojo API hrefs are absolute ``https://docs.modular.com/...``.
+- Docs.modular.com-hosted (kernels and MAX Mojo library): API hrefs are
+  root-relative; cross-site std/layout hrefs are absolute ``https://mojolang.org/...``.
+- ``/kernels/layout`` cross-references resolve to mojolang ``/docs/layout/...``
+  because layout docs are not published under ``/api/mojo/``.
+- Layout package self-references (``/layout/...``) stay on mojolang
+  ``/docs/layout/...`` when ``hosted_on_mojolang`` is set."""
 
 from __future__ import annotations
 
 MOJOLANG_ORIGIN = "https://mojolang.org"
 MOJOLANG_PATH_PREFIX = "/docs"
-MAX_KERNELS_ORIGIN = "https://docs.modular.com"
-MAX_KERNELS_PATH_PREFIX = "/max/api/kernels"
+MAX_MOJO_ORIGIN = "https://docs.modular.com"
+MAX_MOJO_PATH_PREFIX = "/api/mojo"
 
 
 def _mojolang_href(site_path: str, *, hosted_on_mojolang: bool) -> str:
@@ -41,11 +45,22 @@ def _mojolang_href(site_path: str, *, hosted_on_mojolang: bool) -> str:
     return f"{MOJOLANG_ORIGIN}{site_path}"
 
 
-def _max_kernels_href(site_path: str, *, hosted_on_mojolang: bool) -> str:
+def _max_mojo_href(site_path: str, *, hosted_on_mojolang: bool) -> str:
     assert site_path.startswith("/"), site_path
     if hosted_on_mojolang:
-        return f"{MAX_KERNELS_ORIGIN}{site_path}"
+        return f"{MAX_MOJO_ORIGIN}{site_path}"
     return site_path
+
+
+def _mojo_docs_site_path(path: str) -> str:
+    """Map ``mojo doc`` logical ``/mojo/...`` paths to the flat docsite layout."""
+    assert path == "/mojo" or path.startswith("/mojo/")
+    suffix = "" if path == "/mojo" else path[len("/mojo") :]
+    if suffix in ("", "/", "/max", "/max/"):
+        return MAX_MOJO_PATH_PREFIX
+    if suffix.startswith("/max/"):
+        suffix = suffix[len("/max") :]
+    return f"{MAX_MOJO_PATH_PREFIX}{suffix}"
 
 
 def resolve_api_href(
@@ -90,22 +105,28 @@ def resolve_api_href(
             f"{MOJOLANG_PATH_PREFIX}/layout{layout_suffix}",
             hosted_on_mojolang=hosted_on_mojolang,
         )
-    # Layout package referencing its own internal types
+    # Layout package referencing its own internal types (published on mojolang)
     elif path == "/layout" or path.startswith("/layout/"):
         href = _mojolang_href(
             f"{MOJOLANG_PATH_PREFIX}{path}",
             hosted_on_mojolang=hosted_on_mojolang,
         )
-    # Cross-reference between non-layout kernel packages (linalg, nn, etc.)
+    # Cross-reference between kernel packages (linalg, nn, etc.)
     elif path.startswith("/kernels/"):
-        href = _max_kernels_href(
-            f"{MAX_KERNELS_PATH_PREFIX}{path[len('/kernels') :]}",
+        href = _max_mojo_href(
+            f"{MAX_MOJO_PATH_PREFIX}{path[len('/kernels') :]}",
+            hosted_on_mojolang=hosted_on_mojolang,
+        )
+    # MAX Mojo library packages published under /api/mojo/
+    elif path == "/mojo" or path.startswith("/mojo/"):
+        href = _max_mojo_href(
+            _mojo_docs_site_path(path),
             hosted_on_mojolang=hosted_on_mojolang,
         )
     # Fallback for kernel packages that omit `docs_base_path`
     else:
-        href = _max_kernels_href(
-            f"{MAX_KERNELS_PATH_PREFIX}{path}",
+        href = _max_mojo_href(
+            f"{MAX_MOJO_PATH_PREFIX}{path}",
             hosted_on_mojolang=hosted_on_mojolang,
         )
 

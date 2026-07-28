@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from mojodoc_api_href import (
-    MAX_KERNELS_ORIGIN,
+    MAX_MOJO_ORIGIN,
     MOJOLANG_ORIGIN,
     resolve_api_href,
 )
@@ -64,16 +64,15 @@ def test_kernels_other_kernel_tarball_root_relative() -> None:
     assert resolve_api_href(
         "/kernels/linalg/foo/Bar",
         hosted_on_mojolang=False,
-    ) == ("/max/api/kernels/linalg/foo/Bar")
+    ) == ("/api/mojo/linalg/foo/Bar")
 
 
-def test_kernels_other_mojolang_tarball_uses_absolute_max_kernels() -> None:
-    """Kernel cross-links from mojolang-hosted Markdown (e.g. layout)
-    must be absolute so they resolve to docs.modular.com."""
+def test_kernels_other_mojolang_tarball_uses_absolute_max_mojo() -> None:
+    """Kernel cross-links from mojolang-hosted Markdown must be absolute."""
     assert resolve_api_href(
         "/kernels/linalg/foo/Bar",
         hosted_on_mojolang=True,
-    ) == (f"{MAX_KERNELS_ORIGIN}/max/api/kernels/linalg/foo/Bar")
+    ) == (f"{MAX_MOJO_ORIGIN}/api/mojo/linalg/foo/Bar")
 
 
 def test_layout_path_hosted_on_mojolang() -> None:
@@ -87,16 +86,21 @@ def test_extensibility_tensor_kernel_tarball_root_relative() -> None:
     assert resolve_api_href(
         "/extensibility/tensor/foo/Bar",
         hosted_on_mojolang=False,
-    ) == ("/max/api/kernels/extensibility/tensor/foo/Bar")
+    ) == ("/api/mojo/extensibility/tensor/foo/Bar")
 
 
-def test_extensibility_tensor_mojolang_tarball_uses_absolute_max_kernels() -> (
-    None
-):
+def test_extensibility_tensor_mojolang_tarball_uses_absolute_max_mojo() -> None:
     assert resolve_api_href(
         "/extensibility/tensor/foo/Bar",
         hosted_on_mojolang=True,
-    ) == (f"{MAX_KERNELS_ORIGIN}/max/api/kernels/extensibility/tensor/foo/Bar")
+    ) == (f"{MAX_MOJO_ORIGIN}/api/mojo/extensibility/tensor/foo/Bar")
+
+
+def test_mojo_flattened_package_root_tarball_root_relative() -> None:
+    assert resolve_api_href(
+        "/mojo/max",
+        hosted_on_mojolang=False,
+    ) == ("/api/mojo")
 
 
 def test_empty_path() -> None:
