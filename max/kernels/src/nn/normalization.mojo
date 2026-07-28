@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.memory import UnsafePointer
 from std.math import align_down, ceildiv, clamp, rsqrt
 from std.math.uutils import umod, ufloordiv, uceildiv
 from std.sys.info import align_of, simd_width_of, size_of
@@ -2456,12 +2457,14 @@ def rms_norm_fused_residual_add_gpu_block[
         _APPLE_STATIC_SHMEM_MAX_COUNT[Scalar[dtype]],
         Scalar[dtype],
         address_space=AddressSpace.SHARED,
-    ]() if comptime (is_apple_gpu()) else external_memory[
-        Scalar[dtype],
-        address_space=AddressSpace.SHARED,
-        alignment=align_of[SIMD[dtype, simd_width]](),
-        name="intermediate_shared_memory",
-    ]()
+    ]() if comptime (is_apple_gpu()) else UnsafePointer(
+        external_memory[
+            Scalar[dtype],
+            address_space=AddressSpace.SHARED,
+            alignment=align_of[SIMD[dtype, simd_width]](),
+            name="intermediate_shared_memory",
+        ]()
+    )
 
     with PDL():
         var tid = thread_idx.x
@@ -2897,12 +2900,14 @@ def _rms_norm_rope_gpu_warp_tiling[
     # it on-the-fly.  Storing raw input avoids the risk of exceeding the
     # shared-memory budget that could arise from storing normalized values in
     # a different precision.
-    var shared_input = external_memory[
-        Scalar[input_dtype],
-        address_space=AddressSpace.SHARED,
-        alignment=align_of[SIMD[input_dtype, simd_width]](),
-        name="rms_norm_rope_normed",
-    ]()
+    var shared_input = UnsafePointer(
+        external_memory[
+            Scalar[input_dtype],
+            address_space=AddressSpace.SHARED,
+            alignment=align_of[SIMD[input_dtype, simd_width]](),
+            name="rms_norm_rope_normed",
+        ]()
+    )
 
     var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
@@ -3086,12 +3091,14 @@ def _rms_norm_rope_gpu_warp_tiling_128[
 
     # Raw input is stored here so each half-warp can read the paired column
     # (col ± half_cols) during the RoPE step without a second global load.
-    var shared_input = external_memory[
-        Scalar[input_dtype],
-        address_space=AddressSpace.SHARED,
-        alignment=align_of[SIMD[input_dtype, simd_width]](),
-        name="rms_norm_rope_normed_128",
-    ]()
+    var shared_input = UnsafePointer(
+        external_memory[
+            Scalar[input_dtype],
+            address_space=AddressSpace.SHARED,
+            alignment=align_of[SIMD[input_dtype, simd_width]](),
+            name="rms_norm_rope_normed_128",
+        ]()
+    )
 
     var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()

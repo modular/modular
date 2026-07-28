@@ -34,6 +34,7 @@ Supported configurations (Flux VAE optimized):
 - BF16/FP16 data types
 """
 
+from std.memory import UnsafePointer
 from std.collections import Optional
 from std.math import ceildiv
 
@@ -840,11 +841,13 @@ struct Conv2dFpropKernel[
             beta: Residual scale factor (only used when has_residual is True).
         """
         # Access shared memory
-        ref smem = external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ref smem = UnsafePointer(
+            external_memory[
+                Scalar[DType.uint8],
+                address_space=AddressSpace.SHARED,
+                alignment=128,
+            ]()
+        ).bitcast[Self.SmemType]()[]
 
         # Create input pipeline with payload
         var tile_payload = Self.TilePayload(

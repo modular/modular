@@ -2020,11 +2020,13 @@ def topk_softmax_sample_kernel[
         _APPLE_STATIC_SHMEM_CACHE_COUNT,
         Float32,
         address_space=AddressSpace.SHARED,
-    ]() if comptime (is_apple_gpu()) else external_memory[
-        Float32,
-        address_space=AddressSpace.SHARED,
-        alignment=align_of[Float32](),
-    ]()
+    ]() if comptime (is_apple_gpu()) else UnsafePointer(
+        external_memory[
+            Float32,
+            address_space=AddressSpace.SHARED,
+            alignment=align_of[Float32](),
+        ]()
+    )
 
     var s_idxs = (s_vals + k_rounded).bitcast[Int]()
     var s_count = stack_allocation[1, Int, address_space=AddressSpace.SHARED]()

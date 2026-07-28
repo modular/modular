@@ -1175,11 +1175,13 @@ def _topk_stage2[
         _APPLE_STATIC_SHMEM_USABLE_COUNT[TopK_2[T]],
         Scalar[T],
         address_space=AddressSpace.SHARED,
-    ]() if comptime (is_apple_gpu()) else external_memory[
-        Scalar[T],
-        address_space=AddressSpace.SHARED,
-        alignment=align_of[Scalar[T]](),
-    ]()
+    ]() if comptime (is_apple_gpu()) else UnsafePointer(
+        external_memory[
+            Scalar[T],
+            address_space=AddressSpace.SHARED,
+            alignment=align_of[Scalar[T]](),
+        ]()
+    )
 
     var idxs_sram = (vals_sram + vals_smem_size).bitcast[Int]()
 
