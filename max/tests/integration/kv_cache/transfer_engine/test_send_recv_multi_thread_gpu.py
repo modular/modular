@@ -54,7 +54,6 @@ def test_send_recv_basic() -> None:
         engine = KVTransferEngine(
             "engine_1",
             [[kv_memory(blocks, total_num_pages)]],
-            total_num_pages=total_num_pages,
         )
 
         # Connect with peer
@@ -107,7 +106,6 @@ def test_send_recv_basic() -> None:
         engine = KVTransferEngine(
             "engine_2",
             [[kv_memory(blocks, total_num_pages)]],
-            total_num_pages=total_num_pages,
         )
 
         # Connect with peer

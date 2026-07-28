@@ -30,29 +30,11 @@ def test_constructor() -> None:
     _ = KVTransferEngine(
         "abc",
         [[kv_memory(tensor, 2)]],
-        total_num_pages=2,
     )
     _ = KVTransferEngine(
         "abc",
         [[kv_memory(tensor.to(Accelerator()), 2)]],
-        total_num_pages=2,
     )
-
-    # total_num_pages is 0
-    with pytest.raises(ValueError):
-        _ = KVTransferEngine(
-            "abc",
-            [[kv_memory(tensor, 2)]],
-            total_num_pages=0,
-        )
-
-    # unit total_num_pages (2) does not match engine total_num_pages (3)
-    with pytest.raises(ValueError):
-        _ = KVTransferEngine(
-            "abc",
-            [[kv_memory(tensor, 2)]],
-            total_num_pages=3,
-        )
 
 
 def test_initiate_send_transfer() -> None:
@@ -72,12 +54,10 @@ def test_initiate_send_transfer() -> None:
     engine_1 = KVTransferEngine(
         "engine_1",
         [[kv_memory(blocks_1, total_num_pages)]],
-        total_num_pages=total_num_pages,
     )
     engine_2 = KVTransferEngine(
         "engine_2",
         [[kv_memory(blocks_2, total_num_pages)]],
-        total_num_pages=total_num_pages,
     )
 
     engine_1.connect(engine_2.metadata)
@@ -161,21 +141,15 @@ def test_ensure_we_use_memory_manager() -> None:
         ValueError,
         match="MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT must be set when using TransferEngine with GPU memory",
     ):
-        engine = KVTransferEngine(
-            "engine", [[kv_memory(acc_tensor, 1)]], total_num_pages=1
-        )
+        engine = KVTransferEngine("engine", [[kv_memory(acc_tensor, 1)]])
 
     # ok
-    engine = KVTransferEngine(
-        "engine", [[kv_memory(cpu_tensor, 1)]], total_num_pages=1
-    )
+    engine = KVTransferEngine("engine", [[kv_memory(cpu_tensor, 1)]])
     engine.cleanup()
 
     # ok
     os.environ["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT"] = "99"
-    engine = KVTransferEngine(
-        "engine", [[kv_memory(acc_tensor, 1)]], total_num_pages=1
-    )
+    engine = KVTransferEngine("engine", [[kv_memory(acc_tensor, 1)]])
     engine.cleanup()
 
 
@@ -185,16 +159,14 @@ def test_dp_structure_validation() -> None:
 
     # Empty outer list should fail
     with pytest.raises(ValueError, match="must contain at least one replica"):
-        _ = KVTransferEngine("engine", [], total_num_pages=2)
+        _ = KVTransferEngine("engine", [])
 
     # Empty inner list should fail
     with pytest.raises(ValueError, match="must contain at least one tensor"):
-        _ = KVTransferEngine("engine", [[]], total_num_pages=2)
+        _ = KVTransferEngine("engine", [[]])
 
     # Valid DP=1, TP=1
-    engine = KVTransferEngine(
-        "engine", [[kv_memory(tensor, 2)]], total_num_pages=2
-    )
+    engine = KVTransferEngine("engine", [[kv_memory(tensor, 2)]])
     engine.cleanup()
 
 
@@ -207,7 +179,6 @@ def test_multi_replica_construction() -> None:
     engine = KVTransferEngine(
         "engine",
         [[kv_memory(tensor1, 2)], [kv_memory(tensor2, 2)]],
-        total_num_pages=2,
     )
 
     engine.cleanup()
@@ -236,24 +207,18 @@ def test_replicas_must_have_same_tp_degree() -> None:
                 [kv_memory(t1, 2)],
                 [kv_memory(t2, 2)],
             ],  # Different shapes lead to different bytes_per_page
-            total_num_pages=2,
         )
 
 
 def test_replicas_must_have_same_total_num_pages() -> None:
-    """Test that a unit's total_num_pages must match the engine's."""
-    # Create a unit with total_num_pages=2, then pass total_num_pages=3 to
-    # the engine — the constructor validates that they match.
-    t1 = Buffer(DType.int8, (20,), device=CPU())  # 20 elements
+    """All groups must agree on total_num_pages, read off the buffers."""
+    t2 = Buffer(DType.int8, (20,), device=CPU())  # 2 pages of 10 bytes
+    t3 = Buffer(DType.int8, (30,), device=CPU())  # 3 pages of 10 bytes
 
-    with pytest.raises(
-        ValueError,
-        match=r"total_num_pages",
-    ):
+    with pytest.raises(ValueError, match=r"total_num_pages"):
         _ = KVTransferEngine(
             "engine",
-            [[kv_memory(t1, 2)]],  # unit has total_num_pages=2
-            total_num_pages=3,  # engine declares total_num_pages=3 → mismatch
+            [[kv_memory(t2, 2)], [kv_memory(t3, 3)]],
         )
 
 
@@ -267,12 +232,10 @@ def test_replica_idx_validation() -> None:
     engine_1 = KVTransferEngine(
         "engine_1",
         [[kv_memory(tensor1, 3)], [kv_memory(tensor2, 3)]],
-        total_num_pages=3,
     )
     engine_2 = KVTransferEngine(
         "engine_2",
         [[kv_memory(tensor1, 3)], [kv_memory(tensor2, 3)]],
-        total_num_pages=3,
     )
 
     engine_1.connect(engine_2.metadata)

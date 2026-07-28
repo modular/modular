@@ -76,7 +76,6 @@ def transfer_routine_sender(
             kv_group(replica_0_tensors, total_num_pages),
             kv_group(replica_1_tensors, total_num_pages),
         ],
-        total_num_pages=total_num_pages,
     )
 
     # Connect with receiver
@@ -179,7 +178,6 @@ def transfer_routine_receiver(
             kv_group(replica_0_tensors, total_num_pages),
             kv_group(replica_1_tensors, total_num_pages),
         ],
-        total_num_pages=total_num_pages,
     )
 
     # Connect with sender

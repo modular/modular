@@ -69,7 +69,6 @@ def _construct_engine_in_child(result_queue: mp.Queue) -> None:  # type: ignore[
         engine = KVTransferEngine(
             "spawn_preload_engine",
             [[group]],
-            total_num_pages=total_num_pages,
         )
         engine.cleanup()
         result_queue.put(("ok", ""))
