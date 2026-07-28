@@ -62,15 +62,12 @@ def bench_math[
     var inputs = make_inputs(0, 10_000, 1_000_000)
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm inputs}:
         for input in inputs:
             var result = math_f1p(input)
             keep(result)
 
-    b.iter[call_fn]()
-
-    _ = inputs^
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -85,15 +82,12 @@ def bench_math3[
     var inputs = make_inputs(0, 10_000, 1_000_000)
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm inputs}:
         for input in inputs:
             var result = math_f3p(input, input, input)
             keep(result)
 
-    b.iter[call_fn]()
-
-    _ = inputs^
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -104,17 +98,14 @@ def bench_math2[math_f2p: def(Int, Int, /) thin -> Int](mut b: Bencher) raises:
     var int_inputs = make_int_inputs(0, 10_000_000, 1_000_000)
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm int_inputs}:
         for i, input_val in enumerate(List(int_inputs[: len(int_inputs) // 2])):
             var result = keep(
                 math_f2p(input_val, int_inputs[len(int_inputs) - (i + 1)])
             )
             keep(result)
 
-    b.iter[call_fn]()
-
-    _ = int_inputs^
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
