@@ -32,7 +32,7 @@ sources in [`stdlib/std`](../stdlib/std) as follows:
 is the single place that knows the published site layout and rewrites them:
 stdlib → **mojolang.org** ``/docs/std/...``, ``kernels/layout`` →
 **mojolang.org** ``/docs/layout/...``, other kernels → **docs.modular.com**
-``/max/api/kernels/...``.
+``/api/mojo/...``.
 
 ## Contributing
 

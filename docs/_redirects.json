@@ -80,6 +80,16 @@
     "status": 301
   },
   {
+    "source": "/max/api/c/(.*)",
+    "dest": "/api/c/{0}",
+    "status": 302
+  },
+  {
+    "source": "/max/api/kernels/(.*)",
+    "dest": "/api/mojo/{0}",
+    "status": 302
+  },
+  {
     "source": "/mojo/changelog/",
     "dest": "https://mojolang.org/releases/",
     "status": 301
