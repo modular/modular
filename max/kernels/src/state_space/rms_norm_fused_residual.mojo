@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """RMSNorm with fused residual connection for state space models."""
 
+from std.memory import UnsafePointer
 from std.math import align_down, ceildiv, rsqrt
 from std.sys.info import align_of, simd_width_of, size_of
 
@@ -487,12 +488,14 @@ def rms_norm_fused_residual_gpu_block[
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
-    var shared_mem = external_memory[
-        Scalar[dtype],
-        address_space=AddressSpace.SHARED,
-        alignment=align_of[SIMD[dtype, simd_width]](),
-        name="intermediate_shared_memory",
-    ]()
+    var shared_mem = UnsafePointer(
+        external_memory[
+            Scalar[dtype],
+            address_space=AddressSpace.SHARED,
+            alignment=align_of[SIMD[dtype, simd_width]](),
+            name="intermediate_shared_memory",
+        ]()
+    )
     with PDL():
         # First stage: apply dropout, add residual to input and store in shared memory.
         # Loop to handle cases where num_cols > block_dim * simd_width,

@@ -1239,9 +1239,11 @@ struct NVBlockScaledTokenFormat[
         if thread_idx.x == 0:
             self.scales_tma_op.prefetch_descriptor()
 
-        var smem_base = external_memory[
-            UInt8, address_space=AddressSpace.SHARED, alignment=128
-        ]()
+        var smem_base = UnsafePointer(
+            external_memory[
+                UInt8, address_space=AddressSpace.SHARED, alignment=128
+            ]()
+        )
         var mbar_base = (smem_base + Self._mbar_smem_offset).bitcast[
             SharedMemBarrier
         ]()
@@ -1277,11 +1279,13 @@ struct NVBlockScaledTokenFormat[
         comptime aligned_tile_size = align_up(
             Int(Coord(Self.tma_tile_shape).product()), 128
         )
-        var smem_ptr = external_memory[
-            Scalar[Self.scales_dtype],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]()
+        var smem_ptr = UnsafePointer(
+            external_memory[
+                Scalar[Self.scales_dtype],
+                address_space=AddressSpace.SHARED,
+                alignment=128,
+            ]()
+        )
         var scales_tile = TileTensor(
             smem_ptr + aligned_tile_size * w,
             row_major(Coord(Self.tma_tile_shape)),
