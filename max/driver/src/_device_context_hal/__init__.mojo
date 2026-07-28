@@ -474,6 +474,13 @@ struct DeviceContext(
         This is a private method intended for internal use only.
         """
         var major = self.get_attribute(DeviceAttribute.COMPUTE_CAPABILITY_MAJOR)
+        # TODO: Apple GPUs report the chip generation (M1-M5) directly as the
+        # compute capability, matching the native MetalDeviceContext
+        # (`MetalDevice::computeCapability` returns the MAJOR only). The
+        # major/minor split in device attributes is not portable and should be
+        # changed.
+        if self.api() == "metal":
+            return major
         var minor = self.get_attribute(DeviceAttribute.COMPUTE_CAPABILITY_MINOR)
         return major * 10 + minor
 
