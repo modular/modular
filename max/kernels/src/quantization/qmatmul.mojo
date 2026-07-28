@@ -16,7 +16,9 @@ from std.collections import Optional
 from std.math import ceildiv
 from std.sys import CompilationTarget, align_of, simd_width_of, size_of
 
-from std.algorithm import sync_parallelize, tile
+from std.algorithm import tile
+
+from max.algorithm import sync_parallelize
 from std.gpu.host import DeviceContext
 from layout import (
     Layout,

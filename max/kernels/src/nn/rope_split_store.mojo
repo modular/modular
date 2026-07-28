@@ -18,7 +18,7 @@ K/V to the paged KV cache, and writes roped Q to the output buffer, all
 in a single GPU kernel to eliminate intermediate tensor round-trips.
 """
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.collections import OptionalReg
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu

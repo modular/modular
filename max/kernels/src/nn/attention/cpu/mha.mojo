@@ -20,9 +20,11 @@ from std.os import abort
 from std.sys import align_of, simd_width_of
 from std.sys.info import CompilationTarget
 
-from std.algorithm import sync_parallelize, tile, vectorize
+from std.algorithm import tile, vectorize
+
+from max.algorithm import sync_parallelize
 from std.gpu.host import DeviceContext
-from std.algorithm.reduction import (
+from max.algorithm.reduction import (
     _simd_max,
     _simd_max_elementwise,
     _simd_sum,

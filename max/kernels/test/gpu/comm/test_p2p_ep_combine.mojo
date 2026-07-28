@@ -18,7 +18,7 @@ from std.sys import (
     size_of,
 )
 
-from std.algorithm import sync_parallelize
+from max.algorithm import sync_parallelize
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,

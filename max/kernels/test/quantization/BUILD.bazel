@@ -2,6 +2,10 @@ load("//bazel:api.bzl", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
+_EXTRA_DEPS = {
+    "test_qmatmul_k.mojo": ["//max:max_mojo"],
+}
+
 [
     mojo_test(
         name = src + ".test",
@@ -9,7 +13,7 @@ package(default_visibility = ["//max:consumers"])
         deps = [
             "//max:quantization",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["**/*.mojo"],

@@ -22,7 +22,7 @@ from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator, simd_width_of
 
-from std.algorithm.functional import elementwise, IndexList
+from max.algorithm.functional import elementwise, IndexList
 from std.utils.coord import Coord
 
 from extensibility import ManagedTensorSlice

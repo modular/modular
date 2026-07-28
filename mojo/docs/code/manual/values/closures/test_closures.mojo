@@ -331,7 +331,7 @@ def test_greet_all() raises:
 # and the exact API signature may vary across stdlib versions.
 # However, it works, and here it is for your manual testing:
 #
-# from std.algorithm import parallelize
+# from max.algorithm import parallelize
 #
 # def main():
 #    var results = List[Int](length=8, fill=0)

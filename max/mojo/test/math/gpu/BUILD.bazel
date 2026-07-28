@@ -7,6 +7,16 @@ _LIT_TESTS = [
     "test_sqrt_f64.mojo",
 ]
 
+_EXTRA_DEPS = {
+    "test_exp.mojo": ["//max:max_mojo"],
+    "test_exp_approx_f32.mojo": ["//max:max_mojo"],
+    "test_log.mojo": ["//max:max_mojo"],
+    "test_math_accuracy.mojo": ["//max:max_mojo"],
+    "test_pow_bf16.mojo": ["//max:max_mojo"],
+    "test_powf_bf16.mojo": ["//max:max_mojo"],
+    "test_rsqrt.mojo": ["//max:max_mojo"],
+}
+
 [
     mojo_test(
         name = src + ".test",
@@ -20,7 +30,7 @@ _LIT_TESTS = [
         deps = [
             "@mojo//:std",
             "@mojo//:test_utils",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["*.mojo"],

@@ -30,7 +30,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 from std.utils.coord import Coord
 
-from std.algorithm.functional import elementwise, IndexList
+from max.algorithm.functional import elementwise, IndexList
 
 from std.sys.info import has_apple_gpu_accelerator
 

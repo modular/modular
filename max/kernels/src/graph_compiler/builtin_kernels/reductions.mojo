@@ -24,11 +24,11 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from std.algorithm import max as reduce_max
-from std.algorithm import mean
-from std.algorithm import min as reduce_min
-from std.algorithm import product, sum
-from std.algorithm.reduction import _reduce_generator
+from max.algorithm import max as reduce_max
+from max.algorithm import mean
+from max.algorithm import min as reduce_min
+from max.algorithm import product, sum
+from max.algorithm.reduction import _reduce_generator
 
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_gpu

@@ -16,7 +16,7 @@ from std.collections.string import StaticString
 from std.sys import simd_width_of
 from std.sys.info import _current_target
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
 from layout import (

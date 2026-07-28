@@ -17,6 +17,7 @@ mojo_library(
     docs_title = "Layout library",
     use_production_compiler_for_asan = True,
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

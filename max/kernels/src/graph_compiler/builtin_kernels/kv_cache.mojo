@@ -24,7 +24,7 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 
 from std.gpu.host import DeviceContext, get_gpu_target
 from layout.tile_tensor import row_major

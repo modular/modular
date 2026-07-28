@@ -24,7 +24,7 @@ from std.sys.info import has_accelerator
 
 from std.math import iota
 from std.random import NormalRandom, Random
-from std.algorithm.functional import elementwise, IndexList
+from max.algorithm.functional import elementwise, IndexList
 
 from extensibility import (
     ManagedTensorSlice,

@@ -20,7 +20,7 @@ from std.atomic import Atomic
 from std.sys import simd_width_of, has_nvidia_gpu_accelerator
 from std.sys import align_of, size_of, get_defined_bool
 import std.gpu.primitives.block as block
-from std.algorithm.functional import _elementwise_impl_gpu
+from max.algorithm.functional import _elementwise_impl_gpu
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -45,7 +45,7 @@ from layout.tensor_storage import TensorStorage
 from std.logger import Logger
 from std.memory import bitcast
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.utils.coord import Coord, Idx, coord_to_index_list
 from std.utils.index import Index, IndexList, StaticTuple
 from std.utils.numerics import get_accum_type, max_finite

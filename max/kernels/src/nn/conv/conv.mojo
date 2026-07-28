@@ -87,12 +87,15 @@ from _miopen.types import (
 )
 from _miopen.utils import check_error as check_miopen_error
 from std.algorithm import (
-    elementwise,
-    sync_parallelize,
     tile,
     tile_middle_unswitch_boundaries,
     unswitch,
     vectorize,
+)
+
+from max.algorithm import (
+    elementwise,
+    sync_parallelize,
 )
 from linalg.utils import (
     partial_simd_load,

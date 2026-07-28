@@ -18,7 +18,9 @@ from std.sys import align_of, simd_width_of
 
 import std.benchmark
 from std.algorithm import Static2DTileUnitFunc as Tile2DFunc
-from std.algorithm import sync_parallelize, vectorize
+from std.algorithm import vectorize
+
+from max.algorithm import sync_parallelize
 from layout import *
 from std.memory import unsafe_memset_zero
 from std.python import Python

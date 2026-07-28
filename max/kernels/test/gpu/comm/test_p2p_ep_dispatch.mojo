@@ -14,7 +14,7 @@
 from std.random import randint, randn, seed
 from std.sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 
-from std.algorithm import sync_parallelize
+from max.algorithm import sync_parallelize
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,

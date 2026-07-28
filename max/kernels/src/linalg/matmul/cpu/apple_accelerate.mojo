@@ -22,8 +22,10 @@ from std.sys import CompilationTarget, simd_width_of
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
 
-from std.algorithm import elementwise, vectorize
-from std.algorithm.functional import (
+from std.algorithm import vectorize
+
+from max.algorithm import elementwise
+from max.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     parallelize_over_rows,
 )

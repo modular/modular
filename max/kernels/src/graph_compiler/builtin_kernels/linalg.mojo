@@ -106,7 +106,7 @@ from std.logger import Logger
 
 comptime logger = Logger()
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.utils import IndexList
 
 # ===-----------------------------------------------------------------------===#

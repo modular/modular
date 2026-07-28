@@ -21,7 +21,9 @@ from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.sys.info import align_of, simd_width_of
 
-from std.algorithm import sync_parallelize, tile, vectorize
+from std.algorithm import tile, vectorize
+
+from max.algorithm import sync_parallelize
 from std.gpu.host import DeviceContext
 from layout import (
     Coord,

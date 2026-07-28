@@ -14,7 +14,7 @@
 from std.math import erf, exp, tanh
 from std.sys.info import simd_width_of
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 from std.testing import TestSuite

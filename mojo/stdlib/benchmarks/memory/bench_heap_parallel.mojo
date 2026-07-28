@@ -24,7 +24,7 @@ Intended to stress multithreaded heap **placement**, **first-touch**, and
 malloc/free metadata.
 """
 
-from std.algorithm import parallelize
+from max.algorithm import parallelize
 from std.benchmark import (
     Bench,
     BenchConfig,

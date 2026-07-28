@@ -15,7 +15,7 @@
 from std.math import align_up
 from std.math.uutils import udivmod, ufloordiv
 
-from std.algorithm.reduction import _get_nd_indices_from_flat_index
+from max.algorithm.reduction import _get_nd_indices_from_flat_index
 from std.gpu.primitives.block import broadcast
 from std.gpu.host import DeviceContext
 from std.gpu import (

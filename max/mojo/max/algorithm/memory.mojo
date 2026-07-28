@@ -16,7 +16,7 @@
 You can import these APIs from the `algorithm` package. For example:
 
 ```mojo
-from std.algorithm import unsafe_parallel_memcpy
+from max.algorithm import unsafe_parallel_memcpy
 ```
 """
 

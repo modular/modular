@@ -15,6 +15,11 @@ _RUN_BENCHMARKS = [
     "nn/bench_gather_reduce.mojo",
 ]
 
+_EXTRA_DEPS = {
+    "algorithm/parallelize_overhead.mojo": ["//max:max_mojo"],
+    "linalg/bench_layout_tensor.mojo": ["//max:max_mojo"],
+}
+
 _EXTRA_CONSTRAINTS = {
     "algorithm/parallelize_overhead.mojo": select({
         "//:asan": ["@platforms//:incompatible"],
@@ -156,7 +161,7 @@ _CPU_TESTS = glob(
             "//max:layout",
             "//max:nn",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in _CPU_TESTS
 ]
@@ -183,7 +188,7 @@ _CPU_TESTS = glob(
             "//max:layout",
             "//max:nn",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in _RUN_BENCHMARKS
 ]

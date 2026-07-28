@@ -25,6 +25,12 @@ _FILECHECK_TESTS = [
 
 _EXTRA_COPTS = {}
 
+_EXTRA_DEPS = {
+    "test_fast_div.mojo": ["//max:max_mojo"],
+    "test_print_elementwise.mojo": ["//max:max_mojo"],
+    "test_random.mojo": ["//max:max_mojo"],
+}
+
 _APPLE_GPU_INCOMPATIBLE = select({
     "//:apple_gpu": ["@platforms//:incompatible"],
     "//conditions:default": [],
@@ -117,7 +123,7 @@ _GPU_MEMORY = {
             "//max:nn",
             "//max:quantization",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["**/*.mojo"],

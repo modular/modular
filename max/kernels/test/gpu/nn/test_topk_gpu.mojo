@@ -14,7 +14,7 @@
 from std.math import ceildiv, iota, nan
 from std.random import random_float64
 
-from std.algorithm.reduction import max as reduce_max
+from max.algorithm.reduction import max as reduce_max
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,

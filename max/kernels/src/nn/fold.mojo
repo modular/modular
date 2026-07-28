@@ -13,7 +13,7 @@
 """Implements the fold operation."""
 
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.gpu.host import DeviceContext
 from layout import TileTensor
 

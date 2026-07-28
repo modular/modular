@@ -18,7 +18,9 @@ from std.math.uutils import udivmod
 from std.memory import ThinAllocation, dealloc
 from std.memory.alloc import Layout as AllocLayout
 
-from std.algorithm.functional import elementwise, unswitch
+from std.algorithm.functional import unswitch
+
+from max.algorithm.functional import elementwise
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu

@@ -15,7 +15,7 @@
 
 from std.math import ceildiv, exp, inf, log
 
-from std.algorithm.functional import parallelize
+from max.algorithm.functional import parallelize
 from extensibility import register, register_shape_function
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext

@@ -37,11 +37,14 @@ from _cudnn.infer import (
     cudnnTensorFormat_t,
 )
 from std.algorithm import (
-    elementwise,
-    sync_parallelize,
     tile,
     tile_middle_unswitch_boundaries,
     vectorize,
+)
+
+from max.algorithm import (
+    elementwise,
+    sync_parallelize,
 )
 from std.gpu.host import DeviceContext
 from layout import (

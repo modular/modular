@@ -27,6 +27,7 @@ _TEST_SIZE = {
 
 _EXTRA_DEPS = {
     "test_matmul_kernel_10.mojo": ["//max:max_mojo"],
+    "test_stencil_gpu.mojo": ["//max:max_mojo"],
 }
 
 _GPU_MEMORY = {

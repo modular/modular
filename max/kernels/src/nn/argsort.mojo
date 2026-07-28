@@ -16,7 +16,7 @@
 from std.math import ceildiv, iota
 from std.sys.info import simd_width_of
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.bit import next_power_of_two
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,

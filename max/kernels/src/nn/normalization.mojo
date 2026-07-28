@@ -16,8 +16,9 @@ from std.math.uutils import umod, ufloordiv, uceildiv
 from std.sys.info import align_of, simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from std.algorithm import mean, variance, vectorize
-from std.algorithm.functional import (
+from std.algorithm import vectorize
+from max.algorithm import mean, variance
+from max.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     sync_parallelize,
 )

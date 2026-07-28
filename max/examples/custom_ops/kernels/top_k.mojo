@@ -17,7 +17,7 @@ from std.gpu.host import DeviceContext
 from std.math import iota
 from std.sys import align_of, size_of
 
-from std.algorithm import parallelize_over_rows
+from max.algorithm import parallelize_over_rows
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
