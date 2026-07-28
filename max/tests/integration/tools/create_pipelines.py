@@ -1599,6 +1599,7 @@ class WanGenerationOracle(ImageGenerationOracle):
         """Create MAX Wan pixel generation pipeline."""
         models = ModelManifest.from_model_path(
             self.model_path,
+            revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
             device_specs=device_specs,
         )
         config = pipelines.PipelineArgs(models=models)
