@@ -1402,10 +1402,12 @@ ParseResult ExprParser::parseLambda(ExprNode *&result) {
   if (paramList.parseParametersIfPresent(*this, ArgListKind::kParamList))
     return failure();
 
-  // Argument list `(...)` plus trailing effects. A type is only unambiguous
-  // inside parentheses (else the body's ":" is ambiguous), so bare args are
-  // rejected elsewhere with guidance. A no-arg lambda (`lambda: expr`) has
-  // nothing to parse here.
+  // Argument list `(...)` plus trailing effects. Python-style bare
+  // (unparenthesized) arguments are rejected with guidance below: lambda
+  // arguments must be typed, and a type annotation is only unambiguous inside
+  // parentheses (otherwise the ":" introducing the body would be ambiguous).
+  // A lambda may also take no arguments at all (e.g. `lambda: expr`), in which
+  // case there is nothing to parse here.
   if (getToken().is(Token::l_paren)) {
     if (fnSignature.parseArgumentListAndEffects(*this, ArgListKind::kArgList))
       return failure();
@@ -1414,7 +1416,7 @@ ParseResult ExprParser::parseLambda(ExprNode *&result) {
     emitError(getToken().getLoc(),
               "unparenthesized lambda arguments are not supported; write them "
               "in parentheses, with types, e.g. "
-              "`lambda (x: Int, y: Int) {} -> Int: x + y`");
+              "`lambda (x: Int, y: Int) -> Int: x + y`");
     return failure();
   }
 

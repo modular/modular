@@ -640,13 +640,14 @@ def type_subscript(t0 : t):
   t[]
 
 ##===----------------------------------------------------------------------===##
-# lambda errors: for now the capture list and return type must both be written
-# explicitly (eliding either is not yet supported), and arguments must be
-# parenthesized and typed. Successful construction is covered by the positive
-# test (mojo-parser/exprs/lambda.mojo).
+# lambda errors. The capture list and return type may be elided (omitted capture
+# list -> {imm}/thin; omitted return type -> None); arguments must be
+# parenthesized and typed. The cases below are forms that remain rejected;
+# successful construction is covered by mojo-parser/exprs/lambda.mojo.
 ##===----------------------------------------------------------------------===##
 
 # Unparenthesized (Python-style) arguments are guided to the parenthesized form.
+# This fires at parse time, before any elision or type check.
 def testLambdaUnparenthesizedArgs() raises:
   # expected-error @+1 {{unparenthesized lambda arguments are not supported}}
   _ = lambda x, y: x + y
@@ -662,21 +663,16 @@ def testLambdaParenthesizedUntypedArg() raises:
   # expected-error @+1 {{argument type must be specified}}
   _ = lambda (x) {} -> Int: x
 
-def testLambdaParenArgsEffects() raises:
-  # expected-error @+1 {{lambda requires an explicit capture list}}
-  _ = lambda (x: Int, y: Float64) raises: x+y
-
-def testLambdaParam() raises:
-  # expected-error @+1 {{lambda requires an explicit capture list}}
-  _ = lambda [y: Int](x: Int) -> Int: x + y
-
-def testLambdaZeroArg() raises:
-  # expected-error @+1 {{lambda requires an explicit capture list}}
+# Fully bare `lambda: EXPR` is arg-less, thin, and `None`-returning, so a non-None
+# body is rejected (like an elided-return `def`).
+def testLambdaBareNonNoneBody() raises:
+  # expected-error @+1 {{cannot implicitly convert 'IntLiteral[5]' value to 'None' in return value}}
   _ = lambda: 5
 
-# Explicit capture list but no return type: rejected (no inference yet).
-def testLambdaNoReturnType() raises:
-  # expected-error @+1 {{return-type inference is not supported yet}}
+# Elided return type defaults to None (like a `def` with no `->`), so a non-None body is
+# rejected just as `def f(x: Int): return x + 1` is.
+def testLambdaElidedReturnNonNoneBody() raises:
+  # expected-error @+1 {{cannot implicitly convert 'Int' value to 'None' in return value}}
   _ = lambda (x: Int) {}: x + 1
 
 # A specific capture list names some outer vars but not others; a used-but-unnamed
@@ -686,6 +682,14 @@ def testLambdaUnnamedUsedCapture() raises:
   var b = 2
   # expected-error @+1 {{Could not infer capture convention of the captured value b}}
   _ = lambda (x: Int) {imm a} -> Int: x + a + b
+
+# An explicit `{}` means "no captures" and stays distinct from an elided list: a
+# free variable used under `{}` still errors (it is NOT imm-captured by default,
+# unlike the same body with the capture list omitted -- cf. withOmittedCaptures).
+def testLambdaEmptyCaptureFreeVar() raises:
+  var z = 10
+  # expected-error @+1 {{Could not infer capture convention of the captured value z}}
+  _ = lambda (x: Int) {} -> Int: x + z
 
 # An `imm` capture is immutable, so calling a mutating method on it is rejected.
 struct IntList:
@@ -721,6 +725,22 @@ def testLambdaComptimeNamedCapture() raises:
 def testLambdaComptimeCapturingNoFreeVar() raises:
   # expected-error @+1 {{cannot use a capturing lambda in comptime initializer}}
   comptime f = lambda (x: Int) {mut} -> Int: x + 1
+
+# Same for a written `{imm}` -- the convention the elided default uses. Eliding
+# is not sugar for writing `{imm}`: the written form reifies (rejected here),
+# while the elided form stays thin when nothing is captured (cf. the positive
+# withComptimeBoundElided).
+def testLambdaComptimeReadNoFreeVar() raises:
+  # expected-error @+1 {{cannot use a capturing lambda in comptime initializer}}
+  comptime f = lambda (x: Int) {imm} -> Int: x + 1
+
+# A free variable under the default (elided) capture list is a runtime `imm`
+# capture, so the lambda is dynamic and rejected in a comptime initializer --
+# exercising the post-body capture check.
+def testLambdaComptimeElidedFreeVar() raises:
+  var z = 10
+  # expected-error @+1 {{cannot use a capturing lambda in comptime initializer}}
+  comptime f = lambda (x: Int) -> Int: x + z
 
 # A thin lambda in a parameter position folds to a function literal, as a `def`
 # reference does. Against non-`thin` `def(x: Int) -> Int` (a trait, not a type)
