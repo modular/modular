@@ -320,7 +320,13 @@ class KVCacheConfig(ConfigFileModel):
         """
         if allow_kv_head_replication is None:
             allow_kv_head_replication = self.allow_kv_head_replication
+        # A connector without an explicit config gets defaults (e.g.
+        # `--kv-connector tiered` with no `--kv-connector-config`). Done here
+        # rather than in the pipeline config so the connector config's defaults
+        # are owned by this module.
         cfg = self.kv_connector_config
+        if cfg is None and self.kv_connector is not None:
+            cfg = KVConnectorConfig()
         kv_hash_seed = resolve_kv_hash_seed(
             self.kv_cache_hash_algo, self.kv_cache_hash_seed
         )
