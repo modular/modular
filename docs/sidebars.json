@@ -200,13 +200,13 @@
       "type": "category",
       "collapsed": false,
       "items": [
-        "max/api/python/index",
+        "api/python/index",
         {
           "type": "category",
           "label": "max.driver",
           "link": {
             "type": "doc",
-            "id": "max/api/python/driver"
+            "id": "api/python/driver"
           },
           "items": [
             "__AUTOGEN:max.driver__"
@@ -217,7 +217,7 @@
           "label": "max.dtype",
           "link": {
             "type": "doc",
-            "id": "max/api/python/dtype"
+            "id": "api/python/dtype"
           },
           "items": [
             "__AUTOGEN:max.dtype__"
@@ -228,7 +228,7 @@
           "label": "max.engine",
           "link": {
             "type": "doc",
-            "id": "max/api/python/engine"
+            "id": "api/python/engine"
           },
           "items": [
             "__AUTOGEN:max.engine__"
@@ -240,16 +240,16 @@
           "collapsed": true,
           "link": {
             "type": "doc",
-            "id": "max/api/python/experimental"
+            "id": "api/python/experimental"
           },
           "items": [
-            "max/api/python/experimental.functional",
+            "api/python/experimental.functional",
             {
               "type": "category",
               "label": "nn",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/experimental.nn"
+                "id": "api/python/experimental.nn"
               },
               "items": [
                 "__AUTOGEN:max.experimental.nn__"
@@ -260,7 +260,7 @@
               "label": "nn.norm",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/experimental.nn.norm"
+                "id": "api/python/experimental.nn.norm"
               },
               "items": [
                 "__AUTOGEN:max.experimental.nn.norm__"
@@ -271,7 +271,7 @@
               "label": "nn.rope",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/experimental.nn.rope"
+                "id": "api/python/experimental.nn.rope"
               },
               "items": [
                 "__AUTOGEN:max.experimental.nn.rope__"
@@ -282,7 +282,7 @@
               "label": "sharding",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/experimental.sharding"
+                "id": "api/python/experimental.sharding"
               },
               "items": [
                 "__AUTOGEN:max.experimental.sharding__"
@@ -293,7 +293,7 @@
               "label": "tensor",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/experimental.tensor"
+                "id": "api/python/experimental.tensor"
               },
               "items": [
                 "__AUTOGEN:max.experimental.tensor__"
@@ -304,7 +304,7 @@
               "label": "testing",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/experimental.testing"
+                "id": "api/python/experimental.testing"
               },
               "items": [
                 "__AUTOGEN:max.experimental.testing__"
@@ -315,7 +315,7 @@
               "label": "torch",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/experimental.torch"
+                "id": "api/python/experimental.torch"
               },
               "items": [
                 "__AUTOGEN:max.experimental.torch__"
@@ -328,16 +328,16 @@
           "label": "max.graph",
           "link": {
             "type": "doc",
-            "id": "max/api/python/graph"
+            "id": "api/python/graph"
           },
           "items": [
-            "max/api/python/graph.ops",
+            "api/python/graph.ops",
             {
               "type": "category",
               "label": "quantization",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/graph.quantization"
+                "id": "api/python/graph.quantization"
               },
               "items": [
                 "__AUTOGEN:max.graph.quantization__"
@@ -348,7 +348,7 @@
               "label": "weights",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/graph.weights"
+                "id": "api/python/graph.weights"
               },
               "items": [
                 "__AUTOGEN:max.graph.weights__"
@@ -362,7 +362,7 @@
           "label": "max.nn",
           "link": {
             "type": "doc",
-            "id": "max/api/python/nn"
+            "id": "api/python/nn"
           },
           "items": [
             {
@@ -370,19 +370,19 @@
               "label": "attention",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/nn.attention"
+                "id": "api/python/nn.attention"
               },
               "items": [
                 "__AUTOGEN:max.nn.attention__"
               ]
             },
-            "max/api/python/nn.kernels",
+            "api/python/nn.kernels",
             {
               "type": "category",
               "label": "kv_cache",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/nn.kv_cache"
+                "id": "api/python/nn.kv_cache"
               },
               "items": [
                 "__AUTOGEN:max.nn.kv_cache__"
@@ -396,7 +396,7 @@
           "label": "max.pipelines",
           "link": {
             "type": "doc",
-            "id": "max/api/python/pipelines"
+            "id": "api/python/pipelines"
           },
           "items": [
             {
@@ -404,62 +404,62 @@
               "label": "architectures",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.architectures"
+                "id": "api/python/pipelines.architectures"
               },
               "items": [
-                "max/api/python/pipelines.architectures.bert",
-                "max/api/python/pipelines.architectures.deepseekV2",
-                "max/api/python/pipelines.architectures.deepseekV3",
-                "max/api/python/pipelines.architectures.deepseekV3_2",
-                "max/api/python/pipelines.architectures.deepseekV3_nextn",
-                "max/api/python/pipelines.architectures.dflash_llama3",
-                "max/api/python/pipelines.architectures.diffusion_gemma",
-                "max/api/python/pipelines.architectures.eagle3_deepseekV3",
-                "max/api/python/pipelines.architectures.eagle_llama3",
-                "max/api/python/pipelines.architectures.flux2",
-                "max/api/python/pipelines.architectures.gemma3",
-                "max/api/python/pipelines.architectures.gemma3multimodal",
-                "max/api/python/pipelines.architectures.gemma4",
-                "max/api/python/pipelines.architectures.gemma4_assistant",
-                "max/api/python/pipelines.architectures.glm5_1",
-                "max/api/python/pipelines.architectures.gpt_oss",
-                "max/api/python/pipelines.architectures.granite",
-                "max/api/python/pipelines.architectures.hy_v3",
-                "max/api/python/pipelines.architectures.idefics3",
-                "max/api/python/pipelines.architectures.ideogram4",
-                "max/api/python/pipelines.architectures.internvl",
-                "max/api/python/pipelines.architectures.kimik2_5",
-                "max/api/python/pipelines.architectures.laguna",
-                "max/api/python/pipelines.architectures.lfm2",
-                "max/api/python/pipelines.architectures.llama3",
-                "max/api/python/pipelines.architectures.llama4",
-                "max/api/python/pipelines.architectures.mamba",
-                "max/api/python/pipelines.architectures.minimax_m2",
-                "max/api/python/pipelines.architectures.mistral",
-                "max/api/python/pipelines.architectures.mistral3",
-                "max/api/python/pipelines.architectures.mpnet",
-                "max/api/python/pipelines.architectures.nemotron_h",
-                "max/api/python/pipelines.architectures.olmo",
-                "max/api/python/pipelines.architectures.olmo2",
-                "max/api/python/pipelines.architectures.olmo3",
-                "max/api/python/pipelines.architectures.phi3",
-                "max/api/python/pipelines.architectures.pixtral",
-                "max/api/python/pipelines.architectures.qwen2",
-                "max/api/python/pipelines.architectures.qwen2_5vl",
-                "max/api/python/pipelines.architectures.qwen3",
-                "max/api/python/pipelines.architectures.qwen3_5",
-                "max/api/python/pipelines.architectures.qwen3_embedding",
-                "max/api/python/pipelines.architectures.qwen3vl_moe",
-                "max/api/python/pipelines.architectures.qwen_image",
-                "max/api/python/pipelines.architectures.qwen_image_edit",
-                "max/api/python/pipelines.architectures.step3p5",
-                "max/api/python/pipelines.architectures.unified_dflash_kimi_k25",
-                "max/api/python/pipelines.architectures.unified_dflash_llama3",
-                "max/api/python/pipelines.architectures.unified_eagle_llama3",
-                "max/api/python/pipelines.architectures.unified_mtp_deepseekV3",
-                "max/api/python/pipelines.architectures.unified_mtp_gemma4",
-                "max/api/python/pipelines.architectures.unified_mtp_glm5_2",
-                "max/api/python/pipelines.architectures.wan"
+                "api/python/pipelines.architectures.bert",
+                "api/python/pipelines.architectures.deepseekV2",
+                "api/python/pipelines.architectures.deepseekV3",
+                "api/python/pipelines.architectures.deepseekV3_2",
+                "api/python/pipelines.architectures.deepseekV3_nextn",
+                "api/python/pipelines.architectures.dflash_llama3",
+                "api/python/pipelines.architectures.diffusion_gemma",
+                "api/python/pipelines.architectures.eagle3_deepseekV3",
+                "api/python/pipelines.architectures.eagle_llama3",
+                "api/python/pipelines.architectures.flux2",
+                "api/python/pipelines.architectures.gemma3",
+                "api/python/pipelines.architectures.gemma3multimodal",
+                "api/python/pipelines.architectures.gemma4",
+                "api/python/pipelines.architectures.gemma4_assistant",
+                "api/python/pipelines.architectures.glm5_1",
+                "api/python/pipelines.architectures.gpt_oss",
+                "api/python/pipelines.architectures.granite",
+                "api/python/pipelines.architectures.hy_v3",
+                "api/python/pipelines.architectures.idefics3",
+                "api/python/pipelines.architectures.ideogram4",
+                "api/python/pipelines.architectures.internvl",
+                "api/python/pipelines.architectures.kimik2_5",
+                "api/python/pipelines.architectures.laguna",
+                "api/python/pipelines.architectures.lfm2",
+                "api/python/pipelines.architectures.llama3",
+                "api/python/pipelines.architectures.llama4",
+                "api/python/pipelines.architectures.mamba",
+                "api/python/pipelines.architectures.minimax_m2",
+                "api/python/pipelines.architectures.mistral",
+                "api/python/pipelines.architectures.mistral3",
+                "api/python/pipelines.architectures.mpnet",
+                "api/python/pipelines.architectures.nemotron_h",
+                "api/python/pipelines.architectures.olmo",
+                "api/python/pipelines.architectures.olmo2",
+                "api/python/pipelines.architectures.olmo3",
+                "api/python/pipelines.architectures.phi3",
+                "api/python/pipelines.architectures.pixtral",
+                "api/python/pipelines.architectures.qwen2",
+                "api/python/pipelines.architectures.qwen2_5vl",
+                "api/python/pipelines.architectures.qwen3",
+                "api/python/pipelines.architectures.qwen3_5",
+                "api/python/pipelines.architectures.qwen3_embedding",
+                "api/python/pipelines.architectures.qwen3vl_moe",
+                "api/python/pipelines.architectures.qwen_image",
+                "api/python/pipelines.architectures.qwen_image_edit",
+                "api/python/pipelines.architectures.step3p5",
+                "api/python/pipelines.architectures.unified_dflash_kimi_k25",
+                "api/python/pipelines.architectures.unified_dflash_llama3",
+                "api/python/pipelines.architectures.unified_eagle_llama3",
+                "api/python/pipelines.architectures.unified_mtp_deepseekV3",
+                "api/python/pipelines.architectures.unified_mtp_gemma4",
+                "api/python/pipelines.architectures.unified_mtp_glm5_2",
+                "api/python/pipelines.architectures.wan"
               ]
             },
             {
@@ -467,7 +467,7 @@
               "label": "context",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.context"
+                "id": "api/python/pipelines.context"
               },
               "items": [
                 "__AUTOGEN:max.pipelines.context__"
@@ -478,7 +478,7 @@
               "label": "diffusion",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.diffusion"
+                "id": "api/python/pipelines.diffusion"
               },
               "items": [
                 {
@@ -486,7 +486,7 @@
                   "label": "schedulers",
                   "link": {
                     "type": "doc",
-                    "id": "max/api/python/pipelines.diffusion.schedulers"
+                    "id": "api/python/pipelines.diffusion.schedulers"
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.diffusion.schedulers__"
@@ -500,7 +500,7 @@
               "label": "kv_cache",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.kv_cache"
+                "id": "api/python/pipelines.kv_cache"
               },
               "items": [
                 "__AUTOGEN:max.pipelines.kv_cache__"
@@ -511,7 +511,7 @@
               "label": "logging_utils",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.logging_utils"
+                "id": "api/python/pipelines.logging_utils"
               },
               "items": [
                 "__AUTOGEN:max.pipelines.logging_utils__"
@@ -522,7 +522,7 @@
               "label": "lora",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.lora"
+                "id": "api/python/pipelines.lora"
               },
               "items": [
                 "__AUTOGEN:max.pipelines.lora__"
@@ -533,7 +533,7 @@
               "label": "sampling",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.sampling"
+                "id": "api/python/pipelines.sampling"
               },
               "items": [
                 "__AUTOGEN:max.pipelines.sampling__"
@@ -544,7 +544,7 @@
               "label": "lib",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.lib"
+                "id": "api/python/pipelines.lib"
               },
               "items": [
                 {
@@ -552,7 +552,7 @@
                   "label": "interfaces",
                   "link": {
                     "type": "doc",
-                    "id": "max/api/python/pipelines.lib.interfaces"
+                    "id": "api/python/pipelines.lib.interfaces"
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.lib.interfaces__"
@@ -563,7 +563,7 @@
                   "label": "log_probabilities",
                   "link": {
                     "type": "doc",
-                    "id": "max/api/python/pipelines.lib.log_probabilities"
+                    "id": "api/python/pipelines.lib.log_probabilities"
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.lib.log_probabilities__"
@@ -574,7 +574,7 @@
                   "label": "registry",
                   "link": {
                     "type": "doc",
-                    "id": "max/api/python/pipelines.lib.registry"
+                    "id": "api/python/pipelines.lib.registry"
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.lib.registry__"
@@ -592,7 +592,7 @@
                   "label": "base",
                   "link": {
                     "type": "doc",
-                    "id": "max/api/python/pipelines.modeling.base"
+                    "id": "api/python/pipelines.modeling.base"
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.modeling.base__"
@@ -603,7 +603,7 @@
                   "label": "dataprocessing",
                   "link": {
                     "type": "doc",
-                    "id": "max/api/python/pipelines.modeling.dataprocessing"
+                    "id": "api/python/pipelines.modeling.dataprocessing"
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.modeling.dataprocessing__"
@@ -614,7 +614,7 @@
                   "label": "types",
                   "link": {
                     "type": "doc",
-                    "id": "max/api/python/pipelines.modeling.types"
+                    "id": "api/python/pipelines.modeling.types"
                   },
                   "items": [
                     {
@@ -622,7 +622,7 @@
                       "label": "pipeline_variants",
                       "link": {
                         "type": "doc",
-                        "id": "max/api/python/pipelines.modeling.types.pipeline_variants"
+                        "id": "api/python/pipelines.modeling.types.pipeline_variants"
                       },
                       "items": [
                         "__AUTOGEN:max.pipelines.modeling.types.pipeline_variants__"
@@ -636,7 +636,7 @@
                   "label": "weights",
                   "link": {
                     "type": "doc",
-                    "id": "max/api/python/pipelines.weights"
+                    "id": "api/python/pipelines.weights"
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.weights__"
@@ -649,7 +649,7 @@
               "label": "request",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.request"
+                "id": "api/python/pipelines.request"
               },
               "items": [
                 {
@@ -657,7 +657,7 @@
                   "label": "provider_options",
                   "link": {
                     "type": "doc",
-                    "id": "max/api/python/pipelines.request.provider_options"
+                    "id": "api/python/pipelines.request.provider_options"
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.request.provider_options__"
@@ -671,7 +671,7 @@
               "label": "speculative",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.speculative"
+                "id": "api/python/pipelines.speculative"
               },
               "items": [
                 "__AUTOGEN:max.pipelines.speculative__"
@@ -685,7 +685,7 @@
           "label": "max.profiler",
           "link": {
             "type": "doc",
-            "id": "max/api/python/profiler"
+            "id": "api/python/profiler"
           },
           "items": [
             {
@@ -693,7 +693,7 @@
               "label": "cpu",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/profiler.cpu"
+                "id": "api/python/profiler.cpu"
               },
               "items": [
                 "__AUTOGEN:max.profiler.cpu__"
@@ -704,7 +704,7 @@
               "label": "gpu",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/profiler.gpu"
+                "id": "api/python/profiler.gpu"
               },
               "items": [
                 "__AUTOGEN:max.profiler.gpu__"
@@ -718,7 +718,7 @@
           "label": "max.support.image",
           "link": {
             "type": "doc",
-            "id": "max/api/python/support.image"
+            "id": "api/python/support.image"
           },
           "items": [
             "__AUTOGEN:max.support.image__"

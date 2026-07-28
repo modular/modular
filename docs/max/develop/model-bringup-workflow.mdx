@@ -183,8 +183,8 @@ transform tensor layouts. To learn how to implement these transformations, see
 :::note FP8 and FP4 checkpoints
 
 For architectures that load FP8 or FP4 checkpoints, use
-[`QuantFormat`](/max/api/python/generated/max.nn.QuantFormat) and
-[`QuantConfig`](/max/api/python/generated/max.nn.QuantConfig) from `max.nn`.
+[`QuantFormat`](/api/python/generated/max.nn.QuantFormat) and
+[`QuantConfig`](/api/python/generated/max.nn.QuantConfig) from `max.nn`.
 `QuantFormat` identifies the checkpoint's quantization scheme (such as
 `COMPRESSED_TENSORS_FP8`, `NVFP4`, or `MXFP8`) and `QuantConfig` carries the
 per-layer scaling settings: which layers are quantized, the granularity and
@@ -200,7 +200,7 @@ before the first request arrives. Four values drive the allocation:
 `num_key_value_heads`, `head_dim`, `num_layers`, and `model_max_seq_len`. Wrong
 values produce a cache the wrong size: the model runs but generates incoherent
 output rather than raising an error. The interface that carries these values is
-[`ArchConfigWithAttentionKVCache`](/max/api/python/generated/max.pipelines.lib.interfaces.ArchConfigWithAttentionKVCache/),
+[`ArchConfigWithAttentionKVCache`](/api/python/generated/max.pipelines.lib.interfaces.ArchConfigWithAttentionKVCache/),
 which your config class must subclass and implement.
 
 The four abstract properties your subclass must define are:
@@ -239,10 +239,10 @@ def construct_kv_params(
 ```
 
 Store the result as a
-[`KVCacheParams`](/max/api/python/generated/max.nn.kv_cache.KVCacheParams/) in a
+[`KVCacheParams`](/api/python/generated/max.nn.kv_cache.KVCacheParams/) in a
 `kv_params` field on your config class and return it from `get_kv_params()`.
 Then pass it to each
-[`AttentionWithRope`](/max/api/python/generated/max.nn.attention.AttentionWithRope/)
+[`AttentionWithRope`](/api/python/generated/max.nn.attention.AttentionWithRope/)
 layer at construction time:
 
 ```python title="model.py"
@@ -255,16 +255,16 @@ self.attn = AttentionWithRope(
 Most architectures return a flat `KVCacheParams`. Architectures with multiple or
 hybrid KV caches (for example, separate sliding-window and full-attention
 caches) return a
-[`MultiKVCacheParams`](/max/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
+[`MultiKVCacheParams`](/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
 tree instead, which the cache manager consumes through the shared
-[`KVCacheParamInterface`](/max/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
+[`KVCacheParamInterface`](/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
 
 With `kv_params` correctly configured, MAX dispatches fused attention kernels
 (RoPE application, KV store, and flash attention) and manages paged memory
 allocation. See
 [Serve custom model architectures](/max/develop/serve-custom-model-architectures)
 for a complete implementation with
-[`KVCacheConfig`](/max/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/)
+[`KVCacheConfig`](/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/)
 wired end-to-end.
 
 {/* TODO(docs): Link to attention-kv-cache page once it exists. Covers
@@ -305,7 +305,7 @@ Subclassing overrides attributes or methods within an existing graph structure.
 Graph extension changes the structure itself: how many normalization layers a
 block applies, whether attention and MLP share their input, which parameters are
 learnable. What those changes look like depends entirely on your model's
-architecture. [`max.nn`](/max/api/python/nn) provides the building blocks
+architecture. [`max.nn`](/api/python/nn) provides the building blocks
 (attention layers, normalization, MLP, embeddings), and most structural
 differences can be expressed by composing from what's already there.
 [Write a custom layer](/max/develop/layers) covers these build patterns. The
@@ -330,9 +330,9 @@ The parallel form requires one `input_layernorm` per block (not two) and a
 single residual add.
 
 When building any `nn.Module` that holds a list of layers, store them in
-[`Sequential`](/max/api/python/generated/max.nn.Sequential/) rather than a
+[`Sequential`](/api/python/generated/max.nn.Sequential/) rather than a
 plain Python list. `Sequential` (a subclass of
-[`LayerList`](/max/api/python/generated/max.nn.LayerList/), which you'll still
+[`LayerList`](/api/python/generated/max.nn.LayerList/), which you'll still
 see across existing architectures) registers each layer in the `nn.Module`
 hierarchy under a numeric index (`0`, `1`, …), so weight names resolve to
 `layers.0.*`, `layers.1.*`, and so on. A plain Python list doesn't register
@@ -361,8 +361,8 @@ self.input_layernorm = LayerNorm(
 attribute that the weight adapter maps from the checkpoint.
 `ConstantLayerNorm` has none.
 
-[const-layernorm]: /max/api/python/generated/max.nn.ConstantLayerNorm/
-[layernorm-no-bias]: /max/api/python/generated/max.nn.LayerNorm/
+[const-layernorm]: /api/python/generated/max.nn.ConstantLayerNorm/
+[layernorm-no-bias]: /api/python/generated/max.nn.LayerNorm/
 
 When you reuse subcomponents from a reference architecture (attention layers,
 normalization, MLP), verify that those subcomponents don't define parameters
@@ -387,7 +387,7 @@ file in `layers/` rather than putting everything in `model.py`.
 
 The `arch.py` file ties the rest of the package together. It should include one
 or more
-[`SupportedArchitecture`](/max/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)
+[`SupportedArchitecture`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)
 instances that point MAX at your config class, model class, weight adapters, and
 more:
 
@@ -431,7 +431,7 @@ With your architecture implemented, see [Serve custom model
 architectures](/max/develop/serve-custom-model-architectures) to run a
 generation, package your implementation, and load it at serve time.
 
-If your model requires an operation that [`max.nn`](/max/api/python/nn)
+If your model requires an operation that [`max.nn`](/api/python/nn)
 doesn't provide and can't be composed from what's already there, see
 [Custom ops](/max/develop/custom-ops) for the interface, registration, and
 worked examples.

@@ -26,7 +26,7 @@ implement one.
 A custom model architecture package is a Python package (a directory containing
 an `__init__.py`) that MAX can import. To serve the model, the `__init__.py`
 must expose an `ARCHITECTURES` list of
-[`SupportedArchitecture`](/max/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)<!-- rumdl-disable-line MD013 -->
+[`SupportedArchitecture`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)<!-- rumdl-disable-line MD013 -->
 instances. Each `SupportedArchitecture`
 instance bundles the model class, config, tokenizer, encodings, and weight
 adapters under a name.
@@ -40,8 +40,8 @@ from .arch import my_arch
 ARCHITECTURES = [my_arch]
 ```
 
-A typical `arch.py` defines a [`SupportedArchitecture`](/max/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)<!-- rumdl-disable-line MD013 -->
-using types from [`max.pipelines.modeling.types`](/max/api/python/pipelines.modeling.types):
+A typical `arch.py` defines a [`SupportedArchitecture`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)<!-- rumdl-disable-line MD013 -->
+using types from [`max.pipelines.modeling.types`](/api/python/pipelines.modeling.types):
 
 ```python title="arch.py"
 from max.graph.weights import WeightsFormat

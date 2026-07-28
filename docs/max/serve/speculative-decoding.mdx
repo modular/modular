@@ -72,7 +72,7 @@ max serve \
 We use `atomicapple0/EAGLE-LLaMA3.1-Instruct-8B` because it ships
 safetensors weights. For the full list of weight formats MAX supports,
 see
-[`WeightsFormat`](/max/api/python/generated/max.graph.weights.WeightsFormat).
+[`WeightsFormat`](/api/python/generated/max.graph.weights.WeightsFormat).
 
 Once the server prints `Server ready on http://0.0.0.0:8000`, send a
 chat-completion request:
@@ -173,10 +173,10 @@ better-matched draft checkpoint.
 
 The following flags control how MAX drafts tokens and how verification decides
 to accept them. The first three map to fields on
-[`SpeculativeConfig`](/max/api/python/generated/max.pipelines.SpeculativeConfig)
+[`SpeculativeConfig`](/api/python/generated/max.pipelines.SpeculativeConfig)
 when you configure a pipeline programmatically. The last two live on the draft
 model's config and on
-[`KVCacheConfig`](/max/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/).
+[`KVCacheConfig`](/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/).
 
 - `--num-speculative-tokens`: number of tokens the draft proposes per
   step. Default is `2`. Larger values raise peak speedup but hurt

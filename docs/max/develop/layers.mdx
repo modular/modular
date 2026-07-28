@@ -5,17 +5,16 @@ description: Write a custom layer for a model component that max.nn doesn't
   provide, and connect it to your model.
 ---
 
-In MAX, the [`max.nn`](/max/api/python/nn/) library contains the common layers
-you use to
-[bring up a model architecture](/max/develop/model-bringup-workflow/), such as
-[`Linear`](/max/api/python/generated/max.nn.Linear/#max.nn.Linear),
-[`AttentionWithRope`](/max/api/python/generated/max.nn.attention.AttentionWithRope/#max.nn.attention.AttentionWithRope),
-and [`RMSNorm`](/max/api/python/generated/max.nn.RMSNorm/#max.nn.RMSNorm). But
-newly released models frequently introduce novel architectures, with layers that
+In MAX, the [`max.nn`](/api/python/nn/) library contains the common layers you
+use to [bring up a model architecture](/max/develop/model-bringup-workflow/),
+such as [`Linear`](/api/python/generated/max.nn.Linear/#max.nn.Linear),
+[`AttentionWithRope`](/api/python/generated/max.nn.attention.AttentionWithRope/#max.nn.attention.AttentionWithRope),
+and [`RMSNorm`](/api/python/generated/max.nn.RMSNorm/#max.nn.RMSNorm). But newly
+released models frequently introduce novel architectures, with layers that
 `max.nn` doesn't provide yet.
 
 To implement those parts of your model, you write a custom layer: a
-[`Module`](/max/api/python/generated/max.nn.Module/#max.nn.Module) you define
+[`Module`](/api/python/generated/max.nn.Module/#max.nn.Module) you define
 yourself and use alongside the built-in layers you reuse.
 
 You can subclass the closest built-in layer, define a new module from scratch,
@@ -74,7 +73,7 @@ yourself.
 
 When no built-in layer is close enough to subclass, subclass `Module` directly.
 Declare each parameter as a
-[`Weight`](/max/api/python/generated/max.graph.Weight/#max.graph.Weight) in
+[`Weight`](/api/python/generated/max.graph.Weight/#max.graph.Weight) in
 `__init__()`, then use it in `__call__()` to build the forward pass. Here a
 learnable per-channel scale owns one weight and multiplies it into the input:
 
@@ -192,7 +191,7 @@ name your checkpoint must match:
 ```
 
 From here, a pipeline loads a checkpoint into the module, builds a
-[`Graph`](/max/api/python/generated/max.graph.Graph/#max.graph.Graph) from it,
+[`Graph`](/api/python/generated/max.graph.Graph/#max.graph.Graph) from it,
 compiles, and executes. For those mechanics, including declaring weights,
 writing the forward pass, and matching weight names to a checkpoint, see
 [Build a model graph with Module](/max/develop/modules/).
@@ -202,7 +201,7 @@ writing the forward pass, and matching weight names to a checkpoint, see
 When you need a primitive the library lacks or a fusion the compiler isn't
 finding, write the computation as a custom operation in Mojo and wrap it in a
 layer that calls the op with
-[`ops.custom()`](/max/api/python/graph.ops/#max.graph.ops.custom) in
+[`ops.custom()`](/api/python/graph.ops/#max.graph.ops.custom) in
 `__call__()`. The op's `name` matches the string your Mojo kernel registers with
 [`@extensibility.register`](/api/kernels/extensibility/decorators/register/),
 and `out_types` declares the shapes it returns:
@@ -260,10 +259,10 @@ correctly:
   checkpoint's names don't line up, a [weight
   adapter](/max/develop/weight-adapters/) remaps them.
 - **Stacks**: hold a repeated layer, such as a stack of transformer blocks, in a
-  [`Sequential`](/max/api/python/generated/max.nn.Sequential/#max.nn.Sequential),
+  [`Sequential`](/api/python/generated/max.nn.Sequential/#max.nn.Sequential),
   never a plain Python list. A plain list doesn't register its children's
   weights, so they load into nothing and fail silently. (`Sequential` subclasses
-  [`LayerList`](/max/api/python/generated/max.nn.LayerList/#max.nn.LayerList),
+  [`LayerList`](/api/python/generated/max.nn.LayerList/#max.nn.LayerList),
   which you'll still see across existing architectures.) The
   [Model bring-up workflow](/max/develop/model-bringup-workflow/) explains how
   these containers resolve weight names.

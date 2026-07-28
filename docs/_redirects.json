@@ -11,7 +11,7 @@
   },
   {
     "source": "/engine/python/api/engine",
-    "dest": "/max/api/python/engine/",
+    "dest": "/api/python/engine/",
     "status": 301
   },
   {
@@ -87,6 +87,11 @@
   {
     "source": "/max/api/kernels/(.*)",
     "dest": "/api/kernels/{0}",
+    "status": 302
+  },
+  {
+    "source": "/max/api/python/(.*)",
+    "dest": "/api/python/{0}",
     "status": 302
   },
   {

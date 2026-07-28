@@ -50,8 +50,8 @@ Before you begin the debugging process, make sure you have:
 - A trusted PyTorch reference model.
 - A small prompt or test input that reproduces the validation failure.
 - Familiarity with the MAX
-  [`Graph`](/max/api/python/generated/max.graph.Graph/) and
-  [`Module`](/max/api/python/generated/max.nn.Module/) APIs.
+  [`Graph`](/api/python/generated/max.graph.Graph/) and
+  [`Module`](/api/python/generated/max.nn.Module/) APIs.
 
 During debugging, ensure the MAX model and the reference model receive the same
 token IDs, position information, attention mask, and sequence length. If the
@@ -67,14 +67,14 @@ need to run both models and save the tensors they produce. Start by saving
 tensors from a MAX model run, which takes two steps:
 
 1. Add print operations to the model with the
-   [`PrintHook`](/max/api/python/generated/max.nn.hooks.PrintHook/) class.
+   [`PrintHook`](/api/python/generated/max.nn.hooks.PrintHook/) class.
    `PrintHook` adds a
-   [`print()`](/max/api/python/graph.ops/#max.graph.ops.print) operation to
+   [`print()`](/api/python/graph.ops/#max.graph.ops.print) operation to
    every model layer, so you don't have to add it manually. Instantiate
    `PrintHook` before you construct the graph so the print ops become part of
    the graph.
 2. Capture the printed tensors by configuring the debug options on an
-   [`InferenceSession`](/max/api/python/generated/max.engine.InferenceSession/)
+   [`InferenceSession`](/api/python/generated/max.engine.InferenceSession/)
    to export them to `.max` files.
 
 The following example demonstrates how to save printed tensors from a MAX model
@@ -183,7 +183,7 @@ finally:
 
 After you capture both sets of tensors, compare them layer by layer. The
 following example loads each exported MAX tensor with
-[`load_max_buffer()`](/max/api/python/generated/max.driver.load_max_buffer/),
+[`load_max_buffer()`](/api/python/generated/max.driver.load_max_buffer/),
 pairs it with the PyTorch tensor of the same name, and reports three comparison
 metrics per layer:
 

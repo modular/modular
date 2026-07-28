@@ -429,7 +429,7 @@ rope = Llama3RotaryEmbedding(
   </TabItem>
   <TabItem value="qwen3" label="Qwen3">
 
-Qwen3 applies a [`RMSNorm`](/max/api/python/generated/max.nn.RMSNorm/) to the query and key projections before the RoPE calculation. To implement this
+Qwen3 applies a [`RMSNorm`](/api/python/generated/max.nn.RMSNorm/) to the query and key projections before the RoPE calculation. To implement this
 in the compute graph, define two additional normalization layers in
 [`qwen3/layers/attention.py`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/qwen3/layers/attention.py)
 and apply them to query and key projections in the block forward pass:
@@ -494,7 +494,7 @@ graph.
 
 For example, a `vision_config` field implies the model is multimodal and needs
 a separate vision tower (like
-[Pixtral](/max/api/python/pipelines.architectures.pixtral/)) to embed images
+[Pixtral](/api/python/pipelines.architectures.pixtral/)) to embed images
 before passing them to the transformer. An encoder-decoder structure (like T5)
 breaks the standard decoder-only block sequence entirely. If a parameter alters
 how blocks are wired together or what inputs they accept, you must write a new
