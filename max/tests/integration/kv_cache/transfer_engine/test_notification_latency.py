@@ -56,7 +56,6 @@ def test_notification_delivery_is_prompt() -> None:
         engine = KVTransferEngine(
             name="latency_sender",
             memory=[[kv_memory(blocks, total_num_pages)]],
-            total_num_pages=total_num_pages,
         )
 
         # Connect with receiver
@@ -97,7 +96,6 @@ def test_notification_delivery_is_prompt() -> None:
         engine = KVTransferEngine(
             name="latency_receiver",
             memory=[[kv_memory(blocks, total_num_pages)]],
-            total_num_pages=total_num_pages,
         )
 
         # Connect with sender

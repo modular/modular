@@ -213,7 +213,7 @@ def test_inconsistent_replication_across_replicas_raises() -> None:
     replica0 = [_group(replicated=True)]
     replica1 = [_group()]  # same group index, different replication kind
     with pytest.raises(ValueError, match="consistently across DP replicas"):
-        KVTransferEngine("engine", [replica0, replica1], total_num_pages=4)
+        KVTransferEngine("engine", [replica0, replica1])
 
 
 def test_replicas_with_different_group_counts_raises() -> None:
@@ -225,7 +225,7 @@ def test_replicas_with_different_group_counts_raises() -> None:
     replica1 = [_group(64)]
 
     with pytest.raises(ValueError, match="consistent buffer structure"):
-        KVTransferEngine("engine", [replica0, replica1], total_num_pages=4)
+        KVTransferEngine("engine", [replica0, replica1])
 
 
 # ---------------------------------------------------------------------------

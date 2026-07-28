@@ -80,7 +80,6 @@ def sender_routine(
     engine = KVTransferEngine(
         "sender_engine",
         [[replicated_group]],
-        total_num_pages=total_num_pages,
     )
 
     sender_md_queue.put(engine.metadata)
@@ -140,7 +139,6 @@ def receiver_routine(
     engine = KVTransferEngine(
         "receiver_engine",
         replicas,
-        total_num_pages=total_num_pages,
     )
 
     receiver_md_queue.put(engine.metadata)

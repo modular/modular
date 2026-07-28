@@ -50,7 +50,6 @@ def transfer_routine_sender(
     engine_1 = KVTransferEngine(
         "engine_1",
         [kv_group(tensors_1, total_num_pages)],
-        total_num_pages=total_num_pages,
     )
 
     sender_md_queue.put(engine_1.metadata)
@@ -113,7 +112,6 @@ def transfer_routine_receiver(
     engine_2 = KVTransferEngine(
         "engine_2",
         [kv_group(tensors_2, total_num_pages)],
-        total_num_pages=total_num_pages,
     )
 
     receiver_md_queue.put(engine_2.metadata)

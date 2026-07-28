@@ -68,12 +68,10 @@ def test_send_recv_basic(device: Device) -> None:
     engine_1 = KVTransferEngine(
         "engine_1",
         [[kv_memory(blocks_1, total_num_pages)]],
-        total_num_pages=total_num_pages,
     )
     engine_2 = KVTransferEngine(
         "engine_2",
         [[kv_memory(blocks_2, total_num_pages)]],
-        total_num_pages=total_num_pages,
     )
 
     engine_1.connect(engine_2.metadata)

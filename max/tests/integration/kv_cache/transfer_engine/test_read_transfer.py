@@ -77,12 +77,10 @@ def test_read_transfer_completion_from_both_engines(device: Device) -> None:
     engine_1 = KVTransferEngine(
         "engine_1",
         [[kv_memory(blocks_1, total_num_pages)]],
-        total_num_pages=total_num_pages,
     )
     engine_2 = KVTransferEngine(
         "engine_2",
         [[kv_memory(blocks_2, total_num_pages)]],
-        total_num_pages=total_num_pages,
     )
 
     engine_1.connect(engine_2.metadata)

@@ -1632,8 +1632,6 @@ class KVTransferEngine(TransferEngine):
         self,
         name: str,
         memory: Sequence[Sequence[KVCacheMemoryGroup]],
-        *,
-        total_num_pages: int,
     ) -> None:
         """Initialize the transfer engine from producer-authored NIXL groups.
 
@@ -1645,18 +1643,19 @@ class KVTransferEngine(TransferEngine):
                 logical ``(child, kind)`` tensor carrying every TP-shard view,
                 as returned by ``KVCacheBuffer.to_memory_groups()``.  All
                 replicas must have the same group count and consistent
-                replication kind.
-            total_num_pages: Total KV cache pages per tensor (including the
-                null block, i.e. ``get_num_pages() + 1``).  Each group's
-                ``total_num_pages`` must equal this value.
+                replication kind.  The page count (including the null block) is
+                read from the groups themselves, so every group must agree on
+                ``total_num_pages``.
         """
-        if total_num_pages <= 0:
-            raise ValueError(
-                f"Total number of pages {total_num_pages} must be greater than 0"
-            )
-
         if not memory:
             raise ValueError("tensors must contain at least one replica")
+        if not memory[0]:
+            raise ValueError("Each replica must contain at least one tensor")
+
+        # total_num_pages is a property of the buffers (``buffer.shape[0]``,
+        # including the null block), so read it off the authored groups rather
+        # than accepting a redundant argument. Every group must agree on it.
+        total_num_pages = memory[0][0].total_num_pages
 
         for r, replica_groups in enumerate(memory):
             if not replica_groups:
@@ -1666,8 +1665,9 @@ class KVTransferEngine(TransferEngine):
             for group in replica_groups:
                 if group.total_num_pages != total_num_pages:
                     raise ValueError(
-                        f"Replica {r} group has total_num_pages="
-                        f"{group.total_num_pages} but expected {total_num_pages}"
+                        f"Replica {r} has a group with total_num_pages="
+                        f"{group.total_num_pages}, but all groups must match "
+                        f"replica 0 group 0's {total_num_pages}"
                     )
 
         dp = len(memory)
@@ -1834,12 +1834,9 @@ class KVTransferEngine(TransferEngine):
         byte-identical to the previous ``all_buffers`` path.
         """
         dp = kv_cache.params.data_parallel_degree
-        # +1 for the null block.
-        total_num_pages = kv_cache.get_num_pages(replica_idx=0) + 1
         device_buffers = [kv_cache.get_device_buffer(r) for r in range(dp)]
 
         return cls(
             name=name,
             memory=[buf.to_memory_groups() for buf in device_buffers],
-            total_num_pages=total_num_pages,
         )

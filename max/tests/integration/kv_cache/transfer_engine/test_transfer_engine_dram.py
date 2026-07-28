@@ -128,12 +128,10 @@ def test_send_recv_dram() -> None:
     engine_1 = KVTransferEngine(
         "engine_1",
         [[kv_memory(blocks_1, total_num_pages)]],
-        total_num_pages=total_num_pages,
     )
     engine_2 = KVTransferEngine(
         "engine_2",
         [[kv_memory(blocks_2, total_num_pages)]],
-        total_num_pages=total_num_pages,
     )
 
     engine_1.connect(engine_2.metadata)
@@ -169,12 +167,10 @@ def test_read_transfer_dram() -> None:
     engine_1 = KVTransferEngine(
         "engine_1",
         [[kv_memory(blocks_1, total_num_pages)]],
-        total_num_pages=total_num_pages,
     )
     engine_2 = KVTransferEngine(
         "engine_2",
         [[kv_memory(blocks_2, total_num_pages)]],
-        total_num_pages=total_num_pages,
     )
 
     engine_1.connect(engine_2.metadata)
@@ -227,7 +223,6 @@ def test_send_recv_multi_group_dram() -> None:
                 kv_memory(draft_1, total_num_pages),
             ]
         ],
-        total_num_pages=total_num_pages,
     )
     engine_2 = KVTransferEngine(
         "engine_2",
@@ -237,7 +232,6 @@ def test_send_recv_multi_group_dram() -> None:
                 kv_memory(draft_2, total_num_pages),
             ]
         ],
-        total_num_pages=total_num_pages,
     )
 
     engine_1.connect(engine_2.metadata)
@@ -312,7 +306,6 @@ def test_connect_rejects_group_bpp_mismatch_dram() -> None:
                 kv_memory(draft_1, total_num_pages),
             ]
         ],
-        total_num_pages=total_num_pages,
     )
     engine_2 = KVTransferEngine(
         "engine_2",
@@ -322,7 +315,6 @@ def test_connect_rejects_group_bpp_mismatch_dram() -> None:
                 kv_memory(draft_2, total_num_pages),
             ]
         ],
-        total_num_pages=total_num_pages,
     )
 
     with pytest.raises(ValueError, match="mismatch"):

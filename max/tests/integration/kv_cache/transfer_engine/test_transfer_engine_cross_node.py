@@ -377,7 +377,6 @@ def main() -> None:
                 )
             ]
         ],
-        total_num_pages=cfg.num_pages,
     )
     # Phase 2: exchange NIXL engine metadata and activate the RDMA path.
     remote_md = _exchange_engine_metadata(args.role, sock, engine)

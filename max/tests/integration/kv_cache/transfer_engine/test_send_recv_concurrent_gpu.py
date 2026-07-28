@@ -53,7 +53,6 @@ def transfer_routine_sender(
     engine = KVTransferEngine(
         "engine_1",
         [[kv_memory(blocks, total_num_pages)]],
-        total_num_pages=total_num_pages,
     )
 
     # Connect with peer
@@ -113,7 +112,6 @@ def transfer_routine_receiver(
     engine = KVTransferEngine(
         "engine_2",
         [[kv_memory(blocks, total_num_pages)]],
-        total_num_pages=total_num_pages,
     )
 
     # Connect with peer
