@@ -581,3 +581,20 @@ def test_MyIndexable(mut idxable: Some[MyIndexable]):
 
 def test_subtree(mut mylist: MyList):
     test_MyIndexable(mylist)
+
+# MOCO-4453: Tests for origin union collapsing.
+struct OriginWhereClauseTest:
+    var f: Int
+
+    def __init__(out self):
+        self.f = 0
+
+    def field_in_subtree(ref self) where origin_of(self).subtree.contains[origin_of(self.f)]:
+        pass
+    def field_subtree_in_subtree(ref self) where origin_of(self).subtree.contains[origin_of(self.f).subtree]:
+        pass
+
+def test_origin_where_clause():
+    var s = OriginWhereClauseTest()
+    s.field_in_subtree()
+    s.field_subtree_in_subtree()

@@ -1395,7 +1395,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   }
 
   if (auto eqAttr = dyn_cast<OriginEqAttr>(param)) {
-    os << "(origin_eq ";
+    os << "origin_eq(";
     printOriginParam(os, eqAttr.getLhs(), diagShared, /*elideOriginOf=*/false);
     os << " == ";
     printOriginParam(os, eqAttr.getRhs(), diagShared, /*elideOriginOf=*/false);
