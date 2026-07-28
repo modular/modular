@@ -1770,7 +1770,7 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
 
   // If we are referencing an origin parameter, we need to find the
   // Origin it corresponds to and use that. Consider:
-  //   def test[X: Origin[mut=False]](ref [X] a: Int):
+  //   def test[X: ImmOrigin](ref [X] a: Int):
   // turns into:
   //   def test[X._mlir_origin, //, X: Origin](ref [X._mlir_origin] a: Int)
   // as such, we'll see references to the mlir_origin, but we want to find
