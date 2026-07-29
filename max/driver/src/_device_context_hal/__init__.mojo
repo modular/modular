@@ -13,7 +13,11 @@
 
 # Implementation of DeviceContext backed by the HAL
 
-from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+from std.builtin.device_passable import (
+    DevicePassable,
+    DevicePointerLike,
+    DeviceTypeEncoder,
+)
 from std.builtin.rebind import downcast
 from std.collections.optional import OptionalReg
 from std.ffi import CStringSlice, _CPointer, _Global, c_size_t, external_call
@@ -4936,16 +4940,16 @@ struct DefaultDeviceTypeEncoder(DeviceTypeEncoder):
         """
         return _current_target()
 
-    def encode_device_ptr(
-        mut self, value: DevicePointer, dst: MutOpaquePointer[_]
-    ):
-        """Encodes a `DevicePointer` into `dst`.
+    def encode_device_ptr[
+        DevicePointerType: DevicePointerLike
+    ](mut self, value: DevicePointerType, dst: MutOpaquePointer[_],):
+        """Encodes a device pointer into `dst` as its raw pointer.
 
-        By default treat `DevicePointer` as `UnsafePointer`, works for Unified
-        Memory targets such as CUDA and HIP.
+        Parameters:
+            DevicePointerType: The type of the device pointer.
 
         Args:
-            value: The `DevicePointer` instance to encode into `dst`.
+            value: The device pointer to encode.
             dst: The opaque destination pointer to encode into.
         """
         value.unsafe_ptr()._to_device_type(self, dst)
@@ -4963,6 +4967,7 @@ struct DevicePointer[
     origin: Origin[mut=mut],
 ](
     DevicePassable,
+    DevicePointerLike,
     Equatable,
     ImplicitlyCopyable,
     TrivialRegisterPassable,
@@ -4995,6 +5000,8 @@ struct DevicePointer[
     var _buffer: Pointer[DeviceBuffer[Self.dtype], Self.origin]
     var _offset: Int
     var _size: Int
+
+    comptime PointeeType: AnyType = Scalar[Self.dtype]
 
     # ===------------------------------------------------------------------=== #
     # Constructors

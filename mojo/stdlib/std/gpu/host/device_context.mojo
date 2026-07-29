@@ -62,6 +62,7 @@ from std.sys.defines import _is_bool_like
 from std.reflection import call_location, SourceLocation
 from std.builtin.device_passable import (
     DevicePassable,
+    DevicePointerLike,
     DeviceTypeEncoder,
 )
 from std.compile.compile import CompiledFunctionInfo
@@ -870,6 +871,7 @@ struct DevicePointer[
     origin: Origin[mut=mut],
 ](
     DevicePassable,
+    DevicePointerLike,
     Equatable,
     ImplicitlyCopyable,
     TrivialRegisterPassable,
@@ -902,6 +904,9 @@ struct DevicePointer[
     var _buffer: Pointer[DeviceBuffer[Self.dtype], Self.origin]
     var _offset: Int
     var _size: Int
+
+    comptime PointeeType: AnyType = Scalar[Self.dtype]
+    """DevicePointerLike encoded pointer pointee type."""
 
     # ===------------------------------------------------------------------=== #
     # Constructors
@@ -998,6 +1003,13 @@ struct DevicePointer[
             (self._buffer[].unsafe_ptr() + self._offset)
             .unsafe_mut_cast[True]()
             .as_unsafe_any_origin()
+        )
+
+    def _buffer_handle(
+        ref self,
+    ) -> Optional[OpaquePointer[MutUntrackedOrigin]]:
+        return Optional(
+            self._buffer[]._handle.value().unsafe_bitcast[NoneType]()
         )
 
     # ===------------------------------------------------------------------=== #
@@ -1288,16 +1300,16 @@ struct DefaultDeviceTypeEncoder(DeviceTypeEncoder):
         """
         return _current_target()
 
-    def encode_device_ptr(
-        mut self, value: DevicePointer, dst: MutOpaquePointer[_]
-    ):
-        """Encodes a `DevicePointer` into `dst`.
+    def encode_device_ptr[
+        DevicePointerType: DevicePointerLike
+    ](mut self, value: DevicePointerType, dst: MutOpaquePointer[_],):
+        """Encodes a device pointer into `dst` as its raw pointer.
 
-        By default treat `DevicePointer` as a `Pointer`, works for Unified
-        Memory targets such as CUDA and HIP.
+        Parameters:
+            DevicePointerType: The type of the device pointer.
 
         Args:
-            value: The `DevicePointer` instance to encode into `dst`.
+            value: The device pointer to encode.
             dst: The opaque destination pointer to encode into.
         """
         value.unsafe_ptr()._to_device_type(self, dst)

@@ -11,7 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+from std.builtin.device_passable import (
+    DevicePassable,
+    DevicePointerLike,
+    DeviceTypeEncoder,
+)
 from std.collections.optional import Optional
 from std.memory import Layout, stack_allocation, alloc, dealloc, ThinAllocation
 from std.reflection import SourceLocation
@@ -24,7 +28,6 @@ from .device_context import (
     _DeviceFunctionPtr,
     _FunctionEnqueuer,
     DeviceContext,
-    DevicePointer,
 )
 from .dim import Dim
 from ._launch_args import _compact_zero_sized_capture_slots
@@ -68,20 +71,25 @@ struct MetalDeviceTypeEncoder(DeviceTypeEncoder):
         """
         return _current_target()
 
-    def encode_device_ptr(
-        mut self, value: DevicePointer, dst: MutOpaquePointer[_]
-    ):
-        """Encodes a `DevicePointer` into `dst`.
+    def encode_device_ptr[
+        DevicePointerType: DevicePointerLike
+    ](mut self, value: DevicePointerType, dst: MutOpaquePointer[_],):
+        """Encodes a device pointer into `dst`.
 
-        By default treat `DevicePointer` as a `Pointer`, works for USM
-        targets such as CUDA and HIP.
+        Parameters:
+            DevicePointerType: The type of the device pointer.
 
         Args:
-            value: The `DevicePointer` instance to encode into `dst`.
+            value: The device pointer to encode into `dst`.
             dst: The opaque destination pointer to encode into.
         """
         value.unsafe_ptr()._to_device_type(self, dst)
-        self._buffers.append(value.buffer()._handle.value())
+
+        var handle = value._buffer_handle()
+        debug_assert(
+            Bool(handle), "Metal device pointers must have a buffer handle"
+        )
+        self._buffers.append(handle.value().unsafe_bitcast[_DeviceBufferCpp]())
 
 
 @always_inline
