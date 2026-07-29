@@ -336,7 +336,8 @@ A reference whose origin is `#lit.origin.subtree<x>` may refer to storage
 governed by `x` itself or by any origin formed by applying field or interior
 origin projections beneath `x`. This allows APIs to abstract over the precise
 interior region being referenced while still preserving ownership and
-invalidation semantics.
+invalidation semantics. In this document we will use the syntax `x~` as a
+shorthand for `origin_of(x).subtree`.
 
 For example, given the origin:
 
@@ -347,14 +348,14 @@ foo.bar["elements"].zed
 it can be implicitly converted to any of:
 
 ```text
-~foo.bar["elements"].zed
-~foo.bar["elements"]
-~foo.bar
-~foo
+foo.bar["elements"].zed~
+foo.bar["elements"]~
+foo.bar~
+foo~
 ```
 
 You can see this as a superset relationship, erasing progressively more details:
-`foo.bar["elements"] <: ~foo.bar <: ~foo`.
+`foo.bar["elements"] <: foo.bar~ <: foo~`.
 
 Subtree origins are particularly useful when an API wishes to express "some
 reference rooted within this owner" without exposing or depending on the exact
