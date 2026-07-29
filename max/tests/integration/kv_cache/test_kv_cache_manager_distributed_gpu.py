@@ -412,6 +412,11 @@ def test_cross_replica_gpu_prefix_cache_hit() -> None:
     # Both prefix blocks were served cross-replica.
     metrics = manager.get_metrics_aggregated()
     assert metrics.cross_replica_blocks_copied == 2
+    assert metrics.cross_replica_bytes_copied == 2 * _bytes_per_block(buf0)
+    # A cross-replica D2D copy is not a local device hit: must not also tick
+    # device_blocks_served (regression guard for the G0/G0-DP double-count
+    # bug -- CENG-845).
+    assert metrics.device_blocks_served == 0
 
     # The request's window advanced past the two reused blocks.
     assert ctx.cached_prefix_length == 2 * page_size
@@ -502,6 +507,8 @@ def test_cross_replica_host_prefix_cache_hit() -> None:
 
     metrics = manager.get_metrics_aggregated()
     assert metrics.cross_replica_blocks_copied == 0  # host hit, not GPU copy
+    assert metrics.cross_replica_bytes_copied == 0
+    assert metrics.device_blocks_served == 0  # host hit, not a device hit
     assert metrics.h2d_blocks_copied == 2
     assert ctx.cached_prefix_length == 2 * page_size
 

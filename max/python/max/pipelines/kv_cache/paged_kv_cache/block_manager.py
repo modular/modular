@@ -620,6 +620,7 @@ class BlockManager:
             if local_block is not None:
                 local_pool.touch(local_block)
                 blocks.append(local_block)
+                self._metrics.device_blocks_served += 1
                 continue
 
             # Local miss: a cross-replica hit can only be served when
@@ -674,6 +675,9 @@ class BlockManager:
         dst_units = self._replica_kv_memory[dst_replica]
         for src_unit, dst_unit in zip(src_units, dst_units, strict=True):
             src_unit.copy_block_to(dst_unit, dst_block_id, src_block_id)
+            self._metrics.cross_replica_bytes_copied += src_unit.buffer.shape[
+                1
+            ] * len(src_unit.all_buffers)
 
     @traced
     def _get_full_blocks_from_host_prefix_cache(

@@ -404,10 +404,37 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="percent",
         description="Percentage of host KV cache blocks in use (0-100%), sampled once per scheduler batch when host paging is enabled.",
     ),  # type: ignore
+    "maxserve.cache.device_blocks_served": _meter.create_counter(
+        "maxserve.cache.device_blocks_served",
+        unit="blocks",
+        description=(
+            "Cumulative KV blocks served directly from the local device "
+            "prefix cache, with no host/disk promotion or cross-replica "
+            "copy needed."
+        ),
+    ),  # type: ignore
     "maxserve.cache.h2d_blocks_copied": _meter.create_counter(
         "maxserve.cache.h2d_blocks_copied",
         unit="blocks",
         description="Cumulative host->device KV block copies.",
+    ),  # type: ignore
+    "maxserve.cache.cross_replica_blocks_copied": _meter.create_counter(
+        "maxserve.cache.cross_replica_blocks_copied",
+        unit="blocks",
+        description=(
+            "Cumulative KV blocks copied device-to-device across "
+            "data-parallel replicas to reuse a prefix-cache hit resident "
+            "on another replica."
+        ),
+    ),  # type: ignore
+    "maxserve.cache.cross_replica_bytes_copied": _meter.create_counter(
+        "maxserve.cache.cross_replica_bytes_copied",
+        unit="bytes",
+        description=(
+            "Cumulative bytes moved by device-to-device KV copies across "
+            "data-parallel replicas. Rate this to see NVLink/interconnect "
+            "bandwidth consumed by cross-replica prefix reuse."
+        ),
     ),  # type: ignore
     "maxserve.cache.d2h_blocks_copied": _meter.create_counter(
         "maxserve.cache.d2h_blocks_copied",
@@ -1179,10 +1206,37 @@ class _AsyncMetrics:
             ),
         )
 
+    def cache_device_blocks_served(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.device_blocks_served",
+                count,
+                self.extra_attributes,
+            ),
+        )
+
     def cache_h2d_blocks_copied(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.cache.h2d_blocks_copied",
+                count,
+                self.extra_attributes,
+            ),
+        )
+
+    def cache_cross_replica_blocks_copied(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.cross_replica_blocks_copied",
+                count,
+                self.extra_attributes,
+            ),
+        )
+
+    def cache_cross_replica_bytes_copied(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.cross_replica_bytes_copied",
                 count,
                 self.extra_attributes,
             ),
