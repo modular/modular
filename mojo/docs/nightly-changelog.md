@@ -1013,10 +1013,10 @@ This version is still a work in progress.
   var sqrt = lib.get_function[Float64]("sqrt")
   ```
 
-  Arguments are passed using the Mojo calling convention, which is correct
-  for scalar and register-passable arguments. Multi-field struct arguments
-  are rejected at compile time because the Mojo and C conventions can
-  disagree on how aggregates are passed.
+- `OwnedDLHandle.get_function` and `OwnedDLHandle.call` now forward arguments
+  using the C ABI rather than the Mojo calling convention, so structs can be
+  passed and returned by value. Multi-field struct arguments are no longer
+  rejected at compile time.
 
 ## Tooling changes
 
