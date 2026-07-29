@@ -22,7 +22,13 @@ from std.sys import size_of
 
 from std.testing import *
 from std.testing import TestSuite
-from test_utils import DelCounter, ExplicitDelOnly, MoveOnly, check_write_to
+from test_utils import (
+    DelCounter,
+    ExplicitDelOnly,
+    MoveOnly,
+    PinnedExplicitDelOnly,
+    check_write_to,
+)
 
 
 def test_basic() raises:
@@ -552,6 +558,52 @@ def test_optional_non_movable_construct_in_place() raises:
     assert_true(opt)
     assert_equal(opt.bounds()[0], 1)
     assert_equal(opt.value().x, 7)
+
+
+def test_optional_pinned_linear_type_deinit_with() raises:
+    var counter = 0
+
+    def destroy(var value: PinnedExplicitDelOnly) {mut counter}:
+        counter += 1
+        value^.destroy()
+
+    def make() -> PinnedExplicitDelOnly:
+        return PinnedExplicitDelOnly(7)
+
+    var opt = Optional[PinnedExplicitDelOnly](call=make)
+    var is_some = opt.__bool__()
+    var data = opt.value().data
+    # Destroy before potentially raising after assert
+    opt^.deinit_with(destroy)
+    assert_true(is_some)
+    assert_equal(data, 7)
+    assert_equal(counter, 1)
+
+    # The empty case is destroyed without invoking `deinit_func`.
+    var empty = Optional[PinnedExplicitDelOnly](None)
+    empty^.deinit_with(destroy)
+    assert_equal(counter, 1)
+
+
+def test_optional_pinned_linear_type_deinit_assert_empty() raises:
+    var empty = Optional[PinnedExplicitDelOnly](None)
+    empty^.deinit_assert_empty()
+
+
+def test_optional_niched_storage_deinit_with() raises:
+    comptime PointerType = Pointer[Int, AnyOrigin[mut=True]]
+
+    var x = 42
+    var some = Optional[PointerType](
+        Pointer(to=x).unsafe_origin_cast[AnyOrigin[mut=True]]()
+    )
+    some^.deinit_with(PointerType.__del__)
+
+    var empty = Optional[PointerType](None)
+    empty^.deinit_with(PointerType.__del__)
+
+    var empty2 = Optional[PointerType](None)
+    empty2^.deinit_assert_empty()
 
 
 def test_optional_construct_in_place_calls_closure_once() raises:

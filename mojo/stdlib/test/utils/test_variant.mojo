@@ -29,6 +29,7 @@ from test_utils import (
     ExplicitDelOnly,
     NonMovable,
     Observable,
+    PinnedExplicitDelOnly,
     check_write_to,
 )
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
@@ -227,6 +228,17 @@ def test_variant_linear_type_deinit_with() raises:
     # Test destroying a non-linear variant element in-place
     var v2 = Variant[ExplicitDelOnly, String]("notlinear")
     v2^.deinit_with[String](String.__del__)
+
+
+def test_variant_pinned_linear_type_deinit_with() raises:
+    def make() -> PinnedExplicitDelOnly:
+        return PinnedExplicitDelOnly(5)
+
+    var v = Variant[PinnedExplicitDelOnly, Int](call=make)
+    var data = v[PinnedExplicitDelOnly].data
+    # Destroy before potentially raising after assert
+    v^.deinit_with[PinnedExplicitDelOnly](PinnedExplicitDelOnly.destroy)
+    assert_equal(data, 5)
 
 
 def test_variant_linear_type_move() raises:

@@ -514,6 +514,27 @@ struct ExplicitDelOnly(ImplicitlyDeletable where False, Movable):
 
 
 # ===----------------------------------------------------------------------=== #
+# PinnedExplicitDelOnly
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct PinnedExplicitDelOnly(
+    ImplicitlyDeletable where False, Movable where False
+):
+    """Utility for testing container support for linear types that also
+    cannot be moved."""
+
+    var data: Int
+    """Test data payload."""
+
+    def destroy(deinit self):
+        """Explicitly destroy this linear type."""
+
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
 # DelCounter
 # ===----------------------------------------------------------------------=== #
 
