@@ -55,18 +55,27 @@ class Linear(Module, Shardable):
 
     .. code-block:: python
 
+        from max.driver import Accelerator, CPU, accelerator_count
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, TensorType
+        from max.nn import Linear
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+
         linear_layer = Linear(
             in_dim=256,
             out_dim=128,
             dtype=DType.float32,
-            device=DeviceRef.GPU(),
+            device=device_ref,
             name="linear",
             has_bias=True
         )
 
-        # Input tensor of shape: [batch, ..., 256]
-        input_tensor: TensorValue
-        output = linear_layer(input_tensor)
+        input_type = TensorType(DType.float32, [1, 256], device=device_ref)
+        with Graph("linear", input_types=[input_type]) as graph:
+            output = linear_layer(graph.inputs[0])
+            graph.output(output)
     """
 
     weight: Weight
@@ -639,16 +648,19 @@ class ColumnParallelLinear(Linear):
 
     .. code-block:: python
 
+        from max.driver import Accelerator, CPU, accelerator_count
         from max.dtype import DType
         from max.graph import DeviceRef
         from max.nn import ColumnParallelLinear
 
-        num_devices = 4
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+
         distributed_linear = ColumnParallelLinear(
-            in_dim,
-            out_dim,
+            256,
+            128,
             DType.float32,
-            devices=[DeviceRef.GPU(i) for i in range(num_devices)],
+            devices=[device_ref],
         )
     """
 
