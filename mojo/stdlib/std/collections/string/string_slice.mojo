@@ -2736,13 +2736,13 @@ def _unsafe_strlen(ptr: Pointer[mut=False, Byte, _], max: Int = Int.MAX) -> Int:
 def _memchr[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]
+    source: Span[mut=False, Scalar[dtype], _], char: Scalar[dtype]
 ) -> OptionalPointer[Scalar[dtype], source.origin]:
     if (
         __is_run_in_comptime_interpreter
         or len(source) < simd_width_of[Scalar[dtype]]()
     ):
-        var ptr: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
+        var ptr = source.unsafe_ptr()
 
         for i in range(len(source)):
             if ptr[unsafe_offset=i] == char:
@@ -2756,10 +2756,10 @@ def _memchr[
 def _memchr_impl[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], ...],
+    source: Span[mut=False, Scalar[dtype], _],
     char: Scalar[dtype],
 ) -> OptionalPointer[Scalar[dtype], source.origin]:
-    var haystack: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
+    var haystack = source.unsafe_ptr()
     var length = len(source)
     comptime bool_mask_width = simd_width_of[DType.bool]()
     var first_needle = SIMD[dtype, bool_mask_width](char)
@@ -2786,12 +2786,8 @@ def _memchr_impl[
 def _memmem[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], ...],
-    needle_span: Span[
-        mut=False,
-        Scalar[dtype],
-        ...,
-    ],
+    haystack_span: Span[mut=False, Scalar[dtype], _],
+    needle_span: Span[mut=False, Scalar[dtype], _],
 ) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
     if (
         __is_run_in_comptime_interpreter
@@ -2827,12 +2823,8 @@ def _memmem[
 def _memmem_impl[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], ...],
-    needle_span: Span[
-        mut=False,
-        Scalar[dtype],
-        ...,
-    ],
+    haystack_span: Span[mut=False, Scalar[dtype], _],
+    needle_span: Span[mut=False, Scalar[dtype], _],
 ) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
     var haystack: Pointer[
         Scalar[dtype], haystack_span.origin

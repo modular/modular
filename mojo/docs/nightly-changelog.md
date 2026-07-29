@@ -516,6 +516,24 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Span` now has a keyword-only `address_space` parameter (defaulting to
+  `AddressSpace.GENERIC`), so a span can view memory in a non-default address
+  space, such as GPU shared memory:
+
+  ```mojo
+  var smem = stack_allocation[32, Float32, address_space = AddressSpace.SHARED]()
+  var tile = Span[
+      mut=True, Float32, MutUntrackedOrigin, address_space = AddressSpace.SHARED
+  ](unsafe_ptr=smem, length=32)
+  ```
+
+  Address-only operations (indexing, slicing, `unsafe_ptr()`, `as_imm()`, and
+  the SIMD search helpers) work in any address space and preserve it in their
+  results. Element-copying operations (iteration, `fill()`, `copy_from()`,
+  hashing, equality, and writing) remain restricted to the default address
+  space, since copying a value into or out of another address space requires the
+  element type to be trivially copyable.
+
 - Any integer scalar can now be constructed from an `Intable` value, not just
   `Int`. This makes taking a pointer's address as an unsigned integer work
   directly:
