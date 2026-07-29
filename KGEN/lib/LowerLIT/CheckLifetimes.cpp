@@ -194,7 +194,13 @@ WholeProgramState::WholeProgramState(Operation *module,
       // We don't process external functions. They don't have a body to check.
       if (funcOp.isExternal())
         return;
-      funcList.emplace_back(funcOp);
+
+      // Only top-level functions are parallel work items. A nested function
+      // (an old closure) reads SSA values from the function it is nested in,
+      // so it is processed within that top-level ancestor's task (see
+      // runOnOperation) rather than concurrently with it.
+      if (!funcOp->getParentOfType<FnOp>())
+        funcList.emplace_back(funcOp);
 
       // Remember the ImplicitlyDeletable.__del__ member function.
       if (funcOp.getSpecialFunctionKind() == SpecialFunctionKind::kDel &&
@@ -5374,15 +5380,26 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
 
     std::atomic<bool> hadError = false;
     // Each worker thread gets its own Cache (TypeDeclInfo + CachedOriginFinder)
-    // that persists across all functions it processes.
+    // that persists across all functions it processes; it is reset between
+    // functions.
     PerThreadCache cache(std::move(typeDeclInfo));
+    // `functionVector` holds only top-level functions. Each task walks its
+    // function's nested functions and processes the whole subtree on one
+    // thread. A nested function (an old closure) reads SSA values from the
+    // function it is nested in, so keeping the subtree on a single thread
+    // avoids racing that function's own IR mutation (destructor insertion);
+    // distinct top-level functions are op-disjoint.
+    //
+    // FIXME(MOCO-3942): remove this code once old closures are removed -- every
+    // function is then op-disjoint and this becomes a plain per-function loop.
     M::parallelForEach(
         &getContext(), functionVector,
-        [&](PerThreadCache &cache, FnOp func) {
-          if (failed(processFunction(func, cache)))
-            hadError = true;
-
-          cache.reset();
+        [&](PerThreadCache &cache, FnOp topFunc) {
+          topFunc.walk([&](FnOp func) {
+            if (failed(processFunction(func, cache)))
+              hadError = true;
+            cache.reset();
+          });
         },
         cache);
 
