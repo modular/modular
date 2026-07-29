@@ -33,13 +33,19 @@ Example:
     token_buffer = TokenBuffer(prompt_tokens)
 
     # Add generated tokens
-    token_buffer.add_token(5)
-    token_buffer.add_token(6)
+    token_buffer.advance_with_token(5)
+    token_buffer.advance_with_token(6)
 
     # Access token sequences
     all_tokens = token_buffer.all  # [1, 2, 3, 4, 5, 6]
     generated = token_buffer.generated  # [5, 6]
     prompt = token_buffer.prompt  # [1, 2, 3, 4]
+
+.. invisible-code-block: python
+
+    assert list(all_tokens) == [1, 2, 3, 4, 5, 6]
+    assert list(generated) == [5, 6]
+    assert list(prompt) == [1, 2, 3, 4]
 """
 
 from __future__ import annotations

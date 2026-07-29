@@ -187,10 +187,12 @@ specific type information through the type system.
 
 .. code-block:: python
 
+    from max.pipelines.context.context import BaseContextType
+
     def process_context(context: BaseContextType) -> BaseContextType:
         # Function that accepts any BaseContext implementation
         # and returns the same type
-        ...
+        return context
 """
 
 

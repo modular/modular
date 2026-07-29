@@ -79,7 +79,7 @@ class SpeculativeConfig(ConfigFileModel):
 
     .. code-block:: python
 
-        from max.pipelines import SpeculativeConfig
+        from max.pipelines.speculative import SpeculativeConfig
 
         spec = SpeculativeConfig(
             speculative_method="eagle",

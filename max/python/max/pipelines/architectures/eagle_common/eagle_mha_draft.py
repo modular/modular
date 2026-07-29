@@ -118,10 +118,65 @@ class Eagle3MHADraftConfig:
 class Eagle3MHADraft(Module):
     """Eagle3 MHA draft over a DeepseekV3-shaped MLA target.
 
-    The ``__call__`` contract mirrors :class:`Eagle3MLADraft` so the unified
-    graph can swap drafts without changing the call site:
+    Build the draft from an :class:`Eagle3MHADraftConfig`. The pipeline
+    constructs this config from the draft checkpoint at load time:
 
     .. code-block:: python
+
+        from max.driver import Accelerator, accelerator_count
+        from max.dtype import DType
+        from max.graph import DeviceRef
+        from max.nn.kv_cache import MHAKVCacheParams
+        from max.pipelines.architectures.eagle_common.eagle_mha_draft import (
+            Eagle3MHADraft,
+            Eagle3MHADraftConfig,
+        )
+
+        # Eagle3MHADraft builds an Allreduce across its devices, so it needs
+        # at least one accelerator.
+        if accelerator_count() > 0:
+            devices = [DeviceRef.from_device(Accelerator())]
+            config = Eagle3MHADraftConfig(
+                hidden_size=512,
+                num_attention_heads=8,
+                num_key_value_heads=8,
+                head_dim=64,
+                intermediate_size=1024,
+                vocab_size=32000,
+                rms_norm_eps=1e-5,
+                rope_theta=10000.0,
+                max_position_embeddings=2048,
+                devices=devices,
+                data_parallel_degree=1,
+                dtype=DType.float32,
+                norm_dtype=DType.float32,
+                kv_params=MHAKVCacheParams(
+                    dtype=DType.float32,
+                    n_kv_heads=8,
+                    head_dim=64,
+                    num_layers=1,
+                    devices=devices,
+                    page_size=128,
+                ),
+                rope_scaling={
+                    "factor": 1.0,
+                    "original_max_position_embeddings": 2048,
+                    "beta_fast": 32.0,
+                    "beta_slow": 1.0,
+                    "mscale": 1.0,
+                    "mscale_all_dim": 1.0,
+                },
+                fc_input_multiplier=2,
+            )
+            draft = Eagle3MHADraft(config)
+
+    A forward pass is a symbolic graph build inside a
+    :class:`~max.graph.Graph`. Its ``__call__`` contract mirrors
+    :class:`Eagle3MLADraft` so the unified graph can swap drafts without
+    changing the call site, invoked with the per-device tensors the target
+    produces:
+
+    .. code-block:: text
 
         draft(
             tokens,
@@ -135,6 +190,8 @@ class Eagle3MHADraft(Module):
             batch_context_lengths,
             split_prefix=...,
         )
+
+    See :meth:`__call__` for the full argument types.
     """
 
     def __init__(

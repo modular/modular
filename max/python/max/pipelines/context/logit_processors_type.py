@@ -25,10 +25,12 @@ Examples:
 
 .. code-block:: python
 
+    from max.pipelines.context.logit_processors_type import ProcessorInputs
+
     # Example 1:
     def logits_processor(inputs: ProcessorInputs) -> None:
         logits = inputs.logits
-        ...
+        logits[-1, 0] = -10000
 
     # Example 2:
     class SuppressBeginToken:

@@ -122,6 +122,12 @@ class SamplingParamsGenerationConfigDefaults:
 
     .. code-block:: python
 
+        from max.pipelines.context.sampling_params import (
+            SamplingParams,
+            SamplingParamsGenerationConfigDefaults,
+            SamplingParamsInput,
+        )
+
         defaults = SamplingParamsGenerationConfigDefaults(
             temperature=0.7,
             top_k=50,
@@ -182,6 +188,10 @@ class SamplingParamsGenerationConfigDefaults:
             :class:`SamplingParams` default values.
 
         .. code-block:: python
+
+            from max.pipelines.context.sampling_params import (
+                SamplingParamsGenerationConfigDefaults,
+            )
 
             defaults = SamplingParamsGenerationConfigDefaults(
                 temperature=0.7,
@@ -287,9 +297,18 @@ class SamplingParams:
 
         .. code-block:: python
 
+            from max.pipelines.context.sampling_params import (
+                SamplingParams,
+                SamplingParamsGenerationConfigDefaults,
+                SamplingParamsInput,
+            )
+
+            sampling_params_defaults = SamplingParamsGenerationConfigDefaults(
+                top_k=50,
+            )
             params = SamplingParams.from_input_and_generation_config(
                 SamplingParamsInput(temperature=0.7),
-                sampling_params_defaults=model_config.sampling_params_defaults,
+                sampling_params_defaults=sampling_params_defaults,
             )
         """
         # Start with model's generation config values (only if explicitly set)
