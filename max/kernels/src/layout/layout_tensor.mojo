@@ -441,11 +441,7 @@ struct LayoutTensor[
     @always_inline
     def __init__(
         out self: Self.GenericAddressSpaceLayoutTensor,
-        span: Span[
-            Scalar[Self.dtype],
-            Self.origin,
-            ...,
-        ],
+        span: Span[Scalar[Self.dtype], Self.origin],
     ):
         """Create a `LayoutTensor` with a `Span`.
 
@@ -460,11 +456,7 @@ struct LayoutTensor[
     @always_inline
     def __init__(
         out self: Self.GenericAddressSpaceLayoutTensor,
-        span: Span[
-            Scalar[Self.dtype],
-            Self.origin,
-            ...,
-        ],
+        span: Span[Scalar[Self.dtype], Self.origin],
         runtime_layout: RuntimeLayout[Self.layout, ...],
     ):
         """Create a `LayoutTensor` with a `Span` and a runtime layout
@@ -485,11 +477,7 @@ struct LayoutTensor[
     @always_inline
     def __init__(
         out self: Self.GenericAddressSpaceLayoutTensor,
-        span: Span[
-            Scalar[Self.dtype],
-            Self.origin,
-            ...,
-        ],
+        span: Span[Scalar[Self.dtype], Self.origin],
         runtime_layout: RuntimeLayout[Self.layout, ...],
         element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
     ):
