@@ -342,6 +342,7 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "maxserve.time_per_output_token": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.batch_execution_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.batch_creation_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.video.encoding_time_milliseconds": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.dkv.nixl_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.dkv.nixl_write_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.dkv.rpc_acquire_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
@@ -366,6 +367,10 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "maxserve.responses_buffered": HISTOGRAM_COUNT_BUCKETS,
     # Batch size
     "maxserve.batch_size": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    # MiniMax-M3's video processor samples up to 512 frames per clip
+    # (see max_private/minimax_m3/vision_processor.py); this bucket set's
+    # upper bound (512) matches exactly.
+    "maxserve.video.frames_per_clip": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # Throughput (tokens/s)
     "maxserve.batch_prompt_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
     "maxserve.batch_generation_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,

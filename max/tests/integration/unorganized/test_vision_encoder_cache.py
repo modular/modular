@@ -38,6 +38,7 @@ from max.pipelines.context.eos_tracking import EOSTracker
 from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
 from max.pipelines.lib.vision_encoder_cache import (
     SupportsVisionEncoding,
+    VideoEncoderMetrics,
     VisionEncoderCache,
     VisionEncodeResult,
     derive_counts_from_spans,
@@ -1280,6 +1281,29 @@ def test_pop_metrics_disabled_cache_counts_all_as_encoded() -> None:
     assert m.num_images_cached == 0
     assert m.num_patches_encoded == 1
     assert m.num_tokens_encoded == 5
+
+
+def test_video_encoder_metrics_defaults_are_zero() -> None:
+    m = VideoEncoderMetrics()
+    assert m.num_clips_total == 0
+    assert m.num_clips_encoded == 0
+    assert m.num_clips_cached == 0
+    assert m.frame_counts == []
+    assert m.num_tokens_encoded == 0
+    assert m.encoding_time_ms == 0.0
+    assert m.cache_hit_rate == 0.0
+
+
+def test_video_encoder_metrics_cache_hit_rate() -> None:
+    m = VideoEncoderMetrics(
+        num_clips_total=4,
+        num_clips_encoded=1,
+        num_clips_cached=3,
+        frame_counts=[16],
+        num_tokens_encoded=64,
+        encoding_time_ms=12.5,
+    )
+    assert m.cache_hit_rate == 0.75
 
 
 def test_derive_counts_from_spans_single_context() -> None:

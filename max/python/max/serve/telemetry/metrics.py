@@ -496,6 +496,26 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="percent",
         description="Per-batch vision encoder cache hit rate (0-100%).",
     ),  # type: ignore
+    "maxserve.video.clips_encoded": _meter.create_counter(
+        "maxserve.video.clips_encoded",
+        unit="clips",
+        description="Cumulative video clips run through the video encoder (cache misses).",
+    ),  # type: ignore
+    "maxserve.video.tokens_encoded": _meter.create_counter(
+        "maxserve.video.tokens_encoded",
+        unit="tokens",
+        description="Cumulative merged video tokens produced by the video encoder.",
+    ),  # type: ignore
+    "maxserve.video.encoding_time_milliseconds": _meter.create_histogram(
+        "maxserve.video.encoding_time_milliseconds",
+        unit="ms",
+        description="Per-batch video encoder wall-clock time.",
+    ),  # type: ignore
+    "maxserve.video.frames_per_clip": _meter.create_histogram(
+        "maxserve.video.frames_per_clip",
+        unit="frames",
+        description="Sampled frame count per newly-encoded video clip.",
+    ),  # type: ignore
     "maxserve.tool_call.conformance_errors": _meter.create_counter(
         "maxserve.tool_call.conformance_errors",
         description=(
@@ -989,6 +1009,42 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.vision.cache_hit_rate",
                 hit_rate,
+                self.extra_attributes,
+            ),
+        )
+
+    def video_clips_encoded(self, clips: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.video.clips_encoded",
+                clips,
+                self.extra_attributes,
+            ),
+        )
+
+    def video_tokens_encoded(self, tokens: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.video.tokens_encoded",
+                tokens,
+                self.extra_attributes,
+            ),
+        )
+
+    def video_encoding_time_milliseconds(self, time_ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.video.encoding_time_milliseconds",
+                time_ms,
+                self.extra_attributes,
+            ),
+        )
+
+    def video_frames_per_clip(self, frames: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.video.frames_per_clip",
+                frames,
                 self.extra_attributes,
             ),
         )

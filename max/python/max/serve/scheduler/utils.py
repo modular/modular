@@ -23,7 +23,10 @@ from max.driver import Buffer
 from max.nn.kv_cache.metrics import dkv_tier_degraded
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderMetrics
+from max.pipelines.lib.vision_encoder_cache import (
+    VideoEncoderMetrics,
+    VisionEncoderMetrics,
+)
 from max.pipelines.modeling.types import (
     BatchType,
     CompletedBatchStats,
@@ -176,6 +179,11 @@ class BatchMetrics:
     # are gated on this being non-None.
     vision_metrics: VisionEncoderMetrics | None = None
 
+    # Per-iteration video encoder statistics for multimodal models. None
+    # when the batch did no video encoding. The video log clause and video
+    # metrics are gated on this being non-None.
+    video_metrics: VideoEncoderMetrics | None = None
+
     @classmethod
     def create(
         cls,
@@ -189,6 +197,7 @@ class BatchMetrics:
         total_preemption_count: int,
         batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
         batch_vision_metrics: VisionEncoderMetrics | None = None,
+        batch_video_metrics: VideoEncoderMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
@@ -436,6 +445,7 @@ class BatchMetrics:
             per_request_prefix_coverage=per_request_prefix_coverage,
             num_new_admissions=len(per_request_prefix_coverage),
             vision_metrics=batch_vision_metrics,
+            video_metrics=batch_video_metrics,
         )
 
     def pretty_format(self) -> str:
@@ -538,6 +548,18 @@ class BatchMetrics:
                 f"({vm.num_images_cached} hit, {vm.num_images_encoded} miss) | "
             )
 
+        video_str = ""
+        vid = self.video_metrics
+        if vid is not None and vid.num_clips_total > 0:
+            video_str = (
+                f"Video Encoder: {vid.num_clips_encoded} clips, "
+                f"{sum(vid.frame_counts)} frames, "
+                f"{vid.num_tokens_encoded} toks encoded, "
+                f"{vid.encoding_time_ms:.1f}ms, "
+                f"cache hit rate {vid.cache_hit_rate:.1%} "
+                f"({vid.num_clips_cached} hit, {vid.num_clips_encoded} miss) | "
+            )
+
         exec_label = (
             "Previous Execution"
             if self.batch_execution_time_is_previous
@@ -574,6 +596,7 @@ class BatchMetrics:
             f"{dkv_health_str}"
             f"{spec_decode_str}"
             f"{vision_str}"
+            f"{video_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
 
@@ -647,6 +670,16 @@ class BatchMetrics:
             extra["vision_patches_encoded"] = vm.num_patches_encoded
             extra["vision_tokens_encoded"] = vm.num_tokens_encoded
             extra["vision_cache_hit_rate"] = vm.cache_hit_rate
+
+        vid = self.video_metrics
+        if vid is not None and vid.num_clips_total > 0:
+            extra["video_clips_total"] = vid.num_clips_total
+            extra["video_clips_encoded"] = vid.num_clips_encoded
+            extra["video_clips_cached"] = vid.num_clips_cached
+            extra["video_frames_encoded"] = sum(vid.frame_counts)
+            extra["video_tokens_encoded"] = vid.num_tokens_encoded
+            extra["video_encoding_time_ms"] = vid.encoding_time_ms
+            extra["video_cache_hit_rate"] = vid.cache_hit_rate
 
         if (
             self.nixl_read_latency_avg_ms > 0
@@ -803,6 +836,14 @@ class BatchMetrics:
             METRICS.vision_tokens_encoded(vm.num_tokens_encoded)
             METRICS.vision_cache_hit_rate(vm.cache_hit_rate * 100)
 
+        vid = self.video_metrics
+        if vid is not None and vid.num_clips_total > 0:
+            METRICS.video_clips_encoded(vid.num_clips_encoded)
+            METRICS.video_tokens_encoded(vid.num_tokens_encoded)
+            METRICS.video_encoding_time_milliseconds(vid.encoding_time_ms)
+            for frame_count in vid.frame_counts:
+                METRICS.video_frames_per_clip(frame_count)
+
 
 def publish_completed_batch_metrics(stats: CompletedBatchStats) -> None:
     """Publishes execution-time and throughput telemetry for a completed batch.
@@ -862,6 +903,7 @@ class SchedulerLogger:
         total_preemption_count: int,
         batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
         batch_vision_metrics: VisionEncoderMetrics | None = None,
+        batch_video_metrics: VideoEncoderMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
         completed_batch_stats: CompletedBatchStats | None = None,
     ) -> None:
@@ -879,6 +921,8 @@ class SchedulerLogger:
                 for the most recent batch.
             batch_vision_metrics: Per-batch vision encoder metrics for the
                 most recent batch, or None when no vision encoding ran.
+            batch_video_metrics: Per-batch video encoder metrics for the
+                most recent batch, or None when no video encoding ran.
             batch_execution_time_is_previous: When True, ``batch_execution_time_s``
                 is the execution time of the previous batch (the overlap
                 scheduler is active); the log line will read
@@ -906,6 +950,7 @@ class SchedulerLogger:
             total_preemption_count=total_preemption_count,
             batch_spec_decode_metrics=batch_spec_decode_metrics,
             batch_vision_metrics=batch_vision_metrics,
+            batch_video_metrics=batch_video_metrics,
             batch_execution_time_is_previous=batch_execution_time_is_previous,
         )
 
