@@ -205,13 +205,49 @@ class PagedKVCacheManager:
 
     .. code-block:: python
 
+        import numpy as np
+        from max.driver import CPU
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef
+        from max.nn.kv_cache import MHAKVCacheParams
+        from max.pipelines.context import TextContext, TokenBuffer
+        from max.pipelines.kv_cache import PagedKVCacheManager
+        from max.pipelines.modeling.types import RequestID
+
+        params = MHAKVCacheParams(
+            dtype=DType.float32,
+            n_kv_heads=8,
+            head_dim=128,
+            num_layers=2,
+            page_size=128,
+            devices=[DeviceRef.CPU()],
+        )
+        kv_manager = PagedKVCacheManager(
+            params=params,
+            session=InferenceSession(devices=[CPU()]),
+            total_num_pages=8,
+            max_batch_size=4,
+        )
+
+        def make_context() -> TextContext:
+            tokens = np.array([1, 2, 3, 4], dtype=np.int64)
+            return TextContext(
+                request_id=RequestID(),
+                max_length=1000,
+                tokens=TokenBuffer(tokens),
+            )
+
+        ctx1 = make_context()
+        ctx2 = make_context()
+
         # Allocate metadata for requests in batch
         kv_manager.claim(ctx1.request_id, replica_idx=0)
-        kv_manager.claim(ctx2.request_id, replica_idx=1)
+        kv_manager.claim(ctx2.request_id, replica_idx=0)
 
         # Allocate blocks for these requests
         kv_manager.alloc(ctx1, replica_idx=0)
-        kv_manager.alloc(ctx2, replica_idx=1)
+        kv_manager.alloc(ctx2, replica_idx=0)
 
         # Get KVCache inputs to feed to graph
         kv_cache_inputs = kv_manager.runtime_inputs([[ctx1, ctx2]])
@@ -226,7 +262,7 @@ class PagedKVCacheManager:
 
         # Release metadata and KV blocks for these requests
         kv_manager.release(ctx1.request_id, replica_idx=0)
-        kv_manager.release(ctx2.request_id, replica_idx=1)
+        kv_manager.release(ctx2.request_id, replica_idx=0)
     """
 
     def __init__(

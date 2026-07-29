@@ -1475,25 +1475,80 @@ class TransferEngine:
         """Checks if a given send, recv, or read transfer is completed.
 
         .. caution::
-           This method is prone to infinite loops. For the transfer to progress,
-           the remote engine MUST call wait_recv_complete. As such, the following
-           code will hang:
+           This method only reports progress; it does not *drive* it. For a
+           transfer to complete, **both** engines must keep polling: the sender
+           polls its own :meth:`is_complete` while the receiver polls its own.
+           A single-threaded loop that polls only one engine — for example
+           ``while not sender.is_complete(req): pass`` without ever polling the
+           receiver — deadlocks, because the receiver never advances the
+           transfer. Always poll both engines concurrently (or use
+           :meth:`sync_and_release`, which polls with a bounded timeout).
 
-           .. code-block:: python
+        The example below runs a real host-DRAM transfer between two engines
+        on separate threads so both sides make progress, then polls each
+        engine's :meth:`is_complete` until the send finishes. NIXL requires the
+        UCX transport plugin, which ships prebuilt for Linux x86-64 only, so the
+        transfer runs behind an availability guard and safely no-ops elsewhere.
 
-              transfer_req = engine_1.write_to(...)
-              while not engine_1.is_complete(transfer_req):
-                  pass
-              while not engine_2.is_complete(transfer_req):
-                  pass
+        .. code-block:: python
 
-           Instead do:
+            import numpy as np
+            from max._core import nixl
+            from max.driver.buffer import Buffer
+            from max.pipelines.kv_cache import KVTransferEngine
 
-           .. code-block:: python
+            def nixl_ucx_available() -> bool:
+                try:
+                    probe = nixl.Agent(
+                        "probe", nixl.AgentConfig(use_prog_thread=False)
+                    )
+                    return "UCX" in probe.get_available_plugins()
+                except Exception:
+                    return False
 
-              transfer_req = engine_1.write_to(...)
-              while not engine_1.is_complete(transfer_req) or not engine_2.is_complete(transfer_req):
-                  pass
+            if nixl_ucx_available():
+                total_num_pages = 3
+                num_elts = total_num_pages * 3
+                blocks_1 = Buffer.from_numpy(np.arange(num_elts, dtype=np.int16))
+                blocks_2 = Buffer.from_numpy(np.zeros(num_elts, dtype=np.int16))
+
+                sender = KVTransferEngine(
+                    "sender", [[blocks_1]], total_num_pages=total_num_pages
+                )
+                receiver = KVTransferEngine(
+                    "receiver", [[blocks_2]], total_num_pages=total_num_pages
+                )
+                sender.connect(receiver.metadata)
+                receiver.connect(sender.metadata)
+
+                # Poll BOTH engines concurrently so each side drives its half of
+                # the transfer. The receiver runs sync_and_release on a thread
+                # (bounded poll); the main thread polls the sender's is_complete.
+                from queue import Queue
+                from threading import Thread
+
+                queue: Queue = Queue()
+
+                def _send() -> None:
+                    req = sender.initiate_send_transfer(
+                        receiver.metadata, [0], [0],
+                        src_replica_idx=0, dst_replica_idx=0,
+                    )
+                    queue.put(req)
+                    sender.sync_and_release(req)
+
+                def _recv() -> None:
+                    receiver.sync_and_release(queue.get())
+
+                send_thread = Thread(target=_send)
+                recv_thread = Thread(target=_recv)
+                send_thread.start()
+                recv_thread.start()
+                send_thread.join()
+                recv_thread.join()
+
+                receiver.cleanup()
+                sender.cleanup()
 
         Args:
             transfer_req: The transfer request.

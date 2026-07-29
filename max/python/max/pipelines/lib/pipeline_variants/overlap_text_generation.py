@@ -3623,16 +3623,48 @@ class OverlapTextGenerationPipeline(
         """Executes a batch of requests asynchronously on the GPU.
 
         This method returns before the outputs for the current batch are
-        ready. The caller may need to call ``execute()`` again (possibly
-        with an empty batch) to retrieve these outputs. For example:
+        ready, so the outputs it returns belong to the *previous* batch. To
+        drain the outputs for the final batch, call ``execute()`` again with an
+        empty batch.
+
+        The batch of requests is a
+        :class:`~max.pipelines.modeling.types.TextGenerationInputs`, which wraps
+        one or more :class:`~max.pipelines.context.TextContext` objects. Build a
+        batch on CPU like this:
 
         .. code-block:: python
 
+            import numpy as np
+            from max.pipelines.context import TextContext, TokenBuffer
+            from max.pipelines.modeling.types import (
+                RequestID,
+                TextGenerationInputs,
+            )
+
+            contexts = [
+                TextContext(
+                    request_id=RequestID(),
+                    max_length=32,
+                    tokens=TokenBuffer(np.arange(8, dtype=np.int64)),
+                )
+                for _ in range(4)
+            ]
+            inputs = TextGenerationInputs(batches=[contexts])
+            empty_inputs = TextGenerationInputs(batches=[[]])
+            assert len(inputs.flat_batch) == 4
+            assert len(empty_inputs.flat_batch) == 0
+
+        Given a loaded ``pipeline``, the first ``execute`` returns no outputs
+        (they belong to a not-yet-submitted previous batch); a second, empty
+        call drains the first batch's outputs:
+
+        .. code-block:: text
+
             output_a = pipeline.execute(inputs)
-            assert len(outputs) == 0
+            assert len(output_a) == 0
 
             output_b = pipeline.execute(empty_inputs)
-            assert len(outputs) == len(inputs.flat_batch)
+            assert len(output_b) == len(inputs.flat_batch)
 
         Args:
             inputs: The inputs for the batch.

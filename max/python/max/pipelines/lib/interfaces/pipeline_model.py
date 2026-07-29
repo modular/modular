@@ -172,6 +172,12 @@ class ModelInputs:
 
     .. code-block:: python
 
+        from dataclasses import dataclass
+
+        from max.driver import Buffer
+        from max.dtype import DType
+        from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
+
         @dataclass
         class ReplitInputs(ModelInputs):
             tokens: Buffer
@@ -185,7 +191,8 @@ class ModelInputs:
         inputs = ReplitInputs(tokens=tokens, input_row_offsets=input_row_offsets)
 
         # Access tensors
-        list(inputs) == [tokens, input_row_offsets]  # Output: True
+        assert inputs.tokens is tokens
+        assert inputs.input_row_offsets is input_row_offsets
     """
 
     kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None
