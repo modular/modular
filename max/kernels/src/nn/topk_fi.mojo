@@ -44,7 +44,7 @@ from layout import (
 from layout.tile_layout import Layout
 from std.math import ceildiv, gcd, exp
 from std.math.uutils import ufloordiv
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.atomic import Atomic
 from std.random import Random
 from std.sys import align_of, simd_width_of, size_of
@@ -697,16 +697,20 @@ def _block_reduce_value_count[
     comptime value_width = simd_width_of[Scalar[T]]()
     comptime count_width = simd_width_of[DType.int32]()
 
-    var value_sram = stack_allocation[
-        (MAX_BLOCK_SIZE // WARP_SIZE) * value_width,
-        Scalar[T],
-        address_space=AddressSpace.SHARED,
-    ]()
-    var count_sram = stack_allocation[
-        (MAX_BLOCK_SIZE // WARP_SIZE) * count_width,
-        Int32,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var value_sram = UnsafePointer(
+        unsafe_stack_allocation[
+            (MAX_BLOCK_SIZE // WARP_SIZE) * value_width,
+            Scalar[T],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var count_sram = UnsafePointer(
+        unsafe_stack_allocation[
+            (MAX_BLOCK_SIZE // WARP_SIZE) * count_width,
+            Int32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     var warp = warp_id()
     comptime num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
@@ -867,12 +871,16 @@ def TopKSamplingFromProbKernel[
             # the rest.
             comptime MAX_ITERS = 64
 
-            var done_sram = stack_allocation[
-                1, Int32, address_space=AddressSpace.SHARED
-            ]()
-            var out_id_sram = stack_allocation[
-                1, Int, address_space=AddressSpace.SHARED
-            ]()
+            var done_sram = UnsafePointer(
+                unsafe_stack_allocation[
+                    1, Int32, address_space=AddressSpace.SHARED
+                ]()
+            )
+            var out_id_sram = UnsafePointer(
+                unsafe_stack_allocation[
+                    1, Int, address_space=AddressSpace.SHARED
+                ]()
+            )
 
             # Initialize control once, uniformly.
             if tx == 0:
@@ -953,12 +961,16 @@ def TopKSamplingFromProbKernel[
 
             sampled_id = out_id_sram[0]
         else:
-            var sampled_id_sram = stack_allocation[
-                1, Int, address_space=AddressSpace.SHARED
-            ]()
-            var last_valid_id_sram = stack_allocation[
-                1, Int, address_space=AddressSpace.SHARED
-            ]()
+            var sampled_id_sram = UnsafePointer(
+                unsafe_stack_allocation[
+                    1, Int, address_space=AddressSpace.SHARED
+                ]()
+            )
+            var last_valid_id_sram = UnsafePointer(
+                unsafe_stack_allocation[
+                    1, Int, address_space=AddressSpace.SHARED
+                ]()
+            )
 
             var probs_vec: SIMD[DType.float32, vec_size]
             var aggregate: Float32
@@ -1490,12 +1502,16 @@ def TopKTopPSamplingFromProbKernel[
             # threads merely hit the per-iteration barrier.
             comptime MAX_ITERS = 64
 
-            var done_sram = stack_allocation[
-                1, Int32, address_space=AddressSpace.SHARED
-            ]()
-            var out_id_sram = stack_allocation[
-                1, Int, address_space=AddressSpace.SHARED
-            ]()
+            var done_sram = UnsafePointer(
+                unsafe_stack_allocation[
+                    1, Int32, address_space=AddressSpace.SHARED
+                ]()
+            )
+            var out_id_sram = UnsafePointer(
+                unsafe_stack_allocation[
+                    1, Int, address_space=AddressSpace.SHARED
+                ]()
+            )
 
             # Initialize control once, uniformly.
             if tx == 0:
@@ -1570,12 +1586,16 @@ def TopKTopPSamplingFromProbKernel[
 
             sampled_id = out_id_sram[0]
         else:
-            var sampled_id_sram = stack_allocation[
-                1, Int, address_space=AddressSpace.SHARED
-            ]()
-            var last_valid_id_sram = stack_allocation[
-                1, Int, address_space=AddressSpace.SHARED
-            ]()
+            var sampled_id_sram = UnsafePointer(
+                unsafe_stack_allocation[
+                    1, Int, address_space=AddressSpace.SHARED
+                ]()
+            )
+            var last_valid_id_sram = UnsafePointer(
+                unsafe_stack_allocation[
+                    1, Int, address_space=AddressSpace.SHARED
+                ]()
+            )
 
             var probs_vec: SIMD[DType.float32, vec_size]
             var aggregate: Float32
@@ -2016,11 +2036,13 @@ def topk_softmax_sample_kernel[
     # reductions' per-warp scratch); allocating the full 32K bucket for the
     # cache alone overflowed the limit (33932 > 32768). The host launcher's
     # guard (`_APPLE_STATIC_SHMEM_CACHE_BYTES`) bounds k to this reduced budget.
-    var s_vals = stack_allocation[
-        _APPLE_STATIC_SHMEM_CACHE_COUNT,
-        Float32,
-        address_space=AddressSpace.SHARED,
-    ]() if comptime (is_apple_gpu()) else UnsafePointer(
+    var s_vals = UnsafePointer(
+        unsafe_stack_allocation[
+            _APPLE_STATIC_SHMEM_CACHE_COUNT,
+            Float32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    ) if comptime (is_apple_gpu()) else UnsafePointer(
         external_memory[
             Float32,
             address_space=AddressSpace.SHARED,
@@ -2029,7 +2051,9 @@ def topk_softmax_sample_kernel[
     )
 
     var s_idxs = (s_vals + k_rounded).bitcast[Int]()
-    var s_count = stack_allocation[1, Int, address_space=AddressSpace.SHARED]()
+    var s_count = UnsafePointer(
+        unsafe_stack_allocation[1, Int, address_space=AddressSpace.SHARED]()
+    )
 
     with PDL():
         if tx == 0:
@@ -2134,9 +2158,11 @@ def topk_softmax_sample_kernel[
         var thread_sum = Float32(0.0)
 
         # Use atomic counter in shared memory for write position.
-        var s_write_idx = stack_allocation[
-            1, Int32, address_space=AddressSpace.SHARED
-        ]()
+        var s_write_idx = UnsafePointer(
+            unsafe_stack_allocation[
+                1, Int32, address_space=AddressSpace.SHARED
+            ]()
+        )
         if tx == 0:
             s_write_idx[0] = Int32(0)
 

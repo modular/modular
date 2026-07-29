@@ -66,7 +66,7 @@ from layout import (
 )
 from layout.tile_layout import Layout as InternalLayout
 from layout.tensor_core import get_fragment_size
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -1930,12 +1930,16 @@ def _online_softmax_kernel[
         1 if fragment_transpose else 4
     )
     comptime row_alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
-    var rowmax = stack_allocation[
-        num_m_mmas * frag_num_rows, dtype, alignment=row_alignment
-    ]()
-    var rowsum = stack_allocation[
-        num_m_mmas * frag_num_rows, dtype, alignment=row_alignment
-    ]()
+    var rowmax = UnsafePointer(
+        unsafe_stack_allocation[
+            num_m_mmas * frag_num_rows, dtype, alignment=row_alignment
+        ]()
+    )
+    var rowsum = UnsafePointer(
+        unsafe_stack_allocation[
+            num_m_mmas * frag_num_rows, dtype, alignment=row_alignment
+        ]()
+    )
 
     var warp_scratch = LayoutTensor[
         dtype,

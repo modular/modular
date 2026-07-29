@@ -24,7 +24,7 @@ from std.math.uutils import umod, ufloordiv
 from std.math.constants import log2e
 from std.algorithm.functional import unswitch
 from std.gpu import block_idx, lane_id, thread_idx
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.sys import align_of, simd_width_of
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
@@ -588,7 +588,7 @@ struct AttentionRDNA[
 
         # SMEM allocations.
         self.k_smem_ptr = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 Self._k_smem_size,
                 Self.k_t.dtype,
                 address_space=AddressSpace.SHARED,
@@ -596,7 +596,7 @@ struct AttentionRDNA[
             ]()
         )
         self.v_smem_ptr = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 Self._v_smem_size,
                 Self.v_t.dtype,
                 address_space=AddressSpace.SHARED,
@@ -608,7 +608,7 @@ struct AttentionRDNA[
         # P SMEM region (BM*BN) otherwise.
         comptime if not Self.token_gen:
             var p_ptr = UnsafePointer(
-                stack_allocation[
+                unsafe_stack_allocation[
                     Self.BM * Self.BK,
                     Self.q_type,
                     address_space=AddressSpace.SHARED,
@@ -619,7 +619,7 @@ struct AttentionRDNA[
             )
         else:
             var p_ptr = UnsafePointer(
-                stack_allocation[
+                unsafe_stack_allocation[
                     Self._p_smem_size,
                     Self.q_type,
                     address_space=AddressSpace.SHARED,
