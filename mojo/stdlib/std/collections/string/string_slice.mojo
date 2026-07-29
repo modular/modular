@@ -2676,15 +2676,10 @@ def _to_string_list[
         The list of created strings.
     """
 
-    def unsafe_ptr_fn(
-        v: StringSlice[O],
-    ) -> Pointer[Byte, O]:
-        return v.unsafe_ptr()
-
-    def len_fn(v: StringSlice[O]) -> Int:
-        return v.byte_length()
-
-    return _to_string_list[len_fn, unsafe_ptr_fn](items)
+    return _to_string_list[
+        lambda (v: StringSlice[O]) -> Int: v.byte_length(),
+        lambda (v: StringSlice[O]) -> Pointer[Byte, O]: v.unsafe_ptr(),
+    ](items)
 
 
 @always_inline
@@ -2703,13 +2698,10 @@ def _to_string_list[
         The list of created strings.
     """
 
-    def unsafe_ptr_fn(v: Span[Byte, O]) -> Pointer[Byte, O]:
-        return v.unsafe_ptr()
-
-    def len_fn(v: Span[Byte, O]) -> Int:
-        return len(v)
-
-    return _to_string_list[len_fn, unsafe_ptr_fn](items)
+    return _to_string_list[
+        lambda (v: Span[Byte, O]) -> Int: len(v),
+        lambda (v: Span[Byte, O]) -> Pointer[Byte, O]: v.unsafe_ptr(),
+    ](items)
 
 
 @always_inline

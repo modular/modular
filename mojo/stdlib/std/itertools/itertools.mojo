@@ -885,12 +885,8 @@ def take_while[
     ```mojo
     from std.itertools import take_while
 
-    # Take while less than 5
-    def less_than_5(x: Int) -> Bool:
-        return x < 5
-
     var nums = [1, 2, 3, 4, 5, 6, 7]
-    for num in take_while[less_than_5](nums):
+    for num in take_while[lambda (x: Int) -> Bool: x < 5](nums):
         print(num)  # Prints: 1, 2, 3, 4
     ```
     """
@@ -1048,12 +1044,8 @@ def drop_while[
     ```mojo
     from std.itertools import drop_while
 
-    # Drop while less than 5
-    def less_than_5(x: Int) -> Bool:
-        return x < 5
-
     var nums = [1, 2, 3, 4, 5, 6, 1, 2]
-    for num in drop_while[less_than_5](nums):
+    for num in drop_while[lambda (x: Int) -> Bool: x < 5](nums):
         print(num)  # Prints: 5, 6, 1, 2
     ```
     """
