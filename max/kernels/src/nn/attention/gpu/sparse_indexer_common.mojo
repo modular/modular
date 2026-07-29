@@ -30,7 +30,7 @@ path is a possible future optimization.
 from std.gpu import barrier, block_dim, thread_idx
 from std.gpu.memory import AddressSpace
 from std.math import min
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from nn.topk import TopK_2, _block_reduce_topk, _topk_dead_val
 
@@ -87,7 +87,7 @@ def block_select_topk[
     # 1-element shared scratch to broadcast the winner index so every thread
     # reaches the same control-flow decision (and thus the same barriers).
     var winner_sram = UnsafePointer(
-        stack_allocation[1, Int, address_space=AddressSpace.SHARED]()
+        unsafe_stack_allocation[1, Int, address_space=AddressSpace.SHARED]()
     )
 
     var n_written = k_batch

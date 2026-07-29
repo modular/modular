@@ -56,7 +56,7 @@ from layout import (
 )
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
-from std.memory import ThinAllocation, dealloc, stack_allocation
+from std.memory import ThinAllocation, dealloc, unsafe_stack_allocation
 from std.memory.alloc import Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -83,12 +83,14 @@ static shared memory which is 32k."""
 def block_reduce[
     dtype: DType, max_warps_per_block: Int
 ](val: Scalar[dtype]) -> Scalar[dtype]:
-    var m2_shared = stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var m2_broadcast = stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
-    ]()
+    var m2_shared = UnsafePointer(
+        unsafe_stack_allocation[
+            max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+        ]()
+    )
+    var m2_broadcast = UnsafePointer(
+        unsafe_stack_allocation[1, dtype, address_space=AddressSpace.SHARED]()
+    )
 
     var warp_m2 = warp.sum(val)
 
@@ -124,18 +126,22 @@ def block_reduce_dual_sum[
     Scalar[dtype], Scalar[dtype]
 ]:
     """Combined block reduction for two sums using only 2 barriers."""
-    var shared0 = stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var shared1 = stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var broadcast0 = stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var broadcast1 = stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
-    ]()
+    var shared0 = UnsafePointer(
+        unsafe_stack_allocation[
+            max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+        ]()
+    )
+    var shared1 = UnsafePointer(
+        unsafe_stack_allocation[
+            max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+        ]()
+    )
+    var broadcast0 = UnsafePointer(
+        unsafe_stack_allocation[1, dtype, address_space=AddressSpace.SHARED]()
+    )
+    var broadcast1 = UnsafePointer(
+        unsafe_stack_allocation[1, dtype, address_space=AddressSpace.SHARED]()
+    )
 
     var warp_sum0 = warp.sum(val0)
     var warp_sum1 = warp.sum(val1)
@@ -239,24 +245,30 @@ def welford_block_all_reduce[
     mut res_m2: Scalar[dtype],
     mut res_count: Scalar[dtype],
 ):
-    var mean_shared = stack_allocation[
-        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var m2_shared = stack_allocation[
-        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var count_shared = stack_allocation[
-        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var mean_broadcast = stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var m2_broadcast = stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var count_broadcast = stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
-    ]()
+    var mean_shared = UnsafePointer(
+        unsafe_stack_allocation[
+            WARP_SIZE, dtype, address_space=AddressSpace.SHARED
+        ]()
+    )
+    var m2_shared = UnsafePointer(
+        unsafe_stack_allocation[
+            WARP_SIZE, dtype, address_space=AddressSpace.SHARED
+        ]()
+    )
+    var count_shared = UnsafePointer(
+        unsafe_stack_allocation[
+            WARP_SIZE, dtype, address_space=AddressSpace.SHARED
+        ]()
+    )
+    var mean_broadcast = UnsafePointer(
+        unsafe_stack_allocation[1, dtype, address_space=AddressSpace.SHARED]()
+    )
+    var m2_broadcast = UnsafePointer(
+        unsafe_stack_allocation[1, dtype, address_space=AddressSpace.SHARED]()
+    )
+    var count_broadcast = UnsafePointer(
+        unsafe_stack_allocation[1, dtype, address_space=AddressSpace.SHARED]()
+    )
 
     var warp_idx = warp_id()
     var lane_idx = lane_id()
@@ -2453,11 +2465,13 @@ def rms_norm_fused_residual_add_gpu_block[
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
-    var shared_mem = stack_allocation[
-        _APPLE_STATIC_SHMEM_MAX_COUNT[Scalar[dtype]],
-        Scalar[dtype],
-        address_space=AddressSpace.SHARED,
-    ]() if comptime (is_apple_gpu()) else UnsafePointer(
+    var shared_mem = UnsafePointer(
+        unsafe_stack_allocation[
+            _APPLE_STATIC_SHMEM_MAX_COUNT[Scalar[dtype]],
+            Scalar[dtype],
+            address_space=AddressSpace.SHARED,
+        ]()
+    ) if comptime (is_apple_gpu()) else UnsafePointer(
         external_memory[
             Scalar[dtype],
             address_space=AddressSpace.SHARED,

@@ -49,7 +49,12 @@ from linalg.matmul.cpu.apple_accelerate import (
 )
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
-from std.memory import alloc, dealloc, unsafe_memset_zero, stack_allocation
+from std.memory import (
+    alloc,
+    dealloc,
+    unsafe_memset_zero,
+    unsafe_stack_allocation,
+)
 from std.memory.alloc import ManagedAllocation, Layout as AllocLayout
 from nn.attention.mha_mask import MHAMask
 from max.runtime.asyncrt import parallelism_level
@@ -739,14 +744,14 @@ struct _FlashAttention[
         @parameter
         def task_func(task_id: Int):
             var qk_block_ptr = UnsafePointer(
-                stack_allocation[
+                unsafe_stack_allocation[
                     Self._config.block_m * Self._config.qk_block_n,
                     Self.dtype,
                     alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
                 ]()
             )
             var o_block_ptr = UnsafePointer(
-                stack_allocation[
+                unsafe_stack_allocation[
                     Self._config.block_m * Self._config.o_block_n,
                     Self.dtype,
                     alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),

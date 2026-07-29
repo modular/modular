@@ -96,7 +96,7 @@ from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.bmm import batched_matmul
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.transpose import transpose
-from std.memory import ThinAllocation, dealloc, stack_allocation
+from std.memory import ThinAllocation, dealloc, unsafe_stack_allocation
 from std.memory.alloc import Layout as AllocLayout
 
 from .amd_rdna.attention import AttentionRDNA
@@ -2856,10 +2856,10 @@ def mha_single_batch[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
     var rowmax = UnsafePointer(
-        stack_allocation[WM, accum_type, alignment=row_alignment]()
+        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
     )
     var rowsum = UnsafePointer(
-        stack_allocation[WM, accum_type, alignment=row_alignment]()
+        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
     )
 
     comptime for i in range(0, WM, 2):
@@ -3599,10 +3599,10 @@ def mha_single_batch_pipelined[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
     var rowmax = UnsafePointer(
-        stack_allocation[WM, accum_type, alignment=row_alignment]()
+        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
     )
     var rowsum = UnsafePointer(
-        stack_allocation[WM, accum_type, alignment=row_alignment]()
+        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
     )
 
     comptime for i in range(0, WM, p_frag_simdwidth):
@@ -4699,10 +4699,10 @@ def mha_decoding_single_batch[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
     var rowmax = UnsafePointer(
-        stack_allocation[WM, accum_type, alignment=row_align]()
+        unsafe_stack_allocation[WM, accum_type, alignment=row_align]()
     )
     var rowsum = UnsafePointer(
-        stack_allocation[WM, accum_type, alignment=row_align]()
+        unsafe_stack_allocation[WM, accum_type, alignment=row_align]()
     )
 
     comptime for i in range(WM):
@@ -5412,10 +5412,10 @@ def mha_decoding_single_batch_pipelined[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
     var rowmax = UnsafePointer(
-        stack_allocation[WM, accum_type, alignment=row_align]()
+        unsafe_stack_allocation[WM, accum_type, alignment=row_align]()
     )
     var rowsum = UnsafePointer(
-        stack_allocation[WM, accum_type, alignment=row_align]()
+        unsafe_stack_allocation[WM, accum_type, alignment=row_align]()
     )
 
     var partition_idx = block_idx.x
@@ -5823,7 +5823,7 @@ def mha_splitk_reduce[
     # since num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
     var exp_sums = TileTensor(
         UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 WARP_SIZE,
                 Scalar[accum_type],
                 address_space=AddressSpace.SHARED,

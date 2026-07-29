@@ -29,7 +29,7 @@ import std.gpu.primitives.warp as warp
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from layout import Idx, TensorLayout, TileTensor, row_major
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
@@ -132,16 +132,20 @@ def _bitonic_local_sort_kernel[
     var vals = input_arg.ptr
     var idxs = indices_arg.ptr
 
-    var shared_vals = stack_allocation[
-        BLOCK_SIZE,
-        Scalar[input_dtype],
-        address_space=AddressSpace.SHARED,
-    ]()
-    var shared_idxs = stack_allocation[
-        BLOCK_SIZE,
-        Scalar[indices_dtype],
-        address_space=AddressSpace.SHARED,
-    ]()
+    var shared_vals = UnsafePointer(
+        unsafe_stack_allocation[
+            BLOCK_SIZE,
+            Scalar[input_dtype],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var shared_idxs = UnsafePointer(
+        unsafe_stack_allocation[
+            BLOCK_SIZE,
+            Scalar[indices_dtype],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     if gid < n_arg:
         shared_vals[tid] = vals[gid]
@@ -212,16 +216,20 @@ def _bitonic_merge_local_kernel[
     var vals = input_arg.ptr
     var idxs = indices_arg.ptr
 
-    var shared_vals = stack_allocation[
-        BLOCK_SIZE,
-        Scalar[input_dtype],
-        address_space=AddressSpace.SHARED,
-    ]()
-    var shared_idxs = stack_allocation[
-        BLOCK_SIZE,
-        Scalar[indices_dtype],
-        address_space=AddressSpace.SHARED,
-    ]()
+    var shared_vals = UnsafePointer(
+        unsafe_stack_allocation[
+            BLOCK_SIZE,
+            Scalar[input_dtype],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var shared_idxs = UnsafePointer(
+        unsafe_stack_allocation[
+            BLOCK_SIZE,
+            Scalar[indices_dtype],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     shared_vals[tid] = vals[gid]
     shared_idxs[tid] = idxs[gid]

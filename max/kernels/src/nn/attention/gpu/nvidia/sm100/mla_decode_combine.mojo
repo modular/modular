@@ -39,7 +39,7 @@ from std.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from layout import TileTensor
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils.numerics import min_or_neg_inf
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
@@ -706,21 +706,21 @@ def mla_combine_kernel_split_parallel[
     # Layout: smem_result[warp][elem], smem_m[warp], smem_l[warp]
     # =========================================================================
     var smem_result = UnsafePointer(
-        stack_allocation[
+        unsafe_stack_allocation[
             NUM_WARPS * head_dim,
             DType.float32,
             address_space=AddressSpace.SHARED,
         ]()
     )
     var smem_m = UnsafePointer(
-        stack_allocation[
+        unsafe_stack_allocation[
             NUM_WARPS,
             DType.float32,
             address_space=AddressSpace.SHARED,
         ]()
     )
     var smem_l = UnsafePointer(
-        stack_allocation[
+        unsafe_stack_allocation[
             NUM_WARPS,
             DType.float32,
             address_space=AddressSpace.SHARED,

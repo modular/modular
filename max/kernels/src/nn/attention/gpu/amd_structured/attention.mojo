@@ -25,7 +25,7 @@ helper on the struct.
 from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.constants import log2e
-from std.memory import bitcast, stack_allocation
+from std.memory import bitcast, unsafe_stack_allocation
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.intrinsics import readfirstlane
@@ -518,7 +518,7 @@ struct Attention[
         self.out_reg_buffer.zero()
 
         self.k_smem_ptr = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 Self._max_kv_smem_size if Self.amd_structured_config.shared_kv else Self._k_smem_size,
                 Self.k_t.dtype,
                 address_space=AddressSpace.SHARED,
@@ -528,7 +528,7 @@ struct Attention[
         self.v_smem_ptr = self.k_smem_ptr.bitcast[
             Scalar[Self.v_t.dtype]
         ]() if Self.amd_structured_config.shared_kv else UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 Self._v_smem_size,
                 Self.v_t.dtype,
                 address_space=AddressSpace.SHARED,
@@ -537,7 +537,7 @@ struct Attention[
         )
 
         self.warp_scratch_ptr = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 Self._warp_scratch_size,
                 Self.accum_type,
                 address_space=AddressSpace.SHARED,

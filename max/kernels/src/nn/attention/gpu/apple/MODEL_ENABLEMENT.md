@@ -41,7 +41,7 @@ Ordered by impact on running a full model end to end.
   `topk_sram` as `_APPLE_STATIC_SHMEM_MAX_COUNT[TopK_2[f32]]` = exactly 32768
   bytes (the whole budget), then `_block_reduce_topk` needs ~32 more.
 - Fix (specified, not yet applied): Apple-gated headroom in the stage-1/2
-  `stack_allocation` (`topk.mojo:957`/`1239` + a helper in
+  `unsafe_stack_allocation` (`topk.mojo:957`/`1239` + a helper in
   `normalization.mojo`); NVIDIA/AMD take the dynamic-shmem branch and are
   untouched.
 - Severity: high — gates decode *compilation* on Metal. Owner: TBD.

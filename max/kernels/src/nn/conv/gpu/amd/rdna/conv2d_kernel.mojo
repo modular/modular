@@ -33,7 +33,7 @@ from std.gpu import (
 from max.gpu.compute.mma import mma as _mma_intrinsic
 from layout import TensorLayout, TileTensor
 from std.math import ceildiv
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -314,26 +314,34 @@ def conv2d_kernel_rdna[
     var SC = S * C_in
 
     # Double-buffered shared memory
-    var a_smem_0 = stack_allocation[
-        BLOCK_M * SMEM_STRIDE,
-        in_type,
-        address_space=AddressSpace.SHARED,
-    ]()
-    var a_smem_1 = stack_allocation[
-        BLOCK_M * SMEM_STRIDE,
-        in_type,
-        address_space=AddressSpace.SHARED,
-    ]()
-    var b_smem_0 = stack_allocation[
-        BLOCK_N * SMEM_STRIDE,
-        filter_type,
-        address_space=AddressSpace.SHARED,
-    ]()
-    var b_smem_1 = stack_allocation[
-        BLOCK_N * SMEM_STRIDE,
-        filter_type,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var a_smem_0 = UnsafePointer(
+        unsafe_stack_allocation[
+            BLOCK_M * SMEM_STRIDE,
+            in_type,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var a_smem_1 = UnsafePointer(
+        unsafe_stack_allocation[
+            BLOCK_M * SMEM_STRIDE,
+            in_type,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var b_smem_0 = UnsafePointer(
+        unsafe_stack_allocation[
+            BLOCK_N * SMEM_STRIDE,
+            filter_type,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var b_smem_1 = UnsafePointer(
+        unsafe_stack_allocation[
+            BLOCK_N * SMEM_STRIDE,
+            filter_type,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     # Initialize C accumulators
     var c_accum = Array[SIMD[s_type, CD_FRAG_SIZE], NUM_C_TILES](

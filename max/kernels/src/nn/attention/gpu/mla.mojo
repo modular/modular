@@ -104,7 +104,7 @@ from layout.tensor_core import get_fragment_size, get_mma_shape
 from layout.tile_tensor import NullableTileTensor
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.mha_operand import (
@@ -2201,10 +2201,10 @@ def mla_decoding_single_batch[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
     var rowmax = UnsafePointer(
-        stack_allocation[WM, accum_type, alignment=row_alignment]()
+        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
     )
     var rowsum = UnsafePointer(
-        stack_allocation[WM, accum_type, alignment=row_alignment]()
+        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
     )
 
     comptime for i in range(WM):
@@ -4055,10 +4055,10 @@ def mla_prefill_single_batch[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
     var rowmax = UnsafePointer(
-        stack_allocation[WM, accum_type, alignment=row_alignment]()
+        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
     )
     var rowsum = UnsafePointer(
-        stack_allocation[WM, accum_type, alignment=row_alignment]()
+        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
     )
 
     comptime for i in range(0, WM, 2):
