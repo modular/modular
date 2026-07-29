@@ -403,6 +403,42 @@ def _emit_slack_blocks(
     )
 
 
+def _emit_summary_json(
+    summary: FuzzSummary,
+    *,
+    output_path: Path,
+) -> None:
+    """Write machine-readable summary.json consumed by the CI monitor.
+
+    Skipped when the fuzz log was never produced (server crashed before fuzz
+    ran), so the monitor can distinguish a crash from a zero-failure run.
+    """
+    if not summary.log_present:
+        return
+    failures: list[dict[str, str]] = [
+        {
+            "category": scenario,
+            "name": item.name,
+            "reason": item.detail,
+            "kind": status,
+        }
+        for scenario, by_status in sorted(summary.by_scenario.items())
+        for status, items in by_status.items()
+        if status in ("FAIL", "INTERESTING", "ERROR")
+        for item in items
+    ]
+    data: dict[str, object] = {
+        "total": summary.total_tests,
+        "duration": summary.total_duration or 0.0,
+        "pass": summary.counts.get("PASS", 0),
+        "fail": summary.counts.get("FAIL", 0),
+        "interesting": summary.counts.get("INTERESTING", 0),
+        "error": summary.counts.get("ERROR", 0),
+        "failures": failures,
+    }
+    output_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
 def _run_fuzz_with_crash_detection(
     cmd: list[str],
     *,
@@ -622,14 +658,14 @@ def main(
             model_path=model_path,
             output_path=output_dir / "slack-blocks.json",
         )
+        _emit_summary_json(
+            summary,
+            output_path=output_dir / "summary.json",
+        )
 
-    # llm-fuzz's own non-zero exit means "found failures" — that's a
-    # signal about the endpoint, not a workflow problem. Propagate
-    # non-zero only when we had to kill the subprocess because serve
-    # died or hung.
-    if mechanical_failure:
-        sys.exit(fuzz_rc or 1)
-    sys.exit(0)
+    # Propagate fuzz exit code so the job conclusion reflects failures.
+    # Mechanical failures (serve crashed/hung) always exit non-zero.
+    sys.exit(fuzz_rc if not mechanical_failure else (fuzz_rc or 1))
 
 
 if __name__ == "__main__":
