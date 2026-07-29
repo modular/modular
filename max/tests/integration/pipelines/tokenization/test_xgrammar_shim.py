@@ -2253,3 +2253,48 @@ def test_refactor_gemma_const_enum_object_accept_reject() -> None:
     assert _accept_ids(
         _gemma_matcher_params(enum_params), _gemma_encode(good_enum)
     )
+
+
+def test_cache_key_const_instance_values_not_annotation_filtered() -> None:
+    # const/enum values are JSON INSTANCES, not schemas: an object member
+    # named "title" inside a const value is data, not an ignorable
+    # annotation. Two consts differing only in such a member are different
+    # schemas and must not share behavior -- each accepts exactly its own
+    # literal value.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "properties": {'
+        '"a": {"const": {"title": "a"}}, "b": {"const": {"title": "b"}}}, '
+        '"required": ["a", "b"]}'
+    )
+    # A const value is accepted only in its canonical JSON spelling (no
+    # whitespace inside it); the enclosing object allows whitespace.
+    assert _accepts(compiled, '{"a": {"title":"a"}, "b": {"title":"b"}}')
+
+
+def test_cache_key_distinguishes_property_names_default_type() -> None:
+    # An empty schema means "any string" when it constrains property names but
+    # "any value" when it constrains a property value. Those two readings must
+    # stay distinct even when the schema text is identical -- otherwise object
+    # keys could be emitted as arbitrary JSON values (e.g. bare numbers)
+    # instead of strings.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "properties": {'
+        '"b": {}, "a": {"type": "object", "propertyNames": {}}}, '
+        '"required": ["a", "b"]}'
+    )
+    assert _accepts(compiled, '{"b": 1, "a": {"a": 1}}')
+    assert not _accepts(compiled, '{"b": 1, "a": {1: 1}}')
+
+
+def test_cache_key_not_forgeable_via_property_name() -> None:
+    # A property name may contain quotes and colons that make one
+    # subschema's text resemble a structurally different sibling's. Such
+    # similar-looking schemas must not share behavior: `y` must still
+    # accept its own declared shape.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "properties": {'
+        '"x": {"type": "object", "properties": {"a\\":true,\\"b": {"type": "integer"}}}, '
+        '"y": {"type": "object", "properties": {"a": true, "b": {"type": "integer"}}}}, '
+        '"required": ["y"]}'
+    )
+    assert _accepts(compiled, '{"y": {"a": true, "b": 1}}')
