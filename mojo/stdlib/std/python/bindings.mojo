@@ -27,7 +27,7 @@ from std.collections import StringDict
 
 from std.builtin._startup import _ensure_runtime_init
 from std.reflection import reflect
-from std.memory import OpaquePointer, stack_allocation
+from std.memory import OpaquePointer, unsafe_stack_allocation
 from std.python import Python, PythonObject
 from std.python._cpython import (
     GILAcquired,
@@ -1595,10 +1595,10 @@ def _try_convert_arg[
 
 
 # NOTE:
-#   @always_inline is needed so that the stack_allocation() that appears in
-#   the definition below is valid in the _callers_ stack frame, effectively
-#   allowing us to "return" a pointer to stack-allocated data from this
-#   function.
+#   @always_inline is needed so that the unsafe_stack_allocation() that
+#   appears in the definition below is valid in the _callers_ stack frame,
+#   effectively allowing us to "return" a pointer to stack-allocated data
+#   from this function.
 @always_inline
 def check_and_get_or_convert_arg[
     T: ConvertibleFromPython
@@ -1627,7 +1627,9 @@ def check_and_get_or_convert_arg[
     """
 
     # Stack space to hold a converted value for this argument, if needed.
-    var converted_arg_ptr = stack_allocation[1, T]().as_unsafe_any_origin()
+    var converted_arg_ptr = unsafe_stack_allocation[
+        1, T
+    ]().as_unsafe_any_origin()
 
     try:
         return check_and_get_arg[T](func_name, py_args, index)

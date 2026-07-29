@@ -38,7 +38,7 @@ from std.gpu.host.info import B200
 from std.gpu.sync import mbarrier_init, mbarrier_arrive_expect_tx_relaxed
 from std.math import ceildiv, clamp
 from std.math.uutils import ufloordiv, uceildiv, udivmod
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.sys._assembly import inlined_assembly
 from std.sys.defines import get_defined_bool, get_defined_int
 from std.sys.info import _has_sm_100x_or_newer, has_nvidia_gpu_accelerator
@@ -138,25 +138,25 @@ struct _ClcKernel[
         t"{Self.trace_description}_r{Self.rank}_w{Self.simd_width}_b{Self.block_size}.clc.{Self.handle_uneven_simd}"
     )
     def __call__(self) capturing:
-        var result = stack_allocation[
+        var result = unsafe_stack_allocation[
             1,
             UInt128,
             address_space=AddressSpace.SHARED,
             alignment=16,
         ]()
-        var mbar = stack_allocation[
+        var mbar = unsafe_stack_allocation[
             1,
             Int64,
             address_space=AddressSpace.SHARED,
             alignment=8,
         ]()
         # Shared variables for single-barrier broadcast of cancel results.
-        var canceled = stack_allocation[
+        var canceled = unsafe_stack_allocation[
             1,
             UInt32,
             address_space=AddressSpace.SHARED,
         ]()
-        var next_tile = stack_allocation[
+        var next_tile = unsafe_stack_allocation[
             1,
             UInt32,
             address_space=AddressSpace.SHARED,
@@ -242,16 +242,16 @@ struct _ClcKernel[
                         _ = mbarrier_arrive_expect_tx_relaxed(mbar, Int32(16))
 
                     # Publish extracted values for all threads.
-                    canceled[0] = is_canceled
-                    next_tile[0] = ctaid
+                    canceled[unsafe_offset=0] = is_canceled
+                    next_tile[unsafe_offset=0] = ctaid
 
                 # Single barrier — all threads see broadcast values.
                 barrier()
 
-                if canceled[0] == 0:
+                if canceled[unsafe_offset=0] == 0:
                     break
 
-                tile_id = Int(next_tile[0])
+                tile_id = Int(next_tile[unsafe_offset=0])
 
             # Tail: only the first block handles remainder elements.
             if block_idx.x == 0 and thread_idx.x < self.unpacked_tail_length:

@@ -20,15 +20,19 @@
 from std.gpu import barrier, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 
 def _kernel(out_ptr: UnsafePointer[UInt16, MutAnyOrigin]):
-    var smem = stack_allocation[
-        1,
-        UInt32,
-        address_space=AddressSpace.SHARED,
-    ]()
+    # Keep the buffer as an `UnsafePointer`: this test pins the
+    # `UnsafePointer` address-space-cast and bitcast codegen path.
+    var smem = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            UInt32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     if thread_idx.x == 0:
         smem[0] = UInt32(0xCAFEBABE)

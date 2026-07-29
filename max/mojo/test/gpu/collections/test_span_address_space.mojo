@@ -19,7 +19,7 @@ preserve the address space.
 
 from std.gpu import barrier, thread_idx
 from std.gpu.host import DeviceContext
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 comptime TILE_SIZE = 32
@@ -35,7 +35,7 @@ def _tile_sum(tile: Span[Float32, _, address_space=_]) -> Float32:
 
 
 def _kernel(out_ptr: UnsafePointer[Float32, MutAnyOrigin]):
-    var smem = stack_allocation[
+    var smem = unsafe_stack_allocation[
         TILE_SIZE, Float32, address_space=AddressSpace.SHARED
     ]()
     var tile = Span[

@@ -17,7 +17,7 @@
 # spans viewing a non-default address space; only address-only operations are
 # address-space-generic.
 
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 
 def _shared_tile() -> (
@@ -28,7 +28,9 @@ def _shared_tile() -> (
         address_space=AddressSpace.SHARED,
     ]
 ):
-    var smem = stack_allocation[4, Float32, address_space=AddressSpace.SHARED]()
+    var smem = unsafe_stack_allocation[
+        4, Float32, address_space=AddressSpace.SHARED
+    ]()
     return {unsafe_ptr = smem, length = 4}
 
 

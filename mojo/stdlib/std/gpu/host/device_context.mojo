@@ -74,7 +74,7 @@ from std.gpu.host.compile import (
     _to_sass,
     get_gpu_target,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.memory import alloc, dealloc, ThinAllocation, Layout, UnsafeMaybeUninit
 from std.memory.unsafe import bitcast
 from std.builtin.rebind import downcast
@@ -2999,10 +2999,10 @@ struct DeviceFunction[
             for i in range(num_captures + num_args):
                 dense_args_sizes[unsafe_offset=i] = 0
         else:
-            dense_args_addrs = stack_allocation[
+            dense_args_addrs = unsafe_stack_allocation[
                 num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
             ]()
-            dense_args_sizes = stack_allocation[
+            dense_args_sizes = unsafe_stack_allocation[
                 num_captures_static + num_args, UInt64
             ]()
             for i in range(num_captures_static + num_args):
@@ -3268,7 +3268,7 @@ struct DeviceFunction[
                 )
             ).unsafe_leak()
         else:
-            dense_args_addrs = stack_allocation[
+            dense_args_addrs = unsafe_stack_allocation[
                 num_captures_static + num_passed_args,
                 OpaquePointer[MutAnyOrigin],
             ]()
