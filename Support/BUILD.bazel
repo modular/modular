@@ -435,21 +435,71 @@ modular_cc_library(
     ],
 )
 
-# Sources of the always-linked profiler shim (:Profiling below): the Range
-# API forwarder/loader (RangeShim.cpp) plus the Tracy GPU-profiling TUs. The
-# profiler implementation compiles only into the runtime-loaded plugin
-# (//max/internal/profiler:MAXProfilerPlugin), so no host
-# binary carries libkineto or its stubs.
-PROFILING_SHIM_SRCS = glob(
-    ["lib/Profiling/internal/*.cpp"],
-    # For OSS
-    allow_empty = True,
+# Minimal range-annotation and profiler-control API: per-copy
+# hot-path gates plus thin forwarders into an optional RangeSink that the
+# host-side profiler integration (:ProfilerHostGlue below) provides by
+# overriding the weak Detail::acquireRangeSink() at link time.
+# Nothing profiler-specific lives here — no dlopen, no plugin ABI, no
+# backend vocabulary — so the library is OSS-clean by construction and every
+# binary links it unconditionally, with no build config and no packaging
+# cost. Binaries without the glue get safe no-ops.
+modular_cc_library(
+    name = "ProfilingRanges",
+    srcs = ["lib/Profiling/Ranges.cpp"],
+    hdrs = ["include/Support/Profiling/Ranges.h"],
 )
 
-PROFILING_HDRS = glob(
-    ["include/Support/Profiling/internal/*.h"],
-    # For OSS
-    allow_empty = True,
+# Header-only view of the range API for the profiler plugin implementation
+# (//max/internal/profiler), which compiles against Ranges.h but must NOT
+# link :ProfilingRanges — the plugin defines the same M::Profiling symbols, and
+# pulling both archives into its link would leave symbol resolution to
+# archive order.
+modular_cc_library(
+    name = "ProfilingRangesHeaders",
+    hdrs = ["include/Support/Profiling/Ranges.h"],
+    visibility = ["//max/internal/profiler:__pkg__"],
+)
+
+# The C ABI between :ProfilerHostGlue and the runtime-loaded profiler plugin
+# (//max/internal/profiler:MAXProfilerPlugin). Header-only so the plugin
+# implementation compiles against it without linking any host-side code.
+modular_cc_library(
+    name = "ProfilerPluginABI",
+    hdrs = ["include/Support/Profiling/PluginABI.h"],
+    visibility = ["//max/internal/profiler:__pkg__"],
+)
+
+# Host-side glue for the minimal range API (:ProfilingRanges): provides the STRONG
+# Detail::acquireRangeSink() override (the weak default no-ops), the dlopen
+# loader for libMAXProfilerPlugin.so, and the RangeSink that forwards into
+# the plugin's C call table. Linking this target into a binary is the only
+# profiler wiring there is; alwayslink keeps the override from being dropped
+# from the archive. OSS builds never compile it: the OSS api.bzl stubs the
+# target by name, and KGEN CompilerRT reaches it via internal_deps, which
+# the OSS build drops.
+modular_cc_library(
+    name = "ProfilerHostGlue",
+    srcs = ["lib/ProfilerHostGlue.cpp"],
+    local_defines = select({
+        # Tracy owns CUPTI; the glue compiles its loader out so the two GPU
+        # profilers can never meet in one process. Always assigned a value
+        # (0/1) so ProfilerHostGlue.cpp can use `#if` (lint_ifdefs contract).
+        "//:tracy_enabled": ["MODULAR_TRACY_BUILD=1"],
+        "//conditions:default": ["MODULAR_TRACY_BUILD=0"],
+    }),
+    visibility = [
+        "//KGEN:__pkg__",
+        "//mach/crates/max-sys-internal:__pkg__",
+        "//max/internal:__pkg__",
+        "//max/internal/profiler:__pkg__",
+        "//max/python/max/_core/internal:__subpackages__",
+        "//max/tests/internal/profiler:__pkg__",
+    ],
+    deps = [
+        ":ProfilerPluginABI",
+        ":ProfilingRanges",
+    ],
+    alwayslink = True,
 )
 
 # NOTE: Passed as defines to propagate to dependents.
@@ -503,34 +553,28 @@ PROFILING_DEPS = [
     "//conditions:default": [],
 })
 
-# The Range profiling API, as an always-linked static shim: per-DSO hot-path
-# gates plus a dlopen loader that forwards to the profiler plugin
-# (//max/internal/profiler:MAXProfilerPlugin) when present at runtime and
-# degrades to no-ops otherwise. Statics being per consuming DSO is by design
-# — the plugin keeps every registered copy's gates coherent (see
-# RangeShim.cpp) — so there is no shared-library variant and no DT_NEEDED on
-# the plugin or any GPU library.
+# Modular's Tracy profiler integration (CPU zones + the TracyCuda/TracyRocm
+# GPU backends). The FILES live under Support/internal/ so they follow the
+# standardized internal-directory exclusion and are never part of any
+# open-source export; this target keeps the long-standing name so the many
+# compiler-stack consumers keep their dep label and the OSS build keeps
+# stubbing it by name in oss/modular/bazel/api.bzl.
 modular_cc_library(
     name = "Profiling",
-    srcs = PROFILING_SHIM_SRCS,
-    hdrs = PROFILING_HDRS,
+    srcs = [
+        "internal/Tracy/TracyCuda.cpp",
+        "internal/Tracy/TracyRocm.cpp",
+    ],
+    hdrs = [
+        "internal/Tracy/Tracy.h",
+        "internal/Tracy/TracyCuda.h",
+        "internal/Tracy/TracyRocm.h",
+        "internal/Tracy/TracyZone.h",
+    ],
     # TracyRocm.cpp uses a constructor to promote Tracy symbols to RTLD_GLOBAL
     # so that the rocprofiler-sdk plugin can resolve them via dlsym.
     copts = ["-Wno-global-constructors"],
     defines = PROFILING_DEFINES,
-    deps = PROFILING_DEPS,
-)
-
-# Header-only view of the profiling API for the plugin implementation
-# (//max/internal/profiler), which compiles against Range.h/PluginABI.h but
-# must NOT link the shim — the plugin defines the same M::Profiling symbols,
-# and pulling both archives into its link would leave symbol resolution to
-# archive order.
-modular_cc_library(
-    name = "ProfilingHeaders",
-    hdrs = PROFILING_HDRS,
-    defines = PROFILING_DEFINES,
-    visibility = ["//max/internal/profiler:__pkg__"],
     deps = PROFILING_DEPS,
 )
 

@@ -950,6 +950,12 @@ modular_shared_library(
     ]),
     internal_deps = [
         "//MLRT:Core",
+        # The profiler host glue attaches the dlopen loader for
+        # libMAXProfilerPlugin.so to this DSO's //Support:ProfilingRanges copy, so the
+        # mo.profile bridge and Dynolog daemon registration work in mojo
+        # processes too. internal_deps: the OSS build drops it, so OSS mojo
+        # keeps the inert weak default and never compiles the loader.
+        "//Support:ProfilerHostGlue",
     ] + select({
         # Under --config=hal-device-context we don't link the full DeviceContext,
         # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
@@ -984,6 +990,7 @@ modular_shared_library(
         "//Support:Log",
         "//Support:ML",
         "//Support:Profiling",
+        "//Support:ProfilingRanges",
         "//Support:Threading",
         "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
@@ -1018,6 +1025,7 @@ modular_cc_library(
         "//Support:Context",
         "//Support:ML",
         "//Support:Profiling",
+        "//Support:ProfilingRanges",
         "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:ConversionPasses",

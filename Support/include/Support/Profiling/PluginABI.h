@@ -4,10 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// C ABI between the always-linked M::Profiling shim (RangeShim.cpp) and the
-// runtime-loaded profiler plugin, libMAXProfilerPlugin.so. The shim resolves
-// the single exported entry point, M_profilerPluginGetAPI, and forwards
-// every profiling call through the returned function-pointer table.
+// C ABI between the host glue (ProfilerHostGlue.cpp, the strong RangeSink
+// provider behind Support/Profiling/Ranges.h) and the runtime-loaded profiler
+// plugin, libMAXProfilerPlugin.so. The glue resolves the single exported entry
+// point, M_profilerPluginGetAPI, and forwards every profiling call through
+// the returned function-pointer table.
 //
 // Backend neutrality: nothing in this ABI names any profiling backend or
 // vendor library. Hardware backends live entirely inside the plugin (behind
@@ -22,8 +23,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_PROFILING_INTERNAL_PLUGINABI_H
-#define SUPPORT_PROFILING_INTERNAL_PLUGINABI_H
+#ifndef SUPPORT_PROFILING_PLUGINABI_H
+#define SUPPORT_PROFILING_PLUGINABI_H
 
 #include <stdbool.h> // NOLINT(modernize-deprecated-headers): C ABI header.
 #include <stddef.h>  // NOLINT(modernize-deprecated-headers)
@@ -111,4 +112,4 @@ typedef const M_ProfilerPluginAPI *(*M_ProfilerPluginGetAPIFn)(
 } // extern "C"
 #endif
 
-#endif // SUPPORT_PROFILING_INTERNAL_PLUGINABI_H
+#endif // SUPPORT_PROFILING_PLUGINABI_H
