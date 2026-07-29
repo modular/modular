@@ -5,7 +5,7 @@ description: Use speculative decoding to accelerate LLM inference
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import InstallOpenAI from '../../_includes/install-openai.mdx';
+import InstallOpenAI from '../_includes/install-openai.mdx';
 
 Speculative decoding accelerates LLM token generation without changing the
 model's outputs. A smaller, faster draft step proposes several candidate tokens,
@@ -29,7 +29,7 @@ implementation matures.
 
 We recommend running speculative decoding on an accelerator. For more
 information, see [System
-requirements](/max/packages#system-requirements).
+requirements](/packages#system-requirements).
 
 :::
 
@@ -203,11 +203,11 @@ flags.
 When using speculative decoding:
 
 - The `--enable-echo` flag isn't supported.
-- The [`--max-length`](/max/cli/serve/#--max-length-max_length) and
-  [`--draft-max-length`](/max/cli/serve/#--draft-max-length-draft_max_length)
+- The [`--max-length`](/cli/serve/#--max-length-max_length) and
+  [`--draft-max-length`](/cli/serve/#--draft-max-length-draft_max_length)
   are both capped at the draft model's maximum supported length. MAX
   clamps both to that limit if either exceeds it.
-- [Structured output](/max/serve/structured-output) is supported. MAX
+- [Structured output](/serve/structured-output) is supported. MAX
   applies the constraint bitmask to each speculated position during
   verification. This feature requires a GPU deployment.
 - Repetition, frequency, and presence penalties aren't supported when
@@ -221,11 +221,11 @@ You can combine speculative decoding with prefix caching and with
 disaggregated inference. The following topics go deeper on performance
 and deployment:
 
-- [Prefix caching with PagedAttention](/max/serve/prefix-caching): Use prefix
+- [Prefix caching with PagedAttention](/serve/prefix-caching): Use prefix
   caching and PagedAttention when serving a model with the MAX CLI.
-- [Benchmark MAX on NVIDIA or AMD GPUs](/max/deploy/benchmark): Learn how to
+- [Benchmark MAX on NVIDIA or AMD GPUs](/serve/benchmark): Learn how to
   use our benchmarking script to measure the performance of MAX.
-- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+- [Deploy MAX on GPU with self-hosted endpoints](/serve/local-to-cloud):
   Learn how to deploy MAX pipelines to cloud.
 - [Speculative decoding](https://handbook.modular.com/inference-optimization/speculative-decoding/):
   Learn more about it in the LLM Inference Handbook.

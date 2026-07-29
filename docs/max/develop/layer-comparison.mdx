@@ -19,7 +19,7 @@ to:
 5. Narrow down the underlying implementation issue.
 
 You can also use the
-[`debug-model`](/max/develop/model-bringup-skills/#debug-output-divergences)
+[`debug-model`](/develop/model-bringup-skills/#debug-output-divergences)
 skill to automate this process. In addition to layer comparison, the skill
 inspects the serving loop, which this page doesn't cover.
 
@@ -58,7 +58,7 @@ token IDs, position information, attention mask, and sequence length. If the
 inputs differ, tensors can diverge for reasons unrelated to the model
 implementation. Also, if your model doesn't load or compile, resolve those
 issues before you use layer comparison to debug. Learn more in the
-[Model debugging overview](/max/develop/debugging/).
+[Model debugging overview](/develop/debugging/).
 
 ## Capture MAX layer outputs
 
@@ -313,16 +313,16 @@ to confirm the model layer outputs no longer diverge.
 Print operations in a graph can prevent compiler optimization, so remove the
 hook with `hook.remove()` when you finish debugging. If you added individual
 `print()` ops inside your modules, remove those as well. To learn more about the
-graph compiler, see the [Graph overview](/max/develop/graph/).
+graph compiler, see the [Graph overview](/develop/graph/).
 
 ## Next steps
 
 Once you've localized the divergent layer and corrected your model:
 
-- [Repeat logit comparison](/max/develop/logit-comparison/) to validate that
+- [Repeat logit comparison](/develop/logit-comparison/) to validate that
   your model produces the expected logits.
 - Automate layer comparison with the
   [`debug-model`](https://github.com/modular/skills/blob/main/debug-model/SKILL.md)
   skill.
-- [Run benchmarks](/max/deploy/benchmark/) to measure model performance with
+- [Run benchmarks](/serve/benchmark/) to measure model performance with
   `max benchmark`.

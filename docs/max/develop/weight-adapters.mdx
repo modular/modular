@@ -7,12 +7,12 @@ Nearly all model architectures require a weight adapter. Write a weight adapter
 to convert checkpoint weights (most often published on Hugging Face) into the
 format expected by your MAX
 [`Module`](/api/python/generated/max.nn.Module/). Then, integrate the weight
-adapter into the [model pipeline](/max/develop/pipelines/).
+adapter into the [model pipeline](/develop/pipelines/).
 
 :::note
 
 You should be familiar with the `Module` class before writing a weight adapter.
-To learn more, see [Build a model graph with Module](/max/develop/modules/).
+To learn more, see [Build a model graph with Module](/develop/modules/).
 
 :::
 
@@ -392,11 +392,11 @@ weight_adapters={
 Once your adapter loads successfully, complete the remaining model bring-up
 steps:
 
-- [Implement the pipeline model](/max/develop/pipelines/): The pipeline model
+- [Implement the pipeline model](/develop/pipelines/): The pipeline model
   class connects weight loading, graph construction, compilation, and execution.
-- [Configure quantization support](/max/graph/quantize/): If your checkpoint
+- [Configure quantization support](/graph/quantize/): If your checkpoint
   uses a quantized format, implement the corresponding `QuantConfig` and
   `QuantFormat` integration.
 
 For the complete workflow, see
-[Model bring-up workflow](/max/develop/model-bringup-workflow/).
+[Model bring-up workflow](/develop/model-bringup-workflow/).

@@ -6,10 +6,10 @@ description: Generate text using MAX with OpenAI-compatible chat and completion 
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import InstallModular from '../../_includes/install-modular.mdx';
-import InstallOpenAI from '../../_includes/install-openai.mdx';
+import InstallModular from '../_includes/install-modular.mdx';
+import InstallOpenAI from '../_includes/install-openai.mdx';
 import Requirements from '@site/src/components/Requirements';
-import { requirementsWithGPU } from '../../requirements';
+import { requirementsWithGPU } from '../requirements';
 
 MAX makes it easy to generate text with large language models, whether for
 conversational applications, single-turn prompts, or offline inference
@@ -21,24 +21,24 @@ or an ongoing conversation. They can be used for a wide range of tasks,
 including writing content, generating synthetic data, building chatbots, or
 powering multi-turn assistants. MAX provides two main endpoints for text
 completions:
-[`v1/chat/completions`](/max/inference/text-to-text#v1chatcompletions)
-and [`v1/completions`](/max/inference/text-to-text#v1completions).
+[`v1/chat/completions`](/serve/text-to-text#v1chatcompletions)
+and [`v1/completions`](/serve/text-to-text#v1completions).
 
 ## Endpoints
 
-The [`v1/chat/completions`](/max/rest-api/#POST/v1/chat/completions)
+The [`v1/chat/completions`](/rest-api/#POST/v1/chat/completions)
 endpoint is recommended as the default for most text use cases and works best
 with instruction-tuned models. This endpoint supports both single-turn and
 multi-turn scenarios.
 
-The [`v1/completions`](/max/rest-api/#POST/v1/completions) endpoint is
+The [`v1/completions`](/rest-api/#POST/v1/completions) endpoint is
 also supported for traditional single-turn text generation tasks, which is
 useful for offline inference or generating text from a prompt without
 conversational context.
 
 ### `v1/chat/completions`
 
-The [`v1/chat/completions`](/max/rest-api/#POST/v1/chat/completions)
+The [`v1/chat/completions`](/rest-api/#POST/v1/chat/completions)
 endpoint is designed for chat-based models and supports both single-turn and
 multi-turn interactions. You provide a sequence of structured messages with
 roles (`system`, `user`, `assistant`, or `developer`), and the model generates
@@ -85,7 +85,7 @@ enough for general text generation workflows.
 
 ### `v1/completions`
 
-The [`v1/completions`](/max/rest-api/#POST/v1/completions) endpoint
+The [`v1/completions`](/rest-api/#POST/v1/completions) endpoint
 supports traditional text completions. You provide a prompt, and the model
 returns generated text. This endpoint is ideal when you only need a single
 response per request, such as:
@@ -117,7 +117,7 @@ Create a Python project to install our APIs and CLI tools:
 
 ### Serve your model
 
-Use the [`max serve`](/max/cli/serve) command to start a local server with
+Use the [`max serve`](/cli/serve) command to start a local server with
 the Gemma 4 model:
 
 ```bash
@@ -129,7 +129,7 @@ model on `http://localhost:8000/v1/chat/completions`, an [OpenAI compatible
 endpoint](https://platform.openai.com/docs/api-reference/chat).
 
 While this example uses the Gemma 4 model, you can replace it with any of the
-models listed in our [supported models](/max/models/). Make sure that the model
+models listed in our [supported models](/models/). Make sure that the model
 you choose can fit into the memory of your machine.
 
 :::note
@@ -149,7 +149,7 @@ Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
 ```
 
 For a complete list of `max` CLI commands and options, refer to the [MAX CLI
-reference](/max/cli).
+reference](/cli).
 
 ### Generate a text chat completion
 
@@ -271,14 +271,14 @@ how many of the completion tokens were spent on reasoning (it's `0` otherwise).
 </Tabs>
 
 For complete details on all available API endpoints and options, see the
-[REST API documentation](/max/rest-api/).
+[REST API documentation](/rest-api/).
 
 ## Next steps
 
 Now that you have successfully set up MAX with an OpenAI-compatible chat
 endpoint, check out additional serving optimizations specific to your use case.
 
-- [Structured output](/max/serve/structured-output): Enable structured output
+- [Structured output](/serve/structured-output): Enable structured output
   with your GenAI deployments for predictable responses.
-- [Prefix caching with PagedAttention](/max/serve/prefix-caching): Use prefix
+- [Prefix caching with PagedAttention](/serve/prefix-caching): Use prefix
   caching and PagedAttention when serving a model with the MAX CLI.

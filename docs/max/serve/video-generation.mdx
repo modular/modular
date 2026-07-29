@@ -5,20 +5,20 @@ description: Generate videos from text prompts or animate existing images using 
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import InstallModular from '../../_includes/install-modular.mdx';
-import InstallOpenAI from '../../_includes/install-openai.mdx';
+import InstallModular from '../_includes/install-modular.mdx';
+import InstallOpenAI from '../_includes/install-openai.mdx';
 import Requirements from '@site/src/components/Requirements';
-import { requirementsWithGPU } from '../../requirements';
+import { requirementsWithGPU } from '../requirements';
 
 With MAX, you can deploy open-source video generation models on your local
 system or in the cloud and send inference requests with our REST API.
 This page explains how to use the
-[`v1/responses`](/max/rest-api/#POST/v1/responses) endpoint to generate
+[`v1/responses`](/rest-api/#POST/v1/responses) endpoint to generate
 videos from text prompts or animate existing images.
 
 ## Endpoint
 
-The MAX [`v1/responses`](/max/rest-api/#POST/v1/responses) endpoint provides a
+The MAX [`v1/responses`](/rest-api/#POST/v1/responses) endpoint provides a
 unified interface for diverse AI tasks including video generation. It's built on
 [Open Responses](https://huggingface.co/blog/open-responses), an open-source
 initiative to create a standardized, provider-agnostic API specification. The
@@ -110,7 +110,7 @@ count, and denoising steps.
 
 The following are some commonly used parameters under `provider_options.video`.
 This is not an exhaustive list. For the complete reference, see
-[`provider_options`](/max/rest-api/#POST/v1/responses.body.provider_options).
+[`provider_options`](/rest-api/#POST/v1/responses.body.provider_options).
 
 | Parameter           | Type    | Default       | Description                                                                                                                                  |
 |---------------------|---------|---------------|----------------------------------------------------------------------------------------------------------------------------------------------|
@@ -140,7 +140,7 @@ frames:
 
 For advanced parameters including `guidance_scale_2`, `true_cfg_scale`,
 `cfg_normalization`, `cfg_truncation`, and `residual_threshold`, see the
-[`/v1/responses` API reference](/max/rest-api/#POST/v1/responses).
+[`/v1/responses` API reference](/rest-api/#POST/v1/responses).
 
 ## Quickstart
 
@@ -151,7 +151,7 @@ for text-to-video generation.
 :::caution GPU required
 
 To run Wan2.2-T2V-A14B-Diffusers, your system must have a [compatible
-GPU](/max/packages#gpu-compatibility) with sufficient GPU RAM. Video generation
+GPU](/packages#gpu-compatibility) with sufficient GPU RAM. Video generation
 is GPU-intensive and typically takes several minutes per clip on a single GPU.
 
 :::
@@ -170,13 +170,13 @@ Create a Python project to install our APIs and CLI tools:
 ### Serve your model
 
 First, enable the `v1/responses` endpoint by setting the `MAX_SERVE_API_TYPES`
-[environment variable](/max/environment-variables):
+[environment variable](/environment-variables):
 
 ```bash
 export MAX_SERVE_API_TYPES='["responses"]'
 ```
 
-Then, use the [`max serve`](/max/cli/serve) command to start a local model
+Then, use the [`max serve`](/cli/serve) command to start a local model
 server:
 
 ```bash
@@ -191,7 +191,7 @@ Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
 ```
 
 For a complete list of `max` CLI commands and options, refer to the
-[MAX CLI reference](/max/cli).
+[MAX CLI reference](/cli).
 
 ### Generate a video from text
 
@@ -311,17 +311,17 @@ error, so it's worth understanding the three modalities before serving a model:
   that handles both workflows. Examples: `Wan2.2-TI2V-*`.
 
 For the full list of supported video generation models, see
-[Supported models](/max/models).
+[Supported models](/models).
 
 ## Next steps
 
 Now that you can generate videos, explore other inference capabilities and
 deployment options.
 
-- [Image generation](/max/inference/image-generation): Generate images from
+- [Image generation](/serve/image-generation): Generate images from
   text prompts or transform existing images using the MAX v1/responses endpoint.
-- [Image and video to text](/max/inference/image-to-text): Use the MAX chat
+- [Image and video to text](/serve/image-to-text): Use the MAX chat
   completions endpoint with image or video input to generate descriptions and
   answer questions about visual content.
-- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+- [Deploy MAX on GPU with self-hosted endpoints](/serve/local-to-cloud):
   Learn how to deploy MAX pipelines to cloud.

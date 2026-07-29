@@ -5,15 +5,15 @@ description: Learn how to use our benchmarking script to measure the performance
 is_tutorial: true
 ---
 
-import InstallModular from '../../_includes/install-modular.mdx';
+import InstallModular from '../_includes/install-modular.mdx';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import Requirements from '@site/src/components/Requirements';
-import { requirementsWithDockerAndGPU } from '../../requirements';
+import { requirementsWithDockerAndGPU } from '../requirements';
 
 In this tutorial, you'll deploy a MAX inference endpoint using our
-[GPU-enabled containers](/max/container) and evaluate endpoint performance with
-the [`max benchmark`](/max/cli/benchmark) CLI command. You'll collect key
+[GPU-enabled containers](/container) and evaluate endpoint performance with
+the [`max benchmark`](/cli/benchmark) CLI command. You'll collect key
 metrics such as throughput, latency, and token-processing speed to benchmark
 under production-like workloads and establish a baseline before scaling or
 integrating MAX into your deployments.
@@ -59,7 +59,7 @@ This tutorial is intended for production environments using Docker,
 which can be difficult to set up with GPU access on some systems. If you have
 any trouble with Docker, you can instead run benchmarks on an endpoint created
 with the `max serve` command—for instructions, see the [quickstart
-guide](/max/get-started).
+guide](/get-started).
 
 :::
 
@@ -86,7 +86,7 @@ Face](https://huggingface.co/google/gemma-3-27b-it).
 
 We provide a pre-configured GPU-enabled Docker container that simplifies the
 process to deploy an endpoint with MAX. For more information, see [MAX
-container](/max/container).
+container](/container).
 
 Use this command to pull the MAX container and start the model endpoint:
 
@@ -125,10 +125,10 @@ Use this command to pull the MAX container and start the model endpoint:
 </Tabs>
 
 If you want to try a different model, see our
-[supported models](/max/models/).
+[supported models](/models/).
 
 The server is running when you see the following terminal
-message (beware Docker prints [JSON logs by default](/max/container#logs)):
+message (beware Docker prints [JSON logs by default](/container#logs)):
 
 ```output
 🚀 Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
@@ -179,7 +179,7 @@ max benchmark --config-file gemma-3-27b-sonnet-decode-heavy-prefix200.yaml
 ```
 
 For more information, including other datasets and configuration options, see
-the [`max benchmark` documentation](/max/cli/benchmark).
+the [`max benchmark` documentation](/cli/benchmark).
 
 ### Use your own dataset
 
@@ -313,9 +313,9 @@ Now that you have detailed benchmarking results for Gemma 3 on
 MAX using an NVIDIA or AMD GPU, you can explore more advanced scaling
 optimizations:
 
-- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+- [Deploy MAX on GPU with self-hosted endpoints](/serve/local-to-cloud):
   Learn how to deploy MAX pipelines to cloud.
-- [Using LoRA adapters](/max/serve/lora-adapters): Use LoRA adapters with MAX
+- [Using LoRA adapters](/serve/lora-adapters): Use LoRA adapters with MAX
   to serve task-specific, fine-tuned variants of LLMs.
 
 To read more about our performance methodology, check our blog post,

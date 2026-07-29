@@ -65,8 +65,8 @@ The `--quantization-encoding` flag accepts the following values:
 - `float8_e4m3fn`: 8-bit quantization with e4m3fn encoding.
 - `gptq`: Specialized quantization optimized for transformer-based models.
 
-For more information on the `max` CLI, see the [MAX CLI](/max/cli)
-documentation or the [MAX API reference](/max/rest-api/).
+For more information on the `max` CLI, see the [MAX CLI](/cli)
+documentation or the [MAX API reference](/rest-api/).
 
 ## Quantized layer implementation
 
@@ -166,7 +166,7 @@ handles the dequantization process during inference, giving you the performance
 benefits of quantization without having to manage the low-level details.
 
 If you're building a custom architecture that loads FP8 or FP4 checkpoints, see
-[Map weight names](/max/develop/model-bringup-workflow#fp8-and-fp4-checkpoints)
+[Map weight names](/develop/model-bringup-workflow#fp8-and-fp4-checkpoints)
 in the model bring-up workflow guide.
 
 To learn more about quantization, read the LLM Inference Handbook page about

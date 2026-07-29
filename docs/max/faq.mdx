@@ -17,7 +17,7 @@ channel](https://www.discord.gg/modular).
 You can install `modular` on Mac and Linux operating systems.
 
 For more details, see the [system
-requirements](/max/packages#system-requirements).
+requirements](/packages#system-requirements).
 
 ### What are the GPU requirements? {#gpu-requirements}
 
@@ -25,7 +25,7 @@ The Modular Platform supports both CPUs and GPUs, so you don't always need a
 GPU to serve a model—although some larger models do require a GPU.
 
 For details about GPU support, see our [list of compatible
-GPUs](/max/packages/#gpu-compatibility).
+GPUs](/packages/#gpu-compatibility).
 
 ### Will MAX be open-sourced?
 
@@ -50,7 +50,7 @@ community](https://www.modular.com/community).
 You can deploy our MAX container across a variety of VM and Kubernetes-based
 cloud services, including AWS, GCP, and Azure. To get started with any of them,
 check out our
-[tutorial to deploy a model to the cloud](/max/deploy/local-to-cloud/).
+[tutorial to deploy a model to the cloud](/serve/local-to-cloud/).
 
 ### Can I run MAX locally?
 
@@ -73,7 +73,7 @@ single FMA instruction that rounds once instead of twice. The FMA result is
 more mathematically accurate, but individual elements can differ from PyTorch
 by up to 1 ULP (unit in the last place). This has no impact on model-level
 accuracy. For details, see [Numerical
-precision](/max/develop/dtypes#numerical-precision).
+precision](/develop/dtypes#numerical-precision).
 
 ## Installation
 
@@ -82,7 +82,7 @@ precision](/max/develop/dtypes#numerical-precision).
 Yes, it's safe and easy to use the stable
 and nightly builds for different projects, each with their own virtual
 environment and package dependencies. For more information,
-read the [packages guide](/max/packages).
+read the [packages guide](/packages).
 
 ### Does the MAX SDK collect telemetry?
 
@@ -97,4 +97,4 @@ user-submitted bug reports, which are limited and would severely limit our
 performance insights.
 
 To disable serving telemetry, see the [MAX container
-documentation](/max/container#metrics).
+documentation](/container#metrics).

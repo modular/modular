@@ -12,7 +12,7 @@ that computation as a static data structure the compiler can optimize. You need
 both to build a runnable model.
 
 You'll use modules to build a model definition from the ground up, but you'll
-also use them to extend an existing [MAX-supported model](/max/models/) with
+also use them to extend an existing [MAX-supported model](/models/) with
 custom layers. This page shows you how to compose built-in modules, write
 custom modules with explicit weights, load checkpoint data, and construct a
 graph. By the end, you'll understand how to build a complete model definition
@@ -21,7 +21,7 @@ and verify its outputs locally.
 :::note
 
 To understand where modules and graphs fit in the full model development
-workflow, see the [Model development overview](/max/develop/).
+workflow, see the [Model development overview](/develop/).
 
 :::
 
@@ -59,7 +59,7 @@ programming pattern relies on the following key APIs:
 This page uses explicit graph construction with the `max.graph` and `max.nn`
 packages. MAX also provides an eager-style execution pattern with the
 `max.experimental` package. For more information, see the [Graph
-overview](/max/develop/graph).
+overview](/develop/graph).
 
 :::
 
@@ -72,7 +72,7 @@ prebuilt modules, such as [`Linear`](/api/python/generated/max.nn.Linear/),
 [`RMSNorm`](/api/python/generated/max.nn.RMSNorm/),
 [`LayerNorm`](/api/python/generated/max.nn.LayerNorm/), and others. When
 your architecture needs a component none of these provide, you write a custom
-layer; see [Write a custom layer](/max/develop/layers/).
+layer; see [Write a custom layer](/develop/layers/).
 
 Here's a simple module that composes two built-in `Linear` modules:
 
@@ -223,7 +223,7 @@ internal registry so you can pass it to the compiler later on.
 To load weights from a checkpoint file in safetensors or GGUF format, you'll
 need a weight adapter that translates the checkpoint's key names into the names
 your module expects. Learn more in [Weight
-adapters](/max/develop/weight-adapters).
+adapters](/develop/weight-adapters).
 
 If you want to see your module weights'
 fully-qualified names to make sure you're writing your weight adapter
@@ -324,7 +324,7 @@ stored the dictionary inside the `Module` instance. Reuse it by passing
 Calling the runnable `Model` runs `execute()` and returns a list of output
 buffers. Convert each buffer to a NumPy array with `to_numpy()` to inspect the
 results. Output post-processing such as decoding happens elsewhere in the
-[inference pipeline](/max/develop/pipelines/).
+[inference pipeline](/develop/pipelines/).
 
 ### Verify layer correctness
 
@@ -361,8 +361,8 @@ side-effecting operation that can prevent graph optimizations.
 
 At this point, you understand how to build a small model graph from scratch. To
 learn how to customize an existing MAX model graph, see the [Model bring-up
-workflow](/max/develop/model-bringup-workflow/).
+workflow](/develop/model-bringup-workflow/).
 
 Once you have a model graph, you still need to connect it to an inference
 pipeline that handles tokenization, batching, and request routing. Learn more
-in [Model pipelines](/max/develop/pipelines/).
+in [Model pipelines](/develop/pipelines/).
