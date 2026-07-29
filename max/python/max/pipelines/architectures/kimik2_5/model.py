@@ -244,7 +244,7 @@ class KimiK2_5Model(
     ) -> KVCacheParamInterface:
         encoding = _select_quantization_encoding(
             pipeline_config.model, KimiK2_5Config.DEFAULT_ENCODING
-        )[0]
+        )
         if (
             is_float4_encoding(encoding)
             and kv_cache_config.kv_cache_format is None

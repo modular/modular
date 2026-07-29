@@ -173,7 +173,7 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             for spec in model_config.device_specs
         ]
         kv_cache_config = model_config.kv_cache
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             model_config, cls.DEFAULT_ENCODING
         )
         cache_dtype = cache_dtype_for_encoding(

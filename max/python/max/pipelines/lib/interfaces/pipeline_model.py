@@ -483,7 +483,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             None,
         )
         if default is not None:
-            return _select_quantization_encoding(model_config, default)[0]
+            return _select_quantization_encoding(model_config, default)
         encoding = model_config.quantization_encoding
         if encoding is None:
             raise ValueError(

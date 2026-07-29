@@ -63,7 +63,7 @@ class DeepseekV3NextNMemoryPlanner(PagedMemoryPlanner):
         )
         encoding = _select_quantization_encoding(
             draft_model_config, DeepseekV3NextNConfig.DEFAULT_ENCODING
-        )[0]
+        )
         # NextN weights are always BF16 even when the pipeline encoding is FP4,
         # because the NextN checkpoint is not quantized.
         if is_float4_encoding(encoding):

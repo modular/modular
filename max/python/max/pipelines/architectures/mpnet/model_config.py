@@ -68,7 +68,7 @@ class MPNetConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
             An initialized MPNetConfig instance.
         """
         model_config = model_config or pipeline_config.model
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             model_config, cls.DEFAULT_ENCODING
         )
         if len(model_config.device_specs) != 1:

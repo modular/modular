@@ -106,7 +106,7 @@ class KimiK2_5TextConfig(DeepseekV3Config):
                 "Please ensure the model repository contains a valid config.json file."
             )
         kv_cache_config = model_config.kv_cache
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             model_config, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)
@@ -454,7 +454,7 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             raise ValueError("vision_config not found in huggingface_config")
 
         # Get quantization encoding for dtype
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             pipeline_config.model, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)

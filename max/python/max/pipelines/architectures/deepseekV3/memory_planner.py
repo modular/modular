@@ -55,14 +55,14 @@ def _get_mtp_draft_ep_dispatch_dtype(
 
     encoding = _select_quantization_encoding(
         pipeline_config.model, DeepseekV3Config.DEFAULT_ENCODING
-    )[0]
+    )
     if not is_float4_encoding(encoding):
         return None
 
     draft_encoding = (
         _select_quantization_encoding(
             pipeline_config.draft_model, DeepseekV3Config.DEFAULT_ENCODING
-        )[0]
+        )
         if pipeline_config.draft_model is not None
         else None
     )
@@ -120,7 +120,7 @@ class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
 
         encoding = _select_quantization_encoding(
             pipeline_config.model, DeepseekV3Config.DEFAULT_ENCODING
-        )[0]
+        )
 
         def _n_elems_to_bytes(n_elems: int) -> int:
             dtype = supported_encoding_dtype(encoding).size_in_bytes
@@ -220,7 +220,7 @@ class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
         """
         encoding = _select_quantization_encoding(
             pipeline_config.model, DeepseekV3Config.DEFAULT_ENCODING
-        )[0]
+        )
         mla_activation_memory: int = 0
         moe_activation_memory: int = 0
         ep_buffer_memory = 0

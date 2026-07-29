@@ -122,7 +122,7 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             pipeline_config, huggingface_config, text_config.hidden_size
         )
 
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             model_config, cls.DEFAULT_ENCODING
         )
 
@@ -173,7 +173,7 @@ def _create_llama3_text_config(
     from pipeline_config.model.huggingface_config.
     """
     kv_cache_config = pipeline_config.model.kv_cache
-    quantization_encoding, _, _ = _select_quantization_encoding(
+    quantization_encoding = _select_quantization_encoding(
         pipeline_config.model, Idefics3Config.DEFAULT_ENCODING
     )
     dtype = supported_encoding_dtype(quantization_encoding)

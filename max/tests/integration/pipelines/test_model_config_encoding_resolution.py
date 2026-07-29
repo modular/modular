@@ -39,7 +39,10 @@ import pytest
 from max.driver import DeviceSpec
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import MAXModelConfig
-from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.config.model_config import (
+    _select_dtype_cast,
+    _select_quantization_encoding,
+)
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
@@ -166,7 +169,7 @@ def _resolve_encoding(
     :func:`_select_quantization_encoding` helper. Writes the result back onto
     the config so tests can keep asserting on ``config.quantization_encoding``.
     """
-    encoding, _, _ = _select_quantization_encoding(config, default_encoding)
+    encoding = _select_quantization_encoding(config, default_encoding)
     config.quantization_encoding = encoding
 
 
@@ -180,9 +183,8 @@ def _resolve_encoding_and_weight_path(
     production: select the effective encoding, then validate device
     compatibility and discover weight files against that resolved encoding.
     """
-    encoding, cast_from, _ = _select_quantization_encoding(
-        config, default_encoding
-    )
+    encoding = _select_quantization_encoding(config, default_encoding)
+    cast_from, _ = _select_dtype_cast(config, default_encoding)
     config.quantization_encoding = encoding
     config.validate_and_resolve_with_resolved_quantization_encoding(
         resolved_encoding=encoding,

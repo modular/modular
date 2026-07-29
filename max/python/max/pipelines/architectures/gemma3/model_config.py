@@ -196,7 +196,7 @@ class Gemma3Config(
             An initialized :obj:`Gemma3Config` instance.
         """
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             pipeline_config.model, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)

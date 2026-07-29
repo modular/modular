@@ -76,7 +76,7 @@ class KimiK25MemoryPlanner(PagedMemoryPlanner):
 
         encoding = _select_quantization_encoding(
             pipeline_config.model, KimiK2_5Config.DEFAULT_ENCODING
-        )[0]
+        )
 
         def _n_elems_to_bytes(n_elems: int) -> int:
             dtype = supported_encoding_dtype(encoding).size_in_bytes
@@ -212,7 +212,7 @@ class KimiK25MemoryPlanner(PagedMemoryPlanner):
         """
         encoding = _select_quantization_encoding(
             pipeline_config.model, KimiK2_5Config.DEFAULT_ENCODING
-        )[0]
+        )
         mla_activation_memory: int = 0
         moe_activation_memory: int = 0
         ep_buffer_memory = 0

@@ -332,7 +332,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         """
         resolved_encoding = _select_quantization_encoding(
             pipeline_config.model, NemotronHConfig.DEFAULT_ENCODING
-        )[0]
+        )
         if (
             resolved_encoding == "float8_e4m3fn"
             and kv_cache_config.kv_cache_format is None
@@ -372,7 +372,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             )
         quantization_encoding = _select_quantization_encoding(
             model_config, cls.DEFAULT_ENCODING
-        )[0]
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -413,7 +413,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         if dtype == DType.float8_e4m3fn:
             dtype = DType.bfloat16
         kinds = parse_hybrid_pattern(huggingface_config.hybrid_override_pattern)
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             pipeline_config.model, cls.DEFAULT_ENCODING
         )
         return cls(

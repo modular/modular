@@ -16,7 +16,9 @@ from __future__ import annotations
 import numpy as np
 from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import PipelineConfig
-from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.config.model_config import (
+    _select_dtype_cast,
+)
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 
@@ -98,7 +100,7 @@ def convert_safetensor_state_dict(
         new_state_dict[max_name] = weight_data
 
     # TODO(MXF-517): this should be resolved by the ArchConfig, not the adapter.
-    _encoding, cast_from, cast_to = _select_quantization_encoding(
+    cast_from, cast_to = _select_dtype_cast(
         pipeline_config.model, MambaConfig.DEFAULT_ENCODING
     )
 

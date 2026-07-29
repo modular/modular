@@ -94,7 +94,7 @@ class Idefics3VisionConfig:
 
         quantization_encoding = _select_quantization_encoding(
             pipeline_config.model, Idefics3Config.DEFAULT_ENCODING
-        )[0]
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
 
         vision_config = getattr(huggingface_config, "vision_config", None)
@@ -209,7 +209,7 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             pipeline_config, huggingface_config, text_config.hidden_size
         )
 
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             model_config, cls.DEFAULT_ENCODING
         )
 

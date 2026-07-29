@@ -191,7 +191,7 @@ class DeepseekV2Model(
                 _select_quantization_encoding(
                     self.pipeline_config.model,
                     DeepseekV2Config.DEFAULT_ENCODING,
-                )[0],
+                ),
                 self.pipeline_config.model.kv_cache.kv_cache_format,
             ),
         )

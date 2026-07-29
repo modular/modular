@@ -37,6 +37,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config.model_config import (
     _infer_weight_path,
+    _select_dtype_cast,
     _select_quantization_encoding,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
@@ -886,9 +887,8 @@ class TestFloat32WeightFallbackScoping:
             assert _infer_weight_path(config, "bfloat16", None) == []
 
             # Architecture-level given-encoding resolution.
-            encoding, cast_from, cast_to = _select_quantization_encoding(
-                config, "bfloat16"
-            )
+            encoding = _select_quantization_encoding(config, "bfloat16")
+            cast_from, cast_to = _select_dtype_cast(config, "bfloat16")
 
         # The requested bfloat16 is preserved; the float32 weights are cast at
         # load time, recorded in the dtype-cast bookkeeping.
@@ -921,9 +921,8 @@ class TestFloat32WeightFallbackScoping:
                 return_value=True,
             ),
         ):
-            encoding, cast_from, cast_to = _select_quantization_encoding(
-                config, "bfloat16"
-            )
+            encoding = _select_quantization_encoding(config, "bfloat16")
+            cast_from, cast_to = _select_dtype_cast(config, "bfloat16")
 
         assert encoding == "bfloat16"
         assert cast_from == "float32"

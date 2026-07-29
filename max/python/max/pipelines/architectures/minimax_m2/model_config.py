@@ -143,7 +143,7 @@ class MiniMaxM2Config(Llama3Config):
         )
 
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             pipeline_config.model, cls.DEFAULT_ENCODING
         )
         cache_dtype = cache_dtype_for_encoding(

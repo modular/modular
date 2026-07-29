@@ -109,7 +109,7 @@ class MistralConfig(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> Self:
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             pipeline_config.model, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)

@@ -62,7 +62,7 @@ class Qwen3_5MemoryPlanner(PagedMemoryPlanner):
         # Determine state dtype bytes: states stored in model dtype (typically bfloat16).
         encoding = _select_quantization_encoding(
             pipeline_config.model, Qwen3_5Config.DEFAULT_ENCODING
-        )[0]
+        )
         state_dtype = supported_encoding_dtype(encoding)
         dtype_bytes = state_dtype.size_in_bytes
         bytes_per_layer = (

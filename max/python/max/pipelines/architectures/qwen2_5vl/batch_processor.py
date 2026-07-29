@@ -75,7 +75,7 @@ class Qwen2_5VLBatchProcessor(
             quantization_encoding = _select_quantization_encoding(
                 self.runtime.pipeline_config.model,
                 Qwen2_5VLConfig.DEFAULT_ENCODING,
-            )[0]
+            )
             dtype = supported_encoding_dtype(quantization_encoding)
             self._cached_empty_embeddings = Buffer.zeros(
                 shape=[0, hf_config.text_config.hidden_size],

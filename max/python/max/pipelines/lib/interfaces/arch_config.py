@@ -344,7 +344,7 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
         model_config: MAXModelConfig | None = None,
     ) -> Self:
         model_config = model_config or pipeline_config.model
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             model_config, cls.DEFAULT_ENCODING
         )
         return cls(

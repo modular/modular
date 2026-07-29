@@ -433,7 +433,7 @@ def _resolve_given_quantization_encoding(
     return encoding, None, None
 
 
-def _select_quantization_encoding(
+def _select_encoding_and_dtype_cast(
     config: MAXModelConfig,
     default_encoding: SupportedEncoding,
 ) -> tuple[
@@ -441,16 +441,19 @@ def _select_quantization_encoding(
     SupportedEncoding | None,
     SupportedEncoding | None,
 ]:
-    """Resolves the encoding a model will run with, against its architecture.
+    """Resolves the encoding a model will run with plus any load-time cast.
 
     Arch-aware sibling of :func:`_infer_quantization_encoding`: the consumer
-    (an ``ArchConfig``) calls this with the architecture's ``default_encoding``
-    to obtain the effective ``quantization_encoding`` plus any
-    float32<->bfloat16 load-time cast. Read-only -- does not mutate *config*.
+    calls this with the architecture's ``default_encoding`` to obtain the
+    effective ``quantization_encoding`` plus any float32<->bfloat16 load-time
+    cast. Read-only -- does not mutate *config*.
+
+    Prefer :func:`_select_quantization_encoding` (encoding only) or
+    :func:`_select_dtype_cast` (cast only); this helper backs both.
 
     Returns:
-        ``(encoding, applied_dtype_cast_from, applied_dtype_cast_to)``. The
-        cast fields are ``None`` unless a cast was resolved.
+        ``(encoding, cast_from, cast_to)``. The cast fields are ``None`` unless
+        a cast was resolved.
     """
     if config.quantization_encoding is not None:
         return _resolve_given_quantization_encoding(config)
@@ -475,6 +478,36 @@ def _select_quantization_encoding(
         encoding = cast_to
 
     return encoding, cast_from, cast_to
+
+
+def _select_quantization_encoding(
+    config: MAXModelConfig,
+    default_encoding: SupportedEncoding,
+) -> SupportedEncoding:
+    """Resolves the encoding a model will run with, against its architecture.
+
+    The consumer (an ``ArchConfig``) calls this with the architecture's
+    ``default_encoding`` to obtain the effective ``quantization_encoding``.
+    Read-only -- does not mutate *config*.
+    """
+    return _select_encoding_and_dtype_cast(config, default_encoding)[0]
+
+
+def _select_dtype_cast(
+    config: MAXModelConfig,
+    default_encoding: SupportedEncoding,
+) -> tuple[SupportedEncoding | None, SupportedEncoding | None]:
+    """Resolves the load-time weight dtype cast for a model, if any.
+
+    Returns ``(cast_from, cast_to)`` describing a float32<->bfloat16 cast
+    applied when loading weights against the resolved encoding, or
+    ``(None, None)`` when no cast applies. Read-only -- does not mutate
+    *config*.
+    """
+    _, cast_from, cast_to = _select_encoding_and_dtype_cast(
+        config, default_encoding
+    )
+    return cast_from, cast_to
 
 
 class MAXModelConfigBase(ConfigFileModel):

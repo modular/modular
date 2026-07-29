@@ -70,7 +70,7 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
     ) -> int:
         encoding = _select_quantization_encoding(
             pipeline_config.model, LagunaConfig.DEFAULT_ENCODING
-        )[0]
+        )
         n_gpus_per_node = len(pipeline_config.model.device_specs)
         num_experts = getattr(huggingface_config, "num_local_experts", 256)
         moe_dim = getattr(huggingface_config, "intermediate_size", 1536)
