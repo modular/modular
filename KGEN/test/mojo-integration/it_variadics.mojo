@@ -454,7 +454,7 @@ def forward_sum_intable_with_bias[*Ts: Intable](*pack: *Ts, bias: Int) -> Int:
 # Concatenate all pack elements as `Writable` (same forwarding shape as the
 # `Intable` helpers above).
 def concat_writable[*Ts: Writable](*pack: *Ts) -> String:
-    return String.write(*pack)
+    return String(*pack)
 
 
 def forward_concat_writable[*Ts: Writable](*pack: *Ts) -> String:

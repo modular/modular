@@ -9,15 +9,23 @@ def simple_fn(x: Int):
     print(x)  # simple_fn stop
 
 
+# Passing a generic value into a variadic pack (`String(x)`, `print(x)`)
+# attributes the pack-setup code to the `def` line, so the breakpoint would
+# stop on the signature instead of the first statement. Build the string with
+# non-variadic `write` calls instead.
 def parametrized_fn[T: Writable](x: T):
-    print(String.write(x))  # parametrized_fn stop
+    var s = String()  # parametrized_fn stop
+    s.write(x)
+    print(s)
 
 
 @fieldwise_init
 struct Struct[T1: Writable]:
     def parametrized_method[T2: Writable](self, x: Self.T1, y: T2):
-        print(String.write(x))  # parametrized_method stop
-        print(String.write(y))
+        var s = String()  # parametrized_method stop
+        s.write(x)
+        s.write(y)
+        print(s)
 
 
 def main():
