@@ -10,12 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Defines the `stack_allocation` function for stack-based memory allocation.
+"""Defines the `unsafe_stack_allocation` function for stack-based memory
+allocation.
 
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 ```
 """
 
@@ -24,19 +25,14 @@ from std.sys import align_of, is_gpu
 from std._plugin import CurrentPlugin
 
 
-# TODO(MSTDL-2015): ASAN error when updating to use `UnsafePointer`.
 @always_inline
-def stack_allocation[
+def unsafe_stack_allocation[
     count: Int,
     dtype: DType,
     /,
     alignment: Int = align_of[dtype](),
     address_space: AddressSpace = AddressSpace.GENERIC,
-]() -> UnsafePointer[
-    Scalar[dtype],
-    MutUntrackedOrigin,
-    address_space=address_space,
-]:
+]() -> Pointer[Scalar[dtype], MutUntrackedOrigin, address_space=address_space]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
 
@@ -50,7 +46,7 @@ def stack_allocation[
         A data pointer of the given type pointing to the allocated space.
     """
 
-    return stack_allocation[
+    return unsafe_stack_allocation[
         count, Scalar[dtype], alignment=alignment, address_space=address_space
     ]()
 
@@ -61,20 +57,19 @@ comptime _StackAllocationPluginHookFnType[address_space: AddressSpace] = def[
     /,
     name: Optional[StaticString],
     alignment: Int,
-]() thin -> UnsafePointer[type, MutUntrackedOrigin, address_space=address_space]
-"""Plugin-hook signature for `PluginHooks.stack_allocation_fn`; keep in sync with `stack_allocation`."""
+]() thin -> Pointer[type, MutUntrackedOrigin, address_space=address_space]
+"""Plugin-hook signature for `PluginHooks.stack_allocation_fn`; keep in sync with `unsafe_stack_allocation`."""
 
 
-# TODO(MSTDL-2015): ASAN error when updating to use `UnsafePointer`.
 @always_inline
-def stack_allocation[
+def unsafe_stack_allocation[
     count: Int,
     type: AnyType,
     /,
     name: Optional[StaticString] = None,
     alignment: Int = align_of[type](),
     address_space: AddressSpace = AddressSpace.GENERIC,
-]() -> UnsafePointer[type, MutUntrackedOrigin, address_space=address_space]:
+]() -> Pointer[type, MutUntrackedOrigin, address_space=address_space]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
 
@@ -100,7 +95,7 @@ def stack_allocation[
                     name=_get_kgen_string[global_name](),
                     count=count.__mlir_index__(),
                     memoryType=__mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
-                    _type=UnsafePointer[
+                    _type=Pointer[
                         type, MutUntrackedOrigin, address_space=address_space
                     ]._mlir_type,
                     alignment=alignment.__mlir_index__(),
@@ -114,7 +109,7 @@ def stack_allocation[
                 _mlir_value = __mlir_op.`pop.global_alloc`[
                     name=_get_kgen_string[global_name](),
                     count=count.__mlir_index__(),
-                    _type=UnsafePointer[
+                    _type=Pointer[
                         type, MutUntrackedOrigin, address_space=address_space
                     ]._mlir_type,
                     alignment=alignment.__mlir_index__(),
@@ -127,12 +122,12 @@ def stack_allocation[
         elif address_space == AddressSpace.LOCAL:
             var generic_ptr = __mlir_op.`pop.stack_allocation`[
                 count=count.__mlir_index__(),
-                _type=UnsafePointer[type, MutUntrackedOrigin]._mlir_type,
+                _type=Pointer[type, MutUntrackedOrigin]._mlir_type,
                 alignment=alignment.__mlir_index__(),
             ]()
             return {
                 _mlir_value = __mlir_op.`pop.pointer.bitcast`[
-                    _type=UnsafePointer[
+                    _type=Pointer[
                         type, MutUntrackedOrigin, address_space=address_space
                     ]._mlir_type
                 ](generic_ptr)
@@ -147,9 +142,78 @@ def stack_allocation[
     return {
         _mlir_value = __mlir_op.`pop.stack_allocation`[
             count=count.__mlir_index__(),
-            _type=UnsafePointer[
+            _type=Pointer[
                 type, MutUntrackedOrigin, address_space=address_space
             ]._mlir_type,
             alignment=alignment.__mlir_index__(),
         ]()
     }
+
+
+@always_inline
+def stack_allocation[
+    count: Int,
+    dtype: DType,
+    /,
+    alignment: Int = align_of[dtype](),
+    address_space: AddressSpace = AddressSpace.GENERIC,
+]() -> UnsafePointer[
+    Scalar[dtype],
+    MutUntrackedOrigin,
+    address_space=address_space,
+]:
+    """Allocates data buffer space on the stack given a data type and number of
+    elements.
+
+    Parameters:
+        count: Number of elements to allocate memory for.
+        dtype: The data type of each element.
+        alignment: Address alignment of the allocated data.
+        address_space: The address space of the pointer.
+
+    Returns:
+        A data pointer of the given type pointing to the allocated space.
+    """
+
+    return UnsafePointer(
+        unsafe_stack_allocation[
+            count,
+            Scalar[dtype],
+            alignment=alignment,
+            address_space=address_space,
+        ]()
+    )
+
+
+@always_inline
+def stack_allocation[
+    count: Int,
+    type: AnyType,
+    /,
+    name: Optional[StaticString] = None,
+    alignment: Int = align_of[type](),
+    address_space: AddressSpace = AddressSpace.GENERIC,
+]() -> UnsafePointer[type, MutUntrackedOrigin, address_space=address_space]:
+    """Allocates data buffer space on the stack given a data type and number of
+    elements.
+
+    Parameters:
+        count: Number of elements to allocate memory for.
+        type: The data type of each element.
+        name: The name of the global variable (only honored in certain cases).
+        alignment: Address alignment of the allocated data.
+        address_space: The address space of the pointer.
+
+    Returns:
+        A data pointer of the given type pointing to the allocated space.
+    """
+
+    return UnsafePointer(
+        unsafe_stack_allocation[
+            count,
+            type,
+            name=name,
+            alignment=alignment,
+            address_space=address_space,
+        ]()
+    )
