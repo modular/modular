@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import logging
 import pickle
 from pathlib import Path
 from types import SimpleNamespace
@@ -2073,49 +2072,6 @@ def test_validate_and_resolve_overlap_scheduler__validate(
     )
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
-
-
-@prepare_registry
-@mock_pipeline_config_resolve
-def test_validate_and_resolve_max_num_steps_deprecated_override(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Non-1 max_num_steps is deprecated, warned, and forced to 1."""
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="test/model",
-                    device_specs=[DeviceSpec.accelerator()],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(max_num_steps=10),
-    )
-    with caplog.at_level(logging.WARNING):
-        config._validate_and_resolve_max_num_steps()
-    assert config.runtime.max_num_steps == 1
-    assert "deprecated" in caplog.text.lower()
-    assert "10" in caplog.text
-
-
-@prepare_registry
-@mock_pipeline_config_resolve
-def test_validate_and_resolve_max_num_steps_legacy_default() -> None:
-    """Legacy max_num_steps=-1 resolves silently to 1."""
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="test/model",
-                    device_specs=[DeviceSpec.accelerator()],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(max_num_steps=-1),
-    )
-    config._validate_and_resolve_max_num_steps()
-    assert config.runtime.max_num_steps == 1
 
 
 @prepare_registry

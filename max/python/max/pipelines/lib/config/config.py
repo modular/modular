@@ -1075,8 +1075,6 @@ class PipelineConfig(ConfigFileModel):
 
         # Validation for max_length is handled in MAXModelConfig
 
-        self._validate_and_resolve_max_num_steps()
-
         if (
             self.sampling.enable_structured_output
             and self.model.default_device_spec.device_type == "cpu"
@@ -1328,19 +1326,6 @@ class PipelineConfig(ConfigFileModel):
             logger.info("Enabling overlap scheduling for device graph capture.")
         self.runtime.enable_overlap_scheduler = True
 
-    def _validate_and_resolve_max_num_steps(self) -> None:
-        """Normalize deprecated ``max_num_steps`` to single-step decode."""
-        if self.runtime.max_num_steps in (1, -1):
-            self.runtime.max_num_steps = 1
-            return
-
-        logger.warning(
-            "--max-num-steps=%s is deprecated and ignored; using single-step "
-            "decode (max_num_steps=1).",
-            self.runtime.max_num_steps,
-        )
-        self.runtime.max_num_steps = 1
-
     def _validate_pipeline_config_for_speculative_decoding(
         self,
         target_arch: Any,
@@ -1533,7 +1518,6 @@ class PipelineConfig(ConfigFileModel):
                 chunked_prefill_min_chunk_size=args.chunked_prefill_min_chunk_size,
                 enable_in_flight_batching=args.enable_in_flight_batching,
                 eplb_replicas_per_gpu=args.eplb_replicas_per_gpu,
-                max_num_steps=args.max_num_steps,
                 max_batch_input_tokens=args.max_batch_input_tokens,
                 use_experimental_kernels=args.use_experimental_kernels,
                 use_vendor_blas=args.use_vendor_blas,

@@ -349,13 +349,6 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
-    max_num_steps: int = Field(
-        default=1,
-        description=(
-            "Deprecated. Multi-step pipeline execution is no longer supported."
-        ),
-    )
-
     max_batch_input_tokens: int = Field(
         default=DEFAULT_MAX_BATCH_INPUT_TOKENS,
         description=(
@@ -794,7 +787,6 @@ class PipelineArgs(ConfigFileModel):
             chunked_prefill_min_chunk_size=runtime.chunked_prefill_min_chunk_size,
             enable_in_flight_batching=runtime.enable_in_flight_batching,
             eplb_replicas_per_gpu=runtime.eplb_replicas_per_gpu,
-            max_num_steps=runtime.max_num_steps,
             max_batch_input_tokens=runtime.max_batch_input_tokens,
             use_experimental_kernels=runtime.use_experimental_kernels,
             use_vendor_blas=runtime.use_vendor_blas,

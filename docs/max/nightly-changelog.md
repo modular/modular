@@ -703,6 +703,11 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- Removed the deprecated `--max-num-steps` CLI flag (and the corresponding
+  `max_num_steps` config field). Multi-step pipeline execution is no longer
+  supported; the pipeline always runs single-step decode. The flag had been a
+  no-op that only logged a warning, so passing it now errors instead of being
+  ignored.
 - `PipelineTokenizer.eos` (a single scalar token id) is replaced by
   `PipelineTokenizer.eos_token_ids` (a set): the tokenizer's declared EOS
   plus any additional terminators from the model config's `eos_token_id`
