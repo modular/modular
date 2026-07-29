@@ -77,3 +77,10 @@ Sybil runs `assert` statements in a visible `code-block` too, so a check the
 reader can see is fine. Use `invisible-code-block` only when the check should be
 verified but not rendered. Import every name the example uses: the example is
 the rendered documentation, so it must run as-is if a reader copies it.
+
+Avoid backslash escapes such as `\n` or `\t` in example code. The docstring is
+a regular string, so Python resolves the escape when the module loads — a `\n`
+inside `"page_size: 256\n"` becomes a real newline, and Sybil then extracts a
+broken example (typically an unterminated string literal). Write the literal
+without the escape (many APIs don't need the trailing newline), split it across
+real lines, or make the whole docstring raw (`r"""`).
