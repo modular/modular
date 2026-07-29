@@ -36,7 +36,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.memory import UnsafePointer, alloc
+from std.memory import UnsafePointer, alloc, dealloc
 from std.sys import get_defined_bool, get_defined_int, size_of
 
 from max.benchmark import bencher_iter_custom
@@ -325,13 +325,32 @@ def main() raises:
         ctx.enqueue_memset(s_buf, Scalar[scales_dtype](0))
 
         # Per-expert offsets / IDs (small, host-built once).
-        var a_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-        var a_scale_offsets_host = alloc[Scalar[DType.uint32]](
-            num_active_experts
+        var a_offsets_host_alloc = alloc[Scalar[DType.uint32]](
+            {count = num_active_experts + 1}
+        ).into_managed()
+        var a_offsets_host = UnsafePointer(a_offsets_host_alloc.unsafe_ptr())
+        var a_scale_offsets_host_alloc = alloc[Scalar[DType.uint32]](
+            {count = num_active_experts}
+        ).into_managed()
+        var a_scale_offsets_host = UnsafePointer(
+            a_scale_offsets_host_alloc.unsafe_ptr()
         )
-        var expert_ids_host = alloc[Scalar[DType.int32]](num_active_experts)
-        var expert_scales_host = alloc[Scalar[DType.float32]](num_experts)
-        var input_scales_host = alloc[Scalar[DType.float32]](num_active_experts)
+        var expert_ids_host_alloc = alloc[Scalar[DType.int32]](
+            {count = num_active_experts}
+        ).into_managed()
+        var expert_ids_host = UnsafePointer(expert_ids_host_alloc.unsafe_ptr())
+        var expert_scales_host_alloc = alloc[Scalar[DType.float32]](
+            {count = num_experts}
+        ).into_managed()
+        var expert_scales_host = UnsafePointer(
+            expert_scales_host_alloc.unsafe_ptr()
+        )
+        var input_scales_host_alloc = alloc[Scalar[DType.float32]](
+            {count = num_active_experts}
+        ).into_managed()
+        var input_scales_host = UnsafePointer(
+            input_scales_host_alloc.unsafe_ptr()
+        )
 
         a_offsets_host[0] = 0
         var sf_acc = 0
@@ -693,11 +712,11 @@ def main() raises:
             ],
         )
 
-        a_offsets_host.free()
-        a_scale_offsets_host.free()
-        expert_ids_host.free()
-        expert_scales_host.free()
-        input_scales_host.free()
+        dealloc(a_offsets_host_alloc^)
+        dealloc(a_scale_offsets_host_alloc^)
+        dealloc(expert_ids_host_alloc^)
+        dealloc(expert_scales_host_alloc^)
+        dealloc(input_scales_host_alloc^)
 
         # Dump per-CTA per-tile pipeline trace. Schema (see
         # grouped_1d1d_matmul_kernel.mojo): for each output tile i in
@@ -732,7 +751,10 @@ def main() raises:
         # Issue latency = X_S − X_D. Real-work span = X_E − X_S.
         # Slot 0 (= L0_D) is the kernel-never-ran sentinel.
         if trace and fused:
-            var trace_host = alloc[Scalar[DType.uint64]](trace_buf_size)
+            var trace_host_alloc = alloc[Scalar[DType.uint64]](
+                {count = trace_buf_size}
+            ).into_managed()
+            var trace_host = UnsafePointer(trace_host_alloc.unsafe_ptr())
             ctx.enqueue_copy(trace_host, trace_buf_dev)
             ctx.synchronize()
             comptime max_tiles = 8  # mirrors SWIGLU_MAX_TRACED_TILES
@@ -765,6 +787,6 @@ def main() raises:
                     row += String(t",{Int(trace_host[base + 120 + i])}")
                 print(row)
             print("TRACE_CSV_END")
-            trace_host.free()
+            dealloc(trace_host_alloc^)
 
         m.dump_report()
