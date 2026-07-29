@@ -1211,6 +1211,8 @@ struct List[T: Movable, /](
             With no new value provided, the new length must be smaller than or
             equal to the current one. Elements at the end are discarded.
 
+            Calls abort() if the new length is larger than the current length.
+
         Examples:
 
         ```mojo
