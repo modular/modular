@@ -44,15 +44,12 @@ def test_writer_of_string() raises:
     assert_equal(s2, "Point(3, 8)")
 
 
-def test_string_write_seq() raises:
-    var s1 = String.write("Hello, ", "World!")
+def test_string_ctor_seq() raises:
+    var s1 = String("Hello, ", "World!")
     assert_equal(s1, "Hello, World!")
 
-    var s2 = String.write("point = ", Point(2, 7))
+    var s2 = String("point = ", Point(2, 7))
     assert_equal(s2, "point = Point(2, 7)")
-
-    var s3 = String.write()
-    assert_equal(s3, "")
 
 
 def test_stringable_based_on_format() raises:
