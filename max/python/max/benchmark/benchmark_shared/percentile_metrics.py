@@ -34,6 +34,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Literal
 
+_LABEL_COL_WIDTH = 34
+"""Width of the leading label column in single-line metric output."""
+
+_STAT_COL_WIDTH = 14
+"""Width of each ``name=value`` stat column in single-line metric output."""
+
 
 def _is_finite_and_positive(value: float) -> bool:
     """Check that a numeric value is finite and positive."""
@@ -87,34 +93,38 @@ class PercentileMetrics(Metrics):
     unit: str | None = None
     confidence_info: ConfidenceInfo | None = None
 
-    def __str__(self) -> str:
-        """Return a formatted string representation of the metrics in table format."""
-        lines = []
-        lines.append("{:<40} {:<10.2f}".format("Mean:", self.mean))
-        lines.append("{:<40} {:<10.2f}".format("Std:", self.std))
-        lines.append("{:<40} {:<10.2f}".format("P50:", self.p50))
-        lines.append("{:<40} {:<10.2f}".format("P90:", self.p90))
-        lines.append("{:<40} {:<10.2f}".format("P95:", self.p95))
-        lines.append("{:<40} {:<10.2f}".format("P99:", self.p99))
-        return "\n".join(lines)
+    def _format_single_line(self, label: str) -> str:
+        """Render all stats on a single, table-aligned line.
 
-    def format_with_prefix(self, prefix: str, unit: str | None = None) -> str:
-        """Return formatted metrics with a custom prefix for labels."""
-        # Use passed unit, or fall back to self.unit
-        effective_unit = unit or self.unit
-        unit_suffix = f" ({effective_unit})" if effective_unit else ""
-        metrics_data = [
+        ``label`` is left-justified into a fixed-width leading column so the
+        stat columns line up across successive metrics; an empty label omits
+        that column entirely.
+        """
+        stats = (
             ("Mean", self.mean),
             ("Std", self.std),
             ("P50", self.p50),
             ("P90", self.p90),
             ("P95", self.p95),
             ("P99", self.p99),
-        ]
-        return "\n".join(
-            "{:<40} {:<10.2f}".format(f"{label} {prefix}{unit_suffix}:", value)
-            for label, value in metrics_data
         )
+        cells = "".join(
+            f"{f'{name}={value:.2f}':<{_STAT_COL_WIDTH}}"
+            for name, value in stats
+        )
+        prefix = f"{label:<{_LABEL_COL_WIDTH}}" if label else ""
+        return f"{prefix}{cells}".rstrip()
+
+    def __str__(self) -> str:
+        """Return a single-line, table-aligned representation of the metrics."""
+        return self._format_single_line("")
+
+    def format_with_prefix(self, prefix: str, unit: str | None = None) -> str:
+        """Return single-line metrics labeled with a custom prefix and unit."""
+        # Use passed unit, or fall back to self.unit
+        effective_unit = unit or self.unit
+        unit_suffix = f" ({effective_unit})" if effective_unit else ""
+        return self._format_single_line(f"{prefix}{unit_suffix}")
 
     def to_flat_dict(self, name: str) -> dict[str, float]:
         """Flatten percentile stats into ``{"mean_{name}": v, ...}``.

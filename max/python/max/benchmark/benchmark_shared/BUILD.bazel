@@ -42,6 +42,7 @@ modular_py_library(
         requirement("pydantic"),
         requirement("pyyaml"),
         requirement("requests"),
+        requirement("tabulate"),
         requirement("taskgroup"),
         requirement("tqdm"),
         requirement("transformers"),

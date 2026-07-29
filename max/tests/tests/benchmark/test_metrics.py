@@ -75,18 +75,14 @@ def test_percentile_metrics_str_representation() -> None:
     )
     result = str(metrics)
 
-    assert "Mean:" in result
-    assert "10.50" in result
-    assert "Std:" in result
-    assert "2.30" in result
-    assert "P50:" in result
-    assert "9.80" in result
-    assert "P90:" in result
-    assert "12.70" in result
-    assert "P95:" in result
-    assert "14.20" in result
-    assert "P99:" in result
-    assert "18.90" in result
+    # All stats render on a single line in a table-aligned key=value form.
+    assert "\n" not in result
+    assert "Mean=10.50" in result
+    assert "Std=2.30" in result
+    assert "P50=9.80" in result
+    assert "P90=12.70" in result
+    assert "P95=14.20" in result
+    assert "P99=18.90" in result
 
 
 def test_percentile_metrics_format_with_prefix() -> None:
@@ -102,12 +98,15 @@ def test_percentile_metrics_format_with_prefix() -> None:
     )
     result = metrics.format_with_prefix("latency")
 
-    assert "Mean latency (ms):" in result
-    assert "Std latency (ms):" in result
-    assert "P50 latency (ms):" in result
-    assert "P90 latency (ms):" in result
-    assert "P95 latency (ms):" in result
-    assert "P99 latency (ms):" in result
+    # The prefix and unit label the whole single line; each stat is a column.
+    assert "\n" not in result
+    assert "latency (ms)" in result
+    assert "Mean=10.00" in result
+    assert "Std=2.00" in result
+    assert "P50=9.50" in result
+    assert "P90=12.00" in result
+    assert "P95=14.00" in result
+    assert "P99=18.00" in result
 
 
 def test_percentile_metrics_format_with_prefix_override_unit() -> None:
@@ -123,8 +122,10 @@ def test_percentile_metrics_format_with_prefix_override_unit() -> None:
     )
     result = metrics.format_with_prefix("latency", unit="seconds")
 
-    assert "Mean latency (seconds):" in result
-    assert "P99 latency (seconds):" in result
+    assert "\n" not in result
+    assert "latency (seconds)" in result
+    assert "Mean=10.00" in result
+    assert "P99=18.00" in result
 
 
 def test_percentile_metrics_format_with_prefix_no_unit() -> None:
@@ -134,10 +135,12 @@ def test_percentile_metrics_format_with_prefix_no_unit() -> None:
     )
     result = metrics.format_with_prefix("metric")
 
-    assert "Mean metric:" in result
-    assert "P99 metric:" in result
-    assert " (ms):" not in result
-    assert " (seconds):" not in result
+    assert "\n" not in result
+    assert "metric" in result
+    assert "Mean=10.00" in result
+    assert "P99=18.00" in result
+    assert "(ms)" not in result
+    assert "(seconds)" not in result
 
 
 # ---------------------------------------------------------------------------
