@@ -12,6 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 # Implementation of DeviceContext backed by the HAL
+"""This module provides functionality for interacting with accelerators. In
+particular the
+[`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext/) struct,
+which represents a single stream of execution on a given accelerator. You can
+use this struct to allocate accelerator memory, copy data to and from the
+accelerator, and compile and execute functions on the accelerator.
+
+This variant of the module is backed by the HAL and replaces the default
+`std.gpu.host.device_context` implementation when the HAL backend is
+enabled."""
 
 from std.builtin.device_passable import (
     DevicePassable,
@@ -285,10 +295,12 @@ struct DeviceContext(
     """
 
     comptime device_spec = get_device_spec[0]()
+    """`DeviceSpec` describing the device this context targets."""
 
     comptime default_device_info = GPUInfo.from_target[
         Self.device_spec._mlir_target()
     ]()
+    """`GPUInfo` object for the default accelerator."""
 
     var _driver: ArcPointer[Driver]
     var _device: ArcPointer[Device[Self.device_spec]]
@@ -538,6 +550,7 @@ struct DeviceContext(
         """
         return _DeviceContextScopeHAL(self)
 
+    @doc_hidden
     def stream(self) -> DeviceStream:
         return DeviceStream(self)
 
@@ -1884,6 +1897,9 @@ struct DeviceContext(
 
         Returns:
             The total elapsed time in nanoseconds for all iterations.
+
+        Raises:
+            If synchronization fails or if the function raises an exception.
         """
         self.synchronize()
         var start = monotonic()
@@ -1908,6 +1924,9 @@ struct DeviceContext(
 
         Returns:
             The total elapsed time in nanoseconds for all iterations.
+
+        Raises:
+            If synchronization fails or if the function raises an exception.
         """
         self.synchronize()
         var start = monotonic()
@@ -1931,6 +1950,9 @@ struct DeviceContext(
 
         Returns:
             The total elapsed time in nanoseconds for all iterations.
+
+        Raises:
+            If synchronization fails or if the function raises an exception.
         """
 
         self.synchronize()
@@ -1956,6 +1978,9 @@ struct DeviceContext(
 
         Returns:
             The total elapsed time in nanoseconds for all iterations.
+
+        Raises:
+            If synchronization fails or if the function raises an exception.
         """
         self.synchronize()
         var start = monotonic()
@@ -1980,6 +2005,9 @@ struct DeviceContext(
 
         Returns:
             The total elapsed time in nanoseconds for all iterations.
+
+        Raises:
+            If synchronization fails or if the function raises an exception.
         """
 
         self.synchronize()
@@ -2006,6 +2034,9 @@ struct DeviceContext(
 
         Returns:
             The total elapsed time in nanoseconds for all iterations.
+
+        Raises:
+            If synchronization fails or if the function raises an exception.
         """
         self.synchronize()
         var start = monotonic()
@@ -2063,7 +2094,12 @@ struct DeviceContext(
         """Enables peer-to-peer access between all accelerators.
 
         The HAL backend manages a single device, so there are no peers to
-        enable and this is a no-op."""
+        enable and this is a no-op.
+
+        Raises:
+            Never raises; declared `raises` to match the default
+            `DeviceContext` API.
+        """
         pass
 
     @staticmethod
@@ -2071,7 +2107,15 @@ struct DeviceContext(
         """Returns whether peer-to-peer access is enabled between all GPU pairs.
 
         The HAL backend manages a single device (fewer than two GPUs), so this
-        returns False, matching the legacy semantics for that case."""
+        returns False, matching the legacy semantics for that case.
+
+        Returns:
+            False, since the HAL backend manages a single device.
+
+        Raises:
+            Never raises; declared `raises` to match the default
+            `DeviceContext` API.
+        """
         return False
 
     def enqueue_wait_for(self, other: DeviceContext) raises:
@@ -2151,6 +2195,9 @@ struct DeviceContext(
 
         Returns:
             The device name (e.g. "NVIDIA B200").
+
+        Raises:
+            If querying the device name from the driver fails.
         """
         return self._device[].get_name()
 
@@ -5002,6 +5049,7 @@ struct DevicePointer[
     var _size: Int
 
     comptime PointeeType: AnyType = Scalar[Self.dtype]
+    """DevicePointerLike encoded pointer pointee type."""
 
     # ===------------------------------------------------------------------=== #
     # Constructors
