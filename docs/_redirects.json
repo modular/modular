@@ -10,58 +10,18 @@
     "status": 302
   },
   {
-    "source": "/engine/python/api/engine",
-    "dest": "/api/python/engine/",
-    "status": 301
-  },
-  {
-    "source": "/serving",
-    "dest": "/max/serve/",
-    "status": 301
-  },
-  {
-    "source": "/engine/reference/cli/(.*)",
-    "dest": "/max/cli/",
-    "status": 302
-  },
-  {
-    "source": "/engine/reference/(.*)",
-    "dest": "/max/api/",
-    "status": 302
-  },
-  {
-    "source": "/engine/(.*)",
-    "dest": "/max/",
-    "status": 302
-  },
-  {
     "source": "/serving/(.*)",
-    "dest": "/max/serve/",
-    "status": 302
-  },
-  {
-    "source": "/max/tutorials/onnx-custom-op",
-    "dest": "/max/extensibility/",
+    "dest": "/serve/",
     "status": 302
   },
   {
     "source": "/max/tutorials/custom-kernels-pytorch/",
-    "dest": "/max/develop/custom-kernels-pytorch/",
+    "dest": "/develop/custom-kernels-pytorch/",
     "status": 301
   },
   {
-    "source": "/max/extensibility/custom-op",
-    "dest": "/max/extensibility/",
-    "status": 302
-  },
-  {
-    "source": "/max/extensibility/graph-custom-op",
-    "dest": "/max/extensibility/",
-    "status": 302
-  },
-  {
     "source": "/max/graph/get-started",
-    "dest": "/max/develop/modules/",
+    "dest": "/develop/modules/",
     "status": 301
   },
   {
@@ -72,26 +32,26 @@
   {
     "source": "/max/changelog",
     "dest": "/releases/",
-    "status": 301
+    "status": 302
   },
   {
     "source": "/max/changelog/",
     "dest": "/releases/",
-    "status": 301
-  },
-  {
-    "source": "/max/api/c/(.*)",
-    "dest": "/api/c/{0}",
     "status": 302
   },
   {
-    "source": "/max/api/kernels/(.*)",
-    "dest": "/api/kernels/{0}",
+    "source": "/max/inference/(.*)",
+    "dest": "/serve/{0}",
     "status": 302
   },
   {
-    "source": "/max/api/python/(.*)",
-    "dest": "/api/python/{0}",
+    "source": "/max/deploy/(.*)",
+    "dest": "/serve/{0}",
+    "status": 302
+  },
+  {
+    "source": "/max/(.*)",
+    "dest": "/{0}",
     "status": 302
   },
   {

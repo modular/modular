@@ -628,7 +628,7 @@ def main() -> None:
             "❗  - Should this architecture be listed?\n"
             "❗  - Are the model names correct? Do the Hugging Face links work?\n"
             "❗  - Are the supported modalities correct?\n"
-            "❗ This is the file for docs.modular.com/max/models.\n"
+            "❗ This is the file for docs.modular.com/models.\n"
             "❗ If you have issues or questions, raise them in #ask-docs."
         )
 

@@ -7,10 +7,10 @@ description: Use the MAX chat completions endpoint with image or video input to 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import SmallCards from '@site/src/components/SmallCards';
-import InstallModular from '../../_includes/install-modular.mdx';
-import InstallOpenAI from '../../_includes/install-openai.mdx';
+import InstallModular from '../_includes/install-modular.mdx';
+import InstallOpenAI from '../_includes/install-openai.mdx';
 import Requirements from '@site/src/components/Requirements';
-import { requirementsWithGPU } from '../../requirements';
+import { requirementsWithGPU } from '../requirements';
 
 Multimodal large language models are capable of processing images, video, and
 text together in a single request. They can describe visual content, answer
@@ -18,13 +18,13 @@ questions about images or video, and support tasks such as image captioning,
 document analysis, chart interpretation, optical character recognition (OCR),
 video summarization, and content moderation.
 
-Explore our [supported models](/max/models/) to select the best model for your
+Explore our [supported models](/models/) to select the best model for your
 use case.
 
 ## Endpoint
 
 You can interact with a multimodal LLM through the
-[`v1/chat/completions`](/max/rest-api/#POST/v1/chat/completions) endpoint
+[`v1/chat/completions`](/rest-api/#POST/v1/chat/completions) endpoint
 by including image or video inputs alongside text in the request. This allows
 you to provide an image URL, video URL, or base64-encoded data as part of the
 conversation.
@@ -196,7 +196,7 @@ video summarization.
 :::caution GPU required
 
 To run Gemma 4 31B Instruct, your system must have a [compatible
-GPU](/max/packages#gpu-compatibility) with >96 GiB of GPU RAM.
+GPU](/packages#gpu-compatibility) with >96 GiB of GPU RAM.
 
 Due to the model's memory requirements, we recommend an NVIDIA B200 or AMD
 MI355X.
@@ -224,7 +224,7 @@ available in your environment:
 export HF_TOKEN="hf_..."
 ```
 
-Then, use the [`max serve`](/max/cli/serve) command to start a
+Then, use the [`max serve`](/cli/serve) command to start a
 local model server with the Gemma 4 31B Instruct model:
 
 ```bash
@@ -245,7 +245,7 @@ compatible endpoint](https://platform.openai.com/docs/guides/images-vision).
 
 While this example uses the Gemma 4 31B Instruct model, you can replace it with
 any image-to-text or video-to-text model listed in our
-[supported models](/max/models/).
+[supported models](/models/).
 
 The endpoint is ready when you see this message printed in your terminal:
 
@@ -254,7 +254,7 @@ Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
 ```
 
 For a complete list of `max` CLI commands and options, refer to the
-[MAX CLI reference](/max/cli).
+[MAX CLI reference](/cli).
 
 ### Describe an image
 
@@ -463,7 +463,7 @@ vibrant natural scenery...
 </Tabs>
 
 For complete details on all available API endpoints and options, see the [MAX
-Serve API documentation](/max/rest-api/).
+Serve API documentation](/rest-api/).
 
 ## Next steps
 
@@ -471,9 +471,9 @@ Now that you can analyze images and video, try adding structured output to get
 consistent, formatted responses. You can also explore other endpoints and
 deployment options.
 
-- [Structured output](/max/serve/structured-output): Enable structured output
+- [Structured output](/serve/structured-output): Enable structured output
   with your GenAI deployments for predictable responses.
-- [Embeddings](/max/inference/embeddings): Learn how to use the MAX embeddings
+- [Embeddings](/serve/embeddings): Learn how to use the MAX embeddings
   endpoint to create embeddings for input text.
-- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+- [Deploy MAX on GPU with self-hosted endpoints](/serve/local-to-cloud):
   Learn how to deploy MAX pipelines to cloud.

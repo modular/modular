@@ -10,8 +10,8 @@ import SmallCards from '@site/src/components/SmallCards';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import Requirements from '@site/src/components/Requirements';
-import { requirementsWithGPU } from '../../requirements';
-import InstallModular from '../../_includes/install-modular.mdx';
+import { requirementsWithGPU } from '../requirements';
+import InstallModular from '../_includes/install-modular.mdx';
 
 In this tutorial, you'll deploy a MAX inference endpoint with Llama 3 from
 local testing to production on AWS, GCP, or Azure. You'll learn to serve models
@@ -27,7 +27,7 @@ infrastructure for Llama 3.
 
 And although we're using Llama 3 in these instructions, you can swap it for one
 of the hundreds of other LLMs from Hugging Face by browsing our
-[supported models](/max/models/).
+[supported models](/models/).
 
 The tutorial is organized into the following sections:
 
@@ -46,7 +46,7 @@ url="/max/packages#system-requirements" />
 In this section, you will set up and run Llama 3 locally to understand its
 capabilities and validate functionality before moving to the cloud. This part
 doesn't require a GPU because MAX can also run Llama 3 on CPUs, but we
-recommend using a [compatible GPU](/max/faq/#gpu-requirements) for the best
+recommend using a [compatible GPU](/faq/#gpu-requirements) for the best
 performance.
 
 ### 1. Set up your environment
@@ -65,7 +65,7 @@ cloud.
 
 If you want to try a different model, swap the
 `modularai/Llama-3.1-8B-Instruct-GGUF` name in all the commands to another
-Hugging Face model ID from our [supported models](/max/models/). Just
+Hugging Face model ID from our [supported models](/models/). Just
 be aware that some Hugging Face models require access approval and might have
 different memory requirements.
 
@@ -124,7 +124,7 @@ The Los Angeles Dodgers won the 2020 World Series. They defeated the Tampa Bay R
 ```
 
 To learn more about the supported REST body parameters, see our [API reference
-for chat completion](/max/rest-api/#POST/v1/chat/completions).
+for chat completion](/rest-api/#POST/v1/chat/completions).
 
 Now that the model works locally, we'll transition to cloud deployment.
 
@@ -195,7 +195,7 @@ dependencies and configurations for running Llama 3 with GPU acceleration.
 The provided IaC templates initialize the MAX container. If you don't use the
 provided templates for infrastructure set up, you can initialize the container
 image with the `docker run` command. For more information, see
-[MAX container](/max/container).
+[MAX container](/container).
 :::
 
 - **Phase 2: Serving the user endpoint**: Once the cloud stack is configured and
@@ -226,14 +226,14 @@ and permissions for the cloud provider of your choice.
 with the following specifications:
   - **Minimum GPU memory**: 24GB
   - **Supported GPU types**: [See our compatible
-    GPUs](/max/packages#gpu-compatibility)
+    GPUs](/packages#gpu-compatibility)
 
 - This tutorial has been tested on the following NVIDIA instances: `g5.4xlarge`
   (A10G) on AWS, `g2-standard-8` (L4) on GCP, and `Standard_NV36ads_A10_v5`
   (A10G) on Azure. It has also been tested on the AMD
   `Standard_ND96isr_MI300X_v5` (MI300X) Azure instance. You can alter the
   provided cloud config files to deploy MAX on any
-  [compatible cloud instance or virtual machine](/max/container#recommended-cloud-instances).
+  [compatible cloud instance or virtual machine](/container#recommended-cloud-instances).
 
 - **A Hugging Face user access token**: A valid Hugging Face token is required
 to access the model. To create a Hugging Face user access token, see
@@ -248,7 +248,7 @@ token available in your environment with the following command:
 [Docker Engine and CLI](https://docs.docker.com/engine/install/). We use a
 pre-configured GPU-enabled Docker container from our public repository. For more
 information, check out all of our
-[available containers](/max/container#container-contents).
+[available containers](/container#container-contents).
 
 - **Cloud CLI tools**: Before deploying, ensure that you have the respective
 cloud provider CLI tools installed.
@@ -924,7 +924,7 @@ You can also use the public IP address of your deployed MAX endpoint to
 benchmark the performance of Llama 3.1. MAX includes a benchmarking script that
 allows you to evaluate throughput, latency, and GPU utilization metrics. For
 more detailed instructions on benchmarking, see the
-[`max benchmark` docs](/max/cli/benchmark).
+[`max benchmark` docs](/cli/benchmark).
 
 :::
 

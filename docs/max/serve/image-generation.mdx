@@ -6,20 +6,20 @@ description: Generate images from text prompts or transform existing images usin
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import InstallModular from '../../_includes/install-modular.mdx';
-import InstallOpenAI from '../../_includes/install-openai.mdx';
+import InstallModular from '../_includes/install-modular.mdx';
+import InstallOpenAI from '../_includes/install-openai.mdx';
 import Requirements from '@site/src/components/Requirements';
-import { requirementsWithGPU } from '../../requirements';
+import { requirementsWithGPU } from '../requirements';
 
 With MAX, you can run open-source image generation models locally and access
 them through a REST API. This page explains how to use the
-[`v1/responses`](/max/rest-api/#POST/v1/responses) endpoint to generate
+[`v1/responses`](/rest-api/#POST/v1/responses) endpoint to generate
 images from text prompts or transform existing images, with examples for each
 input type.
 
 ## Endpoint
 
-The MAX [`v1/responses`](/max/rest-api/#POST/v1/responses) endpoint
+The MAX [`v1/responses`](/rest-api/#POST/v1/responses) endpoint
 provides a unified interface for diverse AI tasks including image generation,
 with structured input and output handling. It's built on [Open
 Responses](https://huggingface.co/blog/open-responses), an open-source
@@ -212,7 +212,7 @@ denoising steps.
 
 The following are some commonly used parameters under `provider_options.image`.
 This is not an exhaustive list. For the complete reference, see
-[`provider_options`](/max/rest-api/#POST/v1/responses.body.provider_options).
+[`provider_options`](/rest-api/#POST/v1/responses.body.provider_options).
 
 | Parameter         | Type    | Default       | Description                                                                                                                                    |
 |-------------------|---------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -232,7 +232,7 @@ Some parameters apply only to specific model families:
 
 For the full parameter list including `strength`, `response_format`,
 dual-encoder prompts, and CFG controls, see
-[`provider_options`](/max/rest-api/#POST/v1/responses.body.provider_options).
+[`provider_options`](/rest-api/#POST/v1/responses.body.provider_options).
 
 **Height and width**: You can generate images at different aspect ratios. Image
 dimensions must be a multiple of 8 and at least 128 pixels in each dimension.
@@ -271,7 +271,7 @@ server startup. Both are off by default and are mutually exclusive — enable at
 most one (setting both raises an error).
 
 **TaylorSeer** (recommended): enable with `--taylorseer` on
-[`max serve`](/max/cli/serve). TaylorSeer runs the transformer in full for a
+[`max serve`](/cli/serve). TaylorSeer runs the transformer in full for a
 short warmup, then uses a Taylor-series approximation to skip most later steps
 on a fixed schedule. It gives the larger, most predictable speedup and is
 near-lossless at the default settings. Two presets:
@@ -311,7 +311,7 @@ generation.
 :::caution GPU required
 
 To run FLUX.2-dev, your system must have a [compatible
-GPU](/max/packages#gpu-compatibility) with sufficient GPU RAM.
+GPU](/packages#gpu-compatibility) with sufficient GPU RAM.
 
 :::
 
@@ -329,7 +329,7 @@ Create a Python project to install our APIs and CLI tools:
 ### Serve your model
 
 First, enable the `v1/responses` endpoint by setting the `MAX_SERVE_API_TYPES`
-[environment variable](/max/environment-variables):
+[environment variable](/environment-variables):
 
 ```bash
 export MAX_SERVE_API_TYPES='["responses"]'
@@ -344,7 +344,7 @@ environment:
 export HF_TOKEN="hf_..."
 ```
 
-Then, use the [`max serve`](/max/cli/serve) command to start a local model
+Then, use the [`max serve`](/cli/serve) command to start a local model
 server with the FLUX.2-dev model:
 
 ```bash
@@ -359,7 +359,7 @@ Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
 ```
 
 For a complete list of `max` CLI commands and options, refer to the
-[MAX CLI reference](/max/cli).
+[MAX CLI reference](/cli).
 
 ### Generate an image from text
 
@@ -565,10 +565,10 @@ Your output should look similar to the following:
 Now that you can generate images, explore other inference capabilities and
 deployment options.
 
-- [Image and video to text](/max/inference/image-to-text): Use the MAX chat
+- [Image and video to text](/serve/image-to-text): Use the MAX chat
   completions endpoint with image or video input to generate descriptions and
   answer questions about visual content.
-- [Structured output](/max/serve/structured-output): Enable structured output
+- [Structured output](/serve/structured-output): Enable structured output
   with your GenAI deployments for predictable responses.
-- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+- [Deploy MAX on GPU with self-hosted endpoints](/serve/local-to-cloud):
   Learn how to deploy MAX pipelines to cloud.

@@ -1,16 +1,16 @@
 {
   "maxConceptsSidebar": [
-    "max/intro",
-    "max/faq",
+    "intro",
+    "faq",
     {
       "label": "Get started",
       "className": "sidebar-heading",
       "type": "category",
       "collapsed": false,
       "items": [
-        "max/get-started",
-        "max/packages",
-        "max/container",
+        "get-started",
+        "packages",
+        "container",
         {
           "label": "Cookbook",
           "type": "link",
@@ -25,15 +25,15 @@
       "type": "category",
       "collapsed": false,
       "items": [
-        "max/inference/text-to-text",
-        "max/inference/image-to-text",
-        "max/inference/image-generation",
-        "max/inference/video-generation",
-        "max/inference/embeddings",
-        "max/serve/function-calling",
-        "max/serve/structured-output",
-        "max/develop/max-pipeline-bring-your-own-model",
-        "max/models"
+        "serve/text-to-text",
+        "serve/image-to-text",
+        "serve/image-generation",
+        "serve/video-generation",
+        "serve/embeddings",
+        "serve/function-calling",
+        "serve/structured-output",
+        "develop/max-pipeline-bring-your-own-model",
+        "models"
       ]
     },
     {
@@ -44,17 +44,17 @@
       "items": [
         {
           "type": "doc",
-          "id": "max/deploy/local-to-cloud",
+          "id": "serve/local-to-cloud",
           "className": "tutorial-link"
         },
         {
           "type": "doc",
-          "id": "max/deploy/benchmark",
+          "id": "serve/benchmark",
           "className": "tutorial-link"
         },
-        "max/serve/prefix-caching",
-        "max/serve/lora-adapters",
-        "max/serve/speculative-decoding"
+        "serve/prefix-caching",
+        "serve/lora-adapters",
+        "serve/speculative-decoding"
       ]
     },
     {
@@ -65,19 +65,19 @@
       "items": [
         {
           "type": "doc",
-          "id": "max/develop/index",
+          "id": "develop/index",
           "label": "Overview"
         },
-        "max/develop/model-bringup-skills",
-        "max/develop/serve-custom-model-architectures",
+        "develop/model-bringup-skills",
+        "develop/serve-custom-model-architectures",
         {
           "label": "Graphs",
           "type": "category",
           "collapsed": true,
           "items": [
-            "max/develop/graph",
-            "max/develop/modules",
-            "max/develop/layers"
+            "develop/graph",
+            "develop/modules",
+            "develop/layers"
           ]
         },
         {
@@ -85,11 +85,11 @@
           "type": "category",
           "collapsed": true,
           "items": [
-            "max/develop/model-bringup-workflow",
-            "max/develop/read-model-config",
-            "max/develop/weight-adapters",
-            "max/develop/pipelines",
-            "max/graph/quantize"
+            "develop/model-bringup-workflow",
+            "develop/read-model-config",
+            "develop/weight-adapters",
+            "develop/pipelines",
+            "develop/quantize"
           ]
         },
         {
@@ -97,8 +97,8 @@
           "type": "category",
           "collapsed": true,
           "items": [
-            "max/develop/logit-comparison",
-            "max/develop/layer-comparison"
+            "develop/logit-comparison",
+            "develop/layer-comparison"
           ]
         },
         {
@@ -106,11 +106,11 @@
           "type": "category",
           "collapsed": true,
           "items": [
-            "max/develop/debugging",
-            "max/develop/debugging-accuracy",
-            "max/develop/debugging-tracing",
-            "max/develop/debugging-gpu",
-            "max/develop/debugging-errors"
+            "develop/debugging",
+            "develop/debugging-accuracy",
+            "develop/debugging-tracing",
+            "develop/debugging-gpu",
+            "develop/debugging-errors"
           ]
         },
         {
@@ -118,20 +118,20 @@
           "type": "category",
           "collapsed": true,
           "items": [
-            "max/develop/custom-ops",
+            "develop/custom-ops",
             {
               "type": "doc",
-              "id": "max/develop/build-custom-ops",
+              "id": "develop/build-custom-ops",
               "className": "tutorial-link"
             },
             {
               "type": "doc",
-              "id": "max/develop/custom-ops-matmul",
+              "id": "develop/custom-ops-matmul",
               "className": "tutorial-link"
             },
             {
               "type": "doc",
-              "id": "max/develop/custom-kernels-pytorch",
+              "id": "develop/custom-kernels-pytorch",
               "className": "tutorial-link"
             }
           ]
@@ -141,16 +141,16 @@
           "type": "category",
           "collapsed": true,
           "items": [
-            "max/develop/eager-execution",
-            "max/develop/tensors",
-            "max/develop/dtypes",
-            "max/develop/basic-ops",
-            "max/develop/broadcasting",
-            "max/develop/indexing",
-            "max/develop/tensor-realization"
+            "develop/eager-execution",
+            "develop/tensors",
+            "develop/dtypes",
+            "develop/basic-ops",
+            "develop/broadcasting",
+            "develop/indexing",
+            "develop/tensor-realization"
           ]
         },
-        "max/gpu-system-profiling"
+        "gpu-system-profiling"
       ]
     },
     {
@@ -166,12 +166,12 @@
           "items": [
             {
               "type": "autogenerated",
-              "dirName": "max/cli"
+              "dirName": "cli"
             }
           ]
         },
-        "max/environment-variables",
-        "max/coding-assistants",
+        "environment-variables",
+        "coding-assistants",
         {
           "label": "kbench",
           "type": "link",
@@ -755,32 +755,32 @@
     {
       "label": "Create response",
       "type": "link",
-      "href": "/max/rest-api/#POST/v1/responses"
+      "href": "/rest-api/#POST/v1/responses"
     },
     {
       "label": "Create chat completion",
       "type": "link",
-      "href": "/max/rest-api/#POST/v1/chat/completions"
+      "href": "/rest-api/#POST/v1/chat/completions"
     },
     {
       "label": "Create completion",
       "type": "link",
-      "href": "/max/rest-api/#POST/v1/completions"
+      "href": "/rest-api/#POST/v1/completions"
     },
     {
       "label": "Create embeddings",
       "type": "link",
-      "href": "/max/rest-api/#POST/v1/embeddings"
+      "href": "/rest-api/#POST/v1/embeddings"
     },
     {
       "label": "List models",
       "type": "link",
-      "href": "/max/rest-api/#GET/v1/models"
+      "href": "/rest-api/#GET/v1/models"
     },
     {
       "label": "Health check",
       "type": "link",
-      "href": "/max/rest-api/#GET/health"
+      "href": "/rest-api/#GET/health"
     }
   ],
   "maxCReferenceSidebar": [

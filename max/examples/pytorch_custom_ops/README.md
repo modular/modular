@@ -10,7 +10,7 @@ from `max.torch`.
 These examples show how to register and use custom operations in PyTorch
 models, from very basic calculations to complex image processing and full model
 implementations. These examples require a system with a [MAX-compatible
-GPU](https://docs.modular.com/max/faq/#gpu-requirements)
+GPU](https://docs.modular.com/faq/#gpu-requirements)
 
 The five examples of PyTorch custom operations consist of:
 

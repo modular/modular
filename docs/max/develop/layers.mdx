@@ -6,8 +6,8 @@ description: Write a custom layer for a model component that max.nn doesn't
 ---
 
 In MAX, the [`max.nn`](/api/python/nn/) library contains the common layers you
-use to [bring up a model architecture](/max/develop/model-bringup-workflow/),
-such as [`Linear`](/api/python/generated/max.nn.Linear/#max.nn.Linear),
+use to [bring up a model architecture](/develop/model-bringup-workflow/), such
+as [`Linear`](/api/python/generated/max.nn.Linear/#max.nn.Linear),
 [`AttentionWithRope`](/api/python/generated/max.nn.attention.AttentionWithRope/#max.nn.attention.AttentionWithRope),
 and [`RMSNorm`](/api/python/generated/max.nn.RMSNorm/#max.nn.RMSNorm). But newly
 released models frequently introduce novel architectures, with layers that
@@ -21,11 +21,11 @@ You can subclass the closest built-in layer, define a new module from scratch,
 compose several layers into a new module, or wrap a custom Mojo op. This page
 walks through each approach, then shows how to connect the layer to your model.
 For the mechanics common to any module, see [Build a model graph with
-Module](/max/develop/modules/).
+Module](/develop/modules/).
 
 Custom layers live in the `layers/` folder of your architecture package, one
 component per file, and `model.py` composes them into the full architecture. See
-the [Model bring-up workflow](/max/develop/model-bringup-workflow/) for the
+the [Model bring-up workflow](/develop/model-bringup-workflow/) for the
 package layout.
 
 ## Subclass the closest layer
@@ -194,7 +194,7 @@ From here, a pipeline loads a checkpoint into the module, builds a
 [`Graph`](/api/python/generated/max.graph.Graph/#max.graph.Graph) from it,
 compiles, and executes. For those mechanics, including declaring weights,
 writing the forward pass, and matching weight names to a checkpoint, see
-[Build a model graph with Module](/max/develop/modules/).
+[Build a model graph with Module](/develop/modules/).
 
 ## Wrap a custom op
 
@@ -241,8 +241,8 @@ class MLPBlock(nn.Module):
 These snippets show the wrapper pattern, not a runnable program: `ops.custom()`
 resolves `"fused_activation"` against a registered Mojo kernel, so the code runs
 only once that kernel exists. For a complete, runnable custom op, including the
-Mojo kernel, see [Intro to custom ops](/max/develop/custom-ops/), the [Build
-custom ops for GPUs](/max/develop/build-custom-ops/) tutorial, or the [custom op
+Mojo kernel, see [Intro to custom ops](/develop/custom-ops/), the [Build
+custom ops for GPUs](/develop/build-custom-ops/) tutorial, or the [custom op
 examples](https://github.com/modular/modular/tree/main/max/examples/custom_ops)
 on GitHub.
 
@@ -255,29 +255,29 @@ correctly:
 
 - **Weight names**: a layer registers its weights under its attribute path.
   Match these to the checkpoint so the weights load. See [load weights into the
-  module](/max/develop/modules/#load-weights-into-the-module). When the
+  module](/develop/modules/#load-weights-into-the-module). When the
   checkpoint's names don't line up, a [weight
-  adapter](/max/develop/weight-adapters/) remaps them.
+  adapter](/develop/weight-adapters/) remaps them.
 - **Stacks**: hold a repeated layer, such as a stack of transformer blocks, in a
   [`Sequential`](/api/python/generated/max.nn.Sequential/#max.nn.Sequential),
   never a plain Python list. A plain list doesn't register its children's
   weights, so they load into nothing and fail silently. (`Sequential` subclasses
   [`LayerList`](/api/python/generated/max.nn.LayerList/#max.nn.LayerList),
   which you'll still see across existing architectures.) The
-  [Model bring-up workflow](/max/develop/model-bringup-workflow/) explains how
+  [Model bring-up workflow](/develop/model-bringup-workflow/) explains how
   these containers resolve weight names.
 
 A layer that loads isn't necessarily correct. Verify its output against the
 reference implementation, as described in [Logit
-comparison](/max/develop/logit-comparison/).
+comparison](/develop/logit-comparison/).
 
 ## Next steps
 
 From here, go deeper on the pieces a custom layer touches:
 
-- [Build a model graph with Module](/max/develop/modules/): the mechanics of
+- [Build a model graph with Module](/develop/modules/): the mechanics of
   writing modules and the `max.nn` layers you compose from.
-- [Model bring-up workflow](/max/develop/model-bringup-workflow/): where custom
+- [Model bring-up workflow](/develop/model-bringup-workflow/): where custom
   layers fit in bringing up a new architecture.
-- [Intro to custom ops](/max/develop/custom-ops/): write a Mojo kernel when no
+- [Intro to custom ops](/develop/custom-ops/): write a Mojo kernel when no
   built-in layer fits.

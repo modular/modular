@@ -111,7 +111,7 @@ This version is still a work in progress.
   step skipping — the recommended default, with `balanced` and `fast` presets)
   and `--first-block-caching` (first-block-residual reuse — zero-tuning and
   data-adaptive). The two are mutually exclusive and both off by default. See
-  the [image generation guide](/max/inference/image-generation).
+  the [image generation guide](/serve/image-generation).
 - Gemma 4 with multi-token prediction (MTP) speculative decoding
   (`UnifiedMTPGemma4ForCausalLM`) now supports image and video input.
   Previously this path was served text-only: image tokens were ingested by
