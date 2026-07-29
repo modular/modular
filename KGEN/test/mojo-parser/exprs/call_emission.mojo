@@ -651,3 +651,22 @@ def test_singleton_fnptr_params():
   # CHECK: [[FP2BOUND:%.*]] = lit.bind_params [[FP2]] :
   # CHECK: lit.call_indirect [[FP2BOUND]]
   fp2(someInt, someInt)
+
+
+@fieldwise_init
+struct TestMemType:
+    pass
+
+def no_exclusivity_violation[mut: Bool, o: Origin[mut=mut], //](ref [o] x: TestMemType, imm y : TestMemType):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"test()"
+def test():
+    var x = TestMemType()
+    # Binding 'mut' to False makes the 'ref' argument an immutable access, so
+    # aliasing it with the 'imm' argument is not an exclusivity violation.
+    # CHECK: [[X1:%.*]] = lit.ref.immut %x
+    # CHECK-NEXT: [[X2:%.*]] = lit.ref.immut %x
+    # CHECK-NEXT: lit.call {{.*}}@"no_exclusivity_violation{{.*}}[muttoimm *"x`"]<:!Bool {:scalar<bool> false}{{.*}}([[X1]], [[X2]])
+    no_exclusivity_violation[mut = False](x, x)
