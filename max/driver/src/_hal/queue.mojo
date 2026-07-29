@@ -173,7 +173,7 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             UInt32(block_dim.x()), UInt32(block_dim.y()), UInt32(block_dim.z())
         )
 
-        var near_compute_scratchpad_usage: UInt64 = 0
+        var near_compute_scratchpad_usage: Int = 0
         comptime if conforms_to(
             ExecutionConfigType,
             NearComputeGeneralPurposeScratchpadExecutionConfig,
