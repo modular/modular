@@ -25,7 +25,7 @@ from std.memory.unsafe_pointer import pointer_to_int
 from layout.tile_tensor import row_major
 from std.utils.index import IndexList
 
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import size_of, has_amd_gpu_accelerator
 from extensibility import (
     InputTensor,

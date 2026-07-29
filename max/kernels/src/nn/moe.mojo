@@ -48,7 +48,7 @@ from layout import (
     row_major,
     stack_allocation as tensor_alloc,
 )
-from std.runtime.tracing import Trace, TraceLevel
+from max.runtime.tracing import Trace, TraceLevel
 
 from std.utils.index import IndexList, StaticTuple
 from std.builtin.dtype import _uint_type_of_width

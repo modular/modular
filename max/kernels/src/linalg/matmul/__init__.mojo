@@ -28,8 +28,7 @@ from layout import (
     UNKNOWN_VALUE,
     coord_to_index_list,
 )
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
 

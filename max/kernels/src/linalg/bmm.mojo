@@ -51,8 +51,8 @@ from layout.tile_layout import Layout as TileLayout
 from std.logger import Logger
 from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from max.runtime.asyncrt import parallelism_level
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.gpu.host.info import H100, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type

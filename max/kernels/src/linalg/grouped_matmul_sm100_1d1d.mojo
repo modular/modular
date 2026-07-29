@@ -45,7 +45,7 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
     wait_on_dependent_grids,
 )
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     mma_arrive,

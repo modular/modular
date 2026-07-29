@@ -81,7 +81,7 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill import (
     mla_sm100_prefill_sparse,
     mla_sm100_prefill_sparse_fp8,
 )
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from extensibility import DynamicTensor, InputTensor, OutputTensor
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,

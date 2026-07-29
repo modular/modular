@@ -24,10 +24,6 @@ from std.builtin.coroutine import (
 )
 from std.builtin._startup import _ensure_runtime_init
 
-# RaisingCoroutine is a builtin type, available without explicit import.
-from std.gpu.host import DeviceContext
-
-
 # ===-----------------------------------------------------------------------===#
 # _AsyncContext
 # ===-----------------------------------------------------------------------===#
@@ -176,29 +172,6 @@ def parallelism_level() -> Int:
             Int32,
         ]()
     )
-
-
-def parallelism_level(ctx: Optional[DeviceContext]) -> Int:
-    """Gets the parallelism level from a DeviceContext.
-
-    For CPU contexts this returns the number of worker threads in the
-    runtime associated with that context. Falls back to the global
-    parallelism level if the context is None or the query fails.
-
-    Args:
-        ctx: The device context to query.
-
-    Returns:
-        The parallelism level of the context.
-    """
-    from std.gpu.host import DeviceAttribute
-
-    if ctx:
-        try:
-            return ctx.value().get_attribute(DeviceAttribute.PARALLELISM_LEVEL)
-        except:
-            pass
-    return parallelism_level()
 
 
 def create_task(

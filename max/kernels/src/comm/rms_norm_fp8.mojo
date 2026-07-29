@@ -41,7 +41,7 @@ from layout import (
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
 
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 

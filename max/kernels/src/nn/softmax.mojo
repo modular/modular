@@ -67,8 +67,8 @@ from layout import (
 from layout.tile_layout import Layout as InternalLayout
 from layout.tensor_core import get_fragment_size
 from std.memory import stack_allocation
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.asyncrt import parallelism_level
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils import IndexList, StaticTuple
 from std.utils.coord import Coord

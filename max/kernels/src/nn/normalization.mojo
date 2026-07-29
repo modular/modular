@@ -58,8 +58,8 @@ from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
 from std.memory import ThinAllocation, dealloc, stack_allocation
 from std.memory.alloc import Layout as AllocLayout
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.asyncrt import parallelism_level
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple

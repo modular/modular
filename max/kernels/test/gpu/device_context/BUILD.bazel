@@ -89,6 +89,7 @@ mojo_test(
         "//:nvidia_gpu",
     ],
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

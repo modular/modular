@@ -40,7 +40,7 @@ from std.memory import (
 )
 from std.memory.alloc import Layout as AllocLayout
 
-from std.runtime.asyncrt import parallelism_level
+from max.runtime.asyncrt import parallelism_level
 
 from std.utils.index import Index
 

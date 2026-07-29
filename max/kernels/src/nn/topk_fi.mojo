@@ -48,7 +48,7 @@ from std.memory import stack_allocation
 from std.atomic import Atomic
 from std.random import Random
 from std.sys import align_of, simd_width_of, size_of
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.utils.static_tuple import StaticTuple
 from .normalization import (
     _APPLE_STATIC_SHMEM_MAX_COUNT,

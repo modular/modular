@@ -62,7 +62,7 @@ from nn.attention.mha_utils import (
     dispatch_materialized_mask,
 )
 from nn.normalization import _rms_norm_impl, _rms_norm_warp_tiling_subkernel
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils.numerics import get_accum_type
 
 from std.utils import Index, IndexList

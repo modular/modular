@@ -31,9 +31,8 @@ from extensibility import (
 )
 from std.collections import Array
 from std.gpu import block_idx
-from std.gpu.host import (
-    DeviceBuffer,
-    DeviceContext,
+from std.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import (
     DeviceGraph,
     DeviceGraphBuilder,
 )
@@ -73,7 +72,7 @@ from extensibility import (
 
 from std.utils import Index, IndexList, StaticTuple
 
-from std.runtime.async_value import AnyAsyncValueRef, _AsyncValuePtr
+from max.runtime.async_value import AnyAsyncValueRef, _AsyncValuePtr
 
 from .buffer_plan import BufferPlanState, BufferPlanStats
 

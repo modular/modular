@@ -36,7 +36,7 @@ from layout import (
     row_major,
 )
 from std.memory import unsafe_memcpy
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils import IndexList, StaticTuple, product
 

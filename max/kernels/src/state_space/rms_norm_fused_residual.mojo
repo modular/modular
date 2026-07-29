@@ -36,7 +36,7 @@ from std.gpu.primitives.grid_controls import (
 from layout import TensorLayout, TileTensor
 from std.random import Random
 
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type

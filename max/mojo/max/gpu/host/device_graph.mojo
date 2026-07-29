@@ -19,7 +19,7 @@ is [`DeviceGraph.create()`](/docs/std/gpu/host/device_graph/DeviceGraph/#create)
 which hands a [`DeviceGraphBuilder`](/docs/std/gpu/host/device_graph/DeviceGraphBuilder/)
 to a scoped callback."""
 
-from . import (
+from std.gpu.host import (
     ConstantMemoryMapping,
     Dim,
     FuncAttribute,
@@ -32,9 +32,10 @@ from std.sys import bit_width_of, size_of
 from std.memory.unsafe import bitcast
 from std.reflection import call_location, SourceLocation
 from std.builtin.device_passable import DevicePassable
-from std.runtime.async_value import AnyAsyncValueRef
 
-from .device_context import (
+from max.runtime.async_value import AnyAsyncValueRef
+
+from std.gpu.host.device_context import (
     DeviceBuffer,
     DeviceContext,
     DeviceExternalFunction,

@@ -28,7 +28,7 @@ from max.algorithm import (
 from std.gpu.host import DeviceContext
 from layout import TileTensor
 from std.memory import unsafe_memcpy
-from std.runtime.asyncrt import parallelism_level
+from max.runtime.asyncrt import parallelism_level
 
 from std.utils.index import IndexList, StaticTuple
 

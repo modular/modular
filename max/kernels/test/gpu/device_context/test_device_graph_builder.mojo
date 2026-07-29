@@ -13,9 +13,11 @@
 
 from std.math import ceildiv
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
-from std.runtime.async_value import AnyAsyncValueRef
+from std.gpu.host import DeviceContext
 from std.testing import assert_equal
+
+from max.gpu.host import DeviceGraph, DeviceGraphBuilder
+from max.runtime.async_value import AnyAsyncValueRef
 
 
 def vec_add(

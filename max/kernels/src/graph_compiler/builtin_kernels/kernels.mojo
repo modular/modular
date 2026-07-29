@@ -122,7 +122,7 @@ from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_gpu,
     causal_conv1d_varlen_fwd_seqparallel_gpu,
 )
-from std.runtime.tracing import trace_arg
+from max.runtime.tracing import trace_arg
 from extensibility import (
     InputTensor,
     InputVariadicTensors,

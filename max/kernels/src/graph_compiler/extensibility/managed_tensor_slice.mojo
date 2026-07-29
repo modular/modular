@@ -33,12 +33,13 @@ from std.gpu.host.info import is_cpu
 from std.gpu.host.info import is_gpu as _is_gpu
 from std.math import ceil, fma
 from std.memory import AddressSpace
-from std.runtime.tracing import trace_arg
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, is_gpu
 from std.sys.intrinsics import strided_load, strided_store
 from std.utils import IndexList, StaticTuple, product
 from std.utils._serialize import _serialize
+
+from max.runtime.tracing import trace_arg
 
 from layout import (
     Coord,

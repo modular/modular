@@ -109,11 +109,13 @@ from layout import (
 )
 from layout.tile_tensor import NullableTileTensor
 from std.memory.alloc import Layout as AllocLayout
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils import IndexList
 from std.utils.variant import Variant
 from std.gpu.host.info import B200, _is_sm10x_gpu, _is_sm12x_gpu
 from std.collections import OptionalReg
+
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,

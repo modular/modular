@@ -32,8 +32,8 @@ from layout import (
     row_major,
 )
 from std.memory import unsafe_memcpy
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.asyncrt import parallelism_level
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from extensibility import ManagedTensorSlice
 
 from std.utils import IndexList, StaticTuple
