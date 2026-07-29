@@ -98,8 +98,14 @@ from nn.attention.mha_operand import KVCacheMHAOperand
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_utils import MHAConfig, StaticInt
 
-from msa.sparse_indexer_prefill import sparse_indexer_prefill
-from msa.sparse_indexer_decode import sparse_indexer_decode
+from msa.sparse_indexer_prefill import (
+    sparse_indexer_prefill,
+    sparse_indexer_prefill_topk,
+)
+from msa.sparse_indexer_decode import (
+    sparse_indexer_decode,
+    sparse_indexer_decode_score_mtp,
+)
 from msa.msa_1q import msa_sm100_decode
 from msa.msa_2q import msa_sm100_prefill_plan, msa_sm100_prefill_run
 from msa.amd.decode import msa_amd_decode_dispatch
@@ -260,6 +266,61 @@ struct Struct_msa_indexer_ragged_paged:
                 score_buf,
                 tt_row_major(num_index_heads, total_q, max_num_blocks),
             )
+
+            # AMD speculative widths use the decode-style scorer: each K vector
+            # is loaded once and reused across the compile-time query width.
+            # Selection remains the existing prefill top-k so this does not
+            # duplicate or fuse the KERN-3285 top-k work. Width one retains the
+            # established decode route; widths five through eight retain
+            # prefill until production enables wider AMD speculation.
+            comptime USE_AMD_MTP_SCORER = (
+                has_amd_gpu_accelerator()
+                and num_index_heads == 1
+                and idx_head_dim == 128
+                and block_size == 128
+                and type_of(k_operand).dtype == DType.bfloat16
+                and type_of(k_operand).page_size % block_size == 0
+            )
+            comptime if USE_AMD_MTP_SCORER:
+                var max_q_len = Int(k_collection.max_seq_length)
+                comptime for query_width in range(2, 5):
+                    if max_q_len == query_width:
+                        sparse_indexer_decode_score_mtp[
+                            DType.bfloat16,
+                            type_of(k_operand),
+                            query_width,
+                            num_index_heads,
+                            idx_head_dim,
+                            block_size,
+                        ](
+                            q.to_tile_tensor[DType.int64](),
+                            k_operand,
+                            prefix_lens.to_tile_tensor[DType.int64](),
+                            input_row_offsets.to_tile_tensor[DType.int64](),
+                            score,
+                            batch,
+                            total_q,
+                            max_num_blocks,
+                            init_blocks,
+                            local_blocks,
+                            scale,
+                            ctx,
+                        )
+                        sparse_indexer_prefill_topk[
+                            num_index_heads, block_size
+                        ](
+                            input_row_offsets.to_tile_tensor[DType.int64](),
+                            prefix_lens.to_tile_tensor[DType.int64](),
+                            score,
+                            out_idxs.to_tile_tensor[DType.int64](),
+                            batch,
+                            total_q,
+                            max_num_blocks,
+                            topk,
+                            ctx,
+                        )
+                        _ = score_buf^
+                        return
 
             sparse_indexer_prefill[
                 DType.bfloat16,
