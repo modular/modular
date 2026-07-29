@@ -1558,7 +1558,9 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
       // we are only reading, force the origin back to immutable so we don't
       // get confused.
       bool forceToImmutOrigin = false;
-      if (convention == ArgConvention::ReadMem && isArgOrigin(origin))
+      if (isArgOrigin(origin) && hasAddress(convention) &&
+          convention != ArgConvention::Mut &&
+          cast<RefType>(signature.getArgument(argIdx)).isMutableKnown(false))
         forceToImmutOrigin = true;
 
       // Callees marked `@__unsafe_nested_origins_read_only` promise
