@@ -14,7 +14,14 @@
 
 from __future__ import annotations
 
+from max.benchmark.benchmark_shared.metrics import (
+    PercentileMetrics,
+    StandardPercentileMetrics,
+    ThroughputMetrics,
+)
 from max.benchmark.benchmark_shared.serving_result_output import (
+    PercentileRow,
+    _format_percentile_table,
     elide_data_uris_in_string,
 )
 
@@ -65,3 +72,78 @@ def test_elide_data_uris_in_string() -> None:
     assert elide_data_uris_in_string(sample) == expected
 
     # fmt: on
+
+
+def _pm(
+    mean: float,
+    std: float,
+    p50: float,
+    p90: float,
+    p95: float,
+    p99: float,
+) -> PercentileMetrics:
+    return PercentileMetrics(
+        mean=mean, std=std, p50=p50, p90=p90, p95=p95, p99=p99
+    )
+
+
+def test_format_percentile_table() -> None:
+    """The rendered table matches exactly, byte for byte."""
+    table = _format_percentile_table(
+        [
+            PercentileRow(
+                "TTFT (ms)",
+                _pm(15539.31, 4200.50, 15068.37, 28000.00, 31000.00, 33034.17),
+            ),
+            PercentileRow(
+                "TPOT (ms)",
+                _pm(34.23, 18.10, 28.47, 60.20, 95.40, 138.55),
+            ),
+            PercentileRow(
+                "ITL (ms)",
+                _pm(26.76, 22.40, 5.42, 48.90, 120.30, 228.45),
+            ),
+            PercentileRow(
+                "Request Latency (ms)",
+                _pm(20345.10, 5120.30, 19980.40, 30120.50, 33450.10, 35880.90),
+            ),
+            PercentileRow(
+                "Input throughput (tok/s)",
+                _pm(2180.51, 210.30, 2200.10, 1980.40, 1900.20, 1820.60),
+            ),
+            PercentileRow(
+                "Output throughput (tok/s)",
+                _pm(2301.89, 180.70, 2320.50, 2100.30, 2010.80, 1950.40),
+            ),
+        ]
+    )
+
+    expected = (
+        "┌───────────────────────────┬──────────┬─────────┬──────────┬──────────┬──────────┬──────────┐\n"
+        "│ Metric                    │     Mean │     Std │      P50 │      P90 │      P95 │      P99 │\n"
+        "├───────────────────────────┼──────────┼─────────┼──────────┼──────────┼──────────┼──────────┤\n"
+        "│ TTFT (ms)                 │ 15539.31 │ 4200.50 │ 15068.37 │ 28000.00 │ 31000.00 │ 33034.17 │\n"
+        "│ TPOT (ms)                 │    34.23 │   18.10 │    28.47 │    60.20 │    95.40 │   138.55 │\n"
+        "│ ITL (ms)                  │    26.76 │   22.40 │     5.42 │    48.90 │   120.30 │   228.45 │\n"
+        "│ Request Latency (ms)      │ 20345.10 │ 5120.30 │ 19980.40 │ 30120.50 │ 33450.10 │ 35880.90 │\n"
+        "│ Input throughput (tok/s)  │  2180.51 │  210.30 │  2200.10 │  1980.40 │  1900.20 │  1820.60 │\n"
+        "│ Output throughput (tok/s) │  2301.89 │  180.70 │  2320.50 │  2100.30 │  2010.80 │  1950.40 │\n"
+        "└───────────────────────────┴──────────┴─────────┴──────────┴──────────┴──────────┴──────────┘"
+    )
+    assert table == expected
+
+
+def test_format_percentile_table_accepts_metric_wrappers() -> None:
+    """The helper accepts the computed StandardPercentileMetrics / ThroughputMetrics wrappers."""
+    latency = StandardPercentileMetrics([0.5, 0.6, 0.7], scale_factor=1000.0)
+    tput = ThroughputMetrics([50.0, 60.0, 70.0], unit="tok/s")
+
+    table = _format_percentile_table(
+        [
+            PercentileRow("Request Latency (ms)", latency),
+            PercentileRow("Output throughput (tok/s)", tput),
+        ]
+    )
+    lines = table.splitlines()
+    assert any("Request Latency (ms)" in ln for ln in lines)
+    assert any("Output throughput (tok/s)" in ln for ln in lines)
