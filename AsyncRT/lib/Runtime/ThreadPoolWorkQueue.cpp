@@ -21,8 +21,8 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
 #if MODULAR_ASYNCRT_MAX_PROFILING_LEVEL != 0
-#include "Support/Profiling/internal/Range.h"
-#include "Support/Profiling/internal/Tracy.h"
+#include "Support/Profiling/Ranges.h"
+#include "Support/internal/Tracy/Tracy.h"
 #else
 // TODO: This is duplicating some things, maybe find a better way
 #define TRACY_ZONE_SCOPED_NC(name, color)

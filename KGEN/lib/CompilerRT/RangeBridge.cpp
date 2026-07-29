@@ -14,7 +14,7 @@
 #include "Support/SymbolExport.h"
 
 #if MODULAR_KGEN_PROFILING_ENABLED
-#include "Support/Profiling/internal/Range.h"
+#include "Support/Profiling/Ranges.h"
 #include <string_view>
 #endif
 
