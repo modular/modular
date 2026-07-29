@@ -59,8 +59,6 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     vocab_size: int = 129280
     hidden_size: int = 7168
@@ -232,8 +230,8 @@ class DeepseekV3Config(ArchConfigWithKVCache):
                 "Please ensure the model repository contains a valid config.json file."
             )
         kv_cache_config = model_config.kv_cache
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
@@ -299,6 +297,4 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )

@@ -51,8 +51,6 @@ class BertModelConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
     huggingface_config: AutoConfig
     max_seq_len: int
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     @override
     @classmethod
@@ -70,8 +68,8 @@ class BertModelConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
             An initialized BertModelConfig instance.
         """
         model_config = model_config or pipeline_config.model
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
         if len(model_config.device_specs) != 1:
             raise ValueError("BERT model is only supported on a single device")
@@ -94,6 +92,4 @@ class BertModelConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
                 pipeline_config, huggingface_config, model_config
             ),
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )

@@ -59,8 +59,6 @@ class Olmo2Config(
     }
 
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     vocab_size: int
     """Vocabulary size of the Olmo2 model."""
@@ -170,8 +168,8 @@ class Olmo2Config(
         huggingface_config = model_config.huggingface_config
         assert huggingface_config is not None
         kv_cache_config = model_config.kv_cache
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
@@ -220,8 +218,6 @@ class Olmo2Config(
             dtype=dtype,
             devices=device_refs,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
             interleaved_rope_weights=interleaved_rope_weights,
             kv_params=kv_params,
             # Placeholder values; finalize() sets the real values once

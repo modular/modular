@@ -126,8 +126,6 @@ class MambaConfig(ArchConfigWithKVCache):
     expand: int = 2
 
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     def get_max_seq_len(self) -> int:
         return self.max_seq_len
@@ -214,8 +212,8 @@ class MambaConfig(ArchConfigWithKVCache):
         model_config: MAXModelConfig | None = None,
     ) -> Self:
         model_config = model_config or pipeline_config.model
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)
         n_devices = len(pipeline_config.model.device_specs)
@@ -282,8 +280,6 @@ class MambaConfig(ArchConfigWithKVCache):
             use_subgraphs=pipeline_config.model.use_subgraphs,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )
 
     def finalize(

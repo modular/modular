@@ -88,8 +88,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     @classmethod
     def construct_kv_params(
@@ -153,8 +151,8 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             )
 
         kv_cache_config = model_config.kv_cache
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
@@ -257,8 +255,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
             logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )
 
     def finalize(

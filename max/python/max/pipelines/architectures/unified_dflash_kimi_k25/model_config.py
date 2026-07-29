@@ -73,8 +73,6 @@ class UnifiedDflashKimiK25Config(ArchConfigWithKVCache):
     mask_token_id: int = 0
     block_size: int = 0
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     def __post_init__(self) -> None:
         if len(self.target.devices) != len(self.draft.devices):

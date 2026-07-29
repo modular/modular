@@ -161,8 +161,6 @@ class GptOssConfig(
     """Whether to return the last token, all logits, or a variable number of logits."""
 
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
@@ -205,8 +203,8 @@ class GptOssConfig(
                 "Please ensure the model repository contains a valid config.json file."
             )
         kv_cache_config = model_config.kv_cache
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)
         # For MXFP4 models, non-quantized layers (embedding, attention, norm,
@@ -333,8 +331,6 @@ class GptOssConfig(
             interleaved_rope_weights=interleaved_rope_weights,
             kv_params=kv_params,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )
 
     def finalize(

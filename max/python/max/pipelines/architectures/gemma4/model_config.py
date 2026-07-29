@@ -196,10 +196,8 @@ class Gemma4TextConfig(Gemma3Config):
             An initialized Gemma4TextConfig instance.
         """
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(
-                pipeline_config.model, cls.DEFAULT_ENCODING
-            )
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
@@ -303,8 +301,6 @@ class Gemma4TextConfig(Gemma3Config):
             sliding_window_rope_theta=sliding_window_rope_theta,
             layer_types=huggingface_config.layer_types,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )
 
 
@@ -475,12 +471,6 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
     quantization_encoding: SupportedEncoding | None = None
     """The resolved quantization encoding the model runs with."""
 
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    """The encoding a load-time dtype cast converts from, if any."""
-
-    applied_dtype_cast_to: SupportedEncoding | None = None
-    """The encoding a load-time dtype cast converts to, if any."""
-
     def get_kv_params(self) -> MultiKVCacheParams:
         """Returns the KV cache parameters."""
         return self.kv_params
@@ -619,10 +609,8 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             for spec in pipeline_config.model.device_specs
         ]
 
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(
-                pipeline_config.model, cls.DEFAULT_ENCODING
-            )
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
@@ -678,8 +666,6 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
                 huggingface_config, "video_token_id", 262_144
             ),
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )
 
     def finalize(
