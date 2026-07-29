@@ -82,6 +82,7 @@ def _precompiled_pipeline_mefs_impl(ctx):
     args.add(target)
     args.add("--cpu-target")
     args.add(cpu_target)
+    args.add_all(ctx.attr.producer_args)
 
     # The binary's env vars hold short_path values that resolve relative to the
     # runfiles root, but a build action's CWD is the execroot: absolutize the
@@ -130,6 +131,10 @@ _precompiled_pipeline_mefs = rule(
             doc = "A modular_py_binary that runs a pipeline with the " +
                   "consumer's flags. Takes --out, --target and --cpu-target.",
         ),
+        "producer_args": attr.string_list(
+            doc = "Extra arguments for the producer, naming which pipeline " +
+                  "configuration to compile for.",
+        ),
     },
     toolchains = [
         "@rules_mojo//:toolchain_type",
@@ -139,6 +144,7 @@ _precompiled_pipeline_mefs = rule(
 def precompiled_pipeline_mefs(
         name,
         producer,
+        producer_args = [],
         testonly = True,
         exec_properties = {"dockerNetwork": "bridge"},
         **kwargs):
@@ -152,6 +158,8 @@ def precompiled_pipeline_mefs(
         name: Target name; produces a ``<name>_mefs`` directory of MEFs plus a
             ``manifest.json``.
         producer: A modular_py_binary that runs the pipeline (label).
+        producer_args: Extra arguments for the producer, naming which pipeline
+            configuration to compile for.
         testonly: Whether the target is test-only. Defaults to ``True``.
         exec_properties: Remote-execution properties. Defaults to enabling
             container networking, which the producer needs to resolve the
@@ -161,6 +169,7 @@ def precompiled_pipeline_mefs(
     _precompiled_pipeline_mefs(
         name = name,
         producer = producer,
+        producer_args = producer_args,
         testonly = testonly,
         exec_properties = exec_properties,
         **kwargs

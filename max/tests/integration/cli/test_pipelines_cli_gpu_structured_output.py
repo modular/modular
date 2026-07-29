@@ -15,7 +15,7 @@ import logging
 import os
 
 import pytest
-from _structured_output_cli_args import pipeline_flags
+from _cli_pipeline_flags import pipeline_flags
 from max._entrypoints import pipelines
 from test_common.graph_utils import is_h100_h200
 
@@ -39,7 +39,7 @@ def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(
                 "Why is the sky blue",
                 "--top-k=1",
                 *reuse_flags,
-                *pipeline_flags(),
+                *pipeline_flags("smollm-structured-output"),
             ]
         )
     captured = capsys.readouterr()

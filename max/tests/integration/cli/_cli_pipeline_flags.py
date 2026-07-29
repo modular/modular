@@ -11,10 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""The pipeline flags shared by the structured-output CLI test and its precompiler.
+"""The pipeline flags shared by the GPU CLI tests and their CPU precompilers.
 
-The precompiled MEFs are matched to the graphs the GPU run builds, so both sides
-import ``pipeline_flags`` and a flag cannot be changed on one side only.
+Each flag set names one pipeline configuration. The precompiling and the
+executing run must build the same graphs, so both sides read the set from here
+rather than spelling the flags out; a flag changed on one side only would leave
+the precompiled artifacts unusable.
 """
 
 from __future__ import annotations
@@ -23,19 +25,40 @@ import hf_repo_lock
 
 REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
 
+# Flags that distinguish each configuration from the shared base below. Adding a
+# set here is most of what a new precompiled CLI test needs.
+_EXTRA_FLAGS = {
+    "smollm": [],
+    # Enabling structured output server-wide without a JSON schema must not
+    # change the outputs of the base chat experience. It does add a second,
+    # bitmask-aware sampler graph, so this configuration's artifacts differ.
+    "smollm-structured-output": ["--enable-structured-output"],
+}
 
-def pipeline_flags() -> list[str]:
-    """Returns the pipeline-config flags for the structured-output run.
+FLAG_SETS = tuple(_EXTRA_FLAGS)
 
-    These are the flags that shape the compiled graphs, so the same list drives
-    ``generate`` on the GPU and ``warm-cache`` on the CPU precompiler.
+
+def pipeline_flags(flag_set: str) -> list[str]:
+    """Returns the pipeline-config flags for one configuration.
+
     Per-request sampling params (``--top-k`` and friends) are deliberately
     absent: they reach the pipeline as a ``SamplingParams`` per request rather
     than as graph structure, and ``warm-cache`` does not accept them.
 
+    Args:
+        flag_set: One of :data:`FLAG_SETS`.
+
     Returns:
         The CLI flags, with the locked HuggingFace revision filled in.
+
+    Raises:
+        ValueError: If ``flag_set`` is not a known configuration.
     """
+    if flag_set not in _EXTRA_FLAGS:
+        raise ValueError(
+            f"unknown flag set {flag_set!r}; expected one of {FLAG_SETS}"
+        )
+
     revision = hf_repo_lock.revision_for_hf_repo(REPO_ID)
     assert isinstance(revision, str), (
         "REVISION must be a string and present in hf-repo-lock.tsv"
@@ -51,7 +74,5 @@ def pipeline_flags() -> list[str]:
         revision,
         "--huggingface-weight-revision",
         revision,
-        # Enabling structured output server-wide without a JSON schema must not
-        # change the outputs of the base chat experience.
-        "--enable-structured-output",
+        *_EXTRA_FLAGS[flag_set],
     ]

@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""CPU producer for the structured-output CLI test's compiled graphs.
+"""CPU producer for the GPU CLI tests' compiled graphs.
 
 Runs ``max warm-cache`` under MAX's virtual-device knobs so a GPU-less build
-action compiles every graph the pipeline needs for a GPU arch, exporting each one
-to ``--out`` for the consuming test to initialize.
+action compiles every graph one pipeline configuration needs for a GPU arch,
+exporting each to ``--out`` for the consuming test to initialize.
 """
 
 from __future__ import annotations
 
 import click
-from _structured_output_cli_args import pipeline_flags
+from _cli_pipeline_flags import FLAG_SETS, pipeline_flags
 from max._entrypoints import pipelines
 from max.driver import set_virtual_cpu_target
 
@@ -32,7 +32,13 @@ from max.driver import set_virtual_cpu_target
 @click.option(
     "--cpu-target", required=True, help="Host-CPU codegen descriptor."
 )
-def main(out_path: str, target: str, cpu_target: str) -> None:
+@click.option(
+    "--flag-set",
+    required=True,
+    type=click.Choice(FLAG_SETS),
+    help="The pipeline configuration to compile for.",
+)
+def main(out_path: str, target: str, cpu_target: str, flag_set: str) -> None:
     # Pins host codegen to a baseline the consuming GPU host can execute rather
     # than this build worker's own CPU. ``warm-cache --target`` sets the
     # remaining virtual-device knobs itself.
@@ -44,7 +50,7 @@ def main(out_path: str, target: str, cpu_target: str) -> None:
             target,
             "--export-mefs",
             out_path,
-            *pipeline_flags(),
+            *pipeline_flags(flag_set),
         ]
     )
 
