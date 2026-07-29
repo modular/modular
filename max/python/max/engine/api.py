@@ -471,8 +471,29 @@ class InferenceSession:
 
     .. code-block:: python
 
-        session = engine.InferenceSession(devices=[CPU()])
-        model = session.load(model_path)
+        from max.driver import CPU, Accelerator, accelerator_count
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+        with Graph("add") as graph:
+            graph.output(
+                ops.add(
+                    ops.constant([1.0, 2.0], DType.float32, device=device_ref),
+                    ops.constant([3.0, 4.0], DType.float32, device=device_ref),
+                )
+            )
+
+        session = InferenceSession(devices=[device])
+        model = session.load(graph)
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(model.execute()[0].to_numpy(), [4.0, 6.0])
 
     For workflows that need to separate compilation from weight binding,
     use :meth:`compile` followed by :meth:`init` or :meth:`init_all`.
@@ -480,9 +501,30 @@ class InferenceSession:
 
     .. code-block:: python
 
-        session = engine.InferenceSession(devices=[CPU()])
-        compiled = session.compile(model_path)
+        from max.driver import CPU, Accelerator, accelerator_count
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+        with Graph("add") as graph:
+            graph.output(
+                ops.add(
+                    ops.constant([1.0, 2.0], DType.float32, device=device_ref),
+                    ops.constant([3.0, 4.0], DType.float32, device=device_ref),
+                )
+            )
+
+        session = InferenceSession(devices=[device])
+        compiled = session.compile(graph)
         model = session.init(compiled)
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(model.execute()[0].to_numpy(), [4.0, 6.0])
 
     Args:
         devices: A list of devices on which to run inference. The host CPU
@@ -1216,10 +1258,13 @@ class InferenceSession:
         For example, to enable detailed profiling for Nsight Systems
         analysis, call :meth:`gpu_profiling` before :meth:`load`:
 
+        .. Skipped: requires a GPU accelerator; enabling GPU profiling injects GPU tracing that can't compile on a CPU-only CI host.
+        .. skip: next
+
         .. code-block:: python
 
-            from max.engine import InferenceSession
             from max.driver import Accelerator
+            from max.engine import InferenceSession
 
             session = InferenceSession(devices=[Accelerator()])
             session.gpu_profiling("detailed")
