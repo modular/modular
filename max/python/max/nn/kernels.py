@@ -7667,18 +7667,35 @@ def merge_ragged_tensors(
                 [total_a_rows + total_b_rows, ...].
             - The merged row offsets with the same shape as input row offsets.
 
+    The following example interleaves two ragged tensors that share a batch
+    size of 2. Row ``a = [1, 2, 3, 4, 5, 6]`` with offsets ``[0, 2, 6]`` and
+    row ``b = [7, 8, 9, 10]`` with offsets ``[0, 3, 4]`` merge into
+    ``[1, 2, 7, 8, 9, 3, 4, 5, 6, 10]`` with offsets ``[0, 5, 10]``:
+
     .. code-block:: python
 
-        a = [1, 2, 3, 4, 5, 6]
-        a_row_offsets = [0, 2, 6]
-        b = [7, 8, 9, 10]
-        b_row_offsets = [0, 3, 4]
+        from max.driver import Accelerator, CPU, accelerator_count
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, TensorType
+        from max.nn.kernels import merge_ragged_tensors
 
-        merged_tensor, merged_row_offsets = merge_ragged_tensors(
-            a, a_row_offsets, b, b_row_offsets)
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
 
-        merged_tensor = [1, 2, 7, 8, 9, 3, 4, 5, 6, 10]
-        merged_row_offsets = [0, 5, 10]
+        with Graph(
+            "merge_ragged_tensors_example",
+            input_types=(
+                TensorType(DType.int32, ["a_seq_len"], device=device_ref),
+                TensorType(DType.uint32, ["offsets_len"], device=device_ref),
+                TensorType(DType.int32, ["b_seq_len"], device=device_ref),
+                TensorType(DType.uint32, ["offsets_len"], device=device_ref),
+            ),
+        ) as graph:
+            a, a_row_offsets, b, b_row_offsets = (v.tensor for v in graph.inputs)
+            merged_tensor, merged_row_offsets = merge_ragged_tensors(
+                a, a_row_offsets, b, b_row_offsets
+            )
+            graph.output(merged_tensor, merged_row_offsets)
     """
     if a.dtype != b.dtype:
         raise ValueError("a and b must have the same dtype")

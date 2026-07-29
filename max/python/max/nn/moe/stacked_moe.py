@@ -218,39 +218,27 @@ class StackedMoE(Module, Shardable):
 
     .. code-block:: python
 
+        from max.driver import Accelerator, CPU, accelerator_count
+        from max.graph import DeviceRef
+        from max.nn.moe import MoEGate, StackedMoE
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+
         # Basic usage (Llama4/Qwen3VL style)
         moe = StackedMoE(
-            devices=[device],
+            devices=[device_ref],
             hidden_dim=4096,
             num_experts=8,
             num_experts_per_token=2,
             moe_dim=14336,
-            gate_cls=MyGate,
+            gate_cls=MoEGate,
         )
 
-        # With FP8 quantization
-        moe = StackedMoE(
-            devices=[device],
-            hidden_dim=4096,
-            num_experts=8,
-            num_experts_per_token=2,
-            moe_dim=14336,
-            gate_cls=MyGate,
-            quant_config=quant_config,
-        )
-
-        # GptOss style with interleaved format and bias
-        moe = StackedMoE(
-            devices=[device],
-            hidden_dim=4096,
-            num_experts=8,
-            num_experts_per_token=2,
-            moe_dim=14336,
-            gate_cls=GptOssMoEGate,
-            gate_up_format=GateUpFormat.INTERLEAVED,
-            gated_activation_fn=my_custom_activation,
-            has_bias=True,
-        )
+    Pass ``gate_up_format=GateUpFormat.INTERLEAVED``, a custom
+    ``gated_activation_fn``, ``has_bias=True``, or a ``quant_config`` to match
+    other architectures (for example, GptOss style with interleaved format and
+    bias, or FP8 quantization).
 
     Args:
         devices: A list of devices to use for the MoE.
