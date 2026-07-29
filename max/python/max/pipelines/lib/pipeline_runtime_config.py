@@ -179,16 +179,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    max_num_steps: int = Field(
-        default=1,
-        description=(
-            "Deprecated. Multi-step pipeline execution is no longer supported; "
-            "the pipeline always runs single-step decode. Values other than "
-            "``1`` (including the legacy default ``-1``) are ignored after "
-            "logging a warning."
-        ),
-    )
-
     max_batch_input_tokens: int = Field(
         default=DEFAULT_MAX_BATCH_INPUT_TOKENS,
         description=(
