@@ -1165,6 +1165,15 @@ def external_call[
         The external call result.
     """
 
+    comptime if types.contains[String]():
+        comptime assert False, (
+            "Passing a `String` to `external_call` is never correct. Instead,"
+            " first call `as_c_string_slice()` to pass a C-FFI compatible"
+            " `CStringSlice` type (synonymous with C's `const char*`). Example"
+            ' `external_call["foo", NoneType]("some'
+            ' string".as_c_string_slice())'
+        )
+
     # The argument pack will contain references for each value in the pack,
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.
