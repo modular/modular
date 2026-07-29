@@ -34,7 +34,6 @@ from max.benchmark.benchmark_shared.server_metrics import (
     ParsedMetrics,
     _format_metric_key,
     collect_benchmark_metrics,
-    collect_server_metrics,
     compute_metrics_delta,
     fetch_and_parse_metrics,
     get_metrics_url,
@@ -385,47 +384,6 @@ def test_get_histogram_helper() -> None:
         "maxserve_batch_execution_time_milliseconds", {"batch_type": "missing"}
     )
     assert result_missing is None
-
-
-@patch("max.benchmark.benchmark_shared.server_metrics.fetch_and_parse_metrics")
-def test_collect_server_metrics_without_baseline(
-    mock_fetch: MagicMock, sample_metrics: str
-) -> None:
-    """Test collect_server_metrics returns metrics directly when no baseline."""
-    mock_metrics = parse_metrics(sample_metrics)
-    mock_fetch.return_value = mock_metrics
-
-    result = collect_server_metrics("modular", "http://localhost:8000")
-
-    assert result.counters == mock_metrics.counters
-    assert result.gauges == mock_metrics.gauges
-    mock_fetch.assert_called_once_with(
-        backend="modular", base_url="http://localhost:8000"
-    )
-
-
-@patch("max.benchmark.benchmark_shared.server_metrics.compute_metrics_delta")
-@patch("max.benchmark.benchmark_shared.server_metrics.fetch_and_parse_metrics")
-def test_collect_server_metrics_with_baseline(
-    mock_fetch: MagicMock, mock_delta: MagicMock
-) -> None:
-    """Test collect_server_metrics delegates to compute_metrics_delta when baseline provided."""
-    baseline = ParsedMetrics(counters={}, gauges={}, histograms={}, raw_text="")
-    final = ParsedMetrics(counters={}, gauges={}, histograms={}, raw_text="")
-    mock_fetch.return_value = final
-
-    collect_server_metrics("modular", "http://localhost:8000", baseline)
-
-    mock_delta.assert_called_once_with(baseline=baseline, final=final)
-
-
-@patch("max.benchmark.benchmark_shared.server_metrics.fetch_and_parse_metrics")
-def test_collect_server_metrics_raises_on_error(mock_fetch: MagicMock) -> None:
-    """Test collect_server_metrics propagates exceptions."""
-    mock_fetch.side_effect = Exception("Connection failed")
-
-    with pytest.raises(Exception, match="Connection failed"):
-        collect_server_metrics("modular", "http://localhost:8000")
 
 
 def test_metrics_by_endpoint_defaults_to_empty() -> None:
