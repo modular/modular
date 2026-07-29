@@ -28,7 +28,7 @@ on `compute_capability() == 5`.
 
 from std.collections.string import StaticString
 from std.ffi import external_call
-from std.memory import UnsafePointer, bitcast
+from std.memory import bitcast
 from std.memory.pointer import AddressSpace
 from std.sys import size_of
 
@@ -65,7 +65,7 @@ def _emask_load[
     name_space: StaticString,
     target_space: AddressSpace,
 ](
-    ptr: UnsafePointer[Scalar[dtype], _, address_space=src_space],
+    ptr: Pointer[Scalar[dtype], _, address_space=src_space],
     mask: Int16,
 ) -> SIMD[dtype, width]:
     """Shared predicated-load implementation for the `*edge_masked_load` family.
@@ -105,9 +105,9 @@ def _emask_load[
     comptime full_mask = Int16((1 << width) - 1)
     comptime elt_size = Int16(size_of[dtype]())
 
-    var byte_ptr = ptr.bitcast[Scalar[DType.uint8]]().address_space_cast[
-        target_space
-    ]()
+    var byte_ptr = ptr.unsafe_bitcast[
+        Scalar[DType.uint8]
+    ]().unsafe_address_space_cast[target_space]()
     var raw = external_call[name, SIMD[lane_dtype, width]](
         byte_ptr, mask, full_mask, elt_size
     )
@@ -121,7 +121,7 @@ def edge_masked_load[
     //,
     width: Int,
 ](
-    ptr: UnsafePointer[Scalar[dtype], _, address_space=src_space],
+    ptr: Pointer[Scalar[dtype], _, address_space=src_space],
     mask: Int16,
 ) -> SIMD[dtype, width]:
     """Loads a predicated (edge-masked) vector in the pointer's own address
@@ -169,7 +169,7 @@ def gmem_edge_masked_load[
     //,
     width: Int,
 ](
-    ptr: UnsafePointer[Scalar[dtype], _, address_space=src_space],
+    ptr: Pointer[Scalar[dtype], _, address_space=src_space],
     mask: Int16,
 ) -> SIMD[dtype, width]:
     """Loads an edge-masked vector, treating `ptr` as device (global) memory
@@ -204,7 +204,7 @@ def smem_edge_masked_load[
     //,
     width: Int,
 ](
-    ptr: UnsafePointer[Scalar[dtype], _, address_space=src_space],
+    ptr: Pointer[Scalar[dtype], _, address_space=src_space],
     mask: Int16,
 ) -> SIMD[dtype, width]:
     """Loads an edge-masked vector, treating `ptr` as threadgroup (shared)

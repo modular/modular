@@ -40,7 +40,7 @@ from std.math.uutils import umod
 def load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[mut=False, Float32, _],
+    a_ptr: Pointer[mut=False, Float32, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -75,10 +75,10 @@ def load_matrix_a[
     var a23_col = group_lane_id + 4
 
     return SIMD[DType.float32, 4](
-        a_ptr[(tile_row + a02_row) * ldm + (tile_col + a01_col)],
-        a_ptr[(tile_row + a13_row) * ldm + (tile_col + a01_col)],
-        a_ptr[(tile_row + a02_row) * ldm + (tile_col + a23_col)],
-        a_ptr[(tile_row + a13_row) * ldm + (tile_col + a23_col)],
+        a_ptr[unsafe_offset=(tile_row + a02_row) * ldm + (tile_col + a01_col)],
+        a_ptr[unsafe_offset=(tile_row + a13_row) * ldm + (tile_col + a01_col)],
+        a_ptr[unsafe_offset=(tile_row + a02_row) * ldm + (tile_col + a23_col)],
+        a_ptr[unsafe_offset=(tile_row + a13_row) * ldm + (tile_col + a23_col)],
     )
 
 
@@ -86,7 +86,7 @@ def load_matrix_a[
 def load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[mut=False, Float16, _],
+    a_ptr: Pointer[mut=False, Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -123,10 +123,10 @@ def load_matrix_a[
     var a3_col = (group_lane_id * 2) + (3 & 0x1)
 
     return SIMD[DType.float16, 4](
-        a_ptr[(tile_row + a01_row) * ldm + (tile_col + a0_col)],
-        a_ptr[(tile_row + a01_row) * ldm + (tile_col + a1_col)],
-        a_ptr[(tile_row + a23_row) * ldm + (tile_col + a2_col)],
-        a_ptr[(tile_row + a23_row) * ldm + (tile_col + a3_col)],
+        a_ptr[unsafe_offset=(tile_row + a01_row) * ldm + (tile_col + a0_col)],
+        a_ptr[unsafe_offset=(tile_row + a01_row) * ldm + (tile_col + a1_col)],
+        a_ptr[unsafe_offset=(tile_row + a23_row) * ldm + (tile_col + a2_col)],
+        a_ptr[unsafe_offset=(tile_row + a23_row) * ldm + (tile_col + a3_col)],
     )
 
 
@@ -134,7 +134,7 @@ def load_matrix_a[
 def load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[mut=False, BFloat16, _],
+    a_ptr: Pointer[mut=False, BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -171,10 +171,18 @@ def load_matrix_a[
         var a3_col = (group_lane_id * 2) + (3 & 0x1)
 
         return SIMD[DType.bfloat16, k // 2](
-            a_ptr[(tile_row + a01_row) * ldm + (tile_col + a0_col)],
-            a_ptr[(tile_row + a01_row) * ldm + (tile_col + a1_col)],
-            a_ptr[(tile_row + a23_row) * ldm + (tile_col + a2_col)],
-            a_ptr[(tile_row + a23_row) * ldm + (tile_col + a3_col)],
+            a_ptr[
+                unsafe_offset=(tile_row + a01_row) * ldm + (tile_col + a0_col)
+            ],
+            a_ptr[
+                unsafe_offset=(tile_row + a01_row) * ldm + (tile_col + a1_col)
+            ],
+            a_ptr[
+                unsafe_offset=(tile_row + a23_row) * ldm + (tile_col + a2_col)
+            ],
+            a_ptr[
+                unsafe_offset=(tile_row + a23_row) * ldm + (tile_col + a3_col)
+            ],
         )
     else:
         comptime assert m == 16 and n == 8 and k == 16
@@ -194,15 +202,31 @@ def load_matrix_a[
         var a_col_7 = (group_lane_id * 2) + (7 & 0x1) + 8
 
         var a = SIMD[DType.bfloat16, k // 2]()
-        a[0] = a_ptr[(tile_row + a_row_0) * ldm + (tile_col + a_col_0)]
-        a[1] = a_ptr[(tile_row + a_row_0) * ldm + (tile_col + a_col_1)]
-        a[2] = a_ptr[(tile_row + a_row_1) * ldm + (tile_col + a_col_2)]
-        a[3] = a_ptr[(tile_row + a_row_1) * ldm + (tile_col + a_col_3)]
+        a[0] = a_ptr[
+            unsafe_offset=(tile_row + a_row_0) * ldm + (tile_col + a_col_0)
+        ]
+        a[1] = a_ptr[
+            unsafe_offset=(tile_row + a_row_0) * ldm + (tile_col + a_col_1)
+        ]
+        a[2] = a_ptr[
+            unsafe_offset=(tile_row + a_row_1) * ldm + (tile_col + a_col_2)
+        ]
+        a[3] = a_ptr[
+            unsafe_offset=(tile_row + a_row_1) * ldm + (tile_col + a_col_3)
+        ]
 
-        a[4] = a_ptr[(tile_row + a_row_0) * ldm + (tile_col + a_col_4)]
-        a[5] = a_ptr[(tile_row + a_row_0) * ldm + (tile_col + a_col_5)]
-        a[6] = a_ptr[(tile_row + a_row_1) * ldm + (tile_col + a_col_6)]
-        a[7] = a_ptr[(tile_row + a_row_1) * ldm + (tile_col + a_col_7)]
+        a[4] = a_ptr[
+            unsafe_offset=(tile_row + a_row_0) * ldm + (tile_col + a_col_4)
+        ]
+        a[5] = a_ptr[
+            unsafe_offset=(tile_row + a_row_0) * ldm + (tile_col + a_col_5)
+        ]
+        a[6] = a_ptr[
+            unsafe_offset=(tile_row + a_row_1) * ldm + (tile_col + a_col_6)
+        ]
+        a[7] = a_ptr[
+            unsafe_offset=(tile_row + a_row_1) * ldm + (tile_col + a_col_7)
+        ]
         return a
 
 
@@ -210,7 +234,7 @@ def load_matrix_a[
 def load_matrix_a_amd[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[mut=False, Float32, _],
+    a_ptr: Pointer[mut=False, Float32, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -239,14 +263,16 @@ def load_matrix_a_amd[
     var lane = lane_id()
     var thread_x = lane & 15
     var thread_y = lane >> 4
-    return a_ptr[ldm * (tile_row + thread_x) + tile_col + thread_y]
+    return a_ptr[
+        unsafe_offset=ldm * (tile_row + thread_x) + tile_col + thread_y
+    ]
 
 
 @always_inline
 def load_matrix_a_amd[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    a_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
+    a_ptr: Pointer[mut=False, Scalar[dtype], _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -283,7 +309,7 @@ def load_matrix_a_amd[
             var a_idx = (
                 ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
             )
-            a[i] = a_ptr[a_idx]
+            a[i] = a_ptr[unsafe_offset=a_idx]
 
         return a
     else:
@@ -304,7 +330,7 @@ def load_matrix_a_amd[
                 + (tile_col + i)
                 + thread_y * batchStrideA
             )
-            a[i] = a_ptr[a_idx]
+            a[i] = a_ptr[unsafe_offset=a_idx]
 
         return a
 
@@ -313,7 +339,7 @@ def load_matrix_a_amd[
 def load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[mut=False, Float32, _],
+    b_ptr: Pointer[mut=False, Float32, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -347,8 +373,8 @@ def load_matrix_b[
     var b1_row = group_lane_id + 4
 
     return SIMD[DType.float32, 2](
-        b_ptr[(tile_row + b0_row) * ldm + (tile_col + b01_col)],
-        b_ptr[(tile_row + b1_row) * ldm + (tile_col + b01_col)],
+        b_ptr[unsafe_offset=(tile_row + b0_row) * ldm + (tile_col + b01_col)],
+        b_ptr[unsafe_offset=(tile_row + b1_row) * ldm + (tile_col + b01_col)],
     )
 
 
@@ -356,7 +382,7 @@ def load_matrix_b[
 def load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[mut=False, Float16, _],
+    b_ptr: Pointer[mut=False, Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -390,8 +416,8 @@ def load_matrix_b[
     var b1_row = (group_lane_id * 2) + (1 & 0x1)
 
     return SIMD[DType.float16, 2](
-        b_ptr[(tile_row + b0_row) * ldm + (tile_col + b01_col)],
-        b_ptr[(tile_row + b1_row) * ldm + (tile_col + b01_col)],
+        b_ptr[unsafe_offset=(tile_row + b0_row) * ldm + (tile_col + b01_col)],
+        b_ptr[unsafe_offset=(tile_row + b1_row) * ldm + (tile_col + b01_col)],
     )
 
 
@@ -399,7 +425,7 @@ def load_matrix_b[
 def load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[mut=False, BFloat16, _],
+    b_ptr: Pointer[mut=False, BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -433,8 +459,12 @@ def load_matrix_b[
         var b1_row = (group_lane_id * 2) + (1 & 0x1)
 
         return SIMD[DType.bfloat16, k // 4](
-            b_ptr[(tile_row + b0_row) * ldm + (tile_col + b01_col)],
-            b_ptr[(tile_row + b1_row) * ldm + (tile_col + b01_col)],
+            b_ptr[
+                unsafe_offset=(tile_row + b0_row) * ldm + (tile_col + b01_col)
+            ],
+            b_ptr[
+                unsafe_offset=(tile_row + b1_row) * ldm + (tile_col + b01_col)
+            ],
         )
     else:
         comptime assert m == 16 and n == 8 and k == 16
@@ -448,10 +478,18 @@ def load_matrix_b[
         var b_col = group_id
 
         return SIMD[DType.bfloat16, k // 4](
-            b_ptr[(tile_row + b_row_0) * ldm + (tile_col + b_col)],
-            b_ptr[(tile_row + b_row_1) * ldm + (tile_col + b_col)],
-            b_ptr[(tile_row + b_row_2) * ldm + (tile_col + b_col)],
-            b_ptr[(tile_row + b_row_3) * ldm + (tile_col + b_col)],
+            b_ptr[
+                unsafe_offset=(tile_row + b_row_0) * ldm + (tile_col + b_col)
+            ],
+            b_ptr[
+                unsafe_offset=(tile_row + b_row_1) * ldm + (tile_col + b_col)
+            ],
+            b_ptr[
+                unsafe_offset=(tile_row + b_row_2) * ldm + (tile_col + b_col)
+            ],
+            b_ptr[
+                unsafe_offset=(tile_row + b_row_3) * ldm + (tile_col + b_col)
+            ],
         )
 
 
@@ -459,7 +497,7 @@ def load_matrix_b[
 def load_matrix_b_amd[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[mut=False, Float32, _],
+    b_ptr: Pointer[mut=False, Float32, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -484,14 +522,16 @@ def load_matrix_b_amd[
     var lane = lane_id()
     var thread_x = lane & 15
     var thread_y = lane >> 4
-    return b_ptr[ldm * (tile_row + thread_y) + tile_col + thread_x]
+    return b_ptr[
+        unsafe_offset=ldm * (tile_row + thread_y) + tile_col + thread_x
+    ]
 
 
 @always_inline
 def load_matrix_b_amd[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    b_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
+    b_ptr: Pointer[mut=False, Scalar[dtype], _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -535,7 +575,7 @@ def load_matrix_b_amd[
             var b_idx = (
                 ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
             )
-            b[i] = b_ptr[b_idx]
+            b[i] = b_ptr[unsafe_offset=b_idx]
 
         return b
     else:
@@ -554,7 +594,7 @@ def load_matrix_b_amd[
                 + (tile_row + i) * ldm
                 + thread_y * batchStrideB
             )
-            b[i] = b_ptr[b_idx]
+            b[i] = b_ptr[unsafe_offset=b_idx]
 
         return b
 
@@ -563,7 +603,7 @@ def load_matrix_b_amd[
 def _store_matrix_d_nvidia[
     dtype: DType, //, m: Int, n: Int, k: Int
 ](
-    d_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    d_ptr: Pointer[mut=True, Scalar[dtype], _],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,
@@ -604,17 +644,17 @@ def _store_matrix_d_nvidia[
     var d2_col = (group_lane_id * 2) + (2 & 0x1)
     var d3_col = (group_lane_id * 2) + (3 & 0x1)
 
-    d_ptr[(tile_row + d01_row) * ldm + (tile_col + d0_col)] = d[0]
-    d_ptr[(tile_row + d01_row) * ldm + (tile_col + d1_col)] = d[1]
-    d_ptr[(tile_row + d23_row) * ldm + (tile_col + d2_col)] = d[2]
-    d_ptr[(tile_row + d23_row) * ldm + (tile_col + d3_col)] = d[3]
+    d_ptr[unsafe_offset=(tile_row + d01_row) * ldm + (tile_col + d0_col)] = d[0]
+    d_ptr[unsafe_offset=(tile_row + d01_row) * ldm + (tile_col + d1_col)] = d[1]
+    d_ptr[unsafe_offset=(tile_row + d23_row) * ldm + (tile_col + d2_col)] = d[2]
+    d_ptr[unsafe_offset=(tile_row + d23_row) * ldm + (tile_col + d3_col)] = d[3]
 
 
 @always_inline
 def _store_matrix_d_amd[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    d_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    d_ptr: Pointer[mut=True, Scalar[dtype], _],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,
@@ -662,7 +702,7 @@ def _store_matrix_d_amd[
                 + (tile_row + i) * ldm
                 + thread_y * batchStrideD
             )
-            d_ptr[d_idx] = d[i]
+            d_ptr[unsafe_offset=d_idx] = d[i]
 
     else:
         # TODO: Do we need to add constraints here?
@@ -674,14 +714,14 @@ def _store_matrix_d_amd[
             var d_idx = (
                 ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
             )
-            d_ptr[d_idx] = d[i]
+            d_ptr[unsafe_offset=d_idx] = d[i]
 
 
 @always_inline
 def store_matrix_d[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    d_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    d_ptr: Pointer[mut=True, Scalar[dtype], _],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,

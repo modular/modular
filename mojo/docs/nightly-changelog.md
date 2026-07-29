@@ -1478,6 +1478,17 @@ This version is still a work in progress.
 
 - The `layout` package is now bundled with MAX instead of Mojo.
 
+- The GPU device-side standard library now uses the unified safe `Pointer`
+  type throughout `std.gpu` (`memory`, `compute`, `intrinsics`, `sync`, and
+  `primitives`). Public signatures that previously took or returned
+  `UnsafePointer` are respelled to bare `Pointer`; since `Pointer` and
+  `UnsafePointer` share representation and origin and decay implicitly, this
+  is a type-identical change for callers. One visible difference:
+  `external_memory()` now returns a safe `Pointer` instead of an
+  `UnsafePointer`. Code that performs raw pointer arithmetic on the result or
+  builds a `LayoutTensor`/`TileTensor` from it can wrap it in an
+  explicitly-typed `UnsafePointer[...]` at the call site.
+
 ## Removed
 
 - Removed the deprecated `DeviceContext.compile_function_experimental()` and

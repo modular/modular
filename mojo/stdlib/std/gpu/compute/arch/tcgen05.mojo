@@ -37,7 +37,7 @@ def check_blackwell_constraint():
 struct TensorMemory(TrivialRegisterPassable):
     """A wrapper around tensor memory allocated for tcgen05 instructions."""
 
-    var ptr: UnsafePointer[
+    var ptr: Pointer[
         UInt32, MutUntrackedOrigin, address_space=AddressSpace.SHARED
     ]
     """Pointer to the tensor memory address."""
@@ -57,7 +57,7 @@ struct TensorMemory(TrivialRegisterPassable):
             external_memory[
                 UInt32, address_space=AddressSpace.SHARED, alignment=16
             ]()
-            .bitcast[UInt32]()
+            .unsafe_bitcast[UInt32]()
             .unsafe_origin_cast[MutUntrackedOrigin]()
         )
         self.num_cols = num_cols
@@ -67,7 +67,7 @@ struct TensorMemory(TrivialRegisterPassable):
 def tcgen05_alloc[
     cta_group: Int32
 ](
-    ptr_tmem_addr: UnsafePointer[
+    ptr_tmem_addr: Pointer[
         mut=True, UInt32, _, address_space=AddressSpace.SHARED
     ],
     num_cols: UInt32,
@@ -241,10 +241,10 @@ def tcgen05_ld[
             constraints=constraints_str,
             has_side_effect=True,
         ](tmem_addr)
-        var ptr = UnsafePointer(to=r).bitcast[Scalar[dtype]]()
+        var ptr = Pointer(to=r).unsafe_bitcast[Scalar[dtype]]()
         var result = InlineArray[Scalar[dtype], width](uninitialized=True)
         comptime for i in range(width):
-            result[i] = ptr[i]
+            result[i] = ptr[unsafe_offset=i]
         return result^
 
     # fmt: off
