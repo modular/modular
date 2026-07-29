@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Placeholder configuration to start to prototype the API with."""
 
-from std.collections.optional import OptionalReg
 from std.gpu.host.constant_memory_mapping import ConstantMemoryMapping
 from std.gpu.host.dim import Dim
 from std.gpu.host.launch_attribute import LaunchAttribute
@@ -42,13 +41,13 @@ struct GPUExecutionConfiguration(
 
     var grid_dim: Dim
     var block_dim: Dim
-    var shared_mem_bytes: UInt64
+    var shared_mem_bytes: Int
 
     def __init__(
         out self,
         var grid_dim: Dim,
         var block_dim: Dim,
-        var shared_mem_bytes: UInt64 = 0,
+        var shared_mem_bytes: Int = 0,
     ):
         """The 'all members' constructor with reasonable defaults set."""
         self.grid_dim = grid_dim
@@ -106,7 +105,7 @@ struct GPUExecutionConfiguration(
         """
         self.grid_dim = grid_dim
 
-    def get_near_compute_scratchpad_usage(self) -> UInt64:
+    def get_near_compute_scratchpad_usage(self) -> Int:
         """Gets the near-compute scratchpad usage configuration.
 
         Returns:
@@ -114,7 +113,7 @@ struct GPUExecutionConfiguration(
         """
         return self.shared_mem_bytes
 
-    def set_near_compute_scratchpad_usage(mut self, var usage: UInt64):
+    def set_near_compute_scratchpad_usage(mut self, var usage: Int):
         """Sets the near-compute scratchpad usage configuration.
 
         Args:

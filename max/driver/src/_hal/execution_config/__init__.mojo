@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections.optional import OptionalReg
+from std.collections import BitSet
 from std.gpu.host.constant_memory_mapping import ConstantMemoryMapping
 from std.gpu.host.dim import Dim
 from std.gpu.host.launch_attribute import LaunchAttribute
@@ -99,7 +99,7 @@ trait ClusterExecutionConfig(GridBlockExecutionConfig):
     between the grid and block dimensions.
     """
 
-    def __init__(out self, *, cluster_dim: Dim):
+    def __init__(out self, *, cluster_dim: Optional[Dim]):
         """Initializes the execution config with the given cluster dimensions.
 
         Args:
@@ -107,7 +107,7 @@ trait ClusterExecutionConfig(GridBlockExecutionConfig):
         """
         ...
 
-    def get_cluster_dim(self) -> Dim:
+    def get_cluster_dim(self) -> Optional[Dim]:
         """Gets the cluster dimensions for the kernel launch.
 
         Returns:
@@ -115,7 +115,7 @@ trait ClusterExecutionConfig(GridBlockExecutionConfig):
         """
         ...
 
-    def set_cluster_dim(mut self, var cluster_dim: Dim):
+    def set_cluster_dim(mut self, var cluster_dim: Optional[Dim]):
         """Sets the cluster dimensions for the kernel launch.
 
         Args:
@@ -155,7 +155,7 @@ trait NearComputeGeneralPurposeScratchpadExecutionConfig(ExecutionConfig):
     Maps to shared memory on NVIDIA. Most CPUs don't have an equivalent. **DOES NOT** map to tmem on NVIDIA since the general purpose compute can't directly load/store from that.
     """
 
-    def get_near_compute_scratchpad_usage(self) -> UInt64:
+    def get_near_compute_scratchpad_usage(self) -> Int:
         """Gets the near-compute scratchpad usage configuration.
 
         Returns:
@@ -163,7 +163,7 @@ trait NearComputeGeneralPurposeScratchpadExecutionConfig(ExecutionConfig):
         """
         ...
 
-    def set_near_compute_scratchpad_usage(mut self, var usage: UInt64):
+    def set_near_compute_scratchpad_usage(mut self, var usage: Int):
         """Sets the near-compute scratchpad usage configuration.
 
         Args:
@@ -199,7 +199,8 @@ trait ConstantMemoryMappingExecutionConfig(ExecutionConfig):
 
 
 trait LaunchAttributeHolderExecutionConfig(ExecutionConfig):
-    """An `ExecutionConfig` which has the ability to hold launch attributes."""
+    """An `ExecutionConfig` which has the ability to hold CUDA launch attributes.
+    """
 
     def get_launch_attributes[
         o: ImmOrigin
@@ -207,7 +208,7 @@ trait LaunchAttributeHolderExecutionConfig(ExecutionConfig):
         """Gets the launch attributes configured for kernel launch.
 
         Returns:
-            The configured launch attributes.
+            The configured launch attributes, or `None` if unset.
         """
         ...
 
@@ -215,6 +216,6 @@ trait LaunchAttributeHolderExecutionConfig(ExecutionConfig):
         """Sets launch attributes used for kernel launch.
 
         Args:
-            attributes: Launch attributes to apply.
+            attributes: Launch attributes to apply, or `None` to clear them.
         """
         ...

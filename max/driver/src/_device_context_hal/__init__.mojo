@@ -2542,9 +2542,7 @@ struct DeviceFunction[
         )
 
         var config = GPUExecutionConfiguration(grid_dim, block_dim)
-        config.set_near_compute_scratchpad_usage(
-            UInt64(shared_mem_bytes.or_else(0))
-        )
+        config.set_near_compute_scratchpad_usage(shared_mem_bytes.or_else(0))
 
         self._call_with_pack_checked[*Ts, ContextT=ContextT](
             ctx, config, *args, attributes=attributes^, location=location
@@ -2567,7 +2565,7 @@ struct DeviceFunction[
     ) raises:
         _check_device_context_hal_only_supported_exec_config(execution_config)
 
-        var shared_mem_bytes: UInt64 = 0
+        var shared_mem_bytes: Int = 0
 
         comptime if conforms_to(
             ExecutionConfigType,
