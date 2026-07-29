@@ -155,13 +155,24 @@ class _ExternalTierConnector(RecordingConnector):
         return 1024
 
 
+_FAKE_BYTES_PER_PAGE = 64
+
+
 class _FakeKVMemory:
     """CPU stand-in for a ``KVCacheMemory`` unit: records cross-replica D2D
     copies without touching device memory, so a cross-replica prefix-cache hit
-    can be exercised CPU-only."""
+    can be exercised CPU-only.
+
+    ``buffer``/``all_buffers`` mirror the real ``KVCacheMemory`` shape (a
+    single, non-replicated shard) since ``_copy_block_across_replicas`` reads
+    ``buffer.shape[1]`` and ``len(all_buffers)`` to accumulate
+    ``cross_replica_bytes_copied``.
+    """
 
     def __init__(self) -> None:
         self.copies: list[tuple[int, int]] = []
+        self.buffer = SimpleNamespace(shape=(1, _FAKE_BYTES_PER_PAGE))
+        self.all_buffers = [self.buffer]
 
     def copy_block_to(
         self, dst_unit: object, dst_block_id: int, src_block_id: int
@@ -395,6 +406,10 @@ def test_touch_fires_on_cross_replica_hit_keyed_to_serving_replica() -> None:
 
     assert len(device_blocks) == 2  # materialized onto replica 0
     assert connector.touches == [([_b(111), _b(222)], 0)]
+    # Cross-replica D2D copies, not local device hits (CENG-845).
+    assert bm._metrics.cross_replica_blocks_copied == 2
+    assert bm._metrics.cross_replica_bytes_copied == 2 * _FAKE_BYTES_PER_PAGE
+    assert bm._metrics.device_blocks_served == 0
 
 
 def test_cross_replica_copy_disabled_serves_from_external_tier() -> None:

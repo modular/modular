@@ -90,6 +90,7 @@ class BatchMetrics:
     cache_hit_rate: float
     cache_hit_tokens: int
     cache_miss_tokens: int
+    device_blocks_served: int
 
     used_host_kv_pct: float
     total_host_kv_blocks: int
@@ -151,6 +152,12 @@ class BatchMetrics:
     dp_active_tokens: int = 0
     dp_step_capacity_tokens: int = 0
 
+    # Device-to-device KV block copies across DP replicas (a prefix-cache hit
+    # resident on another replica, materialized locally). Both 0 when
+    # data_parallel_degree == 1 or no such copy happened this batch.
+    cross_replica_blocks_copied: int = 0
+    cross_replica_bytes_copied: int = 0
+
     # Per-request prefix cache coverage for requests admitted in this batch
     # (cached_prefix_length / prompt_length). Empty for non-CE batches and
     # for CE batches that admit no new requests (e.g. follow-up prefill
@@ -199,10 +206,13 @@ class BatchMetrics:
 
         total_kv_blocks = 0
         used_kv_pct = 0.0
+        device_blocks_served = 0
         used_host_kv_pct = 0.0
         total_host_kv_blocks = 0
         h2d_blocks_copied = 0
         d2h_blocks_copied = 0
+        cross_replica_blocks_copied = 0
+        cross_replica_bytes_copied = 0
         disk_blocks_read = 0
         disk_blocks_written = 0
         inflight_disk_ops = 0
@@ -271,8 +281,13 @@ class BatchMetrics:
                 )
                 used_host_kv_pct = used_host_kv_blocks / total_host_kv_blocks
 
+            device_blocks_served = metrics_agg.device_blocks_served
             h2d_blocks_copied = metrics_agg.h2d_blocks_copied
             d2h_blocks_copied = metrics_agg.d2h_blocks_copied
+            cross_replica_blocks_copied = (
+                metrics_agg.cross_replica_blocks_copied
+            )
+            cross_replica_bytes_copied = metrics_agg.cross_replica_bytes_copied
             disk_blocks_written = metrics_agg.disk_blocks_written
             disk_blocks_read = metrics_agg.disk_blocks_read
             inflight_disk_ops = metrics_agg.inflight_disk_ops
@@ -387,10 +402,13 @@ class BatchMetrics:
             cache_hit_rate=cache_hit_rate,
             cache_hit_tokens=cache_hit_tokens,
             cache_miss_tokens=cache_miss_tokens,
+            device_blocks_served=device_blocks_served,
             used_host_kv_pct=used_host_kv_pct,
             total_host_kv_blocks=total_host_kv_blocks,
             h2d_blocks_copied=h2d_blocks_copied,
             d2h_blocks_copied=d2h_blocks_copied,
+            cross_replica_blocks_copied=cross_replica_blocks_copied,
+            cross_replica_bytes_copied=cross_replica_bytes_copied,
             disk_blocks_read=disk_blocks_read,
             disk_blocks_written=disk_blocks_written,
             used_disk_kv_pct=used_disk_kv_pct,
@@ -715,6 +733,12 @@ class BatchMetrics:
             METRICS.dp_step_capacity_tokens(
                 self.dp_step_capacity_tokens, batch_type=bt
             )
+            METRICS.cache_cross_replica_blocks_copied(
+                self.cross_replica_blocks_copied
+            )
+            METRICS.cache_cross_replica_bytes_copied(
+                self.cross_replica_bytes_copied
+            )
 
         METRICS.cache_num_used_blocks(
             int(self.total_kv_blocks * self.used_kv_pct)
@@ -726,6 +750,7 @@ class BatchMetrics:
         if self.batch_type == BatchType.CE and self.num_new_admissions > 0:
             METRICS.cache_hits(self.cache_hit_tokens)
             METRICS.cache_misses(self.cache_miss_tokens)
+            METRICS.cache_device_blocks_served(self.device_blocks_served)
             for coverage in self.per_request_prefix_coverage:
                 METRICS.cache_request_prefix_coverage(coverage * 100)
 

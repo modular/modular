@@ -239,6 +239,36 @@ def test_kv_cache_metrics_add_sums_dkv_health_fields() -> None:
     assert total.dkv_degraded
 
 
+def test_kv_cache_metrics_add_sums_tier_attribution_fields() -> None:
+    """device_blocks_served and cross_replica_{blocks,bytes}_copied sum
+    across replicas (CENG-845 G0/G0-DP tier-attribution counters)."""
+    replica_0 = KVCacheMetrics(
+        device_blocks_served=5,
+        cross_replica_blocks_copied=2,
+        cross_replica_bytes_copied=1024,
+        h2d_blocks_copied=10,
+        disk_blocks_read=3,
+    )
+    replica_1 = KVCacheMetrics(
+        device_blocks_served=7,
+        cross_replica_blocks_copied=1,
+        cross_replica_bytes_copied=512,
+        h2d_blocks_copied=4,
+        disk_blocks_read=1,
+    )
+
+    total = replica_0 + replica_1
+
+    assert total.device_blocks_served == 12
+    assert total.cross_replica_blocks_copied == 3
+    assert total.cross_replica_bytes_copied == 1536
+    assert total.h2d_blocks_copied == 14
+    assert total.disk_blocks_read == 4
+    # defaults stay zero
+    assert KVCacheMetrics().device_blocks_served == 0
+    assert KVCacheMetrics().cross_replica_bytes_copied == 0
+
+
 def test_kv_cache_metrics_dkv_degraded_predicate() -> None:
     """dkv_degraded is true only with a dKV tier and a client not connected."""
     # no dKV tier attached
