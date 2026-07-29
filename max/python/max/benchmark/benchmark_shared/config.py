@@ -146,13 +146,6 @@ def get_pixel_gen_endpoint(backend: Backend, task: BenchmarkTask) -> Endpoint:
     )
 
 
-class HardwareConfig(ConfigFileModel):
-    """Configuration class for hardware options."""
-
-    devices: str | None = Field(default=None)
-    """Hardware device on which model will be executed. Valid values: 'cpu', 'gpu', 'gpu:0,1,2'."""
-
-
 class SamplingConfig(ConfigFileModel):
     """Configuration class for sampling options."""
 
@@ -169,41 +162,6 @@ class SamplingConfig(ConfigFileModel):
 
     top_k: int | None = Field(default=None)
     """Limits the sampling to the K most probable tokens. Default: None (no sampling)."""
-
-
-class BenchmarkCommonConfig(ConfigFileModel):
-    tokenizer: str | None = None
-    """Name or path of the tokenizer, if not using the default tokenizer."""
-
-    model_max_length: int | None = None
-    """Override for tokenizer max length. Needed if server has a lower max length than the tokenizer."""
-
-    trust_remote_code: bool = False
-    """Trust remote code from huggingface."""
-
-    # Dataset configuration (common across all benchmark types)
-    dataset_name: str | None = None
-    """Name of the dataset to benchmark on."""
-
-    dataset_path: str | None = None
-    """Path to the dataset."""
-
-    dataset_mode: DatasetMode = "huggingface"
-    """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
-
-    # Basic workload parameters
-    num_prompts: int | None = None
-    """Number of prompts to process."""
-
-    seed: int | None = None
-    """Random seed for reproducibility."""
-
-    # Control flags
-    disable_tqdm: bool = False
-    """Specify to disable tqdm progress bar."""
-
-    print_inputs_and_outputs: bool = False
-    """Print all input and outputs to console."""
 
 
 class BaseBenchmarkConfig(ConfigFileModel):

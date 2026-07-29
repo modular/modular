@@ -412,8 +412,6 @@ class BaseBenchmarkMetrics(BaseModel, Metrics):
             if isinstance(val, (StandardPercentileMetrics, ThroughputMetrics)):
                 d.update(val.to_flat_dict(name))
                 d.update(val.confidence_to_flat_dict(name))
-            elif isinstance(val, ChunkTimingMetrics):
-                d.update(val.to_flat_dict(name))
         if self.metrics_by_endpoint:
             # Backwards compat: `server_metrics` mirrors the first endpoint so
             # existing BigQuery/analysis consumers keep working.
@@ -1069,40 +1067,6 @@ class BenchmarkResult(BaseModel):
         if agg is None:
             return []
         return agg.confidence_warnings()
-
-
-@dataclass
-class ChunkTimingMetrics:
-    """Timing statistics for audio chunks (min, mean, median, p99, max)."""
-
-    min: float
-    mean: float
-    median: float
-    p99: float
-    max: float
-
-    @staticmethod
-    def from_samples(data: list[float]) -> ChunkTimingMetrics:
-        if not data:
-            return ChunkTimingMetrics(
-                min=0.0, mean=0.0, median=0.0, p99=0.0, max=0.0
-            )
-        return ChunkTimingMetrics(
-            min=float(np.min(data)),
-            mean=float(np.mean(data)),
-            median=float(np.median(data)),
-            p99=float(np.percentile(data, 99)),
-            max=float(np.max(data)),
-        )
-
-    def to_flat_dict(self, name: str) -> dict[str, float]:
-        return {
-            f"min_{name}": self.min,
-            f"mean_{name}": self.mean,
-            f"median_{name}": self.median,
-            f"p99_{name}": self.p99,
-            f"max_{name}": self.max,
-        }
 
 
 # ---------------------------------------------------------------------------
