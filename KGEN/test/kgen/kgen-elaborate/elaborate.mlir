@@ -2343,3 +2343,24 @@ kgen.generator @"non_c_export::ok"() attributes {linkageName = #kgen.linkage_nam
 kgen.generator export @"c_export::underscores"() cabi attributes {linkageName = #kgen.linkage_name<"_leading_underscore_123" : !kgen.string, false>} {
   kgen.return
 }
+
+// -----
+
+// COM: Breaking `@score`'s self-recursion SCC while the node is suspended on
+// COM: a blocker (`@scorer_table`, a separate pending SCC) dropped the
+// COM: blocker registration and orphaned the node's dependency count,
+// COM: deadlocking elaboration with no diagnosable recursion.
+
+// CHECK-DAG: kgen.func @scorer_table
+// CHECK-DAG: kgen.func export @score
+
+kgen.generator @scorer_table() -> index {
+  %0 = kgen.call @scorer_table() : () -> index
+  kgen.return %0 : index
+}
+
+kgen.generator export @score() -> index {
+  %0 = kgen.call @score() : () -> index
+  %fp = kgen.param.constant: () -> index = <@scorer_table>
+  kgen.return %0 : index
+}
