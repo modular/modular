@@ -11,23 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Read and flatten benchmark result JSON blobs into CSV-ready rows.
+"""Flatten benchmark result JSON blobs and project them into CSV columns.
 
 The serving benchmark treats its JSON output as the single source of truth: a
-``save_result_json`` blob carries *every* metric the run produced. Turning that
-into a spreadsheet-friendly CSV starts by flattening each nested blob into a
-flat ``dotted.key`` column namespace. This module provides that ingestion step;
-column selection and CSV writing build on top of it.
+``save_result_json`` blob carries *every* metric the run produced. A CSV, by
+contrast, is a presentation of that data — most consumers care about a small
+"summary" slice, while power users opt into complementary groups (prefill /
+decode batch stats, per-turn cache rates, GPU stats, ...) or name exact columns.
+
+This module keeps that separation clean. It reads one or more result JSON files,
+flattens each nested blob into a flat ``dotted.key`` column namespace, and
+projects a CSV containing a curated default summary plus whatever additional
+columns or groups the caller selects. It never recomputes metrics; it only
+projects the columns already present in the JSON.
 """
 
 from __future__ import annotations
 
+import csv
 import json
-from collections.abc import Mapping
+import logging
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import TypeGuard
+from typing import Literal, TypeGuard
 
 from typing_extensions import TypedDict
+
+logger = logging.getLogger(__name__)
 
 # A JSON value as produced by ``json.load``. Recursive: objects nest objects
 # and lists. Using this instead of a bare ``object`` lets the flattener's
@@ -59,6 +69,152 @@ class ResultSetDocument(TypedDict, total=False):
 
     run_context: JSONObject
     results: list[ResultEntry]
+
+
+# Curated, ordered default columns. Only those actually present in the input
+# are emitted, so this same list works for text-generation and pixel-generation
+# runs (missing keys are silently skipped). This is the "summary" slice most
+# consumers want; everything else is opt-in via ``--groups`` / ``--columns`` /
+# ``--all``.
+SUMMARY_COLUMNS: tuple[str, ...] = (
+    # Run identity / configuration.
+    "date",
+    "model_id",
+    "backend",
+    "benchmark_task",
+    "dataset_name",
+    "num_prompts",
+    "max_concurrency",
+    "max_concurrent_conversations",
+    "request_rate",
+    # Top-line throughput / duration.
+    "duration",
+    "completed",
+    "failures",
+    "request_throughput",
+    "total_input_tokens",
+    "total_output_tokens",
+    "total_generated_outputs",
+    "aggregate_tokens_per_minute",
+    "mean_input_throughput",
+    "mean_output_throughput",
+    # Latency headlines (mean + median + p99 for the metrics people quote).
+    "mean_ttft_ms",
+    "median_ttft_ms",
+    "p99_ttft_ms",
+    "mean_tpot_ms",
+    "median_tpot_ms",
+    "p99_tpot_ms",
+    "mean_step_tpot_ms",
+    "median_step_tpot_ms",
+    "mean_itl_ms",
+    "median_itl_ms",
+    "p99_itl_ms",
+    "mean_latency_ms",
+    "median_latency_ms",
+    "p99_latency_ms",
+    # Cache + speculative-decode headlines.
+    "global_cached_token_rate",
+    "spec_decode_acceptance_rate",
+    "spec_decode_acceptance_length",
+)
+
+
+def _group_prefill_decode(key: str) -> bool:
+    return key.startswith(("prefill_stats.", "decode_stats.")) or (
+        key.startswith("server_metrics")
+        and ("prefill" in key or "decode" in key)
+    )
+
+
+def _group_gpu(key: str) -> bool:
+    return key in (
+        "peak_gpu_memory_mib",
+        "available_gpu_memory_mib",
+        "gpu_utilization",
+    )
+
+
+def _group_cpu(key: str) -> bool:
+    return key.startswith("cpu_metrics")
+
+
+def _group_per_turn(key: str) -> bool:
+    return "per_turn" in key
+
+
+def _group_server_metrics(key: str) -> bool:
+    return key.startswith("server_metrics")
+
+
+def _group_spec_decode(key: str) -> bool:
+    return key.startswith("spec_decode")
+
+
+def _group_confidence(key: str) -> bool:
+    return (
+        key.endswith(("_confidence", "_sample_size"))
+        or "_ci_lower" in key
+        or "_ci_upper" in key
+        or "_ci_relative_width" in key
+    )
+
+
+def _group_client_args(key: str) -> bool:
+    return key.startswith("client_args")
+
+
+def _group_steady_state(key: str) -> bool:
+    return key.startswith("steady_state") or key == "num_outliers_rejected"
+
+
+def _group_raw(key: str) -> bool:
+    # Per-request sample arrays and other bulk lists. Kept out of the summary
+    # because each is a single opaque JSON cell that bloats the CSV.
+    return key in (
+        "input_lens",
+        "output_lens",
+        "ttfts",
+        "latencies",
+        "num_generated_outputs",
+        "errors",
+        "request_submit_times",
+        "request_complete_times",
+        "per_turn_cached_token_rates",
+        "per_turn_cache_retentions",
+        "session_server_stats",
+        "aggregate_server_stats",
+    )
+
+
+# Names of the opt-in serving column groups (the keys of COLUMN_GROUPS). A
+# ``Literal`` so the group set is type-checked at definition and typos are caught.
+ServingColumnGroup = Literal[
+    "prefill_decode",
+    "gpu",
+    "cpu",
+    "per_turn",
+    "server_metrics",
+    "spec_decode",
+    "confidence",
+    "client_args",
+    "steady_state",
+    "raw",
+]
+
+# Named opt-in column groups. Each predicate matches a *flattened* column name.
+COLUMN_GROUPS: Mapping[ServingColumnGroup, Callable[[str], bool]] = {
+    "prefill_decode": _group_prefill_decode,
+    "gpu": _group_gpu,
+    "cpu": _group_cpu,
+    "per_turn": _group_per_turn,
+    "server_metrics": _group_server_metrics,
+    "spec_decode": _group_spec_decode,
+    "confidence": _group_confidence,
+    "client_args": _group_client_args,
+    "steady_state": _group_steady_state,
+    "raw": _group_raw,
+}
 
 
 def flatten(obj: JSONObject) -> Row:
@@ -165,3 +321,180 @@ def load_result_rows(path: Path) -> list[Row]:
     if _is_result_set_document(data):
         return _rows_from_result_set(data)
     return [flatten(data)]
+
+
+def _ordered_unique(items: Iterable[str]) -> list[str]:
+    """Returns ``items`` with duplicates removed, preserving first-seen order."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+
+def select_columns(
+    available: Sequence[str],
+    *,
+    groups: Sequence[str] = (),
+    columns: Sequence[str] = (),
+    all_columns: bool = False,
+    only: bool = False,
+) -> list[str]:
+    """Chooses the ordered CSV columns from those available in the input.
+
+    The default (no options) is :data:`SUMMARY_COLUMNS`, restricted to columns
+    actually present in the input. ``groups`` and ``columns`` add to that
+    summary; ``only`` drops the summary so just the requested groups/columns are
+    emitted; ``all_columns`` emits every available column (summary first, then
+    the rest sorted).
+
+    For example:
+
+    .. code-block:: python
+
+        available = [
+            "date", "mean_ttft_ms", "prefill_stats.x", "gpu_utilization",
+        ]
+        # Default: the summary columns present in the input, in summary order.
+        select_columns(available)
+        # -> ["date", "mean_ttft_ms"]
+        # Opt-in groups add to the summary (group columns in definition order):
+        select_columns(available, groups=["prefill_decode", "gpu"])
+        # -> ["date", "mean_ttft_ms", "prefill_stats.x", "gpu_utilization"]
+        # An exact, ordered set with no summary:
+        select_columns(available, only=True, columns=["mean_ttft_ms", "date"])
+        # -> ["mean_ttft_ms", "date"]
+
+    Args:
+        available:
+            All flattened column names present across the input rows.
+        groups:
+            Names of opt-in :data:`COLUMN_GROUPS` to include.
+        columns:
+            Exact column names to include, in the given order. Included even if
+            absent from ``available`` (they produce empty cells).
+        all_columns:
+            Emit every available column.
+        only:
+            Emit only the requested ``groups`` / ``columns`` (no summary).
+
+    Returns:
+        The ordered list of column names to write.
+
+    Raises:
+        ValueError: If a requested group name is unknown.
+    """
+    available_set = set(available)
+
+    if all_columns:
+        summary_present = [c for c in SUMMARY_COLUMNS if c in available_set]
+        rest = sorted(c for c in available_set if c not in set(summary_present))
+        return _ordered_unique([*summary_present, *rest])
+
+    unknown = [g for g in groups if g not in COLUMN_GROUPS]
+    if unknown:
+        raise ValueError(
+            f"Unknown column group(s): {', '.join(sorted(unknown))}. "
+            f"Available groups: {', '.join(sorted(COLUMN_GROUPS))}."
+        )
+
+    selected: list[str] = []
+    if not only:
+        selected.extend(c for c in SUMMARY_COLUMNS if c in available_set)
+
+    # Iterate the group definitions (not the caller-supplied strings) so the
+    # ``Literal``-typed keys stay type-checked; requested groups are emitted in
+    # definition order.
+    requested = set(groups)
+    for name, predicate in COLUMN_GROUPS.items():
+        if name in requested:
+            selected.extend(sorted(c for c in available_set if predicate(c)))
+
+    # Explicit columns keep the caller's order and are emitted even if absent.
+    selected.extend(columns)
+
+    return _ordered_unique(selected)
+
+
+def write_csv(
+    rows: Sequence[Mapping[str, str]],
+    columns: Sequence[str],
+    output_file: Path,
+) -> None:
+    """Writes ``rows`` to ``output_file`` as CSV using the given ``columns``.
+
+    Missing cells (a column absent from a given row) are written as empty
+    strings.
+
+    Args:
+        rows:
+            The flattened result rows.
+        columns:
+            The ordered column names forming the header.
+        output_file:
+            The CSV path to write.
+    """
+    with open(output_file, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(columns)
+        for row in rows:
+            writer.writerow([row.get(column, "") for column in columns])
+
+
+def convert(
+    inputs: Sequence[Path],
+    output_file: Path,
+    *,
+    groups: Sequence[str] = (),
+    columns: Sequence[str] = (),
+    all_columns: bool = False,
+    only: bool = False,
+) -> list[str]:
+    """Reads result JSON ``inputs`` and writes a CSV with selected columns.
+
+    Args:
+        inputs:
+            The result JSON files to read (each may hold one or many results).
+        output_file:
+            The CSV path to write.
+        groups:
+            Names of opt-in :data:`COLUMN_GROUPS` to include.
+        columns:
+            Exact column names to include, in order.
+        all_columns:
+            Emit every available column.
+        only:
+            Emit only the requested groups/columns (no summary).
+
+    Returns:
+        The ordered list of columns written.
+
+    Raises:
+        ValueError: If no inputs are given or a group name is unknown.
+    """
+    if not inputs:
+        raise ValueError("no input files given")
+
+    rows: list[Row] = []
+    for path in inputs:
+        rows.extend(load_result_rows(path))
+
+    # Union of keys across rows, preserving first-seen order for stable output.
+    available = _ordered_unique(key for row in rows for key in row)
+    selected = select_columns(
+        available,
+        groups=groups,
+        columns=columns,
+        all_columns=all_columns,
+        only=only,
+    )
+    write_csv(rows, selected, output_file)
+    logger.info(
+        "Wrote %d row(s) and %d column(s) to %s",
+        len(rows),
+        len(selected),
+        output_file,
+    )
+    return selected
