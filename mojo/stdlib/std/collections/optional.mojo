@@ -755,9 +755,7 @@ struct Optional[T: AnyType](
         assert self.__bool__(), "`.unsafe_take()` on empty `Optional`"
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
 
-    def deinit_with[
-        F: def(var Self.T)
-    ](deinit self, deinit_func: F, /) where conforms_to(Self.T, Movable):
+    def deinit_with[F: def(var Self.T)](deinit self, deinit_func: F, /):
         """Destroy the value contained in this `Optional` in-place using a
         caller-provided deinitializer function.
 
@@ -767,7 +765,7 @@ struct Optional[T: AnyType](
         destroy an `Optional[T]` through this API instead.
 
         If `self` is empty, `deinit_func` is not called. Otherwise
-        `deinit_func` is called exactly once on the moved-out value.
+        `deinit_func` is called exactly once on the contained value.
 
         Parameters:
             F: The type of the caller-provided deinitializer function.
@@ -792,14 +790,8 @@ struct Optional[T: AnyType](
         """
         if self:
             # SAFETY: We just checked that the `Optional` holds a `T`, so
-            # `unsafe_take` won't abort.
-            #
-            # TODO(MOCO-4111): Forward `deinit_func` into
-            # `Variant.deinit_with[Self.T]` instead of deinitializing the
-            # taken-out value here. That call is rejected today because a
-            # `where`-narrowed `def(var Self.T)` is not convertible to
-            # Variant's `def(var T)`.
-            deinit_func(self._value^.unsafe_take[Self.T]())
+            # `Variant.deinit_with` won't abort.
+            self._value^.deinit_with[Self.T](deinit_func)
         else:
             # Retire the empty `Optional` by destroying its `_NoneType`
             # payload through `Variant.deinit_with`. `_NoneType` is

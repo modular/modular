@@ -86,6 +86,13 @@ trait _VariantStorage(Copyable, ImplicitlyDeletable):
         """Consume this storage and return the held value as type `U`."""
         return self.unsafe_ptr[U]().unsafe_take_pointee()
 
+    def unsafe_discard(deinit self):
+        """Consume this storage without reading or destroying the held value.
+
+        Safety: the held value must already have been destroyed or moved out;
+        the active slot is treated as uninitialized."""
+        pass
+
     def isa[U: AnyType](self) -> Bool:
         """Return `True` if the currently active type is `U`."""
         ...
@@ -259,8 +266,11 @@ struct _NichedOptionalStorage[
     @always_inline
     def unsafe_ptr[U: AnyType](ref self) -> Pointer[U, origin_of(self)]:
         Self._check[U]()
+        # The niche backing only has a slot for `Self.T`, so address that slot
+        # and bitcast. When `U` is the zero-sized empty type, the slot's
+        # location is still a valid `U` address.
         return (
-            self._memory.as_uninit[U]()
+            self._memory.as_uninit[Self.T]()
             .unsafe_bitcast[U]()
             .unsafe_origin_cast[origin_of(self)]()
         )
@@ -1044,7 +1054,7 @@ struct Variant[*Ts: AnyType](
         """
         return Self.Ts.contains[T]()
 
-    def deinit_with[T: Movable, F: def(var T)](deinit self, deinit_func: F, /):
+    def deinit_with[T: AnyType, F: def(var T)](deinit self, deinit_func: F, /):
         """Deinitialize a value contained in this Variant in-place using a caller
         provided destructor function.
 
@@ -1066,7 +1076,8 @@ struct Variant[*Ts: AnyType](
         if not self.isa[T]():
             abort("Variant.deinit_with: wrong variant type")
 
-        deinit_func(self._storage^.take[T]())
+        self._storage.unsafe_ptr[T]().unsafe_deinit_pointee_with(deinit_func)
+        self._storage^.unsafe_discard()
 
 
 # ===-------------------------------------------------------------------===#

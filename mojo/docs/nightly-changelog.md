@@ -692,6 +692,11 @@ This version is still a work in progress.
   example calling `next()` on it) no longer compiles and should iterate the
   `Optional` instead.
 
+- `Optional.deinit_with()` and `Variant.deinit_with()` no longer require the
+  element type to be `Movable`. Together with the `call=` constructors, this
+  makes element types that are neither `Movable` nor `ImplicitlyDeletable`
+  fully usable.
+
 - Various datatypes have adopted interior origins for increased memory safety,
   including `List`, `Deque`, `Variant`, `String`, `Dict`, `LinkedList`,
   `OwnedPointer`, and `HostBuffer`. A reference or view into one of these
