@@ -742,37 +742,6 @@ class MAXModelConfig(MAXModelConfigBase):
                 )
             )
 
-    def _resolve_weight_path_identity(
-        self, *, reset_weights_repo_id: bool = False
-    ) -> None:
-        """Re-runs weight-path identity resolution in place.
-
-        ``model_copy(update=...)`` bypasses ``__init__``, so an override of
-        ``weight_path``/``model_path`` (e.g. ``ModelManifest.with_override``
-        applying ``--model-override``) skips the parse that splits an external
-        ``org/repo/file.safetensors`` weight path into its weights repo id and
-        repo-relative file name. Callers that override those fields on a copy
-        must invoke this afterward.
-
-        Args:
-            reset_weights_repo_id: Discard the previously extracted weights
-                repo id before parsing. Set when ``weight_path`` itself was
-                replaced, so a repo id extracted from the old paths can't
-                leak onto the new ones.
-        """
-        if reset_weights_repo_id:
-            self._weights_repo_id = None
-        # getattr: construction paths that bypass __init__ (model_construct,
-        # unpickling) may leave the PrivateAttr absent.
-        self.weight_path, self.model_path, self._weights_repo_id = (
-            _parse_weight_and_model_paths(
-                model_path=self.model_path,
-                weight_path=self.weight_path,
-                subfolder=self.subfolder,
-                weights_repo_id=getattr(self, "_weights_repo_id", None),
-            )
-        )
-
     # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
     # own custom __getstate__/__setstate__ methods.
     def __getstate__(self) -> dict[str, Any]:
