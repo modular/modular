@@ -28,7 +28,7 @@ from max.algorithm import elementwise
 from std.gpu import barrier, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu
-from std.memory import alloc, dealloc, stack_allocation
+from std.memory import alloc, dealloc, unsafe_stack_allocation
 from std.memory.alloc import Layout as AllocLayout
 from std.atomic import Atomic
 from std.sys import simd_width_of
@@ -52,10 +52,10 @@ def _nan_check_gpu_kernel[
 ):
     """GPU kernel: count NaN/Inf values via parallel reduction."""
     var nan_local = UnsafePointer(
-        stack_allocation[1, Int32, address_space=AddressSpace.SHARED]()
+        unsafe_stack_allocation[1, Int32, address_space=AddressSpace.SHARED]()
     )
     var inf_local = UnsafePointer(
-        stack_allocation[1, Int32, address_space=AddressSpace.SHARED]()
+        unsafe_stack_allocation[1, Int32, address_space=AddressSpace.SHARED]()
     )
     if thread_idx.x == 0:
         nan_local[0] = Int32(0)

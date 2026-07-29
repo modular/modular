@@ -20,7 +20,7 @@ from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.int import index as _index
 from std.collections._conditional import _ComptimeConditional
-from std.memory import stack_allocation as _std_stack_allocation
+from std.memory import unsafe_stack_allocation as _std_stack_allocation
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location
 from std.gpu.host import DeviceBuffer, DeviceContext, DevicePointer, HostBuffer

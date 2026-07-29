@@ -28,7 +28,7 @@ from layout.tile_layout import TensorLayout, row_major
 from std.memory import (
     unsafe_memcpy,
     unsafe_memset_zero,
-    stack_allocation,
+    unsafe_stack_allocation,
 )
 
 from std.utils.index import Index, IndexList
@@ -824,7 +824,7 @@ def _pack_b_ndbuffer_impl[
         comptime if use_apple_accelerate_lib[c_type, a_type, b_type]():
             comptime if not transposed:
                 var perm_ptr = UnsafePointer(
-                    stack_allocation[2, Scalar[DType.int]]()
+                    unsafe_stack_allocation[2, Scalar[DType.int]]()
                 )
                 perm_ptr[0] = 1
                 perm_ptr[1] = 0
@@ -1030,7 +1030,7 @@ struct BTileGenerator[
 
         comptime if not Self.b_packed:
             b_tile_stack_ptr = UnsafePointer(
-                stack_allocation[
+                unsafe_stack_allocation[
                     get_pack_data_size[Self.b_type](),
                     Self.b_type,
                     align_of[SIMD[Self.b_type, simd_width_of[Self.b_type]()]](),

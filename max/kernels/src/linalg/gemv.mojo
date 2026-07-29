@@ -71,7 +71,7 @@ from layout import (
     stack_allocation as tt_stack_allocation,
 )
 from std.logger import Logger
-from std.memory import bitcast, stack_allocation
+from std.memory import bitcast, unsafe_stack_allocation
 from std.utils import IndexList
 from std.utils.coord import Coord
 from std.utils.index import Index
@@ -829,7 +829,7 @@ def gevm_kernel[
     var global_warp_id = global_idx.x // warps_per_block
 
     var x_shared = UnsafePointer(
-        stack_allocation[
+        unsafe_stack_allocation[
             tile_size,
             accum_type,
             address_space=AddressSpace.SHARED,

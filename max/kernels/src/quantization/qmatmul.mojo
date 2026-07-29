@@ -39,7 +39,7 @@ from std.memory import (
     alloc,
     bitcast,
     dealloc,
-    stack_allocation,
+    unsafe_stack_allocation,
 )
 from std.memory.alloc import Layout as AllocLayout
 
@@ -1140,14 +1140,14 @@ def _matmul_qint4_m_any[
                 comptime k_batch_groups = K_BATCH_SIZE // group_size
 
                 var b_s8_buf = UnsafePointer(
-                    stack_allocation[
+                    unsafe_stack_allocation[
                         K_BATCH_SIZE * tile_n * simd_width,
                         DType.int8,
                         alignment=alignment,
                     ]()
                 )
                 var b_scale_buf = UnsafePointer(
-                    stack_allocation[
+                    unsafe_stack_allocation[
                         k_batch_groups * tile_n * simd_width,
                         DType.float32,
                         alignment=alignment,
@@ -1160,7 +1160,7 @@ def _matmul_qint4_m_any[
                 comptime needs_correction = aq_type.is_unsigned()
 
                 var b_correction_buf = UnsafePointer(
-                    stack_allocation[
+                    unsafe_stack_allocation[
                         k_batch_groups * tile_n * simd_width,
                         DType.int32,
                         alignment=alignment,

@@ -38,7 +38,7 @@ from std.gpu import (
 )
 from max.gpu.compute.mma import mma as _mma_intrinsic
 from layout import TensorLayout, TileTensor
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -553,12 +553,12 @@ def _wmma_matmul_kernel[
         # global loads stay in registers during the current tile's WMMA. One
         # buffer lets a larger BLOCK_K fit than double-buffering would.
         var a_smem = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
             ]()
         )
         var b_smem = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
             ]()
         )
@@ -637,22 +637,22 @@ def _wmma_matmul_kernel[
             " to use the register-staged pipeline"
         )
         var a_smem_0 = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
             ]()
         )
         var a_smem_1 = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
             ]()
         )
         var b_smem_0 = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
             ]()
         )
         var b_smem_1 = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
             ]()
         )

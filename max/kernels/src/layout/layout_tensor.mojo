@@ -45,7 +45,7 @@ from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_shape
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils import IndexList, StaticTuple
 from std.utils.index import Index
 from .int_tuple import (
@@ -2672,7 +2672,7 @@ struct LayoutTensor[
 
         return Self.StackTensorType(
             UnsafePointer(
-                stack_allocation[
+                unsafe_stack_allocation[
                     Self.layout.size() * Self.element_layout.size(),
                     Self.dtype,
                     alignment=stack_alignment,

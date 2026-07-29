@@ -107,7 +107,7 @@ from std.gpu import (
 )
 from std.gpu.memory import AddressSpace
 from std.math import rsqrt
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from layout import TensorLayout, TileTensor
 
 
@@ -267,14 +267,14 @@ def gated_delta_recurrence_fwd_gpu[
 
     # Shared memory: raw Q and K for the current token (one element per kd).
     var q_raw_s = UnsafePointer(
-        stack_allocation[
+        unsafe_stack_allocation[
             KEY_HEAD_DIM,
             Scalar[DType.float32],
             address_space=AddressSpace.SHARED,
         ]()
     )
     var k_raw_s = UnsafePointer(
-        stack_allocation[
+        unsafe_stack_allocation[
             KEY_HEAD_DIM,
             Scalar[DType.float32],
             address_space=AddressSpace.SHARED,
