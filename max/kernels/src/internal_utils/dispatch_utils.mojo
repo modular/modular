@@ -42,7 +42,7 @@ struct Table[type: TuningConfig](Writable):
 
         for i in range(len(self.configs)):
             var cfg = self.configs[i]
-            var res = String.write(cfg)
+            var res = String(cfg)
             if res in keys:
                 print(
                     "ERROR: Redundant Entry [",

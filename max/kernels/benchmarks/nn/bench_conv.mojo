@@ -200,7 +200,7 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
         b.iter[bench_fn]()
 
     m.bench_with_input[ConvSpec[spec.static_info], bench_conv_wrapper](
-        BenchId("Conv", String.write(spec)),
+        BenchId("Conv", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric.
         [ThroughputMeasure(BenchMetric.elements, spec.flops())],

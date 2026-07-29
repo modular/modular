@@ -499,39 +499,6 @@ struct String(
             args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
 
-    @staticmethod
-    def write[
-        *Ts: Writable,
-    ](*args: *Ts, sep: StaticString = "", end: StaticString = "") -> Self:
-        """Construct a string by concatenating a sequence of Writable arguments.
-
-        Args:
-            args: A sequence of Writable arguments.
-            sep: The separator used between elements.
-            end: The String to write after printing the elements.
-
-        Parameters:
-            Ts: Types of the provided argument sequence.
-
-        Returns:
-            A string formed by formatting the argument sequence.
-        """
-        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
-
-        var total_bytes = _TotalWritableBytes()
-        args._write_to(total_bytes, end=end, sep=sep)
-
-        if total_bytes.size <= Self.INLINE_CAPACITY:
-            var result = String()
-            args._write_to(result, end=end, sep=sep)
-            return result^
-        else:
-            var result = String(capacity=total_bytes.size)
-            var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](result)
-            args._write_to(buffer, end=end, sep=sep)
-            buffer.flush()
-            return result^
-
     def write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
 
@@ -565,23 +532,6 @@ struct String(
             value: The `Writable` argument to write.
         """
         value.write_to(self)
-
-    @staticmethod
-    def write[T: Writable](value: T) -> Self:
-        """Write a single Writable argument to the provided Writer.
-
-        Parameters:
-            T: The type of the value to write, which must implement `Writable`.
-
-        Args:
-            value: The `Writable` argument to write.
-
-        Returns:
-            A new `String` containing the written value.
-        """
-        var result = String()
-        value.write_to(result)
-        return result^
 
     @always_inline("nodebug")
     def __init__(out self, *, unsafe_uninit_length: Int):

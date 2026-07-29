@@ -1520,6 +1520,11 @@ This version is still a work in progress.
   and `[grapheme=]` indexing scheme used by `String` and `StringSlice`. Use
   those keyword accessors instead (for example, on a `StaticString`).
 
+- Removed the static `String.write()` methods. Use the equivalent `String()`
+  constructor instead, which accepts the same `Writable` arguments (for
+  example, `String(a, b, sep=", ")` instead of `String.write(a, b, sep=", ")`).
+  The member `write()` methods that append to an existing string are unchanged.
+
 ## Fixed
 
 - Code completion now reports the correct completion kind for names bound by a

@@ -336,14 +336,14 @@ def bench_string_write[short: Bool](mut b: Bencher) raises:
             var res: String
 
             comptime if short:  # less than 24 bytes
-                res = String.write(
+                res = String(
                     black_box(0),
                     black_box(" is "),
                     black_box("a"),
                     black_box(String(" number")),
                 )
             else:  # 5001 bytes long
-                res = String.write(
+                res = String(
                     black_box(0),
                     black_box(items),
                     black_box(items_2),
