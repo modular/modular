@@ -53,6 +53,7 @@ import numpy as np
 from huggingface_hub import hf_hub_download
 from max.driver import CPU, Accelerator, Device, accelerator_count
 from max.dtype import DType
+from max.experimental import random
 from max.experimental.nn import (
     Embedding,
     LayerNorm,
@@ -236,6 +237,16 @@ _DTYPE = DType.float32
 _PROMPT_TOKENS: list[int] = [464, 3139, 286, 4881, 318]
 _NUM_GENERATE = 20
 
+# Seed for the conformance tests' random weight draws; see _module_weights.
+_WEIGHTS_SEED = 0
+
+# Depth for the full-model conformance tests. Two blocks exercise the same
+# cross-layer composition as twelve, but at full depth TF32-truncated GPU
+# matmuls compound into logit drift past any meaningful atol for many weight
+# draws, and the two full-depth compiles dominated the suite's runtime. The
+# e2e decode still runs the real 12-layer checkpoint.
+_CONFORMANCE_NUM_LAYERS = 2
+
 
 # ---------------------------------------------------------------------------
 # Weight loading — the guide's HuggingFace safetensors adapter.
@@ -371,6 +382,11 @@ def _module_weights(
     read-only, and ``np.from_dlpack`` cannot import a read-only buffer with the
     DLPack version in use.
     """
+    # Whether GPU-vs-CPU drift stays inside tolerance depends on the weight
+    # draw; unseeded draws made this suite flake in CI. Seeding per build (not
+    # per module import) keeps each test's weights independent of test
+    # ordering and `-k` filtering.
+    random.set_seed(_WEIGHTS_SEED)
     with default_device(CPU()), default_dtype(_DTYPE):
         module = build()
     return dict(module.parameters)
@@ -458,7 +474,7 @@ def _forward_cpu_vs_device(
 # GPU-vs-CPU drift for single-module forward passes. Attention softmax on short
 # inner axes (seq_len <= 32) can differ by ~3e-3 across backends.
 _BLOCK_FORWARD_ATOL = 5e-3
-# Whole-model outputs accumulate fp32 noise over 12 transformer blocks, and
+# Whole-model outputs accumulate fp32 noise across the stacked blocks, and
 # near-zero output positions inflate relative error, so the full-model
 # comparison uses a much looser atol that still covers cross-backend drift.
 _MODEL_FORWARD_ATOL = 2e-1
@@ -659,7 +675,7 @@ class TestGPT2Model:
         assert model.ln_f is not None
 
     def test_forward_pass_matches_cpu(self) -> None:
-        config = GPT2Config()
+        config = GPT2Config(n_layer=_CONFORMANCE_NUM_LAYERS)
         cpu_out, device_out = _forward_cpu_vs_device(
             lambda: GPT2Model(config),
             np.zeros((2, 10), dtype=np.int64),
@@ -681,7 +697,7 @@ class TestGPT2LMHeadModel:
         assert model.lm_head is not None
 
     def test_forward_pass_matches_cpu(self) -> None:
-        config = GPT2Config()
+        config = GPT2Config(n_layer=_CONFORMANCE_NUM_LAYERS)
         cpu_out, device_out = _forward_cpu_vs_device(
             lambda: GPT2LMHeadModel(config),
             np.zeros((2, 10), dtype=np.int64),

@@ -85,8 +85,8 @@ modular_py_test(
 modular_py_test(
     name = "gpt2_hal",
     # The per-module CPU-vs-device conformance tests compile many graphs
-    # (including several full 12-layer models), on top of the end-to-end
-    # decode, so the suite needs more than the default `medium` (300s) budget.
+    # (including whole-model graphs), on top of the end-to-end decode, so the
+    # suite needs more than the default `medium` (300s) budget.
     size = "large",
     srcs = ["test_gpt2_hal.py"],
     data = select({
@@ -179,8 +179,8 @@ modular_py_test(
 modular_py_test(
     name = "gpt2_default",
     # The per-module CPU-vs-device conformance tests compile many graphs
-    # (including several full 12-layer models), on top of the end-to-end
-    # decode, so the suite needs more than the default `medium` (300s) budget.
+    # (including whole-model graphs), on top of the end-to-end decode, so the
+    # suite needs more than the default `medium` (300s) budget.
     size = "large",
     srcs = ["test_gpt2_default.py"],
     # GPT-2-small in float32 (~0.5GB of weights, plus the eager interpreter's
