@@ -232,18 +232,16 @@ class Type(Generic[MlirType]):
     This type may be inspected to get finer-grained types and learn more
     about an individual Value.
 
-    The following example shows how to work with types in a graph:
+    The following example shows how to inspect a tensor type:
 
     .. code-block:: python
 
-        from max.graph import Graph, TensorType
         from max.dtype import DType
-        with Graph() as g:
-            # Create a tensor constant with a specific type
-            tensor_type = TensorType(DType.float32, [2, 3])
-            # The type can be inspected to get information about the value
-            print(f"Tensor element type: {tensor_type.dtype}")  # Outputs: DType.float32
-            print(f"Tensor shape: {tensor_type.shape}")  # Outputs: [2, 3]
+        from max.graph import DeviceRef, TensorType
+
+        tensor_type = TensorType(DType.float32, [2, 3], device=DeviceRef.CPU())
+        print(f"Tensor element type: {tensor_type.dtype}")  # Outputs: DType.float32
+        print(f"Tensor shape: {tensor_type.shape}")  # Outputs: [Dim(2), Dim(3)]
     """
 
     def to_mlir(self) -> MlirType:

@@ -40,26 +40,64 @@ class SafetensorWeights(Weights):
 
     .. code-block:: python
 
+        import json
+        import struct
+        import tempfile
         from pathlib import Path
-        from max.graph.weights import SafetensorWeights
+
+        import numpy as np
         from max.dtype import DType
+        from max.graph import DeviceRef
+        from max.graph.weights import SafetensorWeights
 
-        # Load weights from safetensors files
-        weight_files = [Path("model.safetensors")]
-        weights = SafetensorWeights(weight_files)
+        def write_safetensors(path, tensors):
+            header, buffers, offset = {}, [], 0
+            for name, arr in tensors.items():
+                arr = np.ascontiguousarray(arr)
+                header[name] = {
+                    "dtype": "F32",
+                    "shape": list(arr.shape),
+                    "data_offsets": [offset, offset + arr.nbytes],
+                }
+                buffers.append(arr.tobytes())
+                offset += arr.nbytes
+            blob = json.dumps(header).encode()
+            with open(path, "wb") as f:
+                f.write(struct.pack("<Q", len(blob)))
+                f.write(blob)
+                for b in buffers:
+                    f.write(b)
 
-        # Check if a weight exists
-        if weights.model.embeddings.weight.exists():
-            # Allocate the embedding weight
-            embedding_weight = weights.model.embeddings.weight.allocate(
-                dtype=DType.float32,
-                device=DeviceRef.CPU()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "model.safetensors"
+            write_safetensors(
+                path,
+                {
+                    "model.embeddings.weight": np.ones(
+                        (4, 4), dtype=np.float32
+                    ),
+                    "transformer.layers.0.attention.weight": np.ones(
+                        (4, 4), dtype=np.float32
+                    ),
+                },
             )
 
-        # Access weights with hierarchical naming
-        attn_weight = weights.transformer.layers[0].attention.weight.allocate(
-            dtype=DType.float16
-        )
+            weights = SafetensorWeights([path])
+
+            if weights.model.embeddings.weight.exists():
+                embedding_weight = weights.model.embeddings.weight.allocate(
+                    dtype=DType.float32,
+                    device=DeviceRef.CPU(),
+                )
+
+            attn_weight = weights.transformer.layers[0].attention.weight.allocate(
+                dtype=DType.float32,
+                device=DeviceRef.CPU(),
+            )
+
+    .. invisible-code-block: python
+
+        assert attn_weight.shape == [4, 4]
     """
 
     _filepaths: Sequence[PathLike[str]]

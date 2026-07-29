@@ -39,21 +39,25 @@ def broadcast_to(
 
     .. code-block:: python
 
+        import numpy as np
         from max.dtype import DType
         from max.graph import DeviceRef, Graph, ops
 
         device = DeviceRef.CPU()
-        with Graph("broadcast_to_example") as graph:
+        with Graph("broadcast_to", input_types=[]) as graph:
             x = ops.constant(
-                [[1.0], [1.0], [1.0]], DType.float32, device=device
+                np.ones((3, 1), dtype=np.float32), DType.float32, device=device
             )
             result = ops.broadcast_to(x, [3, 4])
             # result has shape (3, 4)
 
-            # Add a new leading dimension.
-            with_leading_dim = ops.broadcast_to(x, [2, 3, 4])
-            # with_leading_dim has shape (2, 3, 4)
-            graph.output(result, with_leading_dim)
+            # Add a new leading dimension
+            result = ops.broadcast_to(x, [2, 3, 4])
+            # result has shape (2, 3, 4)
+
+    .. invisible-code-block: python
+
+            assert result.type.shape == [2, 3, 4]
 
     Args:
         x: The input symbolic tensor to broadcast. Must not contain any

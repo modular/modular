@@ -55,33 +55,60 @@ def repeat_interleave(
 ) -> TensorValue:
     """Repeats each element of a tensor along an axis.
 
-    This op runs on CPU only; a GPU input raises an error.
+    Modeled after :obj:`torch.repeat_interleave`.
 
-    The examples below use an
-    input containing ``[[1.0, 2.0], [3.0, 4.0]]``:
+    Given the input ``[[1.0, 2.0], [3.0, 4.0]]`` (shape ``(2, 2)``), each
+    element repeats ``repeats`` times along ``axis``. Use ``axis=0`` to repeat
+    rows, ``axis=1`` to repeat columns, ``axis=None`` (the default) to flatten
+    first, or pass a per-element ``repeats`` tensor to repeat each index a
+    different number of times:
 
     .. code-block:: python
 
+        import numpy as np
+        from max.driver import CPU
         from max.dtype import DType
-        from max.graph import DeviceRef, Graph, ops
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType, ops
 
-        device = DeviceRef.CPU()
-        with Graph("repeat_interleave_example") as graph:
-            input = ops.constant(
-                [[1.0, 2.0], [3.0, 4.0]], DType.float32, device=device
+        input_type = TensorType(DType.float32, [2, 2], device=DeviceRef.CPU())
+        with Graph("repeat_interleave", input_types=[input_type]) as graph:
+            x = graph.inputs[0].tensor
+            per_element = ops.constant(
+                np.array([2, 3]), DType.int64, device=DeviceRef.CPU()
+            )
+            graph.output(
+                ops.repeat_interleave(x, repeats=2, axis=0),  # shape (4, 2)
+                ops.repeat_interleave(x, repeats=2, axis=1),  # shape (2, 4)
+                ops.repeat_interleave(x, repeats=2),  # flattened, shape (8,)
+                # Per-element repeats: row 0 twice, row 1 three times.
+                ops.repeat_interleave(x, repeats=per_element, axis=0, out_dim=5),
             )
 
-            # Repeat each row twice.
-            rows = ops.repeat_interleave(input, repeats=2, axis=0)
-            # [[1, 2], [1, 2], [3, 4], [3, 4]], shape (4, 2)
+        model = InferenceSession(devices=[CPU()]).load(graph)
+        rows, cols, flat, per_row = model.execute(
+            np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        )
+        # rows:    [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0]]
+        # cols:    [[1.0, 1.0, 2.0, 2.0], [3.0, 3.0, 4.0, 4.0]]
+        # flat:    [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]
+        # per_row: [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0], [3.0, 4.0]]
 
-            # Repeat row 0 twice and row 1 three times.
-            repeats = ops.constant([2, 3], DType.int64, device=device)
-            uneven_rows = ops.repeat_interleave(
-                input, repeats=repeats, axis=0, out_dim=5
-            )
-            # [[1, 2], [1, 2], [3, 4], [3, 4], [3, 4]], shape (5, 2)
-            graph.output(rows, uneven_rows)
+    .. invisible-code-block: python
+
+        np.testing.assert_allclose(
+            rows.to_numpy(), [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0]]
+        )
+        np.testing.assert_allclose(
+            cols.to_numpy(), [[1.0, 1.0, 2.0, 2.0], [3.0, 3.0, 4.0, 4.0]]
+        )
+        np.testing.assert_allclose(
+            flat.to_numpy(), [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]
+        )
+        np.testing.assert_allclose(
+            per_row.to_numpy(),
+            [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0], [3.0, 4.0]],
+        )
 
     Args:
         x: The input tensor.

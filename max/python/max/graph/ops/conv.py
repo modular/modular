@@ -45,26 +45,12 @@ def conv2d(
       ``(height, width, in_channels / num_groups, out_channels)``.
     - The bias has shape ``(out_channels,)``.
 
-    The padding values are expected to take the form (pad_dim1_before,
-    pad_dim1_after, pad_dim2_before, pad_dim2_after...) and represent padding
-    0's before and after the indicated *spatial* dimensions in `input`. In 2-D
-    convolution, dim1 here represents H and dim2 represents W. In Python like
-    syntax, padding a 2x3 spatial `input` with [0, 1, 2, 1] would yield:
-
-    .. code-block:: text
-
-        input = [
-          [1, 2, 3],
-          [4, 5, 6]
-        ]
-        # Shape is 2x3
-
-        padded_input = [
-          [0, 0, 1, 2, 3, 0],
-          [0, 0, 4, 5, 6, 0],
-          [0, 0, 0, 0, 0, 0]
-        ]
-        # Shape is 3x6
+    The ``padding`` values take the form ``(pad_dim1_before, pad_dim1_after,
+    pad_dim2_before, pad_dim2_after)`` and add zeros before and after each
+    spatial dimension, where dim1 is H and dim2 is W. Padding a ``2x3``
+    spatial input with ``(0, 1, 2, 1)`` adds one row of zeros below (H) and
+    two columns before plus one column after (W), producing a ``3x6``
+    spatial output.
 
     This op currently only supports strides and padding on the input.
 
@@ -185,43 +171,47 @@ def conv3d(
     - The filter has QRSCF layout, meaning
       ``(depth, height, width, in_channels / num_groups, out_channels)``.
 
-    The padding values are expected to take the form (pad_dim1_before,
-    pad_dim1_after, pad_dim2_before, pad_dim2_after...) and represent padding
-    0's before and after the indicated *spatial* dimensions in `input`. In 3-D
-    convolution, dim1 here represents D, dim2 represents H and dim3 represents W. In Python like
-    syntax, padding a 2x3 spatial `input` with [0, 1, 2, 1] would yield:
-
-    .. code-block:: text
-
-        input = [
-          [1, 2, 3],
-          [4, 5, 6]
-        ]
-        # Shape is 2x3
-
-        padded_input = [
-          [0, 0, 1, 2, 3, 0],
-          [0, 0, 4, 5, 6, 0],
-          [0, 0, 0, 0, 0, 0]
-        ]
-        # Shape is 3x6
+    The ``padding`` values take the form ``(pad_dim1_before, pad_dim1_after,
+    pad_dim2_before, pad_dim2_after, pad_dim3_before, pad_dim3_after)`` and
+    add zeros before and after each spatial dimension, where dim1 is D, dim2
+    is H, and dim3 is W. Each pair extends its dimension by the sum of its
+    before and after counts.
 
     This op currently only supports strides and padding on the input.
 
+    Convolving a ``2x2x2`` input with an all-ones ``2x2x2`` filter sums the
+    whole window into a single output value:
+
     .. code-block:: python
 
+        import numpy as np
         from max.dtype import DType
-        from max.graph import DeviceRef, Graph, TensorType, ops
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
         device = DeviceRef.CPU()
-        input_type = TensorType(DType.float32, [1, 4, 4, 4, 1], device=device)
-        filter_type = TensorType(DType.float32, [2, 2, 2, 1, 1], device=device)
-        with Graph(
-            "conv3d", input_types=[input_type, filter_type]
-        ) as graph:
-            x, filter = graph.inputs
-            # Output shape is (1, 3, 3, 3, 1).
-            graph.output(ops.conv3d(x.tensor, filter.tensor))
+        with Graph("conv3d_example") as graph:
+            # NDHWC input: batch 1, 2x2x2 spatial, 1 channel, values 1..8.
+            x = ops.constant(
+                np.arange(1, 9, dtype=np.float32).reshape(1, 2, 2, 2, 1),
+                DType.float32,
+                device=device,
+            )
+            # QRSCF filter: 2x2x2, 1 in-channel, 1 out-channel, all ones.
+            filter = ops.constant(
+                np.ones((2, 2, 2, 1, 1), dtype=np.float32),
+                DType.float32,
+                device=device,
+            )
+            graph.output(ops.conv3d(x, filter))
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+        # result: [[[[[36.0]]]]]  (sum of 1..8)
+
+    .. invisible-code-block: python
+
+        np.testing.assert_allclose(result.to_numpy(), [[[[[36.0]]]]])
 
     Args:
         x: An NDHWC input tensor to perform the convolution upon.

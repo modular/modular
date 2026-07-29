@@ -52,46 +52,17 @@ def conv2d_transpose(
     `Transposed Convolution
     <https://d2l.ai/chapter_computer-vision/transposed-conv.html>`_.
 
-    The padding values take the form ``(pad_dim1_before, pad_dim1_after,
-    pad_dim2_before, pad_dim2_after, ...)`` and crop that many rows or columns
-    from the borders of the indicated *spatial* dimensions of the output. In
-    2-D transposed convolution, ``dim1`` represents ``H_out`` and ``dim2``
-    represents ``W_out``. In Python-like syntax, cropping a 2x4 spatial output
-    with ``[0, 1, 2, 1]`` trims 0 rows from the top, 1 row from the bottom, 2
-    columns from the left, and 1 column from the right, leaving:
+    This op effectively computes the gradient of a convolution with
+    respect to its input (as if the original convolution operation had the same
+    filter and hyperparameters as this op). A visualization of the computation
+    can be found in https://d2l.ai/chapter_computer-vision/transposed-conv.html.
 
-    .. code-block:: text
-
-        output = [
-          [1, 2, 3, 4],
-          [5, 6, 7, 8]
-        ]
-        # Shape is 2x4
-
-        cropped_output = [
-          [3],
-        ]
-        # Shape is 1x1
-
-    Building a deconvolution graph (filter is RSCF, with ``out_channels`` and
-    ``in_channels`` w.r.t. the original convolution):
-
-    .. code-block:: python
-
-        from max.dtype import DType
-        from max.graph import DeviceRef, Graph, ops
-
-        device = DeviceRef.CPU()
-        with Graph("conv2d_transpose_example") as graph:
-            # NHWC input: batch 1, 1x1 spatial, 1 channel.
-            x = ops.constant([[[[3.0]]]], DType.float32, device=device)
-            # RSCF filter: 2x2 kernel, 1 out-channel, 1 in-channel, all ones.
-            filter = ops.constant(
-                [[[[1.0]], [[1.0]]], [[[1.0]], [[1.0]]]],
-                DType.float32,
-                device=device,
-            )
-            graph.output(ops.conv2d_transpose(x, filter))
+    The ``padding`` values apply to the *output* spatial dimensions and take
+    the form ``(pad_dim1_before, pad_dim1_after, pad_dim2_before,
+    pad_dim2_after)``, where dim1 is H_out and dim2 is W_out. Each pair crops
+    that many rows or columns of zeros from the corresponding edge of the
+    output, so padding shrinks the transposed-convolution output rather than
+    enlarging it as in a forward convolution.
 
     Args:
         x: An NHWC input tensor to perform the deconvolution upon.

@@ -326,21 +326,31 @@ def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
 
     .. code-block:: python
 
+        import numpy as np
+        from max.driver import Accelerator, CPU, accelerator_count
         from max.dtype import DType
         from max.engine import InferenceSession
         from max.graph import DeviceRef, Graph, ops
 
-        device = DeviceRef.CPU()
-        with Graph("argmax_example") as graph:
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+
+        with Graph("argmax", input_types=[]) as graph:
             x = ops.constant(
                 [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
                 DType.float32,
-                device=device,
+                device=device_ref,
             )
-            graph.output(ops.argmax(x, axis=-1))  # shape (2, 1): [[1], [2]]
+            indices = ops.argmax(x, axis=-1)
+            # indices has shape (2, 1): [[1], [2]]
+            graph.output(indices)
 
-        model = InferenceSession().load(graph)
+        model = InferenceSession(devices=[device]).load(graph)
         result = model.execute()[0]
+
+    .. invisible-code-block: python
+
+        np.testing.assert_array_equal(result.to_numpy(), [[1], [2]])
 
     Args:
         x: The input tensor.

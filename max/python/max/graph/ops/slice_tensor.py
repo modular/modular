@@ -406,41 +406,47 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
     The ``indices`` use NumPy-style slicing conventions, with one index per
     dimension. Each index is one of:
 
-    - An integer
-    - A scalar ``TensorValue`` (a runtime integer index)
-    - A ``slice``
-    - A ``(slice, out_dim)`` tuple, which names the output dimension when
-      slicing a dynamic dimension
-    - ``None`` (to insert a size-1 dimension)
-    - ``Ellipsis`` (to fill in full slices for the remaining dimensions)
-
-    Slice indices must stay within ``[-dim, dim]``, and slice steps must be positive.
+    - Slice indices must not index out of ``[-dim - 1, dim - 1]`` for negative step,
+      or ``[-dim, dim]`` for positive step.
+    - A negative ``step``, or slicing a symbolic dim, requires the
+      ``(slice, out_dim)`` tuple form, where ``out_dim`` names the size of the
+      resulting dimension: ``(slice(None, None, -1), 2)`` reverses a dimension
+      of size 2.
 
     .. code-block:: python
 
+        import numpy as np
+        from max.driver import CPU
         from max.dtype import DType
         from max.engine import InferenceSession
-        from max.graph import DeviceRef, Graph, ops
+        from max.graph import DeviceRef, Graph, TensorType, ops
 
-        device = DeviceRef.CPU()
-        with Graph("slice_tensor") as graph:
-            x = ops.constant(
-                [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-                DType.int32,
-                device=device,
+        input_type = TensorType(DType.float32, [2, 3], device=DeviceRef.CPU())
+        with Graph("slice_tensor", input_types=[input_type]) as graph:
+            x = graph.inputs[0].tensor
+            # Reverse rows: step=-1 requires the (slice, out_dim) tuple form.
+            reversed_rows = ops.slice_tensor(
+                x, [(slice(None, None, -1), 2), slice(None)]
             )
-            # Take rows 0 and 1 and columns 1 and 2, producing
-            # [[2, 3], [5, 6]].
-            graph.output(ops.slice_tensor(x, [slice(0, 2), slice(1, 3)]))
+            # Unsqueeze the second-to-last dim via [..., None, slice(None)].
+            unsqueezed = ops.slice_tensor(x, [..., None, slice(None)])
+            graph.output(reversed_rows, unsqueezed)
 
-        model = InferenceSession().load(graph)
-        result = model.execute()[0]
+        model = InferenceSession(devices=[CPU()]).load(graph)
+        rev, unsq = model.execute(
+            np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
+        )
+        # rev:  [[4.0, 5.0, 6.0], [1.0, 2.0, 3.0]]
+        # unsq: [[[1.0, 2.0, 3.0]], [[4.0, 5.0, 6.0]]]  (shape (2, 1, 3))
 
-    Args:
-        x: The input symbolic tensor to slice.
-        indices: The per-dimension index expressions. Each entry is an
-            integer, a scalar ``TensorValue``, a ``slice``, a
-            ``(slice, out_dim)`` tuple, ``None``, or ``Ellipsis``.
+    .. invisible-code-block: python
+
+        np.testing.assert_allclose(
+            rev.to_numpy(), [[4.0, 5.0, 6.0], [1.0, 2.0, 3.0]]
+        )
+        np.testing.assert_allclose(
+            unsq.to_numpy(), [[[1.0, 2.0, 3.0]], [[4.0, 5.0, 6.0]]]
+        )
 
     Returns:
         A ``TensorValue`` representing the sliced subtensor of ``x``.

@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import ast
 import os
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
 from sybil import Sybil
 from sybil.document import DOCSTRING_PUNCTUATION, PythonDocStringDocument
+from sybil.evaluators.skip import Skipper
 from sybil.example import Example, NotEvaluated
 from sybil.integration.pytest import SybilItem
 from sybil.parsers.rest import PythonCodeBlockParser, SkipParser
@@ -157,7 +158,7 @@ class _PublicDocStringDocument(PythonDocStringDocument):
 #: while a literal ``..`` segment in the anchor never matches anything.
 _SCAN_ROOT = Path(os.path.normpath(Path(__file__).parent / "../../python/max"))
 
-_collect_file = Sybil(
+_sybil = Sybil(
     parsers=[
         PythonCodeBlockParser(),
         SkipParser(),
@@ -170,29 +171,152 @@ _collect_file = Sybil(
         for exclude in COLLECT_EXCLUDES
     ],
     document_types={".py": _PublicDocStringDocument},
-).pytest()
+)
+_collect_file = _sybil.pytest()
+
+
+def _should_collect(path: Path) -> bool:
+    """True if ``path`` is a public source Sybil should scan for examples."""
+    return (
+        path.suffix == ".py"
+        and not is_private_name(path.name)
+        and _sybil.should_parse(path)
+    )
+
+
+def pytest_ignore_collect(collection_path: Path, config: Any) -> bool | None:
+    """Skip files the collector won't handle so pytest never imports them.
+
+    A target's sources are passed as explicit path arguments, and an explicit
+    ``.py`` path bypasses pytest's ``python_files`` filter: pytest would import
+    each declined file (private, excluded, or out of scan root) as a test
+    module and fail on any optional top-level dependency it carries. Ignoring
+    the path here happens before any module import.
+    """
+    if collection_path.suffix == ".py" and not _should_collect(collection_path):
+        return True
+    return None
 
 
 def pytest_collect_file(file_path: Path, parent: Any) -> Any:
-    """Collect docstring examples from public modules under max/python/max.
-
-    ``_collect_file`` already restricts to files under ``_SCAN_ROOT`` via
-    ``Sybil.should_parse``; this only adds the private-module filter, which
-    Sybil's fnmatch excludes can't express (they'd also catch dunder files).
-    """
-    if is_private_name(file_path.name):
-        return None
+    """Collect docstring examples from a public module under max/python/max."""
     return _collect_file(file_path, parent)
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Accept the shard options ``pytest_runner`` derives from bazel's
+    shard env vars.
+
+    Not the stock pytest-shard plugin: its round-robin split separates an
+    example from the ``invisible-code-block`` that checks it.
+    """
+    group = parser.getgroup("sybil_collect")
+    group.addoption("--shard-id", type=int, default=0)
+    group.addoption("--num-shards", type=int, default=1)
+
+
+#: Directives that begin a new example group; the blocks that follow one
+#: (``invisible-code-block`` checks, ``skip`` guards) belong to its group.
+_GROUP_STARTING_DIRECTIVES = frozenset({"code", "code-block", "sourcecode"})
+
+
+def example_group_keys(entries: Sequence[tuple[str, str]]) -> list[str]:
+    """Map ordered ``(path, directive)`` items to shardable group keys.
+
+    A group is one visible code block plus its trailing invisible checks;
+    the authoring contract makes each visible example self-contained, so
+    groups can run in separate shards. ``skip`` directives guard the example
+    that follows them and therefore attach forward to the next group.
+    """
+    counters: dict[str, int] = {}
+    pending_skips: dict[str, list[int]] = {}
+    keys: list[str] = []
+    for path, directive in entries:
+        index = len(keys)
+        if directive in _GROUP_STARTING_DIRECTIVES:
+            counters[path] = counters.get(path, -1) + 1
+            key = f"{path}::{counters[path]}"
+            for skip_index in pending_skips.pop(path, []):
+                keys[skip_index] = key
+            keys.append(key)
+        elif directive == "skip":
+            pending_skips.setdefault(path, []).append(index)
+            keys.append("")
+        else:
+            keys.append(f"{path}::{counters.get(path, 0)}")
+    for path, indices in pending_skips.items():
+        for skip_index in indices:
+            keys[skip_index] = f"{path}::{counters.get(path, 0)}"
+    return keys
+
+
+def shard_assignments(
+    counts: Mapping[str, int], num_shards: int
+) -> dict[str, int]:
+    """Assign each group to a shard, balancing by weight.
+
+    Greedy, heaviest first; deterministic so every shard computes the same
+    mapping.
+    """
+    loads = [0] * num_shards
+    assignment: dict[str, int] = {}
+    for key, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
+        shard = min(range(num_shards), key=lambda i: loads[i])
+        assignment[key] = shard
+        loads[shard] += count
+    return assignment
+
+
+_COLLECTED_ANY = pytest.StashKey[bool]()
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """Keep only this shard's example groups when bazel sharding is active."""
+    config.stash[_COLLECTED_ANY] = any(
+        isinstance(item, SybilItem) for item in items
+    )
+    num_shards = config.getoption("--num-shards")
+    if num_shards <= 1:
+        return
+    entries: list[tuple[str, str]] = []
+    for item in items:
+        example = getattr(item, "example", None)
+        region = example.region if example else None
+        directive = (getattr(region, "lexemes", None) or {}).get(
+            "directive", ""
+        )
+        # Skip regions carry no directive lexeme; identify them by evaluator.
+        if not directive and isinstance(
+            getattr(region, "evaluator", None), Skipper
+        ):
+            directive = "skip"
+        entries.append((str(item.path), directive))
+    keys = example_group_keys(entries)
+    # Weight groups equally: cost is dominated by the one graph compile a
+    # visible example performs, not by its number of check blocks.
+    assignment = shard_assignments({key: 1 for key in keys}, num_shards)
+    shard_id = config.getoption("--shard-id")
+    keep: list[pytest.Item] = []
+    deselected: list[pytest.Item] = []
+    for item, key in zip(items, keys, strict=False):
+        (keep if assignment[key] == shard_id else deselected).append(item)
+    items[:] = keep
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:
     """Fail fast if an opted-in target collected zero docstring examples.
 
-    Runs only in sessions that load this plugin via ``-p sybil_collect``.
+    Checks the pre-shard collection, so a shard that legitimately received
+    no files does not trip the guard. Runs only in sessions that load this
+    plugin via ``-p sybil_collect``.
     """
-    examples = [i for i in session.items if isinstance(i, SybilItem)]
-    if not examples:
-        raise pytest.UsageError(
-            "test_docstring_examples is enabled but no docstring examples were "
-            "collected; check the target's sources and COLLECT_EXCLUDES."
-        )
+    if session.config.stash.get(_COLLECTED_ANY, False):
+        return
+    raise pytest.UsageError(
+        "test_docstring_examples is enabled but no docstring examples were "
+        "collected; check the target's sources and COLLECT_EXCLUDES."
+    )

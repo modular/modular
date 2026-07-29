@@ -430,14 +430,41 @@ class Module:
 
     .. code-block:: python
 
+        import numpy as np
+        from max.driver import Accelerator, CPU, accelerator_count
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, Module, ops
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+
         module = Module()
-        with Graph("encoder", input_types=encoder_inputs, module=module) as encoder:
-            ...
-        with Graph("decoder", input_types=decoder_inputs, module=module) as decoder:
-            ...
-        models = session.load_all(module, weights_registry=weights)
-        encoder = models[encoder.name]
-        decoder = models[decoder.name]
+        with Graph("encoder", input_types=[], module=module) as encoder:
+            encoder.output(
+                ops.constant(
+                    np.array([1.0, 2.0, 3.0], dtype=np.float32),
+                    DType.float32,
+                    device=device_ref,
+                )
+            )
+        with Graph("decoder", input_types=[], module=module) as decoder:
+            decoder.output(
+                ops.constant(
+                    np.array([4.0, 5.0, 6.0], dtype=np.float32),
+                    DType.float32,
+                    device=device_ref,
+                )
+            )
+
+        models = InferenceSession(devices=[device]).load_all(module)
+        (enc_out,) = models[encoder.name].execute()
+        (dec_out,) = models[decoder.name].execute()
+
+    .. invisible-code-block: python
+
+        np.testing.assert_allclose(enc_out.to_numpy(), [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(dec_out.to_numpy(), [4.0, 5.0, 6.0])
 
     The wrapped MLIR module is exposed as :attr:`mlir_module` for code that
     must reach the underlying representation (graph compiler internals,
