@@ -48,9 +48,10 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         "llguidance",  # We use >1.0, sglang pins to 0.7.30
         "nvidia-cudnn-cu12",  # Differs between dependency groups' torch/CUDA versions
         "nvidia-nccl-cu12",  # Differs between dependency groups' torch/CUDA versions
-        "nvidia-nvshmem-cu12",  # Differs between torch 2.9.1 and 2.10.0 for cuda
         "outlines-core",  # Conflicts between vllm and sglang
+        "quack-kernels",  # sglang pins >=0.4.1; flash-attn-4/vllm pin >=0.3.3
         "tilelang",  # MAX itself doesn't use tilelang, but the default environment group does; vllm 0.20.0 hard-pins 0.1.9
+        "tokenspeed-mla",  # vllm pins ==0.1.2, sglang pins ==0.1.1
         "transformers",  # MAX pins 5.12.x; sglang pins 5.3.0, vllm aligns on 5.12.x
         "vllm",
         "sglang",
