@@ -97,6 +97,12 @@ mojo_library(
     validate_missing_docs = True,
 )
 
+label_flag(
+    name = "std_impl",
+    build_setting_default = ":std",
+    visibility = ["//visibility:public"],
+)
+
 pkg_files(
     name = "docs",
     srcs = [":std.docs"],
