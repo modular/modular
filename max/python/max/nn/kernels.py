@@ -5180,6 +5180,26 @@ def grouped_matmul_ragged(
             f" {hidden_states.shape[1]}] but got {weight.shape}"
         )
 
+    if expert_usage_stats.device != hidden_states.device:
+        # This is a graph DeviceRef (``is_cpu()`` method) when building a Graph
+        # and a driver Device (``is_host`` property) on the experimental-tensor
+        # path.
+        src_device = expert_usage_stats.device
+        src_is_cpu = (
+            src_device.is_cpu()
+            if isinstance(src_device, DeviceRef)
+            else src_device.is_host
+        )
+        if not src_is_cpu:
+            raise ValueError(
+                "grouped_matmul_ragged expected expert_usage_stats to be"
+                " host-resident (CPU) or already on the compute device, but got"
+                f" {src_device} with hidden_states on {hidden_states.device}; a"
+                " device-to-device transfer of the expert-usage metadata is not"
+                " supported."
+            )
+        expert_usage_stats = expert_usage_stats.to(hidden_states.device)
+
     output = ops.custom(
         "mo.grouped.matmul.ragged",
         device=hidden_states.device,
