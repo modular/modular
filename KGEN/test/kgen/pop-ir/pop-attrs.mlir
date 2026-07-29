@@ -96,7 +96,8 @@ kgen.func @union_constants() {
 // CHECK: f0 = #kgen.param.expr<xor, #kgen<simd -1> : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
 "simd_xor.attr"() { f0 = #kgen.param.expr<xor,#kgen.unknown : !kgen.simd<4, si32>, #kgen<simd -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32> } : () -> ()
 
-// CHECK: f0 = #kgen<simd false> : !kgen.simd<4, bool>
+// Equality against an unknown value stays symbolic.
+// CHECK: f0 = #kgen.param.expr<eq, #kgen<simd -1> : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, bool>
 "simd_cmp.attr"() { f0 = #kgen.param.expr<eq, #kgen.unknown : !kgen.simd<4, si32>, #kgen<simd -1> : !kgen.simd<4, si32>> : !kgen.simd<4, bool> } : () -> ()
 
 // CHECK: f0 = #pop.simd_reduce_or<#kgen.unknown : !kgen.simd<4, si32>> : !kgen.scalar<si32>

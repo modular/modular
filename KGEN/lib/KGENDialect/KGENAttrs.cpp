@@ -2972,6 +2972,26 @@ static TypedAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
   lhs = getCanonicalAttr(lhs);
   rhs = getCanonicalAttr(rhs);
 
+  // Equality involving an unknown value is undecidable: an UnknownAttr
+  // claims to be a simple constant (it is stable under substitution) but
+  // carries no value, so neither pointer equality nor inequality between
+  // the attributes says anything about the values. Builtin-typed unknowns
+  // canonicalize inside cast wrappers, so look through those. Note this does
+  // not catch unknowns nested inside aggregates.
+  auto isUnknownValue = [](TypedAttr a) {
+    while (true) {
+      if (auto cast = dyn_cast<CastFromBuiltinAttr>(a))
+        a = cast.getArg();
+      else if (auto cast = dyn_cast<CastToBuiltinAttr>(a))
+        a = cast.getArg();
+      else
+        break;
+    }
+    return isa<UnknownAttr>(a);
+  };
+  if (isUnknownValue(lhs) || isUnknownValue(rhs))
+    return {};
+
   // both are simd attrs, fold it differently, `foldCompareOp` handles 32-bit
   // truncation of input values + float value correctly.
   if (isa<SIMDAttr>(lhs) && isa<SIMDAttr>(rhs))

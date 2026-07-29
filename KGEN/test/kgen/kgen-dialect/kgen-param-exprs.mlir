@@ -570,15 +570,17 @@ kgen.generator @param_canonicalize<p1, p2>() {
   kgen.param.declare square = <mul(p1, p1)>  // CHECK: kgen.param.declare square = <to_builtin({{.*}}mul({{.*}}from_builtin({{.*}}p1{{.*}}), from_builtin({{.*}}p1{{.*}})))>
   kgen.param.constant = <square>  // CHECK: kgen.param.constant = <square>
 
-  // CHECK = <eq(p1, *?)>
+  // Equality involving an unknown value stays symbolic: an unknown carries
+  // no value, so neither attribute equality nor inequality decides it.
+  // CHECK: unknown: i1 = <to_builtin(:scalar<bool> eq(:scalar<index> from_builtin(p1), from_builtin(*?)))>
   kgen.param.declare unknown: i1 = <to_builtin(:scalar<bool> eq(*?, p1))>
-  // CHECK: = <0>
+  // CHECK: unknownEq: i1 = <to_builtin(:scalar<bool> eq(:dtype f32, *?))>
   kgen.param.declare unknownEq: i1 = <to_builtin(:scalar<bool> eq(:dtype *?, f32))>
-  // CHECK: = <1>
+  // CHECK: unknownEqItself: i1 = <to_builtin(:scalar<bool> eq(:dtype *?, *?))>
   kgen.param.declare unknownEqItself: i1 = <to_builtin(:scalar<bool> eq(:dtype *?, *?))>
-  // CHECK: = <0>
+  // CHECK: unknownEqIndex: i1 = <to_builtin(:scalar<bool> eq(:scalar<index> from_builtin(*?), 1))>
   kgen.param.declare unknownEqIndex: i1 = <to_builtin(:scalar<bool> eq(*?, 1))>
-  // CHECK: = <1>
+  // CHECK: unknownEqItselfIndex: i1 = <to_builtin(:scalar<bool> eq(:scalar<index> from_builtin(*?), from_builtin(*?)))>
   kgen.param.declare unknownEqItselfIndex: i1 = <to_builtin(:scalar<bool> eq(*?, *?))>
 
   // Make sure operand deduplication happens for nested operands too

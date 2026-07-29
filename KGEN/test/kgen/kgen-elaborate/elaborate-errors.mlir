@@ -498,3 +498,22 @@ kgen.generator export @simd_param_main() {
   kgen.call @simd_param_outer<:!kgen.scalar<si32> #kgen<simd 42>>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// Equality against an unknown value stays symbolic, so it cannot be
+// concretized during elaboration.
+
+// expected-note @below {{function instantiation failed}}
+kgen.generator @type_of_unknown<T: type, value: !kgen.param<T>>() {
+  // expected-note @below {{could not simplify operator eq(:i32 1, *?)}}
+  kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:!kgen.param<T> value, *?))>
+  kgen.return
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator @check() {
+  // expected-note @below {{call expansion failed with parameter value(s): (..., "value": 1)}}
+  kgen.call @type_of_unknown<:type i32, :i32 1>() : () -> ()
+  kgen.return
+}

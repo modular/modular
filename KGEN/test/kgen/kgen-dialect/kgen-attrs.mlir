@@ -417,7 +417,8 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
 } : () -> ()
 
 "some.op"() {
-  // CHECK: a = #kgen<simd false> : !kgen.scalar<bool>
+  // Equality against an unknown value stays symbolic.
+  // CHECK: a = #kgen.param.expr<eq, #kgen<simd 2> : !kgen.scalar<si32>, #kgen.unknown : !kgen.scalar<si32>> : !kgen.scalar<bool>
   a = #kgen.param.expr<eq, #kgen.unknown : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
   // CHECK: b = #kgen<simd false> : !kgen.scalar<bool>
   b = #kgen.param.expr<eq, #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
