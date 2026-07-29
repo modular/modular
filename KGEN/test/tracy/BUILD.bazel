@@ -20,6 +20,7 @@ mojo_test(
         "//KGEN:CompilerRT",
     ],
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )
