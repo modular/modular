@@ -18,7 +18,10 @@ from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderMetrics
+from max.pipelines.lib.vision_encoder_cache import (
+    VideoEncoderMetrics,
+    VisionEncoderMetrics,
+)
 from max.pipelines.modeling.types import (
     BatchType,
     CompletedBatchStats,
@@ -574,6 +577,79 @@ def test_publish_metrics_vision_gated_off() -> None:
         _make_metrics().publish_metrics()
     mock_metrics.vision_images_encoded.assert_not_called()
     mock_metrics.vision_cache_hit_rate.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Video encoder metrics tests
+# ---------------------------------------------------------------------------
+
+
+def _make_video_metrics(**overrides: Any) -> VideoEncoderMetrics:
+    base = dict[str, Any](
+        num_clips_total=4,
+        num_clips_encoded=3,
+        num_clips_cached=1,
+        frame_counts=[16, 32, 8],
+        num_tokens_encoded=512,
+        encoding_time_ms=42.5,
+    )
+    base.update(overrides)
+    return VideoEncoderMetrics(**base)
+
+
+def test_video_metrics_cache_hit_rate() -> None:
+    vm = _make_video_metrics()
+    assert vm.cache_hit_rate == 0.25
+    # No clips -> avoid divide-by-zero, report 0.0.
+    assert VideoEncoderMetrics().cache_hit_rate == 0.0
+
+
+def test_metric_to_string_with_video() -> None:
+    metrics = _make_metrics(video_metrics=_make_video_metrics())
+    assert (
+        "Video Encoder: 3 clips, 56 frames, 512 toks encoded, 42.5ms, "
+        "cache hit rate 25.0% (1 hit, 3 miss) |"
+    ) in metrics.pretty_format()
+
+
+def test_metric_to_string_no_video_clause_when_absent() -> None:
+    assert "Video Encoder" not in _make_metrics().pretty_format()
+    empty = _make_metrics(video_metrics=VideoEncoderMetrics())
+    assert "Video Encoder" not in empty.pretty_format()
+
+
+def test_to_log_extra_video() -> None:
+    extra = _make_metrics(video_metrics=_make_video_metrics()).to_log_extra()
+    assert extra["video_clips_total"] == 4
+    assert extra["video_clips_encoded"] == 3
+    assert extra["video_clips_cached"] == 1
+    assert extra["video_frames_encoded"] == 56
+    assert extra["video_tokens_encoded"] == 512
+    assert extra["video_encoding_time_ms"] == 42.5
+    assert extra["video_cache_hit_rate"] == 0.25
+
+    assert "video_clips_total" not in _make_metrics().to_log_extra()
+
+
+def test_publish_metrics_video_active() -> None:
+    metrics = _make_metrics(video_metrics=_make_video_metrics())
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+    mock_metrics.video_clips_encoded.assert_called_once_with(3)
+    mock_metrics.video_tokens_encoded.assert_called_once_with(512)
+    mock_metrics.video_encoding_time_milliseconds.assert_called_once_with(42.5)
+    assert mock_metrics.video_frames_per_clip.call_count == 3
+    mock_metrics.video_frames_per_clip.assert_any_call(16)
+    mock_metrics.video_frames_per_clip.assert_any_call(32)
+    mock_metrics.video_frames_per_clip.assert_any_call(8)
+
+
+def test_publish_metrics_video_gated_off() -> None:
+    # No video metrics -> no video emissions.
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        _make_metrics().publish_metrics()
+    mock_metrics.video_clips_encoded.assert_not_called()
+    mock_metrics.video_frames_per_clip.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

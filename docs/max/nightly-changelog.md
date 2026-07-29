@@ -127,6 +127,17 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added video encoder statistics to the scheduler's per-iteration batch log
+  for multimodal models, mirroring the existing `Vision Encoder` clause. Each
+  batch line with video work now includes a `Video Encoder` clause reporting
+  the number of clips encoded this iteration versus served from the video
+  encoder cache (with the cache hit rate), the sampled frame count, the
+  video tokens encoded, and the encoder wall-clock time. The same values are
+  exported as OpenTelemetry metrics under the `maxserve.video.*` namespace.
+  A model that manages its own encoder cache internally rather than through
+  the pipeline-owned `VisionEncoderCache` (e.g. MiniMax-M3) now implements a
+  `SupportsPooledVisionMetrics` protocol so both its image and video metrics
+  reach the scheduler.
 - Added opt-in token-balanced CE scheduling across data-parallel replicas.
   With `--dp-ce-balance-timeout-ms` >= 0 (default -1 = off), new context
   encoding requests wait in an unbound pool and are placed by a per-step

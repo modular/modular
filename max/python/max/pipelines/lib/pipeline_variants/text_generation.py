@@ -57,6 +57,7 @@ from max.pipelines.kv_cache import (
     load_kv_manager,
 )
 from max.pipelines.lib.vision_encoder_cache import (
+    SupportsPooledVisionMetrics,
     SupportsVisionEncoding,
     VisionEncoderCache,
     as_vision_context_batches,
@@ -95,7 +96,7 @@ from ..interfaces import (
 from ..interfaces.generate import GenerateMixin
 from ..memory_estimation import _MemoryPlan
 from ..utils import CompilationTimer
-from ..vision_encoder_cache import VisionEncoderMetrics
+from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
 
 logger = logging.getLogger("max.pipelines")
 
@@ -678,8 +679,24 @@ class TextGenerationPipeline(
 
         Returns ``None`` for text-only models and for batches that did no
         vision encoding (e.g. decode steps). The metrics come from the
-        pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one.
+        pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one;
+        otherwise, for a model that owns its encoder cache internally, from
+        :class:`SupportsPooledVisionMetrics`.
         """
-        if self._encoder_cache is None:
-            return None
-        return self._encoder_cache.pop_metrics()
+        if self._encoder_cache is not None:
+            return self._encoder_cache.pop_metrics()
+        if isinstance(self._pipeline_model, SupportsPooledVisionMetrics):
+            return self._pipeline_model.pop_vision_metrics()
+        return None
+
+    def batch_video_metrics(self) -> VideoEncoderMetrics | None:
+        """Returns video encoder metrics for the most recent batch.
+
+        Returns ``None`` for models with no video support and for batches
+        that did no video encoding. Video encoding has no pipeline-owned
+        cache equivalent to :class:`VisionEncoderCache`, so this only ever
+        comes from a model implementing :class:`SupportsPooledVisionMetrics`.
+        """
+        if isinstance(self._pipeline_model, SupportsPooledVisionMetrics):
+            return self._pipeline_model.pop_video_metrics()
+        return None
