@@ -138,7 +138,7 @@ def modular_cc_binary(data = [], deps = [], internal_deps = [], defines = [], lo
 # Ignore internal_deps for public builds
 # buildifier: disable=unused-variable
 def modular_cc_library(name, data = [], deps = [], internal_deps = [], defines = [], local_defines = [], **kwargs):
-    if name in ["Profiling", "ProfilingHeaders"]:
+    if name in ["Profiling", "ProfilerHostGlue"]:
         # Provide TimeProfiler for now since that may be what they're actually after
         _modular_cc_library(name = name, deps = ["//Support:TimeProfiler"])
         return
