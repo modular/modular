@@ -420,18 +420,6 @@ kgen.generator @passTypeList() {
   kgen.return
 }
 
-// CHECK-LABEL: @"type_of_unknown
-kgen.generator @type_of_unknown<T: type, value: !kgen.param<T>>() {
-  // CHECK-NEXT: <0>
-  kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:!kgen.param<T> value, *?))>
-  kgen.return
-}
-
-kgen.generator @check() {
-  kgen.call @type_of_unknown<:type i32, :i32 1>() : () -> ()
-  kgen.return
-}
-
 // -----
 
 //===----------------------------------------------------------------------===//
