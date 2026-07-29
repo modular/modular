@@ -73,7 +73,7 @@ struct MetalDeviceTypeEncoder(DeviceTypeEncoder):
     ):
         """Encodes a `DevicePointer` into `dst`.
 
-        By default treat `DevicePointer` as `UnsafePointer`, works for USM
+        By default treat `DevicePointer` as a `Pointer`, works for USM
         targets such as CUDA and HIP.
 
         Args:

@@ -61,7 +61,7 @@ def _apple_frag_layout_8x8(tid: Int) -> Tuple[Int, Int]:
 def apple_mma_load[
     dtype: DType,
 ](
-    ptr: UnsafePointer[Scalar[dtype], ...],
+    ptr: Pointer[Scalar[dtype], ...],
     row_stride: Int,
     col_stride: Int = 1,
 ) -> SIMD[dtype, 8]:
@@ -85,15 +85,19 @@ def apple_mma_load[
 
     # If row-elems are contiguous, vectorize load
     if col_stride == 1:
-        var lo = (ptr + row_lo * row_stride + col_base).load[width=4]()
-        var hi = (ptr + (row_lo + 8) * row_stride + col_base).load[width=4]()
+        var lo = ptr.unsafe_offset(row_lo * row_stride + col_base).unsafe_load[
+            width=4
+        ]()
+        var hi = ptr.unsafe_offset(
+            (row_lo + 8) * row_stride + col_base
+        ).unsafe_load[width=4]()
         return lo.join(hi)
     else:
         var frag = SIMD[dtype, 8]()
         for el in range(8):
             var row = row_lo + (Int(el > 3) * 8)
             var col = col_base + (el & 3)
-            frag[el] = ptr[row * row_stride + col * col_stride]
+            frag[el] = ptr[unsafe_offset=row * row_stride + col * col_stride]
         return frag
 
 
@@ -101,7 +105,7 @@ def apple_mma_load[
 def apple_mma_store[
     dtype: DType,
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
+    ptr: Pointer[mut=True, Scalar[dtype], ...],
     row_stride: Int,
     frag: SIMD[dtype, 8],
     col_stride: Int = 1,
@@ -124,22 +128,24 @@ def apple_mma_store[
 
     # If row-elems are contiguous, vectorize store
     if col_stride == 1:
-        (ptr + row_lo * row_stride + col_base).store(frag.slice[4, offset=0]())
-        (ptr + (row_lo + 8) * row_stride + col_base).store(
+        ptr.unsafe_offset(row_lo * row_stride + col_base).unsafe_store(
+            frag.slice[4, offset=0]()
+        )
+        ptr.unsafe_offset((row_lo + 8) * row_stride + col_base).unsafe_store(
             frag.slice[4, offset=4]()
         )
     else:
         for el in range(8):
             var row = row_lo + (Int(el > 3) * 8)
             var col = col_base + (el & 3)
-            ptr[row * row_stride + col * col_stride] = frag[el]
+            ptr[unsafe_offset=row * row_stride + col * col_stride] = frag[el]
 
 
 @always_inline
 def apple_mma_load_8x8[
     dtype: DType,
 ](
-    ptr: UnsafePointer[Scalar[dtype], ...],
+    ptr: Pointer[Scalar[dtype], ...],
     row_stride: Int,
     col_stride: Int = 1,
 ) -> SIMD[dtype, 2]:
@@ -162,12 +168,14 @@ def apple_mma_load_8x8[
     var col_base = layout[1]
 
     if col_stride == 1:
-        return (ptr + row_lo * row_stride + col_base).load[width=2]()
+        return ptr.unsafe_offset(row_lo * row_stride + col_base).unsafe_load[
+            width=2
+        ]()
     else:
         var frag = SIMD[dtype, 2]()
         for el in range(2):
             var col = col_base + el
-            frag[el] = ptr[row_lo * row_stride + col * col_stride]
+            frag[el] = ptr[unsafe_offset=row_lo * row_stride + col * col_stride]
         return frag
 
 
@@ -175,7 +183,7 @@ def apple_mma_load_8x8[
 def apple_mma_store_8x8[
     dtype: DType,
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
+    ptr: Pointer[mut=True, Scalar[dtype], ...],
     row_stride: Int,
     frag: SIMD[dtype, 2],
     col_stride: Int = 1,
@@ -197,11 +205,11 @@ def apple_mma_store_8x8[
     var col_base = layout[1]
 
     if col_stride == 1:
-        (ptr + row_lo * row_stride + col_base).store(frag)
+        ptr.unsafe_offset(row_lo * row_stride + col_base).unsafe_store(frag)
     else:
         for el in range(2):
             var col = col_base + el
-            ptr[row_lo * row_stride + col * col_stride] = frag[el]
+            ptr[unsafe_offset=row_lo * row_stride + col * col_stride] = frag[el]
 
 
 @always_inline

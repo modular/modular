@@ -36,11 +36,13 @@ from ..mma import _has_type, _has_shape, _unsupported_mma_op
 def _load_matrix_a_amd_rdna[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[Float16, _],
+    a_ptr: Pointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.float16, 16]:
+) -> SIMD[
+    DType.float16, 16
+]:
     """RDNA-specific implementation: loads 16 FP16 elements per thread."""
     comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
@@ -49,7 +51,7 @@ def _load_matrix_a_amd_rdna[
 
     comptime for i in range(16):
         var a_idx = ldm * (tile_row + thread_x) + tile_col + i
-        a[i] = a_ptr[a_idx]
+        a[i] = a_ptr[unsafe_offset=a_idx]
 
     return a
 
@@ -58,11 +60,13 @@ def _load_matrix_a_amd_rdna[
 def _load_matrix_a_amd_rdna[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[BFloat16, _],
+    a_ptr: Pointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.bfloat16, 16]:
+) -> SIMD[
+    DType.bfloat16, 16
+]:
     """RDNA-specific implementation: loads 16 BF16 elements per thread."""
     comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
@@ -71,7 +75,7 @@ def _load_matrix_a_amd_rdna[
 
     comptime for i in range(16):
         var a_idx = ldm * (tile_row + thread_x) + tile_col + i
-        a[i] = a_ptr[a_idx]
+        a[i] = a_ptr[unsafe_offset=a_idx]
 
     return a
 
@@ -80,11 +84,13 @@ def _load_matrix_a_amd_rdna[
 def _load_matrix_b_amd_rdna[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[Float16, _],
+    b_ptr: Pointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.float16, 16]:
+) -> SIMD[
+    DType.float16, 16
+]:
     """RDNA-specific implementation: loads 16 FP16 elements per thread."""
     comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
@@ -93,7 +99,7 @@ def _load_matrix_b_amd_rdna[
 
     comptime for i in range(16):
         var b_idx = ldm * (tile_row + i) + tile_col + thread_y
-        b[i] = b_ptr[b_idx]
+        b[i] = b_ptr[unsafe_offset=b_idx]
 
     return b
 
@@ -102,11 +108,13 @@ def _load_matrix_b_amd_rdna[
 def _load_matrix_b_amd_rdna[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[BFloat16, _],
+    b_ptr: Pointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.bfloat16, 16]:
+) -> SIMD[
+    DType.bfloat16, 16
+]:
     """RDNA-specific implementation: loads 16 BF16 elements per thread."""
     comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
@@ -115,14 +123,14 @@ def _load_matrix_b_amd_rdna[
 
     comptime for i in range(16):
         var b_idx = ldm * (tile_row + i) + tile_col + thread_y
-        b[i] = b_ptr[b_idx]
+        b[i] = b_ptr[unsafe_offset=b_idx]
 
     return b
 
 
 @always_inline
 def load_matrix_a_amd_rdna16x16x16(
-    a_ptr: UnsafePointer[Float16, _],
+    a_ptr: Pointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -152,7 +160,7 @@ def load_matrix_a_amd_rdna16x16x16(
 
 @always_inline
 def load_matrix_a_amd_rdna16x16x16(
-    a_ptr: UnsafePointer[BFloat16, _],
+    a_ptr: Pointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -182,7 +190,7 @@ def load_matrix_a_amd_rdna16x16x16(
 
 @always_inline
 def load_matrix_b_amd_rdna16x16x16(
-    b_ptr: UnsafePointer[Float16, _],
+    b_ptr: Pointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -212,7 +220,7 @@ def load_matrix_b_amd_rdna16x16x16(
 
 @always_inline
 def load_matrix_b_amd_rdna16x16x16(
-    b_ptr: UnsafePointer[BFloat16, _],
+    b_ptr: Pointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,

@@ -487,7 +487,7 @@ def syncwarp(mask: Int = -1):
 @always_inline("nodebug")
 def _mbarrier_impl[
     type: AnyType, address_space: AddressSpace
-](address: UnsafePointer[mut=True, type, _, address_space=address_space]):
+](address: Pointer[mut=True, type, _, address_space=address_space]):
     """Internal implementation for making a memory barrier track async operations.
 
     This is an internal helper function that implements the core memory barrier tracking
@@ -506,7 +506,7 @@ def _mbarrier_impl[
         or address_space == AddressSpace.GENERIC
     ):
         llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive", NoneType](
-            address.address_space_cast[
+            address.unsafe_address_space_cast[
                 AddressSpace.GENERIC
             ]()._get_kgen_pointer()
         )
@@ -517,7 +517,7 @@ def _mbarrier_impl[
 @always_inline("nodebug")
 def _mbarrier_noinc_impl[
     type: AnyType, address_space: AddressSpace
-](address: UnsafePointer[mut=True, type, _, address_space=address_space]):
+](address: Pointer[mut=True, type, _, address_space=address_space]):
     """Internal noinc implementation for making a memory barrier track async operations.
 
     The noinc variant does not increment the expected transaction count.
@@ -539,7 +539,7 @@ def _mbarrier_noinc_impl[
 @always_inline("nodebug")
 def async_copy_arrive[
     type: AnyType, address_space: AddressSpace, *, noinc: Bool = False
-](address: UnsafePointer[mut=True, type, _, address_space=address_space]):
+](address: Pointer[mut=True, type, _, address_space=address_space]):
     """Makes a memory barrier track all prior async copy operations from this thread.
 
     This function ensures that all previously initiated asynchronous copy operations
@@ -576,9 +576,7 @@ def async_copy_arrive[
 def mbarrier_init[
     type: AnyType
 ](
-    shared_mem: UnsafePointer[
-        mut=True, type, _, address_space=AddressSpace.SHARED
-    ],
+    shared_mem: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED],
     num_threads: Int32,
 ):
     """Initialize a shared memory barrier for synchronizing multiple threads.
@@ -609,9 +607,7 @@ def mbarrier_init[
 def mbarrier_arrive[
     type: AnyType
 ](
-    shared_mem: UnsafePointer[
-        mut=True, type, _, address_space=AddressSpace.SHARED
-    ]
+    shared_mem: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED]
 ) -> Int:
     """Signal thread arrival at a shared memory barrier.
 
@@ -643,9 +639,7 @@ def mbarrier_arrive[
 def mbarrier_test_wait[
     type: AnyType
 ](
-    shared_mem: UnsafePointer[
-        mut=True, type, _, address_space=AddressSpace.SHARED
-    ],
+    shared_mem: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED],
     state: Int,
 ) -> Bool:
     """Test if all threads have arrived at the memory barrier.
@@ -679,7 +673,7 @@ def mbarrier_test_wait[
 def mbarrier_arrive_expect_tx_shared[
     type: AnyType  # The type of the memory barrier
 ](
-    addr: UnsafePointer[mut=True, type, _, address_space=AddressSpace.SHARED],
+    addr: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED],
     tx_count: Int32,
 ):
     """Configure a shared memory barrier to expect additional async transactions.
@@ -712,7 +706,7 @@ def mbarrier_arrive_expect_tx_relaxed[
     scope: Scope = Scope.BLOCK,
     space: Scope = Scope.BLOCK,
 ](
-    addr: UnsafePointer[mut=True, type, _, address_space=AddressSpace.SHARED],
+    addr: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED],
     tx_count: Int32,
 ) -> UInt64:
     """Configure a shared memory barrier to expect additional async transactions.
@@ -774,7 +768,7 @@ def mbarrier_arrive_expect_tx_relaxed[
 def mbarrier_try_wait_parity_shared[
     type: AnyType  # The type of the memory barrier
 ](
-    addr: UnsafePointer[mut=True, type, _, address_space=AddressSpace.SHARED],
+    addr: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED],
     phase: Int32,
     ticks: Int32,
 ):
@@ -806,11 +800,7 @@ def mbarrier_try_wait_parity_shared[
 @always_inline("nodebug")
 def umma_arrive_leader_cta[
     type: AnyType
-](
-    mbar_ptr: UnsafePointer[
-        mut=True, type, _, address_space=AddressSpace.SHARED
-    ]
-):
+](mbar_ptr: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED]):
     """Signal arrival at the barrier to the leader CTA of the pair.
 
     This function signals arrival at the barrier to the leader CTA of the pair.
@@ -834,11 +824,7 @@ def umma_arrive_leader_cta[
 @always_inline("nodebug")
 def umma_arrive_peer_cta[
     type: AnyType
-](
-    mbar_ptr: UnsafePointer[
-        mut=True, type, _, address_space=AddressSpace.SHARED
-    ]
-):
+](mbar_ptr: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED]):
     """Signal arrival at the barrier on the peer CTA of the pair.
 
     This is the mirror of `umma_arrive_leader_cta`. Where the leader variant

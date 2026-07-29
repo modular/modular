@@ -22,7 +22,7 @@ Examples:
     ```mojo
     from std.gpu import Semaphore
 
-    def semaphore(lock: UnsafePointer[mut=True, Int32, ...]):
+    def semaphore(lock: Pointer[mut=True, Int32, ...]):
         var thread_id = 0
         var sem = Semaphore(lock, thread_id)
 
@@ -57,7 +57,7 @@ struct Semaphore[origin: MutOrigin, //](TrivialRegisterPassable):
     It uses a single thread per CTA to perform atomic operations on a shared lock variable.
     """
 
-    var _lock: UnsafePointer[Int32, Self.origin]
+    var _lock: Pointer[Int32, Self.origin]
     """Pointer to the shared lock variable in global memory that all CTAs synchronize on"""
 
     var _wait_thread: Bool
@@ -67,9 +67,7 @@ struct Semaphore[origin: MutOrigin, //](TrivialRegisterPassable):
     """Current state of the semaphore, used to track synchronization status"""
 
     @always_inline
-    def __init__(
-        out self, lock: UnsafePointer[Int32, Self.origin], thread_id: Int
-    ):
+    def __init__(out self, lock: Pointer[Int32, Self.origin], thread_id: Int):
         """Initialize a new Semaphore instance.
 
         Args:
@@ -153,7 +151,7 @@ struct NamedBarrierSemaphore[
         max_num_barriers: Maximum number of named barriers to use.
     """
 
-    var _lock: UnsafePointer[Int32, Self.origin]
+    var _lock: Pointer[Int32, Self.origin]
     """Pointer to the shared lock variable in global memory that all CTAs synchronize on"""
 
     var _wait_thread: Bool
@@ -163,9 +161,7 @@ struct NamedBarrierSemaphore[
     """Current state of the semaphore, used to track synchronization status"""
 
     @always_inline
-    def __init__(
-        out self, lock: UnsafePointer[Int32, Self.origin], thread_id: Int
-    ):
+    def __init__(out self, lock: Pointer[Int32, Self.origin], thread_id: Int):
         """Initialize a new Semaphore instance.
 
         Args:

@@ -1198,18 +1198,20 @@ struct Pointer[
                 Self._OriginCastType[MutUntrackedOrigin],
                 Self._OriginCastType[ImmutAnyOrigin],
                 Self._OriginCastType[ImmUntrackedOrigin],
-                Self._SafeOriginCastType[MutAnyOrigin],
-                Self._SafeOriginCastType[MutUntrackedOrigin],
-                Self._SafeOriginCastType[ImmutAnyOrigin],
-                Self._SafeOriginCastType[ImmUntrackedOrigin],
+                Self._SafetyFlipCastType[Self.origin],
+                Self._SafetyFlipCastType[MutAnyOrigin],
+                Self._SafetyFlipCastType[MutUntrackedOrigin],
+                Self._SafetyFlipCastType[ImmutAnyOrigin],
+                Self._SafetyFlipCastType[ImmUntrackedOrigin],
             ]().contains[U]()
         else:
             return TypeList.of[
                 Self,
                 Self._OriginCastType[ImmutAnyOrigin],
                 Self._OriginCastType[ImmUntrackedOrigin],
-                Self._SafeOriginCastType[ImmutAnyOrigin],
-                Self._SafeOriginCastType[ImmUntrackedOrigin],
+                Self._SafetyFlipCastType[Self.origin],
+                Self._SafetyFlipCastType[ImmutAnyOrigin],
+                Self._SafetyFlipCastType[ImmUntrackedOrigin],
             ]().contains[U]()
 
     def _to_device_type(
@@ -2326,17 +2328,19 @@ struct Pointer[
         _safe=Self._safe,
     ]
 
-    # Same as `_OriginCastType` but forced to the safe (`Pointer`) flavor. Used
-    # by `_is_convertible_to_device_type` so a kernel may declare a safe
-    # `Pointer` entry param and still accept a device buffer whose `device_type`
-    # is an `UnsafePointer` (identical runtime representation).
-    comptime _SafeOriginCastType[
+    # The same pointer with the opposite `_safe` bit. `Pointer` and
+    # `UnsafePointer` share one representation, so at the kernel-argument
+    # boundary a device dtype matches a kernel parameter declared with either
+    # spelling; `_is_convertible_to_device_type` uses this to list both twins.
+    # TODO(MSTDL-2846): Remove when the `_safe` parameter is removed from this
+    # type.
+    comptime _SafetyFlipCastType[
         target_mut: Bool, //, target_origin: Origin[mut=target_mut]
     ] = Pointer[
         Self.T,
         target_origin,
         address_space=Self.address_space,
-        _safe=True,
+        _safe=not Self._safe,
     ]
 
     @always_inline("nodebug")

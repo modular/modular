@@ -348,10 +348,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         dtype: Data type to be stored in the buffer.
     """
 
-    # TODO(MSTDL-2875): kept `UnsafePointer` because this is the type returned
-    # by the public `unsafe_ptr()` / `take_ptr()` accessors, whose documented
-    # spelling external callers rely on for gated raw-pointer arithmetic and
-    # bitcasts; mirrors `DeviceBuffer._DevicePtr`.
+    # Backing pointer for the host allocation; mirrors `DeviceBuffer._DevicePtr`.
     comptime _HostPtr = UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
 
     # We cache the pointer of the buffer here to provide access to elements.
@@ -568,7 +565,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         dst.context().enqueue_copy(dst, self)
 
     def enqueue_copy_to(
-        self, dst_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _]
+        self, dst_ptr: Pointer[mut=True, Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
@@ -618,7 +615,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         self.context().enqueue_copy(self, src)
 
     def enqueue_copy_from(
-        self, src_ptr: UnsafePointer[mut=False, Scalar[Self.dtype], _]
+        self, src_ptr: Pointer[mut=False, Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -892,7 +889,7 @@ struct DevicePointer[
     - Does not support load/store operations.
 
     At the device function execution boundary a `DevicePointer` is transformed
-    into an `UnsafePointer` on the device at the point of being handed over to
+    into a `Pointer` on the device at the point of being handed over to
     the device driver.
 
     Parameters:
@@ -1249,21 +1246,21 @@ struct DevicePointer[
     # DevicePassable
     # ===------------------------------------------------------------------=== #
 
-    # TODO(MSTDL-2875): kernel-entry ABI type. Kept `UnsafePointer` because the
-    # enqueue machinery matches this against the declared kernel param type
-    # exactly (safe/unsafe decay does not apply at that boundary), and the type
-    # is mirrored by downstream copies of this struct.
-    comptime device_type: AnyType = UnsafePointer[
+    # Kernel-entry ABI type. `Pointer` and `UnsafePointer` are one
+    # representation, and device-argument matching accepts either spelling
+    # (see `Pointer._is_convertible_to_device_type`), so kernels may still
+    # declare their parameters as `UnsafePointer`.
+    comptime device_type: AnyType = Pointer[
         mut=True, Scalar[Self.dtype], AnyOrigin[mut=True]
     ]
-    """`DevicePointer` is remapped to `UnsafePointer` when passed to
+    """`DevicePointer` is remapped to a device `Pointer` when passed to
     accelerator devices."""
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         """Device type mapping from `DevicePointer` to the device's
-        `UnsafePointer`.
+        `Pointer`.
         """
         encoder.encode_device_ptr(self, target)
 
@@ -1296,7 +1293,7 @@ struct DefaultDeviceTypeEncoder(DeviceTypeEncoder):
     ):
         """Encodes a `DevicePointer` into `dst`.
 
-        By default treat `DevicePointer` as `UnsafePointer`, works for Unified
+        By default treat `DevicePointer` as a `Pointer`, works for Unified
         Memory targets such as CUDA and HIP.
 
         Args:
@@ -1321,20 +1318,19 @@ struct DeviceBuffer[dtype: DType](
     """
 
     # Implementation of `DevicePassable`
-    # TODO(MSTDL-2875): kernel-entry ABI type. Kept `UnsafePointer` because the
-    # enqueue machinery matches this against the declared kernel param type
-    # exactly (safe/unsafe decay does not apply at that boundary), and the type
-    # is mirrored by downstream copies of this struct.
-    comptime device_type: AnyType = UnsafePointer[
+    # Kernel-entry ABI type. `Pointer` and `UnsafePointer` are one
+    # representation, and device-argument matching accepts either spelling
+    # (see `Pointer._is_convertible_to_device_type`), so kernels may still
+    # declare their parameters as `UnsafePointer`.
+    comptime device_type: AnyType = Pointer[
         mut=True, Scalar[Self.dtype], AnyOrigin[mut=True]
     ]
-    """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
+    """DeviceBuffer dtypes are remapped to a device `Pointer` when passed to accelerator devices."""
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        """Device dtype mapping from DeviceBuffer to the device's UnsafePointer.
-        """
+        """Device dtype mapping from DeviceBuffer to the device's `Pointer`."""
         try:
             encoder.encode_device_ptr(self.device_ptr(), target)
         except:
@@ -1353,9 +1349,7 @@ struct DeviceBuffer[dtype: DType](
         """
         return String(t"DeviceBuffer[{Self.dtype}]")
 
-    # TODO(MSTDL-2875): kept `UnsafePointer` — this is the ABI first word passed
-    # to kernels (see below), coherent with `device_type` and mirrored by
-    # downstream copies; migrates in lockstep with `device_type`.
+    # ABI first word passed to kernels (see below), coherent with `device_type`.
     comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
@@ -1460,7 +1454,7 @@ struct DeviceBuffer[dtype: DType](
     ](
         out self: DeviceBuffer[_dtype],
         ctx: DeviceContext,
-        ptr: UnsafePointer[Scalar[_dtype], ...],
+        ptr: Pointer[Scalar[_dtype], ...],
         size: Int,
         *,
         owning: Bool,
@@ -1484,15 +1478,15 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[_dtype]()
         var cpp_handle: _DeviceBufferPtr[mut=True] = {}
-        var device_ptr = rebind[
-            UnsafePointer[Scalar[_dtype], MutUntrackedOrigin]
-        ](ptr)
+        var device_ptr = rebind[Pointer[Scalar[_dtype], MutUntrackedOrigin]](
+            ptr
+        )
         external_call[
             "AsyncRT_DeviceContext_createBuffer_owning",
             NoneType,
             Pointer[_DeviceBufferPtr[mut=True], origin_of(cpp_handle)],
             _DeviceContextPtr[mut=True],
-            UnsafePointer[Scalar[_dtype], MutUntrackedOrigin],
+            Pointer[Scalar[_dtype], MutUntrackedOrigin],
             c_size_t,
             c_size_t,
             Bool,
@@ -1655,7 +1649,7 @@ struct DeviceBuffer[dtype: DType](
         dst.context().enqueue_copy(dst, self)
 
     def enqueue_copy_to(
-        self, dst_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _]
+        self, dst_ptr: Pointer[mut=True, Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
@@ -1705,7 +1699,7 @@ struct DeviceBuffer[dtype: DType](
         self.context().enqueue_copy(self, src)
 
     def enqueue_copy_from(
-        self, src_ptr: UnsafePointer[mut=False, Scalar[Self.dtype], _]
+        self, src_ptr: Pointer[mut=False, Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -4330,8 +4324,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         def func_signature(
             # Arguments being passed to the assembly code
             # e.g. two pointers and a length
-            input: UnsafePointer[Float32],
-            output: UnsafePointer[Float32],
+            input: Pointer[Float32],
+            output: Pointer[Float32],
             len: Int,
         ):
             # No body because that is passed as assembly code below.
@@ -4395,9 +4389,9 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         from std.gpu.host import DeviceContext
 
         def vec_add_sig(
-            in0: UnsafePointer[Float32],
-            in1: UnsafePointer[Float32],
-            out: UnsafePointer[Float32],
+            in0: Pointer[Float32],
+            in1: Pointer[Float32],
+            out: Pointer[Float32],
             len: Int,
         ):
             pass
@@ -5146,7 +5140,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     ](
         self,
         dst_buf: DeviceBuffer[dtype],
-        src_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
+        src_ptr: Pointer[mut=False, Scalar[dtype], _],
     ) raises:
         """Enqueues an async copy from the host to the provided device
         buffer. The number of bytes copied is determined by the size of the
@@ -5180,7 +5174,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     ](
         self,
         dst_buf: HostBuffer[dtype],
-        src_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
+        src_ptr: Pointer[mut=False, Scalar[dtype], _],
     ) raises:
         """Enqueues an async copy from the host to the provided device
         buffer. The number of bytes copied is determined by the size of the
@@ -5213,7 +5207,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+        dst_ptr: Pointer[mut=True, Scalar[dtype], _],
         src_buf: DeviceBuffer[dtype],
     ) raises:
         """Enqueues an async copy from the device to the host. The
@@ -5246,7 +5240,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+        dst_ptr: Pointer[mut=True, Scalar[dtype], _],
         src_buf: HostBuffer[dtype],
     ) raises:
         """Enqueues an async copy from the device to the host. The
@@ -5279,8 +5273,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
-        src_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
+        dst_ptr: Pointer[mut=True, Scalar[dtype], _],
+        src_ptr: Pointer[mut=False, Scalar[dtype], _],
         size: Int,
     ) raises:
         """Enqueues an async copy of `size` elements from a device pointer to
@@ -5299,7 +5293,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         """
 
         def to_device_buffer(
-            pointer: UnsafePointer[Scalar[dtype], _]
+            pointer: Pointer[Scalar[dtype], _]
         ) {imm} -> DeviceBuffer[dtype]:
             return DeviceBuffer[dtype](
                 self,
