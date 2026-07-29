@@ -197,10 +197,18 @@ struct ImplNode : public ImplNodeBase {
   /// errors from callee nodes that errored during the first pass.
   std::vector<std::pair<Location, ParamNode *>> sccRemovedDeps;
 
-  /// The current downstream node blocking elaboration of this node. E.g. when
-  /// elaboration of this node requires elaboration of another node. The blocker
-  /// node has to be completed before elaboration of this node can continue.
-  std::optional<std::pair<Location, ParamNode *>> blocker;
+  /// The downstream nodes blocking elaboration of this node. All of them must
+  /// complete before elaboration of this node can continue; dropping one
+  /// deadlocks elaboration since the wait is invisible to recursion diagnosis.
+  SmallVector<std::pair<Location, ParamNode *>, 1> blockers;
+
+  /// Outstanding blocker resumes plus a guard held while the node is being
+  /// processed; the node is re-run when this drops to zero.
+  std::atomic<size_t> pendingResumes = 0;
+
+  /// Suppresses blocker registration during location concretization, which
+  /// cannot yield and restart.
+  bool suppressBlockers = false;
 };
 
 //===----------------------------------------------------------------------===//

@@ -268,6 +268,10 @@ private:
   void processImplNodeTask(ImplNode *node);
   /// Schedule an implementation node on the AsyncRT work queue.
   void scheduleImplNode(ImplNode *inode);
+  /// Record that elaboration of `inode` is blocked on completion of `genNode`
+  /// and arrange for `inode` to be re-processed once every registered blocker
+  /// has completed.
+  void registerBlocker(ImplNode *inode, Location from, ParamNode *genNode);
   /// Process the scopes within an implementation node. This function returns
   /// `success` if all scopes completed processing and the node is completely
   /// elaborated. If the function returns `failure`, that means elaboration of
