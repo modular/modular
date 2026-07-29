@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.experimental.sharding import DeviceMesh
@@ -25,12 +26,16 @@ from max.nn.rotary_embedding import LinearScalingParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
 )
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -46,6 +51,9 @@ class Gemma3Config(
     Contains parameters specific to the Gemma 3 architecture (typically extracted
     from HuggingFace configs), plus MAX-specific runtime settings and helpers.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
 
     # Gemma 3 specific parameters (taken from Transformer's `configuration_gemma3.py`)
     vocab_size: int
@@ -134,6 +142,15 @@ class Gemma3Config(
     quant_config: QuantConfig | None = None
     """Scaled quantization configuration."""
 
+    quantization_encoding: SupportedEncoding | None = None
+    """The resolved quantization encoding the model runs with."""
+
+    applied_dtype_cast_from: SupportedEncoding | None = None
+    """The encoding a load-time dtype cast converts from, if any."""
+
+    applied_dtype_cast_to: SupportedEncoding | None = None
+    """The encoding a load-time dtype cast converts to, if any."""
+
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         """Retrieves the number of hidden layers from the HuggingFace configuration.
@@ -186,9 +203,11 @@ class Gemma3Config(
             An initialized :obj:`Gemma3Config` instance.
         """
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding, cast_from, cast_to = (
+            _select_quantization_encoding(
+                pipeline_config.model, cls.DEFAULT_ENCODING
+            )
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding,
@@ -285,6 +304,9 @@ class Gemma3Config(
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),
+            quantization_encoding=quantization_encoding,
+            applied_dtype_cast_from=cast_from,
+            applied_dtype_cast_to=cast_to,
         )
 
     def finalize(

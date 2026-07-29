@@ -17,8 +17,16 @@ import numpy as np
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
+from max.pipelines.modeling.config_enums import (
+    supported_encoding_dtype,
+    supported_encoding_quantization,
+)
 from transformers import LlamaConfig
+
+from .model_config import Llama3Config
 
 # Maps from Safetensor to MAX weight names.
 LLAMA_SAFETENSOR_MAPPING = {
@@ -36,6 +44,10 @@ def _convert_safetensor_with_model_config(
 
     This allows the same conversion logic to be used for both target and draft models.
     """
+    # TODO(MXF-517): this should be resolved by the ArchConfig, not the adapter.
+    resolved_encoding, cast_from, cast_to = _select_quantization_encoding(
+        model_config, Llama3Config.DEFAULT_ENCODING
+    )
     new_state_dict: dict[str, WeightData] = {}
     # Map the weight names.
     for safetensor_name, value in state_dict.items():
@@ -43,7 +55,7 @@ def _convert_safetensor_with_model_config(
         for before, after in LLAMA_SAFETENSOR_MAPPING.items():
             max_name = max_name.replace(before, after)
         new_state_dict[max_name] = value.data()
-    if model_config.quantization_encoding == "gptq":
+    if resolved_encoding == "gptq":
         # hack: argsort the perm_idx array
         for key, weight_data in new_state_dict.items():
             np_array = np.from_dlpack(weight_data.data)
@@ -51,7 +63,7 @@ def _convert_safetensor_with_model_config(
                 new_state_dict[key] = WeightData.from_numpy(
                     np.argsort(np_array).astype(np.int32), key
                 )
-    if model_config.quantization_encoding == "gptq":
+    if resolved_encoding == "gptq":
         for key, weight_data in new_state_dict.items():
             # TODO(E2EOPT-243): gptq models actually have a dtype of float16
             # not bfloat16. Sadly, MMA does not support float16 currently, so
@@ -63,11 +75,9 @@ def _convert_safetensor_with_model_config(
             ):
                 new_state_dict[key] = weight_data.astype(DType.bfloat16)
 
-    if model_config._applied_dtype_cast_from:
-        cast_from = model_config._applied_dtype_cast_from
-        cast_to = model_config._applied_dtype_cast_to
+    if cast_from:
         assert cast_to, (
-            "Invalid configuration: _applied_dtype_cast_to is not set but _applied_dtype_cast_from is set. "
+            "Invalid configuration: cast_to is not set but cast_from is set. "
             "This should not happen."
         )
         for key, weight_data in new_state_dict.items():
@@ -135,11 +145,13 @@ def convert_gguf_state_dict(
     **unused_kwargs,
 ) -> dict[str, WeightData]:
     gguf_mapping = LLAMA_GGUF_UNFUSED_QKV_MAPPING
-    if (
-        pipeline_config is not None
-        and pipeline_config.model.graph_quantization_encoding is not None
-    ):
-        gguf_mapping = LLAMA_GGUF_QUANTIZED_MAPPING
+    if pipeline_config is not None:
+        # TODO(MXF-517): this should be resolved by the ArchConfig, not the adapter.
+        resolved_encoding, _, _ = _select_quantization_encoding(
+            pipeline_config.model, Llama3Config.DEFAULT_ENCODING
+        )
+        if supported_encoding_quantization(resolved_encoding) is not None:
+            gguf_mapping = LLAMA_GGUF_QUANTIZED_MAPPING
 
     new_state_dict: dict[str, WeightData] = {}
     # Map the weight names.

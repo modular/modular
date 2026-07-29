@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 from max.nn import ReturnHiddenStates
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
@@ -26,6 +26,7 @@ from max.pipelines.lib.config import (
     PipelineConfig,
     SpeculativeConfig,
 )
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from typing_extensions import Self
 
 from ..llama3.model_config import ArchConfigWithKVCache, Llama3Config
@@ -99,12 +100,21 @@ def parse_dflash_draft_hf_config(
 
 @dataclass(kw_only=True)
 class UnifiedDflashLlama3Config(ArchConfigWithKVCache):
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float32",
+    }
+
     target: Llama3Config
     draft: Llama3Config
     speculative_config: SpeculativeConfig
     target_layer_ids: list[int] = field(default_factory=list)
     mask_token_id: int = 0
     block_size: int = 0
+    quantization_encoding: SupportedEncoding | None = None
+    applied_dtype_cast_from: SupportedEncoding | None = None
+    applied_dtype_cast_to: SupportedEncoding | None = None
 
     def __post_init__(self) -> None:
         self.target.return_logits = ReturnLogits.VARIABLE

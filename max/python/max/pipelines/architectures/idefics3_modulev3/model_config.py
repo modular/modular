@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
@@ -24,12 +24,16 @@ from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchVLConfigWithTextSubconfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -43,6 +47,9 @@ from ..llama3_modulev3.model_config import Llama3Config
 @dataclass(kw_only=True)
 class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Configuration for Idefics3 models (ModuleV3)."""
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
 
     devices: list[DeviceRef]
     """Devices that the Idefics3 model is parallelized over."""
@@ -61,6 +68,10 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     # Text model configuration - using V3 Llama3Config directly
     text_config: Llama3Config
     """Text model configuration (Llama3-based)."""
+
+    quantization_encoding: SupportedEncoding | None = None
+    applied_dtype_cast_from: SupportedEncoding | None = None
+    applied_dtype_cast_to: SupportedEncoding | None = None
 
     @property
     def image_seq_len(self) -> int:
@@ -113,6 +124,10 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             pipeline_config, huggingface_config, text_config.hidden_size
         )
 
+        quantization_encoding, cast_from, cast_to = (
+            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        )
+
         return cls(
             devices=[
                 DeviceRef(spec.device_type, spec.id)
@@ -124,6 +139,9 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             ),
             vision_config=vision_config,
             text_config=text_config,
+            quantization_encoding=quantization_encoding,
+            applied_dtype_cast_from=cast_from,
+            applied_dtype_cast_to=cast_to,
         )
 
     def finalize(
@@ -159,9 +177,9 @@ def _create_llama3_text_config(
     from pipeline_config.model.huggingface_config.
     """
     kv_cache_config = pipeline_config.model.kv_cache
-    quantization_encoding = pipeline_config.model.quantization_encoding
-    if quantization_encoding is None:
-        raise ValueError("quantization_encoding must not be None")
+    quantization_encoding, cast_from, cast_to = _select_quantization_encoding(
+        pipeline_config.model, Idefics3Config.DEFAULT_ENCODING
+    )
     dtype = supported_encoding_dtype(quantization_encoding)
     cache_dtype = cache_dtype_for_encoding(
         quantization_encoding, pipeline_config.model.kv_cache.kv_cache_format
@@ -230,4 +248,7 @@ def _create_llama3_text_config(
         devices=device_refs,
         clip_qkv=getattr(hf_text_config, "clip_qkv", None),
         logits_scaling=getattr(hf_text_config, "logits_scaling", 1.0),
+        quantization_encoding=quantization_encoding,
+        applied_dtype_cast_from=cast_from,
+        applied_dtype_cast_to=cast_to,
     )

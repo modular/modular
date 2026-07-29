@@ -15,13 +15,15 @@
 
 All tests use fake local safetensors/GGUF repos with no network access.
 
-Encoding/weight-path inference for LLM models happens during
-architecture-level validation (``validate_and_resolve_quantization_encoding_weight_path()``
-/ ``validate_and_resolve_with_resolved_quantization_encoding()``), called by
-``PipelineConfig``/the registry -- not inside ``MAXModelConfig.resolve()``,
-which only validates device_specs and parses weight-path identity. Most
-tests below call those methods directly rather than going through the
-full ``PipelineConfig``/registry machinery, to keep the setup narrow.
+Encoding/weight-path inference for LLM models happens in the consumer
+(an ``ArchConfig.initialize``): it calls the pure
+``_select_quantization_encoding()`` helper to pick the effective encoding,
+then ``validate_and_resolve_with_resolved_quantization_encoding()`` to
+validate device compatibility and discover weight files -- not inside
+``MAXModelConfig.resolve()``, which only validates device_specs and parses
+weight-path identity. Most tests below drive those two steps directly
+(via the helpers) rather than going through the full
+``PipelineConfig``/registry machinery, to keep the setup narrow.
 """
 
 import json
@@ -37,6 +39,7 @@ import pytest
 from max.driver import DeviceSpec
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import MAXModelConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
@@ -158,12 +161,13 @@ def _resolve_encoding(
     config: MAXModelConfig,
     default_encoding: SupportedEncoding = _DEFAULT_ENCODING,
 ) -> None:
-    """Resolves quantization_encoding the way a caller (architecture-level
-    validation) does, rather than via resolve()'s best-effort pass.
+    """Resolves quantization_encoding the way a consumer (an
+    ``ArchConfig.initialize``) does: via the pure
+    :func:`_select_quantization_encoding` helper. Writes the result back onto
+    the config so tests can keep asserting on ``config.quantization_encoding``.
     """
-    config.validate_and_resolve_quantization_encoding_weight_path(
-        default_encoding=default_encoding
-    )
+    encoding, _, _ = _select_quantization_encoding(config, default_encoding)
+    config.quantization_encoding = encoding
 
 
 def _resolve_encoding_and_weight_path(
@@ -172,15 +176,18 @@ def _resolve_encoding_and_weight_path(
     supported_encodings: set[SupportedEncoding] | None = None,
     default_weights_format: WeightsFormat = WeightsFormat.safetensors,
 ) -> None:
-    """Resolves both encoding and weight_path via the same two
-    architecture-validation entry points ``_validate_model_config_against_arch()``
-    calls in production, in the same order.
+    """Resolves both encoding and weight_path the way a consumer does in
+    production: select the effective encoding, then validate device
+    compatibility and discover weight files against that resolved encoding.
     """
-    _resolve_encoding(config, default_encoding=default_encoding)
-    assert config.quantization_encoding is not None
+    encoding, cast_from, _ = _select_quantization_encoding(
+        config, default_encoding
+    )
+    config.quantization_encoding = encoding
     config.validate_and_resolve_with_resolved_quantization_encoding(
-        supported_encodings=supported_encodings
-        or {config.quantization_encoding},
+        resolved_encoding=encoding,
+        applied_dtype_cast_from=cast_from,
+        supported_encodings=supported_encodings or {encoding},
         default_weights_format=default_weights_format,
     )
 

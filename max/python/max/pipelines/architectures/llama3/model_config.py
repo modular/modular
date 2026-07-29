@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -40,12 +40,19 @@ from max.pipelines.lib import (
     PipelineConfig,
     parse_quant_config,
 )
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+    supported_encoding_quantization,
+)
 from max.pipelines.weights import gptq_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -100,6 +107,18 @@ def create_rope_embedding(
 class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Model configuration for Llama3 graph construction/execution."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "q4_k"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "gptq",
+        "q4_k",
+        "q4_0",
+        "q6_k",
+        "float32",
+        "bfloat16",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+    }
+
     hidden_size: int
     num_attention_heads: int
     num_key_value_heads: int
@@ -136,6 +155,9 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
     sliding_window: int | None = None
+    quantization_encoding: SupportedEncoding | None = None
+    applied_dtype_cast_from: SupportedEncoding | None = None
+    applied_dtype_cast_to: SupportedEncoding | None = None
 
     @staticmethod
     def calculate_attention_multiplier(
@@ -217,9 +239,9 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     ) -> Self:
         model_config = model_config or pipeline_config.model
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding, cast_from, cast_to = (
+            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding, model_config.kv_cache.kv_cache_format
@@ -323,9 +345,11 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             interleaved_rope_weights=interleaved_rope_weights,
             vocab_size=huggingface_config.vocab_size,
             dtype=dtype,
-            model_quantization_encoding=pipeline_config.model.graph_quantization_encoding,
+            model_quantization_encoding=supported_encoding_quantization(
+                quantization_encoding
+            ),
             quantization_config=gptq_quant_config(
-                pipeline_config.model.quantization_encoding,
+                quantization_encoding,
                 pipeline_config.model.huggingface_config,
             ),
             max_seq_len=Llama3Config.calculate_max_seq_len(
@@ -349,6 +373,9 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             lora_config=pipeline_config.lora,
             logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            quantization_encoding=quantization_encoding,
+            applied_dtype_cast_from=cast_from,
+            applied_dtype_cast_to=cast_to,
         )
 
     def finalize(

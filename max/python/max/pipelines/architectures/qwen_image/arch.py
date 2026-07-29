@@ -14,12 +14,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import PixelContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types import PipelineTask
 from typing_extensions import Self
 
@@ -31,7 +33,13 @@ from .tokenizer import QwenImageTokenizer
 class QwenImageArchConfig(ArchConfig):
     """Pipeline-level config for QwenImage (implements ArchConfig; no KV cache)."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
+
     pipeline_config: PipelineConfig
+    quantization_encoding: SupportedEncoding | None = None
+    applied_dtype_cast_from: SupportedEncoding | None = None
+    applied_dtype_cast_to: SupportedEncoding | None = None
 
     def get_max_seq_len(self) -> int:
         return 0  # Not used for pixel generation.
@@ -59,8 +67,8 @@ class QwenImageArchConfig(ArchConfig):
 qwen_image_arch = SupportedArchitecture(
     name="QwenImagePipeline",
     task=PipelineTask.PIXEL_GENERATION,
-    default_encoding="bfloat16",
-    supported_encodings={"bfloat16"},
+    default_encoding=QwenImageArchConfig.DEFAULT_ENCODING,
+    supported_encodings=QwenImageArchConfig.SUPPORTED_ENCODINGS,
     example_repo_ids=[
         "Qwen/Qwen-Image-2512",
     ],

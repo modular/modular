@@ -214,9 +214,6 @@ class TextGenerationPipeline(
         self._pipeline_config.configure_session(session)
 
         # Load model.
-        if not model_config.quantization_encoding:
-            raise ValueError("quantization_encoding must not be None")
-
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = model_config.resolved_weight_paths()
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -33,12 +33,16 @@ from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
 )
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -48,6 +52,12 @@ from .layers.rotary_embedding import LongRoPERotaryEmbedding
 @dataclass(kw_only=True)
 class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Model configuration for Llama3 graph construction/execution."""
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float32",
+        "bfloat16",
+    }
 
     hidden_size: int
     num_attention_heads: int
@@ -77,6 +87,9 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    quantization_encoding: SupportedEncoding | None = None
+    applied_dtype_cast_from: SupportedEncoding | None = None
+    applied_dtype_cast_to: SupportedEncoding | None = None
 
     @classmethod
     def construct_kv_params(
@@ -140,9 +153,9 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             )
 
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding, cast_from, cast_to = (
+            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding, model_config.kv_cache.kv_cache_format
@@ -243,6 +256,9 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             devices=device_refs,
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
             logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
+            quantization_encoding=quantization_encoding,
+            applied_dtype_cast_from=cast_from,
+            applied_dtype_cast_to=cast_to,
         )
 
     def finalize(

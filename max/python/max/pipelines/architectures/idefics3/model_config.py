@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -24,11 +24,15 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchVLConfigWithTextSubconfig,
 )
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -88,9 +92,9 @@ class Idefics3VisionConfig:
     ) -> Idefics3VisionConfig:
         """Initialize Idefics3VisionConfig from HuggingFace config."""
 
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must be set")
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, Idefics3Config.DEFAULT_ENCODING
+        )[0]
         dtype = supported_encoding_dtype(quantization_encoding)
 
         vision_config = getattr(huggingface_config, "vision_config", None)
@@ -125,6 +129,9 @@ class Idefics3VisionConfig:
 class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Configuration for Idefics3 models."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
+
     devices: list[DeviceRef]
     """Devices that the Idefics3 model is parallelized over."""
 
@@ -142,6 +149,10 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     # Text model configuration - using Llama3Config directly
     text_config: Llama3Config
     """Text model configuration (Llama3-based)."""
+
+    quantization_encoding: SupportedEncoding | None = None
+    applied_dtype_cast_from: SupportedEncoding | None = None
+    applied_dtype_cast_to: SupportedEncoding | None = None
 
     @property
     def image_seq_len(self) -> int:
@@ -200,6 +211,10 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             pipeline_config, huggingface_config, text_config.hidden_size
         )
 
+        quantization_encoding, cast_from, cast_to = (
+            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        )
+
         return cls(
             devices=[
                 DeviceRef(spec.device_type, spec.id)
@@ -214,6 +229,9 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             vision_config=vision_config,
             # Text model configuration (Llama3-based)
             text_config=text_config,
+            quantization_encoding=quantization_encoding,
+            applied_dtype_cast_from=cast_from,
+            applied_dtype_cast_to=cast_to,
         )
 
     def finalize(

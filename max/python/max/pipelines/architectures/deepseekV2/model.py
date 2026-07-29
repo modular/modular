@@ -41,6 +41,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from typing_extensions import override
 
@@ -187,7 +188,10 @@ class DeepseekV2Model(
             devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
             cache_dtype=cache_dtype_for_encoding(
-                self.pipeline_config.model.quantization_encoding,
+                _select_quantization_encoding(
+                    self.pipeline_config.model,
+                    DeepseekV2Config.DEFAULT_ENCODING,
+                )[0],
                 self.pipeline_config.model.kv_cache.kv_cache_format,
             ),
         )

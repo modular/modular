@@ -56,6 +56,11 @@ def _pipeline_config(quantization_encoding: str | None) -> SimpleNamespace:
         model=SimpleNamespace(
             quantization_encoding=quantization_encoding,
             data_parallel_degree=1,
+            # ``construct_kv_params`` resolves the effective encoding via
+            # ``_select_quantization_encoding``; an empty weight path and repo
+            # make it return the explicit encoding unchanged.
+            weight_path=[],
+            huggingface_weight_repo=SimpleNamespace(supported_encodings=[]),
         )
     )
 
@@ -73,9 +78,9 @@ def _construct(
     """
     kv_cache_config = KVCacheConfig(kv_cache_format=kv_cache_format)
     # ``construct_kv_params`` only reads ``hybrid_override_pattern`` /
-    # ``num_key_value_heads`` / ``head_dim`` off the HF config and
-    # ``model.quantization_encoding`` / ``model.data_parallel_degree`` off the
-    # pipeline config; lightweight ``SimpleNamespace`` stubs cover those.
+    # ``num_key_value_heads`` / ``head_dim`` off the HF config and resolves the
+    # effective encoding (plus ``model.data_parallel_degree``) off the pipeline
+    # config; lightweight ``SimpleNamespace`` stubs cover those.
     # ``cast`` adapts the stubs to the annotated parameter types (no real
     # ``PipelineConfig`` / ``AutoConfig`` is needed for dtype selection).
     params = NemotronHConfig.construct_kv_params(
