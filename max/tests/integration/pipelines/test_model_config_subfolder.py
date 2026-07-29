@@ -19,6 +19,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from huggingface_hub import constants as hf_hub_constants
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import (
     MAXModelConfig,
@@ -254,6 +255,79 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
                 weight_path=[Path("model.safetensors")],
             )
         assert config.weight_path == [Path("model.safetensors")]
+
+
+class TestExternalWeightRepoRevision:
+    """An external weights repo must not inherit the base model's revision."""
+
+    @staticmethod
+    def _external_config(model_rev: str, weight_rev: str) -> MAXModelConfig:
+        # Parse returns a repo id distinct from model_path, so weights come
+        # from an external repo. Mocking the parser keeps construction off the
+        # network.
+        with patch(
+            "max.pipelines.lib.config.model_config.WeightPathParser.parse",
+            return_value=([Path("w.safetensors")], "org/quant-repo"),
+        ):
+            return MAXModelConfig(
+                model_path="org/base-model",
+                weight_path=[Path("org/quant-repo/w.safetensors")],
+                huggingface_model_revision=model_rev,
+                huggingface_weight_revision=weight_rev,
+            )
+
+    def test_mirrored_model_revision_dropped_for_external_repo(self) -> None:
+        """A weight revision copied from the model revision is dropped."""
+        config = self._external_config("deadbeef", "deadbeef")
+        assert config.huggingface_weight_repo_id == "org/quant-repo"
+        with patch("os.path.exists", return_value=True):
+            repo = config.huggingface_weight_repo
+        assert repo.revision == hf_hub_constants.DEFAULT_REVISION
+
+    def test_independent_weight_revision_respected_for_external_repo(
+        self,
+    ) -> None:
+        """A weight revision that differs from the model revision is kept."""
+        config = self._external_config("deadbeef", "cafef00d")
+        with patch("os.path.exists", return_value=True):
+            repo = config.huggingface_weight_repo
+        assert repo.revision == "cafef00d"
+
+    def test_same_repo_keeps_weight_revision(self) -> None:
+        """Non-external weights keep the configured revision."""
+        with patch(
+            "max.pipelines.lib.config.model_config.WeightPathParser.parse",
+            return_value=([Path("model.safetensors")], None),
+        ):
+            config = MAXModelConfig(
+                model_path="org/model",
+                weight_path=[Path("model.safetensors")],
+                huggingface_weight_revision="rev123",
+            )
+        with patch("os.path.exists", return_value=True):
+            repo = config.huggingface_weight_repo
+        assert repo.revision == "rev123"
+
+    def test_external_repo_download_uses_repo_revision(self) -> None:
+        """The download runs at the repo handle's revision, not the raw field.
+
+        Regression test for the nvfp4/fp8 serving 404: the download must use
+        the (reset) ``huggingface_weight_repo.revision`` rather than the base
+        model's ``huggingface_weight_revision``.
+        """
+        config = self._external_config("deadbeef", "deadbeef")
+        with (
+            patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+            patch(
+                "max.pipelines.lib.config.model_config.download_weight_files",
+                return_value=[Path("/tmp/w.safetensors")],
+            ) as mock_download,
+        ):
+            config.resolved_weight_paths([Path("w.safetensors")])
+        assert (
+            mock_download.call_args.kwargs["revision"]
+            == hf_hub_constants.DEFAULT_REVISION
+        )
 
 
 def _write_fake_safetensors(path: str, dtype: str = "BF16") -> None:
