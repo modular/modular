@@ -46,7 +46,7 @@ from std.gpu import (
     syncwarp,
     warp_id,
 )
-from std.gpu.compute.arch.mma_apple import (
+from max.gpu.compute.arch.mma_apple import (
     _apple_frag_layout,
     _mma_apple_transposable,
 )

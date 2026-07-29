@@ -68,14 +68,14 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import WARP_SIZE, barrier
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,
     UMMAInsDescriptor,
     UMMAKind,
     mma,
     mma_arrive,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,
@@ -120,7 +120,7 @@ def mma_ws_cta1[
 ):
     """Issues a single `tcgen05.mma.ws.cta_group::1.<kind>` instruction.
 
-    Mirrors the structure of `mma()` from `std.gpu.compute.arch.mma_nvidia_sm100`
+    Mirrors the structure of `mma()` from `max.gpu.compute.arch.mma_nvidia_sm100`
     but emits the `.ws.` variant of the PTX instruction (which is the form used
     by `bulk_mma_ws` in `attention_utils.mojo`). The `.ws.` variant takes only
     `[c_tmem], a_desc, b_desc, idesc, predicate` — no mask operands.

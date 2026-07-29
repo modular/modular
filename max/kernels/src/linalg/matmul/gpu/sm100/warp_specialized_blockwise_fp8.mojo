@@ -35,7 +35,7 @@ from std.gpu.memory import (
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
@@ -43,7 +43,7 @@ from std.gpu.sync import (
     umma_arrive_leader_cta,
     mbarrier_arrive,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     Coord,
     Layout,

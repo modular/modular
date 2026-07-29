@@ -291,7 +291,7 @@ def store_fragment_to_smem[
             vec, dst, warp_offset
         )
 
-    from std.gpu.compute.mma import st_matrix
+    from max.gpu.compute.mma import st_matrix
     from std.memory import bitcast
 
     comptime c_type = dst.dtype

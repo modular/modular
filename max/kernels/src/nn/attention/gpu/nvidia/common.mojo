@@ -28,7 +28,7 @@ from std.sys._assembly import inlined_assembly
 import std.gpu.primitives.warp as warp
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.compute.mma import st_matrix
+from max.gpu.compute.mma import st_matrix
 from layout import (
     ComptimeInt,
     Coord,

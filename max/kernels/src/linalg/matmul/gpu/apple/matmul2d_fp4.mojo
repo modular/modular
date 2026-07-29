@@ -60,7 +60,7 @@ post-matmul multiply by the graph lowering), identically to the committed path.
 """
 
 from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
-from std.gpu.compute.arch.mma_apple import _mma_apple_transposable
+from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation

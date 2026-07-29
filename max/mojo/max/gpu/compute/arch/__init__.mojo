@@ -35,7 +35,7 @@ unified interface in `gpu.compute.mma` which automatically dispatches to the
 appropriate architecture-specific implementation at compile time:
 
 ```mojo
-from std.gpu.compute import mma
+from max.gpu.compute import mma
 
 # Usage: var result = mma.mma(a, b, c)
 ```
@@ -45,9 +45,9 @@ from std.gpu.compute import mma
 The main `gpu.compute.mma` module imports these implementations:
 
 ```mojo
-from std.gpu.compute.arch.mma_nvidia import _mma_nvidia
-from std.gpu.compute.arch.mma_amd import _mma_amd
-from std.gpu.compute.arch.mma_apple import _mma_apple
+from max.gpu.compute.arch.mma_nvidia import _mma_nvidia
+from max.gpu.compute.arch.mma_amd import _mma_amd
+from max.gpu.compute.arch.mma_apple import _mma_apple
 ```
 
 And dispatches based on compile-time architecture detection:

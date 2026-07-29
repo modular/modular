@@ -37,7 +37,7 @@ from std.gpu.memory import (
     async_copy_wait_group,
     external_memory,
 )
-from std.gpu.compute.mma import mma
+from max.gpu.compute.mma import mma
 from layout.layout import *
 from layout import (
     Coord,

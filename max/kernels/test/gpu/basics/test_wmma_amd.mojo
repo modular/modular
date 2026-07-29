@@ -16,10 +16,10 @@ from std.random import random_si64
 
 from std.gpu import WARP_SIZE, block_idx
 from std.gpu.host import DeviceContext
-from std.gpu.compute.mma import mma
-from std.gpu.compute.mma_util import load_matrix_a_amd as load_matrix_a
-from std.gpu.compute.mma_util import load_matrix_b_amd as load_matrix_b
-from std.gpu.compute.mma_util import store_matrix_d
+from max.gpu.compute.mma import mma
+from max.gpu.compute.mma_util import load_matrix_a_amd as load_matrix_a
+from max.gpu.compute.mma_util import load_matrix_b_amd as load_matrix_b
+from max.gpu.compute.mma_util import store_matrix_d
 from std.testing import assert_equal
 
 

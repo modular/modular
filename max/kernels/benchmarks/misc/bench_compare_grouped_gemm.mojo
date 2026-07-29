@@ -33,7 +33,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu.host import DeviceContext
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand, seed
 from std.utils import Index
 from layout import CoordLike, Coord, Idx, TileTensor, row_major

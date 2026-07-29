@@ -50,14 +50,14 @@ from std.gpu.memory import (
     fence_mbarrier_init,
     CacheEviction,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     PDLLevel,
     wait_on_dependent_grids,
 )
 from std.gpu.sync import async_copy_arrive, syncwarp
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     ComptimeInt,
     Coord,

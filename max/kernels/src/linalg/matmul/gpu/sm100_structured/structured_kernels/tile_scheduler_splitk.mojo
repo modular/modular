@@ -31,7 +31,7 @@ from structured_kernels.tile_types import (
 )
 from std.gpu import WARP_SIZE, grid_dim, lane_id, NamedBarrierSemaphore
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from std.bit import prev_power_of_two
 from std.math.uutils import ufloordiv, umod
 from std.utils.index import Index, IndexList

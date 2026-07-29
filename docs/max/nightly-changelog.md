@@ -688,6 +688,7 @@ This version is still a work in progress.
     `max.benchmark.bench_multicontext`
   - `std.benchmark.Bencher.iter_custom(DeviceContext)` ->
     `max.benchmark.bencher_iter_custom`
+  - `std.gpu.compute` -> `max.gpu.compute`
 
 ## Breaking changes
 

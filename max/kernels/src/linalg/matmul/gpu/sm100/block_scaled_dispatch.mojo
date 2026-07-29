@@ -42,7 +42,7 @@ from std.memory import UnsafePointer
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.sys import size_of, simd_width_of
 from max.algorithm import elementwise
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )

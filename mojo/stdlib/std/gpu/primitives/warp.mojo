@@ -52,8 +52,6 @@ from std.gpu.intrinsics import permlane_shuffle
 from std.gpu.globals import WARP_SIZE
 from std.memory import bitcast
 
-from ..compute.tensor_ops import tc_reduce
-
 # TODO (#24457): support shuffles with width != 32
 comptime _WIDTH_MASK = WARP_SIZE - 1
 comptime _FULL_MASK = UInt(2**WARP_SIZE - 1)

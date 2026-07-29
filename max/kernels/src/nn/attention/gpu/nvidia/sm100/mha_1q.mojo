@@ -43,8 +43,8 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import external_memory, fence_async_view_proxy
-from std.gpu.compute.mma import MMAOperandDescriptor
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.mma import MMAOperandDescriptor
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,
     UMMAInsDescriptor,
     UMMAKind,
@@ -52,7 +52,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import (
     mma_arrive,
 )
 from std.gpu.sync import named_barrier
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,

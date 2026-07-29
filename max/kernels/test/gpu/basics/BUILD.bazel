@@ -29,6 +29,13 @@ _EXTRA_DEPS = {
     "test_fast_div.mojo": ["//max:max_mojo"],
     "test_print_elementwise.mojo": ["//max:max_mojo"],
     "test_random.mojo": ["//max:max_mojo"],
+    "test_tcgen05.mojo": ["//max:max_mojo"],
+    "test_wmma.mojo": ["//max:max_mojo"],
+    "test_wmma_amd.mojo": ["//max:max_mojo"],
+}
+
+_FILECHECK_EXTRA_DEPS = {
+    "test_tensor_core_fp8_mma_sync.mojo": ["//max:max_mojo"],
 }
 
 _APPLE_GPU_INCOMPATIBLE = select({
@@ -164,7 +171,7 @@ mojo_test(
             "//max:nn",
             "//max:quantization",
             "@mojo//:std",
-        ],
+        ] + _FILECHECK_EXTRA_DEPS.get(src, []),
     )
     for src in _FILECHECK_TESTS
 ]

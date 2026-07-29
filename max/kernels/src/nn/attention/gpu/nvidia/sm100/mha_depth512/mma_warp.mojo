@@ -39,7 +39,7 @@ CTA role split (cta_group=2):
 
 from std.sys import size_of
 from std.gpu.primitives.cluster import block_rank_in_cluster
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
     mma_arrive_multicast,
 )

@@ -31,7 +31,7 @@ Note:
     Operations are optimized for warp-level execution.
 """
 
-from std.gpu.compute.mma import mma
+from max.gpu.compute.mma import mma
 from std.gpu.primitives.warp import shuffle_down
 
 

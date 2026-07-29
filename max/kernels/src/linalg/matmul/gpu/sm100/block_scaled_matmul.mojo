@@ -35,7 +35,7 @@ from std.gpu.memory import (
     external_memory,
     fence_mbarrier_init,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     pdl_launch_attributes,
@@ -47,7 +47,7 @@ from std.gpu.sync import (
     named_barrier_arrive,
     syncwarp,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import CoordLike, TileTensor
 from layout.coord import ComptimeInt, Coord, Idx
 from layout.tile_layout import row_major as tt_row_major

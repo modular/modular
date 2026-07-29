@@ -41,9 +41,9 @@ from std.gpu.memory import (
     external_memory,
     fence_mbarrier_init,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import named_barrier
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import Layout, TensorLayout, TileTensor
 
 from std.utils.index import Index, IndexList

@@ -56,8 +56,8 @@ from std.gpu.sync import (
     named_barrier_arrive,
     syncwarp,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
 from std.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     PDLLevel,

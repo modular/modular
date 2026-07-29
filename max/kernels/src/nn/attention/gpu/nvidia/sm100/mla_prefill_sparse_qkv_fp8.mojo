@@ -80,7 +80,7 @@ from std.gpu.sync import (
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,
@@ -104,7 +104,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     mul_ftz,
     st_shared_v4_b32,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
     mma_arrive_multicast,
 )

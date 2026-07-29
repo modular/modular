@@ -30,7 +30,7 @@ This package provides GPU tensor core and matrix multiplication operations:
 Import compute operations directly:
 
 ```mojo
-from std.gpu.compute import mma
+from max.gpu.compute import mma
 
 # Usage: var result = mma.mma(a, b, c)
 ```

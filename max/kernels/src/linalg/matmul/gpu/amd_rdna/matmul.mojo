@@ -36,7 +36,7 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
-from std.gpu.compute.mma import mma as _mma_intrinsic
+from max.gpu.compute.mma import mma as _mma_intrinsic
 from layout import TensorLayout, TileTensor
 from std.memory import stack_allocation
 from std.utils import Index, IndexList

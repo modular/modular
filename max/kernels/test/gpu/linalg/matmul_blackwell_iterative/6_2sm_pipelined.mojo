@@ -36,10 +36,10 @@ from std.gpu import (
     warp_id as get_warp_id,
 )
 from std.gpu.memory import fence_async_view_proxy, external_memory
-from std.gpu.compute.mma import st_matrix
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.mma import st_matrix
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import named_barrier
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
 from layout import (
     IntTuple,

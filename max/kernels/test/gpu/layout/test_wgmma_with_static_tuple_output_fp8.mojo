@@ -16,7 +16,7 @@ from std.gpu import barrier, warp_id, lane_id
 from std.gpu.host import DeviceContext
 
 from std.gpu import thread_idx
-from std.gpu.compute.mma import (
+from max.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,

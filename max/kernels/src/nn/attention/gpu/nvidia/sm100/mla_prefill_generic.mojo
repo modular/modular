@@ -64,7 +64,7 @@ from nn.attention.mha_utils import (
     NoPartition,
     OptionallyStaticInt,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from linalg.arch.sm100.mma import smem_descriptor
 from std.utils.static_tuple import StaticTuple
 from kv_cache.types import padded_depth

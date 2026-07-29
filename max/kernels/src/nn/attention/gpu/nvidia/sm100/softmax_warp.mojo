@@ -29,7 +29,7 @@ from std.gpu.sync import (
 )
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.primitives.id import cluster_dim
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_dealloc,
     tcgen05_fence_after,
     tcgen05_fence_before,

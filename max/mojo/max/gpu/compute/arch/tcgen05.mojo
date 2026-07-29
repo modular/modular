@@ -19,8 +19,8 @@ from std.sys import _RegisterPackType, size_of
 from std.sys._assembly import inlined_assembly
 from std.sys.info import _has_blackwell_tcgen05
 from std.gpu import external_memory
-from std.gpu.compute.mma import _str_iota  # TODO: move to a string module
-from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
+from max.gpu.compute.mma import _str_iota  # TODO: move to a string module
+from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
 from std.gpu.intrinsics import _get_nvtx_register_constraint
 from std.memory import bitcast
 

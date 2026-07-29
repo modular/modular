@@ -39,13 +39,13 @@ from std.gpu import (
     warp_id,
 )
 from std.gpu.memory import external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAInsDescriptor,
     UMMAKind,
     mma_arrive_multicast,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,

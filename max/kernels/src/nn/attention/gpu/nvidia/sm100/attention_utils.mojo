@@ -32,12 +32,12 @@ from std.gpu.globals import WARP_SIZE
 from std.gpu.primitives.warp import broadcast
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAInsDescriptor,
     UMMAKind,
     MMASmemDescriptorPair,
 )
-from std.gpu.compute.arch.tcgen05 import tcgen05_ld, tcgen05_st
+from max.gpu.compute.arch.tcgen05 import tcgen05_ld, tcgen05_st
 from layout import (
     IntTuple,
     Layout,

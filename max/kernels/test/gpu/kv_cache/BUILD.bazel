@@ -76,6 +76,12 @@ _EXTRA_CONSTRAINTS = {
     # test_mha_gemma4_shapes.mojo is split into per-(page_size, mask_kind) targets below; the AMD-only crash repro is one of them.
 }
 
+_EXTRA_DEPS = {
+    "test_pv_mnmajor_mma_spike.mojo": ["//max:max_mojo"],
+    "test_qk_kmajor_consumer_spike.mojo": ["//max:max_mojo"],
+    "test_qk_kmajor_mma_spike.mojo": ["//max:max_mojo"],
+}
+
 [
     mojo_test(
         name = src + ".test",
@@ -118,7 +124,7 @@ _EXTRA_CONSTRAINTS = {
             "//max:nn",
             "//max:quantization",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["**/*.mojo"],

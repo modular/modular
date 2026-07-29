@@ -118,12 +118,17 @@ mojo_test(
     deps = [
         "//max:layout",
         "//max:linalg",
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )
 
 _B200_GPU_MEMORY = {
     "test_tcgen05.mojo": "2",
+}
+
+_B200_EXTRA_DEPS = {
+    "test_tcgen05.mojo": ["//max:max_mojo"],
 }
 
 [
@@ -139,7 +144,7 @@ _B200_GPU_MEMORY = {
             "//max:layout",
             "//max:linalg",
             "@mojo//:std",
-        ],
+        ] + _B200_EXTRA_DEPS.get(src, []),
     )
     for src in [
         "test_cp_async_bulk.mojo",

@@ -28,9 +28,9 @@ from std.gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
 )
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
+from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from std.gpu.primitives.warp import broadcast
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_release_allocation_lock,
