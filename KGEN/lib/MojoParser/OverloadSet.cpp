@@ -1479,8 +1479,13 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
       boundCalleeRV =
           PValue(fitness.getParamBindings().specializeGenerator(calleePVal));
     } else {
-      // Function pointers can have singleton parameters like origins.
-      SRValue calleeVal = emitSRValue({calleeRV, callExpr}, EC_CallCalleeValue);
+      // Calling through a function-pointer value.
+      // BindParamsOp below requires an operand to be a function generator. A
+      // callee whose type is named by a `comptime` alias (`FnT`, `Self.T`)
+      // arrives wrapped in `#kgen.sugar`. `calleeSig` is the desugared
+      // signature, so requesting it as the result type rebinds that sugar away.
+      SRValue calleeVal =
+          emitSRValue({calleeRV, callExpr}, EC_CallCalleeValue, calleeSig);
       if (!calleeVal) {
         operands.dest.resetForError(*this);
         return {};
