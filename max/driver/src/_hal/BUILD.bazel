@@ -9,9 +9,19 @@ exports_files(glob([
     "execution_config/*.mojo",
 ]))
 
+# Base `_hal` sources. Downstream builds overlay backend-specific files onto
+# this tree to extend device support (see the `_hal` overlay in
+# @plugin//max/driver/src).
+filegroup(
+    name = "_hal_srcs",
+    srcs = glob(["**/*.mojo"]),
+    tags = ["maybe-unused"],  # Consumed by external plugin repos.
+    visibility = ["//visibility:public"],
+)
+
 mojo_library(
     name = "_hal",
-    srcs = glob(["**/*.mojo"]),
+    srcs = [":_hal_srcs"],
     deps = [
         "//max:machine",
         "@mojo//:std",
