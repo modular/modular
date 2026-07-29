@@ -17,7 +17,7 @@ Wraps the Apple Accelerate `cblas_sgemm` routine to provide single-precision mat
 
 from std.collections import Optional
 from std.math import fma
-from std.memory import alloc
+from std.memory.alloc import ManagedAllocation, alloc, dealloc
 from std.sys import CompilationTarget, simd_width_of
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
@@ -303,9 +303,7 @@ def apple_gemv[
     var K = Int(a.dim[1]()) if b_packed else Int(b.dim[0]())
     var N = Int(b.dim[0]()) if transpose_b or b_packed else Int(b.dim[1]())
 
-    var transposed_b_ptr = Optional[
-        UnsafePointer[Scalar[b.dtype], MutUntrackedOrigin]
-    ]()
+    var transposed_b_alloc = Optional[ManagedAllocation[Scalar[b.dtype]]]()
     var transposed_b = TileTensor(
         UnsafePointer[Scalar[b.dtype], MutUntrackedOrigin].unsafe_dangling(),
         row_major(Coord(Int(0), Int(0))),
@@ -315,10 +313,15 @@ def apple_gemv[
     # runtime (which is suboptimal, but enables faster gemv below).
     comptime if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(Int(b.dim[1]()), Int(b.dim[0]()))
-        var allocated_ptr = alloc[Scalar[b.dtype]](b.num_elements())
-        transposed_b_ptr = allocated_ptr
+        transposed_b_alloc = alloc[Scalar[b.dtype]](
+            {count = b.num_elements()}
+        ).into_managed()
         transposed_b = TileTensor(
-            allocated_ptr,
+            UnsafePointer(
+                transposed_b_alloc.unsafe_value()
+                .unsafe_ptr()
+                .unsafe_origin_cast[MutUntrackedOrigin]()
+            ),
             row_major(
                 Coord(Int(transposed_b_shape[0]), Int(transposed_b_shape[1]))
             ),
@@ -389,8 +392,7 @@ def apple_gemv[
         IndexList[2](N, K), 1, parallelism_grain_size, ctx
     )
 
-    if transposed_b_ptr:
-        transposed_b_ptr.unsafe_value().free()
+    _ = transposed_b_alloc^
 
 
 # ===-----------------------------------------------------------------------===#
