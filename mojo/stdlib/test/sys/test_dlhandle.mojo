@@ -207,18 +207,18 @@ def test_owned_dlhandle_get_function_stored_callable() raises:
 
 
 def test_owned_dlhandle_get_function_multiple_inline_calls() raises:
-    """Repeated inline resolve and call; the last call previously crashed."""
+    """Resolves and calls the same symbol inline, without binding the returned
+    callable to a variable."""
     var lib = _load_libc()
     _ = lib.get_function[Int32]("getpid")()
     _ = lib.get_function[Int32]("getpid")()
     _ = lib.get_function[Int32]("getpid")()
-    # The final call is the one that used to crash.
     _ = lib.get_function[Int32]("getpid")()
 
 
 def test_owned_dlhandle_get_function_with_args() raises:
-    """Exercise the variadic argument-forwarding path with a scalar-in,
-    scalar-out function, where the Mojo calling convention is safe."""
+    """Exercises the variadic argument-forwarding path with a scalar-in,
+    scalar-out function through the C ABI."""
     var lib = _load_libc()
     var abs_fn = lib.get_function[Int32]("abs")
     assert_equal(abs_fn(Int32(-5)), Int32(5), "abs(-5) should return 5")
@@ -226,9 +226,18 @@ def test_owned_dlhandle_get_function_with_args() raises:
     assert_equal(abs_fn(Int32(0)), Int32(0), "abs(0) should return 0")
 
 
+def test_owned_dlhandle_get_function_multiple_args() raises:
+    """Exercises forwarding of more than one argument. A single argument does
+    not distinguish per-argument lowering from a one-element pack."""
+    var lib = _load_libm()
+    var pow_fn = lib.get_function[Float64]("pow")
+    assert_equal(pow_fn(Float64(2.0), Float64(10.0)), Float64(1024.0), "2^10")
+    assert_equal(pow_fn(Float64(2.0), Float64(-2.0)), Float64(0.25), "2^-2")
+
+
 def test_owned_dlhandle_get_function_missing_symbol_raises() raises:
-    """A missing symbol raises `Error` (previously aborted the process).
-    Ensures callers that probe for optional symbols can recover."""
+    """A missing symbol raises `Error`, so callers that probe for optional
+    symbols can recover."""
     var lib = _load_libc()
     with assert_raises(contains="symbol not found"):
         _ = lib.get_function[Int32]("this_symbol_does_not_exist_xyz_42")
@@ -236,8 +245,8 @@ def test_owned_dlhandle_get_function_missing_symbol_raises() raises:
 
 def test_owned_dlhandle_get_function_float64_return() raises:
     """Exercises the `Float64` return-type path to match the docstring
-    example and ensure non-`Int32` scalars round-trip through the Mojo
-    ABI forwarding correctly."""
+    example and ensure non-`Int32` scalars round-trip through the C-ABI
+    forwarding correctly."""
     var lib = _load_libm()
     var sqrt_fn = lib.get_function[Float64]("sqrt")
     assert_equal(sqrt_fn(Float64(4.0)), Float64(2.0), "sqrt(4.0)")
@@ -262,6 +271,76 @@ def test_owned_dlhandle_get_function_explicit_nonetype_return() raises:
     var lib = _load_libc()
     var srand_fn = lib.get_function[NoneType]("srand")
     srand_fn(UInt32(7))
+
+
+def test_owned_dlhandle_get_function_pointer_arg() raises:
+    """Exercises a pointer argument through the C ABI: `atoi(const char*)`.
+    A pointer is a scalar-class argument, distinct from the integer and float
+    scalars covered elsewhere."""
+    var lib = _load_libc()
+    var atoi_fn = lib.get_function[Int32]("atoi")
+    var s = String("123")
+    assert_equal(
+        atoi_fn(s.as_c_string_slice().unsafe_ptr()), Int32(123), "atoi(123)"
+    )
+    var s2 = String("-42")
+    assert_equal(
+        atoi_fn(s2.as_c_string_slice().unsafe_ptr()), Int32(-42), "atoi(-42)"
+    )
+
+
+@fieldwise_init
+struct _DivT(TrivialRegisterPassable):
+    """Matches C `div_t` = `{ int quot; int rem; }`."""
+
+    var quot: Int32
+    var rem: Int32
+
+
+def test_owned_dlhandle_get_function_struct_return() raises:
+    """Returns an aggregate by value through the C ABI:
+    `div(int, int) -> div_t`."""
+    var lib = _load_libc()
+    var div_fn = lib.get_function[_DivT]("div")
+    var r = div_fn(Int32(17), Int32(5))
+    assert_equal(r.quot, Int32(3), "17 / 5 quot")
+    assert_equal(r.rem, Int32(2), "17 % 5 rem")
+    var r2 = div_fn(Int32(-17), Int32(5))
+    assert_equal(r2.quot, Int32(-3), "-17 / 5 quot")
+    assert_equal(r2.rem, Int32(-2), "-17 % 5 rem")
+
+
+@fieldwise_init
+struct _CDouble(TrivialRegisterPassable):
+    """Same by-value ABI as C `double _Complex`: a homogeneous `{f64, f64}`
+    aggregate (SSE-pair on x86-64, HFA-2 on ARM64)."""
+
+    var re: Float64
+    var im: Float64
+
+
+def test_owned_dlhandle_get_function_struct_arg() raises:
+    """Passes an aggregate by value through the C ABI:
+    `cabs(double _Complex)`."""
+    var lib = _load_libm()
+    var cabs_fn = lib.get_function[Float64]("cabs")
+    assert_equal(cabs_fn(_CDouble(3.0, 4.0)), Float64(5.0), "cabs(3+4i)")
+    assert_equal(cabs_fn(_CDouble(5.0, 12.0)), Float64(13.0), "cabs(5+12i)")
+
+
+def test_owned_dlhandle_call_struct_by_value() raises:
+    """Passes and returns an aggregate by value through `OwnedDLHandle.call`,
+    the other public entry point to the same forwarding."""
+    var libm = _load_libm()
+    assert_equal(
+        libm.call["cabs", Float64](_CDouble(3.0, 4.0)),
+        Float64(5.0),
+        "call cabs(3+4i)",
+    )
+    var libc = _load_libc()
+    var r = libc.call["div", _DivT](Int32(17), Int32(5))
+    assert_equal(r.quot, Int32(3), "call div quot")
+    assert_equal(r.rem, Int32(2), "call div rem")
 
 
 def test_owned_dlhandle_automatic_cleanup() raises:
