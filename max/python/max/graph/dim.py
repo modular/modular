@@ -33,6 +33,7 @@ class Dim:
 
     .. code-block:: python
 
+        from max.dtype import DType
         from max.graph import Dim, TensorType, DeviceRef
 
         # Create a TensorType with a symbolic "batch" dimension and a static dimension of size 10
@@ -218,6 +219,9 @@ class SymbolicDim(Dim):
 
     .. code-block:: python
 
+       from max.dtype import DType
+       from max.graph import DeviceRef, TensorType
+
        tensor_type = TensorType(DType.float32, ("batch", "x", 10), device=DeviceRef.CPU())
     """
 
@@ -311,6 +315,8 @@ class AlgebraicDim(Dim):
     Equivalent expressions simplify to the same form:
 
     .. code-block:: python
+
+        from max.graph import Dim
 
         Dim("x") + 1 + 1 == Dim("x") + 2  # True
 
@@ -427,9 +433,9 @@ class StaticDim(Dim):
 
     .. code-block:: python
 
-        from max.graph import TensorType
         from max.dtype import DType
-        tensor = TensorType(DType.int64, (4, 5))
+        from max.graph import DeviceRef, TensorType
+        tensor = TensorType(DType.int64, (4, 5), device=DeviceRef.CPU())
         # This creates a tensor with 2 static dimensions: 4 and 5 respectively
     """
 
