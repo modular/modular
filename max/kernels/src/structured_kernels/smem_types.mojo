@@ -214,12 +214,14 @@ struct SMemTileArray[
     @always_inline
     @staticmethod
     def stack_allocation() -> Self:
-        var ptr = stack_allocation[
-            Self.storage_size,
-            Self.dtype,
-            alignment=Self.alignment,
-            address_space=AddressSpace.SHARED,
-        ]()
+        var ptr = UnsafePointer(
+            stack_allocation[
+                Self.storage_size,
+                Self.dtype,
+                alignment=Self.alignment,
+                address_space=AddressSpace.SHARED,
+            ]()
+        )
         return Self(ptr)
 
 
@@ -282,12 +284,14 @@ struct SMemArray[type: TrivialRegisterPassable, size: Int](
     @always_inline
     @staticmethod
     def stack_allocation[alignment: Int = align_of[Self.type]()]() -> Self:
-        var ptr = stack_allocation[
-            Self.len(),
-            Self.type,
-            alignment=alignment,
-            address_space=AddressSpace.SHARED,
-        ]()
+        var ptr = UnsafePointer(
+            stack_allocation[
+                Self.len(),
+                Self.type,
+                alignment=alignment,
+                address_space=AddressSpace.SHARED,
+            ]()
+        )
         return Self(ptr)
 
 

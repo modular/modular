@@ -2200,8 +2200,12 @@ def mla_decoding_single_batch[
     comptime row_alignment = align_of[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
-    var rowmax = stack_allocation[WM, accum_type, alignment=row_alignment]()
-    var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
+    var rowmax = UnsafePointer(
+        stack_allocation[WM, accum_type, alignment=row_alignment]()
+    )
+    var rowsum = UnsafePointer(
+        stack_allocation[WM, accum_type, alignment=row_alignment]()
+    )
 
     comptime for i in range(WM):
         rowmax[i] = min_or_neg_inf[accum_type]()
@@ -4050,8 +4054,12 @@ def mla_prefill_single_batch[
     comptime row_alignment = align_of[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
-    var rowmax = stack_allocation[WM, accum_type, alignment=row_alignment]()
-    var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
+    var rowmax = UnsafePointer(
+        stack_allocation[WM, accum_type, alignment=row_alignment]()
+    )
+    var rowsum = UnsafePointer(
+        stack_allocation[WM, accum_type, alignment=row_alignment]()
+    )
 
     comptime for i in range(0, WM, 2):
         rowmax.store(i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]()))

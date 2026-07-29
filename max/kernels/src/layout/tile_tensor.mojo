@@ -3255,12 +3255,16 @@ def stack_allocation[
         MutUntrackedOrigin,
         address_space=address_space,
     ](
-        _std_stack_allocation[
-            Coord[*LayoutType._shape_types].static_product,
-            Scalar[dtype],
-            alignment=alignment,
-            address_space=address_space,
-        ](),
+        UnsafePointer[
+            Scalar[dtype], MutUntrackedOrigin, address_space=address_space
+        ](
+            _std_stack_allocation[
+                Coord[*LayoutType._shape_types].static_product,
+                Scalar[dtype],
+                alignment=alignment,
+                address_space=address_space,
+            ]()
+        ),
         layout,
     )
 

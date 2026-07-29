@@ -64,9 +64,9 @@ struct _Accumulator[
             and (Self.simd_width > 0)
         )
         comptime alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
-        self._storage = stack_allocation[
-            Self._size, Self.dtype, alignment=alignment
-        ]()
+        self._storage = UnsafePointer(
+            stack_allocation[Self._size, Self.dtype, alignment=alignment]()
+        )
 
     @always_inline
     def __init__(

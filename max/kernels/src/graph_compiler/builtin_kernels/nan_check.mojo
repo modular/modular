@@ -51,12 +51,12 @@ def _nan_check_gpu_kernel[
     out_inf: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
 ):
     """GPU kernel: count NaN/Inf values via parallel reduction."""
-    var nan_local = stack_allocation[
-        1, Int32, address_space=AddressSpace.SHARED
-    ]()
-    var inf_local = stack_allocation[
-        1, Int32, address_space=AddressSpace.SHARED
-    ]()
+    var nan_local = UnsafePointer(
+        stack_allocation[1, Int32, address_space=AddressSpace.SHARED]()
+    )
+    var inf_local = UnsafePointer(
+        stack_allocation[1, Int32, address_space=AddressSpace.SHARED]()
+    )
     if thread_idx.x == 0:
         nan_local[0] = Int32(0)
         inf_local[0] = Int32(0)

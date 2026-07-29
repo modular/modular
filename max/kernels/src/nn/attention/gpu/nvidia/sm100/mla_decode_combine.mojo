@@ -705,21 +705,27 @@ def mla_combine_kernel_split_parallel[
     # Shared memory for tree reduction.
     # Layout: smem_result[warp][elem], smem_m[warp], smem_l[warp]
     # =========================================================================
-    var smem_result = stack_allocation[
-        NUM_WARPS * head_dim,
-        DType.float32,
-        address_space=AddressSpace.SHARED,
-    ]()
-    var smem_m = stack_allocation[
-        NUM_WARPS,
-        DType.float32,
-        address_space=AddressSpace.SHARED,
-    ]()
-    var smem_l = stack_allocation[
-        NUM_WARPS,
-        DType.float32,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var smem_result = UnsafePointer(
+        stack_allocation[
+            NUM_WARPS * head_dim,
+            DType.float32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var smem_m = UnsafePointer(
+        stack_allocation[
+            NUM_WARPS,
+            DType.float32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var smem_l = UnsafePointer(
+        stack_allocation[
+            NUM_WARPS,
+            DType.float32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     # =========================================================================
     # Step 1: Determine this warp's split range (runtime).
