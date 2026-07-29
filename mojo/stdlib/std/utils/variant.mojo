@@ -967,6 +967,53 @@ struct Variant[*Ts: AnyType](
             origin_of(self)
         ]()[]
 
+    # ===-------------------------------------------------------------------===#
+    # In-place construction primitives
+    # ===-------------------------------------------------------------------===#
+    #
+    # These internal primitives expose storage-level placement-new so a wrapper
+    # that already knows which of the variant's types to store (for example
+    # `Optional`, whose element floor is `AnyType`) can construct a
+    # non-`Movable` value in place. They sidestep the `call=` ctor, whose stored
+    # type is inferred from the closure return and so cannot be resolved when a
+    # wrapper forwards an abstract closure through it. Use them together: build
+    # with `unsafe_uninitialized`, mark the active type with
+    # `_unsafe_set_active[T]`, then placement-new a `T` into `_unsafe_ptr[T]`
+    # exactly once before any read or destroy. The constructor carries
+    # `@doc_hidden` because a dunder can't be hidden by an underscore name.
+
+    @doc_hidden
+    def __init__(out self, *, unsafe_uninitialized: ()):
+        """Create a variant whose active-type slot is left uninitialized.
+
+        Args:
+            unsafe_uninitialized: Tag to select this constructor.
+        """
+        self._storage = Self._Storage(unsafe_uninitialized=())
+
+    def _unsafe_set_active[T: AnyType](mut self):
+        """Mark `T` as the active type without writing its value.
+
+        Parameters:
+            T: The type to mark active. Must be one of the variant's types.
+        """
+        Self._check[T]()
+        self._storage.unsafe_set_active[T]()
+
+    def _unsafe_ptr[T: AnyType](ref self) -> Pointer[T, origin_of(self)]:
+        """Return a raw pointer to the active slot interpreted as type `T`.
+
+        Parameters:
+            T: The type to interpret the slot as. Must be the active type.
+
+        Returns:
+            A pointer to the storage slot as a `Pointer[T]`.
+        """
+        Self._check[T]()
+        return self._storage.unsafe_ptr[T]().unsafe_origin_cast[
+            origin_of(self)
+        ]()
+
     @staticmethod
     def is_type_supported[T: Movable]() -> Bool:
         """Check if a type can be used by the `Variant`.

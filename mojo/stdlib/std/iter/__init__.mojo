@@ -358,7 +358,9 @@ struct _Once[T: Movable & ImplicitlyDeletable](
         return self.copy()
 
     def __next__(mut self) raises StopIteration -> Self.Element:
-        return next(self._inner)
+        if not self._inner:
+            raise StopIteration()
+        return self._inner.unsafe_take()
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()
