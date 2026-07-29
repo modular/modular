@@ -15,7 +15,6 @@
 from std.sys import size_of
 from std.sys.info import _TargetType
 from std.builtin.rebind import downcast
-from std.gpu.host.device_context import DeviceBuffer, DevicePointer
 from std.collections.array import Array
 from std.reflection import reflect
 from std.utils.static_tuple import StaticTuple, _StaticTupleTraits
@@ -62,6 +61,29 @@ trait DevicePassable:
             The host type's name.
         """
         ...
+
+
+trait DevicePointerLike:
+    """Describes the device-pointer information used during device encoding."""
+
+    comptime PointeeType: AnyType
+    """The type of the values referenced by this pointer."""
+
+    def unsafe_ptr(
+        ref self,
+    ) -> UnsafePointer[Self.PointeeType, MutAnyOrigin]:
+        """Returns the offset-adjusted raw device pointer.
+
+        Returns:
+            Device pointer as raw pointer.
+        """
+        ...
+
+    def _buffer_handle(
+        ref self,
+    ) -> Optional[OpaquePointer[MutUntrackedOrigin]]:
+        """Returns the owning driver buffer's handle, if available."""
+        return None
 
 
 def _contains_device_passable_field[T: AnyType]() -> Bool:
@@ -406,13 +428,16 @@ trait DeviceTypeEncoder:
             else:
                 self.encode(elem, sub)
 
-    def encode_device_ptr(
-        mut self, value: DevicePointer, dst: MutOpaquePointer[_]
-    ):
-        """Encodes a `DevicePointer` into `dst`.
+    def encode_device_ptr[
+        DevicePointerType: DevicePointerLike
+    ](mut self, value: DevicePointerType, dst: MutOpaquePointer[_],):
+        """Encodes a device pointer into `dst`.
+
+        Parameters:
+            DevicePointerType: The type of the device pointer.
 
         Args:
-            value: The `DevicePointer` instance to encode into `dst`.
+            value: The device pointer to encode.
             dst: The opaque destination pointer to encode into.
         """
         ...
