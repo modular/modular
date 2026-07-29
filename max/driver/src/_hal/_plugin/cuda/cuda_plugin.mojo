@@ -10,10 +10,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Execution Configurations for CPUs
 
-For now, CPUs are treated as a single target, but this may change in the future.
-"""
+from std.collections.string.string_slice import _get_kgen_string
+from _hal._plugin._trait import HalPluginHooks
+from machine import DeviceRef
 from _hal.execution_config import ExecutionConfig
-from .cpu_execution_config import CPUExecutionConfiguration
-from std.collections.type_dict import TypeDict
+from _hal.execution_config._nvidia import ExecutionConfigForTarget
+
+
+struct CudaHalPlugin(HalPluginHooks):
+    """`PluginHooks` implementation for NVIDIA CUDA backends.
+
+    Every hook is left at its `PluginHooks` default.
+    """
+
+    comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["cuda"]()
+
+    comptime ExecutionConfigType[device: DeviceRef] = ExecutionConfigForTarget[
+        device.spec.name
+    ]
+    """Returns the execution configuration for the given device."""
