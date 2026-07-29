@@ -16,7 +16,7 @@ from std.atomic import Atomic
 
 from std.gpu import barrier, global_idx, thread_idx
 from std.gpu.host import DeviceContext
-from std.memory import AddressSpace, stack_allocation
+from std.memory import AddressSpace, unsafe_stack_allocation
 from std.testing import assert_equal, TestSuite
 from std.sys import is_apple_gpu, has_apple_gpu_accelerator
 
@@ -84,9 +84,9 @@ def reduce_add_via_shared_cas(
     """Same CAS-retry-loop reduction as `reduce_add_via_cas`, but on
     threadgroup (`AddressSpace.SHARED`) memory, to exercise Apple GPU's
     local-address-space `cmpxchg` path."""
-    var shared = stack_allocation[
-        1, Float32, address_space=AddressSpace.SHARED
-    ]()
+    var shared = UnsafePointer(
+        unsafe_stack_allocation[1, Float32, address_space=AddressSpace.SHARED]()
+    )
 
     if thread_idx.x == 0:
         shared[0] = 0

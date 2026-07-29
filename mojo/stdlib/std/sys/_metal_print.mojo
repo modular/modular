@@ -26,7 +26,7 @@ from std.memory import (
     unsafe_memset,
     Pointer,
     MutUntrackedOrigin,
-    stack_allocation,
+    unsafe_stack_allocation,
 )
 
 
@@ -66,7 +66,7 @@ def _metal_print_write(text: StringSlice[_]):
     var offset = 0
     while offset < length:
         # Allocate a zero-initialized 64-byte buffer on the stack.
-        var chunk = stack_allocation[_CHUNK_SIZE, UInt8]()
+        var chunk = unsafe_stack_allocation[_CHUNK_SIZE, UInt8]()
         unsafe_memset(chunk, 0, _CHUNK_SIZE)
 
         # Copy up to 64 bytes from the source.

@@ -38,7 +38,7 @@ from std.gpu.primitives.grid_controls import (
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import warp
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.atomic import Atomic
 
 from std.utils import IndexList
@@ -158,7 +158,7 @@ def block_reduce[
 
         return result
 
-    var shared = stack_allocation[
+    var shared = unsafe_stack_allocation[
         (BLOCK_SIZE // WARP_SIZE) * num_reductions * simd_width,
         dtype,
         address_space=AddressSpace.SHARED,
@@ -171,7 +171,7 @@ def block_reduce[
     if lane_id() == 0:
         comptime for i in range(num_reductions):
             # bank conflict for sub 4 byte data elems
-            shared.store(
+            shared.unsafe_store(
                 (warp * num_reductions + i) * simd_width,
                 warp_accum[i],
             )
@@ -182,7 +182,7 @@ def block_reduce[
 
     if thread_idx.x < ufloordiv(block_dim.x, WARP_SIZE):
         comptime for i in range(num_reductions):
-            last_accum[i] = shared.load[width=simd_width](
+            last_accum[i] = shared.unsafe_load[width=simd_width](
                 (num_reductions * lane_id() + i) * simd_width
             )
     else:
