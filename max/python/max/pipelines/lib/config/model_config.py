@@ -941,19 +941,27 @@ class MAXModelConfig(MAXModelConfigBase):
             and self._weights_repo_id != self.model_path
         )
         subfolder = None if weights_from_external_repo else self.subfolder
+        # A weight revision copied from the model revision names a commit in
+        # the model repo, not the external weights repo -- fall back to default.
+        revision = self.huggingface_weight_revision
+        if (
+            weights_from_external_repo
+            and revision == self.huggingface_model_revision
+        ):
+            revision = hf_hub_constants.DEFAULT_REVISION
 
         cached = self._cached_weight_repo
         if (
             cached is not None
             and cached.repo_id == weights_repo_id
-            and cached.revision == self.huggingface_weight_revision
+            and cached.revision == revision
             and cached.subfolder == subfolder
         ):
             return cached
 
         repo = HuggingFaceRepo(
             repo_id=weights_repo_id,
-            revision=self.huggingface_weight_revision,
+            revision=revision,
             trust_remote_code=self.trust_remote_code,
             subfolder=subfolder,
         )
@@ -1331,7 +1339,9 @@ class MAXModelConfig(MAXModelConfigBase):
             return download_weight_files(
                 huggingface_model_id=weight_repo.repo_id,
                 filenames=[str(x) for x in weight_path],
-                revision=self.huggingface_weight_revision,
+                # Download at the repo handle's revision (see
+                # huggingface_weight_repo), not the raw config field.
+                revision=weight_repo.revision,
                 force_download=self.force_download,
             )
         else:
