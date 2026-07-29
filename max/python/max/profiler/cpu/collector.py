@@ -59,10 +59,18 @@ class CPUMetricsCollector:
 
     .. code-block:: python
 
-        collector = CPUMetricsCollector(pids)
+        import os
+
+        from max.profiler.cpu import CPUMetricsCollector
+
+        collector = CPUMetricsCollector([os.getpid()])
         with collector:
-            run_workload()
+            sum(range(1_000_000))
         metrics = collector.get_stats()
+
+    .. invisible-code-block: python
+
+        assert metrics is not None
 
     Args:
         pids: The PIDs of the processes to collect CPU times from.
