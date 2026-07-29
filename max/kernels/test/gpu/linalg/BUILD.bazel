@@ -21,6 +21,8 @@ _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS = [
 
 _EXTRA_DEPS = {
     "test_batched_matmul.mojo": ["//max:max_mojo"],
+    "test_cublaslt_scaled_mxfp8_matmul.mojo": ["//max:max_mojo"],
+    "test_cublaslt_scaled_nvfp4_matmul.mojo": ["//max:max_mojo"],
     "test_matmul.mojo": ["//max:max_mojo"],
 }
 
@@ -428,6 +430,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:max_mojo",
             "//max:nn",
             "//max:structured_kernels",
             "@mojo//:std",
@@ -484,6 +487,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:max_mojo",
             "//max:structured_kernels",
             "@mojo//:std",
             "@mojo//:test_utils",

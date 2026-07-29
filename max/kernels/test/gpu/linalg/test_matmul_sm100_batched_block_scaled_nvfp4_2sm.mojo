@@ -42,7 +42,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
     set_batched_scale_factor,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def simple_init() -> Bool:

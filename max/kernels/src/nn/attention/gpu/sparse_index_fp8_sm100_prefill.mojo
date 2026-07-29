@@ -87,7 +87,7 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, external_memory
 from std.gpu.sync import named_barrier
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_release_allocation_lock,
@@ -106,7 +106,7 @@ from layout.tma_async import (
     SplitLastDimTMATensorTile,
 )
 
-from std.gpu.compute.arch.mma_nvidia_sm100 import mma_arrive
+from max.gpu.compute.arch.mma_nvidia_sm100 import mma_arrive
 
 from nn.attention.gpu.nvidia.sm100.mha_1q import SM100TensorAccumulatorSS
 from nn.attention.mha_operand import MHAOperand

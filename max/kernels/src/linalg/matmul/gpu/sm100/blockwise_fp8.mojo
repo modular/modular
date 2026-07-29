@@ -26,8 +26,8 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, lane_id, warp_id as get_warp_id
 from std.gpu.memory import external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import Coord, TensorLayout, TileTensor, coord, row_major
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,

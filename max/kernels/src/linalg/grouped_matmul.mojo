@@ -32,8 +32,8 @@ from std.gpu.primitives.grid_controls import PDLLevel
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
 
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     Coord,
     Idx,

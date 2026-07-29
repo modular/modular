@@ -27,7 +27,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
 )
 from linalg.fp4_quantization import naive_block_scaled_matmul
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def test_block_scaled_nvfp4_cublaslt[

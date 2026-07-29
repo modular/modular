@@ -52,7 +52,7 @@ from std.gpu.host.info import B200
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from std.gpu.memory import fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAKind,
 )

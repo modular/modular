@@ -106,7 +106,7 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.compute.mma import mma as gpu_mma
+from max.gpu.compute.mma import mma as gpu_mma
 from std.gpu.host import DeviceContext
 from std.gpu.host.compile import CompilationTarget
 from std.gpu.sync import s_waitcnt

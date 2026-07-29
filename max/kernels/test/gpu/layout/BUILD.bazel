@@ -102,6 +102,17 @@ _FILECHECK_TESTS = [
     "test_wgmma_layouts.mojo",
 ]
 
+_FILECHECK_EXTRA_DEPS = {
+    "test_apple_mma_8x8.mojo": ["//max:max_mojo"],
+    "test_tensor_core_apple.mojo": ["//max:max_mojo"],
+    "test_tensor_core_sm90.mojo": ["//max:max_mojo"],
+    "test_tiled_matmul_gpu.mojo": ["//max:max_mojo"],
+    "test_wgmma_e4m3_e5m2_layouts_f16.mojo": ["//max:max_mojo"],
+    "test_wgmma_e4m3_e5m2_layouts_f32.mojo": ["//max:max_mojo"],
+    "test_wgmma_int8_uint8_layouts.mojo": ["//max:max_mojo"],
+    "test_wgmma_layouts.mojo": ["//max:max_mojo"],
+}
+
 [
     mojo_test(
         name = src + ".test",
@@ -177,7 +188,7 @@ mojo_test(
             "//max:nn",
             "//max:quantization",
             "@mojo//:std",
-        ],
+        ] + _FILECHECK_EXTRA_DEPS.get(src, []),
     )
     for src in _FILECHECK_TESTS
 ]

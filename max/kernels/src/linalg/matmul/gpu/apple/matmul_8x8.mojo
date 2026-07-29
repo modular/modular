@@ -17,7 +17,7 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.compute.arch.mma_apple import _mma_apple_8x8
+from max.gpu.compute.arch.mma_apple import _mma_apple_8x8
 from layout import TensorLayout, TensorStorage, TileTensor
 from std.utils import Index
 from std.utils.numerics import get_accum_type

@@ -29,7 +29,7 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.primitives.grid_controls import launch_dependent_grids
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAInsDescriptor,
     UMMAKind,
 )
@@ -37,7 +37,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import (
 from std.gpu.sync import (
     named_barrier,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_after,
     tcgen05_ld,
     tcgen05_load_wait,
@@ -45,7 +45,7 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
-from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
+from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import (
     IntTuple,
     Layout,

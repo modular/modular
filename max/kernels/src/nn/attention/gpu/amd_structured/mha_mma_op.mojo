@@ -29,7 +29,7 @@ Supports two MFMA flavors on gfx950, comptime-selected on `T`:
 """
 
 from std.gpu import lane_id
-from std.gpu.compute.mma import mma as gpu_mma
+from max.gpu.compute.mma import mma as gpu_mma
 from std.gpu.intrinsics import ds_read_tr8_b64
 from std.math import exp2 as math_exp2
 from std.memory import AddressSpace

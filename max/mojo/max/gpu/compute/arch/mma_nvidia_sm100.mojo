@@ -18,7 +18,7 @@ from std.sys._assembly import inlined_assembly
 from std.sys.info import _has_blackwell_tcgen05
 
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
+from max.gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 
 from std.utils.index import IndexList
 from std.hashlib.hasher import Hasher

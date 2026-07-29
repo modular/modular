@@ -29,7 +29,7 @@ from std.gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
 from std.gpu.sync import (
     named_barrier,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_before,

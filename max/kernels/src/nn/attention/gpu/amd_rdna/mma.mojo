@@ -17,7 +17,7 @@ WMMA always uses 16-element A/B fragments and 8-element C/D fragments
 per lane (16x16x16, group_size=1).
 """
 
-from std.gpu.compute.mma import mma as _mma_intrinsic
+from max.gpu.compute.mma import mma as _mma_intrinsic
 from std.memory import AddressSpace
 from layout import TileTensor
 

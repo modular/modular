@@ -46,8 +46,8 @@ from std.gpu import WARP_SIZE, barrier, thread_idx, warp_id as get_warp_id
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace, external_memory
 from std.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
-from std.gpu.compute.arch.mma_nvidia_sm100 import mma_arrive
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import mma_arrive
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -72,7 +72,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect,
 )
 
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type

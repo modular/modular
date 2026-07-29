@@ -35,7 +35,7 @@ from std.gpu._utils import (
     simd_to_llvm_struct,
 )
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
+from max.gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 from std.memory import bitcast
 
 from std.utils import StaticTuple
@@ -270,7 +270,7 @@ def ld_matrix[
     Example:
 
         ```mojo
-        from std.gpu.compute.mma import ld_matrix
+        from max.gpu.compute.mma import ld_matrix
         from std.memory import alloc, dealloc, Layout
 
         var layout = Layout[Scalar[DType.float16]](count=8)

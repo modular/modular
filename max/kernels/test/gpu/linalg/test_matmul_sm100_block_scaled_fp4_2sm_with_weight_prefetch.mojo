@@ -48,7 +48,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def _test_impl[

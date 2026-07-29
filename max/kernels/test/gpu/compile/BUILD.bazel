@@ -27,6 +27,7 @@ _EXTRA_COPTS = {
 
 _EXTRA_DEPS = {
     "test_cuda_target.mojo": ["//max:max_mojo"],
+    "test_wmma_nvptx.mojo": ["//max:max_mojo"],
 }
 
 _EXTRA_CONSTRAINTS = {

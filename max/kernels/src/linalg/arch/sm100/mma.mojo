@@ -20,9 +20,9 @@ from std.gpu.host._tensormap import SwizzleMode
 from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_id_in_cluster
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
-from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import IntTuple, Layout, TileTensor
 from layout.tile_layout import TensorLayout, _types_to_int_tuple
 from layout.tensor_core_async import (

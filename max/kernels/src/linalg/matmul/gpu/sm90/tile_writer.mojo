@@ -55,7 +55,7 @@ from layout.swizzle import Swizzle
 from std.gpu import lane_id
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 
-from std.gpu.compute.mma import st_matrix
+from max.gpu.compute.mma import st_matrix
 from std.memory import bitcast
 from layout.tensor_core_async import st_matrix_n_layout, st_matrix_m_layout
 from ....utils import elementwise_epilogue_type, elementwise_compute_lambda_type

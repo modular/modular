@@ -30,7 +30,7 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.compute.mma import mma as _mma_intrinsic
+from max.gpu.compute.mma import mma as _mma_intrinsic
 from layout import TensorLayout, TileTensor
 from std.math import ceildiv
 from std.memory import stack_allocation

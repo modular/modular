@@ -43,7 +43,7 @@ from std.gpu.sync import (
     cp_async_bulk_wait_group,
     umma_arrive_leader_cta,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_dealloc,
     tcgen05_fence_after,
     tcgen05_fence_before,

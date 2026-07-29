@@ -24,7 +24,7 @@ Data-movement primitives (TileLoaderLDS, _load_from_lds, load_lds_fragment)
 live in structured_kernels.amd_tile_io.
 """
 
-from std.gpu.compute.mma import mma as gpu_mma
+from max.gpu.compute.mma import mma as gpu_mma
 from std.gpu import lane_id, WARP_SIZE
 from std.utils import IndexList
 from layout import TensorLayout, TileTensor

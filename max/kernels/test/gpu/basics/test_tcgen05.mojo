@@ -13,8 +13,8 @@
 
 from std.gpu.host import get_gpu_target
 from std.gpu.host.compile import _compile_code
-from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_cp,
     tcgen05_dealloc,

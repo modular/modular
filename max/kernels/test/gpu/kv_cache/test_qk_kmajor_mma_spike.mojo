@@ -71,8 +71,8 @@ from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
 from std.gpu.memory import external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
 
 from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange

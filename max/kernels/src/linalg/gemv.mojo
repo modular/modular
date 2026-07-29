@@ -24,7 +24,7 @@ from std.sys import (
     simd_width_of,
 )
 from std.sys.info import _is_amd_mi250x, _is_sm_100x, size_of
-from std.gpu.compute.mma import ld_matrix, mma
+from max.gpu.compute.mma import ld_matrix, mma
 from std.gpu.sync import async_copy_arrive, named_barrier
 from layout.tma_async import SharedMemBarrier
 from structured_kernels.kernel_common import _to_batched_3d

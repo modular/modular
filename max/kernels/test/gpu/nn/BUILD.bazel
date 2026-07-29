@@ -371,10 +371,14 @@ _EXTRA_CONSTRAINTS = {
 }
 
 _EXTRA_DEPS = {
+    "test_mla_layout_g_mma_smoke.mojo": ["//max:max_mojo"],
+    "test_mma_ws_ts.mojo": ["//max:max_mojo"],
+    "test_mma_ws_ts_pv_m32.mojo": ["//max:max_mojo"],
     "test_rms_norm_fused_residual_add.mojo": ["//max:max_mojo"],
     "test_topk_gpu.mojo": ["//max:max_mojo"],
     "test_topk_gpu_fi.mojo": ["//max:max_mojo"],
     "test_toppminp_gpu.mojo": ["//max:max_mojo"],
+    "test_ws_intracta_combine.mojo": ["//max:max_mojo"],
 }
 
 _GPU_MEMORY = {

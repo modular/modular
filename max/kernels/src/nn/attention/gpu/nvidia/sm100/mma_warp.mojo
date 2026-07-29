@@ -15,7 +15,7 @@
 from std.math import align_up, ceildiv
 from std.sys import size_of
 from std.gpu.primitives.id import cluster_dim
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAKind,
     mma_arrive_multicast,

@@ -44,7 +44,7 @@ from layout.layout_tensor import upcast
 from layout.runtime_tuple import crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
-from std.gpu.compute.mma import ld_matrix
+from max.gpu.compute.mma import ld_matrix
 from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,

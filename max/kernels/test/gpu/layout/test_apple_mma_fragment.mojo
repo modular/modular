@@ -28,7 +28,7 @@ from std.random import random_si64
 from std.sys.info import _accelerator_arch
 
 from std.gpu import WARP_SIZE, barrier, lane_id
-from std.gpu.compute.arch.mma_apple import _apple_frag_layout
+from max.gpu.compute.arch.mma_apple import _apple_frag_layout
 from std.gpu.host import DeviceContext
 
 from layout import TileTensor

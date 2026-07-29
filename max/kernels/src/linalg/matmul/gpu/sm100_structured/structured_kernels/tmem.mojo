@@ -25,7 +25,7 @@ from layout import Layout
 from std.sys import size_of
 
 from std.gpu import syncwarp
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,

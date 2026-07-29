@@ -72,7 +72,7 @@ from std.gpu.primitives.cluster import (
     elect_one_sync_with_mask,
 )
 from std.gpu.sync import async_copy_arrive, syncwarp
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_before,
     tcgen05_st,
     tcgen05_store_wait,

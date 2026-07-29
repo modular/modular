@@ -17,7 +17,7 @@ from std.math.uutils import udivmod
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
 from std.gpu import lane_id, thread_idx, warp_id
-from std.gpu.compute.mma import (
+from max.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,

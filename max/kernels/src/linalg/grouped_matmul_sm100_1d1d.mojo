@@ -47,7 +47,7 @@ from std.gpu.primitives.grid_controls import (
 )
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     mma_arrive,
     mma_arrive_multicast,
 )
@@ -56,7 +56,7 @@ from std.gpu.sync import (
     named_barrier_arrive,
     syncwarp,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     IntTuple,
     Layout,
@@ -116,7 +116,7 @@ from linalg.matmul.gpu.sm100.matmul import (
     register_epilogue,
     accum_arrive,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 from std.math.uutils import ufloordiv
 

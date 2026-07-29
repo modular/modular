@@ -33,6 +33,10 @@ _EXTRA_COPTS = {
     ],
 }
 
+_EXTRA_DEPS = {
+    "test_mfma_fragment_lane_mapping.mojo": ["//max:max_mojo"],
+}
+
 [
     mojo_test(
         name = src + ".test",
@@ -52,7 +56,7 @@ _EXTRA_COPTS = {
             "//max:nn",
             "//max:structured_kernels",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     # Excluded from this glob:
     #  - nkv8 gate harness: built via the explicit per-shape targets below
