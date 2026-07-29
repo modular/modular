@@ -54,7 +54,7 @@ from std.memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
 from nn.topk_fi import topk_topp_sampling_from_prob
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList, product
 from std.utils.numerics import max_or_inf, min_or_neg_inf

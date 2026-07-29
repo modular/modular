@@ -15,7 +15,7 @@
 
 from std.collections.optional import OptionalReg
 
-from std.runtime.tracing import Trace, TraceLevel
+from max.runtime.tracing import Trace, TraceLevel
 
 
 def test_op_logging[

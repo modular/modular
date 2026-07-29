@@ -32,7 +32,7 @@ from std.math.math import max as _max, min as _min
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_valid_target
 
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from std.utils.index import IndexList, StaticTuple
 from std.utils.coord import Coord, CoordLike, DynamicCoord, coord_to_index_list

@@ -29,7 +29,7 @@ from std.gpu.host.info import H100, _is_sm10x_gpu, is_gpu
 from std.gpu import block_idx, global_idx, warp_id, lane_id, thread_idx
 from std.gpu.memory import external_memory
 from std.gpu.primitives.grid_controls import PDLLevel
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
 
 from max.gpu.compute.arch.mma_nvidia_sm100 import *

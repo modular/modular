@@ -16,9 +16,10 @@ from std.math import ceildiv
 from std.os import abort
 from std.utils.index import IndexList
 
-from std.runtime import tracing
-from std.runtime.asyncrt import TaskGroup, parallelism_level
-from std.runtime.tracing import Trace, TraceLevel
+from std.runtime.asyncrt import TaskGroup
+from max.runtime.asyncrt import parallelism_level
+from max.runtime import tracing
+from max.runtime.tracing import Trace, TraceLevel
 
 from std.utils.numerics import FlushDenormals
 

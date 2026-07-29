@@ -31,7 +31,7 @@ from std.gpu.host.info import is_cpu
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
 from layout import Idx, TensorLayout, TileTensor, row_major
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils.coord import Coord
 from std.utils.index import IndexList, StaticTuple

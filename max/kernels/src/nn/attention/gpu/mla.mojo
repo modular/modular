@@ -120,7 +120,7 @@ from nn.attention.mha_utils import (
     _kernel_mask,
     DynamicInt,
 )
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf

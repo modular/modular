@@ -122,8 +122,8 @@ from layout import (
 )
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.asyncrt import parallelism_level
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.sys import (
     has_amd_gpu_accelerator,

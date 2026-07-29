@@ -18,7 +18,7 @@ from std.math import ceildiv, gcd
 from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, size_of, simd_width_of
 from std.gpu.host.info import B200, H100, _is_sm10x_gpu
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (

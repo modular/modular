@@ -44,7 +44,7 @@ from layout.tile_layout import TensorLayout
 from layout.tensor_storage import TensorStorage
 from std.logger import Logger
 from std.memory import bitcast
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from max.algorithm import elementwise
 from std.utils.coord import Coord, Idx, coord_to_index_list
 from std.utils.index import Index, IndexList, StaticTuple

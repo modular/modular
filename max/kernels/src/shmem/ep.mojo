@@ -22,7 +22,7 @@ from std.gpu.host.info import is_gpu
 from std.math import ceildiv
 from layout import PointerStorage, TensorLayout, TileTensor, Idx
 from layout.tile_tensor import row_major
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import has_amd_gpu_accelerator, simd_width_of, size_of
 from std.gpu import WARP_SIZE
 from std.ffi import external_call, _get_global_or_null

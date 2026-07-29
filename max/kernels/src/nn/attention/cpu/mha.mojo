@@ -52,8 +52,8 @@ from linalg.utils import partition_work
 from std.memory import alloc, dealloc, unsafe_memset_zero, stack_allocation
 from std.memory.alloc import ManagedAllocation, Layout as AllocLayout
 from nn.attention.mha_mask import MHAMask
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.asyncrt import parallelism_level
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils import Index, IndexList
 
