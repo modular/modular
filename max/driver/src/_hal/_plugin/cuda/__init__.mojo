@@ -10,10 +10,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Execution Configurations for CPUs
 
-For now, CPUs are treated as a single target, but this may change in the future.
-"""
-from _hal.execution_config import ExecutionConfig
-from .cpu_execution_config import CPUExecutionConfiguration
-from std.collections.type_dict import TypeDict
+from .cuda_plugin import CudaHalPlugin
