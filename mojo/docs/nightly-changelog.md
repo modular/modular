@@ -669,6 +669,29 @@ This version is still a work in progress.
   v.set(call=make)                         # replace in place
   ```
 
+- `Optional` now accepts element types that are not `Movable`, mirroring the
+  `Variant` change: its element type is bounded by `AnyType`, `Movable` and
+  `Copyable` conformance become conditional on the element type, and a
+  non-`Movable` value can be stored in place with a new closure-based
+  constructor:
+
+  ```mojo
+  @fieldwise_init
+  struct Pinned(Movable where False):
+      var value: Int
+
+  def make() -> Pinned:
+      return Pinned(7)
+
+  var opt = Optional[Pinned](call=make)  # construct in place
+  ```
+
+  `Optional` also no longer conforms to `Iterator`; it is now an `Iterable`
+  collection of 0 or 1 elements. `for value in opt` and `for value in opt^` are
+  unchanged, but code that used an `Optional` directly as an iterator (for
+  example calling `next()` on it) no longer compiles and should iterate the
+  `Optional` instead.
+
 - Various datatypes have adopted interior origins for increased memory safety,
   including `List`, `Deque`, `Variant`, `String`, `Dict`, `LinkedList`,
   `OwnedPointer`, and `HostBuffer`. A reference or view into one of these
