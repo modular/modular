@@ -257,7 +257,7 @@ def _resolve_config(config: PipelineConfig) -> None:
     # resolve() no longer mutates model_config.quantization_encoding — the
     # field keeps the raw user value (often None). Mirror the resolved encoding
     # back onto the config so tests can assert the effective encoding.
-    resolved_encoding, _, _ = _select_quantization_encoding(
+    resolved_encoding = _select_quantization_encoding(
         _model(config), arch.default_encoding
     )
     _model(config).quantization_encoding = resolved_encoding

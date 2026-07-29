@@ -67,7 +67,7 @@ class Qwen3VLMoeBatchProcessor(
             quantization_encoding = _select_quantization_encoding(
                 self.runtime.pipeline_config.model,
                 Qwen3VLConfig.DEFAULT_ENCODING,
-            )[0]
+            )
             dtype = supported_encoding_dtype(quantization_encoding)
             hidden_size = hf_config.text_config.hidden_size
             n_deepstack_layers = len(

@@ -280,7 +280,7 @@ class InternVLConfig(ArchConfigWithKVCache):
                 pipeline_config, hf_llm_config
             )
 
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             pipeline_config.model, cls.DEFAULT_ENCODING
         )
 

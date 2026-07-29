@@ -430,7 +430,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
 
         encoding = _select_quantization_encoding(
             first_config, QwenImageArchConfig.DEFAULT_ENCODING
-        )[0]
+        )
         self.prompt_encoder = Qwen25VLMultimodalEncoderModel(
             text_encoder=self.text_encoder,
             config=self._prompt_encoder_config,

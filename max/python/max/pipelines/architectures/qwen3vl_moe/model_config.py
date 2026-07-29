@@ -256,7 +256,7 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         text_config = huggingface_config.text_config
 
         # Get quantization encoding for dtype
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             pipeline_config.model, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)

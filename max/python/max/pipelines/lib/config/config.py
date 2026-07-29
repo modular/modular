@@ -52,7 +52,11 @@ from pydantic import (
 )
 from typing_extensions import Self
 
-from .model_config import MAXModelConfig, _select_quantization_encoding
+from .model_config import (
+    MAXModelConfig,
+    _select_dtype_cast,
+    _select_quantization_encoding,
+)
 from .profiling_config import ProfilingConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -1405,9 +1409,10 @@ class PipelineConfig(ConfigFileModel):
             multi_gpu_supported=arch.multi_gpu_supported
         )
 
-        resolved_encoding, cast_from, _cast_to = _select_quantization_encoding(
+        resolved_encoding = _select_quantization_encoding(
             model_config, arch.default_encoding
         )
+        cast_from, _ = _select_dtype_cast(model_config, arch.default_encoding)
         if resolved_encoding not in arch.supported_encodings:
             raise ValueError(
                 f"quantization_encoding of '{resolved_encoding}' not supported by MAX engine."

@@ -62,7 +62,7 @@ class GptOssMemoryPlanner(PagedMemoryPlanner):
         # and memory fragmentation.
         quantization_encoding = _select_quantization_encoding(
             pipeline_config.model, GptOssConfig.DEFAULT_ENCODING
-        )[0]
+        )
         if quantization_encoding == "float4_e2m1fnx2":
             num_experts = getattr(huggingface_config, "num_local_experts", 32)
             moe_dim = getattr(huggingface_config, "intermediate_size", 2880)

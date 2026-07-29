@@ -18,6 +18,7 @@ from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import (
+    _select_dtype_cast,
     _select_quantization_encoding,
 )
 from max.pipelines.modeling.config_enums import (
@@ -45,7 +46,10 @@ def _convert_safetensor_with_model_config(
     This allows the same conversion logic to be used for both target and draft models.
     """
     # TODO(MXF-517): this should be resolved by the ArchConfig, not the adapter.
-    resolved_encoding, cast_from, cast_to = _select_quantization_encoding(
+    resolved_encoding = _select_quantization_encoding(
+        model_config, Llama3Config.DEFAULT_ENCODING
+    )
+    cast_from, cast_to = _select_dtype_cast(
         model_config, Llama3Config.DEFAULT_ENCODING
     )
     new_state_dict: dict[str, WeightData] = {}
@@ -147,7 +151,7 @@ def convert_gguf_state_dict(
     gguf_mapping = LLAMA_GGUF_UNFUSED_QKV_MAPPING
     if pipeline_config is not None:
         # TODO(MXF-517): this should be resolved by the ArchConfig, not the adapter.
-        resolved_encoding, _, _ = _select_quantization_encoding(
+        resolved_encoding = _select_quantization_encoding(
             pipeline_config.model, Llama3Config.DEFAULT_ENCODING
         )
         if supported_encoding_quantization(resolved_encoding) is not None:

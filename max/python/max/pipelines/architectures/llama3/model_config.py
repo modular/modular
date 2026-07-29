@@ -237,7 +237,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     ) -> Self:
         model_config = model_config or pipeline_config.model
         kv_cache_config = model_config.kv_cache
-        quantization_encoding, _, _ = _select_quantization_encoding(
+        quantization_encoding = _select_quantization_encoding(
             model_config, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)

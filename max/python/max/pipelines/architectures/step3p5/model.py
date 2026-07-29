@@ -128,7 +128,7 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
         encoding = _select_quantization_encoding(
             self.pipeline_config.model, Step3p5Config.DEFAULT_ENCODING
-        )[0]
+        )
         dispatch_dtype = supported_encoding_dtype(encoding)
 
         dispatch_quant_config = None

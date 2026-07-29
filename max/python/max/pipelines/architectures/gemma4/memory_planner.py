@@ -63,7 +63,7 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
         quantization_encoding = _select_quantization_encoding(
             pipeline_config.model,
             Gemma4ForConditionalGenerationConfig.DEFAULT_ENCODING,
-        )[0]
+        )
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding,
             pipeline_config.model.kv_cache.kv_cache_format,

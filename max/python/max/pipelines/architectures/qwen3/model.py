@@ -132,7 +132,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
         encoding = _select_quantization_encoding(
             self.pipeline_config.model, Qwen3Config.DEFAULT_ENCODING
-        )[0]
+        )
         dispatch_dtype = supported_encoding_dtype(encoding)
 
         dispatch_quant_config = None

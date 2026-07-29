@@ -49,7 +49,7 @@ class HyV3MemoryPlanner(PagedMemoryPlanner):
     ) -> int:
         encoding = _select_quantization_encoding(
             pipeline_config.model, HYV3Config.DEFAULT_ENCODING
-        )[0]
+        )
         n_gpus_per_node = len(pipeline_config.model.device_specs)
         # Use moe_intermediate_size for EP buffer math, not the
         # dense-layer intermediate_size (the latter is ~9x larger on
