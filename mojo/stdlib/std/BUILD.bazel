@@ -54,10 +54,12 @@ mojo_overlay_srcs(
         "std/gpu/host/_device_context_extras.mojo",
         "std/gpu/host/_device_context_metal.mojo",
         "std/gpu/host/_metal.mojo",
+        "std/gpu/host/_nvidia_cuda.mojo",
     ],
     base_srcs = [":std_srcs"],
     overlay_files = {
         "//max/driver/src/_device_context_hal:__init__.mojo": "std/gpu/host/device_context.mojo",
+        "//max/driver/src/_device_context_hal:_nvidia_cuda.mojo": "std/gpu/host/_nvidia_cuda.mojo",
         # The HAL DeviceContext has no device-graph support; replace the module
         # with name-only stand-ins so `std.gpu.host`'s re-exports resolve.
         "//max/driver/src/_device_context_hal:_device_graph.mojo": "std/gpu/host/device_graph.mojo",
