@@ -195,11 +195,13 @@ def block_prefix_sum[
         n_warps <= WARP_SIZE
     ), "Number of warps must be less than or equal to warp size"
 
-    var warp_prefix_sum = stack_allocation[
-        n_warps,
-        Scalar[dtype],
-        address_space=AddressSpace.SHARED,
-    ]()
+    var warp_prefix_sum = UnsafePointer(
+        stack_allocation[
+            n_warps,
+            Scalar[dtype],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     var val = Scalar[dtype](0)
     if thread_idx.x < num_elements:
@@ -2356,9 +2358,11 @@ struct EPDispatchKernel[
         comptime shared_expert_offset = 1 if Self.fused_shared_expert else 0
         var tid = thread_idx.x
 
-        var prefix_sum_arr = stack_allocation[
-            Self.n_experts, DType.uint32, address_space=AddressSpace.SHARED
-        ]()
+        var prefix_sum_arr = UnsafePointer(
+            stack_allocation[
+                Self.n_experts, DType.uint32, address_space=AddressSpace.SHARED
+            ]()
+        )
 
         if tid < Self.n_local_experts + shared_expert_offset:
             expert_ids[tid] = Int32(tid)
@@ -2537,15 +2541,21 @@ struct EPDispatchKernel[
 
         # Shared memory: rank prefix sums, per-tile token-to-rank map,
         # expert start, and chunk_start broadcast slot.
-        var rank_prefix = stack_allocation[
-            Self.n_ranks, DType.int32, address_space=AddressSpace.SHARED
-        ]()
-        var tok_rank_map = stack_allocation[
-            tile_size, DType.int32, address_space=AddressSpace.SHARED
-        ]()
-        var smem_vals = stack_allocation[
-            2, DType.int32, address_space=AddressSpace.SHARED
-        ]()
+        var rank_prefix = UnsafePointer(
+            stack_allocation[
+                Self.n_ranks, DType.int32, address_space=AddressSpace.SHARED
+            ]()
+        )
+        var tok_rank_map = UnsafePointer(
+            stack_allocation[
+                tile_size, DType.int32, address_space=AddressSpace.SHARED
+            ]()
+        )
+        var smem_vals = UnsafePointer(
+            stack_allocation[
+                2, DType.int32, address_space=AddressSpace.SHARED
+            ]()
+        )
 
         @always_inline
         def fetch_tile_id() {imm} -> Int32:

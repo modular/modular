@@ -823,7 +823,9 @@ def _pack_b_ndbuffer_impl[
 
         comptime if use_apple_accelerate_lib[c_type, a_type, b_type]():
             comptime if not transposed:
-                var perm_ptr = stack_allocation[2, Scalar[DType.int]]()
+                var perm_ptr = UnsafePointer(
+                    stack_allocation[2, Scalar[DType.int]]()
+                )
                 perm_ptr[0] = 1
                 perm_ptr[1] = 0
 
@@ -1027,11 +1029,13 @@ struct BTileGenerator[
         ), "b cannot be both transposed and pre-packed."
 
         comptime if not Self.b_packed:
-            b_tile_stack_ptr = stack_allocation[
-                get_pack_data_size[Self.b_type](),
-                Self.b_type,
-                align_of[SIMD[Self.b_type, simd_width_of[Self.b_type]()]](),
-            ]()
+            b_tile_stack_ptr = UnsafePointer(
+                stack_allocation[
+                    get_pack_data_size[Self.b_type](),
+                    Self.b_type,
+                    align_of[SIMD[Self.b_type, simd_width_of[Self.b_type]()]](),
+                ]()
+            )
 
         return BTileGenerator[
             Self.config,

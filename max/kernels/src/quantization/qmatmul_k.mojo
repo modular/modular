@@ -540,9 +540,9 @@ def _pack_block_Q6_K[
         == size_of[_block_Q6_K_packed[block_n]]()
     ), "packed block size should be multiple of the unpacked block size"
 
-    var q_bits_block_buf = stack_allocation[
-        _block_QK_K.quantized_k * block_n, DType.uint8
-    ]()
+    var q_bits_block_buf = UnsafePointer(
+        stack_allocation[_block_QK_K.quantized_k * block_n, DType.uint8]()
+    )
 
     for n in range(block_n):
         dst_ptr[].base_scales[n] = src_ptr[].base_scale
@@ -550,9 +550,9 @@ def _pack_block_Q6_K[
         for g in range(group_count):
             dst_ptr[].q_scales[g * block_n + n] = src_ptr[].q_scales[g]
 
-        var q_bits_column_buf = stack_allocation[
-            _block_QK_K.quantized_k, DType.uint8
-        ]()
+        var q_bits_column_buf = UnsafePointer(
+            stack_allocation[_block_QK_K.quantized_k, DType.uint8]()
+        )
 
         _expand_q_bits_lo[width=64](
             src_ptr[].q_bits_lo.unsafe_ptr(), q_bits_column_buf
@@ -1140,9 +1140,11 @@ def _matmul_Q4_K_columns[
     var b_tile_ptr = b_ptr.bitcast[_block_Q4_K_packed[block_n]]()
 
     # Unpack the scales and minimums to uint8 values.
-    var b_q_scales_and_mins_buf = stack_allocation[
-        2 * group_count * block_n, DType.uint8, alignment=alignment
-    ]()
+    var b_q_scales_and_mins_buf = UnsafePointer(
+        stack_allocation[
+            2 * group_count * block_n, DType.uint8, alignment=alignment
+        ]()
+    )
     b_tile_ptr[].q_scales_and_mins.unpack(b_q_scales_and_mins_buf)
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
@@ -1177,9 +1179,11 @@ def _matmul_Q4_K_columns[
         return
 
     # Unpack the quantized bits to uint8 values.
-    var b_q_bits = stack_allocation[
-        _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
-    ]()
+    var b_q_bits = UnsafePointer(
+        stack_allocation[
+            _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
+        ]()
+    )
     b_tile_ptr[].q_bits.unpack(b_q_bits)
 
     @parameter
@@ -1419,9 +1423,11 @@ def _matmul_Q6_K_columns[
         return
 
     # Unpack the quantized bits to uint8 values.
-    var b_q_bits = stack_allocation[
-        _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
-    ]()
+    var b_q_bits = UnsafePointer(
+        stack_allocation[
+            _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
+        ]()
+    )
     b_tile_ptr[].q_bits.unpack[zero_point=UInt8(b_zero_point)](b_q_bits)
 
     @parameter

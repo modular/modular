@@ -777,9 +777,11 @@ struct Matmul2dFp4[
         # TileTensor view so the cooperative decode store and the per-SG B read
         # are TileTensor indexed (`b_view[n, col]`), in-bounds by construction --
         # no raw SMEM pointer arithmetic.
-        var b_sm = stack_allocation[
-            BN * BK, Scalar[Self.in_type], address_space=AddressSpace.SHARED
-        ]()
+        var b_sm = UnsafePointer(
+            stack_allocation[
+                BN * BK, Scalar[Self.in_type], address_space=AddressSpace.SHARED
+            ]()
+        )
         var b_view = TileTensor(b_sm, Layout(Coord(BN, BK), Coord(BK, Idx[1])))
 
         var a_rc = Array[IndexList[2], 8](uninitialized=True)

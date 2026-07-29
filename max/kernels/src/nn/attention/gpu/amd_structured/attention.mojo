@@ -517,26 +517,32 @@ struct Attention[
         self.out_reg_buffer = Self.OutputRegisterBufferType()
         self.out_reg_buffer.zero()
 
-        self.k_smem_ptr = stack_allocation[
-            Self._max_kv_smem_size if Self.amd_structured_config.shared_kv else Self._k_smem_size,
-            Self.k_t.dtype,
-            address_space=AddressSpace.SHARED,
-            alignment=Self._smem_alignment,
-        ]()
+        self.k_smem_ptr = UnsafePointer(
+            stack_allocation[
+                Self._max_kv_smem_size if Self.amd_structured_config.shared_kv else Self._k_smem_size,
+                Self.k_t.dtype,
+                address_space=AddressSpace.SHARED,
+                alignment=Self._smem_alignment,
+            ]()
+        )
         self.v_smem_ptr = self.k_smem_ptr.bitcast[
             Scalar[Self.v_t.dtype]
-        ]() if Self.amd_structured_config.shared_kv else stack_allocation[
-            Self._v_smem_size,
-            Self.v_t.dtype,
-            address_space=AddressSpace.SHARED,
-            alignment=Self._smem_alignment,
-        ]()
+        ]() if Self.amd_structured_config.shared_kv else UnsafePointer(
+            stack_allocation[
+                Self._v_smem_size,
+                Self.v_t.dtype,
+                address_space=AddressSpace.SHARED,
+                alignment=Self._smem_alignment,
+            ]()
+        )
 
-        self.warp_scratch_ptr = stack_allocation[
-            Self._warp_scratch_size,
-            Self.accum_type,
-            address_space=AddressSpace.SHARED,
-        ]()
+        self.warp_scratch_ptr = UnsafePointer(
+            stack_allocation[
+                Self._warp_scratch_size,
+                Self.accum_type,
+                address_space=AddressSpace.SHARED,
+            ]()
+        )
 
         self.p_reg_buffer = Self.PRegisterBufferType(
             tt_stack_allocation[Self.q_type, address_space=AddressSpace.SHARED](

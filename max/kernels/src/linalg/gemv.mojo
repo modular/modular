@@ -828,11 +828,13 @@ def gevm_kernel[
     var col = block_idx.x * WARP_SIZE + lane_id
     var global_warp_id = global_idx.x // warps_per_block
 
-    var x_shared = stack_allocation[
-        tile_size,
-        accum_type,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var x_shared = UnsafePointer(
+        stack_allocation[
+            tile_size,
+            accum_type,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()

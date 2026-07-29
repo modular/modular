@@ -1607,12 +1607,14 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     comptime scales_smem_tile_size = align_up(
         Int(Coord(scales_tile_shape).product()), 128
     )
-    var smem_ptr = stack_allocation[
-        scales_smem_tile_size,
-        Scalar[scales_dtype],
-        alignment=128,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var smem_ptr = UnsafePointer(
+        stack_allocation[
+            scales_smem_tile_size,
+            Scalar[scales_dtype],
+            alignment=128,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     var scales_smem = TileTensor(
         smem_ptr,
