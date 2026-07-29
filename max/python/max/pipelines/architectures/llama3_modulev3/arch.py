@@ -33,11 +33,8 @@ llama_modulev3_arch = SupportedArchitecture(
         "deepseek-ai/deepseek-coder-6.7b-instruct",
         "modularai/Llama-3.1-8B-Instruct-GGUF",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "float32",
-        "bfloat16",
-    },
+    default_encoding=Llama3Config.DEFAULT_ENCODING,
+    supported_encodings=Llama3Config.SUPPORTED_ENCODINGS,
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,

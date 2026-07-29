@@ -15,15 +15,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.pipelines.architectures.mistral.model_config import MistralConfig
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from typing_extensions import Self, override
 
 
 @dataclass(kw_only=True)
 class Mistral3Config(MistralConfig):
     """Configuration for Mistral3 models."""
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
 
     @override
     @classmethod

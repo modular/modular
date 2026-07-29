@@ -27,10 +27,8 @@ mistral3_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistralai/Mistral-Small-3.1-24B-Instruct-2503"],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-    },
+    default_encoding=Mistral3Config.DEFAULT_ENCODING,
+    supported_encodings=Mistral3Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     pipeline_model=Mistral3Model,
     tokenizer=Mistral3Tokenizer,

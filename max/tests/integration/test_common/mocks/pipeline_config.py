@@ -28,6 +28,7 @@ from max.pipelines.lib import (
     SupportedEncoding,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from transformers import AutoConfig
 from typing_extensions import ParamSpec
 
@@ -41,13 +42,10 @@ class DummyMAXModelConfig(MAXModelConfig):
     def weights_size(self) -> int:
         return 1000
 
-    def validate_and_resolve_quantization_encoding_weight_path(
-        self, default_encoding: SupportedEncoding
-    ) -> None:
-        pass
-
     def validate_and_resolve_with_resolved_quantization_encoding(
         self,
+        resolved_encoding: SupportedEncoding,
+        applied_dtype_cast_from: SupportedEncoding | None,
         supported_encodings: set[SupportedEncoding],
         default_weights_format: WeightsFormat,
     ) -> None:
@@ -87,8 +85,24 @@ class DummyPipelineConfig(PipelineConfig):
             device_specs=device_specs,
             quantization_encoding=quantization_encoding,
             max_length=max_length,
+            weight_path=[],
         )
         model_config.kv_cache = KVCacheConfig()
+
+        # `ArchConfig.initialize` resolves the encoding via
+        # `_select_quantization_encoding`, which reads the HF weight repo's
+        # supported encodings. Seed the repo cache with an offline stub (no
+        # supported encodings, no weight files) so resolution stays offline and
+        # keeps the given encoding; this avoids a network `HuggingFaceRepo`
+        # lookup for the fake `model_path`.
+        weight_repo_stub = MagicMock(spec=HuggingFaceRepo)
+        weight_repo_stub.repo_id = model_config.huggingface_weight_repo_id
+        weight_repo_stub.revision = model_config.huggingface_weight_revision
+        weight_repo_stub.subfolder = model_config.subfolder
+        weight_repo_stub.supported_encodings = []
+        weight_repo_stub.files_for_encoding.return_value = {}
+        weight_repo_stub.encoding_for_file.return_value = None
+        model_config._cached_weight_repo = weight_repo_stub
         # NOTE: Using MagicMock without spec here because HuggingFace configs
         # vary by model type (LlamaConfig, Qwen2Config, etc.). Tests that need
         # strict type checking should pass a model-specific huggingface_config

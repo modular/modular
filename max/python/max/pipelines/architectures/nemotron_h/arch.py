@@ -41,10 +41,10 @@ nemotron_h_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8"],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding="bfloat16",
+    default_encoding=NemotronHConfig.DEFAULT_ENCODING,
     # modelopt per-tensor static FP8 on the (non-excluded) mamba in/out_proj and
     # MLP up/down projections; attention, conv1d, norms, lm_head stay bf16.
-    supported_encodings={"bfloat16", "float8_e4m3fn"},
+    supported_encodings=NemotronHConfig.SUPPORTED_ENCODINGS,
     pipeline_model=NemotronHModel,
     tokenizer=NemotronHTokenizer,
     context_type=TextContext,

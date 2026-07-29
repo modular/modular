@@ -57,6 +57,7 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.eplb_stats import (
     EplbPlacement,
     EplbStatsAccumulator,
@@ -241,10 +242,11 @@ class KimiK2_5Model(
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
-        encoding = pipeline_config.model.quantization_encoding
+        encoding = _select_quantization_encoding(
+            pipeline_config.model, KimiK2_5Config.DEFAULT_ENCODING
+        )[0]
         if (
-            encoding is not None
-            and is_float4_encoding(encoding)
+            is_float4_encoding(encoding)
             and kv_cache_config.kv_cache_format is None
         ):
             cache_dtype = DType.float8_e4m3fn

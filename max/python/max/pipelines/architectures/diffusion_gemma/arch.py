@@ -41,11 +41,8 @@ diffusion_gemma_arch = SupportedArchitecture(
         "nvidia/diffusiongemma-26B-A4B-it-NVFP4",
         "google/diffusiongemma-26B-A4B-it",
     ],
-    default_encoding="float4_e2m1fnx2",
-    supported_encodings={
-        "float4_e2m1fnx2",
-        "bfloat16",
-    },
+    default_encoding=DiffusionGemmaForBlockDiffusionConfig.DEFAULT_ENCODING,
+    supported_encodings=DiffusionGemmaForBlockDiffusionConfig.SUPPORTED_ENCODINGS,
     pipeline_model=DiffusionGemmaForBlockDiffusionModel,
     pipeline_cls=BlockDiffusionTextGenerationPipeline,
     task=PipelineTask.TEXT_GENERATION,

@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -28,8 +29,12 @@ from max.nn.kv_cache.cache_params import (
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from max.pipelines.speculative.config import SpeculativeMethod
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -67,6 +72,9 @@ def resolve_indexer_types(
 @dataclass(kw_only=True)
 class DeepseekV3_2Config(DeepseekV3Config):
     """Configuration for DeepseekV3.2 models."""
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"float8_e4m3fn"}
 
     # Added parameters for the Indexer used in DeepSeek Sparse Attention.
     index_head_dim: int = 128
@@ -157,9 +165,9 @@ class DeepseekV3_2Config(DeepseekV3Config):
                 "Please ensure the model repository contains a valid config.json file."
             )
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding, cast_from, cast_to = (
+            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding, model_config.kv_cache.kv_cache_format
@@ -223,4 +231,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
             indexer_types=resolve_indexer_types(
                 config, config.num_hidden_layers
             ),
+            quantization_encoding=quantization_encoding,
+            applied_dtype_cast_from=cast_from,
+            applied_dtype_cast_to=cast_to,
         )

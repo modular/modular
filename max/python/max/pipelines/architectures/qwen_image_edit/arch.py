@@ -24,7 +24,7 @@ qwen_image_edit_arch = SupportedArchitecture(
     name="QwenImageEditPipeline",
     task=PipelineTask.PIXEL_GENERATION,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    default_encoding="bfloat16",
+    default_encoding=QwenImageArchConfig.DEFAULT_ENCODING,
     supported_encodings={"bfloat16"},
     example_repo_ids=[
         "Qwen/Qwen-Image-Edit-2511",
@@ -40,7 +40,7 @@ qwen_image_edit_plus_arch = SupportedArchitecture(
     name="QwenImageEditPlusPipeline",
     task=PipelineTask.PIXEL_GENERATION,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    default_encoding="bfloat16",
+    default_encoding=QwenImageArchConfig.DEFAULT_ENCODING,
     supported_encodings={"bfloat16"},
     example_repo_ids=[
         "Qwen/Qwen-Image-Edit-2511",

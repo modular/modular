@@ -29,12 +29,8 @@ unified_dflash_kimi_k25_arch = SupportedArchitecture(
     example_repo_ids=[
         "nvidia/Kimi-K2.5-NVFP4",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=UnifiedDflashKimiK25Config.DEFAULT_ENCODING,
+    supported_encodings=UnifiedDflashKimiK25Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     pipeline_model=UnifiedDflashKimiK25Model,

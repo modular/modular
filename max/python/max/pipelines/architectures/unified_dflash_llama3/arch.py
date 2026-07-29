@@ -26,11 +26,8 @@ unified_dflash_llama3_arch = SupportedArchitecture(
     example_repo_ids=[
         "meta-llama/Llama-3.2-3B-Instruct",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float32",
-    },
+    default_encoding=UnifiedDflashLlama3Config.DEFAULT_ENCODING,
+    supported_encodings=UnifiedDflashLlama3Config.SUPPORTED_ENCODINGS,
     pipeline_model=UnifiedDflashLlama3Model,
     context_type=TextContext,
     tokenizer=TextTokenizer,

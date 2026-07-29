@@ -30,6 +30,9 @@ from max.pipelines.lib import (
     PipelineConfig,
     supported_encoding_dtype,
 )
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.weights.quant import parse_quant_config
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -65,7 +68,9 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
     def estimate_activation_memory(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
-        encoding = pipeline_config.model.quantization_encoding
+        encoding = _select_quantization_encoding(
+            pipeline_config.model, LagunaConfig.DEFAULT_ENCODING
+        )[0]
         n_gpus_per_node = len(pipeline_config.model.device_specs)
         num_experts = getattr(huggingface_config, "num_local_experts", 256)
         moe_dim = getattr(huggingface_config, "intermediate_size", 1536)
@@ -75,7 +80,7 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
         ep_buffer_memory = 0
         moe_activation_memory = 0
         ep_size = pipeline_config.runtime.ep_size
-        if ep_size > 1 and encoding is not None:
+        if ep_size > 1:
             ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
                 max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
                 ep_size=ep_size,

@@ -1042,7 +1042,6 @@ _COMPUTED_FIELDS = {
     "huggingface_model_repo",
     "huggingface_config",
     "model_name",
-    "graph_quantization_encoding",
     "generation_config",
     "sampling_params_defaults",
 }

@@ -200,11 +200,6 @@ class MemoryEstimator:
             return None
 
         # Retrieve needed parameters.
-        if not model_config.quantization_encoding:
-            raise ValueError(
-                "quantization_encoding must be provided in model_config"
-            )
-
         if not isinstance(arch_config, ArchConfigWithKVCache):
             return None
 
@@ -346,11 +341,6 @@ class MemoryEstimator:
         user_provided_max_batch_size = max_batch_size is not None
 
         if is_draft_model:
-            if not model_config.quantization_encoding:
-                raise ValueError(
-                    "quantization_encoding must be provided for draft model"
-                )
-
             assert max_batch_size is not None, (
                 "max_batch_size must be provided for draft model"
             )
@@ -368,11 +358,6 @@ class MemoryEstimator:
 
         if not user_provided_max_length:
             model_config.max_length = arch_config.get_max_seq_len()
-
-        if not model_config.quantization_encoding:
-            raise ValueError(
-                "quantization_encoding must be provided in pipeline_config"
-            )
 
         if user_provided_max_batch_size:
             assert max_batch_size is not None
@@ -479,11 +464,6 @@ class MemoryEstimator:
         lower = 1
         upper = model_config.max_length
         inferred_max_length = upper
-
-        if not model_config.quantization_encoding:
-            raise ValueError(
-                "quantization_encoding must be provided in pipeline_config"
-            )
 
         while not found_valid_max_length:
             inferred_max_length = (lower + upper) // 2

@@ -30,11 +30,8 @@ bert_arch = SupportedArchitecture(
         "sentence-transformers/all-MiniLM-L6-v2",
         "sentence-transformers/all-MiniLM-L12-v2",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "float32",
-        "bfloat16",
-    },
+    default_encoding=BertModelConfig.DEFAULT_ENCODING,
+    supported_encodings=BertModelConfig.SUPPORTED_ENCODINGS,
     pipeline_model=BertPipelineModel,
     tokenizer=BertTokenizer,
     context_type=TextContext,

@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -32,11 +33,15 @@ from max.nn.quant_config import (
 )
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers.models.auto.configuration_auto import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -149,6 +154,12 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     lm_head stay bf16.
     """
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float8_e4m3fn",
+    }
+
     # Core dims
     hidden_size: int
     vocab_size: int
@@ -210,6 +221,10 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     fp8_mlp_layers: set[int] = field(default_factory=set)
     fp8_moe_layers: set[int] = field(default_factory=set)
     is_fp8: bool = False
+
+    quantization_encoding: SupportedEncoding | None = None
+    applied_dtype_cast_from: SupportedEncoding | None = None
+    applied_dtype_cast_to: SupportedEncoding | None = None
 
     @property
     def mamba_intermediate_size(self) -> int:
@@ -317,8 +332,11 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         Select the same default while preserving explicit cache-format
         overrides and non-FP8 model behavior.
         """
+        resolved_encoding = _select_quantization_encoding(
+            pipeline_config.model, NemotronHConfig.DEFAULT_ENCODING
+        )[0]
         if (
-            pipeline_config.model.quantization_encoding == "float8_e4m3fn"
+            resolved_encoding == "float8_e4m3fn"
             and kv_cache_config.kv_cache_format is None
         ):
             cache_dtype = DType.float8_e4m3fn
@@ -354,9 +372,9 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 "HuggingFace config is required for Nemotron-H but could not "
                 "be loaded; ensure config.json is present."
             )
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )[0]
         dtype = supported_encoding_dtype(quantization_encoding)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -368,7 +386,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             devices=device_refs,
             kv_cache_config=model_config.kv_cache,
             cache_dtype=cache_dtype_for_encoding(
-                model_config.quantization_encoding,
+                quantization_encoding,
                 model_config.kv_cache.kv_cache_format,
             ),
         )
@@ -397,6 +415,11 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         if dtype == DType.float8_e4m3fn:
             dtype = DType.bfloat16
         kinds = parse_hybrid_pattern(huggingface_config.hybrid_override_pattern)
+        quantization_encoding, cast_from, cast_to = (
+            _select_quantization_encoding(
+                pipeline_config.model, cls.DEFAULT_ENCODING
+            )
+        )
         return cls(
             hidden_size=huggingface_config.hidden_size,
             vocab_size=huggingface_config.vocab_size,
@@ -447,4 +470,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 huggingface_config, "mamba_proj_bias", False
             ),
             kv_params=kv_params,
+            quantization_encoding=quantization_encoding,
+            applied_dtype_cast_from=cast_from,
+            applied_dtype_cast_to=cast_to,
         )

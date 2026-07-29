@@ -15,15 +15,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfig,
     ArchConfigWithBoundedMaxSeqLen,
 )
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -32,11 +39,20 @@ from typing_extensions import Self, override
 class MPNetConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
     """Configuration for MPNet models."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float32",
+        "bfloat16",
+    }
+
     dtype: DType
     device: DeviceRef
     pool_embeddings: bool
     huggingface_config: AutoConfig
     max_seq_len: int
+    quantization_encoding: SupportedEncoding | None = None
+    applied_dtype_cast_from: SupportedEncoding | None = None
+    applied_dtype_cast_to: SupportedEncoding | None = None
 
     @override
     @classmethod
@@ -54,9 +70,9 @@ class MPNetConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
             An initialized MPNetConfig instance.
         """
         model_config = model_config or pipeline_config.model
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding, cast_from, cast_to = (
+            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        )
         if len(model_config.device_specs) != 1:
             raise ValueError("MPNet model is only supported on a single device")
         device_spec = model_config.device_specs[0]
@@ -77,4 +93,7 @@ class MPNetConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
             max_seq_len=cls.calculate_max_seq_len(
                 pipeline_config, huggingface_config, model_config
             ),
+            quantization_encoding=quantization_encoding,
+            applied_dtype_cast_from=cast_from,
+            applied_dtype_cast_to=cast_to,
         )

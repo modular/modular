@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING, Any, Literal, get_args
 from max.config import ConfigFileModel
 from max.driver import accelerator_api, load_devices
 from max.engine import InferenceSession
-from max.graph.quantization import QuantizationEncoding
 from max.nn.comm import Signals
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
@@ -53,7 +52,7 @@ from pydantic import (
 )
 from typing_extensions import Self
 
-from .model_config import MAXModelConfig
+from .model_config import MAXModelConfig, _select_quantization_encoding
 from .profiling_config import ProfilingConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -1406,16 +1405,16 @@ class PipelineConfig(ConfigFileModel):
             multi_gpu_supported=arch.multi_gpu_supported
         )
 
-        model_config.validate_and_resolve_quantization_encoding_weight_path(
-            default_encoding=arch.default_encoding
+        resolved_encoding, cast_from, _cast_to = _select_quantization_encoding(
+            model_config, arch.default_encoding
         )
-
-        # by this point, the quantization_encoding must be provided. verify it is supported.
-        if model_config.quantization_encoding not in arch.supported_encodings:
+        if resolved_encoding not in arch.supported_encodings:
             raise ValueError(
-                f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine."
+                f"quantization_encoding of '{resolved_encoding}' not supported by MAX engine."
             )
         model_config.validate_and_resolve_with_resolved_quantization_encoding(
+            resolved_encoding=resolved_encoding,
+            applied_dtype_cast_from=cast_from,
             supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
         )
@@ -1471,15 +1470,6 @@ class PipelineConfig(ConfigFileModel):
     # We still avoid pickling `transformers` objects via `MAXModelConfig`'s
     # custom pickling hooks (it drops `_huggingface_config`), so `PipelineConfig`
     # should rely on the BaseModel implementation.
-
-    @property
-    def graph_quantization_encoding(self) -> QuantizationEncoding | None:
-        """Converts the CLI encoding to a MAX graph quantization encoding.
-
-        Returns:
-            The graph quantization encoding corresponding to the CLI encoding.
-        """
-        return self.model.graph_quantization_encoding
 
     @classmethod
     def from_args(cls, args: PipelineArgs) -> Self:

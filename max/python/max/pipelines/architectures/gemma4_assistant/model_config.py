@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -26,6 +27,7 @@ from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
 )
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig, PretrainedConfig
 from typing_extensions import Self
 
@@ -52,6 +54,9 @@ class Gemma4AssistantConfig:
     against the target (backbone) model's KV cache. It has no K/V projection
     weights of its own.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
 
     backbone_hidden_size: int = 5376
     """Hidden dimension of the target (backbone) model."""

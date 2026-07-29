@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -29,6 +31,13 @@ from ..llama3.model_config import Llama3Config
 
 @dataclass(kw_only=True)
 class Qwen3Config(Llama3Config):
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float32",
+        "float8_e4m3fn",
+    }
+
     # MoE parameters - these are optional and only used for Qwen3-MOE models
     num_experts: int = 0
     """Number of experts in the MoE layer. 0 means dense model (no MoE)."""
@@ -121,11 +130,8 @@ class Qwen3Config(Llama3Config):
         )
 
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
         cache_dtype = cache_dtype_for_encoding(
-            quantization_encoding,
+            base_config.quantization_encoding,
             pipeline_config.model.kv_cache.kv_cache_format,
         )
         n_devices = len(pipeline_config.model.device_specs)
@@ -189,6 +195,9 @@ class Qwen3Config(Llama3Config):
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
             data_parallel_degree=base_config.data_parallel_degree,
+            quantization_encoding=base_config.quantization_encoding,
+            applied_dtype_cast_from=base_config.applied_dtype_cast_from,
+            applied_dtype_cast_to=base_config.applied_dtype_cast_to,
             # MoE parameters
             num_experts=num_experts,
             num_experts_per_tok=num_experts_per_tok,
