@@ -35,7 +35,7 @@ from layout import Layout, LayoutTensor, lt_to_tt
 from layout.int_tuple import _get_index_type, _get_layout_type
 from layout.layout_tensor import LayoutTensorIter
 from layout.tma_async import SharedMemBarrier
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 
 comptime SMemTile[
@@ -215,7 +215,7 @@ struct SMemTileArray[
     @staticmethod
     def stack_allocation() -> Self:
         var ptr = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 Self.storage_size,
                 Self.dtype,
                 alignment=Self.alignment,
@@ -285,7 +285,7 @@ struct SMemArray[type: TrivialRegisterPassable, size: Int](
     @staticmethod
     def stack_allocation[alignment: Int = align_of[Self.type]()]() -> Self:
         var ptr = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 Self.len(),
                 Self.type,
                 alignment=alignment,

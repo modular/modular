@@ -48,7 +48,7 @@ from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace, build_edge_mask, gmem_edge_masked_load
 from std.collections import Optional
 from std.math import round
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils import IndexList
 
 from layout import TileTensor
@@ -1015,7 +1015,9 @@ def _threadgroup_max[nthreads: Int](val: Float32) -> Float32:
     reduction is cheap and needs no tree.
     """
     var s = UnsafePointer(
-        stack_allocation[nthreads, Float32, address_space=AddressSpace.SHARED]()
+        unsafe_stack_allocation[
+            nthreads, Float32, address_space=AddressSpace.SHARED
+        ]()
     )
     var tid = Int(thread_idx.x)
     s[tid] = val

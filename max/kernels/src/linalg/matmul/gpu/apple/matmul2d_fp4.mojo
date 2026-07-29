@@ -63,7 +63,7 @@ from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
 from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils import IndexList
 
 from layout import TileTensor, Idx
@@ -778,7 +778,7 @@ struct Matmul2dFp4[
         # are TileTensor indexed (`b_view[n, col]`), in-bounds by construction --
         # no raw SMEM pointer arithmetic.
         var b_sm = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 BN * BK, Scalar[Self.in_type], address_space=AddressSpace.SHARED
             ]()
         )

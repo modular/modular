@@ -25,7 +25,7 @@ from linalg.utils import (
     partial_simd_load,
     partial_simd_store,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from std.utils.index import IndexList
 
@@ -65,7 +65,9 @@ struct _Accumulator[
         )
         comptime alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
         self._storage = UnsafePointer(
-            stack_allocation[Self._size, Self.dtype, alignment=alignment]()
+            unsafe_stack_allocation[
+                Self._size, Self.dtype, alignment=alignment
+            ]()
         )
 
     @always_inline

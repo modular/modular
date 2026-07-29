@@ -49,7 +49,7 @@ from layout.tma_async import (
 )
 from layout.tile_layout import Layout
 from std.utils.index import IndexList
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils.index import IndexList
 
 # Core matrix constant from tensor_core_async.mojo
@@ -737,7 +737,7 @@ struct SMemTileArrayWithLayout[
             A new SMemTileArrayWithLayout backed by stack-allocated shared memory.
         """
         var ptr = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 Self.storage_size,
                 Self.dtype,
                 alignment=Self.alignment,
@@ -902,7 +902,7 @@ struct SMemTileArray[
             A new SMemTileArray backed by stack-allocated shared memory.
         """
         var ptr = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 Self.storage_size,
                 Self.dtype,
                 alignment=Self.alignment,
@@ -1100,7 +1100,7 @@ struct SMemTileArray2D[
             A new SMemTileArray2D backed by stack-allocated shared memory.
         """
         var ptr = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 Self.storage_size,
                 Self.dtype,
                 alignment=Self.alignment,
@@ -1245,7 +1245,7 @@ struct SMemTileArray2DRowMajor[
             A new SMemTileArray2DRowMajor backed by stack-allocated shared memory.
         """
         var ptr = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 Self.storage_size,
                 Self.dtype,
                 alignment=Self.alignment,

@@ -15,7 +15,7 @@
 
 from std.math import align_up, ceildiv
 from std.math.uutils import uceildiv, udivmod, ufloordiv
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.gpu import (
     block_idx,
     thread_idx,
@@ -1608,7 +1608,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         Int(Coord(scales_tile_shape).product()), 128
     )
     var smem_ptr = UnsafePointer(
-        stack_allocation[
+        unsafe_stack_allocation[
             scales_smem_tile_size,
             Scalar[scales_dtype],
             alignment=128,

@@ -53,7 +53,7 @@ from layout import (
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
 from std.logger import Logger
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
 from ...gemv import (
@@ -159,14 +159,14 @@ def matmul_kernel[
 
     # Allocate A, B tile in shared memory.
     var a_shared = UnsafePointer(
-        stack_allocation[
+        unsafe_stack_allocation[
             tile_size * tile_size,
             a_type,
             address_space=AddressSpace.SHARED,
         ]()
     )
     var b_shared = UnsafePointer(
-        stack_allocation[
+        unsafe_stack_allocation[
             tile_size * tile_size,
             b_type,
             address_space=AddressSpace.SHARED,

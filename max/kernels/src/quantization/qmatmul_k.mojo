@@ -35,7 +35,7 @@ from std.memory import (
     bitcast,
     dealloc,
     unsafe_memcpy,
-    stack_allocation,
+    unsafe_stack_allocation,
     Allocation,
 )
 from std.memory.alloc import Layout as AllocLayout
@@ -541,7 +541,9 @@ def _pack_block_Q6_K[
     ), "packed block size should be multiple of the unpacked block size"
 
     var q_bits_block_buf = UnsafePointer(
-        stack_allocation[_block_QK_K.quantized_k * block_n, DType.uint8]()
+        unsafe_stack_allocation[
+            _block_QK_K.quantized_k * block_n, DType.uint8
+        ]()
     )
 
     for n in range(block_n):
@@ -551,7 +553,7 @@ def _pack_block_Q6_K[
             dst_ptr[].q_scales[g * block_n + n] = src_ptr[].q_scales[g]
 
         var q_bits_column_buf = UnsafePointer(
-            stack_allocation[_block_QK_K.quantized_k, DType.uint8]()
+            unsafe_stack_allocation[_block_QK_K.quantized_k, DType.uint8]()
         )
 
         _expand_q_bits_lo[width=64](
@@ -1141,7 +1143,7 @@ def _matmul_Q4_K_columns[
 
     # Unpack the scales and minimums to uint8 values.
     var b_q_scales_and_mins_buf = UnsafePointer(
-        stack_allocation[
+        unsafe_stack_allocation[
             2 * group_count * block_n, DType.uint8, alignment=alignment
         ]()
     )
@@ -1180,7 +1182,7 @@ def _matmul_Q4_K_columns[
 
     # Unpack the quantized bits to uint8 values.
     var b_q_bits = UnsafePointer(
-        stack_allocation[
+        unsafe_stack_allocation[
             _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
         ]()
     )
@@ -1424,7 +1426,7 @@ def _matmul_Q6_K_columns[
 
     # Unpack the quantized bits to uint8 values.
     var b_q_bits = UnsafePointer(
-        stack_allocation[
+        unsafe_stack_allocation[
             _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
         ]()
     )

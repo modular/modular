@@ -85,7 +85,7 @@ from layout.tma_async import (
     _default_desc_shape,
 )
 from std.math import exp, recip
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.memory.unsafe import bitcast
 from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
 
@@ -196,7 +196,7 @@ def block_prefix_sum[
     ), "Number of warps must be less than or equal to warp size"
 
     var warp_prefix_sum = UnsafePointer(
-        stack_allocation[
+        unsafe_stack_allocation[
             n_warps,
             Scalar[dtype],
             address_space=AddressSpace.SHARED,
@@ -2359,7 +2359,7 @@ struct EPDispatchKernel[
         var tid = thread_idx.x
 
         var prefix_sum_arr = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 Self.n_experts, DType.uint32, address_space=AddressSpace.SHARED
             ]()
         )
@@ -2542,17 +2542,17 @@ struct EPDispatchKernel[
         # Shared memory: rank prefix sums, per-tile token-to-rank map,
         # expert start, and chunk_start broadcast slot.
         var rank_prefix = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 Self.n_ranks, DType.int32, address_space=AddressSpace.SHARED
             ]()
         )
         var tok_rank_map = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 tile_size, DType.int32, address_space=AddressSpace.SHARED
             ]()
         )
         var smem_vals = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 2, DType.int32, address_space=AddressSpace.SHARED
             ]()
         )

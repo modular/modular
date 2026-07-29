@@ -26,7 +26,7 @@ from layout.tile_layout import row_major
 from std.memory import (
     unsafe_memcpy,
     unsafe_memset_zero,
-    stack_allocation,
+    unsafe_stack_allocation,
 )
 
 
@@ -597,13 +597,13 @@ def dot_at_b(
 
     # TODO: We can elide the copy if the data is already aligned.
     var a_buffer = UnsafePointer(
-        stack_allocation[num_elements, Scalar[c.dtype], alignment=128]()
+        unsafe_stack_allocation[num_elements, Scalar[c.dtype], alignment=128]()
     )
     var b_buffer = UnsafePointer(
-        stack_allocation[num_elements, Scalar[c.dtype], alignment=128]()
+        unsafe_stack_allocation[num_elements, Scalar[c.dtype], alignment=128]()
     )
     var c_buffer = UnsafePointer(
-        stack_allocation[num_elements, Scalar[c.dtype], alignment=128]()
+        unsafe_stack_allocation[num_elements, Scalar[c.dtype], alignment=128]()
     )
 
     unsafe_memcpy(dest=a_buffer, src=a_pointer, count=num_elements)

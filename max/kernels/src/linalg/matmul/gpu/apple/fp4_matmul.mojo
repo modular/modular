@@ -50,7 +50,7 @@ from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.math import ceildiv
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.sys import align_of
 from std.utils import IndexList
 
@@ -270,7 +270,7 @@ struct AppleM5Fp4MatMul[
         # TileTensor view so both buffers are addressed by `(buf, nrow, col)`
         # indexing (in-bounds by construction) -- no raw SMEM pointer arithmetic.
         var b_smem = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 2 * BN * BK,
                 Scalar[Self.in_type],
                 address_space=AddressSpace.SHARED,
@@ -291,7 +291,7 @@ struct AppleM5Fp4MatMul[
         comptime NBLK = Self.NBLK_PER_STRIP
         comptime SCALE_SMEM = (2 * BN * NBLK) if Self.coalesce_scales else 1
         var s_smem = UnsafePointer(
-            stack_allocation[
+            unsafe_stack_allocation[
                 SCALE_SMEM,
                 Scalar[DType.float32],
                 address_space=AddressSpace.SHARED,
