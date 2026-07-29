@@ -277,8 +277,6 @@ class HYV3Config(Llama3Config):
             use_subgraphs=base_config.use_subgraphs,
             data_parallel_degree=base_config.data_parallel_degree,
             quantization_encoding=base_config.quantization_encoding,
-            applied_dtype_cast_from=base_config.applied_dtype_cast_from,
-            applied_dtype_cast_to=base_config.applied_dtype_cast_to,
             # MoE
             num_local_experts=num_local_experts,
             num_experts_per_tok=num_experts_per_tok,

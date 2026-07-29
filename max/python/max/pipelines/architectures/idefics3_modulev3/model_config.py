@@ -70,8 +70,6 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Text model configuration (Llama3-based)."""
 
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     @property
     def image_seq_len(self) -> int:
@@ -124,8 +122,8 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             pipeline_config, huggingface_config, text_config.hidden_size
         )
 
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
 
         return cls(
@@ -140,8 +138,6 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             vision_config=vision_config,
             text_config=text_config,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )
 
     def finalize(
@@ -177,7 +173,7 @@ def _create_llama3_text_config(
     from pipeline_config.model.huggingface_config.
     """
     kv_cache_config = pipeline_config.model.kv_cache
-    quantization_encoding, cast_from, cast_to = _select_quantization_encoding(
+    quantization_encoding, _, _ = _select_quantization_encoding(
         pipeline_config.model, Idefics3Config.DEFAULT_ENCODING
     )
     dtype = supported_encoding_dtype(quantization_encoding)
@@ -249,6 +245,4 @@ def _create_llama3_text_config(
         clip_qkv=getattr(hf_text_config, "clip_qkv", None),
         logits_scaling=getattr(hf_text_config, "logits_scaling", 1.0),
         quantization_encoding=quantization_encoding,
-        applied_dtype_cast_from=cast_from,
-        applied_dtype_cast_to=cast_to,
     )

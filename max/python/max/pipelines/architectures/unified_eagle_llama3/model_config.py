@@ -45,8 +45,6 @@ class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
     enable_structured_output: bool = False
     """When True, the graph accepts a bitmask input for grammar-constrained decoding."""
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     def __post_init__(self) -> None:
         self.target.return_logits = ReturnLogits.VARIABLE

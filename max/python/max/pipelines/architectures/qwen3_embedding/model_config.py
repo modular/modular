@@ -32,8 +32,6 @@ class Qwen3EmbeddingConfig(ArchConfig):
 
     pipeline_config: PipelineConfig
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     def get_max_seq_len(self) -> int:
         # Use configured max_length, bounded by model's max_position_embeddings

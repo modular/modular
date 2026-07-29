@@ -156,8 +156,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     data_parallel_degree: int = 1
     sliding_window: int | None = None
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     @staticmethod
     def calculate_attention_multiplier(
@@ -239,8 +237,8 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     ) -> Self:
         model_config = model_config or pipeline_config.model
         kv_cache_config = model_config.kv_cache
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
@@ -374,8 +372,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )
 
     def finalize(

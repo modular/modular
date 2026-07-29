@@ -165,8 +165,6 @@ class InternVLConfig(ArchConfigWithKVCache):
     """Language model configuration (Qwen2 or Qwen3)."""
 
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     def get_kv_params(self) -> KVCacheParams:
         """Returns the KV cache parameters from the embedded LLM config."""
@@ -282,10 +280,8 @@ class InternVLConfig(ArchConfigWithKVCache):
                 pipeline_config, hf_llm_config
             )
 
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(
-                pipeline_config.model, cls.DEFAULT_ENCODING
-            )
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
         )
 
         return cls(
@@ -303,8 +299,6 @@ class InternVLConfig(ArchConfigWithKVCache):
             # Composed language model configuration
             llm_config=llm_config,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )
 
     def finalize(

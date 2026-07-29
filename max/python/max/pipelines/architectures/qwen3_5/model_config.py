@@ -425,8 +425,6 @@ class Qwen3_5Config(Llama3Config):
             use_subgraphs=base_config.use_subgraphs,
             tie_word_embeddings=tie_word_embeddings,
             quantization_encoding=base_config.quantization_encoding,
-            applied_dtype_cast_from=base_config.applied_dtype_cast_from,
-            applied_dtype_cast_to=base_config.applied_dtype_cast_to,
             # Hybrid attention parameters
             layer_types=layer_types,
             full_attention_interval=getattr(

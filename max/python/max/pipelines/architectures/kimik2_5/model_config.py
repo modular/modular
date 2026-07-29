@@ -106,8 +106,8 @@ class KimiK2_5TextConfig(DeepseekV3Config):
                 "Please ensure the model repository contains a valid config.json file."
             )
         kv_cache_config = model_config.kv_cache
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
@@ -178,8 +178,6 @@ class KimiK2_5TextConfig(DeepseekV3Config):
             attention_dropout=config.attention_dropout,
             eagle_aux_hidden_state_layer_ids=eagle_aux_hidden_state_layer_ids,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )
 
     @classmethod
@@ -361,12 +359,6 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     quantization_encoding: SupportedEncoding | None = None
     """The resolved weight encoding the model runs with."""
 
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    """Source encoding of a load-time weight dtype cast, if one was applied."""
-
-    applied_dtype_cast_to: SupportedEncoding | None = None
-    """Target encoding of a load-time weight dtype cast, if one was applied."""
-
     bos_token_id: int
     """ID of the beginning-of-sequence (BOS) token."""
 
@@ -462,10 +454,8 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             raise ValueError("vision_config not found in huggingface_config")
 
         # Get quantization encoding for dtype
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(
-                pipeline_config.model, cls.DEFAULT_ENCODING
-            )
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)
 
@@ -533,6 +523,4 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             # Composed language model configuration
             llm_config=llm_config,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )

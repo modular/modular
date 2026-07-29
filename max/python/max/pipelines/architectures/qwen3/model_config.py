@@ -196,8 +196,6 @@ class Qwen3Config(Llama3Config):
             use_subgraphs=base_config.use_subgraphs,
             data_parallel_degree=base_config.data_parallel_degree,
             quantization_encoding=base_config.quantization_encoding,
-            applied_dtype_cast_from=base_config.applied_dtype_cast_from,
-            applied_dtype_cast_to=base_config.applied_dtype_cast_to,
             # MoE parameters
             num_experts=num_experts,
             num_experts_per_tok=num_experts_per_tok,

@@ -72,8 +72,6 @@ class MistralConfig(
     """Whether to return the last token, all logits, or a variable number of logits."""
 
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     def get_max_seq_len(self) -> int:
         return self.max_seq_len
@@ -111,10 +109,8 @@ class MistralConfig(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> Self:
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(
-                pipeline_config.model, cls.DEFAULT_ENCODING
-            )
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
@@ -154,6 +150,4 @@ class MistralConfig(
             attention_multiplier=math.sqrt(1 / kv_params.head_dim),
             devices=device_refs,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )

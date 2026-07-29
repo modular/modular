@@ -145,12 +145,6 @@ class Gemma3Config(
     quantization_encoding: SupportedEncoding | None = None
     """The resolved quantization encoding the model runs with."""
 
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    """The encoding a load-time dtype cast converts from, if any."""
-
-    applied_dtype_cast_to: SupportedEncoding | None = None
-    """The encoding a load-time dtype cast converts to, if any."""
-
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         """Retrieves the number of hidden layers from the HuggingFace configuration.
@@ -203,10 +197,8 @@ class Gemma3Config(
             An initialized :obj:`Gemma3Config` instance.
         """
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(
-                pipeline_config.model, cls.DEFAULT_ENCODING
-            )
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
         )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
@@ -305,8 +297,6 @@ class Gemma3Config(
                 cache_dtype=cache_dtype,
             ),
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )
 
     def finalize(

@@ -223,8 +223,6 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     is_fp8: bool = False
 
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     @property
     def mamba_intermediate_size(self) -> int:
@@ -415,10 +413,8 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         if dtype == DType.float8_e4m3fn:
             dtype = DType.bfloat16
         kinds = parse_hybrid_pattern(huggingface_config.hybrid_override_pattern)
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(
-                pipeline_config.model, cls.DEFAULT_ENCODING
-            )
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
         )
         return cls(
             hidden_size=huggingface_config.hidden_size,
@@ -471,6 +467,4 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             ),
             kv_params=kv_params,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )

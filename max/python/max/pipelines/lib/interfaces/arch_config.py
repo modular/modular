@@ -325,10 +325,6 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
     """The data type to use for the KV cache."""
     quantization_encoding: SupportedEncoding | None = None
     """The resolved weight encoding the model runs with."""
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    """Source encoding of a load-time weight dtype cast, if one was applied."""
-    applied_dtype_cast_to: SupportedEncoding | None = None
-    """Target encoding of a load-time weight dtype cast, if one was applied."""
     kv_cache: KVCacheConfig = field(default_factory=KVCacheConfig)
     """The KV cache configuration to use when running the model."""
     data_parallel_degree: int = 1
@@ -348,8 +344,8 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
         model_config: MAXModelConfig | None = None,
     ) -> Self:
         model_config = model_config or pipeline_config.model
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
         return cls(
             dtype=supported_encoding_dtype(quantization_encoding),
@@ -362,8 +358,6 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
                 model_config.kv_cache.kv_cache_format,
             ),
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
             kv_cache=model_config.kv_cache,
             data_parallel_degree=model_config.data_parallel_degree,
             user_provided_max_length=model_config.max_length,

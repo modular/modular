@@ -41,8 +41,6 @@ class MPNetConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
     huggingface_config: AutoConfig
     max_seq_len: int
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     @override
     @classmethod

@@ -143,10 +143,8 @@ class MiniMaxM2Config(Llama3Config):
         )
 
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(
-                pipeline_config.model, cls.DEFAULT_ENCODING
-            )
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
         )
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding,
@@ -217,6 +215,4 @@ class MiniMaxM2Config(Llama3Config):
             num_experts_per_tok=num_experts_per_tok,
             partial_rotary_factor=partial_rotary_factor,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )

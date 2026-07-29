@@ -46,8 +46,6 @@ class DeepseekV2Config(ArchConfigWithKVCache):
     kv_params: KVCacheParams
     devices: list[DeviceRef]
     quantization_encoding: SupportedEncoding | None = None
-    applied_dtype_cast_from: SupportedEncoding | None = None
-    applied_dtype_cast_to: SupportedEncoding | None = None
 
     # Default values lifted from Transformers DeepseekV2Config
     vocab_size: int = 102400
@@ -175,8 +173,8 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             for spec in model_config.device_specs
         ]
         kv_cache_config = model_config.kv_cache
-        quantization_encoding, cast_from, cast_to = (
-            _select_quantization_encoding(model_config, cls.DEFAULT_ENCODING)
+        quantization_encoding, _, _ = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding, model_config.kv_cache.kv_cache_format
@@ -245,6 +243,4 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             devices=devices,
             graph_mode=graph_mode,
             quantization_encoding=quantization_encoding,
-            applied_dtype_cast_from=cast_from,
-            applied_dtype_cast_to=cast_to,
         )

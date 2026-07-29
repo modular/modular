@@ -385,8 +385,6 @@ class Step3p5Config(Llama3Config):
             use_subgraphs=base_config.use_subgraphs,
             data_parallel_degree=base_config.data_parallel_degree,
             quantization_encoding=base_config.quantization_encoding,
-            applied_dtype_cast_from=base_config.applied_dtype_cast_from,
-            applied_dtype_cast_to=base_config.applied_dtype_cast_to,
             # Step3p5-specific
             num_attention_groups=num_attention_groups,
             head_dim=head_dim,
