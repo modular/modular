@@ -32,7 +32,7 @@ from layout import ComptimeInt, Coord, RowMajorLayout, TileTensor, row_major
 from layout.tile_io import TileCopier
 from layout.tile_layout import TensorLayout
 
-from std.memory import stack_allocation as raw_stack_allocation
+from std.memory import unsafe_stack_allocation as raw_stack_allocation
 
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
@@ -79,11 +79,13 @@ struct AddFusionTile(ElementwiseFusionTile):
         # and wrap them with `dst.layout`. Load the first input straight into
         # `dst`, the second into the matching staging fragment, both in the
         # copier's dst space.
-        var rhs_buf = raw_stack_allocation[
-            LayoutType.static_product,
-            dtype,
-            address_space=Copier.dst_address_space,
-        ]()
+        var rhs_buf = UnsafePointer(
+            raw_stack_allocation[
+                LayoutType.static_product,
+                dtype,
+                address_space=Copier.dst_address_space,
+            ]()
+        )
         var rhs = TileTensor(rhs_buf, dst.layout)
         copier.copy(
             dst.address_space_cast[Copier.dst_address_space](),

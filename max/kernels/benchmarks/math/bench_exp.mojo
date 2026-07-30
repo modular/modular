@@ -30,7 +30,7 @@ from std.benchmark import (
 from layout import Coord, TileTensor, row_major
 from std.builtin.range import _StridedRange
 from std.compile import compile_info
-from std.memory import bitcast, dealloc, stack_allocation
+from std.memory import bitcast, dealloc, unsafe_stack_allocation
 
 
 def _ri(v: Int) -> Int64:
@@ -403,7 +403,9 @@ def accuracy_test() raises:
     comptime delta_max = 15
     comptime delta_range = delta_max - delta_min + 1
 
-    var deltas_ptr = stack_allocation[delta_range, DType.int32]()
+    var deltas_ptr = UnsafePointer(
+        unsafe_stack_allocation[delta_range, DType.int32]()
+    )
     var deltas = TileTensor(deltas_ptr, row_major[delta_range]())
     _ = deltas.fill(Scalar[DType.int32](0))
 

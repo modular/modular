@@ -19,7 +19,7 @@
 
 from std.sys.info import CompilationTarget
 
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from linalg.arch.cpu.vnni_intrinsics import (
     dot_i8_to_i32_AVX2,
     dot_i8_to_i32_saturated_AVX2,
@@ -30,12 +30,22 @@ from std.testing import assert_equal
 
 
 def test_i8_to_i32() raises:
-    var a = stack_allocation[16 * 64, DType.uint8, alignment=64]()
-    var asat = stack_allocation[16 * 64, DType.uint8, alignment=64]()
-    var b = stack_allocation[64 * 16, DType.int8, alignment=64]()
+    var a = UnsafePointer(
+        unsafe_stack_allocation[16 * 64, DType.uint8, alignment=64]()
+    )
+    var asat = UnsafePointer(
+        unsafe_stack_allocation[16 * 64, DType.uint8, alignment=64]()
+    )
+    var b = UnsafePointer(
+        unsafe_stack_allocation[64 * 16, DType.int8, alignment=64]()
+    )
 
-    var c = stack_allocation[16 * 16, DType.int32, alignment=64]()
-    var csat = stack_allocation[16 * 16, DType.int32, alignment=64]()
+    var c = UnsafePointer(
+        unsafe_stack_allocation[16 * 16, DType.int32, alignment=64]()
+    )
+    var csat = UnsafePointer(
+        unsafe_stack_allocation[16 * 16, DType.int32, alignment=64]()
+    )
 
     for i in range(16 * 64):
         a[i] = UInt8(i & 255)
