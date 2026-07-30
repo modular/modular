@@ -3770,7 +3770,9 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             )
         else:
             return rebind[ResultPtr](
-                storage.unsafe_ptr().address_space_cast[address_space]()
+                UnsafePointer(storage.unsafe_ptr()).address_space_cast[
+                    address_space
+                ]()
             )
 
     @staticmethod

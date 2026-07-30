@@ -89,11 +89,11 @@ struct _Null[
         return Int(mlir_value=__mlir_op.`pop.pointer_to_index`(self.address))
 
 
-struct _UnsafePointerNicheStorage[
+struct _PointerNicheStorage[
     type: AnyType,
     address_space: AddressSpace,
 ](NicheStorageTraits):
-    """Custom niche backing for `UnsafePointer` that lowers directly to
+    """Custom niche backing for `Pointer` that lowers directly to
     `kgen.pointer` instead of `pop.array<1, kgen.pointer>`."""
 
     comptime _mlir_type = __mlir_type[
@@ -113,10 +113,10 @@ struct _UnsafePointerNicheStorage[
     @always_inline
     def as_uninit[
         U: AnyType
-    ](ref self) -> UnsafePointer[UnsafeMaybeUninit[U], origin_of(self)]:
+    ](ref self) -> Pointer[UnsafeMaybeUninit[U], origin_of(self), _safe=True]:
         return (
-            UnsafePointer(to=self.address)
-            .bitcast[UnsafeMaybeUninit[U]]()
+            Pointer[_safe=True](to=self.address)
+            .unsafe_bitcast[UnsafeMaybeUninit[U]]()
             .unsafe_origin_cast[origin_of(self)]()
         )
 
@@ -176,8 +176,8 @@ def unsafe_cast[
 
 @always_inline("nodebug")
 @doc_hidden
-def pointer_to_int(pointer: OptionalUnsafePointer[...]) -> Int:
-    return UnsafePointer(to=pointer).bitcast[Int]()[]
+def pointer_to_int(pointer: OptionalPointer[...]) -> Int:
+    return Pointer[_safe=True](to=pointer).unsafe_bitcast[Int]()[]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -543,7 +543,9 @@ struct Pointer[
                 unsafe_from_address,
                 " does not fit in this pointer's address space",
             )
-        self = UnsafePointer(to=unsafe_from_address).bitcast[type_of(self)]()[]
+        self = Pointer[_safe=True](to=unsafe_from_address).unsafe_bitcast[
+            type_of(self)
+        ]()[]
 
     @always_inline
     @doc_hidden
@@ -662,7 +664,7 @@ struct Pointer[
     # ===------------------------------------------------------------------===#
 
     @doc_hidden
-    comptime NicheStorage: NicheStorageTraits = _UnsafePointerNicheStorage[
+    comptime NicheStorage: NicheStorageTraits = _PointerNicheStorage[
         Self.T, Self.address_space
     ]
 

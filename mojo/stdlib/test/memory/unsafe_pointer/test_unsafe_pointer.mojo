@@ -15,6 +15,7 @@ from std.compile import compile_info
 from std.ffi import external_call
 from std.gpu.host import get_gpu_target
 from std.memory import UnsafeMaybeUninit
+from std.memory.unsafe_pointer import pointer_to_int
 from std.sys import align_of, bit_width_of, size_of
 import std.memory.alloc
 
@@ -786,6 +787,17 @@ def test_optional_unsafe_pointer_llvm_lowering() raises:
             return
 
     raise Error("did not find _test_lower function")
+
+
+def test_pointer_to_int() raises:
+    var x = 42
+    comptime P = Pointer[Int, ImmOrigin(origin_of(x))]
+
+    var present = Optional[P](P(to=x))
+    assert_equal(pointer_to_int(present), Int(P(to=x)))
+
+    var absent = Optional[P]()
+    assert_equal(pointer_to_int(absent), 0)
 
 
 def test_alloc_free_single_zst() raises:

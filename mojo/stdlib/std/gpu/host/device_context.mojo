@@ -984,7 +984,7 @@ struct DevicePointer[
     @doc_hidden
     def unsafe_ptr(
         ref self,
-    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+    ) -> Pointer[Scalar[Self.dtype], MutAnyOrigin]:
         """Returns the raw device pointer, if supported by the target.
 
         On targets that expose raw device pointers (for example CUDA and HIP),
