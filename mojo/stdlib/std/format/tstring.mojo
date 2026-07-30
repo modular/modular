@@ -166,7 +166,7 @@ def _encode_format_string_comptime[format: StringSlice]() -> List[Byte]:
         # Extract at comptime and explicitly materialize to runtime, since
         # `Variant[List[Byte], Error]` is not `ImplicitlyCopyable` (`Error`
         # is only `Copyable`).
-        comptime value = result.take[List[Byte]]()
+        comptime value = result.unwrap[List[Byte]]()
         return materialize[value]()
 
 

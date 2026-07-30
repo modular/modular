@@ -844,12 +844,12 @@ struct Optional[T: AnyType](
         ```
         """
         if self:
-            return self._value^.unsafe_take[Self.T]()
+            return self._value^.unsafe_unwrap[Self.T]()
         # TODO(MOCO-4141): Replace with `return default^`. That transfer is
         # rejected today because the `where`-clause `Movable` evidence isn't
         # visible at the return slot, so route it through Variant's
         # `Movable`-bounded value constructor, which does see the evidence.
-        return Variant[_NoneType, Self.T](default^).unsafe_take[Self.T]()
+        return Variant[_NoneType, Self.T](default^).unsafe_unwrap[Self.T]()
 
     @__allow_legacy_custom_self_type
     def copied[
@@ -944,7 +944,7 @@ struct Optional[T: AnyType](
         ```
         """
         if self:
-            return {mapper(self._value^.unsafe_take[Self.T]())}
+            return {mapper(self._value^.unsafe_unwrap[Self.T]())}
         else:
             # Destroy the empty `Optional` explicitly: an implicit drop here
             # would require `T: ImplicitlyDeletable`, ruling out linear `T`.
@@ -1003,7 +1003,7 @@ struct Optional[T: AnyType](
         ```
         """
         if self:
-            return mapper(self._value^.unsafe_take[Self.T]())
+            return mapper(self._value^.unsafe_unwrap[Self.T]())
         else:
             # Destroy the empty `Optional` explicitly: an implicit drop here
             # would require `T: ImplicitlyDeletable`, ruling out linear `T`.

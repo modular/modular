@@ -82,7 +82,7 @@ trait _VariantStorage(Copyable, ImplicitlyDeletable):
         untouched) immediately afterwards."""
         ...
 
-    def take[U: Movable](deinit self) -> U:
+    def unwrap[U: Movable](deinit self) -> U:
         """Consume this storage and return the held value as type `U`."""
         return self.unsafe_ptr[U]().unsafe_take_pointee()
 
@@ -444,7 +444,7 @@ struct Variant[*Ts: AnyType](
     Tips:
 
     - use `isa[T]()` to check what type a variant is
-    - use `unsafe_take[T]()` to take a value from the variant
+    - use `unsafe_unwrap[T]()` to take a value from the variant
     - use `[T]` to get a value out of a variant
         - This currently does an extra copy/move until we have origins
         - It also temporarily requires the value to be mutable
@@ -768,7 +768,7 @@ struct Variant[*Ts: AnyType](
         ]()
 
     @always_inline
-    def take[T: Movable](deinit self) -> T:
+    def unwrap[T: Movable](deinit self) -> T:
         """Take the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -786,10 +786,10 @@ struct Variant[*Ts: AnyType](
         if not self.isa[T]():
             abort("taking the wrong type!")
 
-        return self._storage^.take[T]()
+        return self._storage^.unwrap[T]()
 
     @always_inline
-    def unsafe_take[T: Movable](deinit self) -> T:
+    def unsafe_unwrap[T: Movable](deinit self) -> T:
         """Unsafely take the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -807,7 +807,33 @@ struct Variant[*Ts: AnyType](
         """
         Self._check[T]()
         assert self.isa[T](), "taking wrong type"
-        return self._storage^.take[T]()
+        return self._storage^.unwrap[T]()
+
+    @always_inline
+    @deprecated(use=unwrap)
+    def take[T: Movable](deinit self) -> T:
+        """Take the current value of the variant with the provided type.
+
+        Parameters:
+            T: The type to take out.
+
+        Returns:
+            The underlying data to be taken out as an owned value.
+        """
+        return self^.unwrap[T]()
+
+    @always_inline
+    @deprecated(use=unsafe_unwrap)
+    def unsafe_take[T: Movable](deinit self) -> T:
+        """Unsafely take the current value of the variant with the provided type.
+
+        Parameters:
+            T: The type to take out.
+
+        Returns:
+            The underlying data to be taken out as an owned value.
+        """
+        return self^.unsafe_unwrap[T]()
 
     @always_inline
     def replace[
@@ -862,7 +888,7 @@ struct Variant[*Ts: AnyType](
         """
         assert self.isa[Tout](), "taking out the wrong type!"
 
-        var x = self^.unsafe_take[Tout]()
+        var x = self^.unsafe_unwrap[Tout]()
         self = Self(value^)
         return x^
 

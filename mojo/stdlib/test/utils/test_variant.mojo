@@ -164,12 +164,12 @@ def test_replace() raises:
     assert_equal(x, 998)
 
 
-def test_take_doesnt_call_deleter() raises:
+def test_unwrap_doesnt_call_deleter() raises:
     comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
     var v1 = TestDeleterVariant(ObservableDel(Pointer(to=deleted)))
     assert_false(deleted)
-    var v2 = v1^.unsafe_take[ObservableDel[]]()
+    var v2 = v1^.unsafe_unwrap[ObservableDel[]]()
     assert_false(deleted)
     _ = v2
     assert_true(deleted)
@@ -209,10 +209,10 @@ def test_variant_works_with_move_only_types() raises:
     assert_equal(v2[MoveOnly[Int]].data, 42)
 
 
-def test_variant_linear_type_take() raises:
+def test_variant_linear_type_unwrap() raises:
     var v = Variant[ExplicitDelOnly, String](ExplicitDelOnly(5))
 
-    var x = v^.take[ExplicitDelOnly]()
+    var x = v^.unwrap[ExplicitDelOnly]()
 
     var data = x.data
     # Destroy before potentially raising after assert
