@@ -405,14 +405,10 @@ def print_benchmark_summary(
     if metrics.text_data is not None:
         t = metrics.text_data
         print_section(title="Client Experience Metrics")
-        total_tpm = (
-            (t.total_input + t.total_output) * 60.0 / agg.duration
-            if agg.duration > 0
-            else float("nan")
-        )
         print(
             "{:<40} {:<10.2f}".format(
-                "Total TPM (input+output, whole bench):", total_tpm
+                "Total TPM (input+output, whole bench):",
+                t.aggregate_tokens_per_minute,
             )
         )
         print(
