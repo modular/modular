@@ -757,12 +757,13 @@ private:
                                      ModuleState &parentState,
                                      FileLineColLoc loc, llvm::SMLoc declLoc,
                                      LexerCursor cursor, LexerCursor endCursor,
-                                     StringRef sourcePath);
+                                     const ModuleSpec &spec);
 
   /// Create a new module state with the given name, location, and body.
   ModuleState &createModuleState(StringAttr declName,
                                  const llvm::MemoryBuffer *moduleBuffer,
-                                 ModuleState &parentState, FileLineColLoc loc);
+                                 ModuleState &parentState, FileLineColLoc loc,
+                                 const ModuleSpec &spec);
 
   /// Create a module state for a source module whose file has not been opened.
   ModuleState &createDeferredModuleState(ModuleSpec moduleSpec,
