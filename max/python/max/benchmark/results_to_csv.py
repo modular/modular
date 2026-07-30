@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -11,7 +12,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Flatten benchmark result JSON blobs and project them into CSV columns.
+"""Post-process benchmark result JSON blobs into a CSV with selectable columns.
 
 The serving benchmark treats its JSON output as the single source of truth: a
 ``save_result_json`` blob carries *every* metric the run produced. A CSV, by
@@ -20,17 +21,41 @@ contrast, is a presentation of that data — most consumers care about a small
 decode batch stats, per-turn cache rates, GPU stats, ...) or name exact columns.
 
 This module keeps that separation clean. It reads one or more result JSON files,
-flattens each nested blob into a flat ``dotted.key`` column namespace, and
-projects a CSV containing a curated default summary plus whatever additional
-columns or groups the caller selects. It never recomputes metrics; it only
-projects the columns already present in the JSON.
+flattens each nested blob into a flat ``dotted.key`` column namespace, and emits
+a CSV containing a curated default summary plus whatever additional columns or
+groups the caller selects. It never recomputes metrics; it only projects the
+columns already present in the JSON.
+
+Run it through Bazel. Under ``bazel run`` the working directory is the
+workspace root, so input/output paths are resolved relative to the repo root
+(pass absolute paths to target files elsewhere)::
+
+    ./bazelw run //max/python/max/benchmark:results_to_csv -- \\
+        results-1-median.json results-2-median.json -o summary.csv
+
+    # add the prefill/decode batch stats and GPU columns:
+    ./bazelw run //max/python/max/benchmark:results_to_csv -- \\
+        sweep-*/results-*.json -o detailed.csv --groups prefill_decode,gpu
+
+    # emit every column found in the JSON:
+    ./bazelw run //max/python/max/benchmark:results_to_csv -- \\
+        results.json -o full.csv --all
+
+    # pick an exact set of columns (no summary):
+    ./bazelw run //max/python/max/benchmark:results_to_csv -- \\
+        results.json -o custom.csv \\
+        --only --columns max_concurrency,mean_ttft_ms,request_throughput
 """
 
 from __future__ import annotations
 
+import argparse
 import csv
+import glob
 import json
 import logging
+import os
+import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Literal, TypeGuard
@@ -451,6 +476,7 @@ def convert(
     columns: Sequence[str] = (),
     all_columns: bool = False,
     only: bool = False,
+    dry_run: bool = False,
 ) -> list[str]:
     """Reads result JSON ``inputs`` and writes a CSV with selected columns.
 
@@ -467,9 +493,12 @@ def convert(
             Emit every available column.
         only:
             Emit only the requested groups/columns (no summary).
+        dry_run:
+            Compute the selected columns and report what would be written, but
+            do not create ``output_file``.
 
     Returns:
-        The ordered list of columns written.
+        The ordered list of columns that were (or would be) written.
 
     Raises:
         ValueError: If no inputs are given or a group name is unknown.
@@ -490,6 +519,15 @@ def convert(
         all_columns=all_columns,
         only=only,
     )
+    if dry_run:
+        logger.info(
+            "[dry run] would write %d row(s) and %d column(s) to %s: %s",
+            len(rows),
+            len(selected),
+            output_file,
+            ", ".join(selected),
+        )
+        return selected
     write_csv(rows, selected, output_file)
     logger.info(
         "Wrote %d row(s) and %d column(s) to %s",
@@ -498,3 +536,130 @@ def convert(
         output_file,
     )
     return selected
+
+
+def _expand_inputs(patterns: Sequence[str]) -> list[Path]:
+    """Expands CLI input arguments, globbing any that contain wildcards."""
+    paths: list[Path] = []
+    for pattern in patterns:
+        if any(ch in pattern for ch in "*?["):
+            matches = sorted(glob.glob(pattern))
+            if not matches:
+                logger.warning("No files matched pattern: %s", pattern)
+            paths.extend(Path(m) for m in matches)
+        else:
+            paths.append(Path(pattern))
+    return paths
+
+
+def _parse_csv_list(value: str | None) -> list[str]:
+    """Splits a comma-separated CLI value into a list, trimming whitespace."""
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """CLI entry point for JSON-to-CSV benchmark result post-processing."""
+    # Under ``bazel run`` the process starts in the runfiles tree; hop back to
+    # the workspace root so relative input/output paths (and globs) resolve
+    # where the user invoked Bazel. Unset outside Bazel, so this is a no-op.
+    if workspace := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
+        os.chdir(workspace)
+
+    parser = argparse.ArgumentParser(
+        prog="results-to-csv",
+        description=(
+            "Flatten benchmark result JSON blobs into a CSV with a curated "
+            "summary column set plus opt-in groups and columns."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Available column groups: " + ", ".join(sorted(COLUMN_GROUPS)) + "."
+        ),
+    )
+    parser.add_argument(
+        "inputs",
+        nargs="+",
+        help="Result JSON file(s). Glob patterns are expanded.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        type=Path,
+        help="Output CSV path.",
+    )
+    parser.add_argument(
+        "--groups",
+        default="",
+        help=(
+            "Comma-separated opt-in column groups to add to the summary "
+            "(e.g. prefill_decode,gpu)."
+        ),
+    )
+    parser.add_argument(
+        "--columns",
+        default="",
+        help="Comma-separated exact column names to add, in order.",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="all_columns",
+        help="Emit every column found in the input.",
+    )
+    parser.add_argument(
+        "--only",
+        action="store_true",
+        help=(
+            "Emit only the requested --groups / --columns (drop the default "
+            "summary)."
+        ),
+    )
+    parser.add_argument(
+        "--list-columns",
+        action="store_true",
+        help="Print the columns available in the input and exit.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Report the rows/columns that would be written without creating "
+            "the output CSV."
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    inputs = _expand_inputs(args.inputs)
+    if not inputs:
+        parser.error("no input files found")
+
+    if args.list_columns:
+        rows: list[Row] = []
+        for path in inputs:
+            rows.extend(load_result_rows(path))
+        for column in _ordered_unique(key for row in rows for key in row):
+            print(column)
+        return 0
+
+    try:
+        convert(
+            inputs,
+            args.output,
+            groups=_parse_csv_list(args.groups),
+            columns=_parse_csv_list(args.columns),
+            all_columns=args.all_columns,
+            only=args.only,
+            dry_run=args.dry_run,
+        )
+    except (ValueError, OSError) as exc:
+        parser.error(str(exc))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
