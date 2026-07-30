@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -87,18 +88,35 @@ class BatchProcessorRuntime:
 class ModelInputCachingAllocator:
     """Caches reusable, non-pinned device input buffers across steps.
 
-    Buffers are keyed by ``(name, device, dtype, shape)`` and reused so a
-    captured graph replays in place (the replay copy is a no-op when the model
-    inputs already are the captured buffers). Callers own copying host data
-    into the returned buffer.
+    Small requests reuse a fixed-capacity backing buffer.
+    Views with the same ``(name, device)`` alias storage and can race if used
+    concurrently.
+
+    Requests larger than the fixed capacity fall back to a dedicated owning
+    buffer cached by the exact ``(name, device, dtype, shape)`` key, and log a
+    warning on each new allocation.
+
+    Reuse keeps a captured graph replaying in place (the replay copy is a
+    no-op when the model inputs already are the captured buffers). Callers own
+    copying host data into the returned buffer.
 
     Never cache pinned host staging buffers here: those must be allocated fresh
     every step so the next overlap step's host writes can't clobber an
     in-flight H2D copy.
     """
 
+    FIXED_CAPACITY_BYTES: ClassVar[int] = 8 * 1024 * 1024
+
     def __init__(self) -> None:
-        self._cache: dict[tuple[str, int, DType, tuple[int, ...]], Buffer] = {}
+        self._fixed_capacity_buffers: dict[tuple[str, int], Buffer] = {}
+        # Graph replay skips input copies only when capture and replay receive
+        # the same Buffer object; recreating an aliased view still copies.
+        self._fixed_capacity_views: dict[
+            tuple[str, int, DType, tuple[int, ...]], Buffer
+        ] = {}
+        self._oversized_buffers: dict[
+            tuple[str, int, DType, tuple[int, ...]], Buffer
+        ] = {}
 
     def alloc(
         self,
@@ -108,10 +126,16 @@ class ModelInputCachingAllocator:
         shape: tuple[int, ...],
         device: Device,
     ) -> Buffer:
-        """Returns the cached buffer for ``(name, device, dtype, shape)``.
+        """Returns a reusable buffer of ``shape`` and ``dtype`` on ``device``.
 
-        Allocated on first use and reused thereafter. Distinct ``name``s never
-        alias, and each device gets its own buffer under a given name.
+        Up to :attr:`FIXED_CAPACITY_BYTES` the result is a view aliasing the
+        single owning backing buffer held for ``(name, device)``. A later
+        allocation under the same name and device may overwrite its contents,
+        while an exact dtype-and-shape request returns the same view object for
+        graph replay. Beyond that capacity the result is a dedicated owning
+        buffer cached by the exact ``(name, device, dtype, shape)`` key.
+        Distinct ``name``s never alias, and each device gets its own backing
+        under a given name.
 
         Args:
             name: Stable identifier for this logical buffer.
@@ -120,11 +144,42 @@ class ModelInputCachingAllocator:
             device: Target device for the buffer.
         """
         shape = tuple(shape)
-        key = (name, id(device), dtype, shape)
-        buffer = self._cache.get(key)
+        num_bytes = math.prod(shape) * dtype.size_in_bytes
+        capacity = self.FIXED_CAPACITY_BYTES
+
+        if num_bytes <= capacity:
+            view_key = (name, id(device), dtype, shape)
+            view = self._fixed_capacity_views.get(view_key)
+            if view is not None:
+                return view
+
+            backing_key = (name, id(device))
+            backing = self._fixed_capacity_buffers.get(backing_key)
+            if backing is None:
+                backing = Buffer(
+                    shape=(capacity,), dtype=DType.uint8, device=device
+                )
+                self._fixed_capacity_buffers[backing_key] = backing
+            view = backing[:num_bytes].view(dtype, shape)
+            self._fixed_capacity_views[view_key] = view
+            return view
+
+        oversized_key = (name, id(device), dtype, shape)
+        buffer = self._oversized_buffers.get(oversized_key)
         if buffer is None:
+            logger.warning(
+                "Model input %r needs %d bytes (shape=%s, dtype=%s, "
+                "device=%s), exceeding the %d-byte reusable input capacity; "
+                "allocating a dedicated buffer cached per exact shape.",
+                name,
+                num_bytes,
+                shape,
+                dtype,
+                device,
+                capacity,
+            )
             buffer = Buffer(shape=shape, dtype=dtype, device=device)
-            self._cache[key] = buffer
+            self._oversized_buffers[oversized_key] = buffer
         return buffer
 
 
