@@ -780,6 +780,7 @@ class MAXModelConfig(MAXModelConfigBase):
             # paths) is consolidated at construction rather than sprinkled
             # across lazy property accesses.
             self._populate_repo_handles()
+            self._populate_hf_config()
 
     # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
     # own custom __getstate__/__setstate__ methods.
@@ -824,11 +825,14 @@ class MAXModelConfig(MAXModelConfigBase):
         private_state.setdefault("_config_file_section_name", "model_config")
         object.__setattr__(self, "__pydantic_private__", private_state)
 
-        # Rebuild the repo handles from the restored identity fields.
-        # __getstate__ drops them (they may cache non-picklable HF API
-        # responses), so an unpickled config -- e.g. in a worker process --
-        # gets them here rather than via a lazy write-back on first access.
+        # Rebuild the derived HF state from the restored identity fields.
+        # __getstate__ drops it (repo handles may cache non-picklable HF API
+        # responses; the HF config may hold remote-code-derived classes), so
+        # an unpickled config -- e.g. in a worker process -- gets it here
+        # rather than via a lazy write-back on first access. Reloading in the
+        # worker also correctly re-resolves trust_remote_code dynamic classes.
         self._populate_repo_handles()
+        self._populate_hf_config()
 
     def _populate_repo_handles(self) -> None:
         """Build the HuggingFace repo handles from the config's identity fields.
@@ -841,6 +845,40 @@ class MAXModelConfig(MAXModelConfigBase):
             self._cached_model_repo = self._make_model_repo()
         if self.huggingface_weight_repo_id:
             self._cached_weight_repo = self._make_weight_repo()
+
+    def _populate_hf_config(self) -> None:
+        """Load the HuggingFace config once, at construction (and on unpickle).
+
+        Skipped when already seeded (an explicit ``_huggingface_config`` passed
+        to the constructor, or one preserved across ``with_override``), for
+        placeholder configs with no ``model_path``, and for repos that carry no
+        loadable model config -- e.g. diffusion-manifest components such as the
+        feature extractor or scheduler, which ship only a preprocessor/
+        scheduler config. Those keep the lazy getter, which stays a no-op
+        unless the config is actually accessed.
+        """
+        if (
+            self._huggingface_config is None
+            and self.model_path
+            and self._has_loadable_hf_config()
+        ):
+            self._huggingface_config = load_huggingface_config(
+                self.huggingface_model_repo
+            )
+
+    def _has_loadable_hf_config(self) -> bool:
+        """Whether the model repo exposes a loadable HuggingFace config.
+
+        Mirrors :func:`load_huggingface_config`'s lookup (``config.json``, then
+        the diffusers ``scheduler_config.json`` fallback) so eager loading is
+        skipped -- not raised -- for config-less components.
+        """
+        repo = self.huggingface_model_repo
+        prefix = f"{repo.subfolder}/" if repo.subfolder is not None else ""
+        return any(
+            repo.file_exists(f"{prefix}{name}")
+            for name in ("config.json", "scheduler_config.json")
+        )
 
     def _make_model_repo(self) -> HuggingFaceRepo:
         """Construct the model repo handle from the config's identity fields."""
@@ -1064,24 +1102,23 @@ class MAXModelConfig(MAXModelConfigBase):
 
     @property
     def huggingface_config(self) -> PretrainedConfig:
-        """Returns the Hugging Face model config (loaded on first access).
+        """Returns the Hugging Face model config.
 
-        For transformers models, returns the ``AutoConfig`` subclass.  For
-        non-transformers models (e.g. diffusers components), falls back to
-        loading the raw ``config.json`` and wrapping it in a
-        ``PretrainedConfig``.
+        Loaded once at construction (see :meth:`_populate_hf_config`) and
+        stored in a PrivateAttr; this getter returns it. Falls back to loading
+        on demand -- without caching -- for a never-populated config (e.g. a
+        placeholder with no ``model_path``).
+
+        For transformers models this is the ``AutoConfig`` subclass; for
+        non-transformers models (e.g. diffusers components) it is the raw
+        ``config.json`` wrapped in a ``PretrainedConfig``.
 
         Raises:
             FileNotFoundError: If no ``config.json`` can be found for the
                 model repo/subfolder.
         """
-        # Note: For multiprocessing, __getstate__ clears _huggingface_config
-        # before pickling. Each worker process reloads fresh, which correctly
-        # handles trust_remote_code dynamic class loading.
         if self._huggingface_config is None:
-            self._huggingface_config = load_huggingface_config(
-                self.huggingface_model_repo
-            )
+            return load_huggingface_config(self.huggingface_model_repo)
         return self._huggingface_config
 
     @cached_property

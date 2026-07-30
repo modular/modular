@@ -937,6 +937,7 @@ class TestFloat32WeightFallbackScoping:
         assert cast_from == "float32"
         assert cast_to == "bfloat16"
 
+    @mock_hf_repo_access
     def test_diffuser_subcomponent_f32_fallback_still_resolves(self) -> None:
         """A diffuser sub-component (``subfolder`` set) still gets the fallback.
 

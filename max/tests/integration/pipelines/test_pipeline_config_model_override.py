@@ -22,7 +22,7 @@ therefore reach ``MAXModelConfig`` construction before
 """
 
 from collections.abc import Iterator
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from max.pipelines import PipelineConfig
@@ -135,13 +135,28 @@ def test_data_parallel_degree_cli_override_of_default_value_applied() -> None:
     # already-populated "main" model (e.g. loaded via --config-file): the
     # explicit override must win even though it matches the field default,
     # rather than being mistaken for "flag never passed".
-    manifest = ModelManifest(
-        {"main": MAXModelConfig(model_path="some/repo", data_parallel_degree=8)}
-    )
+    # "some/repo" is a placeholder; keep MAXModelConfig construction (which now
+    # eagerly builds the repo handles and loads the HF config) offline.
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch("huggingface_hub.file_exists", return_value=False),
+        patch(
+            "max.pipelines.lib.config.model_config.load_huggingface_config",
+            return_value=MagicMock(),
+        ),
+    ):
+        manifest = ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="some/repo", data_parallel_degree=8
+                )
+            }
+        )
 
-    config = PipelineConfig.from_flat_kwargs(
-        models=manifest, data_parallel_degree=1
-    )
+        config = PipelineConfig.from_flat_kwargs(
+            models=manifest, data_parallel_degree=1
+        )
 
     assert config.model is not None
     assert config.model.data_parallel_degree == 1
