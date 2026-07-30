@@ -288,7 +288,8 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
           /*elaborationErrorIncludePreludeId=*/{},
           /*elaborationErrorVerbose=*/{}, /*elaborationMaxDepth=*/{},
           /*ignoreIncompatiblePrecompiledFileErrorsId=*/
-          options::OPT_ignore_incompatible_precompiled_file_errors))
+          options::OPT_ignore_incompatible_precompiled_file_errors,
+          /*fpModeId=*/{}, options::OPT_ignore_deprecated))
     return err.takeError();
 
   // Precompiled files are built with the intention of being agnostic, so use

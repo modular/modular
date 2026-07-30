@@ -114,7 +114,8 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
           optionIDs.elaborationErrorLimit,
           optionIDs.elaborationErrorIncludePrelude,
           optionIDs.elaborationErrorVerbose, optionIDs.elaborationMaxDepth,
-          optionIDs.ignoreIncompatiblePrecompiledFileErrors, optionIDs.fpMode))
+          optionIDs.ignoreIncompatiblePrecompiledFileErrors, optionIDs.fpMode,
+          optionIDs.ignoreDeprecated))
     return err.takeError();
 
   // Parse target options.
@@ -164,7 +165,13 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier elaborationErrorVerboseId,
     llvm::opt::OptSpecifier elaborationMaxDepthId,
     llvm::opt::OptSpecifier ignoreIncompatiblePrecompiledFileErrorsId,
-    llvm::opt::OptSpecifier fpModeId) {
+    llvm::opt::OptSpecifier fpModeId,
+    llvm::opt::OptSpecifier ignoreDeprecatedId) {
+
+  // Parse the deprecation-warning ignore list.
+  if (ignoreDeprecatedId.isValid())
+    compilationOptions.ignoredDeprecations = llvm::to_vector_of<std::string>(
+        args.getAllArgValues(ignoreDeprecatedId));
 
   // Process the sanitizers.
   if (sanitizeId.isValid()) {

@@ -191,6 +191,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .fixit = options::OPT_fixit,
       .exportFixit = options::OPT_export_fixit,
       .warnOnUnstableAPIs = options::OPT_warn_on_unstable_apis,
+      .ignoreDeprecated = options::OPT_ignore_deprecated,
       .lldPath = options::OPT_lld_path,
   };
 

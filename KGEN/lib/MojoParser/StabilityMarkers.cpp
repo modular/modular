@@ -41,6 +41,20 @@ static StringRef getDeclName(ASTDecl &decl) {
   return getDeclName(decl.getIfOperation());
 }
 
+/// Forward declaration; defined below near `checkDeclUsageWarnings`, its
+/// other use site.
+static ASTDecl *getCanonicalOwnerTypeDecl(ASTDecl &decl, SharedState &shared);
+
+/// Returns the `Owner.member` name used to match a declaration against
+/// `--ignore-deprecated` (e.g. `Foo.bar`), or just the declaration's own
+/// name when it has no canonical owner type (e.g. a top-level function).
+static std::string getIgnoreDeprecatedName(ASTDecl &decl, SharedState &shared) {
+  ASTDecl *owner = getCanonicalOwnerTypeDecl(decl, shared);
+  if (owner == &decl)
+    return getDeclName(decl).str();
+  return getDeclName(*owner).str() + "." + getDeclName(decl).str();
+}
+
 /// Returns true if the declaration is marked @stable.
 static bool hasStableDecorator(ASTDecl &decl) {
   if (auto stabilityIface = dyn_cast_if_present<StabilityDecoratorInterface>(
@@ -124,6 +138,13 @@ void M::KGEN::LIT::checkDeprecationAndWarn(ASTDecl &decl, SMLoc useLoc,
   auto stabilityItf =
       dyn_cast_if_present<StabilityDecoratorInterface>(decl.getIfOperation());
   if (!stabilityItf || !stabilityItf.isDeprecated())
+    return;
+
+  // Skip declarations explicitly suppressed via --ignore-deprecated. All
+  // other deprecation warnings still fire.
+  if (!shared.options.ignoredDeprecations.empty() &&
+      llvm::is_contained(shared.options.ignoredDeprecations,
+                         getIgnoreDeprecatedName(decl, shared)))
     return;
 
   StringAttr warning = stabilityItf.getDeprecationWarningAttr();
@@ -216,7 +237,9 @@ void M::KGEN::LIT::checkDeclUsageWarnings(ASTDecl &decl, SMLoc useLoc,
   // Unavailability errors fire at every use site and are never suppressed.
   checkUnavailableAndError(decl, useLoc, shared, range, syntax, fixitLoc);
 
-  // Deprecation warnings are never suppressed by @stable(recursive=True).
+  // Deprecation warnings are never suppressed by @stable(recursive=True); the
+  // only suppression mechanism is the --ignore-deprecated allowlist, applied
+  // inside checkDeprecationAndWarn.
   checkDeprecationAndWarn(decl, useLoc, shared, range, syntax, fixitLoc);
 
   // Suppress stability warnings when the decl (or its owner type) was imported

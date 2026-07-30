@@ -142,6 +142,8 @@ public:
 
   bool warnOnUnstableAPIs{false};
 
+  SmallVector<std::string> ignoredDeprecations;
+
   /// Get the include directories that exist on the file system.
   std::vector<std::string> getIncludePaths() const {
     std::vector<std::string> result;
@@ -173,6 +175,7 @@ public:
         elaborationErrorIncludePrelude, elaborationErrorVerbose,
         elaborationMaxDepth);
     options.warnOnUnstableAPIs = warnOnUnstableAPIs;
+    options.ignoredDeprecations = ignoredDeprecations;
 
     return options;
   }
@@ -501,6 +504,15 @@ private:
       "warn-on-unstable-apis",
       cl::desc("Warn when using unstable APIs from the standard library."),
       llvm::cl::location(options.warnOnUnstableAPIs),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MListOpt<std::string, SmallVector<std::string>> ignoredDeprecations{
+      "ignore-deprecated",
+      cl::desc("Suppress the deprecation warning for the given declaration "
+               "(e.g. `Foo.bar`, or `some_fn` for a top-level "
+               "declaration). May be specified multiple times. All other "
+               "deprecation warnings are still emitted."),
+      llvm::cl::location(options.ignoredDeprecations),
       llvm::cl::cat(KGENOptionsCategory)};
 };
 class KGENOptions : public KGENCommonOptions, public CommonOptions {

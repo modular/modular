@@ -40,6 +40,7 @@ struct DocGenConfig {
   std::string docsBasePath;
   std::vector<std::string> includePaths;
   DiagnosticFormat diagnosticFormat = DiagnosticFormat::Text;
+  std::vector<std::string> ignoredDeprecations;
 };
 
 /// Parses the Mojo file or package at \p resolvedPath, serializes its public

@@ -126,6 +126,8 @@ static int doc(const State &subcommandState) {
   config.docsBasePath = args.getLastArgValue(options::OPT_docs_base_path);
   config.includePaths = args.getAllArgValues(options::OPT_I);
   config.diagnosticFormat = state.diagnosticFormat;
+  config.ignoredDeprecations =
+      args.getAllArgValues(options::OPT_ignore_deprecated);
 
   // Note: timing scope removed during DocGen extraction — it was never
   // surfaced to users.
