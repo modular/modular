@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -30,6 +31,7 @@ from max.benchmark.benchmark_shared.metrics import (
     ThroughputMetrics,
 )
 from max.benchmark.benchmark_shared.server_metrics import HistogramData
+from max.benchmark.results_to_csv import convert as results_to_csv_convert
 from max.benchmark.sweep_benchmark_serving_result_utils import (
     SUPPORTED_SWEEP_SERVING_PERCENTILES,
     LLMBenchmarkResult,
@@ -538,3 +540,53 @@ def test_writer_calls_uploader_upload_with_filename(tmp_path: Path) -> None:
             result=result,
         )
     uploader.upload.assert_called_once_with(result.result_filename)
+
+
+def test_results_to_csv_matches_legacy_writer_metrics(tmp_path: Path) -> None:
+    """results_to_csv carries the same metric values as the legacy sweep writer.
+
+    Guards the serving-sweep migration onto the shared library: every metric the
+    old LLMBenchmarkResultWriter emitted must survive into the results_to_csv
+    output (under the JSON's flat column names), computed from the same
+    ``BenchmarkResult``. The new output is a superset — it additionally carries
+    metrics the legacy writer dropped (Total TPM, global cached-token rate).
+    """
+    metrics = _make_llm_metrics()
+    percentiles = [50, 90, 95, 99]
+    legacy = LLMBenchmarkResult.from_metrics(metrics, percentiles)
+
+    # The per-concurrency JSON blob save_result_json writes is the metrics'
+    # to_result_dict(); project it to CSV via the shared library.
+    blob_path = tmp_path / "results-4-median.json"
+    blob_path.write_text(json.dumps(metrics.to_result_dict()))
+    out = tmp_path / "results.csv"
+    columns = results_to_csv_convert([blob_path], out, all_columns=True)
+    with open(out) as f:
+        rows = list(csv.reader(f))
+    assert len(rows) == 2, "expected header + one data row"
+    row = dict(zip(columns, rows[1], strict=True))
+
+    # Same underlying values as the legacy writer, under renamed columns.
+    assert float(row["request_throughput"]) == pytest.approx(legacy.throughput)
+    assert float(row["duration"]) == pytest.approx(legacy.duration)
+    assert float(row["mean_ttft_ms"]) == pytest.approx(legacy.ttft_mean)
+    assert float(row["mean_itl_ms"]) == pytest.approx(legacy.itl_mean)
+    assert float(row["mean_latency_ms"]) == pytest.approx(
+        legacy.req_latency_mean
+    )
+    for p in percentiles:
+        # to_flat_dict emits ``median_*`` for p50 and ``p{p}_*`` otherwise.
+        stem = "median" if p == 50 else f"p{p}"
+        assert float(row[f"{stem}_ttft_ms"]) == pytest.approx(
+            legacy.ttft_percentiles[p]
+        )
+        assert float(row[f"{stem}_itl_ms"]) == pytest.approx(
+            legacy.itl_percentiles[p]
+        )
+        assert float(row[f"{stem}_latency_ms"]) == pytest.approx(
+            legacy.req_latency_percentiles[p]
+        )
+
+    # Superset: metrics the legacy writer omitted are present as real columns.
+    assert "aggregate_tokens_per_minute" in columns  # Total TPM
+    assert "global_cached_token_rate" in columns

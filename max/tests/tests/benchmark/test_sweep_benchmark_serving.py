@@ -172,7 +172,7 @@ def test_override_num_prompts_if_set_explicitly(
     workload_config: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """When --num-prompts is set, no defaulting warning and value appears in CSV row."""
+    """When --num-prompts is set, no defaulting warning and the value is used."""
     cmd_missing_args = [
         "--model",
         "HuggingFaceTB/SmolLM2-135M",
@@ -193,7 +193,7 @@ def test_override_num_prompts_if_set_explicitly(
     assert _NUM_PROMPTS_DURATION_WARNING not in stderr, (
         f"Unexpected defaulting warning in stderr:\n{stderr}"
     )
-    assert "\n1,inf,700," in stdout
+    assert "num_prompts=700" in stdout
 
 
 def test_override_benchmark_duration_s(
@@ -297,27 +297,6 @@ def test_upload_results(
     )
 
 
-def test_latency_percentiles_with_spaces(
-    cmd_args: list[str],
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """CLI accepts spaces in ``--latency-percentiles``."""
-    cmd_spaces_args = cmd_args + ["--latency-percentiles", "50, 90, 99"]
-
-    sweep_benchmark_serving.main(cmd_spaces_args)
-    stdout, _stderr = capsys.readouterr()
-
-    expected_percentile_headers = [
-        "time_to_first_token_p50_ms",
-        "time_to_first_token_p90_ms",
-        "time_to_first_token_p99_ms",
-    ]
-    for header in expected_percentile_headers:
-        assert header in stdout, (
-            f"Expected header '{header}' not found in output:\n{stdout}"
-        )
-
-
 def test_latency_percentiles_invalid_format(
     cmd_args: list[str],
     capsys: pytest.CaptureFixture[str],
@@ -345,38 +324,6 @@ def test_latency_percentiles_help_message(
 
     assert "--latency-percentiles" in stdout, (
         f"--latency-percentiles not found in help:\n{stdout}"
-    )
-
-
-def test_latency_percentiles_order_preserved(
-    cmd_args: list[str],
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """CSV header lists percentile groups in CLI order (P99 before P50 before P95)."""
-    cmd_custom_order_args = cmd_args + ["--latency-percentiles", "99,50,95"]
-
-    sweep_benchmark_serving.main(cmd_custom_order_args)
-    stdout, _stderr = capsys.readouterr()
-
-    header_lines = [
-        line for line in stdout.split("\n") if "time_to_first_token_p" in line
-    ]
-    assert len(header_lines) >= 1, (
-        f"Could not find CSV header line in output:\n{stdout}"
-    )
-
-    header_line = header_lines[0]
-
-    p99_pos = header_line.find("time_to_first_token_p99_ms")
-    p50_pos = header_line.find("time_to_first_token_p50_ms")
-    p95_pos = header_line.find("time_to_first_token_p95_ms")
-
-    assert p99_pos != -1, f"p99 header not found in: {header_line}"
-    assert p50_pos != -1, f"p50 header not found in: {header_line}"
-    assert p95_pos != -1, f"p95 header not found in: {header_line}"
-
-    assert p99_pos < p50_pos < p95_pos, (
-        f"Headers not in expected order in: {header_line}"
     )
 
 
@@ -759,57 +706,6 @@ def test_result_json_written_at_specified_path(
     assert data["backend"] == "modular"
 
 
-def test_image_to_video_workload_selects_pixel_writer(
-    tmp_path: Path,
-    mocker: pytest_mock.MockerFixture,
-) -> None:
-    """image-to-video must route to the pixel-gen CSV writer, not the LLM one.
-
-    Regression for a duplicated task list in run_sweep that omitted
-    image-to-video, routing video results into LLMBenchmarkResultWriter whose
-    _format_task_values asserts isinstance(result, LLMBenchmarkResult) and
-    crashed. run_sweep now derives pixel-gen from PIXEL_GENERATION_TASKS.
-    """
-    workload = tmp_path / "i2v.yaml"
-    workload.write_text(
-        yaml.safe_dump(
-            {
-                "dataset-name": "local-image",
-                "benchmark-task": "image-to-video",
-                "num-frames": 17,
-            }
-        )
-    )
-    pixel_writer = mocker.patch.object(
-        sweep_benchmark_serving, "TextToImageBenchmarkResultWriter"
-    )
-    llm_writer = mocker.patch.object(
-        sweep_benchmark_serving, "LLMBenchmarkResultWriter"
-    )
-    mocker.patch(
-        "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
-        return_value=[],
-    )
-
-    sweep_benchmark_serving.main(
-        [
-            "--model",
-            "myorg/mymodel",
-            "--workload-config",
-            str(workload),
-            "--max-concurrency",
-            "1",
-            "--num-prompts",
-            "2",
-            "--log-dir",
-            str(tmp_path / "logs"),
-        ]
-    )
-
-    pixel_writer.assert_called_once()
-    llm_writer.assert_not_called()
-
-
 # ===========================================================================
 # CLI vs workload-config precedence tests
 # ===========================================================================
@@ -1008,17 +904,7 @@ def test_upload_path_writes_one_json_per_concurrency(
         "max.benchmark.sweep_benchmark_serving.save_result_json",
         side_effect=capture_save,
     )
-    mocker.patch(
-        "max.benchmark.sweep_benchmark_serving._build_sweep_result",
-        return_value=MagicMock(),
-    )
-    mock_writer_cls = mocker.patch(
-        "max.benchmark.sweep_benchmark_serving.LLMBenchmarkResultWriter"
-    )
-    mock_ctx = MagicMock()
-    mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
-    mock_ctx.__exit__ = MagicMock(return_value=False)
-    mock_writer_cls.return_value = mock_ctx
+    mocker.patch("max.benchmark.sweep_benchmark_serving.results_to_csv")
 
     sweep_benchmark_serving.main(
         [
@@ -1110,16 +996,7 @@ def test_upload_writes_correct_data_to_correct_files(
         "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
         side_effect=fake_benchmark_serving_main,
     )
-    mocker.patch(
-        "max.benchmark.sweep_benchmark_serving._build_sweep_result",
-    )
-    mock_writer_cls = mocker.patch(
-        "max.benchmark.sweep_benchmark_serving.LLMBenchmarkResultWriter"
-    )
-    mock_ctx = MagicMock()
-    mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
-    mock_ctx.__exit__ = MagicMock(return_value=False)
-    mock_writer_cls.return_value = mock_ctx
+    mocker.patch("max.benchmark.sweep_benchmark_serving.results_to_csv")
 
     sweep_benchmark_serving.main(
         [
@@ -1197,17 +1074,7 @@ def test_upload_path_single_run_no_max_concurrency(
         "max.benchmark.sweep_benchmark_serving.save_result_json",
         side_effect=capture_save,
     )
-    mocker.patch(
-        "max.benchmark.sweep_benchmark_serving._build_sweep_result",
-        return_value=MagicMock(),
-    )
-    mock_writer_cls = mocker.patch(
-        "max.benchmark.sweep_benchmark_serving.LLMBenchmarkResultWriter"
-    )
-    mock_ctx = MagicMock()
-    mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
-    mock_ctx.__exit__ = MagicMock(return_value=False)
-    mock_writer_cls.return_value = mock_ctx
+    mocker.patch("max.benchmark.sweep_benchmark_serving.results_to_csv")
 
     sweep_benchmark_serving.main(
         [
