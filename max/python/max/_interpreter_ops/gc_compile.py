@@ -80,6 +80,43 @@ GPU_FLOAT_DTYPES = [DType.float16, DType.float32, DType.bfloat16]
 SIGNED_INT_DTYPES = [DType.int8, DType.int16, DType.int32, DType.int64]
 UNSIGNED_INT_DTYPES = [DType.uint8, DType.uint16, DType.uint32, DType.uint64]
 
+_UINT_FOR_SIZE = {
+    1: DType.uint8,
+    2: DType.uint16,
+    4: DType.uint32,
+    8: DType.uint64,
+}
+
+WIDTH_DTYPES = list(_UINT_FOR_SIZE.values())
+"""The four uint widths a pure-copy family sweeps instead of real dtypes."""
+
+
+def uint_view_dtype(dtype: DType) -> DType:
+    """Returns the same-bit-width unsigned int a dtype is bit-cast to for copying.
+
+    Pure-copy ops (shape rearrange, gather, band-part masking) never interpret
+    an element's value, so one graph per width serves every dtype of that
+    width -- including float16, which has no typed CPU kernel, and bool on GPU.
+
+    Args:
+        dtype: The dtype to reinterpret.
+
+    Returns:
+        The unsigned integer dtype of the same bit width.
+
+    Raises:
+        NotImplementedError: For sub-byte dtypes (e.g. ``float4_e2m1fn``), which
+            pack multiple elements per byte and so cannot be reinterpreted
+            element-for-element as a whole-byte unsigned int.
+    """
+    bits = dtype.size_in_bits
+    if bits % 8 != 0 or bits // 8 not in _UINT_FOR_SIZE:
+        raise NotImplementedError(
+            f"eager GC copy path does not support sub-byte dtype {dtype}"
+        )
+    return _UINT_FOR_SIZE[bits // 8]
+
+
 _SpecT = TypeVar("_SpecT")
 
 
@@ -413,8 +450,11 @@ class GCFamilySpec(Protocol):
         Every family sweeps the same discovered set by default, so this is a
         concrete, inherited implementation rather than a per-family override
         point -- except for a family whose kernel is restricted to a device
-        subset (e.g. ``group_norm``, GPU-only), which must override this to
-        exclude the devices it never builds for. ``_adopt_from_manifest``
+        subset, which must override this to exclude the devices it never
+        builds for: ``group_norm`` (GPU-only), and the ``MO_HostOnly``
+        families (``resize_gc``, ``nonzero_gc``, ``nms_gc``, ``roi_align_gc``)
+        which are CPU-only, since sweeping an accelerator for a host-only op
+        would only produce an empty per-slot module. ``_adopt_from_manifest``
         requires a manifest entry for every device this returns, so a family
         that lists a device it never populates fails adoption entirely.
         """

@@ -29,16 +29,23 @@ import numpy as np
 from max import _core, graph
 from max._core.dialects import builtin, kgen, mo, mosh
 from max._interpreter_ops import (
+    band_part_gc,
     cast_gc,
     conv_gc,
     elementwise_binary_gc,
+    gc_compile,
     group_norm_gc,
     layer_norm_gc,
     matmul_gc,
+    nms_gc,
+    nonzero_gc,
     pooling_gc,
+    random_gc,
+    range_gc,
     reduce_axis_gc,
     resize_gc,
     rms_norm_gc,
+    roi_align_gc,
     select_gc,
     shape_rearrange_gc,
     topk_gc,
@@ -1133,7 +1140,7 @@ def _handle_slice(
     stop_np = np.where(stop_np < 0, stop_np + input_shape_np, stop_np)
 
     rank = len(start_np)
-    udtype = shape_rearrange_gc.uint_view_dtype(input_buffer.dtype)
+    udtype = gc_compile.uint_view_dtype(input_buffer.dtype)
     model = shape_rearrange_gc.model(
         mo.SliceOp, input_buffer.device, udtype, rank
     )
@@ -1490,155 +1497,116 @@ def _handle_group_norm(
 def _handle_range(
     op: mo.RangeOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.range by dispatching to Mojo range kernel.
+    """Dispatches eager range to its GC model.
+
+    Operands are start/limit/step, all host scalars in the result dtype
+    (``MO_SingleDeviceWithHostOperands`` plus ``MO_SameOperandsAndResult-
+    ElementType``), so they pass straight through with no re-materialization.
+    The compiled graph is symbolic (``["n"]``); its registered shape function
+    sizes the output at runtime, so the handler no longer computes the output
+    size itself.
+
+    ``ops.range``'s declared static length floors ``(stop - start) / step``,
+    while the shared shape function this graph compiles against rounds up
+    (``len(range(...))`` for ints, ``ceil`` for floats; see
+    ``max/kernels/src/nn/arange.mojo``). The two agree only when the interval
+    is evenly divisible by the step, so a non-divisible interval silently
+    disagreed with its own declared type until this check: the interpreter
+    otherwise validates only the model's output *count*, never its shape.
 
     Args:
         op: The range operation.
-        inputs: Input buffers - start, limit, step (all scalar tensors on CPU).
+        inputs: start, limit, step (all scalar tensors on CPU).
 
     Returns:
         List containing the range tensor buffer.
+
+    Raises:
+        RuntimeError: If the declared static result length disagrees with the
+            model's actual output length, i.e. the start/stop/step interval
+            is not evenly divisible by the step -- matching the ``RuntimeError``
+            ``ops.range`` and ``Tensor.arange`` document for this same
+            declared-vs-actual mismatch.
     """
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
 
-    assert isinstance(inputs[0], Buffer)
-    assert isinstance(inputs[1], Buffer)
-    assert isinstance(inputs[2], Buffer)
+    start, stop, step = inputs
+    assert isinstance(start, Buffer)
+    assert isinstance(stop, Buffer)
+    assert isinstance(step, Buffer)
 
-    start_buffer = inputs[0]
-    stop_buffer = inputs[1]
-    step_buffer = inputs[2]
+    model = range_gc.range_model(target_device, result_type.dtype)
+    (out,) = model(start, stop, step)
 
-    # Compute output size from inputs
-    shape = result_type.shape
-    if graph.Shape.is_static(shape):
-        output_shape = graph.Shape(shape).static_dims
-    else:
-        size = int(
-            ops.misc_ops.RangeShape(start_buffer, stop_buffer, step_buffer)
-        )
-        output_shape = [size]
-
-    # Allocate output buffer
-    output = Buffer(
-        shape=output_shape, dtype=result_type.dtype, device=target_device
-    )
-
-    # Call Mojo kernel
-    ops.misc_ops.Range(
-        output,
-        start_buffer,
-        stop_buffer,
-        step_buffer,
-        target_device._device_context_ptr(),
-    )
-
-    return [output]
+    declared_shape = result_type.shape
+    if graph.Shape.is_static(declared_shape):
+        declared_len = graph.Shape(declared_shape).static_dims[0]
+        actual_len = out.shape[0]
+        if declared_len != actual_len:
+            raise RuntimeError(
+                f"range declared a static length of {declared_len} but"
+                f" produced {actual_len} elements: the start/stop/step"
+                " interval is not evenly divisible by the step."
+            )
+    return [out]
 
 
 # Random operations
 
 
 @register_op_handler(mo.RandomNormalOp)
-def _handle_random_normal(
-    op: mo.RandomNormalOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.random.normal by dispatching to Mojo random normal kernel.
-
-    Args:
-        op: The random normal operation.
-        inputs: Input buffers - shape, mean, variance (std), seed
-            (all scalar/1D tensors on CPU per MO_SingleDeviceWithHostOperands).
-
-    Returns:
-        List containing the random normal tensor buffer.
-    """
-    target_device = _get_target_device(op)
-
-    assert isinstance(inputs[0], Buffer)  # shape
-    assert isinstance(inputs[1], Buffer)  # mean
-    assert isinstance(inputs[2], Buffer)  # variance (std)
-    assert isinstance(inputs[3], Buffer)  # seed
-
-    # Extract output shape from shape tensor (on CPU)
-    output_shape = inputs[0].to_numpy().tolist()
-
-    # Extract scalar params from CPU buffers
-    mean_val = float(inputs[1].to_numpy().item())
-    variance_val = float(inputs[2].to_numpy().item())
-    seed_val = int(inputs[3].to_numpy().item())
-
-    # Get dtype from MLIR type directly (safe with parametric shapes)
-    result_mlir_type: mo.TensorType = list(op.results)[0].type  # type: ignore[assignment]
-    output_dtype = result_mlir_type.dtype
-
-    # Allocate output buffer on target device
-    output = Buffer(
-        shape=output_shape,
-        dtype=output_dtype,
-        device=target_device,
-    )
-
-    ops.misc_ops.RandomNormal(
-        output,
-        mean_val,
-        variance_val,
-        seed_val,
-        target_device._device_context_ptr(),
-    )
-    return [output]
-
-
 @register_op_handler(mo.RandomUniformOp)
-def _handle_random_uniform(
-    op: mo.RandomUniformOp, inputs: Sequence[Buffer | None]
+def _handle_random(
+    op: mo.RandomNormalOp | mo.RandomUniformOp,
+    inputs: Sequence[Buffer | None],
 ) -> Sequence[Buffer]:
-    """Handle mo.random.uniform by dispatching to Mojo random uniform kernel.
+    """Dispatches eager random normal/uniform to its GC model.
+
+    Operands are ``(shape, lower, upper, seed)`` for uniform and
+    ``(shape, mean, variance, seed)`` for normal. ``MO_SingleDeviceWithHost-
+    Operands`` puts shape/mean-lower/variance-upper on the host; seed is not
+    listed, so it arrives on the same device as the output, matching how
+    ``ops.random``'s public API places it. The compiled graph is flat rank 1 --
+    the sampled values depend only on the element count -- so the handler sends
+    the element count as the shape operand and views the result back.
 
     Args:
-        op: The random uniform operation.
-        inputs: Input buffers - shape, lower_bound, upper_bound, seed
-            (all scalar/1D tensors on CPU per MO_SingleDeviceWithHostOperands).
+        op: The random normal or random uniform operation.
+        inputs: The four operands described above.
 
     Returns:
-        List containing the random uniform tensor buffer.
+        List containing the sampled tensor buffer.
     """
+    shape_buf, lower, upper, seed = inputs
+    assert isinstance(shape_buf, Buffer)
+    assert isinstance(lower, Buffer)
+    assert isinstance(upper, Buffer)
+    assert isinstance(seed, Buffer)
+
     target_device = _get_target_device(op)
-
-    assert isinstance(inputs[0], Buffer)  # shape
-    assert isinstance(inputs[1], Buffer)  # lower_bound
-    assert isinstance(inputs[2], Buffer)  # upper_bound
-    assert isinstance(inputs[3], Buffer)  # seed
-
-    # Extract output shape from shape tensor (on CPU)
-    output_shape = inputs[0].to_numpy().tolist()
-
-    # Extract scalar params from CPU buffers
-    lower_val = float(inputs[1].to_numpy().item())
-    upper_val = float(inputs[2].to_numpy().item())
-    seed_val = int(inputs[3].to_numpy().item())
-
-    # Get dtype from MLIR type directly (safe with parametric shapes)
     result_mlir_type: mo.TensorType = list(op.results)[0].type  # type: ignore[assignment]
     output_dtype = result_mlir_type.dtype
 
-    # Allocate output buffer on target device
-    output = Buffer(
-        shape=output_shape,
-        dtype=output_dtype,
-        device=target_device,
-    )
+    output_shape = [int(d) for d in shape_buf.to_numpy().flatten()]
+    numel = prod(output_shape)
+    flat_shape = Buffer.from_numpy(np.asarray([numel], dtype=np.int64))
 
-    ops.misc_ops.RandomUniform(
-        output,
-        lower_val,
-        upper_val,
-        seed_val,
-        target_device._device_context_ptr(),
-    )
-    return [output]
+    if random_gc.scalars_are_float32(type(op)):
+        # Normal's scalars re-materialize at float32 for the one compiled
+        # graph; uniform's bounds already carry the output dtype the graph
+        # declares.
+        lower = Buffer.from_numpy(
+            np.asarray(lower.to_numpy(), dtype=np.float32)
+        )
+        upper = Buffer.from_numpy(
+            np.asarray(upper.to_numpy(), dtype=np.float32)
+        )
+
+    model = random_gc.random_model(type(op), target_device, output_dtype)
+    (out,) = model(flat_shape, lower, upper, seed)
+    return [out.view(output_dtype, output_shape)]
 
 
 # Select operations
@@ -1712,7 +1680,7 @@ def _handle_concat(
 
     outer, _, inner = shape_rearrange_gc.canonical_rank3(tensors[0].shape, axis)
     dtype = tensors[0].dtype
-    udtype = shape_rearrange_gc.uint_view_dtype(dtype)
+    udtype = gc_compile.uint_view_dtype(dtype)
     gc_model = shape_rearrange_gc.model(mo.ConcatOp, tensors[0].device, udtype)
 
     def view3(buf: Buffer) -> Buffer:
@@ -2153,7 +2121,7 @@ def _handle_split(
 
     outer, _, inner = shape_rearrange_gc.canonical_rank3(in_shape, axis)
     dtype = input_buffer.dtype
-    udtype = shape_rearrange_gc.uint_view_dtype(dtype)
+    udtype = gc_compile.uint_view_dtype(dtype)
     x_view = input_buffer.view(udtype, (outer, in_shape[axis], inner))
     model = shape_rearrange_gc.model(mo.SplitOp, input_buffer.device, udtype)
 
@@ -2497,7 +2465,7 @@ def _handle_tile(
     out_shape = tuple(input_buffer.shape[i] * repeats[i] for i in range(rank))
     # int64 to match the graph's repeats operand regardless of input width.
     reps = Buffer.from_numpy(np.asarray(repeats, dtype=np.int64))
-    udtype = shape_rearrange_gc.uint_view_dtype(input_buffer.dtype)
+    udtype = gc_compile.uint_view_dtype(input_buffer.dtype)
     model = shape_rearrange_gc.model(
         mo.TileOp, input_buffer.device, udtype, rank
     )
@@ -2509,10 +2477,13 @@ def _handle_tile(
 def _handle_band_part(
     op: mo.LinalgBandPartOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.linalg.band_part (matrix band part masking).
+    """Dispatches eager band_part to its GC model.
 
-    Operands: input (device), num_lower (host int64 scalar),
-    num_upper (host int64 scalar), exclude (host bool scalar).
+    Operands: input (device), then num_lower / num_upper / exclude, which
+    ``MO_SingleDeviceWithHostOperands`` guarantees are host scalars; they pass
+    through as runtime operands. The leading axes are batches, so the input
+    collapses to rank 3 and the model is keyed by bit width rather than dtype
+    (masking only copies or zeroes an element).
 
     Args:
         op: The band_part operation.
@@ -2520,18 +2491,15 @@ def _handle_band_part(
 
     Returns:
         List containing the masked output buffer.
+
+    Raises:
+        ValueError: If the input rank is below 2.
     """
-    target_device = _get_target_device(op)
-
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # num_lower
-    assert isinstance(inputs[2], Buffer)  # num_upper
-    assert isinstance(inputs[3], Buffer)  # exclude
-
-    input_buffer = inputs[0]
-    num_lower = int(inputs[1].to_numpy().item())
-    num_upper = int(inputs[2].to_numpy().item())
-    exclude = int(inputs[3].to_numpy().item())
+    input_buffer, num_lower, num_upper, exclude = inputs
+    assert isinstance(input_buffer, Buffer)
+    assert isinstance(num_lower, Buffer)
+    assert isinstance(num_upper, Buffer)
+    assert isinstance(exclude, Buffer)
 
     in_shape = list(input_buffer.shape)
     if len(in_shape) < 2:
@@ -2539,25 +2507,17 @@ def _handle_band_part(
             f"band_part expects rank >= 2 input, got rank {len(in_shape)}"
         )
 
-    M = in_shape[-2]
-    N = in_shape[-1]
-    total = prod(in_shape)
-
-    output = Buffer(
-        shape=in_shape,
-        dtype=input_buffer.dtype,
-        device=target_device,
+    udtype = gc_compile.uint_view_dtype(input_buffer.dtype)
+    rank3 = [prod(in_shape[:-2]), in_shape[-2], in_shape[-1]]
+    model = band_part_gc.band_part_model(input_buffer.device, udtype)
+    # Re-materialized at int64: one compiled graph fixes a single width.
+    (out,) = model(
+        input_buffer.view(udtype, rank3),
+        Buffer.from_numpy(np.asarray(num_lower.to_numpy(), dtype=np.int64)),
+        Buffer.from_numpy(np.asarray(num_upper.to_numpy(), dtype=np.int64)),
+        exclude,
     )
-    ctx_ptr = target_device._device_context_ptr()
-
-    ops.band_part_ops.BandPart(
-        output,
-        input_buffer,
-        (total, M, N, num_lower, num_upper, exclude),
-        ctx_ptr,
-    )
-
-    return [output]
+    return [out.view(input_buffer.dtype, in_shape)]
 
 
 # Average pooling
@@ -2601,30 +2561,35 @@ def _handle_avg_pool(
 def _handle_roi_align(
     op: mo.RoiAlignOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.roi_align (ROI Align pooling, NHWC).
+    """Dispatches eager roi_align to its GC model.
 
-    Operands: input (4D), rois (2D), output_height, output_width,
-    spatial_scale, sampling_ratio.
-    Attributes: aligned (bool), mode (string: "AVG" or "MAX").
+    ``MO_HostOnly`` keeps every operand on CPU. ``aligned`` and ``mode`` are
+    MLIR attributes the GC kernel takes as comptime params, so they join
+    dtype in the model cache key (see ``roi_align_gc``'s module docstring);
+    the four numeric scalars stay ordinary runtime operands, re-materialized
+    at the dtypes the graph declares.
 
     Args:
         op: The roi_align operation.
-        inputs: Input buffers.
+        inputs: input ``[N, H, W, C]``, rois ``[M, 5]``, then output_height,
+            output_width, spatial_scale, and sampling_ratio scalars.
 
     Returns:
         List containing the ROI-aligned output buffer.
+
+    Raises:
+        ValueError: If the input is not rank-4, rois is not ``[M, 5]``, or
+            ``mode`` is not ``"AVG"``/``"MAX"``.
     """
-    target_device = _get_target_device(op)
-
-    assert isinstance(inputs[0], Buffer)  # input [N, H, W, C]
-    assert isinstance(inputs[1], Buffer)  # rois [M, 5]
-    assert isinstance(inputs[2], Buffer)  # output_height (scalar)
-    assert isinstance(inputs[3], Buffer)  # output_width (scalar)
-    assert isinstance(inputs[4], Buffer)  # spatial_scale (scalar)
-    assert isinstance(inputs[5], Buffer)  # sampling_ratio (scalar)
-
-    input_buffer = inputs[0]
-    rois_buffer = inputs[1]
+    input_buffer, rois_buffer, out_h, out_w, spatial_scale, sampling_ratio = (
+        inputs
+    )
+    assert isinstance(input_buffer, Buffer)
+    assert isinstance(rois_buffer, Buffer)
+    assert isinstance(out_h, Buffer)
+    assert isinstance(out_w, Buffer)
+    assert isinstance(spatial_scale, Buffer)
+    assert isinstance(sampling_ratio, Buffer)
 
     in_shape = list(input_buffer.shape)
     if len(in_shape) != 4:
@@ -2638,52 +2603,30 @@ def _handle_roi_align(
             f"roi_align expects [M, 5] rois, got shape {rois_shape}"
         )
 
-    out_h = int(inputs[2].to_numpy().item())
-    out_w = int(inputs[3].to_numpy().item())
-    spatial_scale = float(inputs[4].to_numpy().item())
-    sampling_ratio = float(inputs[5].to_numpy().item())
-
-    n_regions = rois_shape[0]
-    height = in_shape[1]
-    width = in_shape[2]
-    channels = in_shape[3]
-
-    aligned = bool(op.aligned)
     mode_str = str(op.mode.value)
     if mode_str not in ("AVG", "MAX"):
         raise ValueError(
             f"roi_align mode must be 'AVG' or 'MAX', got '{mode_str}'"
         )
-    mode_flag = 0 if mode_str == "AVG" else 1
-    aligned_flag = 1 if aligned else 0
 
-    output = Buffer(
-        shape=[n_regions, out_h, out_w, channels],
-        dtype=input_buffer.dtype,
-        device=target_device,
+    model = roi_align_gc.roi_align_model(
+        input_buffer.dtype, bool(op.aligned), mode_str
     )
-    ctx_ptr = target_device._device_context_ptr()
-
-    ops.roi_align_ops.RoiAlign(
-        output,
+    # Re-materialized at the dtypes the graph declares: one compiled graph
+    # fixes int64 + float32.
+    (out,) = model(
         input_buffer,
         rois_buffer,
-        (
-            n_regions,
-            height,
-            width,
-            channels,
-            out_h,
-            out_w,
-            spatial_scale,
-            sampling_ratio,
-            aligned_flag,
-            mode_flag,
+        Buffer.from_numpy(np.asarray(out_h.to_numpy(), dtype=np.int64)),
+        Buffer.from_numpy(np.asarray(out_w.to_numpy(), dtype=np.int64)),
+        Buffer.from_numpy(
+            np.asarray(spatial_scale.to_numpy(), dtype=np.float32)
         ),
-        ctx_ptr,
+        Buffer.from_numpy(
+            np.asarray(sampling_ratio.to_numpy(), dtype=np.float32)
+        ),
     )
-
-    return [output]
+    return [out]
 
 
 # Top-K / Bottom-K operations
@@ -2751,49 +2694,51 @@ _register_topk_handlers()
 def _handle_arg_nonzero(
     op: mo.ArgNonzeroOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.arg_nonzero with a two-pass count-then-fill strategy.
+    """Dispatches eager arg_nonzero to its GC model.
 
-    Operand: input (host tensor, CPU-only via MO_HostOnly trait).
+    ``MO_HostOnly`` keeps the input on CPU. The compiled graph is canonicalized
+    to rank 1: the handler flattens the input, runs the flat model, and unravels
+    the resulting flat indices back into ``[nnz, rank]`` row-major coordinates
+    against the input's real shape with ``np.unravel_index`` -- the op's shape
+    function computes the exact nonzero count, so the model sizes its own flat
+    output and the handler neither counts nor allocates.
 
-    The output shape ``[nnz, rank]`` is data-dependent, so we:
+    Args:
+        op: The arg_nonzero operation.
+        inputs: Single input buffer.
 
-    1. Run ``ArgNonZeroCount`` to determine ``nnz``.
-    2. Allocate a ``[nnz, rank]`` int64 output buffer on CPU.
-    3. If ``nnz > 0``, run ``ArgNonZeroFill`` to write row-major coordinates.
+    Returns:
+        List containing the ``[nnz, rank]`` int64 coordinate buffer.
+
+    Raises:
+        ValueError: If the input is rank 0 -- ``ops.nonzero`` rejects scalar
+            inputs with the same error, so a public caller never reaches this
+            handler with one.
+        KeyError: If the input dtype is unsupported.
     """
-    target_device = _get_target_device(op)
-
-    assert isinstance(inputs[0], Buffer)
     input_buffer = inputs[0]
-
-    in_shape = list(input_buffer.shape)
-    rank = len(in_shape)
-    numel = prod(in_shape)
-
-    ctx_ptr = target_device._device_context_ptr()
-
-    # Pass 1: count nonzero elements.
-    count_buf = Buffer(shape=[1], dtype=DType.int64, device=CPU())
-    ops.argnonzero_ops.ArgNonZeroCount(
-        count_buf,
-        input_buffer,
-        numel,
-        ctx_ptr,
-    )
-    nnz = int(count_buf.to_numpy().item())
-
-    # Pass 2: fill coordinates.
-    out_buf = Buffer(shape=[nnz, rank], dtype=DType.int64, device=CPU())
-    if nnz > 0:
-        ops.argnonzero_ops.ArgNonZeroFill(
-            out_buf,
-            input_buffer,
-            in_shape,
-            rank,
-            ctx_ptr,
+    assert isinstance(input_buffer, Buffer)
+    shape = input_buffer.shape
+    rank = len(shape)
+    if rank == 0:
+        raise ValueError(
+            "arg_nonzero requires rank >= 1 input; scalar inputs not supported."
         )
 
-    return [out_buf]
+    dtype = input_buffer.dtype
+    graph_dtype = (
+        dtype if dtype.is_float() else gc_compile.uint_view_dtype(dtype)
+    )
+    flat = input_buffer.view(graph_dtype, (prod(shape),))
+
+    model = nonzero_gc.nonzero_model(graph_dtype)
+    (flat_idx,) = model(flat)
+    flat_np = flat_idx.to_numpy().reshape(-1)
+    # np.unravel_index already returns int64, so astype would otherwise copy.
+    coords_np = np.stack(np.unravel_index(flat_np, shape), axis=-1).astype(
+        np.int64, copy=False
+    )
+    return [Buffer.from_numpy(coords_np)]
 
 
 # Padding operations
@@ -2817,7 +2762,7 @@ def _handle_pad_via_gc(
     # int64 to match the graph's paddings operand dtype regardless of width.
     pad_buf = Buffer.from_numpy(np.asarray(paddings, dtype=np.int64))
     dtype = input_buffer.dtype
-    udtype = shape_rearrange_gc.uint_view_dtype(dtype)
+    udtype = gc_compile.uint_view_dtype(dtype)
     model = shape_rearrange_gc.model(op_type, input_buffer.device, udtype, rank)
     x_view = input_buffer.view(udtype, input_buffer.shape)
     if op_type is mo.PadConstantOp:
@@ -3130,81 +3075,54 @@ def _handle_distributed_broadcast(
 def _handle_non_maximum_suppression(
     op: mo.NonMaximumSuppressionOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.non_maximum_suppression via single-pass Mojo NMS kernel.
+    """Dispatches eager non-maximum suppression to its GC model.
 
-    Operands (MO_HostOnly):
-      inputs[0]: boxes -- [batch, num_boxes, 4] float
-      inputs[1]: scores -- [batch, num_classes, num_boxes] float
-      inputs[2]: max_output_boxes_per_class -- scalar int64
-      inputs[3]: iou_threshold -- scalar float
-      inputs[4]: score_threshold -- scalar float
-
-    The output shape [num_selected, 3] is data-dependent.  We allocate an
-    upper-bound buffer (batch * classes * max_output_per_class), run NMS
-    once, then truncate to the actual result size.
+    ``MO_HostOnly`` keeps every operand on CPU. The op's shape function runs the
+    real suppression to size the output, so the handler no longer allocates an
+    upper-bound buffer or truncates the result.
 
     Args:
         op: The non-maximum suppression operation.
-        inputs: Five buffers as described above.
+        inputs: boxes ``[batch, num_boxes, 4]``, scores
+            ``[batch, num_classes, num_boxes]``, then the
+            max-output-per-class, IoU-threshold, and score-threshold scalars.
 
     Returns:
-        List containing a single [num_selected, 3] int64 output buffer
-        where each row is [batch_index, class_index, box_index].
+        List containing a single ``[num_selected, 3]`` int64 buffer whose rows
+        are ``[batch_index, class_index, box_index]``.
+
+    Raises:
+        ValueError: If ``boxes`` and ``scores`` disagree on dtype: the model is
+            keyed on ``boxes.dtype`` alone, and neither the op nor its verifier
+            enforces that ``scores`` matches.
     """
-    target_device = _get_target_device(op)
+    boxes, scores, max_output, iou_threshold, score_threshold = inputs
+    assert isinstance(boxes, Buffer)
+    assert isinstance(scores, Buffer)
+    assert isinstance(max_output, Buffer)
+    assert isinstance(iou_threshold, Buffer)
+    assert isinstance(score_threshold, Buffer)
 
-    assert isinstance(inputs[0], Buffer)  # boxes
-    assert isinstance(inputs[1], Buffer)  # scores
-    assert isinstance(inputs[2], Buffer)  # max_output_boxes_per_class
-    assert isinstance(inputs[3], Buffer)  # iou_threshold
-    assert isinstance(inputs[4], Buffer)  # score_threshold
+    if boxes.dtype != scores.dtype:
+        raise ValueError(
+            f"non_maximum_suppression requires boxes and scores to share a"
+            f" dtype; got boxes={boxes.dtype}, scores={scores.dtype}."
+        )
 
-    boxes_buffer = inputs[0]
-    scores_buffer = inputs[1]
-    max_output_boxes = int(inputs[2].to_numpy().item())
-    iou_threshold = float(inputs[3].to_numpy().item())
-    score_threshold = float(inputs[4].to_numpy().item())
-
-    boxes_shape = list(boxes_buffer.shape)
-    scores_shape = list(scores_buffer.shape)
-
-    batch_size = boxes_shape[0]
-    num_boxes = boxes_shape[1]
-    num_classes = scores_shape[1]
-
-    upper_bound = batch_size * num_classes * max_output_boxes
-    if upper_bound == 0:
-        return [Buffer(shape=[0, 3], dtype=DType.int64, device=CPU())]
-
-    ctx_ptr = target_device._device_context_ptr()
-
-    params = (
-        batch_size,
-        num_classes,
-        num_boxes,
-        max_output_boxes,
-        iou_threshold,
-        score_threshold,
+    model = nms_gc.nms_model(boxes.dtype)
+    # Re-materialized at the dtypes the graph declares: one compiled graph
+    # fixes int64 + float32.
+    return model(
+        boxes,
+        scores,
+        Buffer.from_numpy(np.asarray(max_output.to_numpy(), dtype=np.int64)),
+        Buffer.from_numpy(
+            np.asarray(iou_threshold.to_numpy(), dtype=np.float32)
+        ),
+        Buffer.from_numpy(
+            np.asarray(score_threshold.to_numpy(), dtype=np.float32)
+        ),
     )
-
-    # Single pass: run NMS into an upper-bound buffer.
-    count_buf = Buffer(shape=[1], dtype=DType.int64, device=CPU())
-    work_buf = Buffer(shape=[upper_bound, 3], dtype=DType.int64, device=CPU())
-    ops.nms_ops.NmsRun(
-        count_buf,
-        work_buf,
-        boxes_buffer,
-        scores_buffer,
-        params,
-        ctx_ptr,
-    )
-    num_selected = int(count_buf.to_numpy().item())
-
-    if num_selected == 0:
-        return [Buffer(shape=[0, 3], dtype=DType.int64, device=CPU())]
-
-    # Truncate upper-bound buffer to actual result size.
-    return [Buffer.from_numpy(work_buf.to_numpy()[:num_selected].copy())]
 
 
 @register_op_handler(mo.DistributedReducescatterSumOp)

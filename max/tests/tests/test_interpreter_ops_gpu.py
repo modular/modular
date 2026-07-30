@@ -79,8 +79,8 @@ def _require_warm_adoption() -> None:
     only on a warmed lane; its absence with an accelerator present means a new
     NVIDIA lane wasn't wired (checked at runtime, not in the BUILD select, since
     the pydeps lint aspect evaluates that select on non-NVIDIA lanes too). When
-    wired, ``adopted_from_manifest`` must hold for each family, else adoption
-    fell through to a cold recompile.
+    wired, ``adopted_from_manifest`` must hold for every family, else
+    adoption fell through to a cold recompile.
     """
     if not os.environ.get("XARCH_WARM_RLOCATION"):
         if accelerator_count() > 0:
