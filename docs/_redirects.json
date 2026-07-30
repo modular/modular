@@ -50,6 +50,11 @@
     "status": 302
   },
   {
+    "source": "/max/api/kernels/(.*)",
+    "dest": "/api/mojo/{0}",
+    "status": 302
+  },
+  {
     "source": "/max/(.*)",
     "dest": "/{0}",
     "status": 302

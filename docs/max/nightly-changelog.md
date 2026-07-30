@@ -8,6 +8,13 @@ This version is still a work in progress.
 
 ## Documentation
 
+- The MAX AI kernels library has been renamed to the MAX accelerator library,
+  reflecting an expanded scope that now includes the GPU programming APIs
+  migrated out of the Mojo standard library and gathered under a new top-level
+  `max` package. Its API reference moved to
+  [`/api/mojo/`](https://docs.modular.com/api/mojo/), and links to the previous
+  location redirect.
+
 ## MAX models
 
 - Added GLM-5.2 (`GlmMoeDsaForCausalLM`) support, extending the existing

@@ -28,7 +28,7 @@ _EXCLUDED_KERNEL_LIBS = (
     "weights_registry",  # internal weight registration helpers
 )
 
-# Static landing page for `/api/kernels/`. Each kernel sub-package is its own
+# Static landing page for `/api/mojo/`. Each kernel sub-package is its own
 # Bazel package (used throughout the codebase as `//max:linalg`, `//max:nn`,
 # etc.), so per-sub-package `.docs` are stitched into the published tree by the
 # `docs` `pkg_filegroup` below. The post-process-docs.py script injects a
@@ -58,6 +58,6 @@ pkg_filegroup(
     srcs = [":index.docs"] + [lib + ".docs" for lib in _KERNEL_LIBS if lib not in _EXCLUDED_KERNEL_LIBS] + [
         "//max/kernels/src/graph_compiler:docs",
     ],
-    prefix = "api/kernels",
+    prefix = "api/mojo",
     tags = ["manual"],
 )

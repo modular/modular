@@ -26,7 +26,7 @@ each href works regardless of where the rendered Markdown lives:
 - Docs.modular.com-hosted (kernels and MAX Mojo library): API hrefs are
   root-relative; cross-site std/layout hrefs are absolute ``https://mojolang.org/...``.
 - ``/kernels/layout`` cross-references resolve to mojolang ``/docs/layout/...``
-  because layout docs are not published under ``/api/kernels/`` or ``/api/mojo/``.
+  because layout docs are not published under ``/api/mojo/``.
 - Layout package self-references (``/layout/...``) stay on mojolang
   ``/docs/layout/...`` when ``hosted_on_mojolang`` is set."""
 
@@ -36,7 +36,6 @@ MOJOLANG_ORIGIN = "https://mojolang.org"
 MOJOLANG_PATH_PREFIX = "/docs"
 MAX_MOJO_ORIGIN = "https://docs.modular.com"
 MAX_MOJO_PATH_PREFIX = "/api/mojo"
-MAX_KERNELS_PATH_PREFIX = "/api/kernels"
 
 
 def _mojolang_href(site_path: str, *, hosted_on_mojolang: bool) -> str:
@@ -57,10 +56,8 @@ def _mojo_docs_site_path(path: str) -> str:
     """Map ``mojo doc`` logical ``/mojo/...`` paths to the flat docsite layout."""
     assert path == "/mojo" or path.startswith("/mojo/")
     suffix = "" if path == "/mojo" else path[len("/mojo") :]
-    if suffix in ("", "/", "/max", "/max/"):
+    if suffix in ("", "/"):
         return MAX_MOJO_PATH_PREFIX
-    if suffix.startswith("/max/"):
-        suffix = suffix[len("/max") :]
     return f"{MAX_MOJO_PATH_PREFIX}{suffix}"
 
 
@@ -115,7 +112,7 @@ def resolve_api_href(
     # Cross-reference between kernel packages (linalg, nn, etc.)
     elif path.startswith("/kernels/"):
         href = _max_mojo_href(
-            f"{MAX_KERNELS_PATH_PREFIX}{path[len('/kernels') :]}",
+            f"{MAX_MOJO_PATH_PREFIX}{path[len('/kernels') :]}",
             hosted_on_mojolang=hosted_on_mojolang,
         )
     # MAX Mojo library packages published under /api/mojo/
@@ -127,7 +124,7 @@ def resolve_api_href(
     # Fallback for kernel packages that omit `docs_base_path`
     else:
         href = _max_mojo_href(
-            f"{MAX_KERNELS_PATH_PREFIX}{path}",
+            f"{MAX_MOJO_PATH_PREFIX}{path}",
             hosted_on_mojolang=hosted_on_mojolang,
         )
 
