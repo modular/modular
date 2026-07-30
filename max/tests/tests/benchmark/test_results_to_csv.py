@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for result JSON flatten/load, column selection, and CSV writing."""
+"""Tests for the JSON-to-CSV benchmark result post-processing tool."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ from max.benchmark.results_to_csv import (
     convert,
     flatten,
     load_result_rows,
+    main,
     select_columns,
 )
 
@@ -246,3 +247,40 @@ def test_convert_missing_cell_is_empty(tmp_path: Path) -> None:
 def test_convert_no_inputs_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="no input files"):
         convert([], tmp_path / "out.csv")
+
+
+def test_convert_dry_run_does_not_write(tmp_path: Path) -> None:
+    a = tmp_path / "results.json"
+    _write_blob(a, max_concurrency=1, request_throughput=10.0)
+    out = tmp_path / "out.csv"
+    columns = convert([a], out, dry_run=True)
+    # Selection is still computed and returned, but no file is created.
+    assert "max_concurrency" in columns
+    assert "request_throughput" in columns
+    assert not out.exists()
+
+
+def test_main_cli(tmp_path: Path) -> None:
+    a = tmp_path / "results.json"
+    _write_blob(
+        a,
+        max_concurrency=1,
+        request_throughput=10.0,
+        gpu_utilization=[50.0, 60.0],
+    )
+    out = tmp_path / "out.csv"
+    rc = main([str(a), "-o", str(out), "--groups", "gpu"])
+    assert rc == 0
+    with open(out) as f:
+        header = next(csv.reader(f))
+    assert "gpu_utilization" in header
+    assert "request_throughput" in header
+
+
+def test_main_cli_dry_run(tmp_path: Path) -> None:
+    a = tmp_path / "results.json"
+    _write_blob(a, max_concurrency=1, request_throughput=10.0)
+    out = tmp_path / "out.csv"
+    rc = main([str(a), "-o", str(out), "--dry-run"])
+    assert rc == 0
+    assert not out.exists()

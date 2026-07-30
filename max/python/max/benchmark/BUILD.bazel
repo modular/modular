@@ -36,6 +36,15 @@ modular_py_library(
 )
 
 modular_py_binary(
+    name = "results_to_csv",
+    srcs = ["results_to_csv.py"],
+    main = "results_to_csv.py",
+    deps = [
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_binary(
     name = "serve_replay",
     srcs = ["serve_replay.py"],
     visibility = [":__subpackages__"],
