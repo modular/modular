@@ -106,7 +106,7 @@ def run_matvec[
             M,
             N,
             K,
-            grid_dim=ceildiv(N, WARPS_PER_BLOCK),
+            grid_dim=ceildiv(N, WARP_SIZE),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
 
@@ -271,7 +271,7 @@ def run_matvec_with_epilogue_fn(
             M,
             N,
             K,
-            grid_dim=ceildiv(N, WARPS_PER_BLOCK),
+            grid_dim=ceildiv(N, WARP_SIZE),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
 
