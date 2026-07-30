@@ -17,7 +17,7 @@ from std.algorithm.functional import tile_and_unswitch
 from std.gpu import barrier, global_idx, thread_idx
 from std.gpu.host import DeviceContext
 from layout import TileTensor, Coord, Idx, row_major
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_false
 
 
@@ -49,16 +49,20 @@ def matmul_sram(
     var c = TileTensor(c_ptr, row_major(Coord(M, N)))
 
     # Allocate A, B tile in shared memory.
-    var a_shared = stack_allocation[
-        tile_size * tile_size,
-        DType.float32,
-        address_space=AddressSpace.SHARED,
-    ]()
-    var b_shared = stack_allocation[
-        tile_size * tile_size,
-        DType.float32,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var a_shared = UnsafePointer(
+        unsafe_stack_allocation[
+            tile_size * tile_size,
+            DType.float32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var b_shared = UnsafePointer(
+        unsafe_stack_allocation[
+            tile_size * tile_size,
+            DType.float32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     # Global index in C.
     # These are the same indices in A and B when loading to SRAM.

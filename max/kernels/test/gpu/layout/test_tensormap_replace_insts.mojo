@@ -30,7 +30,7 @@ from layout.tma_async import (
     TMATensorTileArray,
     _idx_product,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 from std.utils.index import Index, IndexList
@@ -77,12 +77,14 @@ def test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     )
     device_tma_tile[block_idx.x][].tensormap_fence_release()
 
-    mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=8,
-    ]()
+    mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+    )
 
     if thread_idx.x == 0:
         mbar[0].init()
@@ -129,7 +131,9 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
         type_of(template_tma_tensormap).desc_shape,
     ](device_tensormaps)
 
-    var tensormaps_host_ptr = stack_allocation[num_of_tensormaps * 128, UInt8]()
+    var tensormaps_host_ptr = UnsafePointer(
+        unsafe_stack_allocation[num_of_tensormaps * 128, UInt8]()
+    )
 
     comptime for i in range(num_of_tensormaps):
         for j in range(128):
@@ -217,9 +221,11 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
         alignment=128,
     ].stack_allocation()
 
-    var smem_desc = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
-    ]()
+    var smem_desc = UnsafePointer(
+        unsafe_stack_allocation[
+            1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
+        ]()
+    )
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
     if thread_idx.x == 0:
@@ -243,12 +249,14 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
     # Entire warp should call this as it's an aligned instruction
     device_tma_tile[block_idx.x][].tensormap_cp_fence_release(smem_desc)
 
-    mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=8,
-    ]()
+    mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+    )
 
     if thread_idx.x == 0:
         mbar[0].init()
@@ -294,7 +302,9 @@ def test_tma_replace_global_addr_in_smem_descriptor[
         type_of(template_tma_tensormap).desc_shape,
     ](device_tensormaps)
 
-    var tensormaps_host_ptr = stack_allocation[num_of_tensormaps * 128, UInt8]()
+    var tensormaps_host_ptr = UnsafePointer(
+        unsafe_stack_allocation[num_of_tensormaps * 128, UInt8]()
+    )
 
     comptime for i in range(num_of_tensormaps):
         for j in range(128):
@@ -381,9 +391,11 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
         alignment=128,
     ].stack_allocation()
 
-    var smem_desc = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
-    ]()
+    var smem_desc = UnsafePointer(
+        unsafe_stack_allocation[
+            1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
+        ]()
+    )
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
     if thread_idx.x == 0:
@@ -424,12 +436,14 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
     # Entire warp should call this as it's an aligned instruction
     device_tma_tile[block_idx.x][].tensormap_cp_fence_release(smem_desc)
 
-    mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=8,
-    ]()
+    mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+    )
 
     if thread_idx.x == 0:
         mbar[0].init()
@@ -489,7 +503,9 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     var device_tensormaps = ctx.enqueue_create_buffer[DType.uint8](
         128 * num_of_subtensors
     )
-    var tensormaps_host_ptr = stack_allocation[num_of_subtensors * 128, UInt8]()
+    var tensormaps_host_ptr = UnsafePointer(
+        unsafe_stack_allocation[num_of_subtensors * 128, UInt8]()
+    )
 
     comptime for i in range(num_of_subtensors):
         for j in range(128):

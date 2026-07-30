@@ -50,7 +50,7 @@ from layout.tma_async import (
     TMATensorTile,
     TMATensorTileArray,
 )
-from std.memory import stack_allocation, UnsafePointer
+from std.memory import unsafe_stack_allocation, UnsafePointer
 
 from std.utils.index import Index, IndexList
 
@@ -139,17 +139,23 @@ def test_grouped_tensormap_update_kernel[
     ].stack_allocation()
 
     # Allocate SMEM for tensormap descriptors
-    var smem_desc_a = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
-    ]()
-    var smem_desc_b = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
-    ]()
+    var smem_desc_a = UnsafePointer(
+        unsafe_stack_allocation[
+            1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
+        ]()
+    )
+    var smem_desc_b = UnsafePointer(
+        unsafe_stack_allocation[
+            1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
+        ]()
+    )
 
     # Allocate barriers
-    var mbar = stack_allocation[
-        2, SharedMemBarrier, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            2, SharedMemBarrier, address_space=AddressSpace.SHARED, alignment=8
+        ]()
+    )
 
     barrier()  # Initial sync before entering loop
 

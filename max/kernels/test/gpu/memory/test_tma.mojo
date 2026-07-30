@@ -25,17 +25,21 @@ from std.gpu.sync import (
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from std.utils.index import Index
 
 
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
 def kernel_copy_async_tma(descriptor: TMADescriptor):
-    var shmem = stack_allocation[
-        16, DType.float32, alignment=16, address_space=AddressSpace.SHARED
-    ]()
-    var mbar = stack_allocation[1, Int64, address_space=AddressSpace.SHARED]()
+    var shmem = UnsafePointer(
+        unsafe_stack_allocation[
+            16, DType.float32, alignment=16, address_space=AddressSpace.SHARED
+        ]()
+    )
+    var mbar = UnsafePointer(
+        unsafe_stack_allocation[1, Int64, address_space=AddressSpace.SHARED]()
+    )
     var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 

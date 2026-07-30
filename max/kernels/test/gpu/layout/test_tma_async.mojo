@@ -31,7 +31,7 @@ from layout.tma_async import (
     create_tma_tile,
     RaggedTensorMap,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 from std.utils.index import Index, IndexList
@@ -130,12 +130,14 @@ def test_tma_load_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=8,
-    ]()
+    mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+    )
 
     if thread_idx.x == 0:
         mbar[0].init()
@@ -183,12 +185,14 @@ def test_tma_multiple_loads_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=8,
-    ]()
+    mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+    )
 
     if thread_idx.x == 0:
         mbar[0].init()
@@ -742,12 +746,14 @@ def test_tma_loads_two_buffers_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=8,
-    ]()
+    mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+    )
 
     if thread_idx.x == 0:
         mbar[0].init()
@@ -923,12 +929,14 @@ def test_tma_loads_and_store_two_buffers_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=8,
-    ]()
+    mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+    )
 
     if thread_idx.x == 0:
         mbar[0].init()

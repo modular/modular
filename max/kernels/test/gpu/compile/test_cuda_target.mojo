@@ -31,7 +31,7 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.compile import _compile_code
-from std.memory import unsafe_memset_zero, stack_allocation
+from std.memory import unsafe_memset_zero, unsafe_stack_allocation
 from std.testing import *
 
 from std.utils.coord import Coord
@@ -193,9 +193,11 @@ def test_erf_kernel_sm90() raises:
 def test_shared_stack_allocation() -> (
     UnsafePointer[Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED]
 ):
-    return stack_allocation[
-        999, DType.int8, 8, address_space=AddressSpace.SHARED
-    ]()
+    return UnsafePointer(
+        unsafe_stack_allocation[
+            999, DType.int8, 8, address_space=AddressSpace.SHARED
+        ]()
+    )
 
 
 @always_inline
@@ -290,18 +292,22 @@ def gemm(
         c[row + col * m] = val
 
     # Allocate B array into shared memory for tiling.
-    var b_shared = stack_allocation[
-        TILE_SZ_RATIO * TILE_SZ_B,
-        DType.float32,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var b_shared = UnsafePointer(
+        unsafe_stack_allocation[
+            TILE_SZ_RATIO * TILE_SZ_B,
+            DType.float32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     # Thread indexing offsets.
     var row = global_idx.x
     var col = block_idx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
-    var c_reg = stack_allocation[TILE_SZ_B, DType.float32]()
+    var c_reg = UnsafePointer(
+        unsafe_stack_allocation[TILE_SZ_B, DType.float32]()
+    )
 
     unsafe_memset_zero(c_reg, TILE_SZ_B)
 
@@ -460,9 +466,11 @@ def test_warp_sum_reduce_sm90() raises:
 
 
 def block_reduce(val: Float32) -> Float32:
-    var shared = stack_allocation[
-        WARP_SIZE, DType.float32, address_space=AddressSpace.SHARED
-    ]()
+    var shared = UnsafePointer(
+        unsafe_stack_allocation[
+            WARP_SIZE, DType.float32, address_space=AddressSpace.SHARED
+        ]()
+    )
 
     comptime warp_shift = log2_floor(WARP_SIZE)
 

@@ -27,7 +27,7 @@ from layout.tma_async import (
     _idx_product,
     create_tensor_tile,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from std.utils.index import Index, IndexList
 
@@ -59,12 +59,14 @@ def tma_swizzle_load_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=8,
-    ]()
+    mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+    )
 
     if thread_idx.x == 0:
         mbar[0].init()

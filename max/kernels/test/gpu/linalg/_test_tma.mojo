@@ -24,7 +24,7 @@ from layout import (
 from layout.layout import zipped_divide
 from layout._utils import ManagedLayoutTensor
 from layout.tma_async import SharedMemBarrier
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 from std.utils.index import IndexList
@@ -197,12 +197,14 @@ def test_tma_load_kernel[
         alignment=128,
     ].stack_allocation()
 
-    var mbar_ptr = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=8,
-    ]()
+    var mbar_ptr = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+    )
 
     var linear_index = Int(block_idx.x)
 

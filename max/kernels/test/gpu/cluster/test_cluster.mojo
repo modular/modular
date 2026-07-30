@@ -30,7 +30,7 @@ from std.gpu import block_id_in_cluster, lane_id
 from std.gpu.intrinsics import Scope
 from std.gpu.memory import fence_mbarrier_init
 from layout.tma_async import PipelineState, SharedMemBarrier
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_almost_equal
 
 from std.utils.static_tuple import StaticTuple
@@ -40,19 +40,23 @@ from layout import TileTensor, row_major
 
 # Derived from https://docs.nvidia.com/cuda/cuda-c-programming-guide/#kernel-example-vector-scalar-multiplication
 def cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
-    result = stack_allocation[
-        1,
-        UInt128,
-        address_space=AddressSpace.SHARED,
-        alignment=16,
-    ]()
+    result = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            UInt128,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+        ]()
+    )
 
-    mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=8,
-    ]()
+    mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+    )
 
     bx = UInt32(block_idx.x)
     tidx = bx * UInt32(block_dim.x) + UInt32(thread_idx.x)
@@ -105,26 +109,32 @@ def cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
 def pipeline_test_kernel[
     num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
 ]():
-    var clc_response = stack_allocation[
-        num_stages,
-        UInt128,
-        address_space=AddressSpace.SHARED,
-        alignment=16,
-    ]()
+    var clc_response = UnsafePointer(
+        unsafe_stack_allocation[
+            num_stages,
+            UInt128,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+        ]()
+    )
 
-    var full_mbar = stack_allocation[
-        num_stages,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=16,
-    ]()
+    var full_mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            num_stages,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+        ]()
+    )
 
-    var empty_mbar = stack_allocation[
-        num_stages,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=16,
-    ]()
+    var empty_mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            num_stages,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+        ]()
+    )
 
     comptime CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
 

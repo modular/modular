@@ -38,7 +38,7 @@ from layout import (
 )
 from layout._fillers import random
 from layout.tma_async import SharedMemBarrier, TMATensorTile, _idx_product
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
@@ -93,12 +93,14 @@ def mha_operand_tma_copy_kernel[
     ].stack_allocation()
 
     # Initialize barrier
-    ref mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=8,
-    ]()[0]
+    ref mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+    )[0]
 
     if thread_idx.x == 0:
         mbar.init()
