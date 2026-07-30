@@ -23,6 +23,10 @@ from max.graph import BufferType, TensorType, TensorValue, Value, ops
 from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import AcceptanceSampler
+from max.nn.transformer.transformer import (
+    captures_by_device,
+    fuse_captured_hidden_states,
+)
 from max.pipelines.speculative.config import MAGIC_DRAFT_TOKEN_ID
 from max.pipelines.speculative.ragged_token_merger import (
     RaggedTokenMerger,
@@ -161,7 +165,9 @@ class UnifiedDflashLlama3(Module):
             merged_offsets,
         )
         target_logits = target_outputs[1]
-        target_hs_concat = target_outputs[3]
+        target_hs_concat = fuse_captured_hidden_states(
+            captures_by_device(target_outputs[3:], 1)
+        )[0]
 
         seed_scalar = inputs.seed[0]
         num_accepted, recovered, bonus = self.acceptance_sampler(
