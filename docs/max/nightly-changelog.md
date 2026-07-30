@@ -743,6 +743,12 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- Dynamic CE chunk sizing in the data-parallel load-balancer
+  (`--dp-ce-balance-enable-dynamic-chunk-size`) now defaults to off. The
+  smaller, more frequent context-encoding chunks it produces interact with
+  tiered-KV onload latency on speculative-decoding deployments; re-enable it
+  explicitly for workloads where its TTFT win is measured to hold.
+
 - Removed the deprecated `--max-num-steps` CLI flag (and the corresponding
   `max_num_steps` config field). Multi-step pipeline execution is no longer
   supported; the pipeline always runs single-step decode. The flag had been a

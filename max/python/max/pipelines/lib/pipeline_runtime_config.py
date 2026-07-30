@@ -363,7 +363,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
     """Occupancy threshold (0-1) that schedules CE work without deferral."""
 
     dp_ce_balance_enable_dynamic_chunk_size: bool = Field(
-        default=True,
+        default=False,
         description=(
             "Whether a below-threshold CE step with work on 2+ replicas "
             "runs immediately with each replica's chunk size reduced to "
