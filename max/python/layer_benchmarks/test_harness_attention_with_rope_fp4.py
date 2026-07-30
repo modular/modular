@@ -16,23 +16,12 @@
 from __future__ import annotations
 
 import pytest
+from layer_mefs import create_runner
 from max.pipelines.context import TextContext
-from testbed.harnesses.attention_with_rope import (
-    AttentionWithRopeHarness,
-    AttentionWithRopeStaticParams,
-)
+from testbed.harnesses.attention_with_rope import AttentionWithRopeStaticParams
 from testbed.harnesses.ragged_attention_harness import AttentionDynamicParams
-from testbed.runner import LayerTestRunner, create_session
-
-_STATIC_PARAMS = AttentionWithRopeStaticParams(
-    hidden_size=4096,
-    n_heads=32,
-    n_kv_heads=8,
-    head_dim=128,
-    max_seq_len=131072,
-    rope_theta=500000.0,
-    dtype="fp4",
-)
+from testbed.runner import LayerTestRunner
+from testbed.specs import ATTENTION_WITH_ROPE_FP4
 
 _SMOKE_SHAPES = [
     AttentionDynamicParams(batch_size=1, seq_len=8192, ctx_len=8192),
@@ -46,10 +35,7 @@ def runner() -> LayerTestRunner[
     AttentionDynamicParams,
     list[TextContext],
 ]:
-    session, device = create_session()
-    return LayerTestRunner(
-        AttentionWithRopeHarness(_STATIC_PARAMS, session, device)
-    )
+    return create_runner(ATTENTION_WITH_ROPE_FP4)
 
 
 def test_benchmark_smoke(

@@ -35,10 +35,13 @@ Dynamic params (per shape):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cached_property
 from typing import Any, cast
 
 import numpy as np
-import torch
+
+# torch is a caller-supplied dep, see BUILD.bazel
+import torch  # type: ignore[import-not-found]
 from max.driver import Accelerator, Buffer, DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -105,10 +108,19 @@ class Qwen25VLAttentionHarness(
             num_layers=1,
             devices=[DeviceRef.GPU()],
         )
-        self._kv_manager = PagedKVCacheManager(
+
+    @cached_property
+    def _kv_manager(self) -> PagedKVCacheManager:
+        """The paged KV cache, allocated on first use.
+
+        Deferred because it claims device memory, which building the graph does
+        not need: the CPU precompile step constructs a harness with no GPU
+        attached.
+        """
+        return PagedKVCacheManager(
             params=self._kv_params,
-            total_num_pages=static_params.total_num_pages,
-            session=session,
+            total_num_pages=self.static_params.total_num_pages,
+            session=self.session,
             max_batch_size=128,
         )
 
