@@ -16,20 +16,20 @@ def main():
     # start-alloc-multiple
     var float_ptr = alloc[Float64](6)
     for offset in range(6):
-        (float_ptr + offset).unsafe_write(0.0)
+        float_ptr.unsafe_offset(offset).unsafe_write(0.0)
     # end-alloc-multiple
 
     # start-subscript-access
-    float_ptr[2] = 3.0
+    float_ptr[unsafe_offset=2] = 3.0
     for offset in range(6):
-        print(float_ptr[offset], end=", ")
+        print(float_ptr[unsafe_offset=offset], end=", ")
     # end-subscript-access
     print()
 
     # Pointer arithmetic: offset from an existing pointer
     var first_ptr = float_ptr
     # start-pointer-offset
-    var third_ptr = first_ptr + 2
+    var third_ptr = first_ptr.unsafe_offset(2)
     # end-pointer-offset
 
     print(third_ptr[])
@@ -38,11 +38,11 @@ def main():
     var ptr = float_ptr
     # start-pointer-advance
     # Advance the pointer one element:
-    ptr += 1
+    ptr = ptr.unsafe_offset(1)
     # end-pointer-advance
 
     print(ptr[])
 
     for offset in range(6):
-        (float_ptr + offset).unsafe_deinit_pointee()
-    float_ptr.free()
+        float_ptr.unsafe_offset(offset).unsafe_deinit_pointee()
+    float_ptr.unsafe_free()

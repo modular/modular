@@ -22,9 +22,13 @@ def invert_red_channel(
     # bytes per pixel, which is also the stride size
     comptime bpp = 3
     for i in range(0, pixel_count * bpp, simd_width * bpp):
-        var red_values = (ptr + i).strided_load[width=simd_width](bpp)
+        var red_values = ptr.unsafe_offset(i).unsafe_strided_load[
+            width=simd_width
+        ](bpp)
         # Invert values and store them in their original locations
-        (ptr + i).strided_store[width=simd_width](~red_values, bpp)
+        ptr.unsafe_offset(i).unsafe_strided_store[width=simd_width](
+            ~red_values, bpp
+        )
 
 
 # end-invert-red-channel
@@ -36,14 +40,14 @@ def main() raises:
     comptime bpp = 3
     var img = alloc[UInt8](pixel_count * bpp)
     for i in range(pixel_count):
-        (img + i * bpp).unsafe_write(UInt8(100))  # R
-        (img + i * bpp + 1).unsafe_write(UInt8(0))  # G
-        (img + i * bpp + 2).unsafe_write(UInt8(0))  # B
+        img.unsafe_offset(i * bpp).unsafe_write(UInt8(100))  # R
+        img.unsafe_offset(i * bpp + 1).unsafe_write(UInt8(0))  # G
+        img.unsafe_offset(i * bpp + 2).unsafe_write(UInt8(0))  # B
 
     invert_red_channel(img, pixel_count)
 
     # After inversion, red values should be ~100 = 155 (bitwise NOT of 100)
     for i in range(pixel_count):
-        assert_equal(img[i * bpp], 155)
+        assert_equal(img[unsafe_offset=i * bpp], 155)
 
-    img.free()
+    img.unsafe_free()

@@ -40,6 +40,6 @@ def main():
         var p = ptr.value()
         print(p[])
     x_ptr.unsafe_deinit_pointee()
-    x_ptr.free()
+    x_ptr.unsafe_free()
 
     test_unsafe_dangling()

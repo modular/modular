@@ -2279,6 +2279,12 @@ struct Pointer[
         """Free the memory referenced by the pointer."""
         _free(self)
 
+    @__allow_legacy_custom_self_type
+    @always_inline
+    def unsafe_free(self: Pointer[mut=True, Self.T, ...]):
+        """Frees the memory referenced by the pointer."""
+        _free(self)
+
     @always_inline("builtin")
     def unsafe_bitcast[
         U: AnyType

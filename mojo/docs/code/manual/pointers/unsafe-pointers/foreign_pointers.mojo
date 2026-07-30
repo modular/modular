@@ -21,7 +21,7 @@ def write_to_address(mmio_address: Int, value: Int32):
     # Writing to a raw memory address may require a volatile load/store as the
     # operation may have side effects not visible to the compiler.
     # You can specify this using the `volatile` parameter.
-    ptr.store[volatile=True](value)
+    ptr.unsafe_store[volatile=True](value)
 
 
 # end-unsafe-from-address
@@ -32,7 +32,7 @@ def main():
     # start-opaque-pointer
     var str = "Hello, world!"
     var str_ptr = UnsafePointer(to=str)
-    var opaque_ptr = str_ptr.bitcast[NoneType]()
+    var opaque_ptr = str_ptr.unsafe_bitcast[NoneType]()
     # ... call some foreign function that takes a void pointer
     # end-opaque-pointer
 
