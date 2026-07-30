@@ -596,6 +596,33 @@ This version is still a work in progress.
   float16/bfloat16 endpoints the Mojo path accepted are no longer supported and
   raise; on accelerators float64 is excluded, matching the sibling families.
 
+- The eager interpreter's `band_part`, `arg_nonzero`, `non_maximum_suppression`,
+  `random.normal`, `random.uniform`, `range`, and `roi_align` ops now run
+  through pre-compiled graph-compiler models instead of hand-written Mojo
+  bindings, so each shares one implementation with the compiled path. Eager CPU
+  coverage narrows to float32 and float64 for `arg_nonzero`,
+  `non_maximum_suppression`, `random.uniform`, `range`, and `roi_align`,
+  matching the dtype policy the other graph-compiler-backed float ops use; the
+  deleted bindings also accepted float16 and bfloat16. `band_part`'s coverage
+  is unchanged, `random.normal` still accepts float16 and bfloat16, and sampled
+  random values are unchanged. `arg_nonzero`, `non_maximum_suppression`, and
+  `roi_align` remain CPU-only, as their `MO_HostOnly` trait already required.
+
+- `band_part` now supports CPU float64 on Apple-silicon builds, which the
+  deleted binding rejected.
+
+- `arg_nonzero` no longer caps input rank.
+
+- `non_maximum_suppression` now runs suppression twice, once to size the output
+  and once to compute it, in exchange for dropping the upper-bound allocation
+  and its truncating copy.
+
+- `range` now raises on a non-evenly-divisible interval or a zero `step` where
+  it previously returned a mis-sized or constant tensor.
+
+- `random.uniform`'s samples depend on the kernel's SIMD grouping, so an eager
+  graph can draw different values than a compiled one from the same seed.
+
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
   machine's devices and drops a stamp. A later lazy eager process on the same

@@ -28,6 +28,10 @@ from max._interpreter_ops import (
     elementwise_binary_gc,
     gc_compile,
     matmul_gc,
+    nms_gc,
+    nonzero_gc,
+    random_gc,
+    range_gc,
     select_gc,
     shape_rearrange_gc,
     unary_elementwise_gc,
@@ -88,6 +92,17 @@ SIGNED_DTYPES = FLOAT_DTYPES + INT_DTYPES
 ELEMENTWISE_DTYPES = SIGNED_DTYPES + UINT_DTYPES
 # DTypes to test for matmul operations (float and integer)
 MATMUL_DTYPES = FLOAT_DTYPES + INT_DTYPES
+
+# Captured pre-migration; the shared kernel's counter mapping must not change them.
+_RANDOM_NORMAL_SEED7_F32 = np.array(
+    [
+        -0.30484700202941895,
+        1.0453333854675293,
+        -0.27856412529945374,
+        0.7178202867507935,
+    ],
+    dtype=np.float32,
+)
 
 
 class TestBinaryElementwiseOps:
@@ -1076,8 +1091,7 @@ class TestNonMaximumSuppressionOp:
 
     Routes through F.non_maximum_suppression -> ops.non_maximum_suppression ->
     rmo.MoNonMaximumSuppressionOp -> mo.NonMaximumSuppressionOp ->
-    _handle_non_maximum_suppression -> nms_ops.NmsCount / NmsFill.
-    CPU-only (MO_HostOnly).
+    _handle_non_maximum_suppression -> nms_gc.nms_model. CPU-only (MO_HostOnly).
 
     The reference is a pure-NumPy greedy NMS implementation applied
     independently per (batch, class) pair.
@@ -1157,8 +1171,13 @@ class TestNonMaximumSuppressionOp:
             return np.zeros((0, 3), dtype=np.int64)
         return np.array(results, dtype=np.int64)
 
-    def test_nms_basic(self) -> None:
-        """Test NMS with 1 batch, 1 class, 6 overlapping boxes."""
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float64])
+    def test_nms_basic(self, dtype: DType) -> None:
+        """Test NMS with 1 batch, 1 class, 6 overlapping boxes.
+
+        Parametrized over boxes/scores dtype; thresholds stay float32.
+        """
+        np_dtype = dtype.to_numpy()
         boxes_np = np.array(
             [
                 [
@@ -1170,11 +1189,11 @@ class TestNonMaximumSuppressionOp:
                     [8.0, 8.0, 9.0, 9.0],
                 ]
             ],
-            dtype=np.float32,
+            dtype=np_dtype,
         )
         scores_np = np.array(
             [[[0.9, 0.75, 0.6, 0.5, 0.4, 0.3]]],
-            dtype=np.float32,
+            dtype=np_dtype,
         )
 
         max_out = 10
@@ -1448,6 +1467,33 @@ class TestNonMaximumSuppressionOp:
 
         result_np = np.from_dlpack(result)
         assert result_np.shape == (0, 3)
+
+    def test_nms_gc_model_returns_exact_selection_count(self) -> None:
+        """A compiled NMS model sizes its own data-dependent output."""
+        # Two heavily-overlapping boxes in one batch and one class; with
+        # max_output_boxes_per_class=1 exactly one survives.
+        boxes = Buffer.from_numpy(
+            np.array(
+                [[[0.0, 0.0, 1.0, 1.0], [0.0, 0.1, 1.0, 1.1]]],
+                dtype=np.float32,
+            )
+        )
+        scores = Buffer.from_numpy(np.array([[[0.9, 0.8]]], dtype=np.float32))
+        model = nms_gc.nms_model(DType.float32)
+        (out,) = model(
+            boxes,
+            scores,
+            Buffer.from_numpy(np.asarray(1, dtype=np.int64)),
+            Buffer.from_numpy(np.asarray(0.5, dtype=np.float32)),
+            Buffer.from_numpy(np.asarray(0.0, dtype=np.float32)),
+        )
+        # One row: [batch_index, class_index, box_index] for the winner.
+        np.testing.assert_array_equal(out.to_numpy(), np.array([[0, 0, 0]]))
+
+    def test_float16_unsupported(self) -> None:
+        """float16 isn't in this family's CPU dtype set."""
+        with pytest.raises(KeyError, match="float16"):
+            nms_gc.nms_model(DType.float16)
 
 
 class TestInterpreterVsCompiled:
@@ -2059,6 +2105,76 @@ class TestRangeOp:
 
         expected = np.arange(5, 15, 2, dtype=np.float32)
         np.testing.assert_array_almost_equal(np.from_dlpack(t), expected)
+
+    def test_range_gc_model_returns_runtime_length(self) -> None:
+        """The compiled model sizes its own output from the host scalars."""
+        model = range_gc.range_model(CPU(), DType.float32)
+        (out,) = model(
+            Buffer.from_numpy(np.asarray(0.0, dtype=np.float32)),
+            Buffer.from_numpy(np.asarray(5.0, dtype=np.float32)),
+            Buffer.from_numpy(np.asarray(1.0, dtype=np.float32)),
+        )
+        np.testing.assert_array_equal(
+            out.to_numpy(), np.arange(0.0, 5.0, 1.0, dtype=np.float32)
+        )
+
+    def test_range_non_divisible_interval_rounds_up(self) -> None:
+        """``arange(0, 5, 2)`` now yields 3 elements, not 2.
+
+        The shared shape function rounds up like Python's ``range`` where the
+        old handler floored, so callers must now declare ``out_dim=3``.
+        """
+        start_t = Tensor.from_dlpack(np.array(0, dtype=np.float32))
+        stop_t = Tensor.from_dlpack(np.array(5, dtype=np.float32))
+        step_t = Tensor.from_dlpack(np.array(2, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            t = Tensor.arange(
+                start_t,
+                stop_t,
+                step_t,
+                out_dim=3,
+                dtype=DType.float32,
+                device=CPU(),
+            )
+
+        expected = np.array([0.0, 2.0, 4.0], dtype=np.float32)
+        np.testing.assert_array_equal(np.from_dlpack(t), expected)
+
+    def test_range_declared_length_mismatch_raises(self) -> None:
+        """A declared length that disagrees with the model's output raises.
+
+        Uses buffer-backed scalars with a deliberately floored ``out_dim``: a
+        fully-literal range is constant-folded before the handler runs.
+        """
+        start_t = Tensor.from_dlpack(np.array(0, dtype=np.float32))
+        stop_t = Tensor.from_dlpack(np.array(5, dtype=np.float32))
+        step_t = Tensor.from_dlpack(np.array(2, dtype=np.float32))
+
+        with pytest.raises(RuntimeError, match=r"declared.*length.*2.*3"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                # Keep a reference: an unreferenced result tensor can be
+                # elided by realization as dead code, along with the error.
+                t = Tensor.arange(
+                    start_t,
+                    stop_t,
+                    step_t,
+                    out_dim=2,
+                    dtype=DType.float32,
+                    device=CPU(),
+                )
+                assert t is not None
+
+    def test_float16_unsupported(self) -> None:
+        """float16 isn't in this family's CPU dtype set."""
+        with pytest.raises(KeyError, match="float16"):
+            range_gc.range_model(CPU(), DType.float16)
 
 
 class TestReduceOps:
@@ -2844,6 +2960,25 @@ class TestRandomNormalOp:
         assert result_np.shape == (10, 10)
         assert result_np.dtype == dtype.to_numpy()
 
+    def test_random_normal_matches_recorded_baseline(self) -> None:
+        """Migrating to the shared GC kernel must not change sampled values.
+
+        A mismatch means the counter mapping diverged, not that the baseline
+        is stale.
+        """
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(7)
+            result = max_random.gaussian(
+                (4,), dtype=DType.float32, device=CPU()
+            )
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(result), _RANDOM_NORMAL_SEED7_F32
+        )
+
 
 class TestRandomUniformOp:
     """Tests for random uniform op via max.random.uniform with interpreter."""
@@ -2924,6 +3059,11 @@ class TestRandomUniformOp:
         result_np = np.from_dlpack(result)
         assert result_np.shape == (10, 10)
         assert result_np.dtype == dtype.to_numpy()
+
+    def test_float16_unsupported(self) -> None:
+        """float16 isn't in this family's CPU dtype set."""
+        with pytest.raises(KeyError, match="float16"):
+            random_gc.random_model(mo.RandomUniformOp, CPU(), DType.float16)
 
 
 class TestShapeChangeOps:
@@ -6629,6 +6769,34 @@ class TestBandPartOp:
 
         np.testing.assert_array_equal(np.from_dlpack(y), x_np)
 
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float16,
+            DType.float32,
+            DType.float64,
+            DType.int32,
+            DType.int64,
+            DType.uint8,
+            DType.bool,
+        ],
+    )
+    def test_band_part_dtype_width_coverage(self, dtype: DType) -> None:
+        """Every byte-aligned dtype rides the same width-keyed GC model."""
+        np_dt = dtype.to_numpy()
+        x_np = np.ones((2, 3, 4), dtype=np_dt)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            x = Tensor.from_dlpack(x_np).to(CPU())
+            out = F.band_part(x, num_lower=0, num_upper=0)
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(out),
+            self._band_part_ref(x_np, num_lower=0, num_upper=0),
+        )
+
 
 class TestAvgPool2dOp:
     """Tests for the mo.avg_pool / mo.avg_pool_ceil_mode_true interpreter
@@ -6802,7 +6970,8 @@ class TestRoiAlignOp:
     """Tests for roi_align interpreter op via F.roi_align.
 
     Routes through F.roi_align -> ops.roi_align -> rmo.MoRoiAlignOp ->
-    mo.RoiAlignOp -> _handle_roi_align -> roi_align_ops.RoiAlign.
+    mo.RoiAlignOp -> _handle_roi_align -> roi_align_gc.roi_align_model.
+    CPU-only (MO_HostOnly).
     The reference is a pure-numpy bilinear-interpolation ROI pooler.
     """
 
@@ -7359,6 +7528,22 @@ class TestArgNonzeroOp:
         ref = self._nonzero_ref(x_np)
         np.testing.assert_array_equal(np.from_dlpack(result), ref)
 
+    def test_6d_basic(self) -> None:
+        """Test nonzero on a rank-6 tensor."""
+        x_np = np.zeros((2, 2, 2, 2, 2, 2), dtype=np.float32)
+        x_np[0, 1, 0, 1, 0, 1] = 1.0
+        x_np[1, 0, 1, 0, 1, 0] = -2.0
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            result = F.nonzero(x, out_dim="nnz")
+
+        ref = self._nonzero_ref(x_np)
+        np.testing.assert_array_equal(np.from_dlpack(result), ref)
+
     def test_all_zeros(self) -> None:
         """All-zero input must return an empty [0, rank] tensor."""
         x_np = np.zeros((3, 4), dtype=np.float32)
@@ -7399,6 +7584,7 @@ class TestArgNonzeroOp:
             DType.int64,
             DType.uint8,
             DType.uint32,
+            DType.bool,
         ],
     )
     def test_dtype_parametrize(self, dtype: DType) -> None:
@@ -7415,6 +7601,24 @@ class TestArgNonzeroOp:
 
         ref = self._nonzero_ref(x_np)
         np.testing.assert_array_equal(np.from_dlpack(result), ref)
+
+    def test_nonzero_gc_model_returns_exact_nnz(self) -> None:
+        """A compiled arg_nonzero model sizes its own data-dependent output.
+
+        Uses a flattened input directly; the [nnz, rank] coordinate decode is
+        covered by the handler-level tests above via F.nonzero.
+        """
+        x = Buffer.from_numpy(
+            np.array([0.0, 1.0, 0.0, 2.0, 0.0, 3.0], dtype=np.float32)
+        )
+        model = nonzero_gc.nonzero_model(DType.float32)
+        (out,) = model(x)
+        np.testing.assert_array_equal(out.to_numpy(), np.array([[1], [3], [5]]))
+
+    def test_float16_unsupported(self) -> None:
+        """float16 isn't in this family's CPU dtype set."""
+        with pytest.raises(KeyError, match="float16"):
+            nonzero_gc.nonzero_model(DType.float16)
 
 
 class TestPadConstantOp:
@@ -9119,15 +9323,12 @@ class TestLazyGCModelCompilation:
 
     def test_uint_view_dtype_rejects_sub_byte(self) -> None:
         """Byte-aligned dtypes bit-cast to a same-width uint; sub-byte raises."""
-        assert shape_rearrange_gc.uint_view_dtype(DType.float16) == DType.uint16
-        assert shape_rearrange_gc.uint_view_dtype(DType.float64) == DType.uint64
-        assert shape_rearrange_gc.uint_view_dtype(DType.bool) == DType.uint8
-        assert (
-            shape_rearrange_gc.uint_view_dtype(DType.float8_e4m3fn)
-            == DType.uint8
-        )
+        assert gc_compile.uint_view_dtype(DType.float16) == DType.uint16
+        assert gc_compile.uint_view_dtype(DType.float64) == DType.uint64
+        assert gc_compile.uint_view_dtype(DType.bool) == DType.uint8
+        assert gc_compile.uint_view_dtype(DType.float8_e4m3fn) == DType.uint8
         with pytest.raises(NotImplementedError, match="sub-byte"):
-            shape_rearrange_gc.uint_view_dtype(DType.float4_e2m1fn)
+            gc_compile.uint_view_dtype(DType.float4_e2m1fn)
 
     def test_tile_rank_over_cap_raises(self) -> None:
         """Rank beyond an op's cap raises cleanly, not a kernel comptime assert.

@@ -180,6 +180,12 @@ _WARM_FAMILIES = [
     "rms_norm",
     "group_norm",
     "cast",
+    "band_part",
+    "nonzero",
+    "nms",
+    "random",
+    "range",
+    "roi_align",
 ]
 
 # CPU fragment per family: no --target -> lane-independent (cfg=exec), shared.

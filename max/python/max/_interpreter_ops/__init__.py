@@ -23,8 +23,7 @@ import mojo.importer
 # matmul / unary-elementwise handlers are backed by graph-compiler models
 # (compiled below), unlike the Mojo op bindings above.
 from . import (  # type: ignore[attr-defined]
-    argnonzero_ops,
-    band_part_ops,
+    band_part_gc,
     cast_gc,
     conv_gc,
     data_movement_ops,
@@ -34,13 +33,15 @@ from . import (  # type: ignore[attr-defined]
     group_norm_gc,
     layer_norm_gc,
     matmul_gc,
-    misc_ops,
-    nms_ops,
+    nms_gc,
+    nonzero_gc,
     pooling_gc,
+    random_gc,
+    range_gc,
     reduce_axis_gc,
     resize_gc,
     rms_norm_gc,
-    roi_align_ops,
+    roi_align_gc,
     select_gc,
     shape_rearrange_gc,
     topk_gc,
