@@ -593,6 +593,14 @@ class TextGenAggregates(_CompletedRunBase):
     max_output: int
     max_total: int
 
+    # Run-level aggregate throughput: (input + output) tokens per minute over
+    # wall-clock duration. Derived in ``_derive_aggregate_tokens_per_minute``
+    # so it is a real stored field (not a ``@computed_field``) and therefore
+    # flows through the field-based CSV reporter as well as the JSON reporters,
+    # rather than existing only inside ``to_result_dict``. ``nan`` when
+    # duration is non-positive (degenerate / fully-skipped runs).
+    aggregate_tokens_per_minute: float = float("nan")
+
     # Global: SUM(cached_tokens) / SUM(prompt_tokens).
     global_cached_token_rate: float
     # Per-turn cached_tokens / prompt_tokens; None when usage data is
@@ -623,17 +631,28 @@ class TextGenAggregates(_CompletedRunBase):
     # for single-turn workloads or when usage data is unavailable.
     per_turn_cache_retentions: list[float] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _derive_aggregate_tokens_per_minute(self) -> TextGenAggregates:
+        """Derive run-level TPM so console, JSON, and CSV share one source.
+
+        Computed from the token totals and wall-clock duration rather than
+        stored by callers, so every construction path (and JSON round-trips)
+        yields a consistent value.
+        """
+        self.aggregate_tokens_per_minute = (
+            (self.total_input + self.total_output) * 60.0 / self.duration
+            if self.duration > 0
+            else float("nan")
+        )
+        return self
+
     def to_result_dict(self) -> dict[str, object]:
         d = super().to_result_dict()
         d["total_input_tokens"] = self.total_input
         d["total_output_tokens"] = self.total_output
         # Aggregate across the entire benchmark run (not per-GPU): sum of
         # input + output tokens divided by wall-clock duration, in tokens/min.
-        d["aggregate_tokens_per_minute"] = (
-            (self.total_input + self.total_output) * 60.0 / self.duration
-            if self.duration > 0
-            else float("nan")
-        )
+        d["aggregate_tokens_per_minute"] = self.aggregate_tokens_per_minute
         d["max_concurrent_conversations"] = self.max_concurrent_conversations
         d["skip_first_n_requests"] = self.skip_first_n_requests
         d["skip_last_n_requests"] = self.skip_last_n_requests
