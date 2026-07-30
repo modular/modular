@@ -15,11 +15,13 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import math
 import os
 import platform
 import uuid
 from time import time
 
+import numpy as np
 import requests
 from max.serve.config import Settings
 from opentelemetry._logs import set_logger_provider
@@ -94,180 +96,42 @@ metrics_resource = Resource.create(
 )
 
 
-# Latency metrics (milliseconds). Fine at sub-10ms, ~1.3-1.5x steps elsewhere
-# out to 30 min for slow ops (request time, model load, compile).
-HISTOGRAM_LATENCY_BUCKETS_MS: tuple[float, ...] = (
-    1.0,
-    2.0,
-    3.0,
-    4.0,
-    5.0,
-    7.5,
-    10.0,
-    # Typical interactive latency band
-    15.0,
-    20.0,
-    30.0,
-    40.0,
-    50.0,
-    75.0,
-    100.0,
-    150.0,
-    200.0,
-    300.0,
-    400.0,
-    500.0,
-    750.0,
-    # Longer running requests up to 30 seconds
-    1_000.0,
-    1_500.0,
-    2_000.0,
-    3_000.0,
-    5_000.0,
-    7_500.0,
-    10_000.0,
-    15_000.0,
-    20_000.0,
-    30_000.0,
-    45_000.0,  # 45s
-    60_000.0,  # 1m
-    90_000.0,  # 1m30s
-    120_000.0,  # 2m
-    180_000.0,  # 3m
-    240_000.0,  # 4m
-    300_000.0,  # 5m
-    420_000.0,  # 7m
-    600_000.0,  # 10m
-    900_000.0,  # 15m
-    1_200_000.0,  # 20m
-    1_800_000.0,  # 30m
+def _log_spaced_buckets(
+    start: float, stop: float, max_ratio: float
+) -> tuple[float, ...]:
+    """Builds a 0 boundary plus geometrically spaced boundaries up to ``stop``."""
+    steps = math.ceil(math.log(stop / start) / math.log(max_ratio))
+    return (0.0,) + tuple(
+        float(f"{bound:.3g}")
+        for bound in np.exp(
+            np.linspace(math.log(start), math.log(stop), steps + 1)
+        )
+    )
+
+
+# Latency metrics (milliseconds). Log-spaced from 1ms out to 8 hours, which
+# covers slow ops (request time, model load, compile) and long agentic requests.
+HISTOGRAM_LATENCY_BUCKETS_MS: tuple[float, ...] = _log_spaced_buckets(
+    1.0, 8 * 60 * 60 * 1000.0, 1.5
 )
 
-# Percentages / utilization ratios (0-100). Finer resolution toward the high
-# end where saturation matters.
-HISTOGRAM_PERCENT_BUCKETS: tuple[float, ...] = (
-    0.0,
-    1.0,
-    2.5,
-    5.0,
-    7.5,
-    10.0,
-    15.0,
-    20.0,
-    25.0,
-    30.0,
-    40.0,
-    50.0,
-    60.0,
-    70.0,
-    75.0,
-    80.0,
-    85.0,
-    90.0,
-    92.5,
-    95.0,
-    97.5,
-    99.0,
-    100.0,
+# Percentages / utilization ratios (0-100). Linear rather than geometric, since
+# utilization is only actionable near saturation: 5% steps through the bulk,
+# tightening to 2% above 90%.
+HISTOGRAM_PERCENT_BUCKETS: tuple[float, ...] = tuple(
+    float(pct) for pct in (*range(0, 91, 5), *range(92, 101, 2))
 )
 
-# Token counts per request/batch and other unbounded counts. ~1.25-1.5x steps
-# through 1k-128k so nearby token sizes (e.g. 8k/10k/12k) stay distinct;
-# coarser at the small occupancy end and the large-context tail.
-HISTOGRAM_COUNT_BUCKETS: tuple[float, ...] = (
-    1.0,
-    2.0,
-    3.0,
-    4.0,
-    6.0,
-    8.0,
-    12.0,
-    16.0,
-    24.0,
-    32.0,
-    48.0,
-    64.0,
-    96.0,
-    128.0,
-    192.0,
-    256.0,
-    384.0,
-    512.0,
-    768.0,
-    1_000.0,
-    1_500.0,
-    2_000.0,
-    3_000.0,
-    4_000.0,
-    6_000.0,
-    8_000.0,
-    10_000.0,
-    12_000.0,
-    16_000.0,
-    20_000.0,
-    24_000.0,
-    32_000.0,
-    48_000.0,
-    64_000.0,
-    96_000.0,
-    128_000.0,
-    192_000.0,
-    256_000.0,
-    384_000.0,
-    512_000.0,
-    768_000.0,
-    1_000_000.0,
+# Token counts per request/batch and other unbounded counts. Log-spaced from 1
+# up to 100M, so batch-level token totals over very long contexts stay on scale.
+HISTOGRAM_COUNT_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
+    1.0, 100_000_000.0, 1.5
 )
 
-# Batch size (number of requests in a batch). Fine-grained at low sizes where
-# small differences (e.g. 8 vs 12) matter, coarsening with size, stopping at
-# 512: by 1 to 8, by 2 to 16, by 4 to 32, by 8 to 128, by 16 to 256, by 32 to
-# 512.
-HISTOGRAM_BATCH_SIZE_BUCKETS: tuple[float, ...] = (
-    1.0,
-    2.0,
-    3.0,
-    4.0,
-    5.0,
-    6.0,
-    7.0,
-    8.0,
-    10.0,
-    12.0,
-    14.0,
-    16.0,
-    20.0,
-    24.0,
-    28.0,
-    32.0,
-    40.0,
-    48.0,
-    56.0,
-    64.0,
-    72.0,
-    80.0,
-    88.0,
-    96.0,
-    104.0,
-    112.0,
-    120.0,
-    128.0,
-    144.0,
-    160.0,
-    176.0,
-    192.0,
-    208.0,
-    224.0,
-    240.0,
-    256.0,
-    288.0,
-    320.0,
-    352.0,
-    384.0,
-    416.0,
-    448.0,
-    480.0,
-    512.0,
+# Batch size (number of requests in a batch), from a single request up to the
+# largest batch the scheduler forms.
+HISTOGRAM_BATCH_SIZE_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
+    1.0, 512.0, 1.5
 )
 
 # Mean speculative-decode acceptance length per batch. Because it is an average
@@ -277,49 +141,16 @@ HISTOGRAM_ACCEPTANCE_LENGTH_BUCKETS: tuple[float, ...] = tuple(
     i * 0.25 for i in range(1, 65)
 )
 
-# Throughput in tokens/second. ~1.5x round-number ladder from slow single
-# request to large prefill batch.
-HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS: tuple[float, ...] = (
-    10.0,
-    25.0,
-    50.0,
-    100.0,
-    150.0,
-    250.0,
-    400.0,
-    600.0,
-    1_000.0,
-    1_500.0,
-    2_500.0,
-    4_000.0,
-    6_000.0,
-    10_000.0,
-    15_000.0,
-    25_000.0,
-    40_000.0,
-    60_000.0,
-    100_000.0,
-    150_000.0,
-    250_000.0,
-    500_000.0,
-    1_000_000.0,
+# Throughput in tokens/second, from a slow single request to a large prefill
+# batch.
+HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
+    10.0, 1_000_000.0, 1.5
 )
 
-# Transfer throughput in GiB/s (e.g. NIXL over fast fabric).
-HISTOGRAM_GIB_PER_S_BUCKETS: tuple[float, ...] = (
-    0.1,
-    0.25,
-    0.5,
-    1.0,
-    2.5,
-    5.0,
-    10.0,
-    25.0,
-    50.0,
-    100.0,
-    200.0,
-    400.0,
-    800.0,
+# Transfer throughput in GiB/s (e.g. NIXL over fast fabric). Coarser steps than
+# the other ladders: this spans four decades and only feeds transfer dashboards.
+HISTOGRAM_GIB_PER_S_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
+    0.1, 800.0, 2.0
 )
 
 # Per-metric histogram bucket boundaries, matched by exact instrument name.

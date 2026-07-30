@@ -467,6 +467,15 @@ This version is still a work in progress.
 
 ### Server metrics
 
+- Histogram bucket boundaries are now generated instead of hand-written: most
+  metrics use geometric ladders, while percentages step linearly by 5,
+  tightening to 2 above 90. Several ranges are wider too: latencies extend to 8
+  hours (previously 30 minutes) and token counts to 100M (previously 1M), so
+  slow compiles and very long contexts no longer land in the overflow bucket.
+  Every histogram now also starts with a `0` boundary. Because the individual
+  bucket edges have moved, dashboards and alerts that hardcode `le` values need
+  updating.
+
 ### `max` CLI
 
 - The entrypoint for the CLI, formerly `max.entrypoints`, has been marked as
