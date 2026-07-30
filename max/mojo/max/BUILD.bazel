@@ -16,7 +16,16 @@ pkg_files(
     srcs = [":max.docs"],
     prefix = "api/mojo",
     renames = {
-        ":max.docs": "",
+        ":max.docs": "max",
     },
+    tags = ["manual"],
+)
+
+# Renders `max` first and pre-expanded, so its subpackages read as children
+# rather than as siblings of the other top-level packages.
+pkg_files(
+    name = "category.docs",
+    srcs = ["_category_.json"],
+    prefix = "api/mojo/max",
     tags = ["manual"],
 )
