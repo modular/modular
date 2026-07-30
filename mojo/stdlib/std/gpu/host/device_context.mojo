@@ -2525,7 +2525,7 @@ struct CompletionFlag(ImplicitlyCopyable):
                 ``M::Driver::CompletionFlag`` (as packed into a graph
                 payload buffer by the producer side).
         """
-        self._handle = UnsafePointer[_CompletionFlagCpp, MutUntrackedOrigin](
+        self._handle = Pointer[_CompletionFlagCpp, MutUntrackedOrigin](
             unsafe_from_address=unsafe_from_address
         )
 
