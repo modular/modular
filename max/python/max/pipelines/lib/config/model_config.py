@@ -775,6 +775,12 @@ class MAXModelConfig(MAXModelConfigBase):
                 )
             )
 
+            # Build the HuggingFace repo handles once, here, so all repo
+            # setup (and the access check under ``HF_HUB_OFFLINE`` / local
+            # paths) is consolidated at construction rather than sprinkled
+            # across lazy property accesses.
+            self._populate_repo_handles()
+
     # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
     # own custom __getstate__/__setstate__ methods.
     def __getstate__(self) -> dict[str, Any]:
@@ -817,6 +823,67 @@ class MAXModelConfig(MAXModelConfigBase):
         private_state.setdefault("_cached_model_repo", None)
         private_state.setdefault("_config_file_section_name", "model_config")
         object.__setattr__(self, "__pydantic_private__", private_state)
+
+        # Rebuild the repo handles from the restored identity fields.
+        # __getstate__ drops them (they may cache non-picklable HF API
+        # responses), so an unpickled config -- e.g. in a worker process --
+        # gets them here rather than via a lazy write-back on first access.
+        self._populate_repo_handles()
+
+    def _populate_repo_handles(self) -> None:
+        """Build the HuggingFace repo handles from the config's identity fields.
+
+        Called at construction (and on unpickle) to consolidate repo setup in
+        one place. Placeholder configs (no ``model_path`` and no external
+        weights repo) have no repo to build and are left unset.
+        """
+        if self.model_path:
+            self._cached_model_repo = self._make_model_repo()
+        if self.huggingface_weight_repo_id:
+            self._cached_weight_repo = self._make_weight_repo()
+
+    def _make_model_repo(self) -> HuggingFaceRepo:
+        """Construct the model repo handle from the config's identity fields."""
+        return HuggingFaceRepo(
+            repo_id=self.model_path,
+            revision=self.huggingface_model_revision,
+            trust_remote_code=self.trust_remote_code,
+            subfolder=self.subfolder,
+        )
+
+    def _weight_repo_identity(self) -> tuple[str, str, str | None]:
+        """Return the ``(repo_id, revision, subfolder)`` weight-repo identity.
+
+        Weights served from an external repo have their own layout and
+        revision, distinct from the model repo.
+        """
+        weights_repo_id = self.huggingface_weight_repo_id
+        # When weights come from an external repo, don't apply the component
+        # subfolder -- the external repo has its own layout.
+        weights_from_external_repo = (
+            self._weights_repo_id is not None
+            and self._weights_repo_id != self.model_path
+        )
+        subfolder = None if weights_from_external_repo else self.subfolder
+        # A weight revision copied from the model revision names a commit in
+        # the model repo, not the external weights repo -- fall back to default.
+        revision = self.huggingface_weight_revision
+        if (
+            weights_from_external_repo
+            and revision == self.huggingface_model_revision
+        ):
+            revision = hf_hub_constants.DEFAULT_REVISION
+        return weights_repo_id, revision, subfolder
+
+    def _make_weight_repo(self) -> HuggingFaceRepo:
+        """Construct the weight repo handle from the config's identity fields."""
+        repo_id, revision, subfolder = self._weight_repo_identity()
+        return HuggingFaceRepo(
+            repo_id=repo_id,
+            revision=revision,
+            trust_remote_code=self.trust_remote_code,
+            subfolder=subfolder,
+        )
 
     @classmethod
     def from_pipeline_args(cls, args: PipelineArgs) -> Self:
@@ -960,73 +1027,26 @@ class MAXModelConfig(MAXModelConfigBase):
     def huggingface_weight_repo(self) -> HuggingFaceRepo:
         """Returns the Hugging Face repo handle for weight files.
 
-        The result is cached in a PrivateAttr to avoid recreating
-        ``HuggingFaceRepo`` instances (and triggering redundant HF API
-        calls for file listing, encoding detection, etc.) on every
-        access.  The cache is invalidated when the underlying config
-        fields change (e.g. after ``model_copy()``).
+        Built once at construction (see :meth:`_populate_repo_handles`) and
+        stored in a PrivateAttr; this getter returns it. Falls back to
+        building a fresh handle only for a never-populated config (e.g. a
+        placeholder with no ``model_path``) and never writes back.
         """
-        weights_repo_id = self.huggingface_weight_repo_id
-        # When weights come from an external repo, don't apply the
-        # component subfolder — the external repo has its own layout.
-        weights_from_external_repo = (
-            self._weights_repo_id is not None
-            and self._weights_repo_id != self.model_path
-        )
-        subfolder = None if weights_from_external_repo else self.subfolder
-        # A weight revision copied from the model revision names a commit in
-        # the model repo, not the external weights repo -- fall back to default.
-        revision = self.huggingface_weight_revision
-        if (
-            weights_from_external_repo
-            and revision == self.huggingface_model_revision
-        ):
-            revision = hf_hub_constants.DEFAULT_REVISION
-
         cached = self._cached_weight_repo
-        if (
-            cached is not None
-            and cached.repo_id == weights_repo_id
-            and cached.revision == revision
-            and cached.subfolder == subfolder
-        ):
-            return cached
-
-        repo = HuggingFaceRepo(
-            repo_id=weights_repo_id,
-            revision=revision,
-            trust_remote_code=self.trust_remote_code,
-            subfolder=subfolder,
-        )
-        self._cached_weight_repo = repo
-        return repo
+        return cached if cached is not None else self._make_weight_repo()
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_model_repo(self) -> HuggingFaceRepo:
         """Returns the Hugging Face repo handle for the model.
 
-        The result is cached in a PrivateAttr to avoid recreating
-        ``HuggingFaceRepo`` instances on every access.  The cache is
-        invalidated when the underlying config fields change.
+        Built once at construction (see :meth:`_populate_repo_handles`) and
+        stored in a PrivateAttr; this getter returns it. Falls back to
+        building a fresh handle only for a never-populated config and never
+        writes back.
         """
         cached = self._cached_model_repo
-        if (
-            cached is not None
-            and cached.repo_id == self.model_path
-            and cached.revision == self.huggingface_model_revision
-            and cached.subfolder == self.subfolder
-        ):
-            return cached
-
-        repo = HuggingFaceRepo(
-            repo_id=self.model_path,
-            revision=self.huggingface_model_revision,
-            trust_remote_code=self.trust_remote_code,
-            subfolder=self.subfolder,
-        )
-        self._cached_model_repo = repo
-        return repo
+        return cached if cached is not None else self._make_model_repo()
 
     @property
     def architecture_name(self) -> str | None:

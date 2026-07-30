@@ -36,8 +36,18 @@ from pytest import MonkeyPatch
 @pytest.fixture(autouse=True)
 def _skip_repo_access_check() -> Iterator[None]:
     """These precedence tests use placeholder repos, so skip the HF
-    existence check that ``PipelineConfig`` construction now runs."""
-    with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
+    existence check. ``validate_repo_access()`` calls the reference imported
+    into ``model_config``; ``MAXModelConfig.__init__`` eagerly builds its
+    ``HuggingFaceRepo`` handles, whose ``__post_init__`` calls the
+    ``hf_utils`` reference. Patch both."""
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=lambda repo_id, revision=None: f"/fake/cache/{repo_id}",
+        ),
+    ):
         yield
 
 

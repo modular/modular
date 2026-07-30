@@ -13,14 +13,34 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import max.tests.integration.tools.debugging_utils as dbg
+import pytest
 import transformers
 from max.experimental.nn import Module as ModuleV3
 from max.nn.layer import Module
 from max.pipelines.lib.config.model_config import MAXModelConfig
+
+
+@pytest.fixture(autouse=True)
+def _skip_repo_access_check() -> Iterator[None]:
+    """These tests build ``MAXModelConfig`` with placeholder repos.
+    ``__init__`` eagerly builds the ``HuggingFaceRepo`` handles, whose
+    ``__post_init__`` runs the HF existence check; no-op it so construction
+    stays offline."""
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=lambda repo_id, revision=None: f"/fake/cache/{repo_id}",
+        ),
+    ):
+        yield
 
 
 def test_apply_v3_hooks() -> None:

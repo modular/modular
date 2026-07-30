@@ -848,13 +848,31 @@ class PipelineConfig(ConfigFileModel):
         model_kwarg = kwargs.pop("model", None)
         draft_model_kwarg = kwargs.pop("draft_model", None)
 
+        # Fold --model-override entries into the directly-passed model/draft
+        # dicts BEFORE constructing MAXModelConfig. The constructor eagerly
+        # resolves the HuggingFace repo handle, and under HF_HUB_OFFLINE a repo
+        # cached only at a pinned SHA has no "main" snapshot — so constructing
+        # at the dataclass-default revision raises. A recipe passed via
+        # --config-file supplies the model as a dict here and pins the revision
+        # via --model-override, so that override must reach the constructor and
+        # not just a later with_override(). (The --model-path CLI path folds
+        # these overrides in _build_models_from_kwargs.)
+        component_overrides: dict[str, dict[str, Any]] = {}
+        for override_str in kwargs.get("model_override") or []:
+            component, field_name, value = cls._parse_model_override(
+                override_str
+            )
+            component_overrides.setdefault(component, {})[field_name] = value
+
         # If a MAXModelConfig (or plain dict from config file) was passed
         # directly, wrap it in a manifest.
         if model_kwarg is not None:
             if isinstance(model_kwarg, dict) and not isinstance(
                 model_kwarg, MAXModelConfig
             ):
-                model_kwarg = MAXModelConfig(**model_kwarg)
+                model_kwarg = MAXModelConfig(
+                    **{**model_kwarg, **component_overrides.get("main", {})}
+                )
             kwargs["models"] = ModelManifest({"main": model_kwarg})
 
         # Separate PipelineConfig-own fields from sub-config fields.
@@ -868,12 +886,19 @@ class PipelineConfig(ConfigFileModel):
 
         instance = cls(**pydantic_kwargs)
 
-        # Add draft model via with_override.
+        # Add draft model via with_override. Fold draft --model-override
+        # entries in before construction for the same offline-revision reason
+        # as the main model above.
         if draft_model_kwarg is not None:
             if isinstance(draft_model_kwarg, dict) and not isinstance(
                 draft_model_kwarg, MAXModelConfig
             ):
-                draft_model_kwarg = MAXModelConfig(**draft_model_kwarg)
+                draft_model_kwarg = MAXModelConfig(
+                    **{
+                        **draft_model_kwarg,
+                        **component_overrides.get("draft", {}),
+                    }
+                )
             instance.models = instance.models.with_override(
                 "draft", config=draft_model_kwarg
             )
