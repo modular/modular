@@ -69,9 +69,12 @@ import os
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import NamedTuple, TypeGuard
+from typing import TYPE_CHECKING, NamedTuple, TextIO, TypeGuard
 
 from typing_extensions import TypedDict
+
+if TYPE_CHECKING:
+    from _csv import _writer as _CsvWriter
 
 logger = logging.getLogger(__name__)
 
@@ -554,6 +557,92 @@ def write_csv(
         writer.writerow(columns)
         for row in rows:
             writer.writerow([row.get(column, "") for column in columns])
+
+
+class CsvStreamWriter:
+    """Incrementally writes result rows to a CSV as they are produced.
+
+    Unlike :func:`convert` (which buffers every input, takes the union of all
+    columns, then writes once), this writer commits each row to disk as it
+    arrives so a crash mid-run still leaves the rows written so far -- restoring
+    the streaming behavior the serving sweep had before it moved to per-run JSON
+    blobs.
+
+    The column header is fixed from the *first* row using the same
+    :func:`select_columns` policy, because a CSV header cannot be revised once
+    written. Keys that appear only in later rows are therefore dropped from the
+    streamed CSV; for the homogeneous per-iteration blobs a sweep emits the
+    first row already carries the column set, and the authoritative superset can
+    always be regenerated from the JSON blobs via :func:`convert` /
+    ``--all``. Use as a context manager so the file is always closed::
+
+        with CsvStreamWriter(path, all_columns=True) as w:
+            for json_path in produced_json_paths:
+                w.write_result(json_path)
+    """
+
+    def __init__(
+        self,
+        output_file: Path,
+        *,
+        groups: Sequence[str] = (),
+        columns: Sequence[str] = (),
+        all_columns: bool = False,
+        only: bool = False,
+        profile: ColumnProfile = SERVING_PROFILE,
+    ) -> None:
+        self._output_file = output_file
+        self._groups = groups
+        self._columns = columns
+        self._all_columns = all_columns
+        self._only = only
+        self._profile = profile
+        self._file: TextIO | None = None
+        self._writer: _CsvWriter | None = None
+        self._header: list[str] | None = None
+        self._row_count = 0
+
+    def __enter__(self) -> CsvStreamWriter:
+        self._file = open(self._output_file, "w", newline="")
+        self._writer = csv.writer(self._file)
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._file is not None:
+            self._file.close()
+        if self._header is not None:
+            logger.info(
+                "Streamed %d row(s) and %d column(s) to %s",
+                self._row_count,
+                len(self._header),
+                self._output_file,
+            )
+
+    def write_result(self, path: Path) -> None:
+        """Flattens a result JSON file and streams each of its rows to the CSV."""
+        for row in load_result_rows(path):
+            self.write_row(row)
+
+    def write_row(self, row: Row) -> None:
+        """Streams a single flattened row, fixing the header on the first call."""
+        if self._writer is None or self._file is None:
+            raise RuntimeError(
+                "CsvStreamWriter must be used as a context manager"
+            )
+        if self._header is None:
+            self._header = select_columns(
+                list(row),
+                groups=self._groups,
+                columns=self._columns,
+                all_columns=self._all_columns,
+                only=self._only,
+                profile=self._profile,
+            )
+            self._writer.writerow(self._header)
+        self._writer.writerow([row.get(column, "") for column in self._header])
+        # Flush per row so a crash mid-run leaves the completed rows on disk.
+        self._file.flush()
+        self._row_count += 1
 
 
 def convert(
