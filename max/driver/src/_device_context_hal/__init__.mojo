@@ -46,7 +46,7 @@ from std.memory import (
 from std.memory.unsafe import bitcast
 from std.pathlib import Path
 from std.utils import Variant
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.memory.pointer import AddressSpace
 from std.os import abort, getenv
 from std.reflection import call_location, reflect, SourceLocation
@@ -2675,13 +2675,17 @@ struct DeviceFunction[
             for i in range(num_captures + num_passed_args):
                 dense_args_sizes[i] = 0
         else:
-            dense_args_addrs = stack_allocation[
-                num_captures_static + num_passed_args,
-                OpaquePointer[MutAnyOrigin],
-            ]()
-            dense_args_sizes = stack_allocation[
-                num_captures_static + num_passed_args, UInt64
-            ]()
+            dense_args_addrs = UnsafePointer(
+                unsafe_stack_allocation[
+                    num_captures_static + num_passed_args,
+                    OpaquePointer[MutAnyOrigin],
+                ]()
+            )
+            dense_args_sizes = UnsafePointer(
+                unsafe_stack_allocation[
+                    num_captures_static + num_passed_args, UInt64
+                ]()
+            )
             for i in range(num_captures_static + num_passed_args):
                 dense_args_sizes[i] = 0
 
@@ -2851,12 +2855,16 @@ struct DeviceFunction[
             for i in range(num_captures + num_args):
                 dense_args_sizes[i] = 0
         else:
-            dense_args_addrs = stack_allocation[
-                num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
-            ]()
-            dense_args_sizes = stack_allocation[
-                num_captures_static + num_args, UInt64
-            ]()
+            dense_args_addrs = UnsafePointer(
+                unsafe_stack_allocation[
+                    num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
+                ]()
+            )
+            dense_args_sizes = UnsafePointer(
+                unsafe_stack_allocation[
+                    num_captures_static + num_args, UInt64
+                ]()
+            )
             for i in range(num_captures_static + num_args):
                 dense_args_sizes[i] = 0
 
@@ -3004,12 +3012,16 @@ struct DeviceFunction[
             for i in range(num_captures + num_args):
                 dense_args_sizes[i] = 0
         else:
-            dense_args_addrs = stack_allocation[
-                num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
-            ]()
-            dense_args_sizes = stack_allocation[
-                num_captures_static + num_args, UInt64
-            ]()
+            dense_args_addrs = UnsafePointer(
+                unsafe_stack_allocation[
+                    num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
+                ]()
+            )
+            dense_args_sizes = UnsafePointer(
+                unsafe_stack_allocation[
+                    num_captures_static + num_args, UInt64
+                ]()
+            )
             for i in range(num_captures_static + num_args):
                 dense_args_sizes[i] = 0
 
@@ -3212,10 +3224,12 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
             )
 
         comptime num_args = Ts.length
-        var dense_args_addrs = stack_allocation[
-            num_args + 1, OpaquePointer[MutAnyOrigin]
-        ]()
-        var dense_args_sizes = stack_allocation[num_args + 1, UInt64]()
+        var dense_args_addrs = UnsafePointer(
+            unsafe_stack_allocation[num_args + 1, OpaquePointer[MutAnyOrigin]]()
+        )
+        var dense_args_sizes = UnsafePointer(
+            unsafe_stack_allocation[num_args + 1, UInt64]()
+        )
 
         comptime for i in range(num_args):
             dense_args_addrs[i] = (
@@ -3284,10 +3298,12 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         _check_device_context_hal_only_supported_exec_config(execution_config)
 
         comptime num_args = Ts.length
-        var dense_args_addrs = stack_allocation[
-            num_args + 1, OpaquePointer[MutAnyOrigin]
-        ]()
-        var dense_args_sizes = stack_allocation[num_args + 1, UInt64]()
+        var dense_args_addrs = UnsafePointer(
+            unsafe_stack_allocation[num_args + 1, OpaquePointer[MutAnyOrigin]]()
+        )
+        var dense_args_sizes = UnsafePointer(
+            unsafe_stack_allocation[num_args + 1, UInt64]()
+        )
 
         comptime for i in range(num_args):
             dense_args_addrs[i] = (
