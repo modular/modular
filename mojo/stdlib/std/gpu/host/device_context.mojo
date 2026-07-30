@@ -1000,7 +1000,7 @@ struct DevicePointer[
         # the buffer; force mutable to preserve this helper's `MutAnyOrigin`
         # contract.
         return (
-            (self._buffer[].unsafe_ptr() + self._offset)
+            (self._buffer[].unsafe_ptr().unsafe_offset(self._offset))
             .unsafe_mut_cast[True]()
             .as_unsafe_any_origin()
         )

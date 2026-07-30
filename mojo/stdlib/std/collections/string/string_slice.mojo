@@ -330,7 +330,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
-        var ptr = unsafe_from_utf8_ptr.bitcast[Byte]()
+        var ptr = unsafe_from_utf8_ptr.unsafe_bitcast[Byte]()
         var byte_slice = Span(
             unsafe_ptr=ptr,
             length=Int(_unsafe_strlen(ptr)),
