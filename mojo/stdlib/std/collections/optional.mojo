@@ -207,7 +207,7 @@ struct Optional[T: AnyType](
         """
         self._value = Self._type(value^)
 
-    def __init__[F: def() -> Self.T](out self, *, call: F):
+    def __init__[F: def() -> Self.T](out self, *, init_with: F):
         """Construct an `Optional` holding a value produced in place by `call`.
 
         The value returned by `call` is constructed directly into the
@@ -215,7 +215,7 @@ struct Optional[T: AnyType](
         populate an `Optional` whose element type is not `Movable`. For a
         `Movable` element type, prefer the value constructor.
 
-        The `call` keyword is required to disambiguate from the value
+        The `init_with` keyword is required to disambiguate from the value
         constructor: a closure is itself a storable value, so a positional
         `Optional(f)` would store `f` rather than call it.
 
@@ -223,7 +223,7 @@ struct Optional[T: AnyType](
             F: The type of the initializer closure.
 
         Args:
-            call: A closure returning the value to store. Called exactly once.
+            init_with: A closure returning the value to store. Called exactly once.
 
         Examples:
 
@@ -235,21 +235,21 @@ struct Optional[T: AnyType](
         def make() -> Pinned:
             return Pinned(7)
 
-        var opt = Optional[Pinned](call=make)
+        var opt = Optional[Pinned](init_with=make)
         print(opt.value().value)  # Output: 7
         ```
         """
-        # MOCO-4408: forwarding the closure into `Variant`'s `call=` ctor, which
+        # MOCO-4408: forwarding the closure into `Variant`'s `init_with=` ctor, which
         # infers the stored type from the closure return, cannot resolve that
         # type from an abstract `def() -> Self.T`. `Self.T` is fixed here, so
-        # pass it explicitly to the storage primitives and call `call()` at the
+        # pass it explicitly to the storage primitives and init_with `init_with()` at the
         # emplacement site instead.
         self._value = Self._type(unsafe_uninitialized=())
         self._value._unsafe_set_active[Self.T]()
-        # TODO(MSTDL-2924): Replace with `Pointer.unsafe_write(call=)`.
+        # TODO(MSTDL-2924): Replace with `Pointer.unsafe_write(init_with=)`.
         __get_address_as_uninit_lvalue(
             self._value._unsafe_ptr[Self.T]()._mlir_value
-        ) = call()
+        ) = init_with()
 
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need

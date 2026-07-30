@@ -519,13 +519,13 @@ This version is still a work in progress.
   rather than printing only the error message.
 
 - `Optional` and `Variant` now accept element types that are not `Movable`.
-  Their element types are now bounded by `AnyType`, with `Movable`,
-  `Copyable`, and related conformances conditional on the element types. A
-  non-`Movable` value can be stored in place with the new closure-based
-  `call=` constructors and `Variant.set()` overload, which construct the value
-  directly into storage (placement-new) rather than moving it. `deinit_with()`
-  on both types also no longer requires `Movable`, so element types that are
-  neither `Movable` nor `ImplicitlyDeletable` are fully usable:
+  Their element types are now bounded by `AnyType`, with `Movable`, `Copyable`,
+  and related conformances conditional on the element types. A non-`Movable`
+  value can be stored in place with the new closure-based `init_with=`
+  constructors and `Variant.set()` overload, which construct the value directly
+  into storage (placement-new) rather than moving it. `deinit_with()` on both
+  types also no longer requires `Movable`, so element types that are neither
+  `Movable` nor `ImplicitlyDeletable` are fully usable:
 
   ```mojo
   @fieldwise_init
