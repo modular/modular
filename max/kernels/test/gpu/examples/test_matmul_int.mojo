@@ -18,7 +18,7 @@ from std.gpu import AddressSpace, barrier, block_idx, global_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.memory import (
     unsafe_memset_zero,
-    stack_allocation,
+    unsafe_stack_allocation,
 )
 from layout import Coord, Idx, TileTensor, row_major
 
@@ -49,18 +49,20 @@ def matmul(
     # NOTE: A and C are column major, B is row major.
 
     # Allocate B array into shared memory for tiling.
-    var b_shared = stack_allocation[
-        TILE_SZ_RATIO * TILE_SZ_B,
-        DType.int,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var b_shared = UnsafePointer(
+        unsafe_stack_allocation[
+            TILE_SZ_RATIO * TILE_SZ_B,
+            DType.int,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     # Thread indexing offsets.
     var row = global_idx.x
     var col = block_idx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
-    var c_reg = stack_allocation[TILE_SZ_B, DType.int]()
+    var c_reg = UnsafePointer(unsafe_stack_allocation[TILE_SZ_B, DType.int]())
 
     unsafe_memset_zero(c_reg, TILE_SZ_B)
 

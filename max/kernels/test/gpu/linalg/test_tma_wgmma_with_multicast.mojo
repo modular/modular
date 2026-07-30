@@ -38,7 +38,7 @@ from layout.tma_async import (
     _idx_product,
     create_tma_tile,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -134,12 +134,14 @@ def multicast_tma_wgmma_kernel[
     var rank_m = block_rank / CLUSTER_N
     var rank_n = block_rank % CLUSTER_N
 
-    mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=8,
-    ]()
+    mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+    )
     if thread_idx.x == 0:
         mbar[0].init()
 

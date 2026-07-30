@@ -22,7 +22,7 @@ from std.gpu.memory import fence_mbarrier_init
 from std.gpu.sync import syncwarp
 from layout.tma_async import PipelineState, SharedMemBarrier
 from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
@@ -32,40 +32,50 @@ from std.utils.static_tuple import StaticTuple
 def test_kernel[
     num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
 ](cluster_dim: StaticTuple[Int32, 3]):
-    var clc_response = stack_allocation[
-        num_stages,
-        UInt128,
-        address_space=AddressSpace.SHARED,
-        alignment=16,
-    ]()
+    var clc_response = UnsafePointer(
+        unsafe_stack_allocation[
+            num_stages,
+            UInt128,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+        ]()
+    )
 
-    var clc_full_mbar = stack_allocation[
-        num_stages,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=16,
-    ]()
+    var clc_full_mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            num_stages,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+        ]()
+    )
 
-    var clc_empty_mbar = stack_allocation[
-        num_stages,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=16,
-    ]()
+    var clc_empty_mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            num_stages,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+        ]()
+    )
 
-    var clc_throttle_full_mbar = stack_allocation[
-        num_stages,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=16,
-    ]()
+    var clc_throttle_full_mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            num_stages,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+        ]()
+    )
 
-    var clc_throttle_empty_mbar = stack_allocation[
-        num_stages,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=16,
-    ]()
+    var clc_throttle_empty_mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            num_stages,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+        ]()
+    )
 
     comptime SCHEDULER_THREADS = 32
     comptime TMA_LOAD_THREADS = 32

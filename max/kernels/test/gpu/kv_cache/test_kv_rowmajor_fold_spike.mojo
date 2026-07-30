@@ -83,7 +83,7 @@ from std.gpu.memory import (
     external_memory,
 )
 from std.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
-from std.memory import unsafe_memset_zero, stack_allocation
+from std.memory import unsafe_memset_zero, unsafe_stack_allocation
 from std.sys import has_nvidia_gpu_accelerator, size_of
 from std.utils.index import Index, IndexList
 
@@ -191,12 +191,14 @@ def _rowmajor_fold_spike_kernel[
     var smem_ref = smem_base
     var smem_test = smem_base + smem_elems
 
-    var mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        alignment=8,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            alignment=8,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     # All lanes compute the elect predicate; `tma_copy_k` (issue-site path)
     # predicates each TMA in-PTX on it, so it must be uniform across the warp.

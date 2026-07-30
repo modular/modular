@@ -35,7 +35,7 @@ from layout.tma_async import (
     TMATensorTile,
     create_tensor_tile,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -177,12 +177,14 @@ def tma_wgmma_kernel[
     comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
-        alignment=8,
-    ]()
+    mbar = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            SharedMemBarrier,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+    )
     if thread_idx.x == 0:
         mbar[0].init()
 

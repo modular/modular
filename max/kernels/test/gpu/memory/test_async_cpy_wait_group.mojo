@@ -22,7 +22,7 @@ from std.gpu.memory import (
     async_copy_wait_all,
     async_copy_wait_group,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 
@@ -33,9 +33,11 @@ def copy_via_shared(
     var thread_id = thread_idx.x
     var mem_buff: UnsafePointer[
         Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ] = stack_allocation[
-        16, Float32, address_space=AddressSpace.SHARED
-    ]().as_unsafe_any_origin()
+    ] = UnsafePointer(
+        unsafe_stack_allocation[
+            16, Float32, address_space=AddressSpace.SHARED
+        ]()
+    ).as_unsafe_any_origin()
     var src_global: UnsafePointer[
         Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
     ] = src.address_space_cast[AddressSpace.GLOBAL]()
@@ -90,9 +92,11 @@ def copy_with_src_size(
     dst: UnsafePointer[Float32, MutAnyOrigin],
     src_size: Int,
 ):
-    var smem = stack_allocation[
-        8, DType.float32, address_space=AddressSpace.SHARED
-    ]()
+    var smem = UnsafePointer(
+        unsafe_stack_allocation[
+            8, DType.float32, address_space=AddressSpace.SHARED
+        ]()
+    )
 
     for i in range(8):
         smem[i] = -1.0
@@ -120,9 +124,11 @@ def copy_with_non_zero_fill[
     src: UnsafePointer[BFloat16, ImmutAnyOrigin],
     dst: UnsafePointer[BFloat16, MutAnyOrigin],
 ):
-    var smem = stack_allocation[
-        smem_size, DType.bfloat16, address_space=AddressSpace.SHARED
-    ]()
+    var smem = UnsafePointer(
+        unsafe_stack_allocation[
+            smem_size, DType.bfloat16, address_space=AddressSpace.SHARED
+        ]()
+    )
 
     for i in range(smem_size):
         smem[i] = 0

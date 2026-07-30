@@ -19,7 +19,7 @@ from std.gpu.host.compile import _compile_code
 from std.gpu.host.info import MI355X
 from std.gpu.intrinsics import AMDBufferResource
 from std.gpu.memory import CacheOperation
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal, assert_true
 
 comptime size = 257
@@ -42,9 +42,11 @@ def kernel[
 def kernel_lds[
     dtype: DType, width: Int
 ](a: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
-    var a_shared = stack_allocation[
-        size, dtype, address_space=AddressSpace.SHARED
-    ]()
+    var a_shared = UnsafePointer(
+        unsafe_stack_allocation[
+            size, dtype, address_space=AddressSpace.SHARED
+        ]()
+    )
 
     var aligned_size = align_down(size, width)
     var buffer = AMDBufferResource(a, size_clip)
