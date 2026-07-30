@@ -13,7 +13,8 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from functools import wraps
 from typing import Any, TypeVar
 from unittest.mock import MagicMock, patch
@@ -28,7 +29,12 @@ from max.pipelines.lib import (
     SupportedEncoding,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.hf_utils import (
+    HuggingFaceRepo,
+)
+from max.pipelines.weights.hf_utils import (
+    generate_local_model_path as _real_generate_local_model_path,
+)
 from transformers import AutoConfig
 from typing_extensions import ParamSpec
 
@@ -36,6 +42,22 @@ from .memory_estimation import mock_estimate_memory_footprint
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+
+
+def _offline_safe_local_model_path(repo_id: str, revision: str) -> str:
+    """Resolve a real cached repo's local snapshot; fall back to a fake path.
+
+    ``MAXModelConfig`` construction resolves the offline snapshot under
+    ``HF_HUB_OFFLINE``. Real cached repos resolve normally so real-repo tests
+    keep working; uncached/placeholder repos get a fake path that preserves the
+    repo id so construction stays offline instead of raising
+    ``LocalEntryNotFoundError``. ``_real_generate_local_model_path`` is captured
+    at import so patching the module attribute never recurses.
+    """
+    try:
+        return _real_generate_local_model_path(repo_id, revision)
+    except Exception:
+        return f"/fake/cache/{repo_id}"
 
 
 class DummyMAXModelConfig(MAXModelConfig):
@@ -316,6 +338,53 @@ def mock_pipeline_config_hf_dependencies(
     )
 
 
+@contextmanager
+def patched_hf_construction() -> Iterator[None]:
+    """No-op the HuggingFace network calls that ``MAXModelConfig`` construction
+    makes, so a config referencing a fake/uncached repo can be *constructed*
+    offline -- including under ``HF_HUB_OFFLINE`` (as CI runs).
+
+    ``MAXModelConfig.__init__`` eagerly builds its ``HuggingFaceRepo`` handles,
+    whose ``__post_init__`` either runs ``validate_hf_repo_access`` (online) or
+    resolves the local snapshot via ``generate_local_model_path`` (offline, the
+    path CI hits). ``validate_repo_access()`` uses the ``validate_hf_repo_access``
+    reference imported into ``model_config``. All are patched; the offline
+    snapshot resolves to a fake local path that preserves the repo id.
+    """
+    with (
+        patch(
+            "max.pipelines.weights.hf_utils.validate_hf_repo_access",
+            return_value=None,
+        ),
+        patch(
+            "max.pipelines.lib.config.model_config.validate_hf_repo_access",
+            return_value=None,
+        ),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=_offline_safe_local_model_path,
+        ),
+    ):
+        yield
+
+
+def mock_hf_repo_access(func: Callable[_P, _R]) -> Callable[_P, _R]:
+    """Decorator form of :func:`patched_hf_construction`.
+
+    Lets a test construct a config against a fake/uncached repo offline.
+    Unlike :func:`mock_pipeline_config_resolve`, this does not touch
+    ``resolve``/memory planning, so tests that exercise real resolution
+    behavior against a fake repo can still use it.
+    """
+
+    @wraps(func)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        with patched_hf_construction():
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
 # This is a helper decorator to mock the PipelineConfig.resolve() method.
 # In practice, it is used to skip all the other validation and resolution steps.
 # We're just testing if the config fields are set correctly.
@@ -333,14 +402,7 @@ def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
                 "max.pipelines.lib.registry._run_memory_planning",
                 return_value=_MemoryPlan(max_batch_size=1, footprint=0),
             ),
-            patch(
-                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
-                return_value=None,
-            ),
-            patch(
-                "max.pipelines.weights.hf_utils.validate_hf_repo_access",
-                return_value=None,
-            ),
+            patched_hf_construction(),
         ):
             return func(*args, **kwargs)
 

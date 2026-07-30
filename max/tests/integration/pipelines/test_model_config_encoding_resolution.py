@@ -44,7 +44,12 @@ from max.pipelines.lib.config.model_config import (
     _select_quantization_encoding,
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
-from max.pipelines.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.hf_utils import (
+    HuggingFaceRepo,
+)
+from max.pipelines.weights.hf_utils import (
+    generate_local_model_path as _real_generate_local_model_path,
+)
 
 _DEFAULT_ENCODING: SupportedEncoding = "bfloat16"
 
@@ -197,6 +202,31 @@ def _resolve_encoding_and_weight_path(
 # ---------------------------------------------------------------------------
 # Category A: Single-Encoding Repos — Encoding Inference
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _offline_hf_construction() -> Iterator[None]:
+    """Keep ``MAXModelConfig`` construction offline (CI runs
+    ``HF_HUB_OFFLINE=1``): ``__init__`` eagerly builds the HuggingFace repo
+    handles. Real cached repos resolve normally; uncached/placeholder repos
+    get a fake path.
+    """
+
+    def _gen(repo_id: str, revision: str) -> str:
+        try:
+            return _real_generate_local_model_path(repo_id, revision)
+        except Exception:
+            return f"/fake/cache/{repo_id}"
+
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=_gen,
+        ),
+    ):
+        yield
 
 
 class TestSingleEncodingInference:

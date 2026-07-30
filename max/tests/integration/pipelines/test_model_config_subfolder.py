@@ -16,9 +16,11 @@
 import os
 import struct
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
 from huggingface_hub import constants as hf_hub_constants
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import (
@@ -30,6 +32,23 @@ from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from test_common.mocks import (
     mock_pipeline_config_resolve,
 )
+
+
+@pytest.fixture(autouse=True)
+def _skip_repo_access_check() -> Iterator[None]:
+    """These tests use placeholder repos. ``MAXModelConfig.__init__`` eagerly
+    builds its ``HuggingFaceRepo`` handles, whose ``__post_init__`` runs the HF
+    existence check via the ``hf_utils`` reference; ``validate_repo_access()``
+    uses the reference imported into ``model_config``. Patch both."""
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=lambda repo_id, revision=None: f"/fake/cache/{repo_id}",
+        ),
+    ):
+        yield
 
 
 class TestMAXModelConfigSubfolder:

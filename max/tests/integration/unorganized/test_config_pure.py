@@ -45,6 +45,7 @@ from max.pipelines.modeling.types.task import PipelineTask
 from max.pipelines.speculative.config import SpeculativeConfig
 from test_common.mocks import (
     mock_estimate_memory_footprint,
+    mock_hf_repo_access,
     mock_pipeline_config_resolve,
 )
 from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH, DUMMY_LLAMA_ARCH
@@ -617,6 +618,7 @@ class TestSpeculativeArchitectureOverride:
 class TestDraftModelDefaultsInheritance:
     """Tests that draft model inherits certain defaults from the target model."""
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_inherits_trust_remote_code(
         self,
     ) -> None:
@@ -631,6 +633,7 @@ class TestDraftModelDefaultsInheritance:
 
         assert draft_kwargs["trust_remote_code"] is True
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_does_not_inherit_false_trust_remote_code(
         self,
     ) -> None:
@@ -646,6 +649,7 @@ class TestDraftModelDefaultsInheritance:
         # trust_remote_code should not be added when target has False
         assert "trust_remote_code" not in draft_kwargs
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_preserves_explicit_trust_remote_code(
         self,
     ) -> None:
@@ -664,6 +668,7 @@ class TestDraftModelDefaultsInheritance:
         # Explicit False should be preserved
         assert draft_kwargs["trust_remote_code"] is False
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_inherits_device_specs(self) -> None:
         """_apply_draft_model_defaults inherits device_specs from target."""
         target_devices = [DeviceSpec.cpu()]
@@ -677,6 +682,7 @@ class TestDraftModelDefaultsInheritance:
 
         assert draft_kwargs["device_specs"] == target_devices
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_preserves_explicit_device_specs(
         self,
     ) -> None:
@@ -696,6 +702,7 @@ class TestDraftModelDefaultsInheritance:
 
         assert draft_kwargs["device_specs"] == draft_devices
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_inherits_data_parallel_degree(
         self,
     ) -> None:
@@ -710,6 +717,7 @@ class TestDraftModelDefaultsInheritance:
 
         assert draft_kwargs["data_parallel_degree"] == 8
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_preserves_explicit_data_parallel_degree(
         self,
     ) -> None:
@@ -727,6 +735,7 @@ class TestDraftModelDefaultsInheritance:
 
         assert draft_kwargs["data_parallel_degree"] == 4
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_does_not_inherit_quantization_encoding(
         self,
     ) -> None:
@@ -895,6 +904,7 @@ class TestFloat32WeightFallbackScoping:
         assert cast_from == "float32"
         assert cast_to == "bfloat16"
 
+    @mock_hf_repo_access
     def test_no_given_encoding_f32_only_repo_casts_to_bfloat16(self) -> None:
         """Architecture-level resolution alone still casts f32 -> bf16.
 
@@ -2321,6 +2331,7 @@ def _backend_arch(default: str | None) -> SimpleNamespace:
     )
 
 
+@mock_hf_repo_access
 def test_resolve_backend__unset_normal_arch_defaults_to_xgrammar() -> None:
     """Unset + an arch with no backend preference resolves to the global
     default ``xgrammar``."""
@@ -2336,6 +2347,7 @@ def test_resolve_backend__unset_normal_arch_defaults_to_xgrammar() -> None:
     assert config.sampling.structured_output_backend == "xgrammar"
 
 
+@mock_hf_repo_access
 def test_resolve_backend__unset_pinned_arch_uses_arch_default() -> None:
     """Unset + an arch that pins ``llguidance`` (e.g. Gemma 3 / MiniMax-M2)
     resolves to the arch default."""
@@ -2350,6 +2362,7 @@ def test_resolve_backend__unset_pinned_arch_uses_arch_default() -> None:
     assert config.sampling.structured_output_backend == "llguidance"
 
 
+@mock_hf_repo_access
 def test_resolve_backend__explicit_xgrammar_overrides_pinned_arch() -> None:
     """Regression: an explicit ``xgrammar`` on a ``llguidance``-pinned arch is
     honored, not silently overwritten. This is the precedence bug this fix
@@ -2366,6 +2379,7 @@ def test_resolve_backend__explicit_xgrammar_overrides_pinned_arch() -> None:
     assert config.sampling.structured_output_backend == "xgrammar"
 
 
+@mock_hf_repo_access
 def test_resolve_backend__explicit_llguidance_on_normal_arch_is_honored() -> (
     None
 ):
@@ -2383,6 +2397,7 @@ def test_resolve_backend__explicit_llguidance_on_normal_arch_is_honored() -> (
     assert config.sampling.structured_output_backend == "llguidance"
 
 
+@mock_hf_repo_access
 def test_resolve_backend__unset_no_arch_defaults_to_xgrammar() -> None:
     """Unset + ``arch=None`` exercises the unconditional global fallback."""
     config = PipelineConfig(
@@ -2394,6 +2409,7 @@ def test_resolve_backend__unset_no_arch_defaults_to_xgrammar() -> None:
     assert config.sampling.structured_output_backend == "xgrammar"
 
 
+@mock_hf_repo_access
 def test_from_args__unset_backend_preserves_none_sentinel() -> None:
     """Regression: ``PipelineArgs`` with no ``--structured-output-backend``
     must carry the ``None`` sentinel into the built ``PipelineConfig``.
@@ -2412,6 +2428,7 @@ def test_from_args__unset_backend_preserves_none_sentinel() -> None:
     assert config.sampling.structured_output_backend is None
 
 
+@mock_hf_repo_access
 def test_from_args__unset_backend_resolves_to_xgrammar() -> None:
     """End-to-end guard for the reported bug: a model launched without an
     explicit backend and no arch pin ends up on ``xgrammar``, not
@@ -2427,6 +2444,7 @@ def test_from_args__unset_backend_resolves_to_xgrammar() -> None:
     assert config.sampling.structured_output_backend == "xgrammar"
 
 
+@mock_hf_repo_access
 def test_from_args__explicit_backend_is_preserved() -> None:
     """An explicit ``--structured-output-backend`` value survives
     ``from_args`` and wins over resolution."""
