@@ -189,7 +189,7 @@ trait PluginHooks:
                 width: Int, rank: Int, alignment: Int = 1
             ](IndexList[rank]) -> None
         ],
-        shape: IndexList[rank, ...],
+        shape: IndexList[rank, element_type=_],
         ctx: DeviceContext,
     ) raises:
         """Per-target plugin hook for `elementwise[...]`.
