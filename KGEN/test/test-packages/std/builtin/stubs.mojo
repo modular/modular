@@ -861,14 +861,10 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         +Self.type,
     ]
 
-    comptime _TabulateIntToValueGeneratorType[ToT: AnyType] = __generator_type[
-        Idx: Int
-    ] ToT
-
     comptime _IndexToIntTabulateWrap[
         ToT: AnyType,
         //,
-        ToWrap: Self._TabulateIntToValueGeneratorType[ToT],
+        ToWrap: __generator_type[Idx: Int] ToT,
         idx: __mlir_type.index,
     ]: ToT = ToWrap[Int(mlir_value=idx)]
 
@@ -876,7 +872,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         type: AnyType,
         //,
         count: Int,
-        Mapper: Self._TabulateIntToValueGeneratorType[type],
+        Mapper: __generator_type[Idx: Int] type,
     ] = ParameterList[
         type=type,
         __mlir_attr[
@@ -962,7 +958,7 @@ struct TypeList[
         ToT: Trait,
         //,
         count: Int,
-        Mapper: _TabulateIntToTypeGeneratorType[Trait, ToT],
+        Mapper: __generator_type[Idx: Int] Trait,
     ] = TypeList[
         Trait=Trait,
         __mlir_attr[
@@ -985,20 +981,16 @@ struct TypeList[
         Trait=Trait, ToT=type, count, Self._SplatTypeTabulator[Trait, type, _]
     ]
 
-    comptime _TypeToTypeGenerator[ToTrait: type_of(AnyType)] = __generator_type[
-        From: Self.Trait
-    ] ToTrait
-
     comptime _MapTabulator[
         ToTrait: type_of(AnyType),
-        Mapper: Self._TypeToTypeGenerator[ToTrait],
+        Mapper: __generator_type[From: Self.Trait] ToTrait,
         idx: Int,
     ]: ToTrait = Mapper[Self.__getitem_param__[idx]]
 
     comptime map[
         ToTrait: type_of(AnyType),
         //,
-        Mapper: Self._TypeToTypeGenerator[ToTrait],
+        Mapper: __generator_type[From: Self.Trait] ToTrait,
     ] = TypeList.tabulate[
         Trait=ToTrait,
         Self.length,
@@ -1006,15 +998,11 @@ struct TypeList[
     ]
 
 
-comptime _TabulateIntToTypeGeneratorType[
-    Trait: type_of(AnyType), ToT: Trait
-] = __generator_type[Idx: Int] Trait
-
 comptime _IndexToIntTypeTabulateWrap[
     Trait: type_of(AnyType),
     ToT: Trait,
     //,
-    ToWrap: _TabulateIntToTypeGeneratorType[Trait, ToT],
+    ToWrap: __generator_type[Idx: Int] Trait,
     idx: __mlir_type.index,
 ] = ToWrap[Int(mlir_value=idx)]
 

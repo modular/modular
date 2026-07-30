@@ -1767,13 +1767,7 @@ comptime InputTensor = ManagedTensorSlice[IOSpec[IO()]()]
 # This specifies the type for a generator that generate a generator type.
 comptime GeneratorTypeGeneratorType[
     From: type_of(AnyType), To: type_of(AnyType)
-] = __mlir_type[
-    `!lit.generator<<"From": `,
-    From,
-    `>`,
-    To,
-    `>`,
-]
+] = __generator_type[From: From] To
 
 comptime Generator[From: Copyable] = Int
 
