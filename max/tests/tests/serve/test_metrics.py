@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+import itertools
 import pickle
 from unittest import mock
 
@@ -177,6 +178,57 @@ def test_all_histograms_have_explicit_buckets() -> None:
     assert not stale, (
         f"HISTOGRAM_BUCKETS_BY_METRIC references non-histograms: {sorted(stale)}"
     )
+
+
+def test_histogram_buckets_are_strictly_increasing() -> None:
+    """OTEL rejects unsorted boundaries, and duplicates waste Prometheus series.
+
+    The log-spaced ladders round to three significant digits, so this also
+    guards against a future range/ratio change rounding two boundaries together.
+    """
+    for name, buckets in common.HISTOGRAM_BUCKETS_BY_METRIC.items():
+        assert all(lo < hi for lo, hi in itertools.pairwise(buckets)), (
+            f"{name} boundaries are not strictly increasing: {buckets}"
+        )
+
+
+def test_log_spaced_bucket_ranges() -> None:
+    """Pins the endpoints and step ratio of each log-spaced ladder.
+
+    Latency reaches 8 hours so slow compiles and long agentic requests land in a
+    real bucket rather than the overflow bucket, and generic counts reach 100M
+    for batch-level token totals over very long contexts. A coarser step ratio
+    than these would make quantile interpolation too imprecise to act on.
+    """
+    for buckets, first, last, max_ratio in (
+        (common.HISTOGRAM_LATENCY_BUCKETS_MS, 1.0, 8 * 60 * 60 * 1000.0, 1.5),
+        (common.HISTOGRAM_COUNT_BUCKETS, 1.0, 100_000_000.0, 1.5),
+        (common.HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS, 10.0, 1_000_000.0, 1.5),
+        (common.HISTOGRAM_BATCH_SIZE_BUCKETS, 1.0, 512.0, 1.5),
+        (common.HISTOGRAM_GIB_PER_S_BUCKETS, 0.1, 800.0, 2.0),
+    ):
+        # The leading 0 keeps exact zeros out of the smallest real bucket.
+        assert buckets[0] == 0.0
+        assert buckets[1] == first
+        assert buckets[-1] == last
+        # Checked on the ladder as a whole, since rounding boundaries to three
+        # significant digits nudges individual steps either side of the ratio.
+        ratio = (buckets[-1] / buckets[1]) ** (1 / (len(buckets) - 2))
+        assert ratio <= max_ratio
+
+
+def test_percent_buckets_tighten_near_saturation() -> None:
+    """Percent buckets step linearly by 5, and by 2 above 90.
+
+    Utilization (KV cache usage, occupancy, hit rates) is only actionable near
+    saturation, so a geometric ladder would put the resolution at the wrong end
+    and leave 85% and 99% sharing a bucket.
+    """
+    buckets = common.HISTOGRAM_PERCENT_BUCKETS
+    assert (buckets[0], buckets[-1]) == (0.0, 100.0)
+    pairs = list(itertools.pairwise(buckets))
+    assert {hi - lo for lo, hi in pairs if hi <= 90.0} == {5.0}
+    assert {hi - lo for lo, hi in pairs if hi > 90.0} == {2.0}
 
 
 def test_block_level_metrics_are_gauges() -> None:
