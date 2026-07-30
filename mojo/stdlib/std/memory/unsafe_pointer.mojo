@@ -140,14 +140,12 @@ def unsafe_cast[
     origin: Origin[mut=mut] = from_origin,
     address_space: AddressSpace = from_address_space,
 ](
-    pointer: Optional[
-        UnsafePointer[from_type, from_origin, address_space=from_address_space]
+    pointer: OptionalPointer[
+        from_type, from_origin, address_space=from_address_space
     ],
-    out result: Optional[
-        UnsafePointer[Type, origin, address_space=address_space]
-    ],
+    out result: OptionalPointer[Type, origin, address_space=address_space],
 ):
-    result = UnsafePointer(to=pointer).bitcast[type_of(result)]()[]
+    result = Pointer[_safe=True](to=pointer).unsafe_bitcast[type_of(result)]()[]
 
 
 @always_inline
@@ -165,13 +163,18 @@ def unsafe_cast[
     address_space: AddressSpace = from_address_space,
 ](
     pointer: OptionalReg[
-        UnsafePointer[from_type, from_origin, address_space=from_address_space]
+        Pointer[
+            from_type,
+            from_origin,
+            address_space=from_address_space,
+            _safe=True,
+        ]
     ],
     out result: OptionalReg[
-        UnsafePointer[Type, origin, address_space=address_space]
+        Pointer[Type, origin, address_space=address_space, _safe=True]
     ],
 ):
-    result = UnsafePointer(to=pointer).bitcast[type_of(result)]()[]
+    result = Pointer[_safe=True](to=pointer).unsafe_bitcast[type_of(result)]()[]
 
 
 @always_inline("nodebug")
