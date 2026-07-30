@@ -702,8 +702,11 @@ void ASTDecl::setBodyDecorators(ArrayRef<ExprNode *> decorators) {
 
 struct SharedState::ModuleState {
   ModuleState(ASTDecl *decl = nullptr) : decl(decl) {}
-  ModuleState(ASTDecl *decl, StringRef sourcePath)
-      : decl(decl), sourcePath(sourcePath.str()) {}
+  ModuleState(ASTDecl *decl, const ModuleSpec &spec)
+      : decl(decl), kind(spec.kind) {
+    if (!spec.isPrecompiled())
+      sourcePath = spec.path.string();
+  }
   ~ModuleState() {
     // Drop any remaining operations in the reader to avoid dangling
     // unmaterialized operations. If these were needed, they would have been
@@ -727,6 +730,8 @@ struct SharedState::ModuleState {
   std::unique_ptr<mlir::BytecodeReader> bytecodeReader;
   /// A temporary module used to load the bytecode.
   ModuleOp tmpModule;
+  /// The kind of module this represents.
+  std::optional<ModuleSpec::Kind> kind;
   /// The optional source path of this module if it was loaded from source.
   std::optional<std::string> sourcePath;
   /// For a package, the location of the import statement that first pulled it
@@ -1184,8 +1189,12 @@ void SharedState::registerSourcePackageChildren(ASTDecl &packageDecl) {
   std::map<std::string, ModuleSpec> packageChildren;
   for (const auto &entry : std::filesystem::directory_iterator(directory, ec)) {
     auto moduleSpec = ModuleSpec::classify(entry.path());
+    if (!moduleSpec)
+      continue;
     // Precompiled children aren't supported in source packages.
-    if (!moduleSpec || moduleSpec->isPrecompiled())
+    if ((disablePrebuiltPackages ||
+         parentState->kind == ModuleSpec::Kind::SourcePackage) &&
+        moduleSpec->isPrecompiled())
       continue;
     if (auto it = packageChildren.find(moduleSpec->name);
         it == packageChildren.end() ||
@@ -1207,6 +1216,14 @@ void SharedState::registerSourcePackageChildren(ASTDecl &packageDecl) {
       // Registered by the directory scan so it gets no import location here.
       // We'll resolve that location if/when it's actually resolved.
       createPackageState(value, *parentState, /*importLoc=*/{});
+    } else if (value.isPrecompiled()) {
+      // NB: We don't call createBinaryPackageState here because it will eagerly
+      // load the bytecode (and potentially even throw errors to our unknown
+      // import location!). We instead skip registration and wait for the user
+      // to actually import it, at which point we'll hit the file system and
+      // load the bytecode module.
+      // The tradeoff is that nothing will enumerate these precompiled children
+      // (e.g., the LSP) until it's actually imported.
     } else {
       createDeferredModuleState(value, *parentState);
     }
@@ -1386,9 +1403,10 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
   if (parentState->decl != impl->topLevelDecl) {
     if (!parentState->sourcePath)
       return notFound("unable to locate module '" + name + "'");
-    modulePath = resolveModulePath(name, *parentState->sourcePath,
-                                   disablePrebuiltPackages,
-                                   /*isInsideSourcePackage=*/true);
+    modulePath = resolveModulePath(
+        name, *parentState->sourcePath, disablePrebuiltPackages,
+        /*isInsideSourcePackage=*/
+        parentState->kind == ModuleSpec::Kind::SourcePackage);
   } else {
     // Otherwise, go through the normal import path.
     modulePath = resolveModulePath(name, loc);
@@ -1433,7 +1451,8 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
                     "'");
   auto fileLoc = createLocation(moduleBuffer->getBufferIdentifier(), /*line=*/1,
                                 /*column=*/1);
-  return &createModuleState(declNameAttr, moduleBuffer, *parentState, fileLoc);
+  return &createModuleState(declNameAttr, moduleBuffer, *parentState, fileLoc,
+                            *modulePath);
 }
 
 SharedState::ModuleState &
@@ -1760,9 +1779,12 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
                                    const llvm::MemoryBuffer *moduleBuffer,
                                    FileLineColLoc loc) {
   // Create a new module state.
+  ModuleSpec spec{moduleName.str(),
+                  /*path=*/std::string(moduleBuffer->getBufferIdentifier()),
+                  ModuleSpec::Kind::SourceModule};
   ModuleState &state =
       createModuleState(StringAttr::get(getContext(), moduleName), moduleBuffer,
-                        *impl->topLevelModuleState, loc);
+                        *impl->topLevelModuleState, loc, spec);
   return *state.decl;
 }
 
@@ -1792,7 +1814,7 @@ std::optional<std::string> SharedState::getModuleSourcePath(ASTDecl &module) {
 SharedState::ModuleState &SharedState::createFileModuleState(
     StringAttr declName, ModuleState &parentState, FileLineColLoc loc,
     llvm::SMLoc declLoc, LexerCursor cursor, LexerCursor endCursor,
-    StringRef sourcePath) {
+    const ModuleSpec &spec) {
   // Use createUnlistedDecl (not addDecl) so the module is NOT added to
   // parentState.decl->declsInScope. This prevents "leaky imports"; the module
   // stays navigable via ModuleState::nestedModules.
@@ -1803,20 +1825,19 @@ SharedState::ModuleState &SharedState::createFileModuleState(
   declResolver->registerDeclSymbol(&moduleDecl);
 
   ModuleState &moduleState = parentState.insertNestedModule(
-      declName, std::make_unique<ModuleState>(&moduleDecl, sourcePath.str()));
+      declName, std::make_unique<ModuleState>(&moduleDecl, spec));
   impl->moduleStates[&moduleDecl] = &moduleState;
   return moduleState;
 }
 
-SharedState::ModuleState &
-SharedState::createModuleState(StringAttr declName,
-                               const llvm::MemoryBuffer *moduleBuffer,
-                               ModuleState &parentState, FileLineColLoc loc) {
+SharedState::ModuleState &SharedState::createModuleState(
+    StringAttr declName, const llvm::MemoryBuffer *moduleBuffer,
+    ModuleState &parentState, FileLineColLoc loc, const ModuleSpec &spec) {
   // An eagerly-opened module: its cursor points at the freshly-lexed buffer.
   Lexer lexer(diags, moduleBuffer);
   ModuleState &moduleState = createFileModuleState(
       declName, parentState, loc, lexer.getToken().getLoc(), lexer.getCursor(),
-      LexerCursor::getEOF(moduleBuffer), moduleBuffer->getBufferIdentifier());
+      LexerCursor::getEOF(moduleBuffer), spec);
 
   // Auto-import the core language modules.
   if (useBuiltinModule)
@@ -1832,14 +1853,14 @@ SharedState::createDeferredModuleState(ModuleSpec moduleSpec,
   // opened. The decl carries an invalid cursor; it is opened + lexed on first
   // body resolution, at which point materializeDeferredModule sets its real
   // location.
+  assert(moduleSpec.isSourceModule() && "Invalid module state");
   auto declNameAttr = StringAttr::get(getContext(), moduleSpec.name);
   FileLineColLoc loc =
       createLocation(moduleSpec.path.string(), /*line=*/1, /*column=*/1);
   return createFileModuleState(declNameAttr, parentState, loc,
                                /*declLoc=*/SMLoc(),
                                /*cursor=*/LexerCursor(),
-                               /*endCursor=*/LexerCursor(),
-                               moduleSpec.path.string());
+                               /*endCursor=*/LexerCursor(), moduleSpec);
 }
 
 LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
@@ -1900,7 +1921,7 @@ SharedState::createPackageState(ModuleSpec moduleSpec, ModuleState &parentState,
 
   // Insert the newly created module state.
   ModuleState &moduleState = parentState.insertNestedModule(
-      declName, std::make_unique<ModuleState>(&decl, moduleSpec.path.string()));
+      declName, std::make_unique<ModuleState>(&decl, moduleSpec));
   moduleState.importLoc = importLoc;
   impl->moduleStates[&decl] = &moduleState;
   impl->packageStates[packageOp] = &moduleState;
