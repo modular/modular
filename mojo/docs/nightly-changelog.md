@@ -468,6 +468,8 @@ This version is still a work in progress.
     `PythonObject.downcast_value_ptr()`, and
     `PythonObject.unchecked_downcast_value_ptr()`.
   - The AMD `sys.intrinsics.implicitarg_ptr()` intrinsic.
+  - `DevicePointer.unsafe_ptr()` (`std.gpu.host`) and the `unsafe_ptr()`
+    requirement of the `DevicePointerLike` trait.
   - The `capture_sizes` field of `CompiledFunctionInfo` (`std.compile`), now a
     safe `Pointer[UInt64]`.
   - The `Span(unsafe_ptr=..., length=...)` constructor, matching `Span`'s

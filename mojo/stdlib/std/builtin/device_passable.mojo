@@ -71,7 +71,7 @@ trait DevicePointerLike:
 
     def unsafe_ptr(
         ref self,
-    ) -> UnsafePointer[Self.PointeeType, MutAnyOrigin]:
+    ) -> Pointer[Self.PointeeType, MutAnyOrigin]:
         """Returns the offset-adjusted raw device pointer.
 
         Returns:
