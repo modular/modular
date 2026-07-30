@@ -41,8 +41,8 @@ def _kernel(out_ptr: Pointer[UInt16, MutAnyOrigin]):
     var halves = generic.unsafe_bitcast[UInt16]()
 
     if thread_idx.x == 0:
-        out_ptr[0] = halves[unsafe_offset=0]
-        out_ptr[1] = halves[unsafe_offset=1]
+        out_ptr[unsafe_offset=0] = halves[unsafe_offset=0]
+        out_ptr[unsafe_offset=1] = halves[unsafe_offset=1]
 
 
 # CHECK-LABEL: == test_gpu_shared_address_space_cast_bitcast
