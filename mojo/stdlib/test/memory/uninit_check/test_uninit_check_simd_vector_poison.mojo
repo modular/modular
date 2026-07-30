@@ -34,4 +34,4 @@ def main():
     _ = ptr.load[width=4]()
 
     # Should not reach here.
-    ptr.free()
+    ptr.unsafe_free()

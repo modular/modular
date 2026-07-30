@@ -82,7 +82,7 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
                     k += 1
                 acc += fold
 
-                p.free()
+                p.unsafe_free()
                 j += 1
 
             _ = checksum.fetch_add(acc)

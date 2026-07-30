@@ -112,8 +112,8 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         )
 
     def __del__(deinit self):
-        self.keys.free()
-        self.keys_end.free()
+        self.keys.unsafe_free()
+        self.keys_end.unsafe_free()
 
     @always_inline
     def add(mut self, key: StringSlice):
@@ -129,7 +129,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         if needs_realocation:
             var keys = alloc[UInt8](self.allocated_bytes)
             unsafe_memcpy(dest=keys, src=self.keys, count=Int(prev_end))
-            self.keys.free()
+            self.keys.unsafe_free()
             self.keys = keys
 
         unsafe_memcpy(
@@ -142,7 +142,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
             var new_capacity = self.capacity + (self.capacity >> 1)
             var keys_end = alloc[Scalar[Self.KeyEndType]](new_capacity)
             unsafe_memcpy(dest=keys_end, src=self.keys_end, count=self.capacity)
-            self.keys_end.free()
+            self.keys_end.unsafe_free()
             self.keys_end = keys_end
             self.capacity = new_capacity
 
@@ -271,9 +271,9 @@ struct StringDict[
             self.deleted_mask = alloc[UInt8](0)
 
     def __del__(deinit self):
-        self.slot_to_index.free()
-        self.deleted_mask.free()
-        self.key_hashes.free()
+        self.slot_to_index.unsafe_free()
+        self.deleted_mask.unsafe_free()
+        self.key_hashes.unsafe_free()
 
     def __len__(self) -> Int:
         return self.count
@@ -374,7 +374,7 @@ struct StringDict[
                 src=self.deleted_mask,
                 count=old_capacity >> 3,
             )
-            self.deleted_mask.free()
+            self.deleted_mask.unsafe_free()
             self.deleted_mask = deleted_mask
 
         var modulo_mask = self.capacity - 1
@@ -408,9 +408,9 @@ struct StringDict[
                 key_hashes[slot] = key_hash
 
         comptime if Self.caching_hashes:
-            self.key_hashes.free()
+            self.key_hashes.unsafe_free()
             self.key_hashes = key_hashes
-        old_slot_to_index.free()
+        old_slot_to_index.unsafe_free()
 
     def get(self, key: StringSlice, default: Self.V) -> Self.V:
         var key_index = self._find_key_index(key)

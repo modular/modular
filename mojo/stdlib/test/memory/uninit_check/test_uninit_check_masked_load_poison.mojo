@@ -36,4 +36,4 @@ def main():
     _ = masked_load(ptr, mask, passthrough)
 
     # Should not reach here.
-    ptr.free()
+    ptr.unsafe_free()

@@ -638,7 +638,7 @@ def test_span_hashable_non_copyable() raises:
     _ = hash(span)
     (ptr + 1).unsafe_deinit_pointee()
     ptr.unsafe_deinit_pointee()
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_span_with_move_only_type() raises:
@@ -647,7 +647,7 @@ def test_span_with_move_only_type() raises:
     var span = Span(unsafe_ptr=ptr, length=1)
     assert_equal(span[0].data, 42)
     ptr.unsafe_deinit_pointee()
-    ptr.free()
+    ptr.unsafe_free()
 
 
 struct NonMovable:
@@ -657,7 +657,7 @@ struct NonMovable:
 def test_span_with_non_movable_type() raises:
     var ptr = alloc[NonMovable](1)
     var _span = Span(unsafe_ptr=ptr, length=0)
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_span_iter_owned() raises:

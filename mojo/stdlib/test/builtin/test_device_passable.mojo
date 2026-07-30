@@ -110,7 +110,7 @@ def test_encode_fields_dispatches_device_passable_field() raises:
     # doubles `raw`; the plain `tag` field is bit-copied unchanged.
     assert_equal(buf[].scaled.raw, 14)
     assert_equal(buf[].tag, 99)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_encode_fields_recurses_into_nested_composite() raises:
@@ -126,7 +126,7 @@ def test_encode_fields_recurses_into_nested_composite() raises:
     assert_equal(buf[].box.scaled.raw, 6)
     assert_equal(buf[].box.tag, 10)
     assert_equal(buf[].tag2, 200)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_encode_fields_bit_copies_plain_fields() raises:
@@ -137,7 +137,7 @@ def test_encode_fields_bit_copies_plain_fields() raises:
     # No field is `DevicePassable`, so every field is bit-copied unchanged.
     assert_equal(buf[].a, 11)
     assert_equal(buf[].b, 22)
-    buf.free()
+    buf.unsafe_free()
 
 
 # `StaticTuple[ScaledInt, N].device_type` is `StaticTuple[Int, N]`, so the
@@ -151,7 +151,7 @@ def test_encode_static_tuple_dispatches_device_passable_element() raises:
     # doubles every `raw`.
     assert_equal(buf[].get[0](), 8)
     assert_equal(buf[].get[1](), 10)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_static_tuple_to_device_type_dispatches_elements() raises:
@@ -162,7 +162,7 @@ def test_static_tuple_to_device_type_dispatches_elements() raises:
     tup._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_equal(buf[].get[0](), 12)
     assert_equal(buf[].get[1](), 14)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_encode_static_tuple_identity_scalar() raises:
@@ -175,7 +175,7 @@ def test_encode_static_tuple_identity_scalar() raises:
     assert_equal(buf[].get[0](), 10)
     assert_equal(buf[].get[1](), 20)
     assert_equal(buf[].get[2](), 30)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_encode_static_tuple_bit_copies_plain_element() raises:
@@ -191,7 +191,7 @@ def test_encode_static_tuple_bit_copies_plain_element() raises:
     assert_equal(buf[].get[0]().b, 2)
     assert_equal(buf[].get[1]().a, 3)
     assert_equal(buf[].get[1]().b, 4)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_encode_static_tuple_recurses_into_composite_element() raises:
@@ -209,7 +209,7 @@ def test_encode_static_tuple_recurses_into_composite_element() raises:
     assert_equal(buf[].get[0]().tag, 1)
     assert_equal(buf[].get[1]().scaled.raw, 10)
     assert_equal(buf[].get[1]().tag, 2)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_encode_fields_delegates_static_tuple() raises:
@@ -221,7 +221,7 @@ def test_encode_fields_delegates_static_tuple() raises:
     encoder.encode_fields(tup, buf.unsafe_bitcast[NoneType]())
     assert_equal(buf[].get[0](), 8)
     assert_equal(buf[].get[1](), 10)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_encode_fields_dispatches_static_tuple_field() raises:
@@ -238,7 +238,7 @@ def test_encode_fields_dispatches_static_tuple_field() raises:
     assert_equal(buf[].tup.get[0]().raw, 8)
     assert_equal(buf[].tup.get[1]().raw, 10)
     assert_equal(buf[].tag, 42)
-    buf.free()
+    buf.unsafe_free()
 
 
 # `Array[ScaledInt, N].device_type` is `Array[Int, N]`, so the
@@ -252,7 +252,7 @@ def test_encode_array_dispatches_device_passable_element() raises:
     # doubles every `raw`.
     assert_equal(buf[][0], 8)
     assert_equal(buf[][1], 10)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_inline_array_to_device_type_dispatches_elements() raises:
@@ -263,7 +263,7 @@ def test_inline_array_to_device_type_dispatches_elements() raises:
     arr._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_equal(buf[][0], 12)
     assert_equal(buf[][1], 14)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_encode_array_identity_scalar() raises:
@@ -276,7 +276,7 @@ def test_encode_array_identity_scalar() raises:
     assert_equal(buf[][0], 10)
     assert_equal(buf[][1], 20)
     assert_equal(buf[][2], 30)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_encode_fields_bit_copies_coord_field() raises:
@@ -295,7 +295,7 @@ def test_encode_fields_bit_copies_coord_field() raises:
     # values are preserved.
     assert_equal(Int(buf[].dims[0].value()), 3)
     assert_equal(Int(buf[].dims[1].value()), 4)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_to_device_type_encodes_fields_with_coord() raises:
@@ -310,7 +310,7 @@ def test_to_device_type_encodes_fields_with_coord() raises:
     assert_equal(buf[].scaled.raw, 16)
     assert_equal(Int(buf[].dims[0].value()), 5)
     assert_equal(Int(buf[].dims[1].value()), 6)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_coord_is_device_passable() raises:
@@ -327,7 +327,7 @@ def test_coord_to_device_type_bit_copies() raises:
     c._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_equal(Int(buf[][0].value()), 3)
     assert_equal(Int(buf[][1].value()), 4)
-    buf.free()
+    buf.unsafe_free()
 
 
 # The static (zero-sized) dim lives entirely in the type, so the bit-copy
@@ -339,7 +339,7 @@ def test_coord_to_device_type_mixed_static_dynamic() raises:
     c._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_equal(Int(buf[][0].value()), 7)
     assert_equal(Int(buf[][1].value()), 9)
-    buf.free()
+    buf.unsafe_free()
 
 
 def test_unsafe_device_type_converts_to_safe_pointer_param() raises:
