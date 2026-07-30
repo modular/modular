@@ -726,6 +726,17 @@ struct List[T: Copyable](Copyable, Iterable):
         return 0
 
 
+struct Array[T: AnyType, length: Int](Copyable):
+    def __init__[
+        *, __literal_size__: Int
+    ](
+        out self: Array[Self.T, __literal_size__],
+        var *elements: Self.T,
+        __list_literal__: NoneType,
+    ):
+        pass
+
+
 struct Set[T: AnyType]:
     def __init__(out self, *elements: Self.T, __set_literal__: NoneType = None):
         pass

@@ -426,7 +426,7 @@ def comprehensionInForLoop(data: List[List[Int]], rows: Int, cols: Int) raises:
 # was passed to a `*Ts`-bound variadic pack parameter, because initializer
 # UValues don't have a resolvable RValue type until bound to a target type.
 # After the fix, pack inference falls back to the literal's default type
-# (List/Dict/Set) the same way the single-argument trait-bound path does.
+# (Array/Dict/Set) the same way the single-argument trait-bound path does.
 
 
 def _moco_3801_pack[*Ts: AnyType](var *values: *Ts):
@@ -435,8 +435,9 @@ def _moco_3801_pack[*Ts: AnyType](var *values: *Ts):
 
 # CHECK-LABEL: lit.fn @"test_moco_3801_pack_of_literals
 def test_moco_3801_pack_of_literals():
-    # COM: Each list literal defaults to List[Int] and binds its own pack slot.
-    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@List<:!AnyType_Copyable_Movable !Int>, {{.*}}@List<:!AnyType_Copyable_Movable !Int>]
+    # COM: Each list literal defaults to Array[Int, 3] and binds its own pack
+    # slot.
+    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@Array<:!AnyType !Int, :!Int {:scalar<index> 3}>, {{.*}}@Array<:!AnyType !Int, :!Int {:scalar<index> 3}>]
     _moco_3801_pack([1, 2, 3], [4, 5, 6])
 
     # COM: Dict literal defaults to Dict[Int, Int].
@@ -449,7 +450,7 @@ def test_moco_3801_pack_of_literals():
 
     # COM: Mixed-literal packs work because each pack element infers
     # independently.
-    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@List<:!AnyType_Copyable_Movable !Int>, {{.*}}@Set<:!AnyType !Int>]
+    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@Array<:!AnyType !Int, :!Int {:scalar<index> 2}>, {{.*}}@Set<:!AnyType !Int>]
     _moco_3801_pack([1, 2], {3, 4})
 
 
@@ -458,18 +459,7 @@ def test_moco_3801_pack_of_literals():
 # ===----------------------------------------------------------------------=== #
 
 
-struct Array[n: Int, T: AnyType]:
-    def __init__[
-        __literal_size__: Int
-    ](
-        out self: Array[__literal_size__, Self.T],
-        *x: Self.T,
-        __list_literal__: NoneType,
-    ):
-        pass
-
-
 # CHECK-LABEL: lit.fn @"foo()"
 def foo():
-    # CHECK: lit.var.decl "v" var : !lit.ref<!lit.struct<#Array <:!Int {:scalar<index> 3}, :!AnyType !Int>>
+    # CHECK: lit.var.decl "v" var : !lit.ref<!lit.struct<#Array <:!AnyType !Int, :!Int {:scalar<index> 3}>>
     var v: Array[_, _] = [1, 2, 3]
