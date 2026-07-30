@@ -22,10 +22,6 @@ EXTRA_DEPS = {
         "//max:layout",
         "//max:builtin_kernels",
     ],
-    "elementwise_cast_ops": [
-        "//max:builtin_kernels",
-        "//max:extensibility",
-    ],
     "misc_ops": [
         "//max:builtin_kernels",
         "//max:extensibility",

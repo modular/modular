@@ -179,6 +179,7 @@ _WARM_FAMILIES = [
     "layer_norm",
     "rms_norm",
     "group_norm",
+    "cast",
 ]
 
 # CPU fragment per family: no --target -> lane-independent (cfg=exec), shared.

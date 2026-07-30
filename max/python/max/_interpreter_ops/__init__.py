@@ -17,12 +17,7 @@ This module defines the operation handler registry and the Mojo op bindings
 for the MO graph interpreter.
 """
 
-from collections.abc import Callable
-
 import mojo.importer
-from max import _core
-from max._core.dialects import mo
-from max._core.driver import Buffer
 
 # Import op bindings from categorized Mojo modules
 # matmul / unary-elementwise handlers are backed by graph-compiler models
@@ -30,10 +25,10 @@ from max._core.driver import Buffer
 from . import (  # type: ignore[attr-defined]
     argnonzero_ops,
     band_part_ops,
+    cast_gc,
     conv_gc,
     data_movement_ops,
     elementwise_binary_gc,
-    elementwise_cast_ops,
     gather_scatter_ops,
     gc_compile,
     group_norm_gc,
@@ -52,16 +47,8 @@ from . import (  # type: ignore[attr-defined]
     unary_elementwise_gc,
 )
 
-# Cast: any dtype input -> any dtype output. (IsNan/IsInf now route through the
-# graph compiler; see unary_elementwise_gc.)
-UNARY_MIXED: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer, int], None]
-] = {
-    mo.CastOp: elementwise_cast_ops.Cast,
-}
-
-# Import handlers after defining kernels to avoid circular import issues.
-# handlers.py uses the kernel dictionaries defined above.
+# Import handlers after the op modules to avoid circular import issues:
+# handlers.py imports the op bindings above (via the package).
 # Re-export the warm-adoption query (from gc_compile) so a consumer can assert
 # the ops were force-loaded from the manifest rather than cold-compiled.
 from .gc_compile import adopted_from_manifest
@@ -91,7 +78,6 @@ _precompile_gc_models()
 
 __all__ = [
     "GC_FAMILIES",
-    "UNARY_MIXED",
     "_MO_OP_HANDLERS",
     "adopted_from_manifest",
     "compile_all_families",
