@@ -41,6 +41,7 @@ from std.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import _is_sm10x_gpu
 from std.utils.coord import Coord, Idx, coord_to_index_list
 from layout import (
     Coord,
@@ -72,6 +73,12 @@ from nn.attention.gpu.mla import _k_cache_to_buffer, mla_decode_max_seq_len
 from nn.attention.gpu.nvidia.sm100.mla_prefill import (
     mla_sm100_prefill_sparse,
     mla_sm100_prefill_sparse_fp8,
+)
+from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_qkv_fp8 import (
+    mla_prefill_sparse_qkv_fp8,
+)
+from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
+    MLASparseConfig,
 )
 from nn.normalization import _rms_norm_warp_tiling_subkernel
 
@@ -1285,31 +1292,84 @@ def mla_decode_branch_fp8[
         row_major(seq_len, Idx[num_heads], Idx[kv_latent_dim]),
     )
 
-    generic_flare_mla_decode_kv_cache_ragged[
-        target=target,
-        mask_str=mask_str,
-        sparse_mla=sparse_mla,
-        fold_shared_index=fold_shared_index,
-    ](
-        mla_decode_input,
-        input_row_offsets,
-        kv_collection,
-        layer_idx,
-        scale,
-        raw_output,
-        scalar_args_buf,
-        ctx,
-        d_indices=d_indices,
-        indices_stride=indices_stride,
-        topk_lengths=topk_lengths,
-        attn_sink_ptr=attn_sink_ptr,
-        extra_k=extra_k,
-        extra_d_indices=extra_d_indices,
-        extra_indices_stride=extra_indices_stride,
-        extra_topk_lengths=extra_topk_lengths,
-        extra_scales_ptr=extra_scales_ptr,
-        num_partitions_in=num_partitions_in,
+    # Sparse decode over a unit-scale FP8 latent cache on SM100 hands the
+    # kernel an FP8 Q so the dispatch routes to the native-FP8 sparse kernel
+    # (MLA_SM100_Decode_Sparse_QKV_FP8). `quantize_and_bmm_fp8_helper` ties
+    # its output dtype to the bf16 input, so the bf16 staging buffer is
+    # converted with a saturating-cast pass instead of staged FP8 directly
+    # (unlike the bf16-weights branch).
+    comptime native_fp8_sparse = (
+        sparse_mla
+        and dtype == DType.bfloat16
+        and collection_t.CacheType.dtype == DType.float8_e4m3fn
+        and not collection_t.CacheType.quantization_enabled
+        and _is_sm10x_gpu(ctx.default_device_info)
     )
+    comptime if native_fp8_sparse:
+        var q_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+            seq_len * num_heads * k_cache_dim
+        )
+        var q_fp8 = TileTensor(
+            q_fp8_buf,
+            row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
+        )
+        var mla_decode_input_bf16 = TileTensor(
+            mla_decode_input.ptr.bitcast[Scalar[DType.bfloat16]](),
+            row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
+        )
+        convert_bf16_to_fp8_e4m3fn(mla_decode_input_bf16, q_fp8, ctx)
+
+        generic_flare_mla_decode_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+            sparse_mla=sparse_mla,
+            fold_shared_index=fold_shared_index,
+        ](
+            q_fp8,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            raw_output,
+            scalar_args_buf,
+            ctx,
+            d_indices=d_indices,
+            indices_stride=indices_stride,
+            topk_lengths=topk_lengths,
+            attn_sink_ptr=attn_sink_ptr,
+            extra_k=extra_k,
+            extra_d_indices=extra_d_indices,
+            extra_indices_stride=extra_indices_stride,
+            extra_topk_lengths=extra_topk_lengths,
+            extra_scales_ptr=extra_scales_ptr,
+            num_partitions_in=num_partitions_in,
+        )
+    else:
+        generic_flare_mla_decode_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+            sparse_mla=sparse_mla,
+            fold_shared_index=fold_shared_index,
+        ](
+            mla_decode_input,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            raw_output,
+            scalar_args_buf,
+            ctx,
+            d_indices=d_indices,
+            indices_stride=indices_stride,
+            topk_lengths=topk_lengths,
+            attn_sink_ptr=attn_sink_ptr,
+            extra_k=extra_k,
+            extra_d_indices=extra_d_indices,
+            extra_indices_stride=extra_indices_stride,
+            extra_topk_lengths=extra_topk_lengths,
+            extra_scales_ptr=extra_scales_ptr,
+            num_partitions_in=num_partitions_in,
+        )
 
     # Create a view of the output tensor with logical shape
     # [num_heads, seq_len, v_head_dim], and map directly to
@@ -1499,36 +1559,97 @@ def mla_prefill_branch_sparse_fp8[
         )
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+    # Unit-scale FP8 latent cache on SM100 runs the native-FP8 sparse prefill
+    # kernel (QK^T and P*V in FP8, no dequant) when the head count fits its
+    # tiles: num_q_heads == 128 (cta_group=2) or a multiple of 8 in (0, 64]
+    # (cta_group=1). `quantize_and_bmm_fp8_helper` ties its output dtype to
+    # the bf16 input, so Q is converted with a saturating-cast pass (unlike
+    # the bf16-weights branch, which stages FP8 directly).
+    comptime native_fp8_sparse = (
+        dtype == DType.bfloat16
+        and collection_t.CacheType.dtype == DType.float8_e4m3fn
+        and not collection_t.CacheType.quantization_enabled
+        and _is_sm10x_gpu(ctx.default_device_info)
+        and (num_heads == 128 or (num_heads <= 64 and num_heads % 8 == 0))
+    )
     comptime if collection_t.CacheType.dtype.is_float8():
-        # FP8 latent cache: run the FP8 sparse-prefill kernel directly over the
-        # quantized cache (no BF16 staging). Today the cache carries no dequant
-        # scales (scale_dtype=int8 => quantization disabled), so read at unit
-        # scale (scale_block_size=0), mirroring the sparse-DECODE kernel's read.
-        # scales_ptr is unused at scale_block_size=0; pass a non-null dummy
-        # (SnapMLA/SERVOPT-1094 will supply real scales + a positive
-        # scale_block_size here once the cache carries them).
-        var dummy_scales = (
-            raw_output_buf.unsafe_ptr()
-            .bitcast[Float32]()
-            .as_unsafe_any_origin()
-        )
-        mla_sm100_prefill_sparse_fp8[
-            num_q_heads=num_heads,
-            qk_depth=k_cache_dim,
-            v_depth=kv_latent_dim,
-            indices_stride=indices_stride,
-            scale_block_size=0,
-        ](
-            raw_output,
-            mla_decode_input,
-            k_cache,
-            indices_tt,
-            topk_lengths_tt,
-            attn_sink_opt,
-            dummy_scales,
-            scale,
-            ctx,
-        )
+        comptime if native_fp8_sparse:
+            var q_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+                seq_len * num_heads * k_cache_dim
+            )
+            var q_fp8 = TileTensor(
+                q_fp8_buf,
+                row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
+            )
+            var mla_decode_input_bf16 = TileTensor(
+                mla_decode_input.ptr.bitcast[Scalar[DType.bfloat16]](),
+                row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
+            )
+            convert_bf16_to_fp8_e4m3fn(mla_decode_input_bf16, q_fp8, ctx)
+
+            comptime cta_group = 2 if num_heads == 128 else 1
+            comptime b_topk = 128 if cta_group == 2 else 64
+            comptime num_mbars = 2 if cta_group == 2 else 4
+            comptime config = MLASparseConfig[
+                DType.bfloat16,
+                b_topk_=b_topk,
+                num_mbars_=num_mbars,
+                cta_group_=cta_group,
+            ](
+                num_q_heads=num_heads,
+                num_kv_heads=1,
+                qk_depth=k_cache_dim,
+                v_depth=kv_latent_dim,
+                indices_stride=indices_stride,
+                group=num_heads,
+            )
+            mla_prefill_sparse_qkv_fp8[
+                config=config,
+                group=num_heads,
+                q_depth=k_cache_dim,
+                scale_block_size=0,
+            ](
+                raw_output,
+                q_fp8,
+                k_cache,
+                indices_tt,
+                topk_lengths_tt,
+                attn_sink_opt,
+                scale,
+                Int32(indices_stride),
+                ctx,
+            )
+        else:
+            # FP8 latent cache with bf16 Q: run the FP8 sparse-prefill kernel
+            # directly over the quantized cache (no BF16 staging). Today the
+            # cache carries no dequant scales (scale_dtype=int8 => quantization
+            # disabled), so read at unit scale (scale_block_size=0), mirroring
+            # the sparse-DECODE kernel's read. scales_ptr is unused at
+            # scale_block_size=0; pass a non-null dummy (SnapMLA/SERVOPT-1094
+            # will supply real scales + a positive scale_block_size here once
+            # the cache carries them).
+            var dummy_scales = (
+                raw_output_buf.unsafe_ptr()
+                .bitcast[Float32]()
+                .as_unsafe_any_origin()
+            )
+            mla_sm100_prefill_sparse_fp8[
+                num_q_heads=num_heads,
+                qk_depth=k_cache_dim,
+                v_depth=kv_latent_dim,
+                indices_stride=indices_stride,
+                scale_block_size=0,
+            ](
+                raw_output,
+                mla_decode_input,
+                k_cache,
+                indices_tt,
+                topk_lengths_tt,
+                attn_sink_opt,
+                dummy_scales,
+                scale,
+                ctx,
+            )
     else:
         mla_sm100_prefill_sparse[
             num_q_heads=num_heads,
@@ -2324,12 +2445,23 @@ def mla_decode_branch_bf16[
     if seq_len == 0:
         return
 
-    # Sparse decode Q TMA uses SWIZZLE_128B over BK=576 elements; that requires
-    # bf16 Q (1152 B). FP8 sparse uses the same bf16 staging buffer (see
-    # mla_decode_branch_fp8). Non-sparse bf16 decode may still stage Q in the
-    # KV cache dtype when the cache is FP8.
+    # Sparse decode over a unit-scale FP8 latent cache on SM100 stages Q in
+    # FP8 so the dispatch routes to the native-FP8 sparse kernel
+    # (MLA_SM100_Decode_Sparse_QKV_FP8, SWIZZLE_64B FP8 Q TMA). Other sparse
+    # configs keep bf16 Q: the BF16/converter sparse kernels' Q TMA uses
+    # SWIZZLE_128B over BK=576 elements, which requires bf16 (1152 B).
+    # Non-sparse bf16 decode may still stage Q in the KV cache dtype when the
+    # cache is FP8.
+    comptime native_fp8_sparse = (
+        sparse_mla
+        and collection_t.CacheType.dtype == DType.float8_e4m3fn
+        and not collection_t.CacheType.quantization_enabled
+        and _is_sm10x_gpu(ctx.default_device_info)
+    )
     comptime mla_decode_input_dtype = (
-        DType.bfloat16 if sparse_mla else collection_t.CacheType.dtype
+        DType.bfloat16 if (
+            sparse_mla and not native_fp8_sparse
+        ) else collection_t.CacheType.dtype
     )
     var mla_decode_input_buf = ctx.enqueue_create_buffer[
         mla_decode_input_dtype
@@ -2534,7 +2666,20 @@ def mla_prefill_branch_sparse_bf16[
     if seq_len == 0:
         return
 
-    var mla_decode_input_buf = ctx.enqueue_create_buffer[DType.bfloat16](
+    # Unit-scale FP8 latent cache on SM100 stages Q in FP8 and runs the
+    # native-FP8 sparse prefill kernel (QK^T and P*V in FP8, no dequant); the
+    # kernel supports num_q_heads == 128 (cta_group=2) or a multiple of 8 in
+    # (0, 64] (cta_group=1). Other configs keep bf16 Q.
+    comptime native_fp8_sparse = (
+        collection_t.CacheType.dtype == DType.float8_e4m3fn
+        and not collection_t.CacheType.quantization_enabled
+        and _is_sm10x_gpu(ctx.default_device_info)
+        and (num_heads == 128 or (num_heads <= 64 and num_heads % 8 == 0))
+    )
+    comptime q_staging_dtype = (
+        DType.float8_e4m3fn if native_fp8_sparse else DType.bfloat16
+    )
+    var mla_decode_input_buf = ctx.enqueue_create_buffer[q_staging_dtype](
         seq_len * num_heads * k_cache_dim
     )
     var mla_decode_input = TileTensor(
@@ -2615,35 +2760,76 @@ def mla_prefill_branch_sparse_bf16[
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     comptime if collection_t.CacheType.dtype.is_float8():
-        # FP8 latent cache: run the FP8 sparse-prefill kernel directly over the
-        # quantized cache (no BF16 staging). Today the cache carries no dequant
-        # scales (scale_dtype=int8 => quantization disabled), so read at unit
-        # scale (scale_block_size=0), mirroring the sparse-DECODE kernel's read.
-        # scales_ptr is unused at scale_block_size=0; pass a non-null dummy
-        # (SnapMLA/SERVOPT-1094 will supply real scales + a positive
-        # scale_block_size here once the cache carries them).
-        var dummy_scales = (
-            raw_output_buf.unsafe_ptr()
-            .bitcast[Float32]()
-            .as_unsafe_any_origin()
-        )
-        mla_sm100_prefill_sparse_fp8[
-            num_q_heads=num_heads,
-            qk_depth=k_cache_dim,
-            v_depth=kv_latent_dim,
-            indices_stride=indices_stride,
-            scale_block_size=0,
-        ](
-            raw_output,
-            mla_decode_input,
-            k_cache,
-            indices_tt,
-            topk_lengths_tt,
-            attn_sink_opt,
-            dummy_scales,
-            scale,
-            ctx,
-        )
+        comptime if native_fp8_sparse:
+            # Native-FP8 sparse prefill: Q was staged in FP8 above, and the
+            # kernel reads the unit-scale FP8 latent cache with no dequant.
+            # Config knobs follow the kernel's validated tactics: head=128
+            # runs the 2-CTA f8f6f4 tile at b_topk=128/num_mbars=2; head<=64
+            # runs the single-CTA shared-KV tile at b_topk=64 (its only
+            # correct PV mn-major layout) with num_mbars=4.
+            comptime cta_group = 2 if num_heads == 128 else 1
+            comptime b_topk = 128 if cta_group == 2 else 64
+            comptime num_mbars = 2 if cta_group == 2 else 4
+            comptime config = MLASparseConfig[
+                DType.bfloat16,
+                b_topk_=b_topk,
+                num_mbars_=num_mbars,
+                cta_group_=cta_group,
+            ](
+                num_q_heads=num_heads,
+                num_kv_heads=1,
+                qk_depth=k_cache_dim,
+                v_depth=kv_latent_dim,
+                indices_stride=indices_stride,
+                group=num_heads,
+            )
+            mla_prefill_sparse_qkv_fp8[
+                config=config,
+                group=num_heads,
+                q_depth=k_cache_dim,
+                scale_block_size=0,
+            ](
+                raw_output,
+                mla_decode_input,
+                k_cache,
+                indices_tt,
+                topk_lengths_tt,
+                attn_sink_opt,
+                scale,
+                Int32(indices_stride),
+                ctx,
+            )
+        else:
+            # FP8 latent cache with bf16 Q: run the FP8 sparse-prefill kernel
+            # directly over the quantized cache (no BF16 staging). Today the
+            # cache carries no dequant scales (scale_dtype=int8 => quantization
+            # disabled), so read at unit scale (scale_block_size=0), mirroring
+            # the sparse-DECODE kernel's read. scales_ptr is unused at
+            # scale_block_size=0; pass a non-null dummy (SnapMLA/SERVOPT-1094
+            # will supply real scales + a positive scale_block_size here once
+            # the cache carries them).
+            var dummy_scales = (
+                raw_output_buf.unsafe_ptr()
+                .bitcast[Float32]()
+                .as_unsafe_any_origin()
+            )
+            mla_sm100_prefill_sparse_fp8[
+                num_q_heads=num_heads,
+                qk_depth=k_cache_dim,
+                v_depth=kv_latent_dim,
+                indices_stride=indices_stride,
+                scale_block_size=0,
+            ](
+                raw_output,
+                mla_decode_input,
+                k_cache,
+                indices_tt,
+                topk_lengths_tt,
+                attn_sink_opt,
+                dummy_scales,
+                scale,
+                ctx,
+            )
     else:
         mla_sm100_prefill_sparse[
             num_q_heads=num_heads,
