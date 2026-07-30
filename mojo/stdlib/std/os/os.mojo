@@ -146,7 +146,7 @@ struct _DirHandle:
             ](self._handle)
             if not ep:
                 break
-            ref name = ep.unsafe_value().take_pointee().name
+            ref name = ep.unsafe_value().unsafe_take_pointee().name
             var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 unsafe_from_utf8=Span[Byte, origin_of(name)](
@@ -176,7 +176,7 @@ struct _DirHandle:
             ](self._handle)
             if not ep:
                 break
-            ref name = ep.unsafe_value().take_pointee().name
+            ref name = ep.unsafe_value().unsafe_take_pointee().name
             var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 unsafe_from_utf8=Span[Byte, origin_of(name)](
