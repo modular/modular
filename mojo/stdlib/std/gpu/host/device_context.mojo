@@ -2525,10 +2525,9 @@ struct CompletionFlag(ImplicitlyCopyable):
                 ``M::Driver::CompletionFlag`` (as packed into a graph
                 payload buffer by the producer side).
         """
-        var opaque = OpaquePointer[MutAnyOrigin](
+        self._handle = UnsafePointer[_CompletionFlagCpp, MutUntrackedOrigin](
             unsafe_from_address=unsafe_from_address
         )
-        self._handle = rebind[_CompletionFlagPtr[mut=True]](opaque)
 
     @always_inline
     def device_ptr(self) -> UInt64:
