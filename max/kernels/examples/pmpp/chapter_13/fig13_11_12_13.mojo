@@ -16,7 +16,7 @@
 from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.math import min, max
 
 
@@ -206,16 +206,20 @@ def merge_tiled_kernel(
         tile_size: Size of each tile.
     """
     # Allocate shared memory
-    var A_S = stack_allocation[
-        1024,
-        Scalar[DType.int32],
-        address_space=AddressSpace.SHARED,
-    ]()
-    var B_S = stack_allocation[
-        1024,
-        Scalar[DType.int32],
-        address_space=AddressSpace.SHARED,
-    ]()
+    var A_S = UnsafePointer(
+        unsafe_stack_allocation[
+            1024,
+            Scalar[DType.int32],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var B_S = UnsafePointer(
+        unsafe_stack_allocation[
+            1024,
+            Scalar[DType.int32],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     # Figure 13.11: Part 1 - Block-level co-rank
     var C_curr = block_idx.x * ceildiv(

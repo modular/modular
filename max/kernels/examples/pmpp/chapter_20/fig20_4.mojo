@@ -16,7 +16,7 @@ from std.random import rand
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
 from std.gpu.memory import AddressSpace
 from std.gpu.host import DeviceContext
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 comptime BLOCK_SIZE = 256
 comptime WARP_SIZE = 32
@@ -75,16 +75,20 @@ def softmax_kernel(
     var D_ptr = D
     var P_ptr = P
 
-    var temp_store = stack_allocation[
-        BLOCK_SIZE,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
-    ]()
-    var broadcast_slot = stack_allocation[
-        1,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
-    ]()
+    var temp_store = UnsafePointer(
+        unsafe_stack_allocation[
+            BLOCK_SIZE,
+            Scalar[DType.float32],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var broadcast_slot = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            Scalar[DType.float32],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     var row = block_idx.x
     var tid = thread_idx.x

@@ -17,7 +17,7 @@ from std.collections import Array
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
 from std.gpu.memory import AddressSpace
 from std.gpu.host import DeviceContext
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.gpu.primitives.warp import (
     shuffle_idx,
     lane_group_max,
@@ -57,21 +57,27 @@ def flashattention_forward_kernel(
     var T_r = N // B_r
     var T_c = N // B_c
 
-    var KT_j = stack_allocation[
-        B_c * D_MODEL,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
-    ]()
-    var S_i = stack_allocation[
-        B_r * B_c,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
-    ]()
-    var V_j = stack_allocation[
-        B_c * D_MODEL,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
-    ]()
+    var KT_j = UnsafePointer(
+        unsafe_stack_allocation[
+            B_c * D_MODEL,
+            Scalar[DType.float32],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var S_i = UnsafePointer(
+        unsafe_stack_allocation[
+            B_r * B_c,
+            Scalar[DType.float32],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var V_j = UnsafePointer(
+        unsafe_stack_allocation[
+            B_c * D_MODEL,
+            Scalar[DType.float32],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     # Per-thread register storage (like CUDA)
     var O_i = Array[Float32, B_r_warp * d_size](fill=0.0)  # 2 * 4 = 8

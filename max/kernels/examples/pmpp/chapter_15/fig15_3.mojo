@@ -18,7 +18,7 @@ from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.itertools import product
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 comptime bM = 64
 comptime bN = 64
@@ -105,16 +105,20 @@ def mm_tiled_kernel(
     var Cr = SIMD[DType.float32, tM * tN](0.0)
 
     # Allocate shared memory
-    var A_s = stack_allocation[
-        bM * bK,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
-    ]()
-    var B_s = stack_allocation[
-        bK * bN,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
-    ]()
+    var A_s = UnsafePointer(
+        unsafe_stack_allocation[
+            bM * bK,
+            Scalar[DType.float32],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var B_s = UnsafePointer(
+        unsafe_stack_allocation[
+            bK * bN,
+            Scalar[DType.float32],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     # Iterate over tiles
     for i in range(ceildiv(Int(K), bK)):

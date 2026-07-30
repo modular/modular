@@ -18,7 +18,7 @@ from std.math import ceildiv
 from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 # Scoring constants
 comptime MATCH = 1
@@ -76,11 +76,13 @@ def sw_kernel_square(
         tile_width: Width of each tile.
     """
     # Allocate shared memory for tile
-    var swTile = stack_allocation[
-        MAX_TILE_WIDTH * MAX_TILE_WIDTH,
-        Scalar[DType.int32],
-        address_space=AddressSpace.SHARED,
-    ]()
+    var swTile = UnsafePointer(
+        unsafe_stack_allocation[
+            MAX_TILE_WIDTH * MAX_TILE_WIDTH,
+            Scalar[DType.int32],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     var numTiles_x = ceildiv(L - 1, tile_width)
 

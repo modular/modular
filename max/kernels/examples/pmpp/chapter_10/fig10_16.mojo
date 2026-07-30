@@ -14,7 +14,7 @@
 from std.gpu import barrier, thread_idx, lane_id, warp_id, WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.gpu.primitives.warp import shuffle_down
 from std.random import random_float64
 from std.math import abs
@@ -63,11 +63,13 @@ def two_stage_warp_level_sum_reduction_kernel(
     partial_sum = warp_reduce(partial_sum)
 
     # Allocate shared memory for partial sums from each warp
-    var partial_sums_s = stack_allocation[
-        BLOCK_DIM // WARP_SIZE,
-        Float32,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var partial_sums_s = UnsafePointer(
+        unsafe_stack_allocation[
+            BLOCK_DIM // WARP_SIZE,
+            Float32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     # Store warp results to shared memory
     if lane_id() == 0:
