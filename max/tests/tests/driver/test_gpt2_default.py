@@ -429,6 +429,10 @@ def _resolve_device() -> Accelerator:
     regression in the device-context path the test exists to exercise, so raise
     instead: the whole module then fails rather than reporting green.
     """
+    if os.environ.get("MODULAR_DRIVER_PLUGINS"):
+        raise RuntimeError(
+            "MODULAR_DRIVER_PLUGINS is set; this test is incompatible with HAL."
+        )
     if accelerator_count() == 0:
         raise RuntimeError(
             "No accelerator detected; test_gpt2_default requires a GPU."

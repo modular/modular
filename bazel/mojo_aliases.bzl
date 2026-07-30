@@ -13,8 +13,6 @@ _EXTRA_ALIASES = {
 
 _MAX_PACKAGES = {
     "algorithm": "kernels/src/algorithm",
-    "machine": "driver/src/machine",
-    "_hal": "driver/src/_hal",
     "kv_cache": "kernels/src/kv_cache",
     "layout": "kernels/src/layout",
     "linalg": "kernels/src/linalg",
@@ -44,6 +42,8 @@ INTERNAL_PACKAGES = [
     "//Kernels/lib/matmul_rs",
     "//Kernels/lib/msa",
     "//Kernels/src/mega_ffn",
+    "//max/internal/driver/src/_hal",
+    "//max/internal/driver/src/machine",
 ]
 
 # Packages that are marked testonly and cannot be used by production targets
