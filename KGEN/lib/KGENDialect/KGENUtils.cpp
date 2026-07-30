@@ -2714,7 +2714,7 @@ OpFoldResult KGEN::foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
     return scalarAttr ? OpFoldResult(scalarAttr) : scalarVal;
 
   auto scalarSIMD = sugarDynCastIfPresent<SIMDAttr>(scalarAttr);
-  if (!size || !scalarSIMD)
+  if (!size || size <= 0 || !scalarSIMD)
     return {};
   SmallVector<DTypeValue> values(*size, scalarSIMD.getValues().front());
   return SIMDAttr::get(values, resultType);

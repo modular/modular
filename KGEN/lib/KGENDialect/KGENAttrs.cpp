@@ -5348,13 +5348,6 @@ SIMDSplatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        << splatDType->getAsString() << "'";
   }
 
-  std::optional<int64_t> size = outType.getResolvedSize();
-  if (!size)
-    return success();
-
-  if (*size <= 0)
-    return emitError() << "requires a non-negative size";
-
   return success();
 }
 
