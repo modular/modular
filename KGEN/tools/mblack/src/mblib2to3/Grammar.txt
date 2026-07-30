@@ -51,7 +51,7 @@ capture_list: capture_item (',' capture_item)* [',']
 capture_item: (VAR [NAME ['^'] | '^' [NAME]]) | (READ [NAME]) | (IMM [NAME]) | (MUT [NAME]) | (REF [NAME]) | (NAME ['^' | NAME])
 metaparams: '[' [typedargslist] ']'
 parameters: '(' [typedargslist] ')'
-result_type: [REF '[' test [',' test [',']] ']'] (functype | or_expr)
+result_type: [REF '[' test [',' test [',']] ']'] (functype | generatortype | or_expr)
 
 # The following definition for typedarglist is equivalent to this set of rules:
 #
@@ -196,7 +196,7 @@ namedexpr_test: asexpr_test [':=' asexpr_test]
 # more stuff to be parser (which would fail on the ast).
 asexpr_test: test ['as' test]
 
-test: functype | top_test
+test: functype | generatortype | top_test
 top_test: [ALIAS|COMPTIME] if_else_test
 if_else_test: or_test ['if' or_test 'else' test] | lambdef
 or_test: and_test ('or' and_test)*
@@ -253,13 +253,15 @@ type_arith_expr: type_term (('+'|'-') type_term)*
 type_term: type_factor (('*'|'@'|'/'|'%'|'//') type_factor)*
 type_factor: ('+'|'-'|'~') type_factor | type_power
 type_power: [AWAIT] type_atom trailer* ['**' factor]
-type_atom: functype | atom
+type_atom: functype | generatortype | atom
 
 classdef: STRUCT NAME [metaparams] ['(' [arglist] ')'] (where_clause)* ':' suite | ('class' | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist] ')'] ':' suite
 
-typeconvexpr: atom trailer* | functype
+typeconvexpr: atom trailer* | functype | generatortype
 typeconv: (['*'|VAR|READ|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
 functype: [ASYNC] 'def' [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' named_effect* [global_effects] [captures] ['[' test ']'] ['->' test]
+# `__generator_type[Idx: Int] ToT` — Mojo generator type literal (`!lit.generator`).
+generatortype: GENERATOR_TYPE [metaparams] type_test
 
 arglist: argument (',' argument)* [',']
 

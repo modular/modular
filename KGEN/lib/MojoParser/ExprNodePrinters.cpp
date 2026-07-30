@@ -77,6 +77,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "ChainedCmp";
   case ExprNode::kFunctionType:
     return "FunctionType";
+  case ExprNode::kGeneratorType:
+    return "GeneratorType";
   case ExprNode::kLambda:
     return "Lambda";
   case ExprNode::kGetMValueAsLitRef:
@@ -611,6 +613,23 @@ void FunctionTypeNode::print(raw_indented_ostream &os) const {
   os << "originExpr: ";
   if (originExpr)
     originExpr->print(os);
+  else
+    os << "<none>\n";
+
+  os.unindent() << "}\n";
+}
+
+void GeneratorTypeNode::print(raw_indented_ostream &os) const {
+  os << "GeneratorType {\n";
+  os << "params: [\n";
+  os.indent();
+  for (const ParsedArgument &param : parsedParams)
+    param.print(os);
+  os.unindent() << "]\n";
+
+  os << "body: ";
+  if (bodyTypeExpr)
+    bodyTypeExpr->print(os);
   else
     os << "<none>\n";
 

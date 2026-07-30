@@ -93,6 +93,7 @@ class _python_symbols(Symbols):
     for_stmt: int
     funcdef: int
     functype: int
+    generatortype: int
     global_stmt: int
     guard: int
     if_stmt: int

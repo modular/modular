@@ -1826,6 +1826,7 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
   } else if (auto genType = dyn_cast<GeneratorType>(type)) {
     PogListAttr paramList = genType.getMetadata();
     ParameterEvaluator evaluator;
+    os << "__generator_type";
     Type reboundBody =
         printGeneratorInterface(os, genType.getInputParamTypes(), paramList,
                                 ctx, genType.getBody(), evaluator);

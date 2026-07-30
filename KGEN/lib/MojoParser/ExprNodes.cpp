@@ -31,6 +31,7 @@
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -4973,6 +4974,42 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     return emitter.emitResult(ASTType(traitType), this, dest);
   }
   return emitter.emitResult(ASTType(signature), this, dest);
+}
+
+AnyValue GeneratorTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
+  // Parameters declared within the generator type must be visible to the body
+  // type expression. Create a dummy declaration scope for them.
+  ASTDecl &dummyScope = emitter.getDeclResolver().addFullyResolvedDecl(
+      nullptr, StringAttr(), getLoc(), &emitter.declScope);
+  dummyScope.setExplicitParamScope();
+
+  ParsedParamList parsedParamList;
+  parsedParamList.params = llvm::to_vector(parsedParams);
+  std::optional<TypeCheckedParamList> paramListOrError =
+      TypeCheckedParamList::create(parsedParamList, dummyScope);
+  if (!paramListOrError.has_value())
+    return {}; // Error already emitted.
+  TypeCheckedParamList &paramList = *paramListOrError;
+
+  // Evaluate the body type in the param scope so generator params resolve.
+  IREmitter typeEmitter(dummyScope, EC_Type);
+  ASTType bodyType =
+      typeEmitter.emitExprType(bodyTypeExpr, /*allowUnbound=*/true);
+  if (!bodyType)
+    return {};
+
+  // Generator types reference their input parameters by index, not by name.
+  IndexRefRemapper remapper(paramList.paramDeclAttrs, {});
+  SmallVector<Type> inputParamTypes;
+  for (ParamDeclAttr param : paramList.paramDeclAttrs)
+    inputParamTypes.push_back(remapper.replace(param.getType()));
+
+  PogListAttr metadata = remapper.replace(paramList.getParamListAttr());
+  Type genType = GeneratorType::get(
+      inputParamTypes, remapper.replace(bodyType.mlirType), metadata);
+
+  dummyScope.setIRValue(PValue(genType));
+  return emitter.emitResult(ASTType(genType), this, dest);
 }
 
 /// Return true if the magic function kind is considered stable.

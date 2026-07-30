@@ -93,6 +93,7 @@ private:
   ParseResult parseComparisonExpr(ExprNode *&result, ExprNode *rhs,
                                   ExprNode::Kind kind, SMLoc loc);
   ParseResult parseFunctionType(ExprNode *&result);
+  ParseResult parseGeneratorType(ExprNode *&result);
   ParseResult parseLambda(ExprNode *&result);
   ParseResult parseMagicFunction(ExprNode *&result);
   ParseResult
@@ -404,6 +405,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_def:
   case Token::kw_lambda:
   case Token::kw_fn:
+  case Token::kw___generator_type:
   case Token::kw___get_mvalue_as_litref:
   case Token::kw___get_litref_as_mvalue:
   case Token::kw___get_address_as_owned_value:
@@ -605,6 +607,11 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::kw_def:
   case Token::kw_fn:
     if (failed(parseFunctionType(result)))
+      return failure();
+    break;
+
+  case Token::kw___generator_type:
+    if (failed(parseGeneratorType(result)))
       return failure();
     break;
 
@@ -1381,6 +1388,28 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
       copyArrayRef<ParsedArgument>(fnSignature.resultArg)[0],
       fnSignature.effects, fnSignature.isThin, fnSignature.thrownTypeExpr,
       originExpr, endLoc);
+  return success();
+}
+
+/// generator_type ::= "__generator_type" [parameter_list] type_expression
+///
+/// Produces a `!lit.generator<<params> body>` type. The parameter list is
+/// optional; when present it uses the same grammar as function/struct
+/// parameter lists.
+ParseResult ExprParser::parseGeneratorType(ExprNode *&result) {
+  SMLoc baseLoc = consumeToken(Token::kw___generator_type).getLoc();
+
+  ParsedParamList paramList;
+  if (paramList.parseParametersIfPresent(*this, ArgListKind::kFnTypeParamList))
+    return failure();
+
+  ExprNode *bodyTypeExpr = nullptr;
+  if (ParserBase::parseExpression(bodyTypeExpr, stmtIndent))
+    return failure();
+
+  result = alloc<GeneratorTypeNode>(
+      baseLoc, copyArrayRef<ParsedArgument>(paramList.params), bodyTypeExpr,
+      bodyTypeExpr->getRangeEnd());
   return success();
 }
 

@@ -35,6 +35,7 @@ KEYWORDS = [
     "from",
     "fn",  # Used to be a keyword
     "global",
+    "__generator_type",
     "if",
     "imm",
     "import",

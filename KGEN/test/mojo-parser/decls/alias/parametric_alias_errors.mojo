@@ -27,7 +27,7 @@ def implicit_generator_constraint_drop_error[cond: Bool]():
     comptime constrained[x: Int]: AnyType where cond = Int
     comptime dropped: __mlir_type[
         `!lit.generator<<"x":`, +Int, `>`, +AnyType, `>`
-    # expected-error @below {{cannot implicitly convert '[x: Int] AnyType where cond' value to '[x: Int] AnyType' in comptime initializer}}
+    # expected-error @below {{cannot implicitly convert '__generator_type[x: Int] AnyType where cond' value to '__generator_type[x: Int] AnyType' in comptime initializer}}
     ] = constrained
 
 def implicit_generator_constraint_drop_env_mismatch_error[
@@ -36,7 +36,7 @@ def implicit_generator_constraint_drop_env_mismatch_error[
     comptime constrained[x: Int]: AnyType where cond = Int
     comptime dropped: __mlir_type[
         `!lit.generator<<"x":`, +Int, `>`, +AnyType, `>`
-    # expected-error @below {{cannot implicitly convert '[x: Int] AnyType where cond' value to '[x: Int] AnyType' in comptime initializer}}
+    # expected-error @below {{cannot implicitly convert '__generator_type[x: Int] AnyType where cond' value to '__generator_type[x: Int] AnyType' in comptime initializer}}
     ] = constrained
 
 # Discharging a generator body constraint depends on the assumptions in scope,
@@ -63,7 +63,7 @@ def implicit_generator_constraint_drop_partial[
 ]() where condA where condB:
     comptime keepsB[x: Int]: AnyType where condB = Int
     comptime bothConstraints[x: Int]: AnyType where condA where condB = Int
-    # expected-error @below {{cannot implicitly convert '[x: Int] AnyType where condA, condB' value to '[x: Int] AnyType where condB' in comptime initializer}}
+    # expected-error @below {{cannot implicitly convert '__generator_type[x: Int] AnyType where condA, condB' value to '__generator_type[x: Int] AnyType where condB' in comptime initializer}}
     comptime r: type_of(keepsB) = bothConstraints
 
 
@@ -72,7 +72,7 @@ def implicit_generator_constraint_drop_partial[
 def implicit_generator_constraint_add[condA: Bool, condB: Bool]() where condA where condB:
     comptime onlyA[x: Int]: AnyType where condA = Int
     comptime bothConstraints[x: Int]: AnyType where condA where condB = Int
-    # expected-error @below {{cannot implicitly convert '[x: Int] AnyType where condA' value to '[x: Int] AnyType where condA, condB' in comptime initializer}}
+    # expected-error @below {{cannot implicitly convert '__generator_type[x: Int] AnyType where condA' value to '__generator_type[x: Int] AnyType where condA, condB' in comptime initializer}}
     comptime r: type_of(bothConstraints) = onlyA
 
 comptime myCurriedIntAdd[x: Int] = myIntAdd[x, ...]
