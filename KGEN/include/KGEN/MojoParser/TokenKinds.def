@@ -144,6 +144,7 @@ TOK_KEYWORD(Self)   // Mojo extension.
 TOK_KEYWORD(struct) // Mojo extension.
 TOK_KEYWORD(trait)  // Mojo extension.
 TOK_KEYWORD(__extension)  // Mojo extension extension.
+TOK_KEYWORD(__generator_type) // Mojo extension: generator type literal.
 TOK_KEYWORD(True)
 TOK_KEYWORD(try)
 TOK_KEYWORD(var) // Mojo extension.

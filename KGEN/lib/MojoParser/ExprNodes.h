@@ -701,6 +701,28 @@ struct FunctionTypeNode final : public ExprNode {
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
+/// `__generator_type[Idx: Int] ToT` — a `!lit.generator<<params> body>` type
+/// literal. Parameters are optional (`__generator_type Int` for no params).
+struct GeneratorTypeNode final : public ExprNode {
+  GeneratorTypeNode(SMLoc baseLoc, ArrayRef<ParsedArgument> parsedParams,
+                    const ExprNode *bodyTypeExpr, SMLoc endLoc)
+      : ExprNode(kGeneratorType), baseLoc(baseLoc), parsedParams(parsedParams),
+        bodyTypeExpr(bodyTypeExpr), endLoc(endLoc) {}
+
+  SMLoc baseLoc;
+  ArrayRef<ParsedArgument> parsedParams;
+  const ExprNode *bodyTypeExpr;
+  SMLoc endLoc;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kGeneratorType;
+  }
+  SMLoc getLoc() const override { return baseLoc; }
+  SourceRange getRange() const override { return {baseLoc, endLoc}; }
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
+  void print(mlir::raw_indented_ostream &os) const override;
+};
+
 /// A `lambda` expression: a closure literal whose body is a single expression.
 /// Parsed syntactically here; the closure is constructed at emit time. Field
 /// order mirrors the parsed grammar, which follows nested-`def` closures:

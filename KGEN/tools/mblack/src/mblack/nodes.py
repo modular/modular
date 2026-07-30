@@ -545,6 +545,12 @@ def whitespace(
         if t in OPENING_BRACKETS:
             return NO
 
+    elif p.type == syms.generatortype:
+        # No space before brackets in generator types
+        # (e.g., __generator_type[Idx: Int] ToT)
+        if t in OPENING_BRACKETS:
+            return NO
+
     elif p.type == syms.named_effect:
         # No space before ( in named effects (e.g., abi("C") not abi ("C"))
         if t == token.LPAR:

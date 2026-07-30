@@ -861,13 +861,9 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         +Self.type,
     ]
 
-    comptime _TabulateIntToValueGeneratorType[ToT: AnyType] = __mlir_type[
-        `!lit.generator<<"Idx":`,
-        Int,
-        `>`,
-        +ToT,
-        `>`,
-    ]
+    comptime _TabulateIntToValueGeneratorType[ToT: AnyType] = __generator_type[
+        Idx: Int
+    ] ToT
 
     comptime _IndexToIntTabulateWrap[
         ToT: AnyType,
@@ -989,9 +985,9 @@ struct TypeList[
         Trait=Trait, ToT=type, count, Self._SplatTypeTabulator[Trait, type, _]
     ]
 
-    comptime _TypeToTypeGenerator[ToTrait: type_of(AnyType)] = __mlir_type[
-        `!lit.generator<<"From":`, Self.Trait, `>`, ToTrait, `>`
-    ]
+    comptime _TypeToTypeGenerator[ToTrait: type_of(AnyType)] = __generator_type[
+        From: Self.Trait
+    ] ToTrait
 
     comptime _MapTabulator[
         ToTrait: type_of(AnyType),
@@ -1012,13 +1008,7 @@ struct TypeList[
 
 comptime _TabulateIntToTypeGeneratorType[
     Trait: type_of(AnyType), ToT: Trait
-] = __mlir_type[
-    `!lit.generator<<"Idx":`,
-    Int,
-    `> `,
-    Trait,
-    `>`,
-]
+] = __generator_type[Idx: Int] Trait
 
 comptime _IndexToIntTypeTabulateWrap[
     Trait: type_of(AnyType),

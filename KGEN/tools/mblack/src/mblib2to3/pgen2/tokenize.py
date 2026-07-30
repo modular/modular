@@ -642,6 +642,7 @@ def generate_tokens(
         "comptime": COMPTIME,
         "var": VAR,
         "__mlir_region": MLIR_REGION,
+        "__generator_type": GENERATOR_TYPE,
         "read": READ,
         "imm": IMM,
         "mut": MUT,

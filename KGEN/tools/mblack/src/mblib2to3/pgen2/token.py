@@ -101,6 +101,7 @@ WHERE: Final = 74
 EXTENSION: Final = 75
 COMPTIME: Final = 76
 IMM: Final = 77
+GENERATOR_TYPE: Final = 78
 NT_OFFSET: Final = 256
 # --end constants--
 

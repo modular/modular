@@ -1279,7 +1279,7 @@ struct TwoParamsType[a: Int, b: Int](Movable where False):
 comptime TwoParamsTypeAlias[B: Int] = TwoParamsType[B, ...]
 # expected-note @+1 {{function declared here}}
 def take_anytype[T: AnyType]():
-  # expected-error @below {{'take_anytype' parameter 'T' has 'AnyType' type, but value has type '[B: Int] AnyStruct[TwoParamsType[B, _]]'}}
+  # expected-error @below {{'take_anytype' parameter 'T' has 'AnyType' type, but value has type '__generator_type[B: Int] AnyStruct[TwoParamsType[B, _]]'}}
     take_anytype[TwoParamsTypeAlias]()
 
 def ternary_missing_else(a: Int, b: Int) -> Int:

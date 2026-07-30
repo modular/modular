@@ -68,6 +68,7 @@ public:
     kSubscriptArrow,    // thing[x, y -> a, b]
     kChainedCmp,        // a < b <= c
     kFunctionType,      // async def[](owned Int, &F32) capturing raises -> F64
+    kGeneratorType,     // __generator_type[Idx: Int] ToT
     kLambda,            // lambda [y: Int](x: Int) raises {mut} -> F64: x + y
 
     // Magic functions
