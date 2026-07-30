@@ -19,9 +19,16 @@
 //     load attempt: MODULAR_PROFILER_PLUGIN (explicit path) → next to the
 //     host DSO (dladdr) → default dlopen search.
 //   * SinkRequest::DeviceInit (activatePendingTrace) performs a full
-//     attempt only in daemon-style setups (KINETO_USE_DAEMON or
-//     MODULAR_PROFILER_PLUGIN set), preserving Dynolog on-demand
-//     registration in processes that never call enable().
+//     attempt only when something asked for a profiler without calling
+//     enable() first: daemon-style setups (KINETO_USE_DAEMON or
+//     MODULAR_PROFILER_PLUGIN set, preserving Dynolog on-demand
+//     registration) and the max-debug.profiling-enabled auto-start knob.
+//     The knob must make the plugin loadable here and not only at
+//     InferenceSession construction: on AMD the profiler can only attach
+//     to the GPU runtime BEFORE the first HIP call, which device creation
+//     (e.g. a Python Accelerator()) may issue before any session exists.
+//     Loading is all that happens early — the trace still starts at the
+//     session's construction-time enable(), as on NVIDIA.
 //   * SinkRequest::Observe (disable, state, waitForTrace, lastTraceError)
 //     only ADOPTS a plugin some other copy in the process already loaded,
 //     via a cheap RTLD_NOLOAD probe. Adoption is what keeps the several
@@ -45,6 +52,7 @@
 #include <string>
 #include <string_view>
 
+#include "Support/Configuration.h"
 #include "Support/Profiling/PluginABI.h"
 #include "Support/Profiling/Ranges.h"
 
@@ -68,6 +76,19 @@ std::atomic<const M_ProfilerPluginAPI *> &getCachedApi() {
 const char *pluginEnvPath() {
   const char *path = std::getenv("MODULAR_PROFILER_PLUGIN");
   return (path != nullptr && *path != '\0') ? path : nullptr;
+}
+
+// The max-debug.profiling-enabled auto-start knob (settable via the
+// MODULAR_MAX_DEBUG_PROFILING_ENABLED / MODULAR_DEBUG env vars or
+// modular.cfg) — the same knob InferenceSession's construction-time
+// enable() reads. Consulted only on the rare DeviceInit path, never per
+// range.
+bool profilingConfigEnabled() {
+  auto configOr = M::Config::open();
+  if (configOr.isError())
+    return false;
+  return configOr->getValueAsBool("max-debug.profiling-enabled",
+                                  /*defaultValue=*/false);
 }
 
 #if !MODULAR_TRACY_BUILD && !defined(_WIN32)
@@ -294,9 +315,11 @@ const RangeSink *acquireRangeSink(SinkRequest request) {
   case SinkRequest::DeviceInit:
     // Daemon-style setups attach at device initialization even though
     // nothing enabled profiling, so Dynolog on-demand capture works with no
-    // flags; otherwise device init only adopts.
+    // flags; the auto-start knob attaches here too because on AMD device
+    // init is the last moment a profiler can hook the GPU runtime (see the
+    // file header). Otherwise device init only adopts.
     allowFullLoad = std::getenv("KINETO_USE_DAEMON") != nullptr ||
-                    pluginEnvPath() != nullptr;
+                    pluginEnvPath() != nullptr || profilingConfigEnabled();
     break;
   case SinkRequest::Observe:
     break;

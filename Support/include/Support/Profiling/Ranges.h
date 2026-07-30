@@ -188,14 +188,18 @@ void enable();
 void disable();
 
 // Activate a deferred trace subscription: enable() only records intent,
-// because the profiler backend may need a live device context to subscribe
-// (subscribing CUPTI without a CUDA primary context segfaults
-// later).  MLRT calls this right after it retains the device's
-// primary context (CUDADeviceContext), with that context current.
-// Idempotent and cheap; safe on any thread.  Environment-driven on-demand
-// capture setups also attach the profiler here even when profiling was
-// never enabled (SinkRequest::DeviceInit); otherwise this is a no-op when
-// profiling is disabled, already active, or no context is bound.
+// because the profiler backend has a vendor-specific readiness ordering that
+// only device initialization can satisfy.  MLRT calls this from each
+// device-init path at the moment its vendor requires: on CUDA right after it
+// retains the device's primary context (CUDADeviceContext), with that
+// context current (subscribing CUPTI without one segfaults later); on AMD
+// right before its first HIP call (HIPDriver), because rocprofiler-sdk only
+// accepts in-process tool registration until the HIP/HSA runtime
+// initializes.  Idempotent and cheap; safe on any thread.
+// Environment-driven on-demand capture setups also attach the profiler here
+// even when profiling was never enabled (SinkRequest::DeviceInit);
+// otherwise this is a no-op when profiling is disabled, already active, or
+// the backend is not yet ready.
 void activatePendingTrace();
 
 // Block until the most recent disable()'s trace has been serialized.
