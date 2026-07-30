@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 from max.benchmark.results_to_csv import (
+    ENGINE_PROFILE,
     JSONObject,
     convert,
     flatten,
@@ -284,3 +285,123 @@ def test_main_cli_dry_run(tmp_path: Path) -> None:
     rc = main([str(a), "-o", str(out), "--dry-run"])
     assert rc == 0
     assert not out.exists()
+
+
+# --- Engine profile (ResultSetInContext output from engine benchmarks) -------
+
+
+def _write_engine_json(path: Path) -> None:
+    """Writes a minimal engine ResultSetInContext document."""
+    path.write_text(
+        json.dumps(
+            {
+                "run_context": {"config_id": None, "git_commit": "abc"},
+                "results": [
+                    {
+                        "iteration_config": {
+                            "batch_size": 4,
+                            "context_len": 0,
+                            "input_len": 128,
+                            "output_len": 64,
+                        },
+                        "result": {
+                            "total_latency_ms": {
+                                "mean": 10.0,
+                                "std": 1.0,
+                                "p50": 9.0,
+                                "p90": 12.0,
+                                "p95": 13.0,
+                                "p99": 15.0,
+                                "unit": "ms",
+                                "confidence_info": None,
+                            },
+                            "prefill_latency_ms": {"mean": 3.0, "p90": 3.5},
+                            "decode_latency_ms": {"mean": 7.0, "p90": 8.0},
+                            "tokens_per_second": 500.0,
+                            "input_tokens_per_second": 300.0,
+                            "output_tokens_per_second": 200.0,
+                            "gpu": {
+                                "peak_memory_mib": 40000.0,
+                                "avg_utilization_percent": 90.0,
+                                "kernel_time_ms": 5.0,
+                                "device_count": 1,
+                                "per_gpu_metrics": None,
+                            },
+                        },
+                    }
+                ],
+            }
+        )
+    )
+
+
+def test_engine_profile_summary_selects_engine_columns() -> None:
+    available = [
+        "run_context.git_commit",
+        "iteration_config.batch_size",
+        "result.tokens_per_second",
+        "result.total_latency_ms.mean",
+        "result.total_latency_ms.std",  # not in summary
+        "result.gpu.peak_memory_mib",
+        "mean_ttft_ms",  # serving column, must NOT appear under engine profile
+    ]
+    selected = select_columns(available, profile=ENGINE_PROFILE)
+    assert "iteration_config.batch_size" in selected
+    assert "result.tokens_per_second" in selected
+    assert "result.total_latency_ms.mean" in selected
+    assert "result.gpu.peak_memory_mib" in selected
+    # Serving-only and non-summary engine columns are excluded from summary.
+    assert "mean_ttft_ms" not in selected
+    assert "result.total_latency_ms.std" not in selected
+
+
+def test_engine_profile_group_gpu() -> None:
+    available = [
+        "iteration_config.batch_size",
+        "result.gpu.peak_memory_mib",
+        "result.gpu.kernel_time_ms",
+        "result.tokens_per_second",
+    ]
+    selected = select_columns(
+        available, groups=["gpu"], only=True, profile=ENGINE_PROFILE
+    )
+    assert selected == [
+        "result.gpu.kernel_time_ms",
+        "result.gpu.peak_memory_mib",
+    ]
+
+
+def test_engine_profile_unknown_group_lists_engine_groups() -> None:
+    with pytest.raises(ValueError, match="Available groups: config, gpu"):
+        select_columns(["x"], groups=["prefill_decode"], profile=ENGINE_PROFILE)
+
+
+def test_convert_engine_profile_end_to_end(tmp_path: Path) -> None:
+    src = tmp_path / "engine-results.json"
+    _write_engine_json(src)
+    out = tmp_path / "engine.csv"
+    columns = convert([src], out, profile=ENGINE_PROFILE)
+
+    assert "iteration_config.batch_size" in columns
+    assert "result.total_latency_ms.mean" in columns
+    # Bulk / non-summary fields stay out of the default engine summary.
+    assert "result.gpu.per_gpu_metrics" not in columns
+
+    with open(out) as f:
+        rows = list(csv.reader(f))
+    assert rows[0] == columns
+    assert len(rows) == 2
+    bs_idx = columns.index("iteration_config.batch_size")
+    assert rows[1][bs_idx] == "4"
+
+
+def test_main_cli_profile_engine(tmp_path: Path) -> None:
+    src = tmp_path / "engine-results.json"
+    _write_engine_json(src)
+    out = tmp_path / "engine.csv"
+    rc = main([str(src), "-o", str(out), "--profile", "engine"])
+    assert rc == 0
+    with open(out) as f:
+        header = next(csv.reader(f))
+    assert "result.tokens_per_second" in header
+    assert "iteration_config.batch_size" in header

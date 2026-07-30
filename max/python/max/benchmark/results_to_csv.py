@@ -14,11 +14,13 @@
 
 """Post-process benchmark result JSON blobs into a CSV with selectable columns.
 
-The serving benchmark treats its JSON output as the single source of truth: a
-``save_result_json`` blob carries *every* metric the run produced. A CSV, by
-contrast, is a presentation of that data — most consumers care about a small
-"summary" slice, while power users opt into complementary groups (prefill /
-decode batch stats, per-turn cache rates, GPU stats, ...) or name exact columns.
+The benchmarks treat their JSON output as the single source of truth: a
+``save_result_json`` blob (serving) or a ``ResultSetInContext`` document (the
+``results_publication`` reporters, used by both serving sweeps and engine
+benchmarks) carries *every* metric the run produced. A CSV, by contrast, is a
+presentation of that data — most consumers care about a small "summary" slice,
+while power users opt into complementary groups (prefill / decode batch stats,
+per-turn cache rates, GPU stats, ...) or name exact columns.
 
 This module keeps that separation clean. It reads one or more result JSON files,
 flattens each nested blob into a flat ``dotted.key`` column namespace, and emits
@@ -26,12 +28,21 @@ a CSV containing a curated default summary plus whatever additional columns or
 groups the caller selects. It never recomputes metrics; it only projects the
 columns already present in the JSON.
 
+The curated summary and opt-in groups are supplied by a :class:`ColumnProfile`,
+selected with ``--profile`` (``serving`` by default, ``engine`` for engine
+benchmark output). ``--all`` / ``--columns`` remain profile-independent and work
+on any JSON.
+
 Run it through Bazel. Under ``bazel run`` the working directory is the
 workspace root, so input/output paths are resolved relative to the repo root
 (pass absolute paths to target files elsewhere)::
 
     ./bazelw run //max/python/max/benchmark:results_to_csv -- \\
         results-1-median.json results-2-median.json -o summary.csv
+
+    # engine benchmark output (ResultSetInContext JSON):
+    ./bazelw run //max/python/max/benchmark:results_to_csv -- \\
+        engine-results.json -o engine.csv --profile engine
 
     # add the prefill/decode batch stats and GPU columns:
     ./bazelw run //max/python/max/benchmark:results_to_csv -- \\
@@ -58,7 +69,7 @@ import os
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Literal, TypeGuard
+from typing import NamedTuple, TypeGuard
 
 from typing_extensions import TypedDict
 
@@ -96,12 +107,26 @@ class ResultSetDocument(TypedDict, total=False):
     results: list[ResultEntry]
 
 
+class ColumnProfile(NamedTuple):
+    """A domain-specific column-selection policy.
+
+    Bundles the curated default ``summary`` columns (in display order, emitted
+    only when present in the input) with the named opt-in ``groups``, each a
+    predicate matching a flattened column name.
+    """
+
+    summary: tuple[str, ...]
+    groups: Mapping[str, Callable[[str], bool]]
+
+
+# ---------------------------------------------------------------------------
+# Serving profile (default) — save_result_json / serving-sweep column layout.
+# ---------------------------------------------------------------------------
+
 # Curated, ordered default columns. Only those actually present in the input
 # are emitted, so this same list works for text-generation and pixel-generation
-# runs (missing keys are silently skipped). This is the "summary" slice most
-# consumers want; everything else is opt-in via ``--groups`` / ``--columns`` /
-# ``--all``.
-SUMMARY_COLUMNS: tuple[str, ...] = (
+# runs (missing keys are silently skipped).
+_SERVING_SUMMARY_COLUMNS: tuple[str, ...] = (
     # Run identity / configuration.
     "date",
     "model_id",
@@ -212,23 +237,11 @@ def _group_raw(key: str) -> bool:
     )
 
 
-# Names of the opt-in serving column groups (the keys of COLUMN_GROUPS). A
-# ``Literal`` so the group set is type-checked at definition and typos are caught.
-ServingColumnGroup = Literal[
-    "prefill_decode",
-    "gpu",
-    "cpu",
-    "per_turn",
-    "server_metrics",
-    "spec_decode",
-    "confidence",
-    "client_args",
-    "steady_state",
-    "raw",
-]
-
 # Named opt-in column groups. Each predicate matches a *flattened* column name.
-COLUMN_GROUPS: Mapping[ServingColumnGroup, Callable[[str], bool]] = {
+# Keyed by ``str`` (not a ``Literal``) so the dict fits ``ColumnProfile.groups``:
+# ``Mapping`` is invariant in its key, so a ``Literal``-keyed map is not
+# assignable to the shared ``Mapping[str, ...]`` field.
+_SERVING_COLUMN_GROUPS: Mapping[str, Callable[[str], bool]] = {
     "prefill_decode": _group_prefill_decode,
     "gpu": _group_gpu,
     "cpu": _group_cpu,
@@ -239,6 +252,78 @@ COLUMN_GROUPS: Mapping[ServingColumnGroup, Callable[[str], bool]] = {
     "client_args": _group_client_args,
     "steady_state": _group_steady_state,
     "raw": _group_raw,
+}
+
+SERVING_PROFILE = ColumnProfile(
+    summary=_SERVING_SUMMARY_COLUMNS, groups=_SERVING_COLUMN_GROUPS
+)
+
+
+# ---------------------------------------------------------------------------
+# Engine profile — ResultSetInContext layout emitted by the engine benchmark
+# (``iteration_config`` = IndividualShapeConfig, ``result`` =
+# EngineBenchmarkMetrics), where nested pydantic fields flatten to dotted keys.
+# ---------------------------------------------------------------------------
+
+_ENGINE_SUMMARY_COLUMNS: tuple[str, ...] = (
+    # Run identity / shape configuration.
+    "run_context.git_commit",
+    "iteration_config.batch_size",
+    "iteration_config.context_len",
+    "iteration_config.input_len",
+    "iteration_config.output_len",
+    # Throughput.
+    "result.tokens_per_second",
+    "result.input_tokens_per_second",
+    "result.output_tokens_per_second",
+    # Latency headlines.
+    "result.total_latency_ms.mean",
+    "result.total_latency_ms.p90",
+    "result.total_latency_ms.p99",
+    "result.prefill_latency_ms.mean",
+    "result.decode_latency_ms.mean",
+    # GPU headlines.
+    "result.gpu.peak_memory_mib",
+    "result.gpu.avg_utilization_percent",
+    "result.gpu.kernel_time_ms",
+    "result.gpu.device_count",
+)
+
+
+def _engine_group_gpu(key: str) -> bool:
+    return key.startswith("result.gpu")
+
+
+def _engine_group_phase(key: str) -> bool:
+    return key.startswith(
+        ("result.prefill_latency_ms", "result.decode_latency_ms")
+    )
+
+
+def _engine_group_latency(key: str) -> bool:
+    return key.startswith("result.total_latency_ms")
+
+
+def _engine_group_config(key: str) -> bool:
+    return key.startswith(("iteration_config", "run_context"))
+
+
+_ENGINE_COLUMN_GROUPS: Mapping[str, Callable[[str], bool]] = {
+    "gpu": _engine_group_gpu,
+    "phase": _engine_group_phase,
+    "latency": _engine_group_latency,
+    "config": _engine_group_config,
+}
+
+ENGINE_PROFILE = ColumnProfile(
+    summary=_ENGINE_SUMMARY_COLUMNS, groups=_ENGINE_COLUMN_GROUPS
+)
+
+
+# Named profiles selectable on the CLI via ``--profile``.
+PROFILES: Mapping[str, ColumnProfile] = {
+    "serving": SERVING_PROFILE,
+    "engine": ENGINE_PROFILE,
 }
 
 
@@ -315,7 +400,7 @@ def _rows_from_result_set(document: ResultSetDocument) -> list[Row]:
 def load_result_rows(path: Path) -> list[Row]:
     """Loads a result JSON file and returns one flattened row per result.
 
-    Supports the shapes the serving benchmark emits:
+    Supports the shapes the benchmarks emit:
 
     - a single ``save_result_json`` blob (one row);
     - a JSON array of such blobs (one row each);
@@ -366,10 +451,11 @@ def select_columns(
     columns: Sequence[str] = (),
     all_columns: bool = False,
     only: bool = False,
+    profile: ColumnProfile = SERVING_PROFILE,
 ) -> list[str]:
     """Chooses the ordered CSV columns from those available in the input.
 
-    The default (no options) is :data:`SUMMARY_COLUMNS`, restricted to columns
+    The default (no options) is ``profile.summary``, restricted to columns
     actually present in the input. ``groups`` and ``columns`` add to that
     summary; ``only`` drops the summary so just the requested groups/columns are
     emitted; ``all_columns`` emits every available column (summary first, then
@@ -396,7 +482,7 @@ def select_columns(
         available:
             All flattened column names present across the input rows.
         groups:
-            Names of opt-in :data:`COLUMN_GROUPS` to include.
+            Names of opt-in ``profile.groups`` to include.
         columns:
             Exact column names to include, in the given order. Included even if
             absent from ``available`` (they produce empty cells).
@@ -404,36 +490,38 @@ def select_columns(
             Emit every available column.
         only:
             Emit only the requested ``groups`` / ``columns`` (no summary).
+        profile:
+            The :class:`ColumnProfile` supplying the summary columns and named
+            groups. Defaults to :data:`SERVING_PROFILE`.
 
     Returns:
         The ordered list of column names to write.
 
     Raises:
-        ValueError: If a requested group name is unknown.
+        ValueError: If a requested group name is unknown to ``profile``.
     """
     available_set = set(available)
 
     if all_columns:
-        summary_present = [c for c in SUMMARY_COLUMNS if c in available_set]
+        summary_present = [c for c in profile.summary if c in available_set]
         rest = sorted(c for c in available_set if c not in set(summary_present))
         return _ordered_unique([*summary_present, *rest])
 
-    unknown = [g for g in groups if g not in COLUMN_GROUPS]
+    unknown = [g for g in groups if g not in profile.groups]
     if unknown:
         raise ValueError(
             f"Unknown column group(s): {', '.join(sorted(unknown))}. "
-            f"Available groups: {', '.join(sorted(COLUMN_GROUPS))}."
+            f"Available groups: {', '.join(sorted(profile.groups))}."
         )
 
     selected: list[str] = []
     if not only:
-        selected.extend(c for c in SUMMARY_COLUMNS if c in available_set)
+        selected.extend(c for c in profile.summary if c in available_set)
 
-    # Iterate the group definitions (not the caller-supplied strings) so the
-    # ``Literal``-typed keys stay type-checked; requested groups are emitted in
-    # definition order.
+    # Iterate the group definitions (not the caller-supplied strings) so
+    # requested groups are emitted in definition order.
     requested = set(groups)
-    for name, predicate in COLUMN_GROUPS.items():
+    for name, predicate in profile.groups.items():
         if name in requested:
             selected.extend(sorted(c for c in available_set if predicate(c)))
 
@@ -476,6 +564,7 @@ def convert(
     columns: Sequence[str] = (),
     all_columns: bool = False,
     only: bool = False,
+    profile: ColumnProfile = SERVING_PROFILE,
     dry_run: bool = False,
 ) -> list[str]:
     """Reads result JSON ``inputs`` and writes a CSV with selected columns.
@@ -486,13 +575,16 @@ def convert(
         output_file:
             The CSV path to write.
         groups:
-            Names of opt-in :data:`COLUMN_GROUPS` to include.
+            Names of opt-in ``profile.groups`` to include.
         columns:
             Exact column names to include, in order.
         all_columns:
             Emit every available column.
         only:
             Emit only the requested groups/columns (no summary).
+        profile:
+            The :class:`ColumnProfile` supplying the summary/groups. Defaults to
+            :data:`SERVING_PROFILE`.
         dry_run:
             Compute the selected columns and report what would be written, but
             do not create ``output_file``.
@@ -518,6 +610,7 @@ def convert(
         columns=columns,
         all_columns=all_columns,
         only=only,
+        profile=profile,
     )
     if dry_run:
         logger.info(
@@ -575,7 +668,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "Available column groups: " + ", ".join(sorted(COLUMN_GROUPS)) + "."
+            "Column groups depend on --profile; run with --list-columns to see "
+            "the columns available in a given input."
         ),
     )
     parser.add_argument(
@@ -589,6 +683,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         required=True,
         type=Path,
         help="Output CSV path.",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=sorted(PROFILES),
+        default="serving",
+        help=(
+            "Column profile supplying the default summary and opt-in groups "
+            "(default: serving)."
+        ),
     )
     parser.add_argument(
         "--groups",
@@ -654,6 +757,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             columns=_parse_csv_list(args.columns),
             all_columns=args.all_columns,
             only=args.only,
+            profile=PROFILES[args.profile],
             dry_run=args.dry_run,
         )
     except (ValueError, OSError) as exc:
