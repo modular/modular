@@ -168,6 +168,8 @@ Here's a module that combines a `Linear` layer with a learnable per-output
 scale using an explicit `Weight`:
 
 ```python
+from max.graph import Weight
+
 class ScaledLinear(nn.Module):
     """Built-in Linear with a learnable output scale."""
 
@@ -204,7 +206,7 @@ This method accepts a dictionary that maps weight names to tensor values.
 # Instantiate the module
 model = FeedForwardBlock(dim=512, hidden_dim=1024, n_layers=4)
 
-# Load weights into the module
+# Load weights into the module (my_state_dict is your weight dictionary)
 model.load_state_dict(my_state_dict)
 ```
 
@@ -303,7 +305,7 @@ from max.driver import GPU
 session = InferenceSession(devices=[GPU()])
 compiled = session.compile(graph)
 runnable_model = session.init(compiled, weights_registry=model.state_dict())
-result = runnable_model(input_data)
+result = runnable_model(input_data)  # input_data is your input tensor
 
 print(result[0].to_numpy())
 ```
@@ -328,11 +330,15 @@ results. Output post-processing such as decoding happens elsewhere in the
 
 ### Verify layer correctness
 
-Some MAX ops also use different conventions than other frameworks, such as
-tensor layout ordering. To verify that individual layers in your MAX
-implementation produce the same output as your original trained model, you can
-call `print()` on a `TensorValue` in your `Module`. This op records a print node
-into the graph that fires when your compiled model runs.
+Some MAX ops use different conventions than other frameworks. For instance, some
+ops use different tensor layout ordering than you might expect. To verify that
+individual layers in your MAX implementation produce the same output as your
+original trained model, you can call `print()` on a `TensorValue` in your
+`Module`. This op records a print node into the graph that fires when your
+compiled model runs.
+
+Here's the `FeedForward` module from earlier, modified to print the
+intermediate activation:
 
 ```python
 class FeedForward(nn.Module):
@@ -347,13 +353,16 @@ class FeedForward(nn.Module):
         return self.fc2(hidden)
 ```
 
-If you instead call Python's `print()`, you'll see an internal graph
-representation rather than tensor data.
+Before you deploy your model, remove `print()` calls. `ops.print` is a
+side-effecting operation that can prevent graph optimizations.
+
+If you want to systematically test the similarity of all the layers in a model,
+use the method described in [Layer comparison](/develop/layer-comparison/).
 
 :::note
 
-Before you deploy your model, remove `print()` calls. `ops.print` is a
-side-effecting operation that can prevent graph optimizations.
+If you call Python's `print()` in a module, you'll see an internal graph
+representation rather than tensor data.
 
 :::
 
