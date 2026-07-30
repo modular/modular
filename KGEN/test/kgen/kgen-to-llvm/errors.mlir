@@ -30,6 +30,32 @@ kgen.func @rebind(%arg0: index) -> f32 {
 
 // -----
 
+// Both pointer types lower to the opaque `!llvm.ptr`, so the mismatch is only
+// visible by comparing the converted element types.
+module attributes {M.target_info = #M.target<triple="", arch="skylake-avx512", features="+fma", data_layout="", simd_bit_width=128, tune_cpu="skylake-avx512">} {
+kgen.func @rebind_ptr_elt_mismatch(%arg0: !kgen.pointer<i32>) -> !kgen.pointer<i64> {
+  // expected-error @below {{invalid rebind between two unequal types: !kgen.pointer<i32> to !kgen.pointer<i64>}}
+  // expected-error @below {{failed to legalize operation}}
+  %0 = kgen.rebind %arg0 : !kgen.pointer<i32> to !kgen.pointer<i64>
+  kgen.return %0 : !kgen.pointer<i64>
+}
+}
+
+// -----
+
+// Nested pointers require recursing through element types to reach the
+// differing leaf types.
+module attributes {M.target_info = #M.target<triple="", arch="skylake-avx512", features="+fma", data_layout="", simd_bit_width=128, tune_cpu="skylake-avx512">} {
+kgen.func @rebind_nested_ptr_mismatch(%arg0: !kgen.pointer<pointer<i32>>) -> !kgen.pointer<pointer<i64>> {
+  // expected-error @below {{invalid rebind between two unequal types: !kgen.pointer<pointer<i32>> to !kgen.pointer<pointer<i64>>}}
+  // expected-error @below {{failed to legalize operation}}
+  %0 = kgen.rebind %arg0 : !kgen.pointer<pointer<i32>> to !kgen.pointer<pointer<i64>>
+  kgen.return %0 : !kgen.pointer<pointer<i64>>
+}
+}
+
+// -----
+
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   kgen.func @capturing_parameter_closure(%arg0: !kgen.pointer<string>) capturing -> !kgen.string {
     %0 = pop.load %arg0 : !kgen.pointer<string>

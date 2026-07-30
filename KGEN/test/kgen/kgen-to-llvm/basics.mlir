@@ -206,3 +206,19 @@ kgen.func @coro() attributes {coroutineType = !kgen.struct<(index, (!kgen.pointe
 }
 
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="skylake-avx512", features="+fma", data_layout="", simd_bit_width=128, tune_cpu="skylake-avx512">} {
+
+// A rebind between pointers whose element types differ in KGEN but convert to
+// the same LLVM type is legal and folds to the input value.
+// CHECK-LABEL: llvm.func internal @rebind_ptr_equivalent_elt
+// CHECK-SAME: (%[[ARG0:.*]]: !llvm.ptr
+kgen.func @rebind_ptr_equivalent_elt(%arg0: !kgen.pointer<simd<1, f32>>) -> !kgen.pointer<f32> {
+  // CHECK: llvm.return %[[ARG0]] : !llvm.ptr
+  %0 = kgen.rebind %arg0 : !kgen.pointer<simd<1, f32>> to !kgen.pointer<f32>
+  kgen.return %0 : !kgen.pointer<f32>
+}
+
+}
