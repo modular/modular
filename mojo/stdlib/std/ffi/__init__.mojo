@@ -1018,7 +1018,9 @@ struct _Global[
         var ptr = OwnedPointer(Self.init_fn())
 
         var storage = ptr^.unsafe_take_allocation().unsafe_leak()
-        return storage.unsafe_bitcast[NoneType]()
+        # TODO(MOCO-4435): remove this temporary variable.
+        var opaque = Pointer(storage.unsafe_bitcast[NoneType]())
+        return opaque
 
     @staticmethod
     def _deinit_wrapper(
@@ -1109,7 +1111,7 @@ def _get_global_or_null(
 
 comptime _CPointer[
     mut: Bool, //, T: AnyType, origin: Origin[mut=mut]
-] = Optional[UnsafePointer[T, origin]]
+] = OptionalPointer[T, origin]
 
 
 @always_inline("nodebug")

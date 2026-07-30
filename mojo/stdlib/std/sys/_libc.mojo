@@ -355,9 +355,7 @@ def dlsym[
 
 def realpath(
     path: Pointer[mut=False, c_char, _],
-    resolved_path: _CPointer[mut=True, c_char, _] = _CPointer[
-        c_char, MutUntrackedOrigin
-    ](),
+    resolved_path: Pointer[mut=True, c_char, _],
     out result: _CPointer[c_char, MutUntrackedOrigin],
 ):
     """Expands all symbolic links and resolves references to /./, /../ and extra
@@ -367,17 +365,14 @@ def realpath(
     pointed to by resolved_path.  The resulting path will have no symbolic link,
     /./ or /../ components.
 
-    If resolved_path is a NULL pointer, then realpath() uses malloc(3) to
-    allocate a buffer of up to PATH_MAX bytes to hold the resolved pathname, and
-    returns a pointer to this buffer. The caller is responsible for deallocating
-    the buffer in this scenario.
+    libc also accepts a NULL `resolved_path`, in which case it allocates the
+    result buffer itself. This binding does not expose that mode, so the caller
+    always owns the destination buffer.
 
     Args:
         path: The path to resolve.
-        resolved_path: The buffer to store the resolved path. If this is a NULL
-            pointer then libc will allocate a buffer of up to PATH_MAX bytes to
-            hold the resolved pathname. The caller is responsible for
-            deallocating the buffer in this scenario.
+        resolved_path: The buffer to store the resolved path. It must be at
+            least `PATH_MAX` bytes long.
 
     Returns:
         A pointer to the resolved path.

@@ -729,8 +729,10 @@ struct LayoutTensor[
         Args:
             host_buffer: Contains the underlying data to point to.
         """
+        # TODO(MOCO-4435): remove this temporary variable.
+        var host_ptr = Optional(host_buffer.unsafe_ptr())
         self = Self.GenericLayoutTensorType(
-            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
+            unsafe_cast[origin=Self.origin](host_ptr),
         )
 
     @always_inline
@@ -778,8 +780,10 @@ struct LayoutTensor[
             host_buffer: The `HostBuffer` containing to the underlying data.
             runtime_layout: The runtime layout of the `LayoutTensor`.
         """
+        # TODO(MOCO-4435): remove this temporary variable.
+        var host_ptr = Optional(host_buffer.unsafe_ptr())
         self = Self.GenericLayoutTensorType(
-            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
+            unsafe_cast[origin=Self.origin](host_ptr),
             runtime_layout,
         )
 
@@ -827,8 +831,10 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the `LayoutTensor`.
             element_runtime_layout: The runtime layout of each element.
         """
+        # TODO(MOCO-4435): remove this temporary variable.
+        var host_ptr = Optional(host_buffer.unsafe_ptr())
         self = Self.GenericLayoutTensorType(
-            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
+            unsafe_cast[origin=Self.origin](host_ptr),
             runtime_layout,
             element_runtime_layout,
         )

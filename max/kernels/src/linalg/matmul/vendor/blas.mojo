@@ -320,26 +320,26 @@ comptime _DEBUG_VENDOR_BLAS = False
 @always_inline
 def _ffi_void_ptr[
     T: AnyType, origin: Origin, addr: AddressSpace
-](ptr: UnsafePointer[T, origin, address_space=addr]) -> UnsafePointer[
-    NoneType, MutAnyOrigin
+](ptr: UnsafePointer[T, origin, address_space=addr]) -> OpaquePointer[
+    MutAnyOrigin
 ]:
     """Cast any pointer to a void pointer for vendor FFI calls."""
-    return rebind[UnsafePointer[NoneType, MutAnyOrigin]](ptr)
+    return rebind[OpaquePointer[MutAnyOrigin]](ptr)
 
 
 @always_inline
 def _ffi_void_ptr[
     T: AnyType, origin: Origin, addr: AddressSpace
-](ptr: Optional[UnsafePointer[T, origin, address_space=addr]]) -> Optional[
-    UnsafePointer[NoneType, MutAnyOrigin]
-]:
+](
+    ptr: Optional[UnsafePointer[T, origin, address_space=addr]]
+) -> OptionalPointer[NoneType, MutAnyOrigin]:
     """Cast an optional non-null pointer to a nullable void pointer for vendor
     FFI calls.
 
     Returns None when the optional is empty.
     """
     if ptr:
-        return rebind[UnsafePointer[NoneType, MutAnyOrigin]](ptr.unsafe_value())
+        return rebind[OpaquePointer[MutAnyOrigin]](ptr.unsafe_value())
     return None
 
 
@@ -672,7 +672,7 @@ def matmul[
         elif handle.resolved_backend is Backend.CUBLASLT:
             _cublasLt_matmul(
                 ctx,
-                _ffi_void_ptr(handle._get_cublas()),
+                handle._get_cublas(),
                 c_tensor,
                 a_tensor,
                 b_tensor,
