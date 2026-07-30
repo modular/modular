@@ -48,6 +48,7 @@
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/bit.h"
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -404,6 +405,16 @@ struct SharedState::Impl {
   /// SharedState, so an entry can never be misattributed to a different decl.
   DenseMap<std::tuple<const ASTDecl *, Type, Type>, bool>
       nominalConformanceCache;
+
+  /// Caches builtin/std lookups by fully-qualified name. Traits and type decls
+  /// are kept in separate maps: a name is either a trait or a type within a
+  /// module, so both maps only ever hold their own kind, and a name looked up
+  /// as both (e.g. a prelude type probed via lookupBuiltinTrait) can never read
+  /// the wrong kind out of a shared key. Only positive results are stored.
+  /// StringMap owns its keys, so the hot lookup path can key on a transient
+  /// stack-built string with no allocation or attribute interning.
+  llvm::StringMap<ASTDecl *> builtinTraitCache;
+  llvm::StringMap<ASTDecl *> builtinTypeDeclCache;
 
   /// An attribute walker used to resolve bytecode references.
   BytecodeResolutionReferenceWalker bytecodeRefResolutionWalker;
@@ -1564,22 +1575,44 @@ SharedState::getWrappedSourcePath(unsigned bufferId) const {
 
 bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
 
+/// Builds the fully-qualified cache key for a builtin/std lookup into a stack
+/// buffer, so the hot lookup path allocates nothing and interns nothing. The
+/// trait and type-decl caches share this format so their keys stay in sync.
+static SmallString<64> makeBuiltinCacheKey(const SharedState::ImportPath &path,
+                                           StringRef name) {
+  SmallString<64> key;
+  key.append(path.relativeLevel, '.');
+  for (StringRef component : path.components) {
+    key += component;
+    key += '.';
+  }
+  key += name;
+  return key;
+}
+
 /// Lookup a builtin trait like `AnyType`, `ImplicitlyDeletable`, `Copyable`,
 /// `Movable` etc.  On error this returns null but does not print an error.
 ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, SMLoc loc) {
-  if (!useBuiltinModule) {
+  if (LLVM_UNLIKELY(!hasBuiltinModule())) {
     // I don't even know why we are allowing this
     return {};
   }
 
+  const auto path = ImportPath({"std", "prelude"});
+  const SmallString<64> cacheKey = makeBuiltinCacheKey(path, traitName);
+  if (auto it = impl->builtinTraitCache.find(cacheKey);
+      it != impl->builtinTraitCache.end())
+    return it->second;
+
   LookupResult lookup = lookupAndResolveDecl(
-      traitName, loc,
-      importModule({"std", "prelude"}, /*currentPackage=*/nullptr, loc), true,
+      traitName, loc, importModule(path, /*currentPackage=*/nullptr, loc), true,
       false);
   if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
     for (ASTDecl *result : lookup.getIfSuccess()) {
-      if (auto trait = dyn_cast_or_null<TraitDeclOp>(result->getIfOperation()))
+      if (isa_and_nonnull<TraitDeclOp>(result->getIfOperation())) {
+        impl->builtinTraitCache.try_emplace(cacheKey, result);
         return result;
+      }
     }
   }
   return nullptr;
@@ -1621,37 +1654,56 @@ ASTDecl *SharedState::lookupNamedTypeDecl(StringRef name, ASTDecl &context,
   return {};
 }
 
-ASTType SharedState::lookupNamedType(StringRef name, ASTDecl &context,
-                                     llvm::SMLoc loc) {
-  if (ASTDecl *decl = lookupNamedTypeDecl(name, context, loc)) {
-    if (auto structDecl =
-            dyn_cast_or_null<StructDeclOp>(decl->getIfOperation()))
-      return structDecl.bindReference();
-    if (auto aliasDecl =
-            dyn_cast_or_null<AliasDeclOp>(decl->getIfOperation())) {
-      // We need the alias body to be available to return a type.
-      if (failed(declResolver->resolveBody(*decl, loc)))
-        return getTypeCheckErrorType();
-      return aliasDecl.getValueAttr();
-    }
+static ASTType typeForResolvedTypeDecl(SharedState &state, ASTDecl *decl,
+                                       SMLoc loc) {
+  if (auto structDecl = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation()))
+    return structDecl.bindReference();
+  if (auto aliasDecl = dyn_cast_or_null<AliasDeclOp>(decl->getIfOperation())) {
+    if (failed(state.declResolver->resolveBody(*decl, loc)))
+      return state.getTypeCheckErrorType();
+    return aliasDecl.getValueAttr();
   }
-  return getTypeCheckErrorType();
+  return state.getTypeCheckErrorType();
 }
 
 ASTType SharedState::lookupBuiltinType(StringRef name, ASTDecl &context,
                                        llvm::SMLoc loc) {
-  if (useBuiltinModule) {
-    ASTDecl &preludeModule =
-        importModule({"std", "prelude"}, /*currentPackage=*/nullptr, loc);
-    return lookupNamedType(name, preludeModule, loc);
+  if (LLVM_LIKELY(hasBuiltinModule()))
+    return getCachedBuiltinType({"std", "prelude"}, name, loc);
+
+  if (ASTDecl *decl = lookupNamedTypeDecl(name, context, loc))
+    return typeForResolvedTypeDecl(*this, decl, loc);
+  return getTypeCheckErrorType();
+}
+
+ASTDecl *SharedState::getCachedBuiltinTypeDecl(const ImportPath &path,
+                                               StringRef name,
+                                               llvm::SMLoc loc) {
+  const SmallString<64> cacheKey = makeBuiltinCacheKey(path, name);
+  if (auto it = impl->builtinTypeDeclCache.find(cacheKey);
+      it != impl->builtinTypeDeclCache.end())
+    return it->second;
+
+  ASTDecl &moduleDecl = importModule(path, /*currentPackage=*/nullptr, loc);
+  if (ASTDecl *decl = lookupNamedTypeDecl(name, moduleDecl, loc)) {
+    impl->builtinTypeDeclCache.try_emplace(cacheKey, decl);
+    return decl;
   }
-  return lookupNamedType(name, context, loc);
+
+  return nullptr;
+}
+
+ASTType SharedState::getCachedBuiltinType(const ImportPath &path,
+                                          StringRef name, llvm::SMLoc loc) {
+  if (auto *decl = getCachedBuiltinTypeDecl(path, name, loc))
+    return typeForResolvedTypeDecl(*this, decl, loc);
+
+  return getTypeCheckErrorType();
 }
 
 ASTDecl *SharedState::getBuiltinCoroutineType(llvm::SMLoc loc) {
-  ASTDecl &coroutineModule = importModule({"std", "builtin", "coroutine"},
-                                          /*currentPackage=*/nullptr, loc);
-  return lookupNamedTypeDecl("Coroutine", coroutineModule, loc);
+  return getCachedBuiltinTypeDecl({"std", "builtin", "coroutine"}, "Coroutine",
+                                  loc);
 }
 
 ASTDecl *SharedState::getBuiltinDevicePassableTrait(llvm::SMLoc loc) {
@@ -1671,28 +1723,21 @@ ASTDecl *SharedState::getBuiltinDevicePassableTrait(llvm::SMLoc loc) {
 }
 
 ASTDecl *SharedState::getBuiltinRaisingCoroutineType(llvm::SMLoc loc) {
-  ASTDecl &coroutineModule = importModule({"std", "builtin", "coroutine"},
-                                          /*currentPackage=*/nullptr, loc);
-  return lookupNamedTypeDecl("RaisingCoroutine", coroutineModule, loc);
+  return getCachedBuiltinTypeDecl({"std", "builtin", "coroutine"},
+                                  "RaisingCoroutine", loc);
 }
 
 ASTType SharedState::getStandardCollectionType(llvm::SMLoc loc,
                                                StringRef name) {
-  ASTDecl &collectionsModule =
-      importModule({"std", "collections"}, /*currentPackage=*/nullptr, loc);
-  return lookupNamedType(name, collectionsModule, loc);
+  return getCachedBuiltinType({"std", "collections"}, name, loc);
 }
 
 ASTType SharedState::getBuiltinSliceType(llvm::SMLoc loc, StringRef name) {
-  ASTDecl &sliceModule = importModule({"std", "builtin", "builtin_slice"},
-                                      /*currentPackage=*/nullptr, loc);
-  return lookupNamedType(name, sliceModule, loc);
+  return getCachedBuiltinType({"std", "builtin", "builtin_slice"}, name, loc);
 }
 
 ASTType SharedState::getBuiltinStubsMLIRType(llvm::SMLoc loc) {
-  ASTDecl &stubsModule = importModule({"std", "builtin", "_stubs"},
-                                      /*currentPackage=*/nullptr, loc);
-  return lookupNamedType("__MLIRType", stubsModule, loc);
+  return getCachedBuiltinType({"std", "builtin", "_stubs"}, "__MLIRType", loc);
 }
 
 ArrayRef<ASTDecl *>
@@ -1840,7 +1885,7 @@ SharedState::ModuleState &SharedState::createModuleState(
       LexerCursor::getEOF(moduleBuffer), spec);
 
   // Auto-import the core language modules.
-  if (useBuiltinModule)
+  if (LLVM_LIKELY(hasBuiltinModule()))
     importBuiltinModules(*moduleState.decl);
   notifyListenerOnModuleDecl(*moduleState.decl, moduleState.decl->getLoc());
   return moduleState;
@@ -1886,7 +1931,7 @@ LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
 
   // Auto-import the core language modules and notify the listener - the
   // module's content now exists.
-  if (useBuiltinModule)
+  if (LLVM_LIKELY(hasBuiltinModule()))
     importBuiltinModules(decl);
   notifyListenerOnModuleDecl(decl, decl.getLoc());
 

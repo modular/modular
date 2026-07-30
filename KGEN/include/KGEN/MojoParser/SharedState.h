@@ -592,10 +592,6 @@ public:
   /// of the type on success.
   ASTDecl *lookupNamedTypeDecl(StringRef name, ASTDecl &context,
                                llvm::SMLoc loc);
-  /// Lookup the specified name, and check that it is a non-parameterized type.
-  /// This emits a diagnostic on error and returns null, or returns the type on
-  /// success.
-  ASTType lookupNamedType(StringRef name, ASTDecl &context, llvm::SMLoc loc);
 
   /// Lookup the specified name in builtin.prelude when builtin is enabled. If
   /// builtin is disabled, search from the provided `context`. The function
@@ -710,6 +706,15 @@ private:
 
   /// Add magic things to the builtins decl when parsing starts.
   void addBuiltinTypes(ASTDecl &builtinsDecl);
+
+  /// Look up a builtin type; either by finding it in the cache or resolving it
+  /// from a module and caching the result.
+  ASTType getCachedBuiltinType(const ImportPath &path, StringRef name,
+                               llvm::SMLoc loc);
+  /// Look up a builtin type decl; either by finding it in the cache or
+  /// resolving it from a module and caching the result.
+  ASTDecl *getCachedBuiltinTypeDecl(const ImportPath &path, StringRef name,
+                                    llvm::SMLoc loc);
 
   /// Import the specified module or package, returning the module state.
   /// Always returns a valid module state, even if the module could not be
