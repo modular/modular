@@ -102,23 +102,23 @@ def test_unsafepointer_of_move_only_type() raises:
 
     var ptr = alloc[ObserveType](1)
     ptr.unsafe_write(ObserveType(42, actions_ptr))
-    assert_equal(len(actions_ptr[0]), 2)
-    assert_equal(actions_ptr[0][0], "__init__")
-    assert_equal(actions_ptr[0][1], "move ctor", msg="emplace_value")
-    assert_equal(ptr[0].value, 42)
+    assert_equal(len(actions_ptr[]), 2)
+    assert_equal(actions_ptr[][0], "__init__")
+    assert_equal(actions_ptr[][1], "move ctor", msg="emplace_value")
+    assert_equal(ptr[].value, 42)
 
     # Stop compiler warnings
     var true = True
 
     if true:  # scope value
-        var value = ptr.take_pointee()
-        assert_equal(len(actions_ptr[0]), 3)
-        assert_equal(actions_ptr[0][2], "move ctor")
+        var value = ptr.unsafe_take_pointee()
+        assert_equal(len(actions_ptr[]), 3)
+        assert_equal(actions_ptr[][2], "move ctor")
         assert_equal(value.value, 42)
 
-    ptr.free()
-    assert_equal(len(actions_ptr[0]), 4)
-    assert_equal(actions_ptr[0][3], "__del__")
+    ptr.unsafe_free()
+    assert_equal(len(actions_ptr[]), 4)
+    assert_equal(actions_ptr[][3], "__del__")
 
 
 def test_unsafepointer_move_pointee_move_count() raises:
@@ -155,19 +155,19 @@ def test_unsafepointer_unsafe_write() raises:
 
 def test_refitem() raises:
     var ptr = alloc[Int](1)
-    ptr[0] = 0
+    ptr[] = 0
     ptr[] += 1
     assert_equal(ptr[], 1)
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_refitem_offset() raises:
     var ptr = alloc[Int](5)
     for i in range(5):
-        ptr[i] = i
+        ptr[unsafe_offset=i] = i
     for i in range(5):
-        assert_equal(ptr[i], i)
-    ptr.free()
+        assert_equal(ptr[unsafe_offset=i], i)
+    ptr.unsafe_free()
 
 
 def test_address_of() raises:
@@ -201,9 +201,9 @@ def test_address_as_integer_scalar() raises:
 def test_bitcast() raises:
     var local = 1
     var ptr = UnsafePointer[Int](to=local)
-    var aliased_ptr = ptr.bitcast[SIMD[DType.uint8, 4]]()
+    var aliased_ptr = ptr.unsafe_bitcast[SIMD[DType.uint8, 4]]()
 
-    assert_equal(Int(ptr), Int(ptr.bitcast[Int]()))
+    assert_equal(Int(ptr), Int(ptr.unsafe_bitcast[Int]()))
 
     assert_equal(Int(ptr), Int(aliased_ptr))
 
@@ -214,7 +214,7 @@ def test_unsafepointer_string() raises:
     var ptr = alloc[Int](1)
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_eq() raises:
@@ -237,41 +237,41 @@ def test_eq() raises:
 def test_comparisons() raises:
     var p1 = alloc[Int](1)
 
-    assert_true((p1 - 1) < p1)
-    assert_true((p1 - 1) <= p1)
+    assert_true(p1.unsafe_offset(-1) < p1)
+    assert_true(p1.unsafe_offset(-1) <= p1)
     assert_true(p1 <= p1)
-    assert_true((p1 + 1) > p1)
-    assert_true((p1 + 1) >= p1)
+    assert_true(p1.unsafe_offset(1) > p1)
+    assert_true(p1.unsafe_offset(1) >= p1)
     assert_true(p1 >= p1)
 
-    p1.free()
+    p1.unsafe_free()
 
 
 def test_unsafepointer_address_space() raises:
-    var p1 = alloc[Int](1).address_space_cast[AddressSpace(0)]()
-    p1.free()
+    var p1 = alloc[Int](1).unsafe_address_space_cast[AddressSpace(0)]()
+    p1.unsafe_free()
 
-    var p2 = alloc[Int](1).address_space_cast[AddressSpace.GENERIC]()
-    p2.free()
+    var p2 = alloc[Int](1).unsafe_address_space_cast[AddressSpace.GENERIC]()
+    p2.unsafe_free()
 
 
 def test_unsafepointer_aligned_alloc() raises:
     comptime alignment_1 = 32
     var ptr = alloc[UInt8](1, alignment=alignment_1)
     var ptr_uint64 = UInt64(Int(ptr))
-    ptr.free()
+    ptr.unsafe_free()
     assert_equal(ptr_uint64 % alignment_1, 0)
 
     comptime alignment_2 = 64
     var ptr_2 = alloc[UInt8](1, alignment=alignment_2)
     var ptr_uint64_2 = UInt64(Int(ptr_2))
-    ptr_2.free()
+    ptr_2.unsafe_free()
     assert_equal(ptr_uint64_2 % alignment_2, 0)
 
     comptime alignment_3 = 128
     var ptr_3 = alloc[UInt8](1, alignment=alignment_3)
     var ptr_uint64_3 = UInt64(Int(ptr_3))
-    ptr_3.free()
+    ptr_3.unsafe_free()
     assert_equal(ptr_uint64_3 % alignment_3, 0)
 
 
@@ -292,7 +292,7 @@ def test_unsafepointer_alloc_origin() raises:
     # Object has not been deleted, because MutAnyOrigin is keeping it alive.
     assert_false(did_del_1)
 
-    ptr_1.free()
+    ptr_1.unsafe_free()
 
     # Now that `ptr` is out of scope, `obj_1` was destroyed as well.
     assert_true(did_del_1)
@@ -313,7 +313,7 @@ def test_unsafepointer_alloc_origin() raises:
     # `obj_2` is ASAP destroyed, since `ptr_2` origin does not keep it alive.
     assert_true(did_del_2)
 
-    ptr_2.free()
+    ptr_2.unsafe_free()
 
 
 # NOTE: Tests fails due to a `UnsafePointer` size
@@ -332,89 +332,89 @@ def test_unsafepointer_alloc_origin() raises:
 def test_indexing() raises:
     var ptr = alloc[Int](4)
     for i in range(4):
-        ptr[i] = i
+        ptr[unsafe_offset=i] = i
 
-    assert_equal(ptr[Int(1)], 1)
-    assert_equal(ptr[3], 3)
+    assert_equal(ptr[unsafe_offset=Int(1)], 1)
+    assert_equal(ptr[unsafe_offset=3], 3)
 
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_indexing_simd() raises:
     var ptr = alloc[Int](4)
     for i in range(4):
-        ptr[UInt8(i)] = i
+        ptr[unsafe_offset=UInt8(i)] = i
 
-    assert_equal(ptr[UInt8(1)], 1)
-    assert_equal(ptr[UInt8(3)], 3)
-    assert_equal(ptr[UInt16(1)], 1)
-    assert_equal(ptr[UInt16(3)], 3)
-    assert_equal(ptr[UInt32(1)], 1)
-    assert_equal(ptr[UInt32(3)], 3)
-    assert_equal(ptr[UInt64(1)], 1)
-    assert_equal(ptr[UInt64(3)], 3)
-    assert_equal(ptr[Int8(1)], 1)
-    assert_equal(ptr[Int8(3)], 3)
-    assert_equal(ptr[Int16(1)], 1)
-    assert_equal(ptr[Int16(3)], 3)
-    assert_equal(ptr[Int32(1)], 1)
-    assert_equal(ptr[Int32(3)], 3)
-    assert_equal(ptr[Int64(1)], 1)
-    assert_equal(ptr[Int64(3)], 3)
+    assert_equal(ptr[unsafe_offset=UInt8(1)], 1)
+    assert_equal(ptr[unsafe_offset=UInt8(3)], 3)
+    assert_equal(ptr[unsafe_offset=UInt16(1)], 1)
+    assert_equal(ptr[unsafe_offset=UInt16(3)], 3)
+    assert_equal(ptr[unsafe_offset=UInt32(1)], 1)
+    assert_equal(ptr[unsafe_offset=UInt32(3)], 3)
+    assert_equal(ptr[unsafe_offset=UInt64(1)], 1)
+    assert_equal(ptr[unsafe_offset=UInt64(3)], 3)
+    assert_equal(ptr[unsafe_offset=Int8(1)], 1)
+    assert_equal(ptr[unsafe_offset=Int8(3)], 3)
+    assert_equal(ptr[unsafe_offset=Int16(1)], 1)
+    assert_equal(ptr[unsafe_offset=Int16(3)], 3)
+    assert_equal(ptr[unsafe_offset=Int32(1)], 1)
+    assert_equal(ptr[unsafe_offset=Int32(3)], 3)
+    assert_equal(ptr[unsafe_offset=Int64(1)], 1)
+    assert_equal(ptr[unsafe_offset=Int64(3)], 3)
 
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_alignment() raises:
     var ptr = alloc[Int64](8, alignment=64)
     assert_equal(Int(ptr) % 64, 0)
-    ptr.free()
+    ptr.unsafe_free()
 
     var ptr_2 = alloc[UInt8](32, alignment=32)
     assert_equal(Int(ptr_2) % 32, 0)
-    ptr_2.free()
+    ptr_2.unsafe_free()
 
 
 def test_offset() raises:
     var ptr = alloc[Int](5)
     for i in range(5):
-        ptr[i] = i
+        ptr[unsafe_offset=i] = i
     var x = UInt(3)
     var y = Int(4)
-    assert_equal((ptr + x)[], 3)
-    assert_equal((ptr + y)[], 4)
+    assert_equal(ptr.unsafe_offset(x)[], 3)
+    assert_equal(ptr.unsafe_offset(y)[], 4)
 
     var ptr2 = alloc[Int](5)
     var ptr3 = ptr2
-    ptr2 += UInt(3)
-    assert_equal(ptr2, ptr3 + 3)
-    ptr2 -= UInt(5)
-    assert_equal(ptr2, ptr3 + -2)
-    assert_equal(ptr2 + UInt(1), ptr3 + -1)
-    assert_equal(ptr2 - UInt(4), ptr3 + -6)
+    ptr2 = ptr2.unsafe_offset(UInt(3))
+    assert_equal(ptr2, ptr3.unsafe_offset(3))
+    ptr2 = ptr2.unsafe_offset(-Int(UInt(5)))
+    assert_equal(ptr2, ptr3.unsafe_offset(-2))
+    assert_equal(ptr2.unsafe_offset(UInt(1)), ptr3.unsafe_offset(-1))
+    assert_equal(ptr2.unsafe_offset(-Int(UInt(4))), ptr3.unsafe_offset(-6))
 
-    ptr.free()
-    ptr2.free()
+    ptr.unsafe_free()
+    ptr2.unsafe_free()
 
 
 def test_offset_from() raises:
     var ptr = alloc[Int32](8)
-    var end = ptr + 8
+    var end = ptr.unsafe_offset(8)
 
     assert_equal(end.offset_from(ptr), 8)
     assert_equal(ptr.offset_from(end), -8)
     assert_equal(ptr.offset_from(ptr), 0)
-    assert_equal((ptr + 3).offset_from(ptr + 1), 2)
+    assert_equal(ptr.unsafe_offset(3).offset_from(ptr.unsafe_offset(1)), 2)
 
     assert_equal(end - ptr, 8)
     assert_equal(ptr - end, -8)
 
-    ptr.free()
+    ptr.unsafe_free()
 
     var wide = alloc[SIMD[DType.int64, 4]](3)
-    assert_equal((wide + 2) - wide, 2)
-    assert_equal(wide - (wide + 2), -2)
-    wide.free()
+    assert_equal(wide.unsafe_offset(2) - wide, 2)
+    assert_equal(wide - wide.unsafe_offset(2), -2)
+    wide.unsafe_free()
 
     # offset_from() and the `-` operator work on safe pointers too, and the
     # operands may mix pointer safety.
@@ -431,21 +431,21 @@ def test_offset_from() raises:
 def test_load_and_store_simd() raises:
     var ptr = alloc[Int8](16)
     for i in range(16):
-        ptr[i] = Int8(i)
+        ptr[unsafe_offset=i] = Int8(i)
     for i in range(0, 16, 4):
-        var vec = ptr.load[width=4](i)
+        var vec = ptr.unsafe_load[width=4](i)
         assert_equal(
             vec,
             SIMD[DType.int8, 4](Int8(i), Int8(i + 1), Int8(i + 2), Int8(i + 3)),
         )
-    ptr.free()
+    ptr.unsafe_free()
 
     var ptr2 = alloc[Int8](16)
     for i in range(0, 16, 4):
-        ptr2.store(i, SIMD[DType.int8, 4](i))
+        ptr2.unsafe_store(i, SIMD[DType.int8, 4](i))
     for i in range(16):
-        assert_equal(ptr2[i], Int8(i // 4 * 4))
-    ptr2.free()
+        assert_equal(ptr2[unsafe_offset=i], Int8(i // 4 * 4))
+    ptr2.unsafe_free()
 
 
 def test_load_and_store_simd_bool() raises:
@@ -453,21 +453,21 @@ def test_load_and_store_simd_bool() raises:
     # loading element-wise should give correct results (github.com/modular/modular/issues/5875).
     var p = alloc[Scalar[DType.bool]](4)
 
-    p.store(0, SIMD[DType.bool, 2](True, False))
-    assert_true(p[0])
-    assert_false(p[1])
+    p.unsafe_store(0, SIMD[DType.bool, 2](True, False))
+    assert_true(p[unsafe_offset=0])
+    assert_false(p[unsafe_offset=1])
     for i in range(2):
-        assert_equal(p.load[width=2](0)[i], p[i])
+        assert_equal(p.unsafe_load[width=2](0)[i], p[unsafe_offset=i])
 
-    p.store(0, SIMD[DType.bool, 4](False, True, True, False))
-    assert_false(p[0])
-    assert_true(p[1])
-    assert_true(p[2])
-    assert_false(p[3])
+    p.unsafe_store(0, SIMD[DType.bool, 4](False, True, True, False))
+    assert_false(p[unsafe_offset=0])
+    assert_true(p[unsafe_offset=1])
+    assert_true(p[unsafe_offset=2])
+    assert_false(p[unsafe_offset=3])
     for i in range(4):
-        assert_equal(p.load[width=4](0)[i], p[i])
+        assert_equal(p.unsafe_load[width=4](0)[i], p[unsafe_offset=i])
 
-    p.free()
+    p.unsafe_free()
 
 
 def test_unsafe_methods_on_safe_pointer() raises:
@@ -494,21 +494,21 @@ def test_unsafe_methods_on_safe_pointer() raises:
 def test_volatile_load_and_store_simd() raises:
     var ptr = alloc[Int8](16)
     for i in range(16):
-        ptr[i] = Int8(i)
+        ptr[unsafe_offset=i] = Int8(i)
     for i in range(0, 16, 4):
-        var vec = ptr.load[width=4, volatile=True](i)
+        var vec = ptr.unsafe_load[width=4, volatile=True](i)
         assert_equal(
             vec,
             SIMD[DType.int8, 4](Int8(i), Int8(i + 1), Int8(i + 2), Int8(i + 3)),
         )
-    ptr.free()
+    ptr.unsafe_free()
 
     var ptr2 = alloc[Int8](16)
     for i in range(0, 16, 4):
-        ptr2.store[volatile=True](i, SIMD[DType.int8, 4](i))
+        ptr2.unsafe_store[volatile=True](i, SIMD[DType.int8, 4](i))
     for i in range(16):
-        assert_equal(ptr2[i], Int8(i // 4 * 4))
-    ptr2.free()
+        assert_equal(ptr2[unsafe_offset=i], Int8(i // 4 * 4))
+    ptr2.unsafe_free()
 
 
 # Test pointer merging with ternary operation.
@@ -716,7 +716,7 @@ def test_write_repr_to() raises:
         is_repr=True,
     )
     check_write_to(
-        UnsafePointer(to=x).address_space_cast[AddressSpace.SHARED](),
+        UnsafePointer(to=x).unsafe_address_space_cast[AddressSpace.SHARED](),
         contains=(
             "Pointer[mut=True, SIMD[DType.int, 1],"
             " address_space=AddressSpace.SHARED](0x"
