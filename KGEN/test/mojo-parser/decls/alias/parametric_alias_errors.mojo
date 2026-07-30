@@ -25,19 +25,15 @@ comptime inlineWhereIsError[x: Int where x > 0] = x
 
 def implicit_generator_constraint_drop_error[cond: Bool]():
     comptime constrained[x: Int]: AnyType where cond = Int
-    comptime dropped: __mlir_type[
-        `!lit.generator<<"x":`, +Int, `>`, +AnyType, `>`
     # expected-error @below {{cannot implicitly convert '__generator_type[x: Int] AnyType where cond' value to '__generator_type[x: Int] AnyType' in comptime initializer}}
-    ] = constrained
+    comptime dropped: __generator_type[x: Int] AnyType = constrained
 
 def implicit_generator_constraint_drop_env_mismatch_error[
     cond: Bool, other: Bool
 ]() where other:
     comptime constrained[x: Int]: AnyType where cond = Int
-    comptime dropped: __mlir_type[
-        `!lit.generator<<"x":`, +Int, `>`, +AnyType, `>`
     # expected-error @below {{cannot implicitly convert '__generator_type[x: Int] AnyType where cond' value to '__generator_type[x: Int] AnyType' in comptime initializer}}
-    ] = constrained
+    comptime dropped: __generator_type[x: Int] AnyType = constrained
 
 # Discharging a generator body constraint depends on the assumptions in scope,
 # so its convertibility result must never be cached: the convertibility cache is
@@ -48,9 +44,7 @@ def implicit_generator_constraint_drop_env_mismatch_error[
 # and produce a spurious "cannot implicitly convert" diagnostic here.
 def implicit_generator_constraint_drop_cross_scope[cond: Bool]() where cond:
     comptime constrained[x: Int]: AnyType where cond = Int
-    comptime dropped: __mlir_type[
-        `!lit.generator<<"x":`, +Int, `>`, +AnyType, `>`
-    ] = constrained
+    comptime dropped: __generator_type[x: Int] AnyType = constrained
 
 
 # Only *fully* dropping body constraints is supported for now. Dropping a strict

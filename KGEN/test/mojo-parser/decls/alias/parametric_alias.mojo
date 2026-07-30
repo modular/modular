@@ -62,7 +62,7 @@ comptime explicitEmptyGeneratorAsType: AnyType = __mlir_attr[
 # CHECK: lit.alias.decl *"bound{{.*}}": !AnyType
 # CHECK-SAME: = <bind_params(:!lit.generator<<>!AnyType> g)>
 def implicit_empty_generator_param[
-    g: __mlir_type[`!lit.generator<<>`, +AnyType, `>`]
+    g: __generator_type AnyType
 ]():
     comptime bound: AnyType = g
 
@@ -74,9 +74,7 @@ def implicit_empty_generator_param[
 # CHECK: lit.alias.decl *"used{{.*}}": !lit.generator<<"a": !Int>!AnyType> = <#kgen.gen<!Int>>
 def implicit_generator_constraint_drop[cond: Bool]() where cond:
     comptime constrained[x: Int]: AnyType where cond = Int
-    comptime dropped: __mlir_type[
-        `!lit.generator<<"x":`, +Int, `>`, +AnyType, `>`
-    ] = constrained
+    comptime dropped: __generator_type[x: Int] AnyType = constrained
     comptime used[a: Int]: AnyType = constrained[a]
 
 
