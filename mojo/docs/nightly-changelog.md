@@ -493,6 +493,10 @@ This version is still a work in progress.
   `unsafe_take_allocation().unsafe_leak()`) and no longer accepts the payload
   pointer that `steal_data()` handed out.
 
+- `Variant.take[T]()` and `Variant.unsafe_take[T]()` have been renamed to
+  `Variant.unwrap[T]()` and `Variant.unsafe_unwrap[T]()`. The old names
+  remain as `@deprecated` methods and will be removed in a future release.
+
 - The `as_immutable()` method on `UnsafePointer` and the
   `get_immutable()` method on `Span`, `StringSlice`, and `UnsafePointer`
   have all been renamed to a single `as_imm()` method, embracing the
