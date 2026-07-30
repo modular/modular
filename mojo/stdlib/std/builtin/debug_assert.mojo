@@ -350,6 +350,79 @@ def debug_assert[
         assume(cond)
 
 
+# The two no-message overloads below omit `location` on purpose: they are
+# optimized for fast compile time, because they are used frequently. An
+# `Optional[SourceLocation]` and an `or_else` call generate extra IR and thus
+# slow compilation down.
+@always_inline
+def debug_assert[
+    cond: def() capturing[_] -> Bool,
+    assert_mode: StaticString = "none",
+    cpu_only: Bool = False,
+]():
+    """Asserts that the condition is true at run time, with no message.
+
+    On failure this reports `assertion failed` at the call site. Use the
+    overload taking `messages` to report a formatted message instead.
+
+    ```mojo
+    def main():
+        var x = 1
+
+        def check() capturing -> Bool:
+            return x > 0
+
+        debug_assert[check]()
+    ```
+
+    Parameters:
+        cond: The function to invoke to check if the assertion holds.
+        assert_mode: Determines when the assert is turned on.
+        cpu_only: If true, only run the assert on CPU.
+    """
+
+    comptime if _assert_enabled[assert_mode, cpu_only]():
+        if cond():
+            return
+
+        _debug_assert_fail(location=call_location())
+
+
+@always_inline
+def debug_assert[
+    assert_mode: StaticString = "none",
+    cpu_only: Bool = False,
+    _use_compiler_assume: Bool = False,
+](cond: Bool):
+    """Asserts that the condition is true at run time, with no message.
+
+    On failure this reports `assertion failed` at the call site. Use the
+    overload taking `messages` to report a formatted message instead.
+
+    ```mojo
+    var x = 1
+    debug_assert(x > 0)
+    ```
+
+    Parameters:
+        assert_mode: Determines when the assert is turned on.
+        cpu_only: If true, only run the assert on CPU.
+        _use_compiler_assume: If true, assume the condition is true for repeated
+            checks, to help the compiler optimize (default False).
+
+    Args:
+        cond: The bool value to assert.
+    """
+
+    comptime if _assert_enabled[assert_mode, cpu_only]():
+        if cond:
+            return
+
+        _debug_assert_fail(location=call_location())
+    elif _use_compiler_assume:
+        assume(cond)
+
+
 @always_inline
 def debug_assert[
     assert_mode: StaticString = "none",
