@@ -11,6 +11,7 @@ mojo_library(
     ],
     deps = [
         "//max/internal/driver/src/_hal",
+        "//max/internal/driver/src/machine",
         "@mojo//:std",
     ],
 )
@@ -22,6 +23,7 @@ mojo_shared_library(
     deps = [
         ":_mojo_module",
         "//max/internal/driver/src/_hal",
+        "//max/internal/driver/src/machine",
         "@mojo//:std",
     ],
 )
