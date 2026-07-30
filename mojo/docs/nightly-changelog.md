@@ -200,6 +200,11 @@ This version is still a work in progress.
 - `imm` is now the preferred spelling for the `read` argument and
   closure-capture convention. `read` still works but will soon be deprecated.
 
+- Parametric "generator" types can now be spelled with a dedicated keyword
+  instead of having to use MLIR syntax directly. This keyword is subject to
+  change in the future as we get experience with it. An example is:
+  `def foo[type: __generator_type[size: Int] SIMD[DType.uint8, size*2]](): ...`.
+
 ## Language changes
 
 - Mojo now rejects function overloads that differ only in argument convention

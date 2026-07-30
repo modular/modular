@@ -2249,15 +2249,9 @@ comptime _WCPair1[L: CoordLike, C: CoordLike]: Bool = (
 
 
 comptime _BoolIsTrue[a: Bool]: Bool = a
-comptime _TwoCoordLikePredicate = __mlir_type[
-    `!lit.generator<<"LHS": `,
-    +CoordLike,
-    `, "RHS": `,
-    +CoordLike,
-    `> `,
-    +Bool,
-    `>`,
-]
+comptime _TwoCoordLikePredicate = __generator_type[
+    LHS: CoordLike, RHS: CoordLike
+] Bool
 
 comptime _tabulatePredicate[
     a: TypeList[Trait=CoordLike, ...],
