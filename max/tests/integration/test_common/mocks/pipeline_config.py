@@ -344,12 +344,16 @@ def patched_hf_construction() -> Iterator[None]:
     makes, so a config referencing a fake/uncached repo can be *constructed*
     offline -- including under ``HF_HUB_OFFLINE`` (as CI runs).
 
-    ``MAXModelConfig.__init__`` eagerly builds its ``HuggingFaceRepo`` handles,
-    whose ``__post_init__`` either runs ``validate_hf_repo_access`` (online) or
-    resolves the local snapshot via ``generate_local_model_path`` (offline, the
-    path CI hits). ``validate_repo_access()`` uses the ``validate_hf_repo_access``
-    reference imported into ``model_config``. All are patched; the offline
-    snapshot resolves to a fake local path that preserves the repo id.
+    ``MAXModelConfig.__init__`` eagerly builds its ``HuggingFaceRepo`` handles
+    (whose ``__post_init__`` either runs ``validate_hf_repo_access`` online or
+    resolves the local snapshot via ``generate_local_model_path`` offline, the
+    path CI hits), probes ``file_exists`` for a loadable config, and loads it
+    via ``load_huggingface_config``. ``validate_repo_access()`` uses the
+    ``validate_hf_repo_access`` reference imported into ``model_config``. All
+    are patched so a fake/uncached repo stays offline: the offline snapshot
+    resolves to a fake local path that preserves the repo id, and the mocked
+    config is a bare ``MagicMock`` -- callers that assert on config contents
+    should set ``_huggingface_config`` or patch loading themselves.
     """
     with (
         patch(
@@ -363,6 +367,13 @@ def patched_hf_construction() -> Iterator[None]:
         patch(
             "max.pipelines.weights.hf_utils.generate_local_model_path",
             side_effect=_offline_safe_local_model_path,
+        ),
+        # Keep the eager config-existence probe offline for online fake repos
+        # (local paths already resolve via os.path.exists).
+        patch("huggingface_hub.file_exists", return_value=False),
+        patch(
+            "max.pipelines.lib.config.model_config.load_huggingface_config",
+            return_value=MagicMock(),
         ),
     ):
         yield

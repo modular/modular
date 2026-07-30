@@ -72,6 +72,9 @@ def _offline_hf_construction() -> Iterator[None]:
             "max.pipelines.weights.hf_utils.generate_local_model_path",
             side_effect=lambda repo_id, revision=None: f"/fake/cache/{repo_id}",
         ),
+        # Some tests force HF_HUB_OFFLINE=False (online path); keep the eager
+        # config-existence probe offline so it doesn't hit the network.
+        patch("huggingface_hub.file_exists", return_value=False),
     ):
         yield
 
