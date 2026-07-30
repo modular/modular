@@ -475,7 +475,7 @@ class PipelineArgs(ConfigFileModel):
     )
 
     dp_ce_balance_enable_dynamic_chunk_size: bool = Field(
-        default=True,
+        default=False,
         description=(
             "Whether below-threshold multi-replica CE steps run immediately "
             "with chunk sizes reduced to the balance level (False = hold "

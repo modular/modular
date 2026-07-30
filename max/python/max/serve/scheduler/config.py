@@ -87,7 +87,7 @@ class TokenGenerationSchedulerConfig:
     0-1) at or above which CE work is scheduled without further deferral.
     Only consulted when ``dp_ce_balance_timeout_ms`` > 0."""
 
-    dp_ce_balance_enable_dynamic_chunk_size: bool = True
+    dp_ce_balance_enable_dynamic_chunk_size: bool = False
     """Whether a below-threshold CE step with work on 2+ replicas runs
     immediately with each replica's chunk size reduced to the balance level
     (deferring only the excess). When False, such steps are held whole until
