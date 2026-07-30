@@ -489,6 +489,7 @@ modular_cc_library(
     }),
     visibility = [
         "//KGEN:__pkg__",
+        "//MLRT:__pkg__",
         "//mach/crates/max-sys-internal:__pkg__",
         "//max/internal:__pkg__",
         "//max/internal/profiler:__pkg__",
@@ -496,6 +497,9 @@ modular_cc_library(
         "//max/tests/internal/profiler:__pkg__",
     ],
     deps = [
+        # Configuration backs the max-debug.profiling-enabled auto-start knob
+        # the DeviceInit load trigger consults.
+        ":Configuration",
         ":ProfilerPluginABI",
         ":ProfilingRanges",
     ],
