@@ -321,6 +321,20 @@ struct Span[
 
     @always_inline
     @implicit
+    def __init__(
+        out self: Span[Self.T, Self.origin],
+        ref[Self.origin] array: Array[downcast[Self.T, Movable], _],
+    ):
+        """Construct a `Span` from an `Array`.
+
+        Args:
+            array: The array to which the span refers.
+        """
+        self._data = rebind[type_of(self)._PointerType](array.unsafe_ptr())
+        self._len = array.length
+
+    @always_inline
+    @implicit
     def __init__[
         array_origin: Origin[mut=Self.mut],
         U: Copyable,

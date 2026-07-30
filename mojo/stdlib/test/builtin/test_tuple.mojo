@@ -445,7 +445,7 @@ def test_tuple_consume_elements_destroys_once() raises:
 
 
 def test_tuple_consume_elements_heterogeneous() raises:
-    var t = (String("hello"), 42, [1, 2, 3])
+    var t = (String("hello"), 42, List([1, 2, 3]))
     var got_str = String()
     var got_int = 0
     var got_sum = 0

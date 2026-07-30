@@ -10,6 +10,14 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- mojo now picks `Array` (instead of `List`) as the default type to construct
+  from a list expression. E.g.,
+
+  ```mojo
+  var x = [1, 2, 3]
+  # type_of(x) = Array[Int, 3]
+  ```
+
 - `where` clauses now accept an optional string-literal message, written
   `where (condition, "message")`. The message is included in the compiler
   diagnostic when the constraint fails, and is supported everywhere `where`
