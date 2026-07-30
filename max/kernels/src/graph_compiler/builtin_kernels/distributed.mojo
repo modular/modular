@@ -210,7 +210,7 @@ struct DistributedAllReduceSum:
                 )
 
             _launch_device_collective[num_devices](
-                launch_vendor_allreduce, dev_ctxs_input
+                launch_vendor_allreduce, dev_ctxs_input.copy()
             )
             return
 
@@ -244,7 +244,9 @@ struct DistributedAllReduceSum:
                 dev_ctxs_input[index],
             )
 
-        _launch_device_collective[num_devices](launch_allreduce, dev_ctxs_input)
+        _launch_device_collective[num_devices](
+            launch_allreduce, dev_ctxs_input.copy()
+        )
 
 
 @extensibility.register("mo.distributed.reducescatter.sum")
@@ -382,7 +384,7 @@ struct DistributedReduceScatterSum:
             )
 
         _launch_device_collective[num_devices](
-            launch_reducescatter, dev_ctxs_input
+            launch_reducescatter, dev_ctxs_input.copy()
         )
 
 
@@ -509,7 +511,9 @@ struct DistributedAllGather:
                 local_rank,
             )
 
-        _launch_device_collective[num_devices](launch_allgather, dev_ctxs_input)
+        _launch_device_collective[num_devices](
+            launch_allgather, dev_ctxs_input.copy()
+        )
 
 
 @extensibility.register("mo.distributed.broadcast")
@@ -610,7 +614,9 @@ struct DistributedBroadcast:
                 root,
             )
 
-        _launch_device_collective[num_devices](launch_broadcast, dev_ctxs_input)
+        _launch_device_collective[num_devices](
+            launch_broadcast, dev_ctxs_input.copy()
+        )
 
 
 @extensibility.register("mo.distributed.scatter")
@@ -698,7 +704,7 @@ struct DistributedScatter:
                 dev_ctxs_input[index],
             )
 
-        _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input)
+        _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input.copy())
 
 
 @extensibility.register(
@@ -841,7 +847,9 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
                 dev_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_fused_allreduce, dev_ctxs)
+        _launch_device_collective[num_devices](
+            launch_fused_allreduce, dev_ctxs.copy()
+        )
 
 
 @extensibility.register("mo.composite.distributed.reduce_scatter_rms_norm")
@@ -1001,7 +1009,9 @@ struct DistributedReduceScatterRMSNorm:
                 dev_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_fused_rs_norm, dev_ctxs)
+        _launch_device_collective[num_devices](
+            launch_fused_rs_norm, dev_ctxs.copy()
+        )
 
 
 @extensibility.register("mo.composite.distributed.allgather_rms_norm")
@@ -1181,7 +1191,9 @@ struct DistributedAllGatherRMSNorm:
                 dev_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_fused_ag_norm, dev_ctxs)
+        _launch_device_collective[num_devices](
+            launch_fused_ag_norm, dev_ctxs.copy()
+        )
 
 
 @extensibility.register("mo.composite.distributed.matmul_reduce_scatter.sum")

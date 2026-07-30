@@ -232,4 +232,4 @@ def sha256(data: Span[Byte, _]) -> Array[UInt8, 32]:
         out[i * 4 + 1] = UInt8((h[i] >> 16) & 0xFF)
         out[i * 4 + 2] = UInt8((h[i] >> 8) & 0xFF)
         out[i * 4 + 3] = UInt8(h[i] & 0xFF)
-    return out
+    return out^

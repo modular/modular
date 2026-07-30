@@ -6555,7 +6555,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         return result
 
 
-struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
+struct DeviceContextArray[length: Int](Copyable, Sized):
     """A fixed-size collection of `DeviceContext` values.
 
     Used by multi-device custom-op `execute` methods to receive one
@@ -6581,13 +6581,15 @@ struct DeviceContextArray[length: Int](Copyable, ImplicitlyCopyable, Sized):
     """The underlying storage for the per-device contexts."""
 
     @always_inline
-    def __init__(out self, device_contexts: Array[DeviceContext, Self.length]):
+    def __init__(
+        out self, var device_contexts: Array[DeviceContext, Self.length]
+    ):
         """Initialize from an `Array` of `DeviceContext` values.
 
         Args:
             device_contexts: The per-device contexts to store.
         """
-        self.device_contexts = device_contexts
+        self.device_contexts = device_contexts^
 
     @always_inline
     def __init__[

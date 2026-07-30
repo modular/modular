@@ -354,17 +354,17 @@ struct _CopyableOwned[size: Int](IterableOwned):
     var _data: Array[Int, Self.size]
 
     def __iter__(var self) -> Self.IteratorOwnedType:
-        return _CopyableOwnedIter(self._data, 0)
+        return _CopyableOwnedIter(self._data.copy(), 0)
 
 
 def _owned2(a: Int, b: Int) -> _CopyableOwned[2]:
     var data: Array[Int, 2] = [a, b]
-    return _CopyableOwned(data)
+    return _CopyableOwned(data^)
 
 
 def _owned3(a: Int, b: Int, c: Int) -> _CopyableOwned[3]:
     var data: Array[Int, 3] = [a, b, c]
-    return _CopyableOwned(data)
+    return _CopyableOwned(data^)
 
 
 def test_product2_owned() raises:

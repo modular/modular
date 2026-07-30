@@ -288,6 +288,17 @@ struct Im2colALoader[
     var s: Int32
     var k_total: Int32  # R*S*C, prebaked once (the partial-K bound)
 
+    def __init__(out self, *, copy: Self):
+        self.input_ptr = copy.input_ptr
+        self.h_base = copy.h_base.copy()
+        self.w_base = copy.w_base.copy()
+        self.batch_base = copy.batch_base.copy()
+
+        self.c0 = copy.c0
+        self.r = copy.r
+        self.s = copy.s
+        self.k_total = copy.k_total
+
     @always_inline
     def __init__(
         out self,

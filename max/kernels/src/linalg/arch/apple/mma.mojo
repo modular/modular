@@ -981,4 +981,4 @@ struct MmaOpApple[
                 accum[mi * Self.num_n_mmas + ni] = self.load_fragment[
                     Self.out_type
                 ](sub)
-        return accum
+        return accum^

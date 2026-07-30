@@ -1447,7 +1447,7 @@ struct DistributedEPDispatchBlockScaledNV:
                 gpu_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs.copy())
 
 
 @extensibility.register("mo.distributed.ep.dispatch.mxfp4")
@@ -1597,7 +1597,7 @@ struct DistributedEPDispatchMXFP4:
                 gpu_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs.copy())
 
 
 @extensibility.register("mo.distributed.ep.dispatch")
@@ -1719,7 +1719,7 @@ struct DistributedEPDispatch:
                 gpu_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs.copy())
 
 
 @extensibility.register("mo.distributed.ep.dispatch.fp8")
@@ -1863,7 +1863,7 @@ struct DistributedEPDispatchFP8:
                 gpu_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs.copy())
 
 
 @extensibility.register("mo.distributed.ep.combine")
@@ -2006,7 +2006,7 @@ struct DistributedEPCombine:
                 gpu_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_combine, gpu_ctxs)
+        _launch_device_collective[num_devices](launch_combine, gpu_ctxs.copy())
 
 
 @extensibility.register("ep.combine_async")

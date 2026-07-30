@@ -804,7 +804,7 @@ def mgp_buffer_plan[
         ],
     ):
         result = {}
-        result.allocate_greedy(static_sizes)
+        result.allocate_greedy(materialize[static_sizes]())
 
     comptime state = compute_static_allocations()
 
@@ -815,7 +815,7 @@ def mgp_buffer_plan[
         logger.debug(stats)
 
         comptime results = state.take_results()
-        return results
+        return materialize[results]()
     else:
         var runtime_state = materialize[state]()
         runtime_state.allocate_greedy[start=num_static_sizes](runtime_sizes)

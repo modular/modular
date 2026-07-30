@@ -367,7 +367,7 @@ def _load_tile_regs[
                 regs[i] = tile.load_linear[width=VECTOR_WIDTH](
                     IndexList[2](global_row, k_offset + elem_idx % BLOCK_K)
                 )
-    return regs
+    return regs^
 
 
 @always_inline

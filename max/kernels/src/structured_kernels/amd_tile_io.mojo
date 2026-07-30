@@ -306,7 +306,7 @@ struct TiledMmaLoader[
                     result[Int(i) + Int(j) * M] = rebind[
                         SIMD[Self.in_type, simd_width]
                     ](lo.join(hi))
-        return result
+        return result^
 
     @staticmethod
     @always_inline

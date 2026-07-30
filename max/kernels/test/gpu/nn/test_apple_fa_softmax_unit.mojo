@@ -83,7 +83,7 @@ def _softmax_unit_kernel(
                 var col = ni * 16 + cb + (el & 3)
                 frag[el] = src[row * SK + col]
             acc[ni] = frag
-        return acc
+        return acc.copy()
 
     @parameter
     def add_output(

@@ -994,7 +994,7 @@ def _allreduce_1stage_kernel[
         else:
             var ptrs_ngpus = rebind[
                 Array[TileTensor[dtype, in_layout, ImmutAnyOrigin], ngpus]
-            ](ptrs)
+            ](ptrs).copy()
             var num_simd_vectors = num_elements // simd_width
             var simd_prefix_elems = num_simd_vectors * simd_width
             if num_simd_vectors > 0:

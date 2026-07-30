@@ -48,7 +48,7 @@ def test_reflect_field_count() raises:
 
 def test_reflect_field_names() raises:
     """Returns field names in order."""
-    comptime names = reflect[Point].field_names()
+    var names = materialize[reflect[Point].field_names()]()
     assert_equal(String(names[0]), "x")
     assert_equal(String(names[1]), "y")
 
@@ -56,7 +56,7 @@ def test_reflect_field_names() raises:
 def test_reflect_field_types() raises:
     """Returns field types iterable with reflect."""
     comptime types = reflect[Point].field_types()
-    comptime first_type_name = reflect[types[0]].name()
+    var first_type_name = reflect[types[0]].name()
     assert_equal(first_type_name, "SIMD[DType.int, 1]")
 
 
@@ -116,7 +116,7 @@ def diff_fields[T: AnyType](a: T, b: T) -> List[String]:
         ref b_val = reflect[T].field_ref[idx](b)
 
         if a_val != b_val:
-            diffs.append(String(names[idx]))
+            diffs.append(String(comptime (names[idx])))
 
     return diffs^
 

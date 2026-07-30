@@ -76,9 +76,11 @@ struct EntryBuilder[N: Int, phase: Phase]:
         self.pos = pos
 
     @always_inline
-    def __init__(out self, entries: Array[ScheduleEntry, Self.N], pos: Int = 0):
+    def __init__(
+        out self, var entries: Array[ScheduleEntry, Self.N], pos: Int = 0
+    ):
         """Wrap an existing entries array (e.g. from a caller)."""
-        self.entries = entries
+        self.entries = entries^
         self.pos = pos
 
     @always_inline
@@ -110,7 +112,7 @@ struct EntryBuilder[N: Int, phase: Phase]:
 # =============================================================================
 
 
-struct Pipe[N: Int](ImplicitlyCopyable, Movable):
+struct Pipe[N: Int](Copyable, Movable):
     """A compile-time sequence of N pipeline operations.
 
     Build sequences using the >> operator to chain ops into a pipeline:

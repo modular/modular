@@ -4507,7 +4507,7 @@ def _conv_miopen[
         shape[1] = UInt64(tensor.dim[tensor_rank - 1]())
         comptime for i in range(conv_rank):
             shape[2 + i] = UInt64(tensor.dim[1 + i]())
-        return shape
+        return shape^
 
     var input_shape = image_shape_from_tensor(input)
     var output_shape = image_shape_from_tensor(output)
@@ -4521,7 +4521,7 @@ def _conv_miopen[
             array[i] = Int32(list[i])
             if Int(array[i]) != list[i]:
                 raise Error(t"{name} value is too large: ", list[i])
-        return array
+        return array^
 
     var padding = int32_array_from_list["padding"](padding_list)
     var stride = int32_array_from_list["stride"](stride_list)
@@ -4554,7 +4554,7 @@ def _conv_miopen[
                 product *= shape[i]
             strides[1] = 1
             strides[0] = product
-            return strides
+            return strides^
 
         var input_strides = strides_from_shape(input_shape)
         var filter_strides = strides_from_shape(filter_shape)
@@ -4660,12 +4660,12 @@ def _conv_miopen[
         # Update cache state
         ptr_meta[].is_set = True
         ptr_meta[].input_dtype = input_type
-        ptr_meta[].input_shape = input_shape
-        ptr_meta[].filter_shape = filter_shape
-        ptr_meta[].output_shape = output_shape
-        ptr_meta[].padding = padding
-        ptr_meta[].stride = stride
-        ptr_meta[].dilation = dilation
+        ptr_meta[].input_shape = input_shape.copy()
+        ptr_meta[].filter_shape = filter_shape.copy()
+        ptr_meta[].output_shape = output_shape.copy()
+        ptr_meta[].padding = padding.copy()
+        ptr_meta[].stride = stride.copy()
+        ptr_meta[].dilation = dilation.copy()
 
     # Run forward convolution
     var forward_workspace = ctx.enqueue_create_buffer[DType.uint8](
