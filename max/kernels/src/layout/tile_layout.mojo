@@ -2249,21 +2249,18 @@ comptime _WCPair1[L: CoordLike, C: CoordLike]: Bool = (
 
 
 comptime _BoolIsTrue[a: Bool]: Bool = a
-comptime _TwoCoordLikePredicate = __generator_type[
-    LHS: CoordLike, RHS: CoordLike
-] Bool
 
 comptime _tabulatePredicate[
     a: TypeList[Trait=CoordLike, ...],
     b: TypeList[Trait=CoordLike, ...],
-    pred: _TwoCoordLikePredicate,
+    pred: __generator_type[LHS: CoordLike, RHS: CoordLike] Bool,
     idx: Int,
 ]: Bool = pred[a[idx], b[idx]]
 
 comptime _AllEltsSatisfy[
     a: TypeList[Trait=CoordLike, ...],
     b: TypeList[Trait=CoordLike, ...],
-    pred: _TwoCoordLikePredicate,
+    pred: __generator_type[LHS: CoordLike, RHS: CoordLike] Bool,
 ]: Bool = a.length == b.length and ParameterList.tabulate[
     a.length, _tabulatePredicate[a, b, pred, _]
 ]().all_satisfies[
