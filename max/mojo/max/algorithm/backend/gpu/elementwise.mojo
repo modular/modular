@@ -86,7 +86,10 @@ def _mbarrier_wait_acquire_cta(
 @always_inline("nodebug")
 def _advance_indices[
     rank: Int
-](mut idx: IndexList[rank, ...], shape: IndexList[rank, ...]):
+](
+    mut idx: IndexList[rank, element_type=_],
+    shape: IndexList[rank, element_type=_],
+):
     """Advances a multi-dimensional index by one element in row-major order."""
     idx[rank - 1] += 1
     comptime for d in reversed(range(1, rank)):
@@ -276,7 +279,9 @@ def _elementwise_impl_gpu_clc[
     elems_per_thread: Int,
     *,
     trace_description: StaticString = "",
-](func: FuncType, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
+](
+    func: FuncType, shape: IndexList[rank, element_type=_], ctx: DeviceContext
+) raises:
     """Executes `func` over `shape` on SM100+ GPUs using Cluster Launch Control
     work-stealing.
 
@@ -451,7 +456,9 @@ def _elementwise_impl_gpu_grid_stride[
     elems_per_thread: Int,
     *,
     trace_description: StaticString = "",
-](func: FuncType, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
+](
+    func: FuncType, shape: IndexList[rank, element_type=_], ctx: DeviceContext
+) raises:
     """Executes `func` over `shape` using a grid-stride loop.
 
     Parameters:

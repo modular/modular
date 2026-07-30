@@ -32,25 +32,25 @@ def _stencil_impl_cpu[
     //,
     rank: Int,
     stencil_rank: Int,
-    stencil_axis: IndexList[stencil_rank, ...],
+    stencil_axis: IndexList[stencil_rank, element_type=_],
     simd_width: Int,
     dtype: DType,
-    map_fn: def(IndexList[stencil_rank, ...]) -> Tuple[
+    map_fn: def(IndexList[stencil_rank, element_type=_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ],
     map_strides: def(dim: Int) -> Int,
-    load_fn: def[simd_width: Int, dtype: DType](IndexList[rank, ...]) -> SIMD[
-        dtype, simd_width
-    ],
+    load_fn: def[simd_width: Int, dtype: DType](
+        IndexList[rank, element_type=_]
+    ) -> SIMD[dtype, simd_width],
     compute_init_fn: def[simd_width: Int]() -> SIMD[dtype, simd_width],
     compute_fn: def[simd_width: SIMDLength](
-        IndexList[rank, ...],
+        IndexList[rank, element_type=_],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width],
     compute_finalize_fn: def[simd_width: SIMDLength](
-        IndexList[rank, ...], SIMD[dtype, simd_width]
+        IndexList[rank, element_type=_], SIMD[dtype, simd_width]
     ) -> None,
 ](
     shape: IndexList[rank, element_type=shape_element_type],

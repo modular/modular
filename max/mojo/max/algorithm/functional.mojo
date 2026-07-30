@@ -56,7 +56,7 @@ from .backend.gpu import (
 @always_inline
 def _get_start_indices_of_nth_subvolume[
     rank: Int, //, subvolume_rank: Int = 1
-](n: Int, shape: IndexList[rank, ...], out res: type_of(shape)):
+](n: Int, shape: IndexList[rank, element_type=_], out res: type_of(shape)):
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
