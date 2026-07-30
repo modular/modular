@@ -2250,8 +2250,8 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
         add_bos_token=True,
     ),
-    "deepseek-ai/DeepSeek-R1": GenericOracle(
-        model_path="deepseek-ai/DeepSeek-R1",
+    "deepseek-ai/DeepSeek-R1-0528": GenericOracle(
+        model_path="deepseek-ai/DeepSeek-R1-0528",
         config_params={
             "max_length": 516,
             "trust_remote_code": False,
