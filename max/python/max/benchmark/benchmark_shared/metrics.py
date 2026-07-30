@@ -30,7 +30,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from max.benchmark.benchmark_shared.percentile_metrics import (
@@ -168,12 +168,20 @@ def _compute_confidence_info(
     )
 
 
-class ThroughputMetrics(Metrics):
+@dataclass(init=False)
+class ThroughputMetrics(PercentileMetrics):
     """
     Container for throughput-based metrics with automatic percentile calculations.
 
     For throughput metrics, percentiles are reversed because smaller values
     are worse for throughput (e.g., p99 represents the 1st percentile).
+
+    Structured as a ``PercentileMetrics`` subclass (rather than wrapping one in a
+    private attribute) so the computed stats live in dataclass fields: JSON /
+    ``model_dump`` serializable, and expandable into per-stat columns by the
+    schema-driven CSV flattener. The public API (``mean``, ``p99``,
+    ``to_flat_dict``, ``format_with_prefix``, ``validate_metrics``, ...) is
+    inherited from ``PercentileMetrics`` unchanged.
     """
 
     def __init__(
@@ -197,7 +205,7 @@ class ThroughputMetrics(Metrics):
         percentiles = self._calculate_throughput_percentiles(data, scale_factor)
 
         ci = _compute_confidence_info(data, basic_stats["mean"], scale_factor)
-        self._metrics = PercentileMetrics(
+        super().__init__(
             unit=unit, confidence_info=ci, **basic_stats, **percentiles
         )
 
@@ -212,25 +220,22 @@ class ThroughputMetrics(Metrics):
             "p99": float(np.percentile(data, 1)) * scale_factor,  # Bottom 1%
         }
 
-    def __getattr__(self, name: str) -> Any:
-        """Delegate attribute access to the internal metrics object."""
-        return getattr(self._metrics, name)
-
     def __str__(self) -> str:
         """Return a formatted string representation of throughput metrics in table format."""
         return self.format_with_prefix(prefix="throughput")
 
-    def validate_metrics(self) -> tuple[bool, list[str]]:
-        """Validate by delegating to the inner PercentileMetrics."""
-        return self._metrics.validate_metrics()
 
-
-class StandardPercentileMetrics(Metrics):
+@dataclass(init=False)
+class StandardPercentileMetrics(PercentileMetrics):
     """
     Container for standard percentile-based metrics with automatic calculations.
 
     For standard metrics, higher percentiles represent worse performance
     (e.g., p99 represents the 99th percentile).
+
+    Structured as a ``PercentileMetrics`` subclass (see ``ThroughputMetrics``)
+    so the computed stats are serializable dataclass fields; the public API is
+    inherited from ``PercentileMetrics`` unchanged.
     """
 
     def __init__(
@@ -254,7 +259,7 @@ class StandardPercentileMetrics(Metrics):
         percentiles = self._calculate_standard_percentiles(data, scale_factor)
 
         ci = _compute_confidence_info(data, basic_stats["mean"], scale_factor)
-        self._metrics = PercentileMetrics(
+        super().__init__(
             unit=unit, confidence_info=ci, **basic_stats, **percentiles
         )
 
@@ -269,19 +274,12 @@ class StandardPercentileMetrics(Metrics):
             "p99": float(np.percentile(data, 99)) * scale_factor,
         }
 
-    def __getattr__(self, name: str) -> Any:
-        """Delegate attribute access to the internal metrics object."""
-        return getattr(self._metrics, name)
-
     def __str__(self) -> str:
         """Return a formatted string representation of standard percentile metrics in table format."""
         return self.format_with_prefix(prefix="metric")
 
-    def validate_metrics(self) -> tuple[bool, list[str]]:
-        """Validate by delegating to the inner PercentileMetrics."""
-        return self._metrics.validate_metrics()
 
-
+@dataclass(init=False)
 class RatePercentileMetrics(StandardPercentileMetrics):
     """Bounded ratio in [0, 1]; mean of per-item ratios.
 
@@ -300,14 +298,17 @@ class RatePercentileMetrics(StandardPercentileMetrics):
         scale_factor = 100.0 if as_percent else 1.0
         unit = "%" if as_percent else None
         super().__init__(data, scale_factor=scale_factor, unit=unit)
-        self._upper_bound = scale_factor
 
     def validate_metrics(self) -> tuple[bool, list[str]]:
-        m = self._metrics.mean
+        # Upper bound follows the stored representation: 100 for a percentage
+        # (unit "%"), 1 for a fraction. Catches negatives and values above the
+        # representation's maximum.
+        upper_bound = 100.0 if self.unit == "%" else 1.0
+        m = self.mean
         if not math.isfinite(m):
             return False, [f"Invalid mean: {m}"]
-        if m < 0 or m > self._upper_bound:
-            return False, [f"Mean {m} outside [0, {self._upper_bound}]"]
+        if m < 0 or m > upper_bound:
+            return False, [f"Mean {m} outside [0, {upper_bound}]"]
         return True, []
 
 
