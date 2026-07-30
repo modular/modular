@@ -13,17 +13,23 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import logging.handlers
 import math
 import os
 import platform
 import uuid
+from collections.abc import Callable
 from time import time
 
 import numpy as np
 import requests
 from max.serve.config import Settings
+from max.serve.telemetry.metrics import (
+    HISTOGRAM_SHADOW_SUFFIX,
+    configure_histogram_shadow_emission,
+)
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
@@ -33,12 +39,22 @@ from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.metrics import set_meter_provider
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics import Counter, Histogram, MeterProvider
 from opentelemetry.sdk.metrics._internal.aggregation import (
     ExplicitBucketHistogramAggregation,
+    ExponentialBucketHistogramAggregation,
+)
+from opentelemetry.sdk.metrics._internal.point import (
+    ExponentialHistogram,
+    Metric,
+)
+from opentelemetry.sdk.metrics._internal.point import (
+    Histogram as ExplicitHistogramData,
 )
 from opentelemetry.sdk.metrics.export import (
+    AggregationTemporality,
     MetricReader,
+    MetricsData,
     PeriodicExportingMetricReader,
 )
 from opentelemetry.sdk.metrics.view import View
@@ -420,25 +436,106 @@ def configure_logging(
         )
 
 
-def configure_metrics(settings: Settings) -> None:
-    egress_enabled = not settings.disable_telemetry
+def _drop_metrics_matching(
+    metrics_data: MetricsData | None,
+    should_drop: Callable[[Metric], bool],
+) -> MetricsData | None:
+    """Rebuilds the MetricsData tree without metrics matching ``should_drop``.
 
-    meter_readers: list[MetricReader] = [PrometheusMetricReader(True)]
-    if egress_enabled:
-        meter_readers.append(
-            PeriodicExportingMetricReader(
-                OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
+    MetricsData/ResourceMetrics/ScopeMetrics are frozen dataclasses, so this
+    reconstructs the tree rather than mutating it in place.
+    """
+    if metrics_data is None:
+        return None
+    return dataclasses.replace(
+        metrics_data,
+        resource_metrics=[
+            dataclasses.replace(
+                resource_metrics,
+                scope_metrics=[
+                    dataclasses.replace(
+                        scope_metrics,
+                        metrics=[
+                            m
+                            for m in scope_metrics.metrics
+                            if not should_drop(m)
+                        ],
+                    )
+                    for scope_metrics in resource_metrics.scope_metrics
+                ],
             )
-        )
+            for resource_metrics in metrics_data.resource_metrics
+        ],
+    )
 
+
+class _SkipExponentialHistogramsPrometheusReader(PrometheusMetricReader):
+    """Drops exponential-histogram data points instead of crashing on them.
+
+    The classic Prometheus text exposition format (and this exporter) only
+    knows how to render explicit-bucket histograms:
+    ``_translate_to_prometheus`` assumes every non-``HistogramDataPoint`` has
+    a ``.value`` attribute, which ``ExponentialHistogramDataPoint`` doesn't
+    have, so it would raise ``AttributeError`` and 500 the whole ``/metrics``
+    scrape. The exponential-histogram shadow metrics
+    (metrics.HISTOGRAM_SHADOW_SUFFIX) only exist when
+    ``MAX_SERVE_OTLP_METRICS_ENDPOINT`` is set, and are meant for that
+    endpoint only (see _ExponentialShadowOnlyReader below) — this keeps
+    Prometheus showing exactly the explicit-bucket histograms it always has,
+    unaffected either way.
+    """
+
+    def _receive_metrics(
+        self,
+        metrics_data: MetricsData,
+        timeout_millis: float = 10_000,
+        **kwargs: object,
+    ) -> None:
+        filtered = _drop_metrics_matching(
+            metrics_data, lambda m: isinstance(m.data, ExponentialHistogram)
+        )
+        if filtered is not None:
+            super()._receive_metrics(filtered, timeout_millis, **kwargs)
+
+
+class _ExponentialShadowOnlyReader(PeriodicExportingMetricReader):
+    """Drops explicit-bucket histogram data points; keeps everything else.
+
+    The complement of _SkipExponentialHistogramsPrometheusReader: the
+    explicit-bucket histograms already reach Prometheus unchanged (above),
+    so this reader — used only for the opt-in
+    ``MAX_SERVE_OTLP_METRICS_ENDPOINT`` — carries just the exponential
+    shadow histograms (plus counters/gauges) to that endpoint, keeping the
+    two histogram representations on separate destinations for MXSERV-258
+    side-by-side comparison rather than duplicating the explicit-bucket one
+    there too.
+    """
+
+    def _receive_metrics(
+        self,
+        metrics_data: MetricsData,
+        timeout_millis: float = 10_000,
+        **kwargs: object,
+    ) -> None:
+        filtered = _drop_metrics_matching(
+            metrics_data, lambda m: isinstance(m.data, ExplicitHistogramData)
+        )
+        if filtered is not None:
+            super()._receive_metrics(filtered, timeout_millis, **kwargs)
+
+
+def _histogram_views(settings: Settings) -> list[View]:
     # One View per histogram, matched by its exact instrument name, so each
-    # metric gets bucket boundaries tuned to its actual range (latency in ms,
-    # percentages, token/occupancy counts, batch sizes, throughput, ...).
+    # metric gets bucket boundaries tuned to its actual range (latency in
+    # ms, percentages, token/occupancy counts, batch sizes, throughput,
+    # ...). Always active, regardless of MAX_SERVE_OTLP_METRICS_ENDPOINT:
+    # Prometheus keeps showing exactly these, unchanged.
     #
     # Matching by exact name guarantees every Histogram matches at most one
-    # View, so we never get duplicate Prometheus series from overlapping Views.
-    # Any histogram missing from the map falls back to the OTEL SDK default
-    # buckets; test_all_histograms_have_explicit_buckets guards against that.
+    # of these Views, so we never get duplicate Prometheus series from
+    # overlapping Views. Any histogram missing from the map falls back to
+    # the OTEL SDK default buckets; test_all_histograms_have_explicit_buckets
+    # guards against that.
     views: list[View] = [
         View(
             instrument_name=name,
@@ -447,11 +544,57 @@ def configure_metrics(settings: Settings) -> None:
         for name, buckets in HISTOGRAM_BUCKETS_BY_METRIC.items()
     ]
 
+    if settings.otlp_metrics_endpoint:
+        # Exponential shadow of every histogram (metrics.HISTOGRAM_SHADOW_SUFFIX),
+        # matched by name glob so new histograms are covered automatically.
+        # Self-calibrating: no per-metric bucket boundaries to hand-tune, and
+        # (unlike the explicit-bucket histograms above) mergeable across
+        # replicas, so a Datadog-side p99 across the fleet is a mathematically
+        # valid percentile rather than an average/max of independent
+        # per-replica estimates. Reaches only the OTLP endpoint
+        # (_ExponentialShadowOnlyReader), side by side with the
+        # explicit-bucket histograms on Prometheus, for MXSERV-258 comparison.
+        views.append(
+            View(
+                instrument_name="*" + HISTOGRAM_SHADOW_SUFFIX,
+                aggregation=ExponentialBucketHistogramAggregation(),
+            )
+        )
+
+    return views
+
+
+def configure_metrics(settings: Settings) -> None:
+    egress_enabled = not settings.disable_telemetry
+    configure_histogram_shadow_emission(bool(settings.otlp_metrics_endpoint))
+
+    meter_readers: list[MetricReader] = [
+        _SkipExponentialHistogramsPrometheusReader(True)
+    ]
+    if egress_enabled:
+        meter_readers.append(
+            PeriodicExportingMetricReader(
+                OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
+            )
+        )
+    if settings.otlp_metrics_endpoint:
+        meter_readers.append(
+            _ExponentialShadowOnlyReader(
+                OTLPMetricExporter(
+                    endpoint=settings.otlp_metrics_endpoint,
+                    preferred_temporality={
+                        Histogram: AggregationTemporality.DELTA,
+                        Counter: AggregationTemporality.DELTA,
+                    },
+                )
+            )
+        )
+
     set_meter_provider(
         MeterProvider(
             metric_readers=meter_readers,
             resource=metrics_resource,
-            views=views,
+            views=_histogram_views(settings),
         )
     )
 

@@ -53,6 +53,7 @@ dependencies = [
   "opentelemetry-api",
   "opentelemetry-exporter-otlp-proto-http>=1.28.2",
   "opentelemetry-exporter-prometheus",
+  "opentelemetry-proto",
   "opentelemetry-sdk",
   "packaging",
   "prometheus-client",

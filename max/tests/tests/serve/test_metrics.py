@@ -23,6 +23,28 @@ from opentelemetry.metrics._internal.instrument import (
     _ProxyHistogram,
     _ProxyInstrument,
 )
+from opentelemetry.sdk.metrics._internal.aggregation import (
+    ExplicitBucketHistogramAggregation,
+    ExponentialBucketHistogramAggregation,
+)
+from opentelemetry.sdk.metrics._internal.point import (
+    Buckets,
+    ExponentialHistogram,
+    ExponentialHistogramDataPoint,
+    HistogramDataPoint,
+    Metric,
+    MetricsData,
+    NumberDataPoint,
+    ResourceMetrics,
+    ScopeMetrics,
+    Sum,
+)
+from opentelemetry.sdk.metrics._internal.point import (
+    Histogram as ExplicitHistogramData,
+)
+from opentelemetry.sdk.metrics.export import AggregationTemporality
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.util.instrumentation import InstrumentationScope
 
 _meter = get_meter_provider().get_meter("testing")
 
@@ -154,18 +176,22 @@ def _is_histogram(inst: object) -> bool:
 
 
 def test_all_histograms_have_explicit_buckets() -> None:
-    """Every histogram must have tuned bucket boundaries.
+    """Every primary histogram must have tuned bucket boundaries.
 
     The default latency-ms buckets are wrong for non-latency histograms
     (percentages, token counts, throughput, ...), so common.py assigns
     per-metric buckets by exact instrument name. Guard against a new histogram
     being added without a matching bucket View (which would silently fall back
-    to the SDK default buckets), and against stale map entries.
+    to the SDK default buckets), and against stale map entries. Excludes the
+    exponential-histogram shadow metrics (metrics.HISTOGRAM_SHADOW_SUFFIX),
+    which are deliberately not in this map -- they're covered by the glob
+    View in _histogram_views instead.
     """
     histogram_names = {
         name
         for name, inst in metrics.SERVE_METRICS.items()
         if _is_histogram(inst)
+        and not name.endswith(metrics.HISTOGRAM_SHADOW_SUFFIX)
     }
     mapped = set(common.HISTOGRAM_BUCKETS_BY_METRIC)
 
@@ -229,6 +255,238 @@ def test_percent_buckets_tighten_near_saturation() -> None:
     pairs = list(itertools.pairwise(buckets))
     assert {hi - lo for lo, hi in pairs if hi <= 90.0} == {5.0}
     assert {hi - lo for lo, hi in pairs if hi > 90.0} == {2.0}
+
+
+def test_every_histogram_has_an_exponential_shadow() -> None:
+    """Every primary histogram gets a same-named exponential shadow metric.
+
+    Created unconditionally at import time (see metrics.py) so
+    configure_histogram_shadow_emission can be toggled purely at commit
+    time, without touching instrument setup.
+    """
+    for name in common.HISTOGRAM_BUCKETS_BY_METRIC:
+        shadow_name = name + metrics.HISTOGRAM_SHADOW_SUFFIX
+        assert shadow_name in metrics.SERVE_METRICS, (
+            f"{name} has no exponential shadow metric ({shadow_name})"
+        )
+        assert _is_histogram(metrics.SERVE_METRICS[shadow_name])
+
+
+def test_histogram_views_default_uses_explicit_buckets_only() -> None:
+    """With no OTLP metrics endpoint configured, only Prometheus's buckets.
+
+    Verifies the default (flag-off) path stays on today's per-metric,
+    hand-tuned ``ExplicitBucketHistogramAggregation`` Views, matched by
+    exact instrument name -- and that no exponential View is added, since
+    the shadow metrics are never committed to in this mode.
+    """
+    views = common._histogram_views(Settings())
+
+    assert len(views) == len(common.HISTOGRAM_BUCKETS_BY_METRIC)
+    for view in views:
+        assert view._instrument_name in common.HISTOGRAM_BUCKETS_BY_METRIC
+        assert isinstance(view._aggregation, ExplicitBucketHistogramAggregation)
+
+
+def test_histogram_views_with_otlp_endpoint_adds_exponential_shadow() -> None:
+    """Setting an OTLP metrics endpoint adds an exponential shadow View.
+
+    The explicit-bucket Views (Prometheus's) stay exactly as in the default
+    case -- this is additive, not a replacement -- plus one more View,
+    matched by a name glob rather than per-metric, covering every shadow
+    histogram at once with a self-calibrating aggregation (see MXSERV-258).
+    """
+    views = common._histogram_views(
+        Settings(otlp_metrics_endpoint="http://localhost:4318")
+    )
+
+    explicit_views = [
+        v
+        for v in views
+        if isinstance(v._aggregation, ExplicitBucketHistogramAggregation)
+    ]
+    exponential_views = [
+        v
+        for v in views
+        if isinstance(v._aggregation, ExponentialBucketHistogramAggregation)
+    ]
+
+    assert len(explicit_views) == len(common.HISTOGRAM_BUCKETS_BY_METRIC)
+    assert len(exponential_views) == 1
+    assert exponential_views[0]._instrument_name == (
+        "*" + metrics.HISTOGRAM_SHADOW_SUFFIX
+    )
+
+
+def test_histogram_shadow_emission_mirrors_commits() -> None:
+    """configure_histogram_shadow_emission gates the shadow commit.
+
+    Disabled (the default): committing a primary histogram measurement
+    doesn't touch its shadow. Enabled: it does, with the same value.
+    """
+    metrics.configure_histogram_shadow_emission(False)
+    try:
+        with mock.patch(
+            "max.serve.telemetry.metrics._commit_measurement"
+        ) as mock_commit:
+            metrics.MaxMeasurement("maxserve.itl", 12.5).commit()
+            assert mock_commit.call_count == 1
+            assert mock_commit.call_args[0][0] == "maxserve.itl"
+
+        metrics.configure_histogram_shadow_emission(True)
+        with mock.patch(
+            "max.serve.telemetry.metrics._commit_measurement"
+        ) as mock_commit:
+            metrics.MaxMeasurement("maxserve.itl", 12.5).commit()
+            assert mock_commit.call_count == 2
+            committed_names = {
+                call.args[0] for call in mock_commit.call_args_list
+            }
+            assert committed_names == {
+                "maxserve.itl",
+                "maxserve.itl" + metrics.HISTOGRAM_SHADOW_SUFFIX,
+            }
+    finally:
+        metrics.configure_histogram_shadow_emission(False)
+
+
+def _synthetic_metrics_data(
+    *data: Sum | ExplicitHistogramData | ExponentialHistogram,
+) -> MetricsData:
+    """Builds a minimal MetricsData tree wrapping the given data payloads.
+
+    Exercises common._drop_metrics_matching (shared by both reader guards)
+    directly, without needing a real MeterProvider/exporter -- these are
+    frozen dataclasses, cheap to construct by hand.
+    """
+    return MetricsData(
+        resource_metrics=[
+            ResourceMetrics(
+                resource=Resource.create({}),
+                schema_url="",
+                scope_metrics=[
+                    ScopeMetrics(
+                        scope=InstrumentationScope("test"),
+                        schema_url="",
+                        metrics=[
+                            Metric(
+                                name=f"metric_{i}",
+                                description=None,
+                                unit=None,
+                                data=payload,
+                            )
+                            for i, payload in enumerate(data)
+                        ],
+                    )
+                ],
+            )
+        ]
+    )
+
+
+def _sum_payload() -> Sum:
+    return Sum(
+        data_points=[
+            NumberDataPoint(
+                attributes={},
+                start_time_unix_nano=0,
+                time_unix_nano=1,
+                value=1,
+            )
+        ],
+        aggregation_temporality=AggregationTemporality.CUMULATIVE,
+        is_monotonic=True,
+    )
+
+
+def _explicit_histogram_payload() -> ExplicitHistogramData:
+    return ExplicitHistogramData(
+        data_points=[
+            HistogramDataPoint(
+                attributes={},
+                start_time_unix_nano=0,
+                time_unix_nano=1,
+                count=1,
+                sum=1.0,
+                bucket_counts=[1, 0],
+                explicit_bounds=[1.0],
+                min=1.0,
+                max=1.0,
+            )
+        ],
+        aggregation_temporality=AggregationTemporality.CUMULATIVE,
+    )
+
+
+def _exponential_histogram_payload() -> ExponentialHistogram:
+    return ExponentialHistogram(
+        data_points=[
+            ExponentialHistogramDataPoint(
+                attributes={},
+                start_time_unix_nano=0,
+                time_unix_nano=1,
+                count=1,
+                sum=1.0,
+                scale=1,
+                zero_count=0,
+                positive=Buckets(offset=0, bucket_counts=[1]),
+                negative=Buckets(offset=0, bucket_counts=[]),
+                flags=0,
+                min=1.0,
+                max=1.0,
+            )
+        ],
+        aggregation_temporality=AggregationTemporality.CUMULATIVE,
+    )
+
+
+def _metric_data_types(filtered: MetricsData | None) -> list[type]:
+    assert filtered is not None
+    return [
+        type(m.data)
+        for rm in filtered.resource_metrics
+        for sm in rm.scope_metrics
+        for m in sm.metrics
+    ]
+
+
+def test_drop_metrics_matching_keeps_and_drops_by_data_type() -> None:
+    """common._drop_metrics_matching is the shared primitive behind both
+    reader guards: _SkipExponentialHistogramsPrometheusReader filters out
+    ExponentialHistogram data (so Prometheus never sees a shape it can't
+    render), and _ExponentialShadowOnlyReader filters out the classic
+    Histogram data (so the OTLP endpoint carries only the shadow metric,
+    per MXSERV-258). Exercised directly against a synthetic MetricsData
+    tree containing all three payload shapes at once.
+    """
+    data = _synthetic_metrics_data(
+        _sum_payload(),
+        _explicit_histogram_payload(),
+        _exponential_histogram_payload(),
+    )
+
+    # Mirrors _SkipExponentialHistogramsPrometheusReader's filter.
+    prometheus_bound = common._drop_metrics_matching(
+        data, lambda m: isinstance(m.data, ExponentialHistogram)
+    )
+    assert set(_metric_data_types(prometheus_bound)) == {
+        Sum,
+        ExplicitHistogramData,
+    }
+
+    # Mirrors _ExponentialShadowOnlyReader's filter.
+    otlp_bound = common._drop_metrics_matching(
+        data, lambda m: isinstance(m.data, ExplicitHistogramData)
+    )
+    assert set(_metric_data_types(otlp_bound)) == {
+        Sum,
+        ExponentialHistogram,
+    }
+
+    # Neither guard drops everything, and a None input passes through as
+    # None (both readers' _receive_metrics skip the export call in that
+    # case, matching the base SDK's own no-op-on-None convention).
+    assert common._drop_metrics_matching(None, lambda m: True) is None
 
 
 def test_block_level_metrics_are_gauges() -> None:

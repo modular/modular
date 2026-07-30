@@ -134,6 +134,18 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added `MAX_SERVE_OTLP_METRICS_ENDPOINT` to additionally push a
+  self-calibrating exponential-histogram shadow of every histogram metric
+  (TTFT, ITL, request time, token counts, throughput, etc.) to an OTLP
+  endpoint (for example a Datadog Agent OTLP receiver, or any OTel
+  collector), rather than using the existing hand-tuned static bucket
+  boundaries. The existing histograms keep exporting on the local
+  Prometheus `/metrics` endpoint exactly as before, unaffected either way
+  (the classic Prometheus text format cannot carry exponential histograms
+  regardless); the shadow metric (named `<metric>.exponential`) goes only
+  to the configured OTLP endpoint, so both representations are available
+  side by side for comparison. Unset by default, which adds nothing and
+  leaves today's behavior unchanged.
 - Added video encoder statistics to the scheduler's per-iteration batch log
   for multimodal models, mirroring the existing `Vision Encoder` clause. Each
   batch line with video work now includes a `Video Encoder` clause reporting
