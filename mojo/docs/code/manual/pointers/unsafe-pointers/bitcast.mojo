@@ -24,14 +24,14 @@ def read_chunks(
     while chunk_size > 0:
         # Skip the 1 byte chunk_size and get a pointer to the first
         # UInt32 in the chunk
-        var ui32_ptr = (ptr + 1).bitcast[UInt32]()
+        var ui32_ptr = ptr.unsafe_offset(1).unsafe_bitcast[UInt32]()
         var chunk = List[UInt32](capacity=chunk_size)
         for i in range(chunk_size):
-            chunk.append(ui32_ptr[i])
+            chunk.append(ui32_ptr[unsafe_offset=i])
         # list is not implicitly copyable, so it needs the transfer sigil (^)
         chunks.append(chunk^)
         # Move our pointer to the next byte after the current chunk
-        ptr += 1 + 4 * chunk_size
+        ptr = ptr.unsafe_offset(1 + 4 * chunk_size)
         # Read the size of the next chunk
         chunk_size = Int(ptr[])
     return chunks^
@@ -49,23 +49,23 @@ def main():
     var offset = 0
 
     # Chunk 1 header
-    (buf + offset).unsafe_write(UInt8(2))
+    buf.unsafe_offset(offset).unsafe_write(UInt8(2))
     offset += 1
     # Chunk 1 values (little-endian UInt32)
-    (buf + offset).bitcast[UInt32]().unsafe_write(UInt32(10))
+    buf.unsafe_offset(offset).unsafe_bitcast[UInt32]().unsafe_write(UInt32(10))
     offset += 4
-    (buf + offset).bitcast[UInt32]().unsafe_write(UInt32(20))
+    buf.unsafe_offset(offset).unsafe_bitcast[UInt32]().unsafe_write(UInt32(20))
     offset += 4
 
     # Chunk 2 header
-    (buf + offset).unsafe_write(UInt8(1))
+    buf.unsafe_offset(offset).unsafe_write(UInt8(1))
     offset += 1
     # Chunk 2 value
-    (buf + offset).bitcast[UInt32]().unsafe_write(UInt32(30))
+    buf.unsafe_offset(offset).unsafe_bitcast[UInt32]().unsafe_write(UInt32(30))
     offset += 4
 
     # Terminator
-    (buf + offset).unsafe_write(UInt8(0))
+    buf.unsafe_offset(offset).unsafe_write(UInt8(0))
 
     var result = read_chunks(buf)
     print(len(result))  # 2
@@ -73,4 +73,4 @@ def main():
     print(result[0][1])  # 20
     print(result[1][0])  # 30
 
-    buf.free()
+    buf.unsafe_free()

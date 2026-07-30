@@ -46,7 +46,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable & ImplicitlyDeletable](
             var next_ptr = self.next.value()
             next_ptr[].free_chain()
             next_ptr.unsafe_deinit_pointee()
-            next_ptr.free()
+            next_ptr.unsafe_free()
 
         self.next = Self.make_node(value)
 
@@ -75,7 +75,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable & ImplicitlyDeletable](
             var current_ptr = current.value()
             next_node = current_ptr[].next
             current_ptr.unsafe_deinit_pointee()
-            current_ptr.free()
+            current_ptr.unsafe_free()
             current = next_node
 
 
@@ -94,4 +94,4 @@ def main():
     # at exit
     list_head[].free_chain()
     list_head.unsafe_deinit_pointee()
-    list_head.free()
+    list_head.unsafe_free()

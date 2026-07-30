@@ -19,7 +19,7 @@ comptime `❌`: Int32 = 0
 
 
 def kernel(value: UnsafePointer[Scalar[DType.int32], MutAnyOrigin]):
-    value[0] = `✅`
+    value[unsafe_offset=0] = `✅`
 
 
 def main() raises:

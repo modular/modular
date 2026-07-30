@@ -164,12 +164,12 @@ struct HeapArray(Writable):
         self.size = len(values)
         self.data = alloc[Int](self.size)
         for i in range(self.size):
-            (self.data + i).unsafe_write(values[i])
+            self.data.unsafe_offset(i).unsafe_write(values[i])
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("[")
         for i in range(self.size):
-            writer.write(self.data[i])
+            writer.write(self.data[unsafe_offset=i])
             if i < self.size - 1:
                 writer.write(", ")
         writer.write("]")
@@ -177,8 +177,8 @@ struct HeapArray(Writable):
     def __del__(deinit self):
         print("Destroying", self.size, "elements")
         for i in range(self.size):
-            (self.data + i).unsafe_deinit_pointee()
-        self.data.free()
+            self.data.unsafe_offset(i).unsafe_deinit_pointee()
+        self.data.unsafe_free()
 
 
 def main():
@@ -200,10 +200,10 @@ end of the function. (For more information on the `deinit` convention, see
 Note that a pointer doesn't *own* any values in the memory it points to, so
 when a pointer is destroyed, Mojo doesn't call the destructors on those values.
 
-So in the `HeapArray` example above, calling `free()` on the pointer releases
-the memory, but doesn't call the destructors on the stored values. To invoke
-the destructors, use the `unsafe_deinit_pointee()` method provided by the
-`UnsafePointer` type.
+So in the `HeapArray` example above, calling `unsafe_free()` on the pointer
+releases the memory, but doesn't call the destructors on the stored values. To
+invoke the destructors, use the `unsafe_deinit_pointee()` method provided by
+the `UnsafePointer` type.
 
 :::note
 

@@ -118,7 +118,7 @@ def use_aligned():
 
     # Heap allocation
     var heap_ptr = alloc[CacheAligned](1)
-    heap_ptr.free()
+    heap_ptr.unsafe_free()
 ```
 
 You don't need to manually request alignment when allocating values of an
@@ -148,7 +148,7 @@ def demonstrate_array_stride():
     # Only arr[0] is guaranteed to be 64-byte aligned
     # Subsequent elements follow at 8-byte intervals
 
-    arr.free()
+    arr.unsafe_free()
 ```
 
 If every element in an array must be aligned, pad the struct until its size

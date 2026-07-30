@@ -112,7 +112,7 @@ def append(mut self, value: Self.ElementType):
         var next_ptr = self.next.value()
         next_ptr[].free_chain()
         next_ptr.unsafe_deinit_pointee()
-        next_ptr.free()
+        next_ptr.unsafe_free()
 
     self.next = Self.make_node(value)
 ```
@@ -163,7 +163,7 @@ def free_chain(self):
         var current_ptr = current.value()
         next_node = current_ptr[].next
         current_ptr.unsafe_deinit_pointee()
-        current_ptr.free()
+        current_ptr.unsafe_free()
         current = next_node
 ```
 
@@ -172,7 +172,7 @@ The "head" node stays allocated unless you explicitly free it yourself:
 ```mojo
 list_head[].free_chain()
 list_head.unsafe_deinit_pointee()
-list_head.free()
+list_head.unsafe_free()
 ```
 
 ### Destructors
@@ -203,7 +203,7 @@ struct LinkedList[T]:
         while curr:
             var next = curr.value()[].next
             curr.value().unsafe_deinit_pointee()
-            curr.value().free()
+            curr.value().unsafe_free()
             curr = next
 ```
 
@@ -218,7 +218,9 @@ from std.os import abort
 comptime Element = String # Adapt for your type
 comptime ListNode = Node[Element] # Constructing a LinkedList
 
-struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
+struct Node[ElementType: ImplicitlyCopyable & Writable & ImplicitlyDeletable](
+    Movable
+):
     comptime NodePointer = UnsafePointer[Self, MutUntrackedOrigin]
 
     var value: Optional[Self.ElementType] # The `Node`'s value
@@ -246,7 +248,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
             var next_ptr = self.next.value()
             next_ptr[].free_chain()
             next_ptr.unsafe_deinit_pointee()
-            next_ptr.free()
+            next_ptr.unsafe_free()
 
         self.next = Self.make_node(value)
 
@@ -275,7 +277,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
             var current_ptr = current.value()
             next_node = current_ptr[].next
             current_ptr.unsafe_deinit_pointee()
-            current_ptr.free()
+            current_ptr.unsafe_free()
             current = next_node
 
 def main():
@@ -293,7 +295,7 @@ def main():
     # at exit
     list_head[].free_chain()
     list_head.unsafe_deinit_pointee()
-    list_head.free()
+    list_head.unsafe_free()
 ```
 
 Output:

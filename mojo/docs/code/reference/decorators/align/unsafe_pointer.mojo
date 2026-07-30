@@ -27,7 +27,7 @@ def use_aligned():
 
     # Heap allocation
     var heap_ptr = alloc[CacheAligned](1)
-    heap_ptr.free()
+    heap_ptr.unsafe_free()
 
 
 def main():

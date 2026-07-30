@@ -148,7 +148,7 @@ def scalar_add(
     if idx < size:
         # Each thread adds the scalar to its corresponding vector element
         # This operation happens in parallel across all GPU threads
-        vector[idx] += scalar
+        vector[unsafe_offset=idx] += scalar
 
 
 def main() raises:

@@ -27,7 +27,7 @@ def test_alloc_and_init():
     print(ptr[])
     # end-dereference
 
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_pointer_to_value():
@@ -53,7 +53,7 @@ def test_alloc_string():
     # end-alloc-string
 
     str_ptr.unsafe_deinit_pointee()
-    str_ptr.free()
+    str_ptr.unsafe_free()
 
 
 def test_unsafe_write_owned():
@@ -63,7 +63,7 @@ def test_unsafe_write_owned():
     # end-unsafe-write-owned
 
     str_ptr.unsafe_deinit_pointee()
-    str_ptr.free()
+    str_ptr.unsafe_free()
 
 
 def test_pointer_to_string():

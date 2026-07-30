@@ -20,22 +20,22 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
         self.size = len(elements)
         self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
-            (self.data + i).unsafe_write(elements[i].copy())
+            self.data.unsafe_offset(i).unsafe_write(elements[i].copy())
 
     def __init__(out self, *, count: Int, value: Self.ElementType):
         self.size = count
         self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
-            (self.data + i).unsafe_write(copy=value)
+            self.data.unsafe_offset(i).unsafe_write(copy=value)
 
     def __del__(deinit self):
         for i in range(self.size):
-            (self.data + i).unsafe_deinit_pointee()
-        self.data.free()
+            self.data.unsafe_offset(i).unsafe_deinit_pointee()
+        self.data.unsafe_free()
 
     def __getitem__(self, i: Int) raises -> ref[self] Self.ElementType:
         if i < self.size:
-            return self.data[i]
+            return self.data[unsafe_offset=i]
         else:
             raise Error("Out of bounds")
 

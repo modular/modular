@@ -33,7 +33,7 @@ def demonstrate_array_stride() raises:
     # Only arr[0] is guaranteed to be 64-byte aligned
     # Subsequent elements follow at 8-byte intervals
 
-    arr.free()
+    arr.unsafe_free()
 
 
 def main() raises:
