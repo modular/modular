@@ -892,15 +892,18 @@ class KVCacheParams(KVCacheParamInterface):
             ``float8_e4m3fnuz`` and a valid quantization scale dtype is
             configured; ``False`` otherwise.
         """
-        # Currently only FP8_E4M3 KVCache quantization is supported.
+        # Supported quantized-KV storage schemes: FP8_E4M3 (fp32 / e8m0 scales)
+        # and int8 (fp16 per-block absmax scales).
         valid_scale = False
         if self.kvcache_quant_config is not None:
             valid_scale = self.kvcache_quant_config.scale_dtype in (
                 DType.float32,
                 DType.float8_e8m0fnu,
+                DType.float16,
             )
         return (
-            self.dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz)
+            self.dtype
+            in (DType.float8_e4m3fn, DType.float8_e4m3fnuz, DType.int8)
             and valid_scale
         )
 
