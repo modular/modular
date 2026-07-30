@@ -13,9 +13,9 @@
 
 """Integration tests for ``max.benchmark.sweep_benchmark_serving``.
 
-CSV columns, percentile validation, and ``SweepServingBenchmarkResultWriter``
-behavior are covered by
-``test_sweep_benchmark_serving_result_utils.py``.
+Percentile validation and the uploader protocol are covered by
+``test_sweep_benchmark_serving_result_utils.py``; schema-driven CSV column
+derivation is covered by ``test_model_csv.py``.
 """
 
 from __future__ import annotations
