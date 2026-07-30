@@ -26,7 +26,7 @@ from std.gpu import (
 from std.gpu.host.info import is_cpu
 from std.gpu.host import DeviceBuffer
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
 
@@ -67,9 +67,11 @@ def _histogram_gpu(
             return
 
         # Allocate shared memory for the histogram
-        var shared_mem = stack_allocation[
-            bin_width, Int64, address_space=AddressSpace.SHARED
-        ]()
+        var shared_mem = UnsafePointer(
+            unsafe_stack_allocation[
+                bin_width, Int64, address_space=AddressSpace.SHARED
+            ]()
+        )
 
         # Initialize the shared memory to 0
         shared_mem[thread_idx.x] = 0

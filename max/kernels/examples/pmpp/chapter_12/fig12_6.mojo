@@ -14,7 +14,7 @@
 from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.atomic import Atomic
 
 
@@ -52,16 +52,20 @@ def filter_kernel(
         N: Number of elements.
     """
     # Allocate shared memory for block-private output list
-    var output_s = stack_allocation[
-        BLOCK_DIM,
-        UInt32,
-        address_space=AddressSpace.SHARED,
-    ]()
-    var output_size_s = stack_allocation[
-        1,
-        UInt32,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var output_s = UnsafePointer(
+        unsafe_stack_allocation[
+            BLOCK_DIM,
+            UInt32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var output_size_s = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            UInt32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     if thread_idx.x == 0:
         output_size_s[0] = UInt32(0)
@@ -80,11 +84,13 @@ def filter_kernel(
     barrier()
 
     # Update the public counter (one thread per block)
-    var j_shared = stack_allocation[
-        1,
-        UInt32,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var j_shared = UnsafePointer(
+        unsafe_stack_allocation[
+            1,
+            UInt32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
     if thread_idx.x == 0:
         var local_size = output_size_s[0]
         var j = Atomic.fetch_add(output_size, local_size)

@@ -14,7 +14,7 @@
 from std.gpu import barrier, thread_idx, warp_id, WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.gpu.primitives.warp import shuffle_down
 from std.random import random_float64
 from std.math import abs
@@ -57,11 +57,13 @@ def warp_level_sum_reduction_kernel(
         output: Output scalar for the sum result.
     """
     # Allocate shared memory
-    var input_s = stack_allocation[
-        BLOCK_DIM,
-        Float32,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var input_s = UnsafePointer(
+        unsafe_stack_allocation[
+            BLOCK_DIM,
+            Float32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     var t = UInt32(thread_idx.x)
     # Load data into shared memory with initial reduction

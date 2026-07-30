@@ -30,7 +30,7 @@ from std.gpu.primitives import warp
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 from max.benchmark import bencher_iter_custom
 
@@ -51,11 +51,13 @@ def sum_kernel[
 ):
     """Efficient reduction of the vector a."""
     comptime KERNEL_TPB: Int = 512
-    sums = stack_allocation[
-        KERNEL_TPB,
-        Scalar[dtype],
-        address_space=AddressSpace.SHARED,
-    ]()
+    sums = UnsafePointer(
+        unsafe_stack_allocation[
+            KERNEL_TPB,
+            Scalar[dtype],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     global_tid = block_idx.x * block_dim.x + thread_idx.x
     tid = thread_idx.x

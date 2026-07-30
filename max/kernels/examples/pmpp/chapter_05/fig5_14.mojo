@@ -18,7 +18,7 @@ from std.math import ceildiv
 from std.gpu import block_idx, thread_idx, barrier
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 # ========================== KERNEL CODE ==========================
 
@@ -42,16 +42,20 @@ def matrix_mul_tiled_boundary_kernel(
     comptime TILE_WIDTH = 16
 
     # Allocate shared memory tiles
-    var Mds = stack_allocation[
-        TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
-    ]()
-    var Nds = stack_allocation[
-        TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
-    ]()
+    var Mds = UnsafePointer(
+        unsafe_stack_allocation[
+            TILE_WIDTH * TILE_WIDTH,
+            Scalar[DType.float32],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
+    var Nds = UnsafePointer(
+        unsafe_stack_allocation[
+            TILE_WIDTH * TILE_WIDTH,
+            Scalar[DType.float32],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     var tx = thread_idx.x
     var ty = thread_idx.y

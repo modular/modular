@@ -21,7 +21,7 @@ from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.itertools import product
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 # ========================== KERNEL CODE ==========================
 
@@ -51,11 +51,13 @@ def convolution_tiled_2D_const_mem_kernel(
     var row = block_idx.y * OUT_TILE_DIM + thread_idx.y - FILTER_RADIUS
 
     # Allocate shared memory for input tile
-    var N_s = stack_allocation[
-        IN_TILE_DIM * IN_TILE_DIM,
-        Float32,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var N_s = UnsafePointer(
+        unsafe_stack_allocation[
+            IN_TILE_DIM * IN_TILE_DIM,
+            Float32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     # Load input tile into shared memory
     var tx = thread_idx.x

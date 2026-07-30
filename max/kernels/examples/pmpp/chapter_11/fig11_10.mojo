@@ -14,7 +14,7 @@
 from std.gpu import barrier, block_idx, thread_idx, WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.gpu.primitives.id import lane_id, warp_id
 from std.gpu.primitives.warp import shuffle_up
 
@@ -61,11 +61,13 @@ def block_scan(val: Float32) -> Float32:
     var result = warp_scan(val)
 
     # Allocate shared memory for warp sums
-    var warp_sums_s = stack_allocation[
-        NUM_WARPS,
-        Float32,
-        address_space=AddressSpace.SHARED,
-    ]()
+    var warp_sums_s = UnsafePointer(
+        unsafe_stack_allocation[
+            NUM_WARPS,
+            Float32,
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     # Step 2: Collect warp sums
     if lane_id() == WARP_SIZE - 1:

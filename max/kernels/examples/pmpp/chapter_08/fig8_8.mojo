@@ -17,7 +17,7 @@ from std.itertools import product
 from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 # ========================== TILING CONFIGURATION ==========================
 comptime STENCIL_WIDTH = 7
@@ -42,11 +42,13 @@ def stencil_kernel(
         N: Dimension size (N x N x N).
     """
     # Allocate shared memory tile (includes halo cells)
-    var in_s = stack_allocation[
-        IN_TILE_DIM * IN_TILE_DIM * IN_TILE_DIM,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
-    ]()
+    var in_s = UnsafePointer(
+        unsafe_stack_allocation[
+            IN_TILE_DIM * IN_TILE_DIM * IN_TILE_DIM,
+            Scalar[DType.float32],
+            address_space=AddressSpace.SHARED,
+        ]()
+    )
 
     # Get thread and block indices
     var tx = thread_idx.x
