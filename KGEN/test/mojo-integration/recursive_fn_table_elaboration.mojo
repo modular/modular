@@ -68,7 +68,7 @@ struct Value(ImplicitlyDeletable, Movable):
         # Blocker 2, on the SAME node while blocker 1 is still pending:
         # indexing the comptime `SERIALIZERS` table forces its generator to
         # elaborate. Two concurrent blockers overflowed the old single slot.
-        return SERIALIZERS[self.kind](self)
+        return materialize[SERIALIZERS]()[self.kind](self)
 
 
 comptime Serializer = def(Value) raises thin -> String
