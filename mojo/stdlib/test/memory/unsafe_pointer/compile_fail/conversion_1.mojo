@@ -16,14 +16,14 @@
 
 def test_cannot_cast_immutable_to_mutable[
     T: AnyType
-](p: UnsafePointer[mut=True, T, ...]):
+](p: Pointer[mut=True, T, ...]):
     pass
 
 
 def main() raises:
     var x = 42
 
-    var p = UnsafePointer(to=x).as_imm()
+    var p = Pointer(to=x).as_imm()
     # FIXME: this probably should be a parameter inference error, not the type
     # conversion error.
 

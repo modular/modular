@@ -59,7 +59,6 @@ def test_memcpy() raises:
     var src = Pointer(to=pair1)
     var dest = Pointer(to=pair2)
 
-    # UnsafePointer test
     pair2.lo = 0
     pair2.hi = 0
     unsafe_memcpy(dest=dest, src=src, count=1)

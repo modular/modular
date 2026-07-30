@@ -16,13 +16,13 @@
 
 def test_cannot_cast_between_different_address_spaces[
     T: AnyType
-](p: UnsafePointer[T, address_space=AddressSpace(1), ...]):
+](p: Pointer[T, address_space=AddressSpace(1), ...]):
     pass
 
 
 def main() raises:
     var x = 42
 
-    var p = UnsafePointer(to=x).address_space_cast[AddressSpace(2)]()
+    var p = Pointer(to=x).unsafe_address_space_cast[AddressSpace(2)]()
     # CHECK: value passed to 'p' cannot be converted
     test_cannot_cast_between_different_address_spaces(p)

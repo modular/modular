@@ -1072,7 +1072,7 @@ def test_indexing() raises:
 def test_list_dtor() raises:
     var dtor_count = 0
 
-    var ptr = UnsafePointer(to=dtor_count).as_imm()
+    var ptr = Pointer(to=dtor_count).as_imm()
     var l = List[DelCounter[ptr.origin]]()
     assert_equal(dtor_count, 0)
 
@@ -1086,7 +1086,7 @@ def test_list_dtor() raises:
 def test_destructor_trivial_elements() raises:
     var dtor_count = 0
 
-    var ptr = UnsafePointer(to=dtor_count).as_imm()
+    var ptr = Pointer(to=dtor_count).as_imm()
     var l = List[DelCounter[ptr.origin, trivial_del=True]]()
     l.append(DelCounter[ptr.origin, trivial_del=True](ptr))
 
@@ -1139,8 +1139,8 @@ def test_list_fill_constructor() raises:
 def test_uninit_ctor() raises:
     var list = List[String](unsafe_uninit_length=2)
 
-    UnsafePointer(to=list[0]).unsafe_write("hello ")
-    UnsafePointer(to=list[1]).unsafe_write("world")
+    Pointer(to=list[0]).unsafe_write("hello ")
+    Pointer(to=list[1]).unsafe_write("world")
     assert_equal(list[0], "hello ")
     assert_equal(list[1], "world")
 

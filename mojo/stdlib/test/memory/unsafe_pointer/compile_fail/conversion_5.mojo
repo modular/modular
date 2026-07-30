@@ -16,13 +16,13 @@
 
 def test_cannot_cast_from_mutable_any_to_named[
     T: AnyType, mut: Bool, //, origin: Origin[mut=mut]
-](p: UnsafePointer[T, origin]):
+](p: Pointer[T, origin]):
     pass
 
 
 def main() raises:
     var x = 42
 
-    var p = UnsafePointer(to=x).as_unsafe_any_origin()
-    # CHECK: value passed to 'p' cannot be converted from 'Pointer[Int, MutUnsafeAnyOrigin, _safe=False]' to 'Pointer[T, origin_of(x), _safe=False]'
+    var p = Pointer(to=x).as_unsafe_any_origin()
+    # CHECK: value passed to 'p' cannot be converted from 'Pointer[Int, MutUnsafeAnyOrigin, _safe=True]' to 'Pointer[T, origin_of(x), _safe=True]'
     test_cannot_cast_from_mutable_any_to_named[origin_of(x)](p)

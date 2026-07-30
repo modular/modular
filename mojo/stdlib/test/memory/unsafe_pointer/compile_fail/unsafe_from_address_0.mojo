@@ -16,4 +16,4 @@
 
 def main() raises:
     # CHECK: Pointer is non-nullable
-    var _p = UnsafePointer[Int, MutUntrackedOrigin](unsafe_from_address=0)
+    var _p = Pointer[Int, MutUntrackedOrigin](unsafe_from_address=0)

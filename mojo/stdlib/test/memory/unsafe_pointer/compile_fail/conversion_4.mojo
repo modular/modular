@@ -16,7 +16,7 @@
 
 def test_cannot_cast_between_different_named_origins[
     T: AnyType, mut: Bool, //, origin: Origin[mut=mut]
-](p: UnsafePointer[T, origin]):
+](p: Pointer[T, origin]):
     pass
 
 
@@ -24,6 +24,6 @@ def main() raises:
     var x = 42
     var y = 55
 
-    var p = UnsafePointer(to=x)
-    # CHECK: value passed to 'p' cannot be converted from 'Pointer[Int, origin_of(x), _safe=False]' to 'Pointer[T, origin_of(y), _safe=False]'
+    var p = Pointer(to=x)
+    # CHECK: value passed to 'p' cannot be converted from 'Pointer[Int, origin_of(x), _safe=True]' to 'Pointer[T, origin_of(y), _safe=True]'
     test_cannot_cast_between_different_named_origins[origin_of(y)](p)

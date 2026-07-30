@@ -23,28 +23,26 @@ from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 
 
-def _kernel(out_ptr: UnsafePointer[UInt16, MutAnyOrigin]):
-    # Keep the buffer as an `UnsafePointer`: this test pins the
-    # `UnsafePointer` address-space-cast and bitcast codegen path.
-    var smem = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            UInt32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+def _kernel(out_ptr: Pointer[UInt16, MutAnyOrigin]):
+    # Keep the buffer as an `Pointer`: this test pins the
+    # `Pointer` address-space-cast and bitcast codegen path.
+    var smem = unsafe_stack_allocation[
+        1,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     if thread_idx.x == 0:
-        smem[0] = UInt32(0xCAFEBABE)
+        smem[unsafe_offset=0] = UInt32(0xCAFEBABE)
     barrier()
 
     # Erase-then-reinterpret is what triggers the crash.
-    var generic = smem.address_space_cast[AddressSpace.GENERIC]()
-    var halves = generic.bitcast[UInt16]()
+    var generic = smem.unsafe_address_space_cast[AddressSpace.GENERIC]()
+    var halves = generic.unsafe_bitcast[UInt16]()
 
     if thread_idx.x == 0:
-        out_ptr[0] = halves[0]
-        out_ptr[1] = halves[1]
+        out_ptr[0] = halves[unsafe_offset=0]
+        out_ptr[1] = halves[unsafe_offset=1]
 
 
 # CHECK-LABEL: == test_gpu_shared_address_space_cast_bitcast

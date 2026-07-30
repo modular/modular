@@ -16,4 +16,4 @@
 
 def main() raises:
     # CHECK: Pointer's address cannot be negative.
-    var _p = UnsafePointer[Int, MutUntrackedOrigin](unsafe_from_address=-1)
+    var _p = Pointer[Int, MutUntrackedOrigin](unsafe_from_address=-1)

@@ -62,9 +62,9 @@ def test_string_slice_layout() raises:
 
     var str_slice = StringSlice("")
 
-    var base_ptr = Int(UnsafePointer(to=str_slice))
-    var first_word_ptr = Int(UnsafePointer(to=str_slice._slice._data))
-    var second_word_ptr = Int(UnsafePointer(to=str_slice._slice._len))
+    var base_ptr = Int(Pointer(to=str_slice))
+    var first_word_ptr = Int(Pointer(to=str_slice._slice._data))
+    var second_word_ptr = Int(Pointer(to=str_slice._slice._len))
 
     # 1st field should be at 0-byte offset from base ptr
     assert_equal(first_word_ptr - base_ptr, 0)

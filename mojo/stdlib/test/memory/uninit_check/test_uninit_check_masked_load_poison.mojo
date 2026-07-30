@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # Tests that masked_load with poison in an unmasked lane triggers abort.
 
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
 from std.sys.intrinsics import masked_load
 
 
