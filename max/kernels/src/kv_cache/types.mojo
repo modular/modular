@@ -360,7 +360,7 @@ struct PagedRowIndices[
     page_size: Int,
     pair_cta: Bool = False,
     is_leader: Bool = True,
-](ImplicitlyCopyable):
+](Copyable):
     """Pre-computed physical row indices for a BN-row range of paged KV cache.
 
     `BN` is V's tile row count. `MHAOperand.populate` (or its
@@ -1076,7 +1076,7 @@ def _populate_via_row_idx[
         result.rows[i] = row_idx_fn(
             batch_idx, base_kv_row + UInt32(i * Result.eff_page)
         )
-    return result
+    return result^
 
 
 trait KVCacheT(DevicePassable, TrivialRegisterPassable):
@@ -2405,7 +2405,7 @@ struct PagedKVCache[
                 var rows_simd = simd * SIMD[DType.uint32, chunk](stride)
                 comptime for i in range(chunk):
                     result.rows[c * chunk + i] = rows_simd[i]
-        return result
+        return result^
 
     @always_inline
     def create_tma_tile[

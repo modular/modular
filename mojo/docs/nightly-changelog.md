@@ -797,6 +797,10 @@ This version is still a work in progress.
   var v: y_type.T = 3.14  # y_type.T is the concrete field type
   ```
 
+- `Array[T]` (the type formerly known as `InlineArray[T]`) no longer conforms to
+  `ImplicitlyCopyable`, since it is not inherently cheap to copy. It continues
+  to conform to `Copyable`.
+
 - Several collection types now *conditionally* conform to `ImplicitlyDeletable`,
   conforming only when their element type does. This lets a collection hold
   non-`ImplicitlyDeletable` elements at all (previously such a collection failed

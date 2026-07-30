@@ -169,7 +169,7 @@ def diff_fields[T: AnyType](a: T, b: T) -> List[String]:
             ref a_val = reflect[T].field_ref[idx](a)
             ref b_val = reflect[T].field_ref[idx](b)
             if a_val != b_val:
-                diffs.append(String(names[idx]))
+                diffs.append(String(comptime (names[idx])))
 
     return diffs^
 ```
@@ -266,7 +266,7 @@ struct Packet:
     var payload: UInt64
 
 def show_layout[T: AnyType]():
-    comptime names = reflect[T].field_names()
+    var names = materialize[reflect[T].field_names()]()
     comptime for i in range(reflect[T].field_count()):
         comptime off = reflect[T].field_offset[index=i]()
         print(names[i], "at byte", off)

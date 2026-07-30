@@ -528,7 +528,6 @@ def test_inline_array_conditional_conformances() raises:
     assert_true(conforms_to(Array[Int, 3], Equatable))
     assert_true(conforms_to(Array[Int, 3], Hashable))
     assert_true(conforms_to(Array[Int, 3], Copyable))
-    assert_true(conforms_to(Array[Int, 3], ImplicitlyCopyable))
     assert_true(conforms_to(Array[Int, 3], ImplicitlyDeletable))
     # An array of explicitly-destroyed elements is not implicitly deletable.
     assert_false(conforms_to(Array[ExplicitDestroy, 3], ImplicitlyDeletable))

@@ -84,7 +84,7 @@ def diff_fields[T: AnyType](a: T, b: T) -> List[String]:
             ref a_val = reflect[T].field_ref[idx](a)
             ref b_val = reflect[T].field_ref[idx](b)
             if a_val != b_val:
-                diffs.append(String(names[idx]))
+                diffs.append(String(comptime (names[idx])))
 
     return diffs^
 

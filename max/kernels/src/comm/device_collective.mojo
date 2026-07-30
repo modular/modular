@@ -70,5 +70,7 @@ def _launch_device_collective[
 
     _launch_device_collective[num_devices](
         func,
-        rebind[Array[DeviceContext, num_devices]](dev_ctxs.device_contexts^),
+        rebind[Array[DeviceContext, num_devices]](
+            dev_ctxs.device_contexts^
+        ).copy(),
     )

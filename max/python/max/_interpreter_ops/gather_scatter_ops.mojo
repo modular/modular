@@ -384,7 +384,7 @@ def gather_nd_dispatcher(
             i_depth,
             s_size,
             id_stride,
-            indexed_strides,
+            indexed_strides.copy(),
             ctx,
         )
     elif idx_dtype == DType.int64:
@@ -398,7 +398,7 @@ def gather_nd_dispatcher(
             i_depth,
             s_size,
             id_stride,
-            indexed_strides,
+            indexed_strides.copy(),
             ctx,
         )
     else:
@@ -407,6 +407,7 @@ def gather_nd_dispatcher(
         )
 
 
+@fieldwise_init
 struct _GatherNdBody[idx_dtype: DType](Dispatchable):
     """Dispatch body for the GatherNd operation over data dtypes."""
 
@@ -420,30 +421,6 @@ struct _GatherNdBody[idx_dtype: DType](Dispatchable):
     var input_data_stride: Int
     var indexed_strides: Array[Int, MAX_RANK]
     var ctx: DeviceContext
-
-    def __init__(
-        out self,
-        out_addr: Int,
-        in_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
-        batch_size: Int,
-        indices_outer_size: Int,
-        index_depth: Int,
-        suffix_size: Int,
-        input_data_stride: Int,
-        indexed_strides: Array[Int, MAX_RANK],
-        ctx: DeviceContext,
-    ):
-        self.out_addr = out_addr
-        self.in_addr = in_addr
-        self.idx_ptr = idx_ptr
-        self.batch_size = batch_size
-        self.indices_outer_size = indices_outer_size
-        self.index_depth = index_depth
-        self.suffix_size = suffix_size
-        self.input_data_stride = input_data_stride
-        self.indexed_strides = indexed_strides
-        self.ctx = ctx
 
     def call[t: DType](self) raises -> None:
         gather_nd_op(
@@ -472,7 +449,7 @@ def _gather_nd_dispatch_integer[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: Array[Int, MAX_RANK],
+    var indexed_strides: Array[Int, MAX_RANK],
     ctx: DeviceContext,
 ) raises:
     dispatch_dtype(
@@ -485,7 +462,7 @@ def _gather_nd_dispatch_integer[
             index_depth,
             suffix_size,
             input_data_stride,
-            indexed_strides,
+            indexed_strides^,
             ctx,
         ),
         dtype,
@@ -1527,7 +1504,7 @@ def scatter_nd_dispatcher(
             i_depth,
             s_size,
             id_stride,
-            indexed_strides,
+            indexed_strides.copy(),
             ctx,
         )
     elif idx_dtype == DType.int64:
@@ -1541,7 +1518,7 @@ def scatter_nd_dispatcher(
             i_depth,
             s_size,
             id_stride,
-            indexed_strides,
+            indexed_strides.copy(),
             ctx,
         )
     else:
@@ -1550,6 +1527,7 @@ def scatter_nd_dispatcher(
         )
 
 
+@fieldwise_init
 struct _ScatterNdBody[idx_dtype: DType](Dispatchable):
     """Dispatch body for the ScatterNd operation over data dtypes."""
 
@@ -1563,30 +1541,6 @@ struct _ScatterNdBody[idx_dtype: DType](Dispatchable):
     var input_data_stride: Int
     var indexed_strides: Array[Int, MAX_RANK]
     var ctx: DeviceContext
-
-    def __init__(
-        out self,
-        out_addr: Int,
-        upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
-        batch_size: Int,
-        indices_outer_size: Int,
-        index_depth: Int,
-        suffix_size: Int,
-        input_data_stride: Int,
-        indexed_strides: Array[Int, MAX_RANK],
-        ctx: DeviceContext,
-    ):
-        self.out_addr = out_addr
-        self.upd_addr = upd_addr
-        self.idx_ptr = idx_ptr
-        self.batch_size = batch_size
-        self.indices_outer_size = indices_outer_size
-        self.index_depth = index_depth
-        self.suffix_size = suffix_size
-        self.input_data_stride = input_data_stride
-        self.indexed_strides = indexed_strides
-        self.ctx = ctx
 
     def call[t: DType](self) raises -> None:
         scatter_nd_op(
@@ -1615,7 +1569,7 @@ def _scatter_nd_dispatch_integer[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: Array[Int, MAX_RANK],
+    var indexed_strides: Array[Int, MAX_RANK],
     ctx: DeviceContext,
 ) raises:
     dispatch_dtype(
@@ -1628,7 +1582,7 @@ def _scatter_nd_dispatch_integer[
             index_depth,
             suffix_size,
             input_data_stride,
-            indexed_strides,
+            indexed_strides^,
             ctx,
         ),
         dtype,
@@ -1764,7 +1718,7 @@ def scatter_nd_add_dispatcher(
             i_depth,
             s_size,
             id_stride,
-            indexed_strides,
+            indexed_strides.copy(),
         )
     elif idx_dtype == DType.int64:
         _scatter_nd_add_dispatch_integer[DType.int64](
@@ -1777,7 +1731,7 @@ def scatter_nd_add_dispatcher(
             i_depth,
             s_size,
             id_stride,
-            indexed_strides,
+            indexed_strides.copy(),
         )
     else:
         raise Error(
@@ -1785,6 +1739,7 @@ def scatter_nd_add_dispatcher(
         )
 
 
+@fieldwise_init
 struct _ScatterNdAddBody[idx_dtype: DType](Dispatchable):
     """Dispatch body for the ScatterNdAdd operation over data dtypes."""
 
@@ -1797,28 +1752,6 @@ struct _ScatterNdAddBody[idx_dtype: DType](Dispatchable):
     var suffix_size: Int
     var input_data_stride: Int
     var indexed_strides: Array[Int, MAX_RANK]
-
-    def __init__(
-        out self,
-        out_addr: Int,
-        upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
-        batch_size: Int,
-        indices_outer_size: Int,
-        index_depth: Int,
-        suffix_size: Int,
-        input_data_stride: Int,
-        indexed_strides: Array[Int, MAX_RANK],
-    ):
-        self.out_addr = out_addr
-        self.upd_addr = upd_addr
-        self.idx_ptr = idx_ptr
-        self.batch_size = batch_size
-        self.indices_outer_size = indices_outer_size
-        self.index_depth = index_depth
-        self.suffix_size = suffix_size
-        self.input_data_stride = input_data_stride
-        self.indexed_strides = indexed_strides
 
     def call[t: DType](self) raises -> None:
         scatter_nd_add_op(
@@ -1846,7 +1779,7 @@ def _scatter_nd_add_dispatch_integer[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: Array[Int, MAX_RANK],
+    var indexed_strides: Array[Int, MAX_RANK],
 ) raises:
     dispatch_dtype(
         _ScatterNdAddBody[d](
@@ -1858,7 +1791,7 @@ def _scatter_nd_add_dispatch_integer[
             index_depth,
             suffix_size,
             input_data_stride,
-            indexed_strides,
+            indexed_strides^,
         ),
         dtype,
     )
@@ -1991,7 +1924,7 @@ def scatter_nd_max_dispatcher(
             i_depth,
             s_size,
             id_stride,
-            indexed_strides,
+            indexed_strides.copy(),
         )
     elif idx_dtype == DType.int64:
         _scatter_nd_max_dispatch_integer[DType.int64](
@@ -2004,7 +1937,7 @@ def scatter_nd_max_dispatcher(
             i_depth,
             s_size,
             id_stride,
-            indexed_strides,
+            indexed_strides.copy(),
         )
     else:
         raise Error(
@@ -2012,6 +1945,7 @@ def scatter_nd_max_dispatcher(
         )
 
 
+@fieldwise_init
 struct _ScatterNdMaxBody[idx_dtype: DType](Dispatchable):
     """Dispatch body for the ScatterNdMax operation over data dtypes."""
 
@@ -2024,28 +1958,6 @@ struct _ScatterNdMaxBody[idx_dtype: DType](Dispatchable):
     var suffix_size: Int
     var input_data_stride: Int
     var indexed_strides: Array[Int, MAX_RANK]
-
-    def __init__(
-        out self,
-        out_addr: Int,
-        upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
-        batch_size: Int,
-        indices_outer_size: Int,
-        index_depth: Int,
-        suffix_size: Int,
-        input_data_stride: Int,
-        indexed_strides: Array[Int, MAX_RANK],
-    ):
-        self.out_addr = out_addr
-        self.upd_addr = upd_addr
-        self.idx_ptr = idx_ptr
-        self.batch_size = batch_size
-        self.indices_outer_size = indices_outer_size
-        self.index_depth = index_depth
-        self.suffix_size = suffix_size
-        self.input_data_stride = input_data_stride
-        self.indexed_strides = indexed_strides
 
     def call[t: DType](self) raises -> None:
         scatter_nd_max_op(
@@ -2073,7 +1985,7 @@ def _scatter_nd_max_dispatch_integer[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: Array[Int, MAX_RANK],
+    var indexed_strides: Array[Int, MAX_RANK],
 ) raises:
     dispatch_dtype(
         _ScatterNdMaxBody[d](
@@ -2085,7 +1997,7 @@ def _scatter_nd_max_dispatch_integer[
             index_depth,
             suffix_size,
             input_data_stride,
-            indexed_strides,
+            indexed_strides^,
         ),
         dtype,
     )
@@ -2218,7 +2130,7 @@ def scatter_nd_min_dispatcher(
             i_depth,
             s_size,
             id_stride,
-            indexed_strides,
+            indexed_strides.copy(),
         )
     elif idx_dtype == DType.int64:
         _scatter_nd_min_dispatch_integer[DType.int64](
@@ -2231,7 +2143,7 @@ def scatter_nd_min_dispatcher(
             i_depth,
             s_size,
             id_stride,
-            indexed_strides,
+            indexed_strides.copy(),
         )
     else:
         raise Error(
@@ -2239,6 +2151,7 @@ def scatter_nd_min_dispatcher(
         )
 
 
+@fieldwise_init
 struct _ScatterNdMinBody[idx_dtype: DType](Dispatchable):
     """Dispatch body for the ScatterNdMin operation over data dtypes."""
 
@@ -2251,28 +2164,6 @@ struct _ScatterNdMinBody[idx_dtype: DType](Dispatchable):
     var suffix_size: Int
     var input_data_stride: Int
     var indexed_strides: Array[Int, MAX_RANK]
-
-    def __init__(
-        out self,
-        out_addr: Int,
-        upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
-        batch_size: Int,
-        indices_outer_size: Int,
-        index_depth: Int,
-        suffix_size: Int,
-        input_data_stride: Int,
-        indexed_strides: Array[Int, MAX_RANK],
-    ):
-        self.out_addr = out_addr
-        self.upd_addr = upd_addr
-        self.idx_ptr = idx_ptr
-        self.batch_size = batch_size
-        self.indices_outer_size = indices_outer_size
-        self.index_depth = index_depth
-        self.suffix_size = suffix_size
-        self.input_data_stride = input_data_stride
-        self.indexed_strides = indexed_strides
 
     def call[t: DType](self) raises -> None:
         scatter_nd_min_op(
@@ -2300,7 +2191,7 @@ def _scatter_nd_min_dispatch_integer[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: Array[Int, MAX_RANK],
+    var indexed_strides: Array[Int, MAX_RANK],
 ) raises:
     dispatch_dtype(
         _ScatterNdMinBody[d](
@@ -2312,7 +2203,7 @@ def _scatter_nd_min_dispatch_integer[
             index_depth,
             suffix_size,
             input_data_stride,
-            indexed_strides,
+            indexed_strides^,
         ),
         dtype,
     )
@@ -2445,7 +2336,7 @@ def scatter_nd_mul_dispatcher(
             i_depth,
             s_size,
             id_stride,
-            indexed_strides,
+            indexed_strides.copy(),
         )
     elif idx_dtype == DType.int64:
         _scatter_nd_mul_dispatch_integer[DType.int64](
@@ -2458,7 +2349,7 @@ def scatter_nd_mul_dispatcher(
             i_depth,
             s_size,
             id_stride,
-            indexed_strides,
+            indexed_strides.copy(),
         )
     else:
         raise Error(
@@ -2466,6 +2357,7 @@ def scatter_nd_mul_dispatcher(
         )
 
 
+@fieldwise_init
 struct _ScatterNdMulBody[idx_dtype: DType](Dispatchable):
     """Dispatch body for the ScatterNdMul operation over data dtypes."""
 
@@ -2478,28 +2370,6 @@ struct _ScatterNdMulBody[idx_dtype: DType](Dispatchable):
     var suffix_size: Int
     var input_data_stride: Int
     var indexed_strides: Array[Int, MAX_RANK]
-
-    def __init__(
-        out self,
-        out_addr: Int,
-        upd_addr: Int,
-        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutUntrackedOrigin],
-        batch_size: Int,
-        indices_outer_size: Int,
-        index_depth: Int,
-        suffix_size: Int,
-        input_data_stride: Int,
-        indexed_strides: Array[Int, MAX_RANK],
-    ):
-        self.out_addr = out_addr
-        self.upd_addr = upd_addr
-        self.idx_ptr = idx_ptr
-        self.batch_size = batch_size
-        self.indices_outer_size = indices_outer_size
-        self.index_depth = index_depth
-        self.suffix_size = suffix_size
-        self.input_data_stride = input_data_stride
-        self.indexed_strides = indexed_strides
 
     def call[t: DType](self) raises -> None:
         scatter_nd_mul_op(
@@ -2527,7 +2397,7 @@ def _scatter_nd_mul_dispatch_integer[
     index_depth: Int,
     suffix_size: Int,
     input_data_stride: Int,
-    indexed_strides: Array[Int, MAX_RANK],
+    var indexed_strides: Array[Int, MAX_RANK],
 ) raises:
     dispatch_dtype(
         _ScatterNdMulBody[d](
@@ -2539,7 +2409,7 @@ def _scatter_nd_mul_dispatch_integer[
             index_depth,
             suffix_size,
             input_data_stride,
-            indexed_strides,
+            indexed_strides^,
         ),
         dtype,
     )

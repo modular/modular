@@ -188,7 +188,7 @@ def _softmax_row_max[
     r[0] = max(r[0], shuffle_xor(r[0], UInt32(8)))
     r[1] = max(r[1], shuffle_xor(r[1], UInt32(1)))
     r[1] = max(r[1], shuffle_xor(r[1], UInt32(8)))
-    return r
+    return r^
 
 
 @always_inline

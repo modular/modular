@@ -218,6 +218,7 @@ struct _ArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
     "Use `deinit_with()` to explicitly destroy an `Array` of"
     " non-`ImplicitlyDeletable` elements"
 )
+@stable(since="1.0")
 struct Array[T: AnyType, length: Int](
     Copyable where conforms_to(T, Copyable),
     Defaultable,
@@ -226,7 +227,6 @@ struct Array[T: AnyType, length: Int](
     ),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
-    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
@@ -536,6 +536,7 @@ struct Array[T: AnyType, length: Int](
         # FIXME: Why doesn't consume_elements work here?
         elems^._annihilate()
 
+    @stable(since="1.0")
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         """Copy constructs the array from another array.
 
@@ -557,6 +558,7 @@ struct Array[T: AnyType, length: Int](
             for idx in range(Self.length):
                 base.unsafe_offset(idx).unsafe_write(copy=copy.unsafe_get(idx))
 
+    @stable(since="1.0")
     def __init__(
         out self, *, deinit move: Self
     ) where conforms_to(Self.T, Movable):
@@ -579,6 +581,7 @@ struct Array[T: AnyType, length: Int](
                     other_ptr
                 )
 
+    @stable(since="1.0")
     def __del__(
         deinit self,
     ) where conforms_to(Self.T, ImplicitlyDeletable):
@@ -720,6 +723,7 @@ struct Array[T: AnyType, length: Int](
         return Self.length
 
     @always_inline
+    @stable(since="1.0")
     def __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Compares two arrays for equality.
 
@@ -735,6 +739,7 @@ struct Array[T: AnyType, length: Int](
         return True
 
     @always_inline
+    @stable(since="1.0")
     def __ne__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Compares two arrays for inequality.
 
@@ -840,6 +845,7 @@ struct Array[T: AnyType, length: Int](
         )
 
     @always_inline
+    @stable(since="1.0")
     def __contains__(
         self, value: Self.T
     ) -> Bool where conforms_to(Self.T, Equatable):

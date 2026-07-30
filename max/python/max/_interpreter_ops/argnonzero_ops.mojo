@@ -232,7 +232,7 @@ def argnonzero_fill_dispatcher(
             Int(py=in_buffer._data_ptr()),
             numel,
             r,
-            sh,
+            sh^,
         ),
         dtype,
     )
