@@ -22,7 +22,7 @@ def bench_allocation(mut b: Bencher) raises:
         for _ in range(10000):
             var a = alloc[Int](100)
             keep(a)
-            a.free()
+            a.unsafe_free()
 
     b.iter[call_fn]()
 

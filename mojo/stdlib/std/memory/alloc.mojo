@@ -640,7 +640,7 @@ def alloc[
     ptr.store(2, Int32(9))
     var a = ptr.load(0)
     print(a[0], ptr.load(1)[0], ptr.load(2)[0])
-    ptr.free()
+    ptr.unsafe_free()
     ```
     """
     comptime size_of_t = size_of[type]()

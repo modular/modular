@@ -35,4 +35,4 @@ def main():
     _ = ptr.gather(offset=offset, mask=mask)
 
     # Should not reach here.
-    ptr.free()
+    ptr.unsafe_free()

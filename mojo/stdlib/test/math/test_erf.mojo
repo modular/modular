@@ -77,9 +77,9 @@ def test_erf_libm() raises:
 
     assert_almost_equal(err, abs_rel_err)
 
-    x32.free()
-    y32.free()
-    libm_out.free()
+    x32.unsafe_free()
+    y32.unsafe_free()
+    libm_out.unsafe_free()
 
 
 def main() raises:

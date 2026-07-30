@@ -87,7 +87,7 @@ def test_masked_load_poison_in_masked_off_lane() raises:
     assert_true(val[0] == 1.0)
     assert_true(val[1] == 2.0)
 
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_normal_float64() raises:

@@ -80,9 +80,9 @@ def test_memcpy() raises:
         var err = unsafe_memcmp(dst, buf, size)
 
         assert_equal(err, 0)
-        buf.free()
-        src.free()
-        dst.free()
+        buf.unsafe_free()
+        src.unsafe_free()
+        dst.unsafe_free()
 
     _test_memcpy_buf[1]()
     _test_memcpy_buf[4]()
@@ -115,8 +115,8 @@ def test_memcpy_dtype() raises:
     assert_equal(b[2], 2)
     assert_equal(b[3], 3)
 
-    a.free()
-    b.free()
+    a.unsafe_free()
+    b.unsafe_free()
 
 
 def test_memcmp() raises:
@@ -167,8 +167,8 @@ def test_memcmp_overflow() raises:
     c = unsafe_memcmp(p2, p1, 1)
     assert_equal(c, -1)
 
-    p1.free()
-    p2.free()
+    p1.unsafe_free()
+    p2.unsafe_free()
 
 
 def test_memcmp_simd() raises:
@@ -203,8 +203,8 @@ def test_memcmp_simd() raises:
     c = unsafe_memcmp(p2, p1, length)
     assert_equal(c, -1, "[..., 0, 120, 90] is smaller than [..., 120, 100]")
 
-    p1.free()
-    p2.free()
+    p1.unsafe_free()
+    p2.unsafe_free()
 
 
 def _test_memcmp_extensive[
@@ -262,10 +262,10 @@ def _test_memcmp_extensive[
         String("for dtype=", dtype, ";extremes=", extremes, ";count=", count),
     )
 
-    ptr1.free()
-    ptr2.free()
-    dptr1.free()
-    dptr2.free()
+    ptr1.unsafe_free()
+    ptr2.unsafe_free()
+    dptr1.unsafe_free()
+    dptr2.unsafe_free()
 
 
 def test_memcmp_extensive() raises:
@@ -325,8 +325,8 @@ def test_memcmp_simd_boundary() raises:
         result, 1, "Should detect difference at SIMD boundary (reverse)"
     )
 
-    ptr1.free()
-    ptr2.free()
+    ptr1.unsafe_free()
+    ptr2.unsafe_free()
 
 
 def test_memcmp_simd_overlap() raises:
@@ -360,8 +360,8 @@ def test_memcmp_simd_overlap() raises:
         result = unsafe_memcmp(ptr1, ptr2, size)
         assert_equal(result, -1, "Should detect difference in overlap region")
 
-        ptr1.free()
-        ptr2.free()
+        ptr1.unsafe_free()
+        ptr2.unsafe_free()
 
 
 def test_memcmp_simd_index_finding() raises:
@@ -396,8 +396,8 @@ def test_memcmp_simd_index_finding() raises:
             "Should detect difference at lane " + String(lane) + " (reverse)",
         )
 
-        ptr1.free()
-        ptr2.free()
+        ptr1.unsafe_free()
+        ptr2.unsafe_free()
 
 
 def test_memcmp_simd_signed_overflow() raises:
@@ -428,8 +428,8 @@ def test_memcmp_simd_signed_overflow() raises:
         result, 1, "0xFF should be greater than 0x01 in unsigned comparison"
     )
 
-    ptr1.free()
-    ptr2.free()
+    ptr1.unsafe_free()
+    ptr2.unsafe_free()
 
 
 def test_memcmp_simd_alignment() raises:
@@ -466,8 +466,8 @@ def test_memcmp_simd_alignment() raises:
         # Restore for next iteration
         ptr2[test_size - 1] = ptr2[test_size - 1] - 1
 
-    large_ptr1.free()
-    large_ptr2.free()
+    large_ptr1.unsafe_free()
+    large_ptr2.unsafe_free()
 
 
 def test_memcmp_simd_width_edge_cases() raises:
@@ -514,8 +514,8 @@ def test_memcmp_simd_width_edge_cases() raises:
                 "Should detect end difference for size " + String(size),
             )
 
-        ptr1.free()
-        ptr2.free()
+        ptr1.unsafe_free()
+        ptr2.unsafe_free()
 
 
 def test_memcmp_simd_zero_bytes() raises:
@@ -560,8 +560,8 @@ def test_memcmp_simd_zero_bytes() raises:
             "Should detect non-zero vs zero at position " + String(pos),
         )
 
-    ptr1.free()
-    ptr2.free()
+    ptr1.unsafe_free()
+    ptr2.unsafe_free()
 
 
 def test_memset() raises:
@@ -585,19 +585,19 @@ def test_memset() raises:
     assert_equal(buf0.load(0), 16843009)
     unsafe_memset(buf0, -1, 2)
     assert_equal(buf0.load(0), -1)
-    buf0.free()
+    buf0.unsafe_free()
 
     var buf1 = alloc[Int8](2)
     unsafe_memset(buf1, 5, 2)
     assert_equal(buf1.load(0), 5)
-    buf1.free()
+    buf1.unsafe_free()
 
     var buf3 = alloc[Int32](2)
     unsafe_memset(buf3, 1, 2)
     unsafe_memset_zero[count=2](buf3)
     assert_equal(buf3.load(0), 0)
     assert_equal(buf3.load(1), 0)
-    buf3.free()
+    buf3.unsafe_free()
 
     _ = pair
 
@@ -606,14 +606,14 @@ def test_pointer_string() raises:
     var ptr = alloc[Int](1)
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_dtypepointer_string() raises:
     var ptr = alloc[Float32](1)
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_pointer_explicit_copy() raises:
@@ -621,14 +621,14 @@ def test_pointer_explicit_copy() raises:
     ptr[] = 42
     var copy = ptr.copy()
     assert_equal(copy[], 42)
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_pointer_refitem() raises:
     var ptr = alloc[Int](1)
     ptr[] = 42
     assert_equal(ptr[], 42)
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_pointer_refitem_string() raises:
@@ -637,7 +637,7 @@ def test_pointer_refitem_string() raises:
     __get_address_as_uninit_lvalue(ptr._get_kgen_pointer()) = String()
     ptr[] = payload
     assert_equal(ptr[], payload)
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_pointer_refitem_pair() raises:
@@ -648,7 +648,7 @@ def test_pointer_refitem_pair() raises:
     #   assert_equal(ptr[], Pair(42, 24))
     assert_equal(ptr[].lo, 42)
     assert_equal(ptr[].hi, 24)
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_address_space_str() raises:
@@ -698,7 +698,7 @@ def test_dtypepointer_gather() raises:
     _test_masked_gather[1](Int32(2), Scalar[DType.bool](True), -1.0, 2.0)
     _test_masked_gather(offset, mask, default, desired)
 
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_dtypepointer_scatter() raises:
@@ -773,7 +773,7 @@ def test_dtypepointer_scatter() raises:
         SIMD[ptr.T.dtype, 4](3.0, 2.0, 2.0, 0.0),
     )
 
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_indexing() raises:
@@ -784,7 +784,7 @@ def test_indexing() raises:
     assert_equal(ptr[Int(2)], 2)
     assert_equal(ptr[1], 1)
 
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_memmove_overlapping_regions() raises:
@@ -834,9 +834,9 @@ def test_uninit_move_n_trivial() raises:
     assert_equal(dest[2].move_count, 1)
 
     # Don't destroy src - it's uninitialized after move
-    src.free()
+    src.unsafe_free()
     unsafe_destroy_n(dest, count=3)
-    dest.free()
+    dest.unsafe_free()
 
 
 def test_uninit_move_n_nontrivial() raises:
@@ -863,9 +863,9 @@ def test_uninit_move_n_nontrivial() raises:
     assert_equal(dest[2].move_count, 2)
 
     # Don't destroy src - it's uninitialized after move
-    src.free()
+    src.unsafe_free()
     unsafe_destroy_n(dest, count=3)
-    dest.free()
+    dest.unsafe_free()
 
 
 def test_uninit_copy_n_trivial() raises:
@@ -893,8 +893,8 @@ def test_uninit_copy_n_trivial() raises:
     assert_equal(dest[1].copy_count, 0)
     assert_equal(dest[2].copy_count, 0)
 
-    src.free()
-    dest.free()
+    src.unsafe_free()
+    dest.unsafe_free()
 
 
 def test_uninit_copy_n_nontrivial() raises:
@@ -928,8 +928,8 @@ def test_uninit_copy_n_nontrivial() raises:
 
     unsafe_destroy_n(src, count=3)
     unsafe_destroy_n(dest, count=3)
-    src.free()
-    dest.free()
+    src.unsafe_free()
+    dest.unsafe_free()
 
 
 def test_destroy_n_trivial() raises:
@@ -948,7 +948,7 @@ def test_destroy_n_trivial() raises:
     # Verify destructor was NOT called (trivial destructor is no-op)
     assert_equal(del_count, 0)
 
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_destroy_n_nontrivial() raises:
@@ -966,7 +966,7 @@ def test_destroy_n_nontrivial() raises:
     # Verify destructor was called for all 3 elements
     assert_equal(del_count, 3)
 
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_uninit_move_n_zero_count() raises:
@@ -985,8 +985,8 @@ def test_uninit_move_n_zero_count() raises:
 
     # Cleanup/free the memory
     unsafe_destroy_n(src, count=1)
-    src.free()
-    dest.free()
+    src.unsafe_free()
+    dest.unsafe_free()
 
 
 def test_uninit_copy_n_zero_count() raises:
@@ -1003,8 +1003,8 @@ def test_uninit_copy_n_zero_count() raises:
 
     # Cleanup/free the memory
     unsafe_destroy_n(src, count=1)
-    src.free()
-    dest.free()
+    src.unsafe_free()
+    dest.unsafe_free()
 
 
 def test_destroy_n_zero_count() raises:
@@ -1022,7 +1022,7 @@ def test_destroy_n_zero_count() raises:
 
     # Cleanup/free the memory
     unsafe_destroy_n(ptr, count=1)
-    ptr.free()
+    ptr.unsafe_free()
 
 
 @fieldwise_init

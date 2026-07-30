@@ -332,7 +332,7 @@ struct Pointer[
       use `Optional[Pointer[...]]`, which shares the same layout (the null
       address is the `None` niche) so it remains zero-overhead.
     - It does not own existing memory. When memory is heap-allocated with
-      `alloc()`, you must call `.free()`.
+      `alloc()`, you must call `.unsafe_free()`.
     - For simple read/write access, use `(ptr + i)[]` or `ptr[i]` where `i`
       is the offset size.
     - For SIMD operations on numeric data, use `Pointer[Scalar[DType.xxx]]`
@@ -375,7 +375,7 @@ struct Pointer[
         ptr.store(i, Float32(i))
     var v = ptr.load(2)
     print(v[0])  # => 2.0
-    ptr.free()
+    ptr.unsafe_free()
     ```
 
     Vectorized store and load (width = 4):
@@ -386,7 +386,7 @@ struct Pointer[
     ptr.store(0, vec)
     var out = ptr.load[width=4](0)
     print(out)  # => [1, 2, 3, 4]
-    ptr.free()
+    ptr.unsafe_free()
     ```
 
     Pointer arithmetic and dereference:
@@ -398,7 +398,7 @@ struct Pointer[
     ptr[2] = 30  # equivalent offset/dereference with brackets (via __getitem__)
     var second = ptr[1]  # reads the element at index 1
     print(second, ptr[2])  # => 20 30
-    ptr.free()
+    ptr.unsafe_free()
     ```
 
     Point to a value on the stack:
@@ -433,7 +433,7 @@ struct Pointer[
         var ptr = maybe_ptr.value()
         ptr.unsafe_write(42)
         print(ptr[])  # => 42
-        ptr.free()
+        ptr.unsafe_free()
     ```
 
     If you instead need a non-null placeholder for a field that will be
@@ -924,7 +924,7 @@ struct Pointer[
         var end = ptr + 3
         print(end - ptr)  # => 3
         print(ptr - end)  # => -3
-        ptr.free()
+        ptr.unsafe_free()
         ```
         """
         return self.offset_from(rhs)
@@ -1315,7 +1315,7 @@ struct Pointer[
         var end = ptr + 3
         print(end.offset_from(ptr))  # => 3
         print(ptr - end)  # => -3
-        ptr.free()
+        ptr.unsafe_free()
         ```
         """
         comptime assert (
@@ -1489,7 +1489,7 @@ struct Pointer[
         p.unsafe_store(0, SIMD[DType.int32, 4](1, 2, 3, 4))
         var v = p.unsafe_load[width=4]()
         print(v)  # => [1, 2, 3, 4]
-        p.free()
+        p.unsafe_free()
         ```
 
         Constraints:
@@ -1863,7 +1863,7 @@ struct Pointer[
         p.unsafe_store(vec)
         var out = p.unsafe_load[width=4]()
         print(out)  # => [1.0, 2.0, 3.0, 4.0]
-        p.free()
+        p.unsafe_free()
         ```
 
         Constraints:
@@ -2688,7 +2688,7 @@ struct Pointer[
         ptr.unsafe_write("foo")
         print(ptr[])  # => foo
         ptr.unsafe_deinit_pointee()
-        ptr.free()
+        ptr.unsafe_free()
         ```
 
         Parameters:
@@ -2789,8 +2789,8 @@ struct Pointer[
 
         # Clean up
         b_ptr.unsafe_deinit_pointee()
-        a_ptr.free()
-        b_ptr.free()
+        a_ptr.unsafe_free()
+        b_ptr.unsafe_free()
         ```
 
         Safety:
