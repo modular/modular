@@ -1250,6 +1250,9 @@ This version is still a work in progress.
   and could push GPU kernels past the stack frame limit. A no-message assert
   failure now reports `assertion failed` instead of an empty message.
 
+- `debug_assert` has dedicated overloads for the no-message case, which generate
+  less code and so compile faster than passing an empty message list.
+
 - Code folding in VSCode now works for Mojo files. `mojo-lsp-server` no longer
   advertises folding-range support, which only produced docstring ranges and
   caused VSCode to disable its built-in indentation-based folding — leaving

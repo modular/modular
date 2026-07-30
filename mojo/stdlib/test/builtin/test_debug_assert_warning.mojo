@@ -23,5 +23,16 @@ def main():
     debug_assert(False, "failed, but we don't terminate")
     # CHECK: test_debug_assert_warning.mojo:25:17: Assert Error: also failed, but in a Boolable
     debug_assert(Bool(0), Error("also failed, but in a Boolable"))
+
+    # A no-message assertion must report the caller's location.
+    var zero = 0
+
+    def is_positive() capturing -> Bool:
+        return zero > 0
+
+    # CHECK: test_debug_assert_warning.mojo:[[@LINE+1]]:17: Assert Error: assertion failed
+    assert zero > 0
+    # CHECK: test_debug_assert_warning.mojo:[[@LINE+1]]:30: Assert Error: assertion failed
+    debug_assert[is_positive]()
     # CHECK: is reached
     print("is reached")

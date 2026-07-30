@@ -20,6 +20,9 @@
 # assertions when `MOJO_ENABLE_ASSERTIONS_IN_TESTS` is set, and without them the
 # assert bodies are elided entirely.
 #
+# The conditions must be opaque to the compiler. A condition it can prove true
+# folds the failure path away before it reaches the IR, leaving nothing to check.
+#
 # The check names the buffer type rather than an allocation size, so it keeps
 # its meaning if the size changes. `_WriteBufferHeap` reaches the IR through the
 # mangled names of the writer specializations the message path instantiates.
@@ -35,6 +38,9 @@
 # CHECK: c"assertion failed\00"
 
 
+from std.sys.arg import argv
+
+
 def bool_overload(x: Int):
     assert x == 0
 
@@ -47,5 +53,6 @@ def closure_overload(x: Int):
 
 
 def main():
-    bool_overload(0)
-    closure_overload(0)
+    var opaque = len(argv())
+    bool_overload(opaque)
+    closure_overload(opaque)
