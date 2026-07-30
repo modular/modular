@@ -939,14 +939,23 @@ def gather_nd_rule(
 
 
 def _scatter_rows(input: TensorLayout, axis: int) -> list[AxisAssignment]:
-    """Builds the menu for ``scatter`` / ``scatter_add``."""
+    """Builds the menu for ``scatter`` / ``scatter_add``.
+
+    Non-scatter axes are batch-like (``updates``/``indices`` share the
+    input's extent there), so all three operands shard together on them.
+    Replicating ``updates``/``indices`` against a sharded input would give
+    each device the full batch extent against a partial input shard, and the
+    scatter kernel would index outside the shard.
+    """
     in_r = input.rank
     a_axis = axis % in_r
     rows: list[AxisAssignment] = [AxisAssignment((R, R, R), R)]
     for ax in range(in_r):
         if ax == a_axis:
             continue
-        rows.append(AxisAssignment((Sharded(ax), R, R), Sharded(ax)))
+        rows.append(
+            AxisAssignment((Sharded(ax), Sharded(ax), Sharded(ax)), Sharded(ax))
+        )
     return rows
 
 
