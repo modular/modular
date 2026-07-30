@@ -1626,7 +1626,12 @@ def mha_sm100_dispatch[
     comptime assert (
         config.dtype == KVType.dtype and config.dtype == q_type
     ), "config, kv, and q types must all match for FA3."
-    q = rebind[UnsafePointer[Scalar[KVType.dtype], MutAnyOrigin]](q_arg)
+
+    q = (
+        q_arg.unsafe_ptr()
+        .bitcast[Scalar[KVType.dtype]]()
+        .unsafe_origin_cast[MutAnyOrigin]()
+    )
 
     # Persistent kernels not currently supported with partitioning
     # This doesn't seem useful: we partition to make SMs more busy,

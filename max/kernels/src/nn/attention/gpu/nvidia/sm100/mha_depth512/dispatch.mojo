@@ -151,7 +151,10 @@ def mha_sm100_depth512_dispatch[
     comptime PairBM_eff = d512_config.BM_eff() * 2
     comptime num_threads = d512_config.num_threads  # 384
 
-    var q = rebind[UnsafePointer[Scalar[KVType.dtype], q_arg.origin]](q_arg)
+    var q = q_arg.bitcast[Scalar[KVType.dtype]]().unsafe_origin_cast[
+        q_arg.origin
+    ]()
+
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
 
