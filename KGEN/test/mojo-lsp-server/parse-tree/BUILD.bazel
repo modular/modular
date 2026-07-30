@@ -22,6 +22,7 @@
 
 load("@mojo//:mojo.bzl", "ALL_MOJOPKGS")
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test")
+load("//bazel:mojo_aliases.bzl", "INTERNAL_PACKAGES")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -202,7 +203,7 @@ _KERNELS_NO_RUN_LIST = [
 _KERNEL_MOJOPKGS = [
     dep
     for dep in ALL_MOJOPKGS
-    if not dep.startswith("//Kernels/")
+    if dep not in INTERNAL_PACKAGES
 ]
 
 # Same `kgen -lsp` mechanism as lsp-parse-smoke-stdlib, scanning
