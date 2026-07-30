@@ -275,7 +275,9 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
   // CHECK: a = #kgen<simd 1> : !kgen.simd<4, si32>
   a = #kgen.simd_splat< #kgen<simd 1> : !kgen.scalar<si32>> : !kgen.simd<4, si32>,
   // CHECK: b = #kgen<simd "1"> : !kgen.simd<3, f16>
-  b = #kgen.simd_splat< #kgen<simd "1.0"> : !kgen.scalar<f16>> : !kgen.simd<3, f16>
+  b = #kgen.simd_splat< #kgen<simd "1.0"> : !kgen.scalar<f16>> : !kgen.simd<3, f16>,
+  // CHECK: c = #kgen.simd_splat<#kgen<simd 1> : !kgen.scalar<si32>> : !kgen.simd<-1, si32>
+  c = #kgen.simd_splat< #kgen<simd 1> : !kgen.scalar<si32>> : !kgen.simd<-1, si32>
 } : () -> ()
 
 "some.op"() {
