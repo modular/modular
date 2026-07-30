@@ -64,10 +64,19 @@ from max.experimental.cascade.pipelines.dummy_textgen import (
 from max.serve.process_control import subprocess_manager
 from pydantic import BaseModel
 
+# The HTTP server subprocess imports uvicorn, fastapi and prometheus_client,
+# which costs ~35s before it answers `/alive` on a contended macOS CI worker --
+# past the 30s readiness budget in `_wait_until_alive`. gRPC answers in ~11s.
+# TODO(SERVSYS-1301): re-enable once HTTP server startup fits the budget.
+_SKIP_HTTP = sys.platform == "darwin"
+_SKIP_HTTP_REASON = "Cascade HTTP startup exceeds its budget on macOS CI"
+
 # The transports the shared-runtime suite runs against. ``LocalRuntime`` is
 # in-process; the other two are backed by a server subprocess (see
 # ``_shared_server``).
-_RUNTIME_TRANSPORTS = ["local", "grpc", "http"]
+_RUNTIME_TRANSPORTS = (
+    ["local", "grpc"] if _SKIP_HTTP else ["local", "grpc", "http"]
+)
 
 
 async def _grpc_ready(target: str) -> None:
@@ -405,6 +414,7 @@ async def test_grpc_cross_runtime_result_forwarding() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(_SKIP_HTTP, reason=_SKIP_HTTP_REASON)
 async def test_http_cross_runtime_result_forwarding() -> None:
     """Two HttpRuntimeProxy instances on separate TCP ports communicate peer-to-peer.
 
@@ -481,7 +491,13 @@ async def test_worker_exception(runtime: Runtime) -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "runtime_cls",
-    [SubprocHttpRuntime, SubprocGrpcRuntimeClient],
+    [
+        pytest.param(
+            SubprocHttpRuntime,
+            marks=pytest.mark.skipif(_SKIP_HTTP, reason=_SKIP_HTTP_REASON),
+        ),
+        SubprocGrpcRuntimeClient,
+    ],
     ids=lambda c: c.__name__,
 )
 async def test_worker_sys_exit(runtime_cls: type) -> None:
