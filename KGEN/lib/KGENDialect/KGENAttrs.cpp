@@ -783,7 +783,7 @@ GetWitnessAttr GetWitnessAttr::get(MLIRContext *ctx, TypedAttr typeValue,
                                    Type type) {
   // Witness lookup is keyed by underlying type identity; upcast/downcast only
   // adjust trait-view sugar. Strip them here so get_witness matches across
-  // refined vs unrefined type values (same as prior constraintImplies
+  // refined vs unrefined type values (same as prior isImplicationProven
   // replacer).
   typeValue = UpcastAttr::strip(typeValue);
   typeValue = DowncastAttr::strip(typeValue);

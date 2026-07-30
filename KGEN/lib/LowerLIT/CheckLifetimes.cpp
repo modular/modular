@@ -543,7 +543,7 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
   //
   // Returns nullopt if the trait isn't in the composition at all.
   auto isTypeImplicitlyDeletable = [&](StructInfo info,
-                                       Type structType) -> ConstraintRelation {
+                                       Type structType) -> TriState {
     TraitType canonTrait = info.decl.getCanonicalTrait();
     ArrayRef<SymbolRefAttr> symbols = canonTrait.getSymbols();
     ArrayRef<ConstraintAttr> constraints = canonTrait.getConstraints();
@@ -551,7 +551,7 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
       if (symbol.getLeafReference() != "ImplicitlyDeletable")
         continue;
       if (i >= constraints.size())
-        return ConstraintRelation::Implies; // Unconditional conformance.
+        return TriState::yes(); // Unconditional conformance.
 
       auto actualStructType = sugarCast<LIT::StructType>(structType);
       ParameterEvaluator evaluator(info.decl.getParams(),
@@ -569,9 +569,9 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
         overallAssumption = ParamOperatorAttr::get(
             POC::And, {overallAssumption, assumption.getProposition()});
 
-      return inferConstraintRelation(overallAssumption, conformanceCondition);
+      return isPropositionImplied(conformanceCondition, overallAssumption);
     }
-    return ConstraintRelation::Contradicts;
+    return TriState::no();
   };
 
   auto getDestructor = [&](StructInfo info) -> SpecialMemberInfo {
@@ -579,14 +579,13 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
     // Determine conformance to ImplicitlyDeletable via the declared trait bound
     // of the struct type. This info is always available (in both LSP & normal
     // compile).
-    ConstraintRelation isImplicitlyDeletableOpt =
-        isTypeImplicitlyDeletable(info, type);
+    TriState isImplicitlyDeletable = isTypeImplicitlyDeletable(info, type);
 
     // - If the conformance condition is provably False, the type is NOT
     // ImplicitlyDeletable.
     // - If the conformance condition is unprovable, conservatively treat it as
     // NOT ImplicitlyDeletable. We can improve this error message in the future.
-    if (isImplicitlyDeletableOpt != ConstraintRelation::Implies) {
+    if (!isImplicitlyDeletable.isTrue()) {
       StringAttr message = info.decl.getLinearTypeErrorMsgAttr();
       assert(message && "should have a message");
       return SpecialMemberInfo::unavailable(message);

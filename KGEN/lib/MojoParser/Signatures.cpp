@@ -1246,7 +1246,7 @@ void TypeCheckedParamList::emitBodyConstraints() {
       violationDiag = shared.emitError(loc ? *loc : deferral.deferralLoc);
       return *violationDiag;
     };
-    TriState result = LIT::canDischargeConstraints(
+    TriState result = LIT::canDischargeConstraintsInScope(
         declScope, /*paramListAttr=*/PogListAttr(), {deferral.constraint},
         /*origConstraints=*/{}, getDiag, &stillUnprovable,
         /*evaluator=*/nullptr);
@@ -1266,10 +1266,10 @@ void TypeCheckedParamList::emitBodyConstraints() {
             << unprovable.getProposition();
       }
     }
-    // For `Violated`, `getDiag` was invoked and `canDischargeConstraints`
-    // populated `violationDiag` with a "violated constraint" message plus
-    // per-constraint notes. It will commit when `violationDiag` goes out of
-    // scope.
+    // For `Violated`, `getDiag` was invoked and
+    // `canDischargeConstraintsInScope` populated `violationDiag` with a
+    // "violated constraint" message plus per-constraint notes. It will commit
+    // when `violationDiag` goes out of scope.
   }
 }
 

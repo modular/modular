@@ -143,10 +143,10 @@ static bool canFullyDischargeBodyConstraints(
   ArrayRef<ConstraintAttr> actualConstraints = actual.getBodyConstraints();
   auto actualParamList = cast<PogListAttr>(actual.getMetadata());
   OptionalDiag diag(declScope.getShared(), loc, /*discardError=*/true);
-  return canDischargeConstraints(declScope, actualParamList, actualConstraints,
-                                 actualConstraints, diag.getDiag(),
-                                 /*unprovableConstraints=*/nullptr,
-                                 /*evaluator=*/nullptr, additionalAssumptions)
+  return canDischargeConstraintsInScope(
+             declScope, actualParamList, actualConstraints, actualConstraints,
+             diag.getDiag(), /*unprovableConstraints=*/nullptr,
+             /*evaluator=*/nullptr, additionalAssumptions)
       .isTrue();
 }
 
@@ -926,12 +926,12 @@ classifyEmptyGeneratorToBody(ASTExprAnd<CValue> valueExpr, ASTType requiredType,
   auto paramList = cast<PogListAttr>(generator.getMetadata());
   OptionalDiag diag(declScope.getShared(), valueExpr.expr->getLoc(),
                     /*discardError=*/true);
-  bool satisfied =
-      canDischargeConstraints(declScope, paramList, bodyConstraints,
-                              /*origConstraints=*/{}, diag.getDiag(),
-                              /*unprovableConstraints=*/nullptr,
-                              /*evaluator=*/nullptr, additionalAssumptions)
-          .isTrue();
+  bool satisfied = canDischargeConstraintsInScope(
+                       declScope, paramList, bodyConstraints,
+                       /*origConstraints=*/{}, diag.getDiag(),
+                       /*unprovableConstraints=*/nullptr,
+                       /*evaluator=*/nullptr, additionalAssumptions)
+                       .isTrue();
   return ConversionResult::scopeDependent(satisfied);
 }
 

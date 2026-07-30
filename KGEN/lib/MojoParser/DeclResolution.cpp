@@ -2925,7 +2925,7 @@ static LogicalResult verifyDerivedAncestorImplication(
 
       TypedAttr ancestorProp = it->second.getProposition();
 
-      if (!constraintImplies(prop, ancestorProp)) {
+      if (!isImplicationProven(ancestorProp, prop)) {
         shared.emitError(constraint.getLoc())
             << "constraint for " << symbol.getLeafReference()
             << " does not imply constraint for ancestor trait "
@@ -3461,17 +3461,23 @@ static auto silenceErrors(MLIRContext *ctx) {
   };
 }
 
-static bool structConformsToTrait(ASTDecl &structDecl, StringRef traitName) {
-  auto [conformanceResult, traitDecl] =
-      ASTType(cast<StructDeclOp>(structDecl.getIfOperation()).bindReference())
-          .conformsToBuiltinTrait(traitName, structDecl.getLoc(),
-                                  structDecl.getShared(), {});
-  // Use optimistic conformance check - conditional conformances should still
-  // trigger synthesis of the relevant methods (with matching constraints).
-  // No caller scope: the struct's own parameter bindings (via concreteType)
-  // are sufficient; where-clause assumptions from an enclosing function are
-  // not relevant for deciding which methods to synthesize on the struct.
-  return !conformanceResult.isFalse();
+static bool structDeclaresConformanceTo(ASTDecl &structDecl,
+                                        StringRef traitName) {
+  StructDeclOp structOp = cast<StructDeclOp>(structDecl.getIfOperation());
+  TraitType canonicalTrait = structOp.getCanonicalTrait();
+  if (canonicalTrait &&
+      llvm::any_of(canonicalTrait.getSymbols(), [&](SymbolRefAttr symbol) {
+        return symbol.getLeafReference() == traitName;
+      }))
+    return true;
+
+  // Temporary fallback: Catches an `__extension`'s conformances, which never
+  // enter the struct's canonical trait. This is sound as a satisfiability query
+  // only because extension conformances cannot yet be conditional.
+  auto conformance = ASTType(structOp.bindReference())
+                         .conformsToBuiltinTrait(traitName, structDecl.getLoc(),
+                                                 structDecl.getShared(), {});
+  return !conformance.first.isFalse();
 }
 
 // Look up the conditional conformance constraint for a specific trait from
@@ -3825,7 +3831,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Only set the convention for unconditional RP conformance. Conditional RP
   // leaves the struct as MemoryOnly at declaration time; the parametric
   // isMemoryOnly bit resolves per-instantiation during lowering.
-  if (structConformsToTrait(decl, "RegisterPassable")) {
+  if (structDeclaresConformanceTo(decl, "RegisterPassable")) {
     ConstraintAttr rpConstraint =
         getConformanceConstraint(structOp, "RegisterPassable");
     if (isTriviallyTrueConstraint(rpConstraint)) {
@@ -3838,7 +3844,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // TrivialRegisterPassable conforms to RegisterPassable, so should set this
   // after setting RegisterPassable. Conditional TrivialRegisterPassable is
   // rejected above, so this is always unconditional.
-  if (structConformsToTrait(decl, "TrivialRegisterPassable"))
+  if (structDeclaresConformanceTo(decl, "TrivialRegisterPassable"))
     structOp.setConvention(TypeConvention::RegisterPassableTrivial);
 
   shared.notifyListenerOnStructDecl(decl, identifierLoc);
@@ -4120,7 +4126,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   }
 
   // Determine if there is an explicit conformance to ImplicitlyDeletable.
-  if (structConformsToTrait(structDecl, "ImplicitlyDeletable")) {
+  if (structDeclaresConformanceTo(structDecl, "ImplicitlyDeletable")) {
     // Synthesize an empty __del__ when the type conforms to
     // ImplicitlyDeletable but has no explicit destructor.
     if (!shared.typeHasMember(structDecl, "__del__", structDecl.getLoc()))
@@ -4136,7 +4142,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // If the struct conforms to well-known traits but doesn't have explicit
   // implementations of the corresponding methods, add signatures for them.
   // These can all be synthesized without resolving the members.
-  if (structConformsToTrait(structDecl, "Movable")) {
+  if (structDeclaresConformanceTo(structDecl, "Movable")) {
     FnOp moveFn = lookupSpecialInit(structDecl, SpecialFunctionKind::kMoveCtor);
     if (!moveFn)
       moveFn = StructEmitter(structDecl)
@@ -4149,7 +4155,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
           structDecl.getShared().getEvaluationContext()));
     }
   }
-  if (structConformsToTrait(structDecl, "Copyable")) {
+  if (structDeclaresConformanceTo(structDecl, "Copyable")) {
     FnOp copyFn = lookupSpecialInit(structDecl, SpecialFunctionKind::kCopyCtor);
     if (!copyFn)
       copyFn = StructEmitter(structDecl)

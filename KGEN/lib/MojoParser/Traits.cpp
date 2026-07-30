@@ -109,8 +109,7 @@ static bool isInheritedFnOp(FnOp fnOp) {
 /// definitively satisfied or violated - unprovable constraints trigger errors.
 ///
 /// If the result is `no`, `violatedConstraint` (when non-null) is set to the
-/// specific method constraint that contradicts the conformance, so callers can
-/// report it the same way a violated constraint is reported at a call site.
+/// specific method constraint that contradicts the conformance.
 ///
 /// Returns:
 ///   - `yes`: conformance implies all method constraints
@@ -118,7 +117,6 @@ static bool isInheritedFnOp(FnOp fnOp) {
 ///   - `unknown`: constraints cannot be proven or disproven (error case)
 static TriState
 canDischargeMethodConstraints(FnOp method, ConstraintAttr conformanceConstraint,
-                              ASTDecl &structDecl,
                               ConstraintAttr *violatedConstraint = nullptr) {
   ArrayRef<ConstraintAttr> methodConstraints =
       method.getFuncTypeGenerator().getParamListAttrs().getBodyConstraints();
@@ -127,27 +125,17 @@ canDischargeMethodConstraints(FnOp method, ConstraintAttr conformanceConstraint,
 
   TypedAttr confProp = getCanonicalAttr(conformanceConstraint.getProposition());
 
-  // Fold each method constraint's verdict together: a single `no` fails the
-  // whole conformance, and any `unknown` leaves it unprovable.
   TriState result = TriState::yes();
   for (ConstraintAttr methodConstraint : methodConstraints) {
-    TypedAttr methodProp = getCanonicalAttr(methodConstraint.getProposition());
-
-    // Skip trivially true method constraints.
-    if (isTriviallyTrueProposition(methodProp))
-      continue;
-
-    switch (inferConstraintRelation(confProp, methodProp)) {
-    case ConstraintRelation::Contradicts:
+    TriState verdict = isPropositionImplied(
+        getCanonicalAttr(methodConstraint.getProposition()), confProp);
+    if (verdict.isFalse()) {
       if (violatedConstraint)
         *violatedConstraint = methodConstraint;
       return TriState::no();
-    case ConstraintRelation::Implies:
-      break;
-    case ConstraintRelation::Unprovable:
-      result &= TriState::unknown();
-      break;
     }
+    if (verdict.isUnknown())
+      result &= TriState::unknown();
   }
 
   return result;
@@ -264,9 +252,8 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
       // Check if this method's constraints are valid for the conformance.
       // Following overload selection rules, we require constraints to be
       // definitively provable or disproved - unprovable constraints are errors.
-      TriState status =
-          canDischargeMethodConstraints(cast<FnOp>(decl->getIfOperation()),
-                                        conformanceConstraint, structDecl);
+      TriState status = canDischargeMethodConstraints(
+          cast<FnOp>(decl->getIfOperation()), conformanceConstraint);
       if (status.isTrue()) {
         // Since we are not using the default implementation, set the ASTDecl
         // which were inserted for referencing default method to be fully
@@ -529,8 +516,8 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
         structDeclOp.getRegisterPassableConstraintAttr();
     bool conformanceImpliesRP =
         rpConstraint && op.getConstraintAttr() &&
-        constraintImplies(op.getConstraintAttr().getProposition(),
-                          rpConstraint.getProposition());
+        isImplicationProven(rpConstraint.getProposition(),
+                            op.getConstraintAttr().getProposition());
     if (!conformanceImpliesRP) {
       diag = shared.emitError(structDecl.getLoc(),
                               "a struct must be register passable in order to "
@@ -667,7 +654,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 
       ConstraintAttr violatedConstraint;
       TriState status = canDischargeMethodConstraints(
-          fnOp, conformanceConstraint, structDecl, &violatedConstraint);
+          fnOp, conformanceConstraint, &violatedConstraint);
       if (status.isTrue()) {
         provableDecls.push_back(decl);
       } else if (status.isUnknown()) {
@@ -1101,35 +1088,15 @@ static TriState doesNominalTypeConformToUncached(
   ArrayRef<SymbolRefAttr> providedSymbolsArr = providedCanonTrait.getSymbols();
   ArrayRef<ConstraintAttr> constraints = providedCanonTrait.getConstraints();
 
-  // Track symbols that are definitely provided (proven) vs conditionally
-  // provided (unprovable constraint).
-  DenseSet<SymbolRefAttr> provenSymbols;
-  DenseSet<SymbolRefAttr> unprovenSymbols;
-
-  // Collect all provided symbols, starting with the struct's own conformances.
-  // For conditional conformances, track whether constraints are proven or not.
-  if (constraints.empty()) {
-    // No constraints array means all traits are unconditionally provided.
-    provenSymbols.insert(providedSymbolsArr.begin(), providedSymbolsArr.end());
-  } else {
-    for (auto [i, symbol] : llvm::enumerate(providedSymbolsArr)) {
-      ConstraintAttr constraint = constraints[i];
-
-      // If constraint is trivially true, the trait is unconditionally provided.
-      if (isTriviallyTrueConstraint(constraint)) {
-        provenSymbols.insert(symbol);
-        continue;
-      }
-
-      TriState constraintResult =
-          canDischargeConstraint(evaluator, constraint, callerAssumptions);
-      if (constraintResult.isTrue())
-        provenSymbols.insert(symbol);
-      else if (constraintResult.isUnknown())
-        unprovenSymbols.insert(symbol);
-      // Otherwise the constraint is disproven, so the symbol is not provided.
-    }
-  }
+  // Map each provided symbol to the condition under which it is provided. A
+  // null or trivially-true entry means the symbol is provided unconditionally.
+  llvm::SmallDenseMap<SymbolRefAttr, ConstraintAttr> providedConditions;
+  assert((constraints.empty() ||
+          constraints.size() == providedSymbolsArr.size()) &&
+         "trait constraints must be parallel to symbols");
+  for (auto [i, symbol] : llvm::enumerate(providedSymbolsArr))
+    providedConditions[symbol] =
+        constraints.empty() ? ConstraintAttr() : constraints[i];
 
   if (auto structOp = dyn_cast_or_null<StructDeclOp>(self->getIfOperation())) {
     llvm::SmallPtrSet<ASTDecl *, 4> uniqueExtensions;
@@ -1177,7 +1144,7 @@ static TriState doesNominalTypeConformToUncached(
         TraitType extCanonicalTrait = extOp.getCanonicalTrait().value();
         for (SymbolRefAttr symbol : extCanonicalTrait.getSymbols()) {
           // Extension conformances are currently unconditional.
-          provenSymbols.insert(symbol);
+          providedConditions[symbol] = ConstraintAttr();
         }
       }
     }
@@ -1185,22 +1152,45 @@ static TriState doesNominalTypeConformToUncached(
 
   // Check the provided symbols against the required symbols by the target
   // trait. Track whether any required symbol relies on unproven constraints.
+  ArrayRef<ConstraintAttr> requiredConstraints = trait.getConstraints();
+  SmallVector<ConstraintAttr> scratch;
   bool hasUnprovenRequired = false;
-  for (SymbolRefAttr required : trait.getSymbols()) {
-    if (provenSymbols.contains(required)) {
+  for (auto [i, required] : llvm::enumerate(trait.getSymbols())) {
+    // Assume each requirement's own condition while checking it. Remember that
+    // an empty constraints array means every requirement is unconditional.
+    ArrayRef<ConstraintAttr> assumptions = callerAssumptions;
+    if (!requiredConstraints.empty()) {
+      ConstraintAttr requiredCond = requiredConstraints[i];
+      if (isPropositionImplied(requiredCond, callerAssumptions, evaluator)
+              .isFalse())
+        continue;
+      scratch.assign(callerAssumptions.begin(), callerAssumptions.end());
+      scratch.push_back(requiredCond);
+      assumptions = scratch;
+    }
+
+    auto it = providedConditions.find(required);
+    TriState provided =
+        it == providedConditions.end() ? TriState::no()
+        : isTriviallyTrueConstraint(it->second)
+            ? TriState::yes()
+            : isPropositionImplied(it->second, assumptions, evaluator);
+
+    if (provided.isTrue()) {
       // Symbol is definitely provided.
       continue;
     }
-    if (unprovenSymbols.contains(required)) {
+    if (provided.isUnknown()) {
       // Symbol is conditionally provided but constraint is unproven.
       hasUnprovenRequired = true;
       continue;
     }
 
-    // Symbol is not provided at all. If the type's concrete identity is
-    // unknown, i.e. its metatype is a trait bound rather than a concrete struct
-    // metatype, then a missing trait is not definitively absent: A `where
-    // conforms_to(...)` assumption could supply it. Report `unknown`.
+    // Symbol is not provided (absent, or its condition is disproven). If the
+    // type's concrete identity is unknown, i.e. its metatype is a trait bound
+    // rather than a concrete struct metatype, then a missing trait is not
+    // definitively absent: a `where conforms_to(...)` assumption could supply
+    // it. Report `unknown`.
     if (concreteType) {
       Type meta = ASTType(getCanonicalType(concreteType)).extractMetaType();
       if (sugarIsa<AnyTraitType, TraitType>(meta))
@@ -1252,20 +1242,46 @@ LIT::getFailedConformanceMessages(ASTType concreteType, TraitType trait,
   // conformance does not hold. A derived trait and its propagated ancestors
   // carry the same message at the same `where`-clause location, so a single
   // requirement can match several of them; dedupe on (location, message) so
-  // the note is shown once.
-  DenseSet<SymbolRefAttr> requiredSet(trait.getSymbols().begin(),
-                                      trait.getSymbols().end());
+  // the note is shown once. Map each required symbol to its own condition so
+  // the verdict-mirroring rules below (skip a vacuous requirement, assume a
+  // live requirement's condition) stay in lockstep with
+  // `doesNominalTypeConformToUncached` -- otherwise a note could contradict
+  // the conformance decision.
+  ArrayRef<ConstraintAttr> requiredConstraints = trait.getConstraints();
+  llvm::SmallDenseMap<SymbolRefAttr, ConstraintAttr> requiredConds;
+  for (auto [i, symbol] : llvm::enumerate(trait.getSymbols()))
+    requiredConds[symbol] =
+        requiredConstraints.empty() ? ConstraintAttr() : requiredConstraints[i];
   DenseSet<std::pair<LocationAttr, StringAttr>> seen;
+  SmallVector<ConstraintAttr> scratch;
   for (auto [i, symbol] : llvm::enumerate(providedSymbols)) {
-    if (!requiredSet.contains(symbol))
+    auto reqIt = requiredConds.find(symbol);
+    if (reqIt == requiredConds.end())
       continue;
+    // Assume the requirement's own condition, mirroring
+    // `doesNominalTypeConformToUncached`: a requirement whose condition cannot
+    // hold imposes nothing (so its provider's message must not surface), while
+    // an unconditional condition discharges to `yes` and pushes a no-op `True`
+    // -- both fall out of the same rules with no trivially-true special case. A
+    // null entry means the requirement is unconditional (no `c_req` to
+    // consult).
+    ConstraintAttr requiredCond = reqIt->second;
+    ArrayRef<ConstraintAttr> assumptions = callerAssumptions;
+    if (requiredCond) {
+      if (isPropositionImplied(requiredCond, callerAssumptions, evaluator)
+              .isFalse())
+        continue;
+      scratch.assign(callerAssumptions.begin(), callerAssumptions.end());
+      scratch.push_back(requiredCond);
+      assumptions = scratch;
+    }
+
     ConstraintAttr constraint = constraints[i];
     if (isTriviallyTrueConstraint(constraint) || !constraint.getMessage())
       continue;
     if (!seen.insert({constraint.getLoc(), constraint.getMessage()}).second)
       continue;
-    if (!canDischargeConstraint(evaluator, constraint, callerAssumptions)
-             .isTrue())
+    if (!isPropositionImplied(constraint, assumptions, evaluator).isTrue())
       result.push_back(constraint);
   }
   return result;
