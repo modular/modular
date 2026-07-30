@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # Tests that gather with poison in an unmasked lane triggers abort.
 
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
 
 
 # CHECK: UNINIT_READ at {{.*}}: dtype={{.*}}: load matched debug allocator poison sentinel

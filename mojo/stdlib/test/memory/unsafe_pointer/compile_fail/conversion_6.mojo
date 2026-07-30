@@ -16,13 +16,13 @@
 
 def test_cannot_cast_from_immutable_any_to_named[
     T: AnyType, mut: Bool, //, origin: Origin[mut=mut]
-](p: UnsafePointer[T, origin]):
+](p: Pointer[T, origin]):
     pass
 
 
 def main() raises:
     var x = 42
 
-    var p = UnsafePointer(to=x).as_imm().as_unsafe_any_origin()
+    var p = Pointer(to=x).as_imm().as_unsafe_any_origin()
     # CHECK: value passed to 'p' cannot be converted
     test_cannot_cast_from_immutable_any_to_named[ImmOrigin(origin_of(x))](p)

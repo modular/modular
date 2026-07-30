@@ -294,9 +294,9 @@ def _test_dictionary_object_api(cpy: CPython) raises:
 
     var succ = cpy.PyDict_Next(
         d,
-        UnsafePointer(to=pos).as_unsafe_any_origin(),
-        UnsafePointer(to=key).as_unsafe_any_origin(),
-        UnsafePointer(to=value).as_unsafe_any_origin(),
+        Pointer(to=pos).as_unsafe_any_origin(),
+        Pointer(to=key).as_unsafe_any_origin(),
+        Pointer(to=value).as_unsafe_any_origin(),
     )
     assert_equal(pos, 1)
     assert_equal(key, b)
@@ -305,9 +305,9 @@ def _test_dictionary_object_api(cpy: CPython) raises:
 
     succ = cpy.PyDict_Next(
         d,
-        UnsafePointer(to=pos).as_unsafe_any_origin(),
-        UnsafePointer(to=key).as_unsafe_any_origin(),
-        UnsafePointer(to=value).as_unsafe_any_origin(),
+        Pointer(to=pos).as_unsafe_any_origin(),
+        Pointer(to=key).as_unsafe_any_origin(),
+        Pointer(to=value).as_unsafe_any_origin(),
     )
     assert_false(succ)
 

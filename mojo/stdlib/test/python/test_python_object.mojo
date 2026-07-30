@@ -352,9 +352,9 @@ def test_dict() raises:
     var val: PyObjectPtr = {}
     _ = cpy.PyDict_Next(
         d._obj_ptr,
-        UnsafePointer(to=_pos).as_unsafe_any_origin(),
-        UnsafePointer(to=key).as_unsafe_any_origin(),
-        UnsafePointer(to=val).as_unsafe_any_origin(),
+        Pointer(to=_pos).as_unsafe_any_origin(),
+        Pointer(to=key).as_unsafe_any_origin(),
+        Pointer(to=val).as_unsafe_any_origin(),
     )
 
     assert_equal(cpy._Py_REFCNT(key), 1)
