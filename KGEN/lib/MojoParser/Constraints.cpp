@@ -55,7 +55,7 @@ void LIT::emitConstraintInconclusive(DeclResolver &resolver,
   });
 }
 
-TriState LIT::canDischargeConstraints(
+TriState LIT::canDischargeConstraintsInScope(
     ASTDecl &declScope, PogListAttr paramListAttr,
     ArrayRef<ConstraintAttr> constraints,
     ArrayRef<ConstraintAttr> origConstraints,
@@ -84,24 +84,10 @@ TriState LIT::canDischargeConstraints(
   for (ConstraintAttr assumption : assumptions) {
     TypedAttr prop = assumption.getProposition();
     TypedAttr canonProp = getCanonicalAttr(prop);
+    if (evaluator)
+      canonProp = getCanonicalAttr(evaluator->getReboundAttribute(canonProp));
     overallAssumptionOperands.push_back(canonProp);
   }
-  // Combine contextual assumptions, or use trivial true when there are none so
-  // constant constraints still resolve via inferConstraintRelation (handles
-  // weakening rules, conjunction elimination, negation, etc.).
-  TypedAttr overallAssumption;
-  if (overallAssumptionOperands.size() == 1) {
-    // Single assumption: no need to wrap in an AND.
-    overallAssumption = overallAssumptionOperands.front();
-  } else if (!overallAssumptionOperands.empty()) {
-    overallAssumption =
-        ParamOperatorAttr::get(POC::And, overallAssumptionOperands);
-  } else {
-    MLIRContext *ctx = constraints.front().getContext();
-    overallAssumption = SIMDAttr::getScalarBool(ctx, true);
-  }
-  if (evaluator)
-    overallAssumption = evaluator->getReboundAttribute(overallAssumption);
 
   SmallVector<std::pair<size_t, ConstraintAttr>> failedConstraints;
   SmallVector<ConstraintAttr> localUnprovableConstraints;
@@ -113,14 +99,13 @@ TriState LIT::canDischargeConstraints(
 
     // If assumptions imply the constraint, skip it; if they contradict it,
     // treat it as violated.
-    switch (inferConstraintRelation(overallAssumption, canonProp)) {
-    case ConstraintRelation::Implies:
+    TriState result =
+        isPropositionImplied(canonProp, overallAssumptionOperands);
+    if (result.isTrue())
       continue;
-    case ConstraintRelation::Contradicts:
+    if (result.isFalse()) {
       failedConstraints.emplace_back(idx, constraint);
       continue;
-    case ConstraintRelation::Unprovable:
-      break;
     }
 
     // Unprovable constraint.

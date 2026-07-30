@@ -150,10 +150,10 @@ private:
 LogicalResult InferenceState::checkBodyConstraints(
     ArrayRef<ConstraintAttr> extraConstraints) {
   // Check the extra constraints first.
-  if (LIT::canDischargeConstraints(declScope, declaredParamPogs,
-                                   extraConstraints,
-                                   /*origConstraints=*/{}, diag.getDiag(),
-                                   &bodyUnprovableConstraints, &evaluator)
+  if (LIT::canDischargeConstraintsInScope(
+          declScope, declaredParamPogs, extraConstraints,
+          /*origConstraints=*/{}, diag.getDiag(), &bodyUnprovableConstraints,
+          &evaluator)
           .isFalse())
     return failure();
 
@@ -184,7 +184,7 @@ LogicalResult InferenceState::checkBodyConstraints(
   // Verify that no concrete constraints are violated. Any unprovable concrete
   // constraints are recorded in `bodyUnprovableConstraints`. The caller is
   // responsible for surfacing any errors if appropriate.
-  TriState result = LIT::canDischargeConstraints(
+  TriState result = LIT::canDischargeConstraintsInScope(
       declScope, declaredParamPogs, concreteConstraints,
       /*origConstraints=*/{}, diag.getDiag(), &bodyUnprovableConstraints,
       &evaluator);

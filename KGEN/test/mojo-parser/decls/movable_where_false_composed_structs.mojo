@@ -13,13 +13,12 @@
 #
 # Root cause was two distinct bugs, both in
 # KGEN/lib/LITDialect/LITUtils.cpp:
-#   1. `LIT::inferConstraintRelation` was missing an "assumption trivially
-#      false implies anything" case -- this alone fixes the self-conformance
-#      case below.
-#   2. `LIT::canDischargeConstraint` (singular) had a separate bug in its
-#      per-assumption loop: an early `Contradicts` verdict from one
-#      assumption discarded an already-found `Implies` from another -- this
-#      is what actually blocked the field-composition case below.
+#   1. The single-assumption `LIT::isPropositionImplied` overload was
+#      missing an "assumption trivially false implies anything" case -- this
+#      alone fixes the self-conformance case below.
+#   2. The multi-assumption overload had a separate bug: an early `no` verdict
+#      from one assumption discarded an already-found `yes` from another --
+#      this is what actually blocked the field-composition case below.
 #
 # This is deliberately a standalone, minimal test rather than folded into an
 # existing large file: this area has a documented history of subtle
@@ -29,7 +28,7 @@
 # this test starts failing, read the commits that introduced it (and the
 # corresponding KGEN/internal/claude_kb/entries/known-limitations/
 # where-false-constraints.md entry) before touching
-# inferConstraintRelation/canDischargeConstraint again.
+# the `isPropositionImplied` overload family again.
 
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | FileCheck %s
 
@@ -43,9 +42,9 @@ struct SelfConstrained[value: Int](Movable where False) where value >= 0:
 
 # Field-composition case: Outer has its own where-clause AND `Movable where
 # False`; Inner (used as Outer's field) is also `Movable where False`.
-# Checked via ASTType::isMovable -> canDischargeConstraint, where the caller
-# assumptions mix Outer's own where-clause with the synthesized function's
-# own trivially-false conformance clause.
+# Checked via ASTType::isMovable -> isPropositionImplied, where the
+# assumptions mix Outer's own where-clause with the synthesized function's own
+# trivially-false conformance clause.
 # CHECK-LABEL: lit.struct.decl @ComposedInner
 struct ComposedInner[value: Int](Movable where False):
     pass

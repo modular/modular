@@ -269,31 +269,29 @@ private:
 // Constraint Checking
 //===----------------------------------------------------------------------===//
 
-/// The logical relationship between an assumption and a proposition.
-enum class ConstraintRelation {
-  Implies,     ///< assumption implies proposition.
-  Contradicts, ///< assumption implies NOT proposition.
-  Unprovable,  ///< neither relation is provable.
-};
+/// Determine whether an assumption proves or disproves a proposition.
+///
+/// An internally inconsistent assumption proves the proposition vacuously.
+TriState isPropositionImplied(TypedAttr proposition, TypedAttr assumption);
 
-/// Determine how propA (an assumption) relates to propB (a proposition).
-/// Returns Implies, Contradicts, or Unprovable.
-ConstraintRelation inferConstraintRelation(TypedAttr propA, TypedAttr propB);
-
-/// Returns true if propA implies propB. Thin wrapper over
-/// inferConstraintRelation.
-inline bool constraintImplies(TypedAttr propA, TypedAttr propB) {
-  return inferConstraintRelation(propA, propB) == ConstraintRelation::Implies;
+/// Returns true if `assumption` implies `proposition`.
+inline bool isImplicationProven(TypedAttr proposition, TypedAttr assumption) {
+  return isPropositionImplied(proposition, assumption).isTrue();
 }
 
-/// Evaluate a conditional constraint using a pre-built evaluator that already
-/// has struct parameters bound. Caller assumptions may prove or disprove the
-/// rebound constraint via inferConstraintRelation. Returns a three-valued
-/// verdict: `yes` if the constraint is proven, `no` if disproven, and `unknown`
-/// for a conditional conformance that can't be decided statically.
-TriState
-canDischargeConstraint(ParameterEvaluator &evaluator, ConstraintAttr constraint,
-                       ArrayRef<ConstraintAttr> callerAssumptions = {});
+/// Determine how a list of assumptions relate to a goal proposition.
+///
+/// The assumptions are interpreted as a conjunction; an empty list therefore
+/// represents `True`. Returns `yes` if the conjunction proves the goal, `no` if
+/// it disproves the goal, and `unknown` when neither relation is provable.
+TriState isPropositionImplied(TypedAttr proposition,
+                              ArrayRef<TypedAttr> assumptions);
+
+/// Similar to isPropositionImplied but rebinds propositions using the
+/// evaluator prior to checking the constraint.
+TriState isPropositionImplied(ConstraintAttr proposition,
+                              ArrayRef<ConstraintAttr> assumptions,
+                              ParameterEvaluator &evaluator);
 
 /// Given a type expression and a set of assumptions, compute the effective
 /// trait bound implied by any `conforms_to(type, Trait)` constraints. Returns a

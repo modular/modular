@@ -33,7 +33,7 @@ using namespace M::KGEN::LIT;
 
 /// Check if a parameterized field type conditionally conforms to a builtin
 /// trait based on the function's where-clause constraints.  Constructs a
-/// conforms_to proposition and delegates to constraintImplies.
+/// conforms_to proposition and delegates to isImplicationProven.
 ///
 /// Returns the resolved TraitDeclOp on success (for reuse in code-gen),
 /// or a null TraitDeclOp if no conditional conformance was found.
@@ -61,7 +61,7 @@ fieldConditionallyConformsToBuiltin(ASTType fieldType, StringRef traitName,
       TypeConformsToTraitAttr::get(fieldParam, traitType.getPValue());
 
   for (ConstraintAttr constraint : bodyConstraints)
-    if (constraintImplies(constraint.getProposition(), conformsTo))
+    if (isImplicationProven(conformsTo, constraint.getProposition()))
       return traitOp;
   return {};
 }
@@ -414,7 +414,7 @@ LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
   ASTDecl &structDecl = *fnDecl.getParentDecl();
   ASTType structSelfType = structDecl.getTypeDeclSelf();
 
-  IREmitter emitter(structDecl, EC_Trait);
+  IREmitter emitter(fnDecl, EC_Trait);
   fn.getBody()->clear(); // Remove the lit.end_fn
 
   emitter.builder = OpBuilder::atBlockBegin(fn.getBody());

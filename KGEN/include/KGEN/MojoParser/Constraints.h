@@ -50,7 +50,7 @@ void emitConstraintInconclusive(DeclResolver &resolver, MojoInflightDiag &diag,
 /// constraints. Additional assumptions can be passed to consider alongside the
 /// scope's known assumptions (e.g., a conformance constraint during trait
 /// checking).
-TriState canDischargeConstraints(
+TriState canDischargeConstraintsInScope(
     ASTDecl &declScope, PogListAttr paramListAttr,
     ArrayRef<ConstraintAttr> constraints,
     ArrayRef<ConstraintAttr> origConstraints,

@@ -952,41 +952,41 @@ static TypedAttr getNotOperand(TypedAttr prop) {
   return {};
 }
 
-ConstraintRelation LIT::inferConstraintRelation(TypedAttr propA,
-                                                TypedAttr propB) {
-  using CR = ConstraintRelation;
-
+TriState LIT::isPropositionImplied(TypedAttr proposition,
+                                   TypedAttr assumption) {
   // Canonicalize and decompose multi-trait conforms_to into AND of single-trait
   // ones so the general conjunction rules handle subsumption uniformly.
-  propA = getCanonicalAttr(propA);
-  propB = getCanonicalAttr(propB);
-  if (TypedAttr d = decomposeConformsTo(propA))
-    propA = d;
-  if (TypedAttr d = decomposeConformsTo(propB))
-    propB = d;
+  proposition = getCanonicalAttr(proposition);
+  assumption = getCanonicalAttr(assumption);
+  if (TypedAttr decomposed = decomposeConformsTo(proposition))
+    proposition = decomposed;
+  if (TypedAttr decomposed = decomposeConformsTo(assumption))
+    assumption = decomposed;
 
   // Direct equality: A implies A.
-  if (propA == propB)
-    return CR::Implies;
+  if (assumption == proposition)
+    return TriState::yes();
 
   // A trivially false assumption implies anything.
-  if (isTriviallyFalseProposition(propA))
-    return CR::Implies;
+  if (isTriviallyFalseProposition(assumption))
+    return TriState::yes();
 
   // Trivially true is implied by anything.
-  if (isTriviallyTrueProposition(propB))
-    return CR::Implies;
+  if (isTriviallyTrueProposition(proposition))
+    return TriState::yes();
   // Trivially false constraints are violated under any assumption. This is
-  // sound because we know propA is not also trivially false at this point.
-  if (isTriviallyFalseProposition(propB))
-    return CR::Contradicts;
+  // sound because we know the assumption is not also trivially false here.
+  if (isTriviallyFalseProposition(proposition))
+    return TriState::no();
 
-  if (auto conformsToA = dyn_cast<TypeConformsToTraitAttr>(propA)) {
-    if (auto conformsToB = dyn_cast<TypeConformsToTraitAttr>(propB)) {
+  if (auto assumptionConformance =
+          dyn_cast<TypeConformsToTraitAttr>(assumption)) {
+    if (auto propositionConformance =
+            dyn_cast<TypeConformsToTraitAttr>(proposition)) {
       std::optional<ArrayRef<SymbolRefAttr>> symbolsA =
-          conformsToA.getTraitSymbols();
+          assumptionConformance.getTraitSymbols();
       std::optional<ArrayRef<SymbolRefAttr>> symbolsB =
-          conformsToB.getTraitSymbols();
+          propositionConformance.getTraitSymbols();
       bool traitsImply = false;
       if (symbolsA && symbolsB) {
         DenseSet<SymbolRefAttr> symbols(symbolsA->begin(), symbolsA->end());
@@ -994,106 +994,108 @@ ConstraintRelation LIT::inferConstraintRelation(TypedAttr propA,
           return symbols.contains(symbol);
         });
       }
-      if (traitsImply && isEqualCanon(stripIdentityWrappers(getCanonicalAttr(
-                                          conformsToA.getTypeValue())),
-                                      stripIdentityWrappers(getCanonicalAttr(
-                                          conformsToB.getTypeValue()))))
-        return CR::Implies;
-    }
-  }
-
-  // Negation rule: A contradicts NOT(A).
-  // If B = NOT(inner) and A implies inner, then A contradicts B.
-  if (TypedAttr innerB = getNotOperand(propB))
-    if (constraintImplies(propA, innerB))
-      return CR::Contradicts;
-  // Symmetric: if A = NOT(inner) and B implies inner, then A contradicts B.
-  if (TypedAttr innerA = getNotOperand(propA))
-    if (constraintImplies(propB, innerA))
-      return CR::Contradicts;
-
-  if (auto paramOpB = dyn_cast<ParamOperatorAttr>(propB)) {
-    // Weakening: A implies (A OR B) for any B.
-    if (paramOpB.getOpcode() == POC::Or) {
-      for (Attribute operand : paramOpB.getOperands())
-        if (constraintImplies(propA, cast<TypedAttr>(operand)))
-          return CR::Implies;
-    }
-    // Conjunction introduction: A implies (B AND C) iff A implies every
-    // conjunct. A contradicts (B AND C) if A contradicts any conjunct.
-    if (paramOpB.getOpcode() == POC::And) {
-      CR result = CR::Implies;
-      for (Attribute operand : paramOpB.getOperands()) {
-        CR rel = inferConstraintRelation(propA, cast<TypedAttr>(operand));
-        if (rel == CR::Contradicts)
-          return CR::Contradicts;
-        if (rel == CR::Unprovable)
-          result = CR::Unprovable;
-      }
-      return result;
+      if (traitsImply &&
+          isEqualCanon(stripIdentityWrappers(getCanonicalAttr(
+                           assumptionConformance.getTypeValue())),
+                       stripIdentityWrappers(getCanonicalAttr(
+                           propositionConformance.getTypeValue()))))
+        return TriState::yes();
     }
   }
 
   // Conjunction elimination: (A AND B) implies B if any conjunct implies B.
   // AND decomposition: (A AND B) contradicts Z if any conjunct contradicts Z.
-  if (auto paramOpA = dyn_cast<ParamOperatorAttr>(propA)) {
-    if (paramOpA.getOpcode() == POC::And) {
-      bool anySatisfied = false;
-      for (Attribute operand : paramOpA.getOperands()) {
-        CR rel = inferConstraintRelation(cast<TypedAttr>(operand), propB);
-        if (rel == CR::Contradicts)
-          return CR::Contradicts;
-        if (rel == CR::Implies)
-          anySatisfied = true;
+  //
+  // Scan every conjunct instead of stopping at the first verdict, preferring a
+  // proof over a disproof. This must stay ahead of the negation rule below.
+  if (auto assumptionOp = dyn_cast<ParamOperatorAttr>(assumption)) {
+    if (assumptionOp.getOpcode() == POC::And) {
+      bool anyDisproves = false;
+      for (Attribute operand : assumptionOp.getOperands()) {
+        TriState result =
+            isPropositionImplied(proposition, cast<TypedAttr>(operand));
+        if (result.isFalse())
+          anyDisproves = true;
+        else if (result.isTrue())
+          return TriState::yes();
       }
-      if (anySatisfied)
-        return CR::Implies;
+      if (anyDisproves)
+        return TriState::no();
+    }
+  }
+
+  // Negation rule: A contradicts NOT(A).
+  // If B = NOT(inner) and A implies inner, then A contradicts B.
+  if (TypedAttr innerProposition = getNotOperand(proposition))
+    if (isImplicationProven(innerProposition, assumption))
+      return TriState::no();
+  // Symmetric: if A = NOT(inner) and B implies inner, then A contradicts B.
+  if (TypedAttr innerAssumption = getNotOperand(assumption))
+    if (isImplicationProven(innerAssumption, proposition))
+      return TriState::no();
+
+  if (auto propositionOp = dyn_cast<ParamOperatorAttr>(proposition)) {
+    // Weakening: A implies (A OR B) for any B.
+    if (propositionOp.getOpcode() == POC::Or) {
+      for (Attribute operand : propositionOp.getOperands())
+        if (isImplicationProven(cast<TypedAttr>(operand), assumption))
+          return TriState::yes();
+    }
+    // Conjunction introduction: A implies (B AND C) iff A implies every
+    // conjunct. A contradicts (B AND C) if A contradicts any conjunct.
+    if (propositionOp.getOpcode() == POC::And) {
+      TriState result = TriState::yes();
+      for (Attribute operand : propositionOp.getOperands()) {
+        TriState operandResult =
+            isPropositionImplied(cast<TypedAttr>(operand), assumption);
+        if (operandResult.isFalse())
+          return TriState::no();
+        if (operandResult.isUnknown())
+          result = TriState::unknown();
+      }
+      return result;
     }
   }
 
   // Fallback: A implies B iff AND(A, B) == A.
-  TypedAttr combined = ParamOperatorAttr::get(POC::And, {propA, propB});
-  if (combined == propA)
-    return CR::Implies;
-
-  return CR::Unprovable;
-}
-
-TriState
-LIT::canDischargeConstraint(ParameterEvaluator &evaluator,
-                            ConstraintAttr constraint,
-                            ArrayRef<ConstraintAttr> callerAssumptions) {
-  TypedAttr prop = getCanonicalAttr(constraint.getProposition());
-  TypedAttr rebound = getCanonicalAttr(evaluator.getReboundAttribute(prop));
-
-  if (isTriviallyTrueProposition(rebound))
+  TypedAttr combined =
+      ParamOperatorAttr::get(POC::And, {assumption, proposition});
+  if (combined == assumption)
     return TriState::yes();
-
-  bool anyImplies = false;
-  bool anyContradicts = false;
-  for (ConstraintAttr assumption : callerAssumptions) {
-    TypedAttr assumptionRebound = getCanonicalAttr(
-        evaluator.getReboundAttribute(assumption.getProposition()));
-    switch (inferConstraintRelation(assumptionRebound, rebound)) {
-    case ConstraintRelation::Contradicts:
-      anyContradicts = true;
-      break;
-    case ConstraintRelation::Implies:
-      anyImplies = true;
-      break;
-    case ConstraintRelation::Unprovable:
-      break;
-    }
-  }
-  // An implication is stronger than a contradiction: if both occur, the
-  // assumption set is itself contradictory, so the goal is vacuously implied
-  // either way.
-  if (anyImplies)
-    return TriState::yes();
-  if (anyContradicts)
-    return TriState::no();
 
   return TriState::unknown();
+}
+
+TriState LIT::isPropositionImplied(TypedAttr proposition,
+                                   ArrayRef<TypedAttr> assumptions) {
+  TypedAttr combinedAssumption;
+  if (assumptions.empty())
+    combinedAssumption =
+        SIMDAttr::getScalarBool(proposition.getContext(), true);
+  else if (assumptions.size() == 1)
+    combinedAssumption = assumptions.front();
+  else
+    combinedAssumption = ParamOperatorAttr::get(POC::And, assumptions);
+
+  return isPropositionImplied(proposition, combinedAssumption);
+}
+
+TriState LIT::isPropositionImplied(ConstraintAttr proposition,
+                                   ArrayRef<ConstraintAttr> assumptions,
+                                   ParameterEvaluator &evaluator) {
+  TypedAttr propositionAttr = getCanonicalAttr(proposition.getProposition());
+  TypedAttr reboundProposition =
+      getCanonicalAttr(evaluator.getReboundAttribute(propositionAttr));
+  if (isTriviallyTrueProposition(reboundProposition))
+    return TriState::yes();
+
+  SmallVector<TypedAttr> reboundAssumptions;
+  reboundAssumptions.reserve(assumptions.size());
+  for (ConstraintAttr assumption : assumptions)
+    reboundAssumptions.push_back(getCanonicalAttr(
+        evaluator.getReboundAttribute(assumption.getProposition())));
+
+  return isPropositionImplied(reboundProposition, reboundAssumptions);
 }
 
 /// Visit each TypeConformsToTraitAttr found in a constraint proposition.

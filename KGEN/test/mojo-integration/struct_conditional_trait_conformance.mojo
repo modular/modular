@@ -926,7 +926,7 @@ def test_comptime_if_guard():
 # ===========================================================================
 # A where clause asserting types.all_conforms_to[Writable]() enables calling
 # repr() on Tuple[*types], because the assumption is wired into
-# doesNominalTypeConformTo via constraintImplies.
+# doesNominalTypeConformTo via isImplicationProven.
 
 
 def repr_with_where[
@@ -1405,10 +1405,10 @@ def test_comptime_alias_conditional_conformance():
 # Regression test for SymbolRefAttr sub-element walking in
 # TypeConformsToTraitAttr. The default Equatable.__eq__ uses reflection to
 # iterate fields and calls conforms_to(FieldType, Equatable) for each one.
-# This path exercises constraintImplies → getCanonicalAttr on decomposed
+# This path exercises isImplicationProven → getCanonicalAttr on decomposed
 # multi-trait conforms_to attrs. Without proper sub-element walking,
 # getCanonicalAttr cannot descend into the SymbolRefAttr list, producing
-# non-canonical forms that cause constraintImplies to reject valid
+# non-canonical forms that cause isImplicationProven to reject valid
 # subsumption (e.g. conforms_to(T, Equatable) should imply
 # conforms_to(T, ImplicitlyDeletable) via ancestor expansion).
 
