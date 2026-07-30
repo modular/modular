@@ -87,3 +87,8 @@ def validate_doc_strings : Flag<["--", "-"], "validate-doc-strings">,
   Group<DiagnosticOptionGroup>, Index<7>,
   Flags<[HelpHidden]>,
   HelpText<"Deprecated: use -Werror instead. Treat doc string warnings as errors.">;
+
+defm ignore_deprecated : CommandOption<["--", "-"], "ignore-deprecated",
+  DiagnosticOptionGroup, Index<8>, MetaVarName<"NAME">,
+  HelpText<"Suppress the deprecation warning for the given declaration (e.g. "
+           "`Foo.bar`, or `some_fn` for a top-level declaration).">>;

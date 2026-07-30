@@ -93,6 +93,7 @@ struct CommonOptionIDs {
 
   // Stability options
   llvm::opt::OptSpecifier warnOnUnstableAPIs;
+  llvm::opt::OptSpecifier ignoreDeprecated;
 
   // Linker options
   llvm::opt::OptSpecifier lldPath;
@@ -169,7 +170,8 @@ ErrorOrSuccess parseCompilationOptions(
     llvm::opt::OptSpecifier elaborationErrorVerbose = {},
     llvm::opt::OptSpecifier elaborationMaxDepth = {},
     llvm::opt::OptSpecifier ignoreIncompatiblePrecompiledFilesId = {},
-    llvm::opt::OptSpecifier fpModeId = {});
+    llvm::opt::OptSpecifier fpModeId = {},
+    llvm::opt::OptSpecifier ignoreDeprecatedId = {});
 
 /// Warn users when doing debug builds with a compiler in debug mode.
 void warnBuildingForDebugWithDebugBuiltCompiler(

@@ -36,6 +36,8 @@ bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
 
   CompilationOptions compilationOptions;
   compilationOptions.warningsAsErrors = config.warningsAsErrors;
+  compilationOptions.ignoredDeprecations =
+      llvm::to_vector_of<std::string>(config.ignoredDeprecations);
   LIT::ParserConfig parserConfig(&context, compilationOptions);
   parserConfig.diagnoseMissingDocStrings = config.diagnoseMissingDocStrings;
   parserConfig.maxNotesPerDiagnostic = config.maxNotesPerDiagnostic;

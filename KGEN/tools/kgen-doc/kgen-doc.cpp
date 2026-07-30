@@ -128,6 +128,8 @@ int main(int argc, char *argv[]) {
   config.docsBasePath = args.getLastArgValue(options::OPT_docs_base_path);
   config.includePaths = args.getAllArgValues(options::OPT_I);
   config.diagnosticFormat = state.diagnosticFormat;
+  config.ignoredDeprecations =
+      args.getAllArgValues(options::OPT_ignore_deprecated);
 
   if (!generateMojoDocJSON(*pathOrErr, context, config, out->os()))
     return state.reportError("could not generate documentation");

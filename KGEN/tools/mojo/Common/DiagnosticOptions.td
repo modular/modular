@@ -82,4 +82,9 @@ def ignore_incompatible_precompiled_file_errors : Flag<["--"], "ignore-incompati
   Group<DiagnosticOptionGroup>, Index<13>,
   HelpText<"Ignore errors encountered when loading incompatible Mojo precompiled files.">;
 
+defm ignore_deprecated : CommandOption<["--", "-"], "ignore-deprecated",
+  DiagnosticOptionGroup, Index<14>, MetaVarName<"NAME">,
+  HelpText<"Suppress the deprecation warning for the given declaration (e.g. "
+           "`Foo.bar`, or `some_fn` for a top-level declaration).">>;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_DIAGNOSTICOPTIONS_TD
