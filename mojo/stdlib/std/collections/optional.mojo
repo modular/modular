@@ -688,7 +688,8 @@ struct Optional[T: AnyType](
             The contained data of the `Optional` as an owned T value.
 
         Notes:
-            This will abort on empty `Optional`.
+            This will abort on empty `Optional`. This leaves the `Optional`
+            empty rather than consuming it; use `into_inner()` to consume it.
 
         Examples:
 
@@ -754,6 +755,47 @@ struct Optional[T: AnyType](
         """
         assert self.__bool__(), "`.unsafe_take()` on empty `Optional`"
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
+
+    def into_inner(deinit self) -> Self.T where conforms_to(Self.T, Movable):
+        """Consume the `Optional` and return the value it contains.
+
+        Unlike `take()`, which needs only a mutable reference and leaves the
+        `Optional` empty, this consumes the `Optional`.
+
+        Returns:
+            The contained data of the `Optional` as an owned T value.
+
+        Notes:
+            This will abort on empty `Optional`.
+
+        Examples:
+
+        ```mojo
+        instance = Optional("Hello")
+        x = instance^.into_inner()  # `instance` is consumed
+        print(x)                    # Output: Hello
+
+        # Best practice
+        instance2 = Optional[String](None)
+        if instance2:
+            y = instance2^.into_inner()  # Won't reach this line
+            print(y)
+
+        # Used directly
+        # y = instance2^.into_inner()  # ABORT: `Optional.into_inner()` called on empty `Optional`
+        # print(y)                     # Does not reach this line
+        ```
+        """
+        if not self.__bool__():
+            abort(
+                "`Optional.into_inner()` called on empty `Optional`. Consider"
+                " using `if optional:` to check whether the `Optional` is empty"
+                " before calling `.into_inner()`, or use `.or_else()` to"
+                " provide a default value."
+            )
+        # SAFETY: The emptiness check above aborts before reaching this point,
+        # so `Self.T` is the active type of the underlying `Variant`.
+        return self._value^.unsafe_unwrap[Self.T]()
 
     def deinit_with[F: def(var Self.T)](deinit self, deinit_func: F, /):
         """Destroy the value contained in this `Optional` in-place using a
