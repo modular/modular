@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 from max.benchmark.results_to_csv import (
     ENGINE_PROFILE,
+    CsvStreamWriter,
     JSONObject,
     convert,
     flatten,
@@ -405,3 +406,81 @@ def test_main_cli_profile_engine(tmp_path: Path) -> None:
         header = next(csv.reader(f))
     assert "result.tokens_per_second" in header
     assert "iteration_config.batch_size" in header
+
+
+# --- CsvStreamWriter (incremental / crash-resilient streaming) ---------------
+
+
+def test_stream_writer_writes_header_and_rows(tmp_path: Path) -> None:
+    out = tmp_path / "stream.csv"
+    with CsvStreamWriter(out, all_columns=True) as w:
+        w.write_row({"a": "1", "b": "2"})
+        w.write_row({"a": "3", "b": "4"})
+
+    with open(out) as f:
+        rows = list(csv.reader(f))
+    assert rows[0] == ["a", "b"]
+    assert rows[1] == ["1", "2"]
+    assert rows[2] == ["3", "4"]
+
+
+def test_stream_writer_header_fixed_by_first_row(tmp_path: Path) -> None:
+    """Columns are fixed from the first row: later-only keys are dropped and
+    columns absent from a later row are written empty."""
+    out = tmp_path / "stream.csv"
+    with CsvStreamWriter(out, all_columns=True) as w:
+        w.write_row({"a": "1", "b": "2"})
+        # "c" is new (dropped); "b" is missing (empty cell).
+        w.write_row({"a": "3", "c": "9"})
+
+    with open(out) as f:
+        rows = list(csv.reader(f))
+    assert rows[0] == ["a", "b"]
+    assert "c" not in rows[0]
+    assert rows[1] == ["1", "2"]
+    assert rows[2] == ["3", ""]
+
+
+def test_stream_writer_is_crash_resilient(tmp_path: Path) -> None:
+    """Rows written before an exception survive on disk (flushed per row)."""
+    out = tmp_path / "stream.csv"
+    with pytest.raises(RuntimeError):
+        with CsvStreamWriter(out, all_columns=True) as w:
+            w.write_row({"a": "1", "b": "2"})
+            raise RuntimeError("simulated mid-run crash")
+
+    with open(out) as f:
+        rows = list(csv.reader(f))
+    assert rows[0] == ["a", "b"]
+    assert rows[1] == ["1", "2"]
+
+
+def test_stream_writer_write_result_from_json(tmp_path: Path) -> None:
+    src = tmp_path / "results-1-median.json"
+    src.write_text(
+        json.dumps({"model_id": "m", "max_concurrency": 1, "nested": {"x": 5}})
+    )
+    out = tmp_path / "stream.csv"
+    with CsvStreamWriter(out, all_columns=True) as w:
+        w.write_result(src)
+
+    with open(out) as f:
+        rows = list(csv.reader(f))
+    header = rows[0]
+    assert "model_id" in header
+    assert "nested.x" in header
+    assert rows[1][header.index("nested.x")] == "5"
+
+
+def test_stream_writer_no_rows_leaves_empty_file(tmp_path: Path) -> None:
+    out = tmp_path / "stream.csv"
+    with CsvStreamWriter(out, all_columns=True):
+        pass
+    assert out.exists()
+    assert out.read_text() == ""
+
+
+def test_stream_writer_requires_context_manager(tmp_path: Path) -> None:
+    w = CsvStreamWriter(tmp_path / "stream.csv", all_columns=True)
+    with pytest.raises(RuntimeError, match="context manager"):
+        w.write_row({"a": "1"})

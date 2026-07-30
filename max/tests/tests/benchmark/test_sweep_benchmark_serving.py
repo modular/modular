@@ -904,7 +904,7 @@ def test_upload_path_writes_one_json_per_concurrency(
         "max.benchmark.sweep_benchmark_serving.save_result_json",
         side_effect=capture_save,
     )
-    mocker.patch("max.benchmark.sweep_benchmark_serving.results_to_csv")
+    mocker.patch("max.benchmark.sweep_benchmark_serving.CsvStreamWriter")
 
     sweep_benchmark_serving.main(
         [
@@ -996,7 +996,7 @@ def test_upload_writes_correct_data_to_correct_files(
         "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
         side_effect=fake_benchmark_serving_main,
     )
-    mocker.patch("max.benchmark.sweep_benchmark_serving.results_to_csv")
+    mocker.patch("max.benchmark.sweep_benchmark_serving.CsvStreamWriter")
 
     sweep_benchmark_serving.main(
         [
@@ -1074,7 +1074,7 @@ def test_upload_path_single_run_no_max_concurrency(
         "max.benchmark.sweep_benchmark_serving.save_result_json",
         side_effect=capture_save,
     )
-    mocker.patch("max.benchmark.sweep_benchmark_serving.results_to_csv")
+    mocker.patch("max.benchmark.sweep_benchmark_serving.CsvStreamWriter")
 
     sweep_benchmark_serving.main(
         [

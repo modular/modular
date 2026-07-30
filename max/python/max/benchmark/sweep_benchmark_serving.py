@@ -42,7 +42,7 @@ from max.benchmark.benchmark_serving import (
 from max.benchmark.benchmark_shared.config import (
     ServingBenchmarkConfig,
 )
-from max.benchmark.results_to_csv import convert as results_to_csv
+from max.benchmark.results_to_csv import CsvStreamWriter
 from max.benchmark.sweep_benchmark_serving_result_utils import (
     SweepUploader,
     validate_sweep_serving_percentiles,
@@ -197,49 +197,41 @@ def run_sweep(
         return results
 
     results_csv_path = log_dir / "results.csv"
-    # Per-concurrency JSON blobs are the single source of truth; results.csv is
-    # produced from them by the shared results_to_csv library rather than a
-    # bespoke sweep CSV writer.
-    #
-    # TODO(MXTOOLS-441): CSV is written post-hoc here, so a mid-sweep crash
-    # leaves no partial results.csv (the per-concurrency JSON and the
-    # results-publication reporter still stream). Restore streaming once
-    # results_to_csv grows a streaming writer.
-    json_paths: list[Path] = []
-    for result in benchmark_serving_main(
-        config, server_liveness=server_liveness
-    ):
-        results.append(result)
-        # Save per-concurrency JSON with full metrics.
-        if result.result is not None:
-            assert config.model is not None
-            json_path = (
-                log_dir / f"results-{result.max_concurrency}-median.json"
-            )
-            save_result_json(
-                str(json_path),
-                config,
-                result.result,
-                benchmark_task=config.benchmark_task,
-                model_id=config.model,
-                tokenizer_id=config.tokenizer or config.model,
-                request_rate=result.request_rate,
-                record_max_concurrency=result.max_concurrency,
-            )
-            json_paths.append(json_path)
-            if upload_active and uploader is not None:
-                uploader.upload(str(json_path))
+    # results.csv streams one row per iteration (all columns) as that
+    # iteration's JSON blob is written, so a crash mid-sweep still leaves the
+    # completed rows on disk. The per-concurrency JSON blobs remain the source
+    # of truth; the authoritative all-columns superset can be regenerated from
+    # them via results_to_csv if a later iteration surfaces new columns.
+    with CsvStreamWriter(results_csv_path, all_columns=True) as csv_writer:
+        for result in benchmark_serving_main(
+            config, server_liveness=server_liveness
+        ):
+            results.append(result)
+            # Save per-concurrency JSON with full metrics, then stream its row.
+            if result.result is not None:
+                assert config.model is not None
+                json_path = (
+                    log_dir / f"results-{result.max_concurrency}-median.json"
+                )
+                save_result_json(
+                    str(json_path),
+                    config,
+                    result.result,
+                    benchmark_task=config.benchmark_task,
+                    model_id=config.model,
+                    tokenizer_id=config.tokenizer or config.model,
+                    request_rate=result.request_rate,
+                    record_max_concurrency=result.max_concurrency,
+                )
+                csv_writer.write_result(json_path)
+                if upload_active and uploader is not None:
+                    uploader.upload(str(json_path))
 
-        # Stream the row to the results-publication reporter, if the caller
-        # wired one in — so a crash mid-sweep still leaves rows 1..N-1
-        # published downstream.
-        if report_result is not None:
-            report_result(result)
-
-    # Project the per-concurrency JSON blobs into results.csv (all columns, so
-    # results.csv stays a superset of the metrics the run produced).
-    if json_paths:
-        results_to_csv(json_paths, results_csv_path, all_columns=True)
+            # Stream the row to the results-publication reporter, if the caller
+            # wired one in — so a crash mid-sweep still leaves rows 1..N-1
+            # published downstream.
+            if report_result is not None:
+                report_result(result)
 
     result_file_path = results_csv_path.resolve()
     logger.info(
