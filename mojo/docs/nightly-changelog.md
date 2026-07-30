@@ -493,6 +493,10 @@ This version is still a work in progress.
   `unsafe_take_allocation().unsafe_leak()`) and no longer accepts the payload
   pointer that `steal_data()` handed out.
 
+- `OwnedPointer.take()` has been renamed to `OwnedPointer.into_inner()`.
+  The old name remains as a `@deprecated` method and will be
+  removed in a future release.
+
 - `Variant.take[T]()` and `Variant.unsafe_take[T]()` have been renamed to
   `Variant.unwrap[T]()` and `Variant.unsafe_unwrap[T]()`. The old names
   remain as `@deprecated` methods and will be removed in a future release.
@@ -855,7 +859,7 @@ This version is still a work in progress.
     elements, so a `Set` with linear elements can be constructed and torn
     down but not populated.
   - `OwnedPointer[T]`: conforms only when `T` does; a linear `OwnedPointer`
-    must be consumed explicitly with `take()` (for a `Movable` `T`) or
+    must be consumed explicitly with `into_inner()` (for a `Movable` `T`) or
     `unsafe_take_allocation()` rather than dropped implicitly.
 
   Consuming iteration is conditional through the `IterableOwned` conformance;
