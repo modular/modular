@@ -28,6 +28,7 @@ embedding before a single MHA attention block. Layout matches
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -61,6 +62,7 @@ from max.nn.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
 )
+from max.nn.transformer.transformer import fuse_captured_hidden_states
 
 
 @dataclass(kw_only=True)
@@ -113,6 +115,34 @@ class Eagle3MHADraftConfig:
     target layers at different depths with very different magnitudes, and ``fc``
     is trained on per-chunk-normalized inputs, so skipping this collapses the
     draft."""
+
+
+def project_captured_hidden_states(
+    captures_per_device: Sequence[Sequence[TensorValue]],
+    *,
+    fc_norm_shards: Sequence[Sequence[Callable[[TensorValue], TensorValue]]]
+    | None,
+    fc_shards: Sequence[Callable[[TensorValue], TensorValue]],
+) -> list[TensorValue]:
+    """Applies the per-capture ``fc_norm``, then the ``fc`` fusion."""
+    num_devices = len(captures_per_device)
+    num_captures = len(captures_per_device[0])
+    per_capture = [
+        [captures_per_device[d][j] for d in range(num_devices)]
+        for j in range(num_captures)
+    ]
+    if fc_norm_shards is not None:
+        per_capture = [
+            forward_sharded_layers(fc_norm_shards[j], per_capture[j])
+            for j in range(num_captures)
+        ]
+    fused = fuse_captured_hidden_states(
+        [
+            [per_capture[j][d] for j in range(num_captures)]
+            for d in range(num_devices)
+        ]
+    )
+    return forward_sharded_layers(fc_shards, fused)
 
 
 class Eagle3MHADraft(Module):
@@ -180,7 +210,8 @@ class Eagle3MHADraft(Module):
 
         draft(
             tokens,
-            fused_target_hs,        # per-device list[TensorValue]
+            fused_target_hs,        # per-device list[TensorValue] or
+                                    # list[list[TensorValue]]
             signal_buffers,
             kv_collections,         # per-device list[PagedCacheValues]
             return_n_logits,
@@ -221,6 +252,11 @@ class Eagle3MHADraft(Module):
         device0 = devices[0]
         dtype = config.dtype
         norm_dtype = config.norm_dtype
+
+        assert config.fc_input_multiplier > 1, (
+            f"fc_input_multiplier must be at least 2, got "
+            f"{config.fc_input_multiplier}"
+        )
 
         self.dp_degree = config.data_parallel_degree
         assert num_devices % self.dp_degree == 0, (
@@ -466,7 +502,8 @@ class Eagle3MHADraft(Module):
     def __call__(
         self,
         tokens: TensorValue,
-        fused_target_hs: list[TensorValue],
+        fused_target_hs: Sequence[TensorValue]
+        | Sequence[Sequence[TensorValue]],
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
@@ -485,34 +522,32 @@ class Eagle3MHADraft(Module):
         devices = config.devices
         num_devices = len(devices)
 
-        fused_hs: list[TensorValue] = list(fused_target_hs)
-        if fused_hs[0].shape[-1] != config.hidden_size:
-            # Step 0 only (fused input is ``fc_input_multiplier * hidden``).
-            # Normalize each captured chunk before fusing, matching the draft's
-            # training-time ``fc_norm``.
-            if self.fc_norm is not None:
-                h = config.hidden_size
-                normed_chunks = [
-                    forward_sharded_layers(
-                        self.fc_norm_shards[j],
-                        [
-                            fused_hs[d][:, j * h : (j + 1) * h]
-                            for d in range(num_devices)
-                        ],
-                    )
-                    for j in range(config.fc_input_multiplier)
-                ]
-                fused_hs = [
-                    ops.concat(
-                        [
-                            normed_chunks[j][d]
-                            for j in range(len(normed_chunks))
-                        ],
-                        axis=-1,
-                    )
-                    for d in range(num_devices)
-                ]
-            fused_hs = forward_sharded_layers(self.fc_shards, fused_hs)
+        # Wrap a bare per-device hidden so capture count identifies the step.
+        captures_per_dev: list[list[TensorValue]] = []
+        for per_device in fused_target_hs:
+            if isinstance(per_device, TensorValue):
+                captures_per_dev.append([per_device])
+            else:
+                captures_per_dev.append(list(per_device))
+        assert len(captures_per_dev) == num_devices, (
+            f"expected {num_devices} per-device hidden states, got "
+            f"{len(captures_per_dev)}"
+        )
+        counts = {len(c) for c in captures_per_dev}
+        assert counts in ({1}, {config.fc_input_multiplier}), (
+            f"every device must carry 1 hidden state or all "
+            f"{config.fc_input_multiplier} captures, got {sorted(counts)}"
+        )
+        if counts != {1}:
+            fused_hs = project_captured_hidden_states(
+                captures_per_dev,
+                fc_norm_shards=self.fc_norm_shards
+                if self.fc_norm is not None
+                else None,
+                fc_shards=self.fc_shards,
+            )
+        else:
+            fused_hs = [c[0] for c in captures_per_dev]
 
         h_embed = self.embed_tokens(tokens, signal_buffers)
 

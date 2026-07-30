@@ -29,6 +29,10 @@ from max.graph import (
 from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import AcceptanceSampler
+from max.nn.transformer.transformer import (
+    captures_by_device,
+    fuse_captured_hidden_states,
+)
 from max.pipelines.speculative.config import MAGIC_DRAFT_TOKEN_ID
 from max.pipelines.speculative.ragged_token_merger import (
     RaggedTokenMerger,
@@ -124,7 +128,9 @@ class UnifiedDflashKimiK25(Module):
             ep_inputs,
         )
         target_logits = target_outputs[1]
-        target_hs_per_dev = list(target_outputs[3 : 3 + n_devs])
+        target_hs_per_dev = fuse_captured_hidden_states(
+            captures_by_device(target_outputs[3:], n_devs)
+        )
 
         seed_scalar = seed[0]
         num_accepted, recovered, bonus = self.acceptance_sampler(
