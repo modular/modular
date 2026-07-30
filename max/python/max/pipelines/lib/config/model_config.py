@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 import os
-from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -735,6 +734,9 @@ class MAXModelConfig(MAXModelConfigBase):
     """Cached HuggingFaceRepo for the model. Avoids recreating instances
     (and redundant HF API calls) on every property access."""
 
+    _generation_config: GenerationConfig | None = PrivateAttr(default=None)
+    """Hugging Face ``GenerationConfig``, loaded once at construction."""
+
     _config_file_section_name: str = PrivateAttr(default="model_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
@@ -781,6 +783,7 @@ class MAXModelConfig(MAXModelConfigBase):
             # across lazy property accesses.
             self._populate_repo_handles()
             self._populate_hf_config()
+            self._populate_generation_config()
 
     # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
     # own custom __getstate__/__setstate__ methods.
@@ -804,6 +807,7 @@ class MAXModelConfig(MAXModelConfigBase):
             # (weight_files, info, etc.) that may not be picklable.
             private_state["_cached_weight_repo"] = None
             private_state["_cached_model_repo"] = None
+            private_state["_generation_config"] = None
             state["__pydantic_private__"] = private_state
         return state
 
@@ -822,6 +826,7 @@ class MAXModelConfig(MAXModelConfigBase):
         private_state.setdefault("_weights_repo_id", None)
         private_state.setdefault("_cached_weight_repo", None)
         private_state.setdefault("_cached_model_repo", None)
+        private_state.setdefault("_generation_config", None)
         private_state.setdefault("_config_file_section_name", "model_config")
         object.__setattr__(self, "__pydantic_private__", private_state)
 
@@ -833,6 +838,7 @@ class MAXModelConfig(MAXModelConfigBase):
         # worker also correctly re-resolves trust_remote_code dynamic classes.
         self._populate_repo_handles()
         self._populate_hf_config()
+        self._populate_generation_config()
 
     def _populate_repo_handles(self) -> None:
         """Build the HuggingFace repo handles from the config's identity fields.
@@ -865,6 +871,16 @@ class MAXModelConfig(MAXModelConfigBase):
             self._huggingface_config = load_huggingface_config(
                 self.huggingface_model_repo
             )
+
+    def _populate_generation_config(self) -> None:
+        """Load the ``GenerationConfig`` once, at construction (and on unpickle).
+
+        Skipped for placeholder configs (no ``model_path``). Loading failures
+        are tolerated (a default ``GenerationConfig`` is used), so this never
+        raises at construction.
+        """
+        if self._generation_config is None and self.model_path:
+            self._generation_config = self._make_generation_config()
 
     def _has_loadable_hf_config(self) -> bool:
         """Whether the model repo exposes a loadable HuggingFace config.
@@ -1121,17 +1137,24 @@ class MAXModelConfig(MAXModelConfigBase):
             return load_huggingface_config(self.huggingface_model_repo)
         return self._huggingface_config
 
-    @cached_property
+    @property
     def generation_config(self) -> GenerationConfig:
-        """Retrieves the Hugging Face ``GenerationConfig`` for this model.
+        """Returns the Hugging Face ``GenerationConfig`` for this model.
 
-        Lazily loads the ``GenerationConfig`` from the model repository
-        and caches it to avoid repeated remote fetches.
+        Loaded once at construction (see :meth:`_populate_generation_config`)
+        and stored in a PrivateAttr; this getter returns it, falling back to
+        loading on demand for a never-populated config (e.g. a placeholder).
+        Loading failures yield a default ``GenerationConfig``.
+        """
+        if self._generation_config is None:
+            return self._make_generation_config()
+        return self._generation_config
 
-        Returns:
-            The ``GenerationConfig`` for the model, containing generation parameters
-            including ``max_length``, ``temperature``, and ``top_p``. If loading
-            fails, returns a default ``GenerationConfig``.
+    def _make_generation_config(self) -> GenerationConfig:
+        """Load the ``GenerationConfig`` from the model repo (default on error).
+
+        Contains generation parameters including ``max_length``,
+        ``temperature``, and ``top_p``.
         """
         try:
             kwargs: dict[str, Any] = {
@@ -1153,7 +1176,7 @@ class MAXModelConfig(MAXModelConfigBase):
             return GenerationConfig()
 
     @computed_field  # type: ignore[prop-decorator]
-    @cached_property
+    @property
     def sampling_params_defaults(
         self,
     ) -> SamplingParamsGenerationConfigDefaults:
