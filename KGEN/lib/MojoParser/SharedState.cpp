@@ -713,11 +713,7 @@ void ASTDecl::setBodyDecorators(ArrayRef<ExprNode *> decorators) {
 
 struct SharedState::ModuleState {
   ModuleState(ASTDecl *decl = nullptr) : decl(decl) {}
-  ModuleState(ASTDecl *decl, const ModuleSpec &spec)
-      : decl(decl), kind(spec.kind) {
-    if (!spec.isPrecompiled())
-      sourcePath = spec.path.string();
-  }
+  ModuleState(ASTDecl *decl, const ModuleSpec &spec) : decl(decl), spec(spec) {}
   ~ModuleState() {
     // Drop any remaining operations in the reader to avoid dangling
     // unmaterialized operations. If these were needed, they would have been
@@ -741,10 +737,16 @@ struct SharedState::ModuleState {
   std::unique_ptr<mlir::BytecodeReader> bytecodeReader;
   /// A temporary module used to load the bytecode.
   ModuleOp tmpModule;
-  /// The kind of module this represents.
-  std::optional<ModuleSpec::Kind> kind;
+  /// The module spec this state was created from. Absent for the top-level
+  /// and erroneous module states.
+  std::optional<ModuleSpec> spec;
+
   /// The optional source path of this module if it was loaded from source.
-  std::optional<std::string> sourcePath;
+  std::optional<std::string> sourcePath() const {
+    if (spec && !spec->isPrecompiled())
+      return spec->path.string();
+    return std::nullopt;
+  }
   /// For a package, the location of the import statement that first pulled it
   /// in; used for diagnostics. Imported module states are shared across all
   /// compilation units so we can only meaningfully track one location, even if
@@ -1188,10 +1190,10 @@ SharedState::getNestedModuleDecls(PackageOp packageOp) const {
 
 void SharedState::registerSourcePackageChildren(ASTDecl &packageDecl) {
   ModuleState *parentState = impl->moduleStates.lookup(&packageDecl);
-  if (!parentState || !parentState->sourcePath)
+  if (!parentState || !parentState->sourcePath())
     return;
   std::error_code ec;
-  std::filesystem::path directory(*parentState->sourcePath);
+  std::filesystem::path directory(*parentState->sourcePath());
   if (!std::filesystem::is_directory(directory, ec) || ec)
     return;
 
@@ -1203,8 +1205,7 @@ void SharedState::registerSourcePackageChildren(ASTDecl &packageDecl) {
     if (!moduleSpec)
       continue;
     // Precompiled children aren't supported in source packages.
-    if ((disablePrebuiltPackages ||
-         parentState->kind == ModuleSpec::Kind::SourcePackage) &&
+    if ((disablePrebuiltPackages || parentState->spec->isSourcePackage()) &&
         moduleSpec->isPrecompiled())
       continue;
     if (auto it = packageChildren.find(moduleSpec->name);
@@ -1348,7 +1349,8 @@ SharedState::lookupModuleCache(StringRef name, ASTDecl *parentDecl,
     // Imports written in a REPL/LSP docstring wrapper buffer are still
     // self-imports of the module they wrap.
     std::optional<StringRef> wrapped = getWrappedSourcePath(importerBufferId);
-    return wrapped && state->sourcePath && *wrapped == *state->sourcePath;
+    std::optional<std::string> sourcePath = state->sourcePath();
+    return wrapped && sourcePath && *wrapped == *sourcePath;
   };
 
   // Reject self-imports with an unregistered erroneous state. The name *is*
@@ -1412,12 +1414,11 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
   // Resolve the path for this module.
   std::optional<ModuleSpec> modulePath;
   if (parentState->decl != impl->topLevelDecl) {
-    if (!parentState->sourcePath)
+    if (!parentState->sourcePath())
       return notFound("unable to locate module '" + name + "'");
     modulePath = resolveModulePath(
-        name, *parentState->sourcePath, disablePrebuiltPackages,
-        /*isInsideSourcePackage=*/
-        parentState->kind == ModuleSpec::Kind::SourcePackage);
+        name, *parentState->sourcePath(), disablePrebuiltPackages,
+        /*isInsideSourcePackage=*/parentState->spec->isSourcePackage());
   } else {
     // Otherwise, go through the normal import path.
     modulePath = resolveModulePath(name, loc);
@@ -1449,7 +1450,7 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
 
   // Check if the path is a precompiled file or binary package.
   if (modulePath->isPrecompiled())
-    return &createBinaryPackageState(loc, declNameAttr, pathRef, *parentState);
+    return &createBinaryPackageState(loc, *modulePath, *parentState);
 
   // Open + lex the module source file.
   assert(modulePath->isSourceModule() && "Unexpected import kind");
@@ -1843,9 +1844,9 @@ ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
 }
 
 ASTDecl &SharedState::createBinaryPackage(StringRef path, StringRef name) {
+  ModuleSpec spec{name.str(), path.str(), ModuleSpec::Kind::Precompiled};
   ModuleState &state =
-      createBinaryPackageState(SMLoc(), StringAttr::get(getContext(), name),
-                               path.str(), *impl->topLevelModuleState);
+      createBinaryPackageState(SMLoc(), spec, *impl->topLevelModuleState);
   return *state.decl;
 }
 
@@ -1853,7 +1854,7 @@ std::optional<std::string> SharedState::getModuleSourcePath(ASTDecl &module) {
   auto it = impl->moduleStates.find(&module);
   if (it == impl->moduleStates.end())
     return std::nullopt;
-  return it->second->sourcePath;
+  return it->second->sourcePath();
 }
 
 SharedState::ModuleState &SharedState::createFileModuleState(
@@ -1912,14 +1913,16 @@ LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
   // Only a deferred source module (FileModuleOp with an invalid cursor and a
   // recorded source path) needs materializing; everything else is a no-op.
   ModuleState *state = impl->moduleStates.lookup(&decl);
-  if (!state || !state->sourcePath || !decl.getCursor().isInvalid())
+  if (!state || !decl.getCursor().isInvalid())
+    return success();
+  std::optional<std::string> sourcePath = state->sourcePath();
+  if (!sourcePath)
     return success();
 
-  const llvm::MemoryBuffer *moduleBuffer =
-      openModuleFile(*state->sourcePath, loc);
+  const llvm::MemoryBuffer *moduleBuffer = openModuleFile(*sourcePath, loc);
   if (!moduleBuffer) {
     emitError(decl.getLoc(),
-              "unable to open module file '" + *state->sourcePath + "'");
+              "unable to open module file '" + *sourcePath + "'");
     return failure();
   }
 
@@ -1975,12 +1978,12 @@ SharedState::createPackageState(ModuleSpec moduleSpec, ModuleState &parentState,
 }
 
 SharedState::ModuleState &
-SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
-                                      std::filesystem::path path,
+SharedState::createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
                                       ModuleState &parentState) {
-  std::string pathStr = path.string();
+  std::string pathStr = spec.path.string();
+  auto declNameAttr = StringAttr::get(getContext(), spec.name);
   auto makeError = [&](const Twine &msg) -> ModuleState & {
-    return createErrorModuleState(loc, declName, *parentState.decl, msg);
+    return createErrorModuleState(loc, declNameAttr, *parentState.decl, msg);
   };
 
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> packageBuffer =
@@ -2097,7 +2100,7 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
 
   // Initialize the module state.
   ModuleState &moduleState = parentState.insertNestedModule(
-      declName, std::make_unique<ModuleState>(&decl));
+      declNameAttr, std::make_unique<ModuleState>(&decl, spec));
   // Remember where this package was imported. The package's source files are
   // only opened at diagnostic time (they aren't parsed here), so when a decl
   // from this package is lazily materialized we use this to set its location
@@ -2493,9 +2496,15 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             diags.recordImportedFileIncludeLoc(op->getLoc(), packageImportLoc);
             ASTDecl &decl = addDeclForOp(op, name);
 
-            // Record a nested module state for this decl.
-            ModuleState &moduleState = packageState->insertNestedModule(
-                name, std::make_unique<ModuleState>(&decl));
+            // Record a nested module state for this decl, inheriting the
+            // enclosing package's spec (kind and path) under its own name.
+            auto childState = std::make_unique<ModuleState>(&decl);
+            if (packageState->spec) {
+              childState->spec = *packageState->spec;
+              childState->spec->name = name.getValue().str();
+            }
+            ModuleState &moduleState =
+                packageState->insertNestedModule(name, std::move(childState));
 
             impl->moduleStates[&decl] = &moduleState;
             if constexpr (std::is_same_v<decltype(op), PackageOp>)
