@@ -305,6 +305,17 @@ def test_helper[depth: Int](ctx: DeviceContext) raises:
     test[dtype, depth=depth, num_heads=16, group=16](1, 128, ctx)
     test[dtype, depth=depth, num_heads=16, group=16](1, 1024, ctx)
     test[dtype, depth=depth, num_heads=16, group=16](1, 5000, ctx)
+    # Speculative-verify query lengths. On AMD these take the decode kernel's
+    # query-token fold, one instantiation per S (BM = num_heads*S = 32/48/64);
+    # elsewhere, and outside the fold's bf16 / single-KV-head / depth <= 128
+    # window, they take prefill. The num_keys span a single partition (29), a
+    # BN=128 straddle (208), an aligned length (1024), and split-K-heavy (5000).
+    comptime if not USE_FP8 and depth <= 128:
+        for seq_len in [2, 3, 4]:
+            test[dtype, depth=depth, num_heads=16, group=16](seq_len, 29, ctx)
+            test[dtype, depth=depth, num_heads=16, group=16](seq_len, 208, ctx)
+            test[dtype, depth=depth, num_heads=16, group=16](seq_len, 1024, ctx)
+            test[dtype, depth=depth, num_heads=16, group=16](seq_len, 5000, ctx)
 
 
 def main() raises:

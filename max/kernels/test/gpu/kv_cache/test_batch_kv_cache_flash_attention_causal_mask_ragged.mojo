@@ -34,6 +34,11 @@ from std.utils import Index, IndexList
 comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime llama_num_q_heads = 32
 
+# MiniMax-M3's dense-layer shape at TP4: 16 query heads over one KV head, so
+# `group == num_heads` and the AMD decode query-token fold is eligible.
+comptime kv_params_single_kv = KVCacheStaticParams(num_heads=1, head_size=128)
+comptime fold_num_q_heads = 16
+
 
 def execute_ragged_flash_attention[
     num_q_heads: Int,
@@ -427,6 +432,45 @@ def test_flash_attention_with_sink_weights(ctx: DeviceContext) raises:
     )
 
 
+def test_speculative_decode_query_lengths(ctx: DeviceContext) raises:
+    """Verify-step query lengths (S > 1) against the padded naive reference.
+
+    On AMD these route to the decode kernel's query-token fold, which writes rows
+    `input_row_offsets[b] .. +S`. A NON-UNIFORM batch is what catches a wrong row
+    base — a short sequence would overwrite its neighbour's tokens — since the
+    comparison reads each output row at its ragged offset. Elsewhere these lengths
+    take prefill and are still valid coverage.
+    """
+    var max_seq_len_cache = 1024
+
+    # Uniform S, one kernel instantiation per S on the fold path.
+    for s in [2, 3, 4]:
+        var seq_lens = List[Int]()
+        var cache_lens = List[Int]()
+        for _ in range(4):
+            seq_lens.append(s)
+            cache_lens.append(Int(random_ui64(512, 1000)))
+        execute_ragged_flash_attention[
+            fold_num_q_heads, DType.bfloat16, kv_params_single_kv
+        ](seq_lens, max_seq_len_cache, cache_lens, 2, 0, ctx)
+
+    # Non-uniform S in one launch (drafts accepted to different depths, including
+    # a plain 1-token decode): the fold dispatches at S = max(seq_lens) and each
+    # CTA clamps to its own runtime length.
+    var mixed_seq_lens: List[Int] = [4, 1, 2, 4, 3]
+    var mixed_cache_lens: List[Int] = [900, 512, 700, 1000, 613]
+    execute_ragged_flash_attention[
+        fold_num_q_heads, DType.bfloat16, kv_params_single_kv
+    ](mixed_seq_lens, max_seq_len_cache, mixed_cache_lens, 2, 0, ctx)
+
+    # Single sequence, and a cache length far short of the BN=128 key tile.
+    var one_seq: List[Int] = [4]
+    var one_cache: List[Int] = [29]
+    execute_ragged_flash_attention[
+        fold_num_q_heads, DType.bfloat16, kv_params_single_kv
+    ](one_seq, max_seq_len_cache, one_cache, 2, 0, ctx)
+
+
 def main() raises:
     seed(42)
     with DeviceContext() as ctx:
@@ -434,3 +478,5 @@ def main() raises:
 
         # Test sink weights functionality
         test_flash_attention_with_sink_weights(ctx)
+
+        test_speculative_decode_query_lengths(ctx)

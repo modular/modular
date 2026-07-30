@@ -84,10 +84,10 @@ struct Attention[
     # `v_smem_ptr` is bitcast'd from `k_smem_ptr` (no separate V allocation).
     # Enforced via `comptime assert` in `__init__`.
     mla_kv_alias: Bool = False,
-    # MLA decode MTP: query tokens (S) folded into the MMA
-    # M dimension, heads-inner (row = token*H + head, M = num_heads*q_seq_len).
+    # Speculative decode (MLA MTP / MHA verify): S query tokens folded into the
+    # MMA M dimension, heads-inner (row = token*H + head, M = num_heads*S).
     # Default 1 = single-token decode (query_rows == group), byte-identical.
-    # gfx950 / AMD MLA decode only.
+    # gfx950 decode only.
     q_seq_len: Int = 1,
 ]:
     """Holds the per-warp register, SMEM, and softmax state for a gfx950 MHA/MLA attention tile.
@@ -124,7 +124,7 @@ struct Attention[
         mla_kv_alias: Whether V aliases onto K's SMEM, skipping the V DMA
             (defaults to `False`; requires `shared_kv=True`).
         q_seq_len: Number of query tokens folded into the MMA M dimension
-            for MLA decode (defaults to 1, single-token decode).
+            for speculative decode (defaults to 1, single-token decode).
     """
 
     # Block/warp dimensions from MHAConfig.
@@ -139,23 +139,25 @@ struct Attention[
     comptime num_warps_m = Self.BM // Self.WM
     comptime depth = Self.config.depth
 
-    # MLA-decode token-fold geometry. At S=1 `query_rows == group`, so everything
-    # below collapses to single-token decode (byte-identical). For S>1 the QK^T M
-    # dimension holds M = num_heads * q_seq_len rows (heads-inner: token*H + head).
-    # The fold applies ONLY to AMD MLA decode (`token_gen and mla_mode`); the
-    # `Attention` struct is shared with MHA/GQA prefill (`mha.mojo:2111`) and MHA
-    # decode (`mha.mojo:3734`) where `group < num_heads`. For those non-MLA paths
-    # `heads_inner` MUST fold to `group`, else the `__init__` invariant becomes
-    # `group % num_heads` (compile break for GQA) and the mask derives
-    # `fold_seq_len = 0` (→ score_row = num_keys → whole fragment masked to NaN).
-    comptime _is_mla_fold = Self.token_gen and Self.mla_mode
+    # Decode token-fold geometry: MLA always, MHA at S>1 (speculative verify).
+    # At S=1 `query_rows == group` and everything below collapses to single-token
+    # decode (byte-identical); at S>1 the QK^T M dimension holds
+    # num_heads*q_seq_len heads-inner rows (token*H + head).
+    # Off the fold path — prefill and single-token MHA decode, where
+    # `group < num_heads` — `heads_inner` MUST fold to `group`, else the
+    # `__init__` invariant becomes `group % num_heads` (GQA compile break) and
+    # the mask derives `fold_seq_len = 0` (score_row = num_keys → all-NaN
+    # fragment). The MHA fold also needs `group == num_heads`, asserted below.
+    comptime _fold_active = Self.token_gen and (
+        Self.mla_mode or Self.q_seq_len > 1
+    )
     comptime query_rows = (
         Self.num_heads * Self.q_seq_len
-    ) if Self._is_mla_fold else Self.group
+    ) if Self._fold_active else Self.group
     # H — the divisor used by the per-token causal mask: token(row) = row // H,
     # head(row) = row % H. The fold invariant `query_rows % heads_inner == 0`
     # is asserted in `__init__` (comptime asserts must live in a function body).
-    comptime heads_inner = Self.num_heads if Self._is_mla_fold else Self.group
+    comptime heads_inner = Self.num_heads if Self._fold_active else Self.group
 
     comptime accum_type = get_accum_type[Self.q_type]()
 
@@ -231,7 +233,7 @@ struct Attention[
     # bank-conflict optimization, not correctness; num_warps_n=1 has no cross-warp
     # P contention). A register-resident warp-local path is a deferred follow-up.
     comptime _warp_local_p = (
-        Self._is_mla_fold and Self.num_warps_m > 1 and Self.num_warps_n == 1
+        Self._fold_active and Self.num_warps_m > 1 and Self.num_warps_n == 1
     )
     comptime _p_shared_memory_backed = (
         Self.BN != Self.WN
@@ -510,8 +512,27 @@ struct Attention[
         # Fold invariant: query rows partition evenly into S tokens of H. Scoped
         # to the fold path so a stray `group % num_heads` (GQA) is never asserted
         # on the shared non-MLA paths (where it holds trivially anyway).
-        comptime if Self._is_mla_fold:
+        comptime if Self._fold_active:
             comptime assert Self.query_rows % Self.heads_inner == 0
+        # MHA fold: `get_q_offset`/`get_output_offset` base the tile at
+        # `kv_head_idx * group` and read it with the flat row stride
+        # `_q_stride0 = q_depth`, so row `token*group + head` lands on BSHD
+        # element `(token*num_heads + head)*depth` only with a single KV head;
+        # `group < num_heads` would silently address the wrong heads.
+        # TODO(anand): a rank-3 Q/O tile with strides
+        # (num_heads*depth, depth, 1) lifts this to any GQA group.
+        comptime if Self._fold_active and not Self.mla_mode:
+            comptime assert Self.group == Self.num_heads, (
+                "MHA token-fold (q_seq_len > 1) requires group == num_heads"
+                " (single KV head) for flat query-row addressing"
+            )
+            # The sink lookup is `q_head_idx()` = lane % MMA_M, which is the
+            # folded head only while num_heads == MMA_M; past that, warps beyond
+            # the first would seed softmax with the wrong head's sink weight.
+            comptime assert not Self.sink, (
+                "MHA token-fold (q_seq_len > 1) does not support attention"
+                " sinks: the sink lookup is not fold-row aware"
+            )
 
         self.softmax = type_of(self.softmax)()
         self.out_reg_buffer = Self.OutputRegisterBufferType()
@@ -560,7 +581,7 @@ struct Attention[
         # batch). Other paths keep the comptime `query_rows` / prefill `min(BM,
         # ...)` byte-identically.
         var valid_rows: UInt32
-        comptime if Self._is_mla_fold and Self.q_seq_len > 1:
+        comptime if Self._fold_active and Self.q_seq_len > 1:
             valid_rows = UInt32(Self.num_heads) * UInt32(seq_len)
         elif Self.token_gen:
             valid_rows = UInt32(Self.query_rows)
@@ -685,7 +706,7 @@ struct Attention[
             # single-token span.
             comptime fold_seq_len = (
                 Self.query_rows // Self.heads_inner
-            ) if Self._is_mla_fold else 1
+            ) if Self._fold_active else 1
             return self.mask.status(
                 UInt32(self.batch_idx),
                 Index[dtype=DType.uint32](
@@ -749,11 +770,11 @@ struct Attention[
                 mma_m=Self.mma_shape[0],
                 use_exp2=Self.use_exp2,
                 # Token fold: H = num_heads, M = query_rows = H*S. Defaults
-                # (group, group) reproduce single-token decode; `mla_mode` gates
-                # the fold arithmetic comptime-dead on the non-MLA paths.
+                # (group, group) reproduce single-token decode, where
+                # `fold_mode=False` makes the fold arithmetic comptime-dead.
                 num_heads_per_token=Self.heads_inner,
                 valid_rows=Self.query_rows,
-                mla_mode=Self._is_mla_fold,
+                fold_mode=Self._fold_active,
                 # Warp-local (num_warps_m>1): a warp owns 16 absolute rows that
                 # may include pad rows, so the mask's dead-row guard must test
                 # the absolute row, not intra-warp `lane_row`.
@@ -1089,9 +1110,18 @@ struct Attention[
         # `warp_row*WM + lane_row` (lane_row = lane % MMA_M); take warp_col==0,
         # lane < MMA_M as the one writer per row. The bound is the runtime
         # live-row count `num_heads * seq_len` (not the comptime ceiling) so a
-        # short sequence's pad rows are skipped (their slots stay uninitialized
-        # and the reducer skips them). Comptime-dead at S=1.
-        comptime if Self._is_mla_fold and Self.q_seq_len > 1:
+        # short sequence's pad rows are skipped. Comptime-dead at S=1.
+        #
+        # Leaving those slots unwritten is only safe for MLA (its reducer
+        # early-returns on pad rows) and MHA ragged (a short sequence's pad rows
+        # are the next sequence's rows, written by that sequence's own CTA). A
+        # PADDED MHA batch leaves them uninitialized and `mha_splitk_reduce`'s
+        # `scale > 0` blend guard does not reject that, so `_mha_decode_fold_ok`
+        # excludes the combination on the host.
+        #
+        # `r` is the absolute row for the MHA fold too: `group == num_heads`
+        # means one KV head, so no per-KV-head base term is needed.
+        comptime if Self._fold_active and Self.q_seq_len > 1:
             # Warp-local folds one 16-row MMA M-tile per warp (WM == mma_m), so a
             # warp owns a single tile and its row stat lives in
             # `rowsum_tensor[0, 0]`. Assert that here so a future num_m_mmas > 1
