@@ -21,8 +21,8 @@ from max.benchmark.benchmark_shared.metrics import (
 )
 from max.benchmark.benchmark_shared.serving_result_output import (
     PercentileRow,
-    _format_percentile_table,
     elide_data_uris_in_string,
+    format_percentile_table,
 )
 
 
@@ -89,7 +89,7 @@ def _pm(
 
 def test_format_percentile_table() -> None:
     """The rendered table matches exactly, byte for byte."""
-    table = _format_percentile_table(
+    table = format_percentile_table(
         [
             PercentileRow(
                 "TTFT (ms)",
@@ -138,7 +138,7 @@ def test_format_percentile_table_accepts_metric_wrappers() -> None:
     latency = StandardPercentileMetrics([0.5, 0.6, 0.7], scale_factor=1000.0)
     tput = ThroughputMetrics([50.0, 60.0, 70.0], unit="tok/s")
 
-    table = _format_percentile_table(
+    table = format_percentile_table(
         [
             PercentileRow("Request Latency (ms)", latency),
             PercentileRow("Output throughput (tok/s)", tput),

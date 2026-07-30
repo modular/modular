@@ -308,7 +308,7 @@ class PercentileRow(NamedTuple):
     metrics: _PercentileLike
 
 
-def _format_percentile_table(rows: Sequence[PercentileRow]) -> str:
+def format_percentile_table(rows: Sequence[PercentileRow]) -> str:
     """Render per-metric percentile stats as one table, one row per metric."""
     headers = ["Metric", "Mean", "Std", "P50", "P90", "P95", "P99"]
     table = [
@@ -464,7 +464,7 @@ def print_benchmark_summary(
 
     if percentile_rows:
         print_section(title="Latency & Throughput Percentiles")
-        print(_format_percentile_table(percentile_rows))
+        print(format_percentile_table(percentile_rows))
         td = metrics.text_data
         if td is not None:
             if td.tpot_ms is not None:
