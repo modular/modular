@@ -781,9 +781,8 @@ private:
   ModuleState &createPackageState(ModuleSpec moduleSpec,
                                   ModuleState &parentState, SMLoc importLoc);
 
-  /// Create a new module state for a binary package with the given name.
-  ModuleState &createBinaryPackageState(SMLoc loc, StringAttr declName,
-                                        std::filesystem::path path,
+  /// Create a new module state for a binary package with the given spec.
+  ModuleState &createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
                                         ModuleState &parentState);
 
   /// Create an error module state and emit the given error message. If
