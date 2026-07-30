@@ -741,9 +741,55 @@ def test_region_passthrough_dependencies(
             assert_equal(host[i], Float32(15))
 
 
+def test_as_context_kernel_chain(ctx: DeviceContext) raises:
+    print(
+        "Test recording a two-kernel chain through DeviceGraphBuilder"
+        ".recording_context() using the ordinary enqueue_function API."
+    )
+    comptime length = 1024
+    comptime block_dim = 256
+    comptime grid_dim = ceildiv(length, block_dim)
+
+    var buf = ctx.enqueue_create_buffer[DType.float32](length)
+
+    var fill = ctx.compile_function[fill_constant]()
+    var incr = ctx.compile_function[add_in_place]()
+
+    # Record fill(=5) then incr(+10) on the same buffer through the recording
+    # context. The facade chains each enqueue after the previous one, so a
+    # correct final value of 15 proves the launches recorded AND stayed ordered
+    # (incr must observe fill's write, which on CUDA/HIP relies on the recorded
+    # dependency edge rather than any implicit stream FIFO).
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        with builder.recording_context() as rec:
+            rec.enqueue_function(
+                fill, buf, 5, length, grid_dim=grid_dim, block_dim=block_dim
+            )
+            rec.enqueue_function(
+                incr, buf, 10, length, grid_dim=grid_dim, block_dim=block_dim
+            )
+
+    var graph = DeviceGraph.create(ctx, build)
+
+    graph.replay()
+    ctx.synchronize()
+    with buf.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], Float32(15))
+            # Zero out so the second replay must recompute from scratch.
+            host[i] = 0.0
+
+    graph.replay()
+    ctx.synchronize()
+    with buf.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], Float32(15))
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_vec_add_kernel_node(ctx)
+        test_as_context_kernel_chain(ctx)
         test_parameterized_kernel_node(ctx)
         test_capturing_parameterized_kernel_node(ctx)
         test_closure_node(ctx)

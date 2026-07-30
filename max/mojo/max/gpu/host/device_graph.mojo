@@ -381,6 +381,57 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         """
         return self._ctx
 
+    def recording_context(self) raises -> DeviceContext:
+        """Returns a `DeviceContext` view that records into this builder.
+
+        Operations enqueued through the returned context (kernel launches,
+        copies, memsets) are recorded as graph nodes in enqueue order,
+        simulating stream ordering, instead of executing eagerly. This lets
+        code written against `DeviceContext` — the bulk of the standard library
+        and kernels — record into a device graph without modification.
+
+        Setup and query calls (buffer allocation, function loading, attribute
+        queries) forward to the builder's backing context. Host-visible waits
+        (`synchronize()`, events, timers) raise, because they observe a
+        device-side result that does not exist until replay.
+
+        Returns:
+            A `DeviceContext` that records into this builder.
+
+        Raises:
+            If the backing driver fails to create the recording context.
+        """
+        # Dependency tracking lives on the Mojo builder (`_implicit_deps` and
+        # `region` scopes); the C++ builder does not model it. Materialize the
+        # current ambient predecessor set as a single empty "seed" node — its
+        # dependencies come from `_merge_implicit` inside `add_empty` — and hand
+        # that node across the boundary. Operations recorded through the
+        # returned context chain after the seed, so they respect whatever
+        # `region` scope is active when `recording_context` is called.
+        var seed = self.add_empty()
+        var result: _DeviceContextPtr[mut=True] = {}
+        # const char *AsyncRT_DeviceGraphBuilder_recordingContext(
+        #     DeviceContext **result, DeviceGraphBuilder *builder,
+        #     int32_t seedNodeId)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_recordingContext",
+                _CString[],
+                UnsafePointer[_DeviceContextPtr[mut=True], origin_of(result)],
+                _DeviceGraphBuilderPtr[mut=True],
+                Int32,
+            ](
+                UnsafePointer(to=result),
+                self._handle,
+                seed.id,
+            )
+        )
+        # `checkRef` transferred ownership of the fresh reference to us, so the
+        # returned context must release it on destruction.
+        var ctx = DeviceContext(ctx_ptr=result)
+        ctx._owning = True
+        return ctx^
+
     @doc_hidden
     @always_inline
     def _merge_implicit(
