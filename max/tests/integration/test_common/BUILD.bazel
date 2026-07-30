@@ -144,6 +144,14 @@ modular_py_library(
     testonly = True,
     srcs = ["mef_precompile.py"],
     imports = [".."],
+    # Package default plus //max/python/layer_benchmarks, whose harness tests
+    # live outside //max/tests but use the same CPU/GPU compile split.
+    visibility = [
+        "//:__pkg__",
+        "//max/python/layer_benchmarks:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         requirement("click"),
         "//max/python/max/driver",
