@@ -577,13 +577,19 @@ class TestUnaryMixedOps:
             (DType.uint8, DType.float32),
             (DType.float32, DType.int64),
             (DType.int64, DType.float32),
+            (DType.uint8, DType.uint16),
+            (DType.int32, DType.bool),
+            (DType.bool, DType.int32),
+            (DType.float32, DType.bool),
         ],
     )
     def test_cast(self, in_dtype: DType, out_dtype: DType) -> None:
         """Test cast op converts dtype correctly."""
         in_np_dtype = in_dtype.to_numpy()
         out_np_dtype = out_dtype.to_numpy()
-        x_np = np.arange(12, dtype=in_np_dtype).reshape(3, 4)
+        # numpy rejects arange with an explicit bool dtype past 2 elements, so
+        # build the ramp in the default dtype and cast it to the input dtype.
+        x_np = np.arange(12).astype(in_np_dtype).reshape(3, 4)
 
         x = Tensor.from_dlpack(x_np)
         with (

@@ -1469,6 +1469,8 @@ class TestUnaryMixedOpsGPU:
             (DType.int32, DType.float32),
             (DType.int64, DType.float32),
             (DType.float32, DType.int64),
+            (DType.int32, DType.bool),
+            (DType.bool, DType.int32),
         ],
     )
     def test_cast(self, in_dtype: DType, out_dtype: DType) -> None:

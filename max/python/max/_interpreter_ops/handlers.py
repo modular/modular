@@ -29,6 +29,7 @@ import numpy as np
 from max import _core, graph
 from max._core.dialects import builtin, kgen, mo, mosh
 from max._interpreter_ops import (
+    cast_gc,
     conv_gc,
     elementwise_binary_gc,
     group_norm_gc,
@@ -780,41 +781,40 @@ def _register_unary_elementwise_handlers() -> None:
 _register_unary_elementwise_handlers()
 
 
-# Unary mixed-dtype operations (cast, is_nan, is_inf)
+# Cast (any dtype -> any dtype)
 
 
-def unary_mixed_handler(op_type: type) -> OpHandler:
-    op_binding = ops.UNARY_MIXED[op_type]
+@register_op_handler(mo.CastOp)
+def _handle_cast(
+    op: mo.CastOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Dispatches an eager cast to its GC model.
 
-    def handler(
-        op: _core.Operation,
-        inputs: Sequence[Buffer | None],
-    ) -> Sequence[Buffer]:
-        assert isinstance(inputs[0], Buffer)
+    The model is compiled once per (device, src dtype, dst dtype) at rank 1 (see
+    :func:`cast_gc.cast_model`), so the operand is flattened around the call and
+    reshaped back (zero-copy views). The source dtype is the input buffer's; the
+    target dtype comes from the MLIR result type, not the input.
 
-        result_type = graph.Type.from_mlir(list(op.results)[0].type)
-        assert isinstance(result_type, graph.TensorType)
-        target_device = result_type.device.to_device()
-        _check_buffers_on_device(inputs, target_device)
+    Args:
+        op: The cast operation being handled.
+        inputs: The realized input buffers; the first is the operand.
 
-        # Output dtype comes from the MLIR result type (not the input dtype).
-        # For IsNan/IsInf: result_type.dtype is DType.bool
-        # For Cast: result_type.dtype is the target cast dtype
-        output = Buffer(
-            shape=inputs[0].shape,
-            dtype=result_type.dtype,
-            device=target_device,
-        )
+    Returns:
+        A single-element list holding the result buffer.
+    """
+    x = inputs[0]
+    assert isinstance(x, Buffer)
 
-        op_binding(output, inputs[0], target_device._device_context_ptr())
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_buffers_on_device(inputs, target_device)
 
-        return [output]
+    model = cast_gc.cast_model(target_device, x.dtype, result_type.dtype)
+    x_view = x.view(x.dtype, cast_gc.canonical_shape(x.shape))
+    (out,) = model(x_view)
+    return [out.view(out.dtype, x.shape)]
 
-    return handler
-
-
-for op_type in ops.UNARY_MIXED:
-    register_op_handler(op_type)(unary_mixed_handler(op_type))
 
 # Matrix operations
 
