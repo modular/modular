@@ -396,6 +396,18 @@ struct MLA_SM100_Decode_Config:
         # (1x4 datapath, BM=32, MMA_M=32). False is the default for all
         # other backends.
         decode_layout_g: Bool = False,
+        # Selects the unified native-FP8 sparse decode kernel
+        # (MLA_SM100_Decode_Sparse_QKV_FP8's re-swizzle-staged gather):
+        # KV is gathered contiguously (SWIZZLE_NONE/int64, matching the old
+        # converter kernel's efficient gather) into a LINEAR staging buffer,
+        # then a re-swizzle warpgroup permutes it FP8->FP8 into the SW64
+        # layout the native tcgen05.mma.kind::f8f6f4 operand expects. Adds a
+        # second, same-sized KV buffer (linear-in) + a second KV pipeline's
+        # worth of barriers per stage, and goes back to 4 warpgroups (the
+        # re-swizzle WG). False (default) preserves the plain native-FP8
+        # single-buffer SW64-gather layout for every other call site
+        # (dense native FP8, Layout G).
+        native_fp8_unified_gather: Bool = False,
         # Sentinel `0` means "use the default (64)" for decoupled QK/PV
         # block sizes; existing call sites that don't pass these stay on 64.
         bn_qk: Int = 0,
@@ -460,15 +472,17 @@ struct MLA_SM100_Decode_Config:
             self.per_token_scales_per_stage = self.BN_QK * 1 * 4
         else:
             self.per_token_scales_per_stage = 0
-        # All paths use 3 WGs (384 threads) except the old FP8 converter path
-        # (Q=BF16, KV=FP8, both blockwise and tensorwise) which uses 4 WGs (512
-        # threads) for the extra FP8-to-BF16 conversion warpgroup.
+        # All paths use 3 WGs (384 threads) except: the old FP8 converter path
+        # (Q=BF16, KV=FP8, both blockwise and tensorwise), which uses 4 WGs
+        # (512 threads) for the extra FP8-to-BF16 conversion warpgroup; and
+        # the unified native-FP8 kernel, which uses 4 WGs for the re-swizzle
+        # staging warpgroup (no dtype conversion, pure FP8->FP8 layout permute).
         var _old_fp8_converter = (
             kv_type_size == 1
             and not native_fp8
             and not per_token_scale_rope_aware
         )
-        if _old_fp8_converter:
+        if _old_fp8_converter or native_fp8_unified_gather:
             self.num_threads = WARPGROUP_SIZE * 4
         else:
             self.num_threads = WARPGROUP_SIZE * 3
@@ -569,9 +583,19 @@ struct MLA_SM100_Decode_Config:
             smem_per_kv = self.BN_QK * self.padded_q_depth * kv_type_size
             # Native FP8: P lives in a separate SMEM region.
             # Per-stage cost = KV tile + P tile + 6 barriers (kv:2 + s:2 + p:2).
+            # Unified-gather adds a second, same-sized linear-gather KV
+            # buffer (contiguous SWIZZLE_NONE stage the re-swizzle WG reads
+            # from) plus its own 2-barrier producer/consumer pair per stage.
             var p_per_stage = self.BM * self.BK_PV * kv_type_size
+            var gather_per_stage = (
+                smem_per_kv if native_fp8_unified_gather else 0
+            )
+            var gather_bar_per_stage = 2 if native_fp8_unified_gather else 0
             var smem_per_stage_total = (
-                smem_per_kv + p_per_stage + 6 * Self.mbar_size
+                smem_per_kv
+                + p_per_stage
+                + gather_per_stage
+                + (6 + gather_bar_per_stage) * Self.mbar_size
             )
             # Reserve stage-independent barriers (11) plus output barriers.
             var fixed_barrier_reserve = 11 * Self.mbar_size
@@ -587,7 +611,7 @@ struct MLA_SM100_Decode_Config:
             # Layout G halves Q/P SMEM, so pin to 4 stages.
             if decode_layout_g:
                 self.num_kv_stages = 4
-            smem_for_p = self.num_kv_stages * p_per_stage
+            smem_for_p = self.num_kv_stages * (p_per_stage + gather_per_stage)
         else:
             smem_per_kv = self.BN_QK * self.padded_q_depth * dtype_size
             smem_for_p = 0  # P lives inside KV stages for BF16/old FP8
@@ -626,9 +650,13 @@ struct MLA_SM100_Decode_Config:
         # Old FP8 converter: 27 barriers (23 + 4 for convert pipeline)
         # Native FP8 / per_token_scale_rope_aware: 6*N + 11 barriers where N = num_kv_stages
         #   bar_q(1) + kv(2N) + s(2N) + p(2N) + o(4) + c(2) + corr_done(4)
+        # Unified-gather adds 2*N more (the linear-gather->re-swizzle pipeline's
+        # own producer/consumer barrier pair per stage): 8*N + 11.
         var fixed_barriers: Int
         if per_token_scale_rope_aware or native_fp8:
-            fixed_barriers = 6 * self.num_kv_stages + 11
+            fixed_barriers = (
+                8 * self.num_kv_stages + 11
+            ) if native_fp8_unified_gather else (6 * self.num_kv_stages + 11)
         elif kv_type_size == 1:
             fixed_barriers = (
                 27  # Old FP8 converter: 4 extra for convert pipeline
@@ -1219,6 +1247,7 @@ struct DecodeKVProducer[
     dtype: DType,
     config: MLA_SM100_Decode_Config,
     num_producer: Int = 1,
+    num_consumer: Int = 2,
 ](TrivialRegisterPassable):
     """Producer side of the decode KV pipeline that loads KV tiles via TMA.
 
@@ -1228,10 +1257,16 @@ struct DecodeKVProducer[
             `q_depth` for pipeline stage sizing.
         num_producer: Number of producer threads arriving on each producer
             mbarrier (defaults to 1).
+        num_consumer: Number of consumer threads arriving on each consumer
+            mbarrier (defaults to 2, matching the standard mmaQK+mmaPV
+            dual-consumer KV pipeline). Set to e.g. `WARPGROUP_SIZE` when
+            the consumer side is a full warpgroup independently arriving
+            (not TMA/MMA-elected), as with a manual SMEM-to-SMEM
+            re-staging producer/consumer pair.
     """
 
     comptime KVPipeType = KVPipelineGeneric[
-        Self.config.num_kv_stages, 1, Self.num_producer, 2
+        Self.config.num_kv_stages, 1, Self.num_producer, Self.num_consumer
     ]
 
     # One KV stage = a BN_QK x 576 logical K tile (loaded as
@@ -1287,6 +1322,22 @@ struct DecodeKVProducer[
         # we advance producer's logical stage index.
         self.pipe.state.step()
 
+    @always_inline("nodebug")
+    def commit_all(mut self):
+        """Explicit-arrive commit for a non-TMA (manual SMEM-write) producer.
+
+        Every thread of the `num_consumer`-wide... actually `num_producer`
+        -wide producer role (e.g. a full warpgroup doing a manual SMEM
+        re-swizzle store) calls this once; each thread's own local
+        `PipelineState` copy steps identically, and the `num_producer`
+        independent `arrive()` calls satisfy the mbar's expected count.
+        Use this instead of `commit_step()` when there is no TMA hardware
+        `expect_bytes` auto-arrival (i.e. the producer wrote SMEM directly,
+        not via `cp.async.bulk.tensor`).
+        """
+        _ = self.pipe.producer_mbar[0]()[].arrive()
+        self.pipe.state.step()
+
 
 # ------------------------------------------------------------------------------
 # MLA decoding ConsumerKVPipeline
@@ -1295,6 +1346,7 @@ struct DecodeKVConsumer[
     dtype: DType,
     config: MLA_SM100_Decode_Config,
     num_producer: Int = 1,
+    num_consumer: Int = 2,
 ](TrivialRegisterPassable):
     """Consumer side of the decode KV pipeline that waits for and releases KV stages.
 
@@ -1304,10 +1356,13 @@ struct DecodeKVConsumer[
             `q_depth` for pipeline stage sizing.
         num_producer: Number of producer threads arriving on each producer
             mbarrier (defaults to 1).
+        num_consumer: Number of consumer threads arriving on each consumer
+            mbarrier (defaults to 2, matching the standard mmaQK+mmaPV
+            dual-consumer KV pipeline).
     """
 
     comptime KVPipeType = KVPipelineGeneric[
-        Self.config.num_kv_stages, 1, Self.num_producer, 2
+        Self.config.num_kv_stages, 1, Self.num_producer, Self.num_consumer
     ]
     # Stage element count tracks the producer (BN_QK x q_depth).
     comptime kv_stage_elems = Self.config.BN_QK * Self.config.q_depth
@@ -1349,6 +1404,21 @@ struct DecodeKVConsumer[
     def release[*, qk_stage: Int = 0](mut self, e: Int32):
         # Signal "stage consumed" to the producer via consumer mbar
         self.pipe.consumer_release[qk_stage](e)
+
+    @always_inline("nodebug")
+    def release_all(mut self):
+        """Explicit-arrive release for a non-MMA (independent-thread) consumer.
+
+        Every thread of the `num_consumer`-wide consumer role (e.g. a full
+        warpgroup doing a manual SMEM re-swizzle read) calls this once; the
+        `num_consumer` independent `arrive()` calls satisfy the mbar's
+        expected count. Use this instead of `release[qk_stage](e)` (which
+        uses `elect_mma_arrive` for a single elected thread per warp) when
+        every thread independently participates, not just one MMA-eligible
+        lane per warp.
+        """
+        _ = self.pipe.consumer_mbar[0]()[].arrive()
+        self.pipe.state.step()
 
 
 # ------------------------------------------------------------------------------
