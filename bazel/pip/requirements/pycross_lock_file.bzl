@@ -96,6 +96,7 @@ PINS = {
     "opentelemetry-api": "opentelemetry-api@1.35.0",
     "opentelemetry-exporter-otlp-proto-http": "opentelemetry-exporter-otlp-proto-http@1.35.0",
     "opentelemetry-exporter-prometheus": "opentelemetry-exporter-prometheus@0.56b0",
+    "opentelemetry-proto": "opentelemetry-proto@1.35.0",
     "opentelemetry-sdk": "opentelemetry-sdk@1.35.0",
     "optimum": "optimum@1.24.0",
     "outlines-core": "outlines-core@multiple",
@@ -8328,27 +8329,62 @@ def targets():
     _quack_kernels_0_3_3_deps = [
         ":torch@multiple",
     ] + select({
-        ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.10_aarch64-apple-darwin": [
             ":apache-tvm-ffi@0.1.9",
             ":nvidia-cutlass-dsl@4.4.2",
             ":torch-c-dlpack-ext@0.1.5",
         ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
             ":apache-tvm-ffi@0.1.9",
             ":nvidia-cutlass-dsl@4.4.2",
             ":torch-c-dlpack-ext@0.1.5",
         ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.11_aarch64-apple-darwin": [
             ":apache-tvm-ffi@0.1.9",
             ":nvidia-cutlass-dsl@4.4.2",
             ":torch-c-dlpack-ext@0.1.5",
         ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":apache-tvm-ffi@0.1.9",
             ":nvidia-cutlass-dsl@4.4.2",
             ":torch-c-dlpack-ext@0.1.5",
         ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.12_aarch64-apple-darwin": [
+            ":apache-tvm-ffi@0.1.9",
+            ":nvidia-cutlass-dsl@4.4.2",
+            ":torch-c-dlpack-ext@0.1.5",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":apache-tvm-ffi@0.1.9",
+            ":nvidia-cutlass-dsl@4.4.2",
+            ":torch-c-dlpack-ext@0.1.5",
+        ],
+        ":_env_python_3.13_aarch64-apple-darwin": [
+            ":apache-tvm-ffi@0.1.9",
+            ":nvidia-cutlass-dsl@4.4.2",
+            ":torch-c-dlpack-ext@0.1.5",
+        ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":apache-tvm-ffi@0.1.9",
+            ":nvidia-cutlass-dsl@4.4.2",
+            ":torch-c-dlpack-ext@0.1.5",
+        ],
+        ":_env_python_3.14_aarch64-apple-darwin": [
+            ":apache-tvm-ffi@0.1.9",
+            ":nvidia-cutlass-dsl@4.4.2",
+            ":torch-c-dlpack-ext@0.1.5",
+        ],
+        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
+            ":apache-tvm-ffi@0.1.9",
+            ":nvidia-cutlass-dsl@4.4.2",
+            ":torch-c-dlpack-ext@0.1.5",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":apache-tvm-ffi@0.1.9",
+            ":nvidia-cutlass-dsl@4.4.2",
+            ":torch-c-dlpack-ext@0.1.5",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":apache-tvm-ffi@0.1.9",
             ":nvidia-cutlass-dsl@4.4.2",
             ":torch-c-dlpack-ext@0.1.5",
@@ -8371,37 +8407,37 @@ def targets():
     _quack_kernels_0_6_1_deps = [
         ":torch@multiple",
     ] + select({
-        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+        ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":apache-tvm-ffi@0.1.9",
             ":einops@0.8.0",
             ":nvidia-cutlass-dsl@4.4.2",
             ":torch-c-dlpack-ext@0.1.5",
         ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+        ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":apache-tvm-ffi@0.1.9",
             ":einops@0.8.0",
             ":nvidia-cutlass-dsl@4.4.2",
             ":torch-c-dlpack-ext@0.1.5",
         ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+        ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":apache-tvm-ffi@0.1.9",
             ":einops@0.8.0",
             ":nvidia-cutlass-dsl@4.4.2",
             ":torch-c-dlpack-ext@0.1.5",
         ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+        ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":apache-tvm-ffi@0.1.9",
             ":einops@0.8.0",
             ":nvidia-cutlass-dsl@4.4.2",
             ":torch-c-dlpack-ext@0.1.5",
         ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
             ":apache-tvm-ffi@0.1.9",
             ":einops@0.8.0",
             ":nvidia-cutlass-dsl@4.4.2",
             ":torch-c-dlpack-ext@0.1.5",
         ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+        ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":apache-tvm-ffi@0.1.9",
             ":einops@0.8.0",
             ":nvidia-cutlass-dsl@4.4.2",

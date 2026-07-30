@@ -213,6 +213,24 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_DISABLE_TELEMETRY",
     )
 
+    otlp_metrics_endpoint: str | None = Field(
+        default=None,
+        description=(
+            "Optional OTLP endpoint (e.g. a Datadog Agent OTLP receiver or "
+            "any OTel collector) to push histogram metrics to. When set, "
+            "histogram instruments switch from hand-tuned explicit bucket "
+            "boundaries to a self-calibrating exponential-histogram "
+            "aggregation, exported to this endpoint with delta "
+            "temporality. The local Prometheus endpoint continues serving "
+            "counters and gauges as before, but histograms stop appearing "
+            "there (the classic Prometheus text format cannot carry "
+            "exponential histograms). Leave unset to keep today's "
+            "explicit-bucket histograms on the local Prometheus endpoint, "
+            "unchanged."
+        ),
+        alias="MAX_SERVE_OTLP_METRICS_ENDPOINT",
+    )
+
     # Model worker configuration
     use_heartbeat: bool = Field(
         default=False,
