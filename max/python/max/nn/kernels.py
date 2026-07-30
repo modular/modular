@@ -2795,6 +2795,12 @@ def msa_sparse_indexer(
         rank=3,
         device=index_q.device,
     )
+    scratch_heads = score_scratch.shape[0]
+    if int(scratch_heads) != num_index_heads:
+        raise ValueError(
+            "score_scratch must carry one plane per index head: expected "
+            f"shape[0] == {num_index_heads}, got {int(scratch_heads)}"
+        )
     if topk <= 0:
         raise ValueError(f"topk must be greater than 0, got {topk}")
 
