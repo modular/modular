@@ -494,7 +494,7 @@ ASTType InitializerUValue::getDefaultType(SharedState &shared) const {
   auto loc = get().callExpr->getLoc();
   switch (syntax) {
   case Syntax::kListLiteral:
-    return shared.getStandardCollectionType(loc, "List");
+    return shared.getStandardCollectionType(loc, "Array");
   case Syntax::kDictLiteral:
     return shared.getStandardCollectionType(loc, "Dict");
   case Syntax::kSetInitLiteral:
