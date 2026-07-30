@@ -7,7 +7,6 @@ mojo_library(
     srcs = glob(["**/*.mojo"]),
     docs_base_path = "mojo",
     deps = [
-        "//max:machine",
         "@mojo//:std",
     ],
 )
