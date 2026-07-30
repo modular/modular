@@ -234,7 +234,7 @@ def test_variant_pinned_linear_type_deinit_with() raises:
     def make() -> PinnedExplicitDelOnly:
         return PinnedExplicitDelOnly(5)
 
-    var v = Variant[PinnedExplicitDelOnly, Int](call=make)
+    var v = Variant[PinnedExplicitDelOnly, Int](init_with=make)
     var data = v[PinnedExplicitDelOnly].data
     # Destroy before potentially raising after assert
     v^.deinit_with[PinnedExplicitDelOnly](PinnedExplicitDelOnly.destroy)
@@ -493,7 +493,7 @@ def test_variant_conditional_conformances() raises:
 def test_variant_admits_non_movable_type() raises:
     # The `AnyType` floor admits a non-`Movable` type in the type list. The
     # value constructor still requires `Movable`, so it stores the movable
-    # type; the non-`Movable` type is populated via `call=` (see
+    # type; the non-`Movable` type is populated via `init_with=` (see
     # `test_variant_closure_construction`).
     var v = Variant[_Pinned, Int](42)
     assert_true(v.isa[Int]())
@@ -506,7 +506,7 @@ def test_variant_closure_construction() raises:
     def make_pinned() -> _Pinned:
         return _Pinned(7)
 
-    var v = Variant[_Pinned, Int](call=make_pinned)
+    var v = Variant[_Pinned, Int](init_with=make_pinned)
     assert_true(v.isa[_Pinned]())
     assert_false(v.isa[Int]())
     assert_equal(v[_Pinned].value, 7)
@@ -515,7 +515,7 @@ def test_variant_closure_construction() raises:
     def make_int() -> Int:
         return 42
 
-    var v2 = Variant[_Pinned, Int](call=make_int)
+    var v2 = Variant[_Pinned, Int](init_with=make_int)
     assert_true(v2.isa[Int]())
     assert_equal(v2[Int], 42)
 
@@ -527,7 +527,7 @@ def test_variant_closure_replacement() raises:
 
     var v = Variant[_Pinned, Int](0)
     assert_true(v.isa[Int]())
-    v.set(call=make_pinned)
+    v.set(init_with=make_pinned)
     assert_true(v.isa[_Pinned]())
     assert_equal(v[_Pinned].value, 9)
 
@@ -540,11 +540,11 @@ def test_variant_closure_called_once() raises:
         calls += 1
         return 5
 
-    var v = Variant[Int, String](call=make)
+    var v = Variant[Int, String](init_with=make)
     assert_equal(calls, 1)
     assert_equal(v[Int], 5)
 
-    v.set(call=make)
+    v.set(init_with=make)
     assert_equal(calls, 2)
     assert_equal(v[Int], 5)
 
@@ -560,7 +560,7 @@ def test_variant_closure_set_calls_deleter() raises:
     def make() -> Int:
         return 5
 
-    v.set(call=make)
+    v.set(init_with=make)
     assert_true(deleted)
     assert_true(v.isa[Int]())
     assert_equal(v[Int], 5)

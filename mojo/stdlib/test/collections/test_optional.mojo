@@ -550,11 +550,11 @@ def test_optional_non_movable_element_type() raises:
 
 
 def test_optional_non_movable_construct_in_place() raises:
-    # `call=` populates an `Optional` with a non-`Movable` value in place.
+    # `init_with=` populates an `Optional` with a non-`Movable` value in place.
     def make() -> _NotMovable:
         return _NotMovable(7)
 
-    var opt = Optional[_NotMovable](call=make)
+    var opt = Optional[_NotMovable](init_with=make)
     assert_true(opt)
     assert_equal(opt.bounds()[0], 1)
     assert_equal(opt.value().x, 7)
@@ -570,7 +570,7 @@ def test_optional_pinned_linear_type_deinit_with() raises:
     def make() -> PinnedExplicitDelOnly:
         return PinnedExplicitDelOnly(7)
 
-    var opt = Optional[PinnedExplicitDelOnly](call=make)
+    var opt = Optional[PinnedExplicitDelOnly](init_with=make)
     var is_some = opt.__bool__()
     var data = opt.value().data
     # Destroy before potentially raising after assert
@@ -613,13 +613,13 @@ def test_optional_construct_in_place_calls_closure_once() raises:
         calls += 1
         return 7
 
-    var opt = Optional[Int](call=make)
+    var opt = Optional[Int](init_with=make)
     assert_equal(opt.value(), 7)
     assert_equal(calls, 1)
 
 
 def test_optional_construct_in_place_destroys_value_once() raises:
-    # `call=` marks the storage's active type by hand before emplacing, so check
+    # `init_with=` marks the storage's active type by hand before emplacing, so check
     # that teardown runs the element's destructor exactly once.
     var del_count = 0
     var counter_ptr = Pointer(to=del_count)
@@ -628,7 +628,7 @@ def test_optional_construct_in_place_destroys_value_once() raises:
     def make() {counter_ptr} -> Counter:
         return Counter(counter_ptr)
 
-    var opt = Optional[Counter](call=make)
+    var opt = Optional[Counter](init_with=make)
     assert_true(opt)
     _ = opt^
     assert_equal(del_count, 1)
