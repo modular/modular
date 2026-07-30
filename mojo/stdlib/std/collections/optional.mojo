@@ -895,7 +895,7 @@ struct Optional[T: AnyType](
     def _unsafe_nullable[
         U: AnyType, origin: Origin, address_space: AddressSpace
     ](
-        self: Optional[UnsafePointer[U, origin, address_space=address_space]],
+        self: Optional[Pointer[U, origin, address_space=address_space]],
         out result: type_of(self).T,
     ):
         result = Pointer(to=self).unsafe_bitcast[type_of(result)]()[]
@@ -1331,9 +1331,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
     def _unsafe_nullable[
         U: AnyType, origin: Origin, address_space: AddressSpace
     ](
-        self: OptionalReg[
-            UnsafePointer[U, origin, address_space=address_space]
-        ],
+        self: OptionalReg[Pointer[U, origin, address_space=address_space]],
         out result: type_of(self).T,
     ):
         result = Pointer(to=self).unsafe_bitcast[type_of(result)]()[]
