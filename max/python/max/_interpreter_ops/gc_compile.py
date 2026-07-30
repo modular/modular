@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
 from max import _core, engine
+from max._core.engine import get_config_value
 from max._mlir_context import in_default_mlir_context
 from max.driver import (
     Device,
@@ -204,8 +205,11 @@ def should_precompile() -> bool:
 
 
 def _derived_root() -> Path | None:
-    """The ``MODULAR_DERIVED_PATH`` root, or None if unset."""
-    derived = os.environ.get("MODULAR_DERIVED_PATH")
+    """The ``MODULAR_DERIVED_PATH`` root, or None if unset or empty."""
+    try:
+        derived = get_config_value("derived_path")
+    except KeyError:
+        return None
     return Path(derived) if derived else None
 
 
