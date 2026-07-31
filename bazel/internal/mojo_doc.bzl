@@ -41,7 +41,8 @@ def _mojo_doc_implementation(ctx):
                         mojodoc_output.path,
                         file_args,
                     ] + (["--docs-base-path", ctx.attr.docs_base_path] if ctx.attr.docs_base_path else []) +
-                    (["--diagnose-missing-doc-strings"] if ctx.attr.validate_missing_docs else []),
+                    (["--diagnose-missing-doc-strings"] if ctx.attr.validate_missing_docs else []) +
+                    ctx.attr.copts,
         progress_message = "%{label} generating mojodoc.json",
         env = {
             "MODULAR_HOME": ".",  # Make sure any cache files are written to somewhere bazel will cleanup
@@ -106,6 +107,13 @@ mojo_doc = rule(
             default = "none",
             values = ["all", "stable", "none"],
             doc = "Show stability markers in generated docs",
+        ),
+        "copts": attr.string_list(
+            default = [],
+            doc = "Extra flags passed to `mojo doc` (e.g. `--ignore-deprecated=...`). " +
+                  "Unlike `mojo_library`'s `copts`, these are not compiler flags in " +
+                  "the general sense -- only flags `mojo doc`'s own option table " +
+                  "recognizes are valid here.",
         ),
         "_mojodoc_json_to_markdown": attr.label(
             default = Label("//bazel/internal:mojodoc_json_to_markdown"),

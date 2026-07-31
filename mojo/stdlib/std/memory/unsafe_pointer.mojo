@@ -725,6 +725,9 @@ struct Pointer[
     @__unsafe_nested_origins_read_only
     @doc_hidden
     @always_inline("nodebug")
+    @deprecated(
+        "positional `__getitem__` is deprecated, use `unsafe_offset=` instead"
+    )
     def __getitem__[
         I: Indexer, //
     ](self, offset: I) -> ref[Self.origin, Self.address_space] Self.T:
@@ -814,6 +817,7 @@ struct Pointer[
 
     @doc_hidden
     @always_inline("nodebug")
+    @deprecated(use=unsafe_offset)
     def __add__[I: Indexer, //](self, offset: I) -> Self:
         """Return a pointer at an offset from the current one.
 
@@ -830,6 +834,7 @@ struct Pointer[
 
     @doc_hidden
     @always_inline
+    @deprecated(use=unsafe_offset)
     def __sub__[I: Indexer, //](self, offset: I) -> Self:
         """Return a pointer at an offset from the current one.
 
@@ -846,6 +851,7 @@ struct Pointer[
 
     @doc_hidden
     @always_inline
+    @deprecated(use=unsafe_offset)
     def __iadd__[I: Indexer, //](mut self, offset: I):
         """Add an offset to this pointer.
 
@@ -859,6 +865,7 @@ struct Pointer[
 
     @doc_hidden
     @always_inline
+    @deprecated(use=unsafe_offset)
     def __isub__[I: Indexer, //](mut self, offset: I):
         """Subtract an offset from this pointer.
 
@@ -1422,6 +1429,7 @@ struct Pointer[
 
     @doc_hidden
     @always_inline("nodebug")
+    @deprecated(use=unsafe_as_noalias)
     def as_noalias_ptr(self) -> Self:
         """Cast the pointer to a new pointer that is known not to locally alias
         any other pointer. In other words, the pointer transitively does not
@@ -1547,6 +1555,7 @@ struct Pointer[
     @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
+    @deprecated(use=unsafe_load)
     def load[
         dtype: DType,
         //,
@@ -1617,6 +1626,7 @@ struct Pointer[
     @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
+    @deprecated(use=unsafe_load)
     def load[
         dtype: DType,
         //,
@@ -1687,6 +1697,7 @@ struct Pointer[
     @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
+    @deprecated(use=unsafe_load)
     def load[
         I: Indexer,
         dtype: DType,
@@ -1854,6 +1865,7 @@ struct Pointer[
     @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
+    @deprecated(use=unsafe_store)
     def store[
         I: Indexer,
         dtype: DType,
@@ -1878,6 +1890,7 @@ struct Pointer[
     @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
+    @deprecated(use=unsafe_store)
     def store[
         dtype: DType,
         offset_type: DType,
@@ -1902,6 +1915,7 @@ struct Pointer[
     @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
+    @deprecated(use=unsafe_store)
     def store[
         dtype: DType,
         //,
@@ -1981,6 +1995,7 @@ struct Pointer[
     @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
+    @deprecated(use=unsafe_strided_load)
     def strided_load[
         dtype: DType, S: Intable, //, width: Int
     ](self: Pointer[Scalar[dtype], ...], stride: S,) -> SIMD[dtype, width]:
@@ -2023,6 +2038,7 @@ struct Pointer[
     @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
+    @deprecated(use=unsafe_strided_store)
     def strided_store[
         dtype: DType,
         S: Intable,
@@ -2118,6 +2134,7 @@ struct Pointer[
     @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
+    @deprecated(use=unsafe_gather)
     def gather[
         dtype: DType,
         //,
@@ -2212,6 +2229,7 @@ struct Pointer[
     @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline("nodebug")
+    @deprecated(use=unsafe_scatter)
     def scatter[
         dtype: DType,
         //,
@@ -2229,6 +2247,7 @@ struct Pointer[
     @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline
+    @deprecated(use=unsafe_free)
     def free(self: Pointer[mut=True, Self.T, ...]):
         """Free the memory referenced by the pointer."""
         _free(self)
@@ -2271,6 +2290,7 @@ struct Pointer[
 
     @doc_hidden
     @always_inline("builtin")
+    @deprecated(use=unsafe_bitcast)
     def bitcast[
         U: AnyType
     ](self) -> Pointer[U, Self.origin, address_space=Self.address_space]:
@@ -2459,6 +2479,7 @@ struct Pointer[
 
     @doc_hidden
     @always_inline("builtin")
+    @deprecated(use=unsafe_address_space_cast)
     def address_space_cast[
         target_address_space: AddressSpace = Self.address_space,
     ](self) -> Pointer[
@@ -2578,6 +2599,7 @@ struct Pointer[
     @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline
+    @deprecated(use=unsafe_take_pointee)
     def take_pointee[
         U: Movable,
         //,

@@ -1047,6 +1047,12 @@ This version is still a work in progress.
   names going forward. Each method's docstring documents the exact `Safety:`
   requirements the caller must uphold.
 
+- The unprefixed pointer methods that the `unsafe_`-prefixed names above
+  replace — `__getitem__()`, `__add__()`, `__sub__()`, `__iadd__()`,
+  `__isub__()`, `load()`, `store()`, `strided_load()`, `strided_store()`,
+  `gather()`, `scatter()`, `bitcast()`, `address_space_cast()`,
+  `take_pointee()`, and `free()` — now emit a deprecation warning when called.
+
 - `Pointer` now supports subtracting two pointers to compute the signed
   distance between them in elements of the pointee type, via the new
   `offset_from()` method (analogous to Rust's `offset_from`). The `-`
