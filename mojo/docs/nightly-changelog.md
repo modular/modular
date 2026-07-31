@@ -1431,3 +1431,5 @@ This version is still a work in progress.
 
   `mojo doc` and file-in-package builds also now use the whole dotted name for
   such packages, rather than truncating it at the first dot.
+
+- Invalid SIMD vector lengths are now rejected during code generation.
