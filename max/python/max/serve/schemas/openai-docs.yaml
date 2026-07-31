@@ -3,52 +3,8 @@ info:
   title: MAX REST API reference
   description: |
 
-    MAX is a high-performance, Python-based inference server for
-    deploying large language models (LLMs) locally or in the cloud. It provides
-    efficient request handling through advanced batching and scheduling, and
-    an OpenAI-compatible REST endpoint.
-
-    ## Get started
-
-    With just a few commands, you can start a local endpoint with the GenAI
-    model of your choice using our [`max`](/max/cli) CLI
-    and start sending requests.
-
-    When you want to deploy your model to a cloud-hosted endpoint, you can use
-    our [MAX container](/max/container)—see our [Get started with
-    MAX](/max/get-started) and then see our tutorials on using MAX:
-
-    - [Start a chat endpoint](/max/inference/text-to-text)
-    - [Serve an embedding model](/max/inference/embeddings)
-    - [Image-to-text use cases](/max/inference/image-to-text)
-    - [Image generation](/max/inference/image-generation)
-    - [Deploy MAX on GPU in the cloud](/max/deploy/local-to-cloud/)
-
-    ## OpenAI API compatibility
-
-    The MAX REST API is compatible with a subset of the [OpenAI REST
-    API](https://platform.openai.com/docs/api-reference/introduction). This
-    allows you to use many existing OpenAI client applications with MAX
-    endpoints.
-
-    - **Supported endpoints:**
-
-        - [Responses](#POST/v1/responses) (`/v1/responses`)
-        - [Chat completions](#POST/v1/chat/completions) (`/v1/chat/completions`)
-        - [Completions](#POST/v1/completions) (`/v1/completions`)
-        - [Embeddings](#POST/v1/embeddings) (`/v1/embeddings`)
-        - [List models](#GET/v1/models) (`/v1/models`)
-        - [Health check](#GET/health) (`/health`)
-
-    - **Parameter handling:** While aiming for high compatibility, not all
-    OpenAI body parameters are implemented. Some may be accepted as no-ops
-    (ignored but won't cause errors) to maintain client compatibility. The
-    specific endpoint documentation below details only the parameters that
-    actively affect behavior in MAX.
-
-    In addition to the OpenAI APIs, MAX provides a Prometheus-formatted
-    [metrics endpoint](/max/container#metrics) to help track your model's
-    performance.
+    The MAX REST API provides an OpenAI-compatible REST endpoint for deploying
+    LLMs and other GenAI models locally or in the cloud.
 
 paths:
   /v1/responses:
