@@ -4285,7 +4285,20 @@ def mha_single_batch_pipelined[
 
 
 # Entry point for mha_decoding with batch_size > 1.
-@__llvm_metadata(`rocdl.waves_per_eu`=SIMDLength(get_waves_per_eu(depth)))
+# A CTA's warps are dealt round-robin over the CU's 4 SIMDs, and a depth-128
+# decode CTA's ~80 KB of LDS holds the CU to 2 CTAs -- too few to even out a
+# short SIMD -- so 2 waves/EU needs a warp count that is a multiple of 4.
+# Hinting it on a 2- or 3-warp token fold makes the register allocator target an
+# occupancy it cannot reach: 7-27% slower. AMD single-token decode is 4 warps, so
+# its emitted amdgcn is unchanged; depth 64 fits 4 CTAs, where a 2-warp CTA could
+# reach 2 waves/EU and is merely hinted conservatively. NVIDIA sets BN == depth,
+# so its depth-64 decode is 2 warps and lands here too -- inert, since
+# `rocdl.waves_per_eu` is AMDGPU-only metadata.
+@__llvm_metadata(
+    `rocdl.waves_per_eu`=SIMDLength(
+        get_waves_per_eu(depth) if (num_threads // WARP_SIZE) % 4 == 0 else 1
+    )
+)
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
