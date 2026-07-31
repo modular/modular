@@ -204,7 +204,7 @@ def test_fill() raises:
 def test_fill_bytes() raises:
     # Exercises the single-byte `memset` fast path in `Span.fill`: a non-zero
     # pattern, a length past the SIMD width (tail handling), and zeroing.
-    var a = InlineArray[Byte, 37](fill=0)
+    var a = Array[Byte, 37](fill=0)
     var s = Span(array=a)
 
     s.fill(0xAB)
@@ -217,7 +217,7 @@ def test_fill_bytes() raises:
 
 
 def test_fill_empty() raises:
-    var a = InlineArray[Byte, 4](fill=0)
+    var a = Array[Byte, 4](fill=0)
     var s = Span(array=a)
     var empty = s[0:0]
     # Filling a zero-length span is a no-op and must not touch memory.
@@ -229,7 +229,7 @@ def test_fill_empty() raises:
 
 def test_fill_multibyte() raises:
     # Exercises the element-wise (non-`memset`) branch for a wider element type.
-    var a = InlineArray[Int32, 5](fill=0)
+    var a = Array[Int32, 5](fill=0)
     var s = Span(array=a)
 
     s.fill(-1)

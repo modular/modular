@@ -34,7 +34,7 @@ def standardize_string_slice(
     return standardized_x^
 
 
-# The idea is to end up with a Array of size
+# The idea is to end up with an Array of size
 # 24, which is enough to store the largest integer
 # that can be represented in unsigned 64 bits (size 20), and
 # is also SIMD friendly because divisible by 8, 4, 2, 1.

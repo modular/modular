@@ -374,10 +374,10 @@ def create_tma_descriptor[
     var tensor_map_ptr = Pointer(to=tma_descriptor).unsafe_bitcast[NoneType]()
 
     # NOTE: These are initialized in the comptime loop below.
-    var global_dim_arg = InlineArray[Int64, rank](uninitialized=True)
-    var global_strides_arg = InlineArray[Int64, rank](uninitialized=True)
-    var box_dim_arg = InlineArray[Int32, rank](uninitialized=True)
-    var element_stride_arg = InlineArray[Int32, rank](fill=1)
+    var global_dim_arg = Array[Int64, rank](uninitialized=True)
+    var global_strides_arg = Array[Int64, rank](uninitialized=True)
+    var box_dim_arg = Array[Int32, rank](uninitialized=True)
+    var element_stride_arg = Array[Int32, rank](fill=1)
 
     comptime for i in range(rank):
         global_dim_arg[i] = Int64(global_shape[rank - i - 1])

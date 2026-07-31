@@ -285,10 +285,10 @@ def create_tensormap[
     var tensormap = TensorMap()
     var tensormap_ptr = Pointer(to=tensormap).unsafe_bitcast[NoneType]()
 
-    var global_dim_arg = InlineArray[Int64, rank](uninitialized=True)
-    var global_strides_arg = InlineArray[Int64, rank](uninitialized=True)
-    var box_dim_arg = InlineArray[Int32, rank](uninitialized=True)
-    var element_stride_arg = InlineArray[Int32, rank](fill=1)
+    var global_dim_arg = Array[Int64, rank](uninitialized=True)
+    var global_strides_arg = Array[Int64, rank](uninitialized=True)
+    var box_dim_arg = Array[Int32, rank](uninitialized=True)
+    var element_stride_arg = Array[Int32, rank](fill=1)
 
     # The input are row-major i.e. last dim is contiguous. The tensormap arguments
     # goes from the least rapidly varying dim to the highest. Here we inverse the
@@ -391,11 +391,11 @@ def create_tensormap_im2col[
     # Convert from row-major NHWC to column-major CWHDN for TMA API
     # Row-major NHWC: N is dim 0, H is dim 1, W is dim 2, C is dim 3
     # TMA expects CWHDN order (least rapidly varying to most)
-    var global_dim_arg = InlineArray[Int64, rank](uninitialized=True)
-    var global_strides_arg = InlineArray[Int64, rank](uninitialized=True)
-    var lower_corner_arg = InlineArray[Int32, spatial_rank](uninitialized=True)
-    var upper_corner_arg = InlineArray[Int32, spatial_rank](uninitialized=True)
-    var element_stride_arg = InlineArray[Int32, rank](fill=1)
+    var global_dim_arg = Array[Int64, rank](uninitialized=True)
+    var global_strides_arg = Array[Int64, rank](uninitialized=True)
+    var lower_corner_arg = Array[Int32, spatial_rank](uninitialized=True)
+    var upper_corner_arg = Array[Int32, spatial_rank](uninitialized=True)
+    var element_stride_arg = Array[Int32, rank](fill=1)
 
     # Reverse dimension order for TMA API (CWHDN from NHWC)
     comptime for i in range(rank):

@@ -177,7 +177,7 @@ def fa4_scale_write_output[
         comptime if zero_fill:
             # Empty (all-masked) row: emit zeros without reading the
             # never-produced O accumulator in TMEM.
-            var o_vals = InlineArray[Scalar[accum_dtype], o_sw_K](
+            var o_vals = Array[Scalar[accum_dtype], o_sw_K](
                 fill=Scalar[accum_dtype](0)
             )
             var packed = scale_pack_o_row[output_type, w=o_sw_K](

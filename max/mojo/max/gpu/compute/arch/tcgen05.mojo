@@ -137,7 +137,7 @@ def tcgen05_ld[
     dtype: DType,
     pack: Bool,
     width: Int = (datapaths * bits * repeat) // (32 * 32),
-](tmem_addr: UInt32) -> InlineArray[Scalar[dtype], width]:
+](tmem_addr: UInt32) -> Array[Scalar[dtype], width]:
     """Loads data from tensor memory into registers.
 
     Parameters:
@@ -152,7 +152,7 @@ def tcgen05_ld[
         tmem_addr: The address of the tensor memory to load from.
 
     Returns:
-        The InlineArray containing the loaded data.
+        The Array containing the loaded data.
     """
     check_blackwell_constraint()
 
@@ -225,7 +225,7 @@ def tcgen05_ld[
     @always_inline("nodebug")
     def call_ld_intrinsic[
         pack_type: TrivialRegisterPassable
-    ]() -> InlineArray[Scalar[dtype], width]:
+    ]() -> Array[Scalar[dtype], width]:
         var r = inlined_assembly[
             "tcgen05.ld.sync.aligned."
             + shape_str
@@ -242,7 +242,7 @@ def tcgen05_ld[
             has_side_effect=True,
         ](tmem_addr)
         var ptr = Pointer(to=r).unsafe_bitcast[Scalar[dtype]]()
-        var result = InlineArray[Scalar[dtype], width](uninitialized=True)
+        var result = Array[Scalar[dtype], width](uninitialized=True)
         comptime for i in range(width):
             result[i] = ptr[unsafe_offset=i]
         return result^
@@ -323,7 +323,7 @@ def tcgen05_st[
     bits: Int,
     repeat: Int,
     pack: Bool,
-](tmem_addr: UInt32, data: InlineArray[Scalar[dtype], width]):
+](tmem_addr: UInt32, data: Array[Scalar[dtype], width]):
     """Stores data from registers into tensor memory.
 
     Parameters:
