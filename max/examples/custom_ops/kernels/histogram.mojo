@@ -74,19 +74,24 @@ def _histogram_gpu(
         )
 
         # Initialize the shared memory to 0
-        shared_mem[thread_idx.x] = 0
+        shared_mem[unsafe_offset=thread_idx.x] = 0
 
         # Synchronize all threads to ensure that the shared memory is initialized
         barrier()
 
         # Increment the shared memory for the current thread
-        _ = Atomic.fetch_add(shared_mem + Int(input[tid]), 1)
+        _ = Atomic.fetch_add(
+            shared_mem.unsafe_offset(Int(input[unsafe_offset=tid])), 1
+        )
 
         # Synchronize all threads to ensure that the shared memory is updated
         barrier()
 
         # Increment the output for the current thread
-        _ = Atomic.fetch_add(output + thread_idx.x, shared_mem[thread_idx.x])
+        _ = Atomic.fetch_add(
+            output.unsafe_offset(thread_idx.x),
+            shared_mem[unsafe_offset=thread_idx.x],
+        )
 
     var n = input.dim_size(0)
 

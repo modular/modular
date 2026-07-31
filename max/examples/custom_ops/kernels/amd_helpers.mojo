@@ -188,7 +188,7 @@ def copy_local_to_dram_32_32_8[
                 dst_idx += dst_fragments.runtime_layout(i)
 
             var src_element = Element[index_type=src_lt.linear_idx_type].load(
-                src_lt.ptr + src_idx,
+                src_lt.ptr.unsafe_offset(src_idx),
                 src_lt.runtime_element_layout,
             )
 
@@ -615,7 +615,9 @@ def max_reduce_kernel[
     var tid = thread_idx.x
     var bid = block_idx.x
 
-    var local_relative_error = relative_error._storage[offset * elements * bid]
+    var local_relative_error = relative_error._storage[
+        unsafe_offset=offset * elements * bid
+    ]
 
     # Parallel reduction loop: for(int i = elements >> 1; i > 0; i = i >> 1)
     var i = elements >> 1

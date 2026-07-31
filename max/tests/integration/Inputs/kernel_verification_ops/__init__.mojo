@@ -182,7 +182,7 @@ def binary_kernel_with_raises_shape(
 struct MutableInputTensorKernel:
     @staticmethod
     def execute(in_place_tensor: MutableInputTensor) raises:
-        in_place_tensor._ptr.store(0, 0)
+        in_place_tensor._ptr.unsafe_store(0, 0)
 
 
 @extensibility.register("op_with_int_parameter")

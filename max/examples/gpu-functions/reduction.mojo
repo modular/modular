@@ -68,8 +68,8 @@ def sum_kernel[
         idx = i * batch_size
         # Load in a vectorized fashion and reduce the loaded SIMD vector
         if idx < size:
-            sum += a.load[width=batch_size](idx).reduce_add()
-    sums[tid] = sum
+            sum += a.unsafe_load[width=batch_size](idx).reduce_add()
+    sums[unsafe_offset=tid] = sum
     barrier()
 
     # Reduce until the first warp
@@ -80,12 +80,12 @@ def sum_kernel[
     comptime for power in range(1, KERNEL_LOG_TPB - log2_floor(WARP_SIZE) + 1):
         active_threads >>= 1
         if tid < active_threads:
-            sums[tid] += sums[tid + active_threads]
+            sums[unsafe_offset=tid] += sums[unsafe_offset=tid + active_threads]
         barrier()
 
     # Reduce the warp and accumulate via atomic addition
     if tid < WARP_SIZE:
-        var warp_sum: Int32 = sums[tid][0]
+        var warp_sum: Int32 = sums[unsafe_offset=tid][0]
         warp_sum = warp.sum(warp_sum)
 
         if tid == 0:

@@ -21,27 +21,27 @@ from extensibility import (
 struct MutableTestOp:
     @staticmethod
     def execute(in_place_tensor: MutableInputTensor) raises:
-        x = in_place_tensor._ptr.load(0)
+        x = in_place_tensor._ptr.unsafe_load(0)
         x += 1
-        in_place_tensor._ptr.store(0, x)
+        in_place_tensor._ptr.unsafe_store(0, x)
 
 
 @extensibility.register("foo")
 struct FooKernel:
     @staticmethod
     def execute(in_place_tensor: MutableInputTensor) raises:
-        in_place_tensor._ptr.store(0, 0)
+        in_place_tensor._ptr.unsafe_store(0, 0)
 
 
 @extensibility.register("bar")
 struct BarKernel:
     @staticmethod
     def execute(in_place_tensor: MutableInputTensor) raises:
-        in_place_tensor._ptr.store(0, 0)
+        in_place_tensor._ptr.unsafe_store(0, 0)
 
 
 @extensibility.register("baz")
 struct BazKernel:
     @staticmethod
     def execute(in_place_tensor: MutableInputTensor) raises:
-        in_place_tensor._ptr.store(0, 0)
+        in_place_tensor._ptr.unsafe_store(0, 0)
