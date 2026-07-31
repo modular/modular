@@ -4831,7 +4831,9 @@ struct LaunchHostFunc:
         var ud_addr = Int(payload[1])
         var tr_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=tr_addr)
         var ud_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=ud_addr)
-        ctx.stream().enqueue_host_func(rebind[_HostFuncTy](tr_ptr), ud_ptr)
+        # Reinterpret the raw trampoline address as a thin function value.
+        var tr_fn = Pointer(to=tr_ptr).unsafe_bitcast[_HostFuncTy]()[]
+        ctx.stream().enqueue_host_func(tr_fn, ud_ptr)
 
 
 @extensibility.register("mo.wait_host_value")
