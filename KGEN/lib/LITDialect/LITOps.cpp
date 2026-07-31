@@ -616,6 +616,16 @@ SpecialFunctionKind SpecialFunctionInfo::lookupKind(StringRef name) {
   if (name.size() < 5 || !name.starts_with("__") || !name.ends_with("__"))
     return SpecialFunctionKind::kNormal;
 
+  // Normalize deprecated spellings (e.g. '__del__') to their canonical form
+  // before dispatching below. StmtParser::parseDefFnStmt canonicalizes the
+  // name eagerly for the common case, but DeclResolver::resolveSignature(FnOp,
+  // Lexer&, ASTDecl&) re-lexes and re-parses a lazily-resolved function's name
+  // directly from source, independently of that canonicalization - so this is
+  // the single choke point that covers both paths. The deprecation warning
+  // itself is emitted where a source location is available
+  // (TypeCheckedFnSignature::verifyFunctionNameBinding).
+  name = getCanonicalSpelling(name);
+
 #define SF(ENUM, NAME, MINOPERANDS, MAXOPERANDS, EXPRNODE, FLAGS)              \
   if (name == (NAME))                                                          \
     return SpecialFunctionKind::ENUM;
@@ -623,6 +633,11 @@ SpecialFunctionKind SpecialFunctionInfo::lookupKind(StringRef name) {
 
   // Otherwise, this declaration isn't known.
   return SpecialFunctionKind::kNormal;
+}
+
+// TODO(MOCO-4495): Remove when `__del__` is no longer supported.
+StringRef SpecialFunctionInfo::getCanonicalSpelling(StringRef name) {
+  return name == "__del__" ? "__deinit__" : name;
 }
 
 /// If this is a special function like __init__ return the enum that

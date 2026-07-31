@@ -725,14 +725,14 @@ FnOp StructEmitter::synthesizeEmptyDtor(ConstraintAttr conformanceConstraint) {
 
   // Create the FnOp and ASTDecl for the method.
   auto [funcOp, funcDecl] = synthesizeMethodInStruct(
-      "__del__", /*params=*/{},
+      "__deinit__", /*params=*/{},
       /*paramListAttrs=*/
       PogListAttr::get(getContext(), /*numPogs=*/0, constraints),
       /*argTypes=*/{selfType.mlirType},
       /*argConvs=*/{ArgConvention::DeinitMem},
       /*argListAttrs=*/
       PogListAttr::get(getContext(), selfName, PassingKind::PosOnly),
-      shared.getNoneType(), SpecialFunctionKind::kDel);
+      shared.getNoneType(), SpecialFunctionKind::kDeinit);
   if (!funcOp)
     return {};
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
@@ -748,7 +748,7 @@ FnOp StructEmitter::synthesizeEmptyDtor(ConstraintAttr conformanceConstraint) {
   // Perform semantic analysis to make sure all the fields are implicitly
   // deletable. We would rather error in the parser than in check lifetimes.
   // We do this after creating the function so we don't emit a redundant error
-  // complaining that a missing __del__ means the struct doesn't conform to
+  // complaining that a missing __deinit__ means the struct doesn't conform to
   // ImplicitlyDeletable.
   SmallVector<ConstraintAttr> assumptions;
   structDecl.getKnownAssumptionsIncludingParents(assumptions);
@@ -1028,8 +1028,9 @@ std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
 
     return success();
   };
-  if (failed(find("__del__", SpecialFunctionKind::kDel, result.del)) ||
-      failed(
+  if (failed(find("__deinit__", SpecialFunctionKind::kDeinit, result.del)))
+    return {};
+  if (failed(
           find("__init__", SpecialFunctionKind::kCopyCtor, result.copyctor)) ||
       failed(find("__init__", SpecialFunctionKind::kMoveCtor, result.movector)))
     return {};
@@ -1084,7 +1085,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   StringRef baseName;
   StringRef traitName;
   switch (kind) {
-  case SpecialFunctionKind::kDel:
+  case SpecialFunctionKind::kDeinit:
     baseName = "__del__";
     traitName = "ImplicitlyDeletable";
     break;
@@ -1109,10 +1110,11 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     return emitter.emitBool({v, &node}, EC_OperatorOperandValue).getIfPValue();
   };
 
-  LookupResult spDecls = shared.lookupAndResolveDecl(
-      kind == SpecialFunctionKind::kDel ? "__del__" : "__init__",
-      structDecl.getLoc(), structDecl,
-      /*searchParentScope=*/false);
+  StringRef spName =
+      kind == SpecialFunctionKind::kDeinit ? "__deinit__" : "__init__";
+  LookupResult spDecls =
+      shared.lookupAndResolveDecl(spName, structDecl.getLoc(), structDecl,
+                                  /*searchParentScope=*/false);
   if (spDecls.isErroneous())
     return nullptr;
   for (ASTDecl *decl : spDecls.getIfSuccess()) {

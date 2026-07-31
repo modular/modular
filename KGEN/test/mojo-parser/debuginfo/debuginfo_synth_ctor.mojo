@@ -15,9 +15,9 @@
 # The only debug info comes from default trait method for copy.
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "copy($0)"
 
-# We also have Moveinit in Movable and __del__ in ImplicitlyDeletable.
+# We also have Moveinit in Movable and __deinit__ in ImplicitlyDeletable.
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__init__(move:$0$)"
-# CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__del__($0$)"
+# CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__deinit__($0$)"
 
 # CHECK-NOT: #debuginfo.subprogram
 

@@ -495,14 +495,14 @@ def bind_regpassable_required_type():
 # CHECK-LABEL: lit.struct.decl @RegTrivialSpecial
 struct RegTrivialSpecial(TrivialRegisterPassable, AnyType, ImplicitlyCopyable):
     pass
-    # CHECK: lit.fn @"__del__
+    # CHECK: lit.fn @"__deinit__
     # CHECK: lit.fn @"__init__{{.*}}(*, %move:
     # CHECK: lit.fn @"__init__{{.*}}(*, %copy:
 
 # COM: TrivialRegisterPassable should behave the same as
 struct RegTrivialSpecialWithTrait(TrivialRegisterPassable):
     pass
-    # CHECK: lit.fn @"__del__
+    # CHECK: lit.fn @"__deinit__
     # CHECK: lit.fn @"__init__{{.*}}(*, %move:
     # CHECK: lit.fn @"__init__{{.*}}(*, %copy:
 
@@ -511,14 +511,14 @@ struct RegSpecial(AnyType, ImplicitlyCopyable, RegisterPassable):
     def __init__(out self, *, copy: Self):
         pass
 
-    # CHECK: lit.fn @"__del__
+    # CHECK: lit.fn @"__deinit__
     # CHECK: lit.fn @"__init__{{.*}}(*, %move:
 
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial
 struct MemoryOnlySpecial(AnyType, ImplicitlyCopyable):
     pass
-    # CHECK: lit.fn @"__del__
+    # CHECK: lit.fn @"__deinit__
     # CHECK-SAME: [{{.*}} deinit_mem, |) -> !kgen.none
     # CHECK: return %none
 
@@ -700,7 +700,7 @@ def converted_metatype_struct_element(x: Collection[Item]):
 
 # CHECK-LABEL: lit.struct.decl @TraitMember
 struct TraitMember[T: Movable & ImplicitlyDeletable](Movable where False):
-    # CHECK: lit.fn @"__del__
+    # CHECK: lit.fn @"__deinit__
     var value: Self.T
 
 
@@ -715,7 +715,7 @@ struct TraitMember[T: Movable & ImplicitlyDeletable](Movable where False):
 @fieldwise_init
 struct MyPointer[T: AnyType](ImplicitlyCopyable):
     pass
-    # CHECK: lit.fn @"__del__
+    # CHECK: lit.fn @"__deinit__
     # CHECK: lit.fn @"__init__
 
 
@@ -723,7 +723,7 @@ struct MyPointer[T: AnyType](ImplicitlyCopyable):
 struct HasMyPointerSelf(AnyType, Movable where False):
     # CHECK: lit.struct.field x : !lit.struct<#MyPointer <:!AnyType
     var x: MyPointer[Self]
-    # CHECK: lit.fn @"__del__
+    # CHECK: lit.fn @"__deinit__
 
     def __init__(out self, *, deinit move: Self):
         pass
@@ -908,7 +908,7 @@ trait RGTrait(ImplicitlyDeletable, RegisterPassable):
     # CHECK-NEXT: lit.fn @"doSomething{{.*}}"[imm *"{{.*}}"](%self: !lit.ref<:!AnyType_ImplicitlyDeletable_Movable_RegisterPassable_RGTrait *"{{.*}}", imm *"{{.*}}"> read_mem) -> !kgen.none
     def doSomething(self):
         ...
-    # CHECK: lit.fn @"__del__({{.*}})"[mut *"{{.*}}"](%self: !lit.ref<:!AnyType_ImplicitlyDeletable_Movable_RegisterPassable_RGTrait *"{{.*}}", mut *"{{.*}}"> deinit_mem, |) -> !kgen.none
+    # CHECK: lit.fn @"__deinit__({{.*}})"[mut *"{{.*}}"](%self: !lit.ref<:!AnyType_ImplicitlyDeletable_Movable_RegisterPassable_RGTrait *"{{.*}}", mut *"{{.*}}"> deinit_mem, |) -> !kgen.none
 
 # CHECK-LABEL: lit.trait.decl @RGTrivialTrait{{.*}} register_passable_trivial
 trait RGTrivialTrait(TrivialRegisterPassable):

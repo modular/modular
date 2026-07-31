@@ -18,7 +18,7 @@ struct MyAffine(Movable where False):
 # CHECK-LABEL: @"testAffineThing
 def testAffineThing():
     _ = MyAffine()
-    # CHECK: lit.call {{.*}}MyAffine::@"__del__
+    # CHECK: lit.call {{.*}}MyAffine::@"__deinit__
     # CHECK: kgen.return
 
 
@@ -31,7 +31,7 @@ struct EmptyExplicit(ImplicitlyDeletable where False, Movable where False):
     def consume(deinit self):
         # CHECK: lit.ownership.mark_destroyed %self
         pass
-        # CHECK-NOT: lit.call {{.*}}__del__
+        # CHECK-NOT: lit.call {{.*}}__deinit__
 
     # Deinit method should be able to transfer all of self to another
     # deinit method.
@@ -50,7 +50,7 @@ struct ExplicitDestroyThrowing(ImplicitlyDeletable where False, Movable where Fa
     var field: MyAffine
 
     # CHECK-LABEL: lit.fn @"foo
-    # CHECK: lit.call {{.*}}MyAffine::@"__del__
+    # CHECK: lit.call {{.*}}MyAffine::@"__deinit__
     def foo(deinit self):
         pass
 
@@ -65,7 +65,7 @@ struct ExplicitDestroyThrowing(ImplicitlyDeletable where False, Movable where Fa
         # CHECK: %__call_result_tmp__ = lit.var.decl
         # CHECK: lit.call {{.*}}@"method_that_raises{{.*}}(%0, %__error__, %__call_result_tmp__)
         # CHECK-NEXT: lit.ref.struct.ger %self[field]
-        # CHECK-NEXT: lit.call {{.*}}MyAffine::@"__del__
+        # CHECK-NEXT: lit.call {{.*}}MyAffine::@"__deinit__
         # CHECK-NEXT: hlcf.if
         # CHECK-NEXT: lit.ownership.mark_consumed %__call_result_tmp__
         # CHECK-NEXT: lit.var.lifetime.end %__call_result_tmp__
@@ -135,7 +135,7 @@ def map[
 def moco2373(l: I):
     var l2 = map[f](l)
     # This shouldn't cause a crash, it should successfully destruct it.
-    # CHECK: lit.call {{.*}}@_MapIterator::@"__del__
+    # CHECK: lit.call {{.*}}@_MapIterator::@"__deinit__
     _ = l2^
 
 

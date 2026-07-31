@@ -59,4 +59,4 @@ struct Container[T: AnyType](
         self._storage = Self._Storage()
 
     def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
-        self._storage^.__del__()
+        self._storage^.__deinit__()

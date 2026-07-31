@@ -114,7 +114,7 @@ struct ExplicitWithDel(ImplicitlyDeletable where False, Movable where False):
 def testExplicitWithDel():
     a = ExplicitWithDel()
     a.method()
-    a^.__del__()  # ok
+    a^.__deinit__()  # ok
 
     b = ExplicitWithDel()
     b.method()  # expected-error {{'b' abandoned without being explicitly destroyed: must use __del__() explicitly}}

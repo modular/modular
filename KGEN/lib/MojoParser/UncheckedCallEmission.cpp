@@ -1246,12 +1246,13 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
   // will call it on a local variable (or other !RValue reference) which will
   // actually cause a COPY of the source value, and then explicitly destroy
   // this copy of the value.  Emit a warning in this case.
-  if (calleeFunc.getSpecialFunctionKind() == SpecialFunctionKind::kDel &&
+  if (calleeFunc.getSpecialFunctionKind() == SpecialFunctionKind::kDeinit &&
       callOperands.size() == 1 && // defensive.
       callOperands[0].ir.getIfRValue().isNull()) {
-    emitter.emitWarning(loc) << "explicit call to '__del__' destroys a copy of "
-                                "the value; consider removing this call"
-                             << callOperands[0].expr->getRange();
+    emitter.emitWarning(loc)
+        << "explicit call to '__deinit__' destroys a copy of "
+           "the value; consider removing this call"
+        << callOperands[0].expr->getRange();
     return;
   }
 }

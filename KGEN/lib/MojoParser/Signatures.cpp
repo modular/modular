@@ -2581,18 +2581,19 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
   if (fnInfo.isInstMethod() && !selfType) {
     shared.emitError(fnDecl->getLoc())
-        << "'" << fnInfo.name << "' must be a method, not a global function";
+        << "'" << baseName.getValue()
+        << "' must be a method, not a global function";
     fnDecl->setErroneous();
     fnInfo = SpecialFunctionInfo();
   }
 
   // Trivial types are copyable with memcpy so they can't define a dtor.
-  if (fnInfo.kind == SpecialFunctionKind::kDel &&
+  if (fnInfo.kind == SpecialFunctionKind::kDeinit &&
       selfType.isTrivial(fnDecl->getLoc(), shared)) {
     fnDecl->setErroneous();
     auto diag =
         shared.emitError(fnDecl->getLoc(), "trivial types must not declare '");
-    diag << fnInfo.name << "' methods; they are trivially destroyable";
+    diag << baseName.getValue() << "' methods; they are trivially destroyable";
     diag.attachNote(*fnDecl)
         << "trivial types have no identity; the compiler destroys them "
            "automatically with no observable effect";
@@ -2632,12 +2633,19 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 /// If this function detects a problem, it marks the decl as erroneous and
 /// resets fnInfo.
 void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
-                                                       StringAttr name) {
+                                                       StringAttr &name) {
   FnOp funcOp = cast<FnOp>(*decl.getIfOperation());
 
   MutableArrayRef<ParsedArgument> parsedArgs = argList.parsedArgs;
   ArrayRef<Type> argTypes = this->argTypes;
   auto &shared = paramList.shared;
+
+  // '__del__' is a deprecated spelling of the destructor; canonicalize it to
+  // '__deinit__' here so every downstream consumer of the function's name
+  // (the AST and the MLIR it lowers to) only ever sees the canonical form.
+  if (fnInfo.kind == SpecialFunctionKind::kDeinit &&
+      name.getValue() == "__del__")
+    name = StringAttr::get(shared.getContext(), "__deinit__");
 
   // On any semantic error we mark the declaration erroneous - so references to
   // it don't type check, and we clear our special function information.  This
@@ -2738,7 +2746,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
     else if (fnInfo.kind == SpecialFunctionKind::kMoveCtor)
       fnName = "move constructor";
     else {
-      assert(fnInfo.kind == SpecialFunctionKind::kDel);
+      assert(fnInfo.kind == SpecialFunctionKind::kDeinit);
       fnName = "destructor";
     }
 
@@ -2792,7 +2800,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
     diagnoseSelfForDelAndMoveInit("move");
     break;
   }
-  case SpecialFunctionKind::kDel:
+  case SpecialFunctionKind::kDeinit:
     assert(parsedArgs.size() == 1 && "arg count already checked above");
     diagnoseSelfForDelAndMoveInit("self");
     break;

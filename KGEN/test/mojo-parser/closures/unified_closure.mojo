@@ -53,7 +53,7 @@
 # S0-NEXT: }
 # S0: lit.fn @"__init__{{.*}}"[mut *"[[S0_L2:.*]]`", mut *"[[S0_L3:.*]]`"](*, %move: !lit.ref<{{.*}}<:[[S0_IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[S0_L2]]`"> deinit_mem, ?, %self: !lit.ref<{{.*}} <:[[S0_IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[S0_L3]]`"> byref_result) -> !kgen.none
 # S0: lit.ownership.mark_destroyed %move
-# S0: lit.fn @"__del__({{.*}})"[mut *"[[S0_L1:.*]]`"](%self: !lit.ref<{{.*}}<:[[S0_IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[S0_L1]]`"> deinit_mem, |) -> !kgen.none
+# S0: lit.fn @"__deinit__({{.*}})"[mut *"[[S0_L1:.*]]`"](%self: !lit.ref<{{.*}}<:[[S0_IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[S0_L1]]`"> deinit_mem, |) -> !kgen.none
 # S0: lit.ownership.mark_destroyed %self
 
 
@@ -146,8 +146,8 @@ def s3_make_closure(x: Int, mem: String) -> Int:
 # S4-NEXT: kgen.witness "__init__{{.*}}" : !lit.generator<[2](*, "move": !lit.ref<!lit.struct<[[S4_T]] <:[[S4_TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, ?, "self": !lit.ref<!lit.struct<[[S4_T]] <:[[S4_TRAIT]] impl, :origin.set origin_set>>, mut *[0,1]> byref_result) -> !kgen.none
 # S4-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__init__(move:
 # S4: kgen.conformance @"{{.*}}::ImplicitlyDeletable" {
-# S4-NEXT:  kgen.witness "__del__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<[[S4_T]] <:[[S4_TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, |) -> !kgen.none
-# S4-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__del__{{.*}}"<{{.*}}>
+# S4-NEXT:  kgen.witness "__deinit__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<[[S4_T]] <:[[S4_TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, |) -> !kgen.none
+# S4-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__deinit__{{.*}}"<{{.*}}>
 # S4: kgen.conformance @"{{.*}}::AnyType" {
 # S4-NEXT: }
 
@@ -284,7 +284,7 @@ def nested[
 # S11-DAG: lit.struct.decl @"s11_bindIt(::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::String)::myclosure::__storage"
 # S11-DAG: kgen.conformance @"{{.*}}::AnyType" {
 # S11-DAG: kgen.conformance @"{{.*}}::ImplicitlyDeletable" {
-# S11-DAG: kgen.witness "__del__{{.*}}"
+# S11-DAG: kgen.witness "__deinit__{{.*}}"
 # S11-DAG: kgen.conformance @"{{.*}}::Movable" {
 # S11-DAG: kgen.witness "__init__(move:$0$)"
 # S11-DAG: kgen.conformance @"def(z: Int) -> Int" {

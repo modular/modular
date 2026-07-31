@@ -343,8 +343,11 @@ public:
   /// because that is how defs work in Python.
   ///
   /// If this function detects a problem, it marks the decl as erroneous and
-  /// resets fnInfo.
-  void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name);
+  /// resets fnInfo. `name` is updated in place to the canonical spelling of
+  /// the function's name (e.g. a deprecated '__del__' becomes '__deinit__'),
+  /// so the caller's downstream use of the name (mangling, the symbol and
+  /// source-name attributes) always sees the canonical form.
+  void verifyFunctionNameBinding(ASTDecl &decl, StringAttr &name);
 
   /// In a method with a self argument, check to make sure it has the correct
   /// type and invariants. "isSelfResult" is true for initializers that return

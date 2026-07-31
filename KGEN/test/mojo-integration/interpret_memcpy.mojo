@@ -64,7 +64,7 @@ struct Data(ImplicitlyCopyable, Writable):
         memcpy(result._data.unsafe_offset(self._size), rhs._data, rhs._size)
         return result
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         dealloc(
             ThinAllocation(
                 unsafe_assume_ownership=self._data

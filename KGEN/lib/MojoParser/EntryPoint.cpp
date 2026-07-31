@@ -268,7 +268,7 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module,
           // Some REPL tests are not resolving MoveInit at all.
           fnOp && fnOp->getNumRegions() == 1 && !fnOp.getBodyRegion().empty()) {
         auto parentOp = fnOp->getParentOp();
-        if (fnOp.getSpecialFunctionKind() == SpecialFunctionKind::kDel &&
+        if (fnOp.getSpecialFunctionKind() == SpecialFunctionKind::kDeinit &&
             isa_and_nonnull<TraitDeclOp>(parentOp) &&
             cast<TraitDeclOp>(parentOp).getSymName() == "ImplicitlyDeletable")
           return WalkResult::skip();

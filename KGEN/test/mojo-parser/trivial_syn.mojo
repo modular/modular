@@ -46,7 +46,7 @@ struct C[X: ImplicitlyCopyable & ImplicitlyDeletable, Y: ImplicitlyCopyable & Im
     # CHECK-NEXT:   }
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::ImplicitlyDeletable" {
-    # CHECK-NEXT:    kgen.witness "__del__{{.*}}"
+    # CHECK-NEXT:    kgen.witness "__deinit__{{.*}}"
     # CHECK: kgen.witness "__del__is_trivial" : !Bool = sugar_builtin(apply({{.*}})
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::Movable" {

@@ -47,7 +47,7 @@ def test_invalidate_base():
 
     ref elt_ref1 = list[]
     elt_ref1 += 4
-    list^.__del__()
+    list^.__deinit__()
 
     # Deleting list obviously invalidates it.
     # expected-error @+1 {{use of uninitialized value 'list'}}

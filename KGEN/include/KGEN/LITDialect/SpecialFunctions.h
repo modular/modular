@@ -93,6 +93,12 @@ public:
   /// Given a function name like "__init__" return the special function kind
   /// that corresponds to it.
   static SpecialFunctionKind lookupKind(llvm::StringRef name);
+
+  /// If `name` is a deprecated spelling of a special function that has a
+  /// canonical replacement (currently just the destructor's '__del__', whose
+  /// canonical spelling is '__deinit__'), returns the canonical spelling.
+  /// Otherwise returns `name` unchanged.
+  static llvm::StringRef getCanonicalSpelling(llvm::StringRef name);
 };
 
 } // namespace M::KGEN::LIT

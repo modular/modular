@@ -62,7 +62,7 @@ def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: %_b = lit.var.decl
     # CHECK-NEXT: lifetime.start %_b
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%_b)
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%_b)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%_b)
     # CHECK-NEXT: lifetime.end %_b
     var _b = MemExample()
 
@@ -72,7 +72,7 @@ def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     if cond:
         # CHECK-NEXT: lifetime.start %_a
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%_a)
-        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%_a)
+        # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%_a)
         # CHECK-NEXT: lifetime.end %_a
         _a = MemExample()
     # CHECK-NEXT: hlcf.yield
@@ -80,7 +80,7 @@ def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     else:
         # CHECK-NEXT: lifetime.start %_b
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%_b)
-        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%_b)
+        # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%_b)
         # CHECK-NEXT: lifetime.end %_b
         _b = MemExample()
     # CHECK-NEXT:   hlcf.yield
@@ -94,7 +94,7 @@ def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: hlcf.elif.yield %cond
     # CHECK-NEXT: } then {
     if cond:
-        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%c)
+        # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%c)
         # CHECK-NEXT: lifetime.end %c
         # CHECK-NEXT: lifetime.start %c
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%c)
@@ -108,7 +108,7 @@ def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %c
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     c.noop()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%c)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%c)
     # CHECK-NEXT: lifetime.end %c
 
     # CHECK-NEXT: %d = lit.var.decl "d"
@@ -133,7 +133,7 @@ def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %d
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     d.noop()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%d)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%d)
     # CHECK-NEXT: lifetime.end %d
 
 
@@ -160,7 +160,7 @@ def try_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
         # CHECK-NEXT: lit.ownership.use %caught_error
         # CHECK-NEXT: lit.ownership.use %caught_error
         _ = caught_error^
-        # CHECK-NEXT: lit.call {{.*}}Error::@"__del__{{.*}}(%caught_error)
+        # CHECK-NEXT: lit.call {{.*}}Error::@"__deinit__{{.*}}(%caught_error)
         # CHECK-NEXT: lit.var.lifetime.end %caught_error
         # CHECK-NEXT: lit.try.yield
     # CHECK-NEXT: } else {
@@ -169,7 +169,7 @@ def try_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     a.noop()  # ok
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%a)
     # CHECK-NEXT: lifetime.end %a
 
     # CHECK-NEXT: %_b = lit.var.decl
@@ -180,14 +180,14 @@ def try_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
         # CHECK-NEXT: lifetime.start %_b
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%_b)
         _b = MemExample()
-        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%_b)
+        # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%_b)
         # CHECK-NEXT: lifetime.end %_b
         raise Error()
     # CHECK: } except {
     # CHECK-NEXT: [[ERR:%.*]] = lit.ref.immut [[ERRSLOT]]
     # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[ERR]])
 
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[ERRSLOT]])
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[ERRSLOT]])
     # CHECK-NEXT: lit.var.lifetime.end [[ERRSLOT]]
     # CHECK-NEXT: lit.try.yield
     except e:
@@ -199,7 +199,7 @@ def try_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: lifetime.start %_b
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%_b)
     _b = MemExample()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%_b)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%_b)
     # CHECK-NEXT: lifetime.end %_b
 
     # CHECK-NEXT: %c = lit.var.decl
@@ -216,7 +216,7 @@ def try_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: [[ERR:%.*]] = lit.ref.immut [[ERRSLOT]]
     # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[ERR]])
 
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[ERRSLOT]])
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[ERRSLOT]])
     # CHECK-NEXT: lifetime.end [[ERRSLOT]]
 
     # CHECK-NEXT: lit.try.yield
@@ -228,7 +228,7 @@ def try_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %c
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     c.noop()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%c)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%c)
     # CHECK-NEXT: lifetime.end %c
 
     # CHECK-NEXT: %d = lit.var.decl
@@ -243,7 +243,7 @@ def try_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
         # CHECK-NOT: %d
     # CHECK: } except {
     except e:
-        # CHECK: call {{.*}}Error::@"__del__
+        # CHECK: call {{.*}}Error::@"__deinit__
         use(e)
         # CHECK: lit.call {{.*}}__init__{{.*}}(%d)
         d = MemExample()
@@ -259,7 +259,7 @@ def try_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %d
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     d.noop()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%d)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%d)
     # CHECK-NEXT: lifetime.end %d
 
 
@@ -282,7 +282,7 @@ def chris_origin_example(a: Bool, b: Bool):
         # CHECK-NEXT: lit.call
         # CHECK-NEXT: hlcf.elif.yield
         # CHECK-NEXT: } then {
-        # CHECK-NEXT: __del__{{.*}}(%x)
+        # CHECK-NEXT: __deinit__{{.*}}(%x)
         # CHECK: return
         # CHECK: else
         # CHECK: lit.try.raise
@@ -297,7 +297,7 @@ def chris_origin_example(a: Bool, b: Bool):
     # CHECK: } except {
     except:
         # CHECK: lit.call {{.*}}@"use_mut{{.*}}(%x)
-        # CHECK: lit.call {{.*}}__del__{{.*}}(%x)
+        # CHECK: lit.call {{.*}}__deinit__{{.*}}(%x)
         use_mut(x)
     # CHECK: else
     # CHECK-NEXT: lit.try.yield
@@ -338,9 +338,9 @@ def loop_example(cond1: __mlir_type.`!kgen.scalar<bool>`, cond2: __mlir_type.`!k
             # CHECK-NEXT: hlcf.break
             break
         # CHECK-NEXT: } else {
-        # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}(%c)
+        # CHECK-NEXT:   lit.call {{.*}}__deinit__{{.*}}(%c)
         # CHECK-NEXT:   lifetime.end %c
-        # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}(%a)
+        # CHECK-NEXT:   lit.call {{.*}}__deinit__{{.*}}(%a)
         # CHECK-NEXT:   lifetime.end %a
         # CHECK-NEXT:   hlcf.yield
         # CHECK-NEXT: }
@@ -354,19 +354,19 @@ def loop_example(cond1: __mlir_type.`!kgen.scalar<bool>`, cond2: __mlir_type.`!k
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     a.noop()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%a)
     # CHECK-NEXT: lifetime.end %a
 
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %b
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     b.noop()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%b)
     # CHECK-NEXT: lifetime.end %b
 
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %c
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     c.noop()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%c)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%c)
     # CHECK-NEXT: lifetime.end %c
 
 
@@ -419,7 +419,7 @@ def testInfiniteloop():
         # CHECK-NEXT:  lit.call {{.*}}__init__{{.*}}(%localThing)
         # CHECK-NEXT:  [[IMMREF:%.*]] = lit.ref.immut %localThing
         # CHECK-NEXT:  lit.call {{.*}}noop{{.*}}([[IMMREF]])
-        # CHECK-NEXT:  lit.call {{.*}}__del__{{.*}}(%localThing)
+        # CHECK-NEXT:  lit.call {{.*}}__deinit__{{.*}}(%localThing)
         # CHECK-NEXT:  lifetime.end %localThing
         var localThing = MemExample()
         localThing.noop()
@@ -473,7 +473,7 @@ def testErrorReturn() raises:
     var input: String
     # CHECK: try
     with MyStringReturningCtx() as ctx:
-        # CHECK-NOT: @MyStringReturningCtx::@"__del__
+        # CHECK-NOT: @MyStringReturningCtx::@"__deinit__
         var x = ctx.read()
         input = "hello"
     # CHECK: except
@@ -507,7 +507,7 @@ def test_param_for1(cond: Bool, cond2: Bool):
         # ... cond ...
         # CHECK: } then {
         if cond:
-            # CHECK: lit.call {{.*}}__del__{{.*}}(%mem)
+            # CHECK: lit.call {{.*}}__deinit__{{.*}}(%mem)
             # CHECK-NEXT: lifetime.end %mem
             # CHECK-NEXT: lit.call {{.*}}marker()
             marker()
@@ -518,7 +518,7 @@ def test_param_for1(cond: Bool, cond2: Bool):
         # ... cond2 ...
         # CHECK: } then {
         if cond2:
-            # CHECK: lit.call {{.*}}__del__{{.*}}(%mem)
+            # CHECK: lit.call {{.*}}__deinit__{{.*}}(%mem)
             # CHECK-NEXT: lifetime.end %mem
             # CHECK-NEXT: lit.call {{.*}}marker()
             marker()
@@ -537,7 +537,7 @@ def test_param_for1(cond: Bool, cond2: Bool):
         # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut %mem
         # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[TMP]])
         use(mem)
-        # CHECK: lit.call {{.*}}__del__{{.*}}(%mem)
+        # CHECK: lit.call {{.*}}__deinit__{{.*}}(%mem)
         # CHECK-NEXT: lifetime.end %mem
 
         # CHECK-NEXT: lit.call {{.*}}marker()
@@ -574,7 +574,7 @@ def test_param_for2():
 
     # CHECK-NEXT: } else {
     else:
-        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem)
+        # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem)
         # CHECK-NEXT: lifetime.end %mem
         # CHECK-NEXT: lit.call {{.*}}marker()
         marker()
@@ -593,13 +593,13 @@ def test_elif(cond: Bool, cond2: Bool):
     # CHECK-NEXT: hlcf.elif.yield
     # CHECK-NEXT: } then {
     if cond:
-        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem3)
+        # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem3)
         # CHECK-NEXT: lifetime.end %mem3
-        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
+        # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem2)
         # CHECK-NEXT: lifetime.end %mem2
         # CHECK-NEXT: lit.call {{.*}}use_mut{{.*}}(%mem1)
         use_mut(mem1)
-        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem1)
+        # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem1)
         # CHECK-NEXT: lifetime.end %mem1
 
         # CHECK-NEXT: lit.call {{.*}}marker()
@@ -607,16 +607,16 @@ def test_elif(cond: Bool, cond2: Bool):
         # CHECK-NEXT: hlcf.yield
     # CHECK-NEXT: } {
     # mem1 never used at this point, destroy in the condition.
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem1)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem1)
     # CHECK-NEXT: lifetime.end %mem1
     # CHECK-NEXT: __mlir_bool__
     # CHECK-NEXT: hlcf.elif.yield
 
     # CHECK-NEXT: } then {
     elif cond2:
-        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem3)
+        # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem3)
         # CHECK-NEXT: lifetime.end %mem3
-        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
+        # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem2)
         # CHECK-NEXT: lifetime.end %mem2
 
         # CHECK-NEXT: lit.call {{.*}}marker()
@@ -628,14 +628,14 @@ def test_elif(cond: Bool, cond2: Bool):
     # CHECK-NEXT: lit.ref.struct.ger %mem2[x]
     # CHECK-NEXT: kgen.rebind
     # CHECK-NEXT: lit.ref.load
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem2)
     # CHECK: hlcf.elif.yield
 
     # CHECK-NEXT: } then {
     elif mem2.x == 0:
         # CHECK-NEXT: lit.call {{.*}}use_mut{{.*}}(%mem3)
         use_mut(mem3)
-        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem3)
+        # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem3)
         # CHECK-NEXT: lifetime.end %mem3
 
         # CHECK-NEXT: lit.call {{.*}}marker()
@@ -643,7 +643,7 @@ def test_elif(cond: Bool, cond2: Bool):
         # CHECK-NEXT: hlcf.yield
 
     # CHECK-NEXT: } else {
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem3)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem3)
     # CHECK-NEXT: lifetime.end %mem3
     # CHECK-NEXT: hlcf.yield
 
@@ -662,7 +662,7 @@ def loop_any_origin(var mem: MemExample, cond: Bool):
     # CHECK-NEXT:     hlcf.if
     # CHECK-NEXT:       hlcf.yield
     # CHECK-NEXT:     } else {
-    # CHECK-NEXT:       lit.call {{.*}}MemExample::@"__del__
+    # CHECK-NEXT:       lit.call {{.*}}MemExample::@"__deinit__
     # CHECK-NEXT:       lit.var.lifetime.end %ptr
     # CHECK-NEXT:       hlcf.break
     while cond:
