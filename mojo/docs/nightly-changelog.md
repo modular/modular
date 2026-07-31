@@ -451,6 +451,9 @@ This version is still a work in progress.
       b.iter(call_fn)
   ```
 
+- `Array` is no longer `Defaultable`. Previously it conformed to `Defaultable`
+  but attempting to actually default construct an `Array` would fail to compile.
+
 - `Error` is now `ImplicitlyCopyable`, so re-raising a caught error no longer
   requires the transfer sigil:
 

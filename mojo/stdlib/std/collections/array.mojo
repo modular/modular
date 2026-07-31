@@ -221,7 +221,6 @@ struct _ArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
 @stable(since="1.0")
 struct Array[T: AnyType, length: Int](
     Copyable where conforms_to(T, Copyable),
-    Defaultable,
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
     ),
@@ -350,17 +349,6 @@ struct Array[T: AnyType, length: Int](
     # ===------------------------------------------------------------------===#
     # Life cycle methods
     # ===------------------------------------------------------------------===#
-
-    @always_inline
-    def __init__(out self):
-        """This constructor will always cause a compile time error if used.
-        It is used to steer users away from uninitialized memory.
-        """
-        comptime assert False, (
-            "Initialize with either a variadic list of arguments, a default"
-            " fill element or pass the keyword argument"
-            " 'uninitialized=True'."
-        )
 
     @always_inline
     def __init__(out self, *, uninitialized: Bool):
