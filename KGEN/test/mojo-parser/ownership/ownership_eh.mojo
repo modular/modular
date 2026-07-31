@@ -35,7 +35,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
     # Test a raising constructor.
     # CHECK-LABEL: lit.fn @"__init__{{.*}}(%a: {{.*}}, %b: {{.*}}, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %self: !lit.ref<!RegExample, {{.*}}> byref_result) throws -> !kgen.scalar<bool>
     def __init__(out self, a: MemExample, b: MemExample) raises:
-        # CHECK-NOT: __del__
+        # CHECK-NOT: __deinit__
         # CHECK: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
         # CHECK-NEXT: kgen.return [[FALSE]]
         return
@@ -110,7 +110,7 @@ def thing_that_raises(c: __mlir_type.`!kgen.scalar<bool>`) raises -> MemExample:
     # CHECK-NEXT:     hlcf.elif.yield %c
     # CHECK-NEXT:   } then {
     # CHECK-NEXT:      = lit.call {{.*}}__init__
-    # CHECK-NOT:       __del__
+    # CHECK-NOT:       __deinit__
     # CHECK: kgen.return
     if c:
         return MemExample()
@@ -147,7 +147,7 @@ def finally_may_raise() raises:
         # CHECK-NEXT:   lifetime.start [[RESULT]]
         # CHECK-NEXT:   [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}(%__finally_error__, [[RESULT]])
         # CHECK-NEXT:   if [[IS_ERR]]
-        # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%__error__)
+        # CHECK-NEXT:     call {{.*}}__deinit__{{.*}}(%__error__)
         # CHECK-NEXT:     mark_consumed [[RESULT]]
         # CHECK:      } except {
         # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__finally_error__, %__error__){{.*}}*, "move"
@@ -190,10 +190,10 @@ def context_mgr_exit_raises() raises:
     # CHECK-NEXT:     lit.var.lifetime.start %__finally_error__
     # CHECK-NEXT:     lit.var.lifetime.start [[BOOL]]
     # CHECK-NEXT:     [[IS_ERR:%.*]] = lit.call {{.*}}__exit__{{.*}}([[IMM]], %__finally_error__, [[BOOL]])
-    # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%$CONTEXTMGR)
+    # CHECK-NEXT:     call {{.*}}__deinit__{{.*}}(%$CONTEXTMGR)
     # CHECK-NEXT:     lit.var.lifetime.end %$CONTEXTMGR
     # CHECK-NEXT:     if [[IS_ERR]]
-    # CHECK-NEXT:       call {{.*}}__del__{{.*}}(%__error__)
+    # CHECK-NEXT:       call {{.*}}__deinit__{{.*}}(%__error__)
     # CHECK-NEXT:       mark_consumed [[BOOL]]
     # CHECK-NEXT:       lit.var.lifetime.end [[BOOL]]
     # CHECK:          else
@@ -202,7 +202,7 @@ def context_mgr_exit_raises() raises:
     # CHECK-NEXT:       lit.var.lifetime.end %__finally_error__
     # CHECK-NEXT:       yield
     # CHECK:        else
-    # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%$CONTEXTMGR)
+    # CHECK-NEXT:     call {{.*}}__deinit__{{.*}}(%$CONTEXTMGR)
     # CHECK:      } except {
     # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__finally_error__, %__error__){{.*}}*, "move"
     # CHECK-NEXT:   lit.var.lifetime.end %__finally_error__
@@ -231,7 +231,7 @@ def propagate_reg_error() raises:
     # CHECK-NEXT:   yield
     # CHECK-NEXT: }
     # CHECK-NEXT: lit.ownership.use [[RESULT]]
-    # CHECK-NEXT: lit.call {{.*}}@RegExample::@"__del__{{.*}}([[RESULT]])
+    # CHECK-NEXT: lit.call {{.*}}@RegExample::@"__deinit__{{.*}}([[RESULT]])
     # CHECK-NEXT: lifetime.end [[RESULT]]
     _ = may_throw()
     # CHECK-NEXT: %none = kgen.param.constant: none
@@ -278,7 +278,7 @@ def testErrorReturn() raises:
     var input: String
     # CHECK: try
     with MyStringReturningCtx() as ctx:
-        # CHECK-NOT: @MyStringReturningCtx::@"__del__
+        # CHECK-NOT: @MyStringReturningCtx::@"__deinit__
         var x = (
             ctx.read()
         )  # expected-warning {{assignment to 'x' was never used}}
@@ -320,7 +320,7 @@ struct DestructSome(Movable where False):
         # CHECK-NEXT: call {{.*}}somethingThatRaises
         # CHECK-NEXT: if
         # CHECK-NEXT:   [[FIELD:%.*]] = lit.ref.struct.ger %self[a]
-        # CHECK-NEXT:   __del__{{.*}}([[FIELD]])
+        # CHECK-NEXT:   __deinit__{{.*}}([[FIELD]])
         # CHECK-NEXT:   mark_consumed %__call_result_tmp__
         # CHECK-NEXT:   lifetime.end %__call_result_tmp__
         # CHECK-NEXT:   kgen.param.constant
@@ -337,7 +337,7 @@ struct DestructSome(Movable where False):
         # CHECK:      lifetime.start %__call_result_tmp__
         # CHECK-NEXT: call {{.*}}somethingThatRaises
         # CHECK-NEXT: if
-        # CHECK-NEXT:   __del__{{.*}}(%self)
+        # CHECK-NEXT:   __deinit__{{.*}}(%self)
         # CHECK-NEXT:   mark_consumed %__call_result_tmp__
         # CHECK-NEXT:   lifetime.end %__call_result_tmp__
         # CHECK-NEXT:   kgen.param.constant
@@ -361,9 +361,9 @@ def raising_use(var value: MemExample):
         # CHECK-NEXT: lifetime.start %__try_error__
         # CHECK-NEXT: lifetime.start [[VAL]]
         # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}borrow_and_return{{.*}}([[BORROW]], %__try_error__, [[VAL]])
-        # CHECK-NEXT: call {{.*}}@MemExample::@"__del__{{.*}}(%value)
+        # CHECK-NEXT: call {{.*}}@MemExample::@"__deinit__{{.*}}(%value)
         # CHECK-NEXT: if [[IS_ERR]]
-        # CHECK-NEXT:   call {{.*}}@Error::@"__del__{{.*}}(%__try_error__)
+        # CHECK-NEXT:   call {{.*}}@Error::@"__deinit__{{.*}}(%__try_error__)
         # CHECK-NEXT:   lit.var.lifetime.end %__try_error__
         # CHECK-NEXT:   mark_consumed [[VAL]]
         # CHECK-NEXT:   lit.var.lifetime.end [[VAL]]
@@ -374,7 +374,7 @@ def raising_use(var value: MemExample):
         # CHECK-NEXT:   hlcf.yield
         # CHECK-NEXT: }
         # CHECK-NEXT: lit.ownership.use [[VAL]]
-        # CHECK-NEXT: call {{.*}}@MemExample::@"__del__{{.*}}([[VAL]])
+        # CHECK-NEXT: call {{.*}}@MemExample::@"__deinit__{{.*}}([[VAL]])
         # CHECK-NEXT: lifetime.end [[VAL]]
         _ = borrow_and_return(value)
     except:
@@ -408,7 +408,7 @@ struct ThrowingSelfInit(Movable where False):
     def __init__(out self, x: Int, y: Int) raises:
         # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%__error__, %self)
         # CHECK:      else
-        # CHECK-NEXT:   call {{.*}}__del__{{.*}}(%self)
+        # CHECK-NEXT:   call {{.*}}__deinit__{{.*}}(%self)
         # CHECK-NEXT:   mark_consumed %__error__
         # CHECK-NEXT:   yield
         self = ThrowingSelfInit()
@@ -428,7 +428,7 @@ struct InitFieldsDestroyedInThrowingConstructor(Movable where False):
         # CHECK:      hlcf.elif {
         # CHECK-NEXT:   hlcf.elif.yield %cond
         # CHECK-NEXT: } then {
-        # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}(%self)
+        # CHECK-NEXT:   lit.call {{.*}}__deinit__{{.*}}(%self)
         # CHECK-NEXT:   lit.call {{.*}}::@Error::@"__init__
         # CHECK-NEXT:   kgen.param.constant
         # CHECK-NEXT:   lit.error_return

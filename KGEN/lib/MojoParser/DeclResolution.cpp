@@ -4127,9 +4127,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 
   // Determine if there is an explicit conformance to ImplicitlyDeletable.
   if (structDeclaresConformanceTo(structDecl, "ImplicitlyDeletable")) {
-    // Synthesize an empty __del__ when the type conforms to
+    // Synthesize an empty __deinit__ when the type conforms to
+    // ImplicitlyDeletable
+    // ([mojo-lang] Accept '__deinit__' as the canonical destructor spelling)
     // ImplicitlyDeletable but has no explicit destructor.
-    if (!shared.typeHasMember(structDecl, "__del__", structDecl.getLoc()))
+    if (!shared.typeHasMember(structDecl, "__deinit__", structDecl.getLoc()))
       (void)StructEmitter(structDecl)
           .synthesizeEmptyDtor(
               getConformanceConstraint(structOp, "ImplicitlyDeletable"));
@@ -4962,7 +4964,7 @@ DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
     // Matching by name is a bit gross, but we don't have general synthesized
     // decls so it should be robust.
     if (trivialTagName == "__del__is_trivial")
-      return SpecialFunctionKind::kDel;
+      return SpecialFunctionKind::kDeinit;
     if (trivialTagName == "__move_ctor_is_trivial")
       return SpecialFunctionKind::kMoveCtor;
     if (trivialTagName == "__copy_ctor_is_trivial")

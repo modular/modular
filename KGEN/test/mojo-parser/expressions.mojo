@@ -22,7 +22,7 @@ struct MemoryOnlyInt(ImplicitlyCopyable):
     # CHECK: %1 = {{.*}}constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
     # CHECK: lit.ref.store %1, %0
     self.x = 1
-  def __del__(deinit self): pass
+  def __deinit__(deinit self): pass
 
   # CHECK-LABEL: lit.fn @"__init__{{.*}}*, %copy
   def __init__(out self, *, copy: Self):
@@ -201,7 +201,7 @@ struct RegPassable(ImplicitlyCopyable, RegisterPassable):
   def __init__(out self, value: Int):
     self.value = value
 
-  def __del__(deinit self): pass
+  def __deinit__(deinit self): pass
   def __neg__(self) -> Self: pass
   def __add__(self, rhs: Self) -> Self: pass
   def __matmul__(self, rhs: Self) -> Self: pass
@@ -1173,13 +1173,13 @@ def reg_passable_trivial():
 def del_warnings():
   # These copy the value before destroying it, which is pointless.
   var m = MemoryOnlyInt()
-  m.__del__()  # expected-warning {{explicit call to '__del__' destroys a copy of the value; consider removing this call}}
+  m.__deinit__()  # expected-warning {{explicit call to '__deinit__' destroys a copy of the value; consider removing this call}}
   var r = RegPassable(1)
-  r.__del__()  # expected-warning {{explicit call to '__del__' destroys a copy of the value; consider removing this call}}
+  r.__deinit__()  # expected-warning {{explicit call to '__deinit__' destroys a copy of the value; consider removing this call}}
 
   # These is weird/unneeded, but at least it does what it says.
-  MemoryOnlyInt().__del__()
-  RegPassable(1).__del__()
+  MemoryOnlyInt().__deinit__()
+  RegPassable(1).__deinit__()
 
 ##===----------------------------------------------------------------------===##
 # Parameter inference

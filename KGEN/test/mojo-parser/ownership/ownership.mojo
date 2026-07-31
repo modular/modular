@@ -18,7 +18,7 @@ struct MemExample(ImplicitlyCopyable, Copyable):
   def __bool__(self) -> Bool: return True
 
   # Destructor should not recurse.
-  # CHECK-LABEL: lit.fn @"__del__
+  # CHECK-LABEL: lit.fn @"__deinit__
   # CHECK-NEXT:    [[IMMREF:%.*]] = lit.ref.immut %self
   # CHECK-NEXT:    lit.call {{.*}}noop{{.*}}([[IMMREF]])
   # CHECK-NEXT:    %none = kgen.param.constant{{.*}} <#kgen.none>
@@ -51,7 +51,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
     return
 
   def noop(self): pass
-  # CHECK-LABEL: lit.fn @"__del__
+  # CHECK-LABEL: lit.fn @"__deinit__
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
   # CHECK-NEXT: kgen.return
@@ -66,14 +66,14 @@ def consume(var a: RegExample): pass
 # CHECK-LABEL: lit.fn @"destructors
 # CHECK-SAME: (%arg0: !lit.ref<!MemExample, mut {{.*}}> owned_in_mem)
 def destructors(var arg0: MemExample):
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%arg0)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%arg0)
 
   # CHECK-NEXT: %mem1 = lit.var.decl "mem1" var
   # expected-warning @+1 {{assignment to 'mem1' was never used}}
   var mem1 = MemExample()
   # CHECK-NEXT: lifetime.start %mem1
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem1)
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem1)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem1)
   # CHECK-NEXT: lifetime.end %mem1
 
   var mem2 = MemExample()
@@ -83,7 +83,7 @@ def destructors(var arg0: MemExample):
   mem2.noop()
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mem2
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem2)
   # CHECK-NEXT: lifetime.end %mem2
 
   mem2 = MemExample()
@@ -96,13 +96,13 @@ def destructors(var arg0: MemExample):
   # CHECK-NEXT: %reg = lit.var.decl "reg"
   # CHECK-NEXT: lifetime.start %reg
   # CHECK-NEXT: lit.ref.store [[TMP]], %reg
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%reg)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%reg)
   # CHECK-NEXT: lifetime.end
 
   mem2.noop()
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mem2
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%mem2)
   # CHECK-NEXT: lifetime.end %mem2
 
   # CHECK-NEXT: %mem3 = lit.var.decl "mem3"
@@ -129,7 +129,7 @@ def destructors(var arg0: MemExample):
   # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[ANON]]
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMM]])
   RegExample().noop()
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[ANON]])
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[ANON]])
   # CHECK-NEXT: lit.var.lifetime.end [[ANON]]
 
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}@RegExample::@"__init__{{.*}}()
@@ -149,7 +149,7 @@ def indirect_call[detail_fn: def() thin -> MemExample]():
        # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mem
        # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
        mem.noop()
-       # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%mem)
+       # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}(%mem)
 
 # CHECK-LABEL: lit.struct.decl @Parameterized<level: !Int>
 struct Parameterized[level: Int](Movable where False):
@@ -164,7 +164,7 @@ def test_parameterized():
   # expected-warning @+1 {{assignment to 'x' was never used}}
   var x = Parameterized[4]()
   # CHECK: lit.call {{.*}}@"__init__{{.*}}(%x)
-  # CHECK: lit.call {{.*}}__del__{{.*}}<:!Int {:scalar<index> 4}>(%x)
+  # CHECK: lit.call {{.*}}__deinit__{{.*}}<:!Int {:scalar<index> 4}>(%x)
 
 struct Complicated(Movable where False):
   var a: MemExample
@@ -183,8 +183,8 @@ def testTakePointeeAsOwned1(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`])
   # CHECK-NEXT: [[REF2:%.*]] = lit.ref.from_pointer %ptr end_uninit :
   # CHECK-NEXT: lit.ownership.use [[REF2]]
   _ = __get_address_as_owned_value(ptr)
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF2]])
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF1]])
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[REF2]])
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[REF1]])
 
 
 # CHECK-LABEL: lit.fn @"testTakePointeeAsOwned2
@@ -262,7 +262,7 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
   # CHECK-LABEL: lit.fn @"mutate
   def mutate(mut self):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %self[f1]
-    # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%0)
+    # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}(%0)
 
     # CHECK-NEXT: %2 = lit.ref.struct.ger %self[f1]
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%2)
@@ -271,15 +271,15 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
 
   # CHECK-LABEL: lit.fn @"mutate2
   def mutate2(deinit self):
-    # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%self)
+    # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}(%self)
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%self)
     self = FieldSensitiveMemExample()
 
     # This is a 'deinit' method, so both F1 and F2 need to be destroyed
     # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %self[f1]
-    # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[F1R]])
+    # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}([[F1R]])
     # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %self[f2]
-    # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[F2R]])
+    # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}([[F2R]])
 
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
     # CHECK-NEXT: lit.ownership.mark_destroyed %self
@@ -288,19 +288,19 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
   # CHECK-LABEL: lit.fn @"disableDtor
   def disableDtor(deinit x):
     # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %x[f1]
-    # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[F1R]])
+    # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}([[F1R]])
     # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %x[f2]
-    # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[F2R]])
+    # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}([[F2R]])
     # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: lit.ownership.mark_destroyed %x
     pass
 
 
-  # CHECK-LABEL: lit.fn @"__del__
+  # CHECK-LABEL: lit.fn @"__deinit__
   # CHECK-NEXT: %0 = lit.ref.struct.ger %self[f1]
-  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%0)
+  # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}(%0)
   # CHECK-NEXT: %2 = lit.ref.struct.ger %self[f2]
-  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%2)
+  # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}(%2)
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
 
@@ -310,14 +310,14 @@ def regpassable_owned_args_mutable(var x: RegExample):
   # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x)
   x.mutate()
 
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%x)
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}"__init__{{.*}}()
   # CHECK-NEXT: lit.ref.store [[TMP]], %x
   x = RegExample()
 
   # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x)
   x.mutate()
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%x)
 
 # Result optimization cannot emit directly into a value that is passed as an
 # argument, because this forms a mutable reference to something immutable
@@ -350,7 +350,7 @@ def test_result_optimization():
   # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
   # CHECK-NEXT: lifetime.start %__call_result_tmp__
   # CHECK-NEXT: lit.call {{.*}}use_and_return{{.*}}([[IMMREF]], %__call_result_tmp__)
-  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%example)
+  # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}(%example)
   # CHECK-NEXT: lit.var.lifetime.end %example
   # CHECK-NEXT: lit.var.lifetime.start %example
   # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}move"
@@ -366,7 +366,7 @@ def test_result_optimization():
   # CHECK-NEXT: lit.call @ownership::@"use_and_return2{{.*}}([[IMMREF]], %__call_result_tmp___0)
   example.f1 = use_and_return2(example)
   # CHECK-NEXT: [[F1_2:%.*]] = lit.ref.struct.ger %example[f1]
-  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[F1_2]])
+  # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}([[F1_2]])
   # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}move"
   # CHECK-NEXT: lifetime.end %__call_result_tmp___0
 
@@ -379,7 +379,7 @@ def test_result_optimization():
 
   # Delete the old thing at the reference pointed-to-by return_ref before we
   # copy into it.
-  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[RETREF]])
+  # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}([[RETREF]])
 
   # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}move"
   # CHECK-NEXT: lifetime.end [[TMPVAR]]
@@ -387,14 +387,14 @@ def test_result_optimization():
 
   # CHECK-NEXT: lit.call {{.*}}@"mutate{{.*}}(%example)
   example.mutate()
-  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%example)
+  # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}(%example)
   # CHECK-NEXT: lifetime.end %example
 
   # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
 # CHECK-LABEL: lit.fn @"impl_mutable_arg
 def impl_mutable_arg(mut a: FieldSensitiveMemExample, mut b: FieldSensitiveMemExample):
-  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%b)
+  # CHECK-NEXT: lit.call {{.*}}@"__deinit__{{.*}}(%b)
   # CHECK-NEXT: lit.call {{.*}}use_inout_and_return{{.*}}(%a, %b)
 
   b = use_inout_and_return(a)
@@ -428,7 +428,7 @@ def test_result_consume_reg(cond: __mlir_type.`!kgen.scalar<bool>`) -> RegExampl
 
 # CHECK: lit.fn @"consumeMem
 def consumeMem(var x: MemExample):
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%x)
   # CHECK-NEXT: kgen.param.constant: none
   pass
 
@@ -502,11 +502,11 @@ struct BigRegExample(ImplicitlyCopyable, RegisterPassable):
     self.a = copy.a
     self.b = copy.b
 
-  # CHECK-LABEL: lit.fn @"__del__
+  # CHECK-LABEL: lit.fn @"__deinit__
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.struct.ger %self[a]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[APTR]])
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[APTR]])
   # CHECK-NEXT: [[BPTR:%.*]] = lit.ref.struct.ger %self[b]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BPTR]])
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[BPTR]])
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
   # CHECK-NEXT: kgen.return
@@ -542,7 +542,7 @@ def bigreg_test():
   # CHECK-NEXT: [[AREF:%.*]] = lit.ref.struct.ger %varThing[a]
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
   # CHECK-NEXT: lit.ref.store [[TMP]], [[AREF]]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%varThing)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%varThing)
   # CHECK-NEXT: lifetime.end %varThing
   varThing.a = RegExample()
 
@@ -554,7 +554,7 @@ def bigreg_test():
   # CHECK-NEXT: [[ELT:%.*]] = lit.ref.struct.ger [[TMP]][a]
   # CHECK-NEXT: [[ELTIMM:%.*]] = lit.ref.immut [[ELT]]
   # CHECK-NEXT: lit.call {{.*}}take_regexample_ref{{.*}}([[ELTIMM]])
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[TMP]])
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[TMP]])
   # CHECK-NEXT: lit.var.lifetime.end [[TMP]]
   take_regexample_ref(ret_big_reg().a)
 
@@ -566,11 +566,11 @@ struct ExoticDelExample(RegisterPassable):
   var b: BigRegExample
   var c: RegExample
 
- # CHECK-LABEL: lit.fn @"__del__
+ # CHECK-LABEL: lit.fn @"__deinit__
   def __del__(deinit self):
     # self.b gets destroyed ASAP since it isn't used.
     # CHECK-NEXT: [[BPTR:%.*]] = lit.ref.struct.ger %self[b]
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BPTR]])
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[BPTR]])
 
     # Test the condition
     # CHECK-NEXT: hlcf.elif
@@ -590,7 +590,7 @@ struct ExoticDelExample(RegisterPassable):
     # CHECK-NEXT: } else {
     # Destroy C automatically on the else side.
     # CHECK-NEXT:  [[CPTR:%.*]] = lit.ref.struct.ger %self[c]
-    # CHECK-NEXT:  lit.call {{.*}}__del__{{.*}}([[CPTR]])
+    # CHECK-NEXT:  lit.call {{.*}}__deinit__{{.*}}([[CPTR]])
     # CHECK-NEXT:  hlcf.yield
     # CHECK-NEXT:}
 
@@ -657,9 +657,9 @@ def destruct_generic_return():
         while True:
             pass
 
-    # CHECK: call {{.*}}@GenericType::@"__del__
+    # CHECK: call {{.*}}@GenericType::@"__deinit__
     _ = return_generic_type[GenericType]()
-    # CHECK: call {{.*}}@GenericRegType::@"__del__
+    # CHECK: call {{.*}}@GenericRegType::@"__deinit__
     _ = return_generic_type[GenericRegType]()
 
 
@@ -685,9 +685,9 @@ struct RegExampleValue(ImplicitlyCopyable, RegisterPassable):
     self.x = RegExample()
 
   # Make sure the synthesized dtor is taken register style.
-  # CHECK: lit.fn @"__del__{{.*}}(%self: !lit.ref<!RegExampleValue
+  # CHECK: lit.fn @"__deinit__{{.*}}(%self: !lit.ref<!RegExampleValue
   # CHECK-NEXT: lit.ref.struct.ger %self[x]
-  # CHECK-NEXT: lit.call {{.*}}__del__
+  # CHECK-NEXT: lit.call {{.*}}__deinit__
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK: lit.ownership.mark_destroyed %self
 
@@ -741,7 +741,7 @@ def call_variadic_mems(a: MemExample, b: MemExample):
   variadic_mems(c)
   # CHECK-NEXT: lit.var.lifetime.end %anonymous
   # CHECK-NEXT: lit.var.lifetime.end %__passed_varargs__
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%c)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%c)
   # CHECK-NEXT: lit.var.lifetime.end %c
   # CHECK-NEXT: kgen.param.constant: none
 
@@ -755,7 +755,7 @@ def variadic_field_sensitivity():
   # One for the transfer, one for the assignment to _.
   # CHECK-NEXT: lit.ownership.use [[AREF]]
   # CHECK-NEXT: lit.ownership.use [[AREF]]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[AREF]])
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[AREF]])
   _ = memPair.a^  # Destroy a.
 
   # Can still pass b through varargs.
@@ -772,7 +772,7 @@ def variadic_field_sensitivity():
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[AREF]])
   memPair.a = MemExample()
 
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%memPair)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%memPair)
   # CHECK-NEXT: lifetime.end %memPair
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
@@ -805,9 +805,9 @@ def call_variadic_inout_mems():
   variadic_inout_mems(a, b)
   # CHECK-NEXT: lit.var.lifetime.end %anonymous
   # CHECK-NEXT: lit.var.lifetime.end %__passed_varargs__
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BR]])
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[BR]])
   # CHECK-NEXT: lifetime.end %b
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[AR]])
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[AR]])
   # CHECK-NEXT: lifetime.end %a
 
   # CHECK-NEXT: kgen.param.constant: none
@@ -844,7 +844,7 @@ def test_partial_overwrite(cond: __mlir_type.`!kgen.scalar<bool>`):
   if cond:
     # Inserted destruction of incoming pair.b
     # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %pair[b]
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BREF]])
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[BREF]])
 
     # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %pair[b]
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[BREF]])
@@ -853,12 +853,12 @@ def test_partial_overwrite(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %pair
     # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[IMMREF]])
     pair.use()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%pair)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%pair)
     # CHECK-NEXT: lifetime.end %pair
     # CHECK-NEXT: hlcf.yield
   else: # CHECK-NEXT: } else {
     # Inserted destruction of whole pair.
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%pair)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%pair)
     # CHECK-NEXT: lifetime.end %pair
 
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
@@ -902,7 +902,7 @@ struct HasMemExample(Movable where False):
       # here.
 
       # CHECK-NEXT: if
-      # CHECK-NEXT:   lit.call {{.*}}Error::@"__del__{{.*}}(%__try_error__)
+      # CHECK-NEXT:   lit.call {{.*}}Error::@"__deinit__{{.*}}(%__try_error__)
       # CHECK-NEXT:   lifetime.end %__try_error__
       # CHECK-NEXT:   mark_consumed %__call_result_tmp__
       # CHECK-NEXT:   lifetime.end %__call_result_tmp__
@@ -911,7 +911,7 @@ struct HasMemExample(Movable where False):
 
       # On success, we overwrite the field.
       # CHECK-NEXT:   [[FIELD2:%.*]] = lit.ref.struct.ger
-      # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}([[FIELD2]])
+      # CHECK-NEXT:   lit.call {{.*}}__deinit__{{.*}}([[FIELD2]])
       # CHECK-NEXT:   mark_consumed %__try_error__
       # CHECK-NEXT:   lifetime.end %__try_error__
       # CHECK-NEXT:   yield
@@ -963,7 +963,7 @@ def destroyWholeValuesIfLastReferenceWasInLoop(cond: __mlir_type.`!kgen.scalar<b
      # CHECK:      hlcf.if %cond {
      # CHECK-NEXT:   hlcf.yield
      # CHECK-NEXT: } else {
-     # CHECK-NEXT:   lit.call {{.*}}::@MemPair::@"__del__({{.*}}(%memPair)
+     # CHECK-NEXT:   lit.call {{.*}}::@MemPair::@"__deinit__({{.*}}(%memPair)
      # CHECK-NEXT:   hlcf.break "_loop_0"
      # CHECK-NEXT: }
      if cond:
@@ -975,14 +975,14 @@ def overwrite(y: MemExample, x: Bool) raises:
    var foo = MemPair()
    if x:
    # CHECK: } then {
-   # CHECK-NEXT: lit.call {{.*}}::@MemPair::@"__del__
+   # CHECK-NEXT: lit.call {{.*}}::@MemPair::@"__deinit__
       raise Error()
    # CHECK: } else {
    # CHECK-NEXT: [[V7:%.*]] = lit.ref.struct.ger %foo[a]
-   # CHECK-NEXT: lit.call {{.*}}@MemExample::@"__del__
+   # CHECK-NEXT: lit.call {{.*}}@MemExample::@"__deinit__
    # CHECK-NEXT: hlcf.yield
    # CHECK-NEXT: }
-   # CHECK: lit.call {{.*}}::@MemPair::@"__del__{{.*}}(%foo)
+   # CHECK: lit.call {{.*}}::@MemPair::@"__deinit__{{.*}}(%foo)
    foo.a = MemExample()
 
 
@@ -1004,8 +1004,8 @@ def test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExamp
     # CHECK-NEXT:  [[RESULT:%.*]] = lit.call {{.*}}__init__{{.*}}copy"
 
     # Last use of both x and b.
-    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%b)
-    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%a)
+    # CHECK-NEXT:    lit.call {{.*}}__deinit__{{.*}}(%b)
+    # CHECK-NEXT:    lit.call {{.*}}__deinit__{{.*}}(%a)
 
     # CHECK-NEXT:  kgen.return [[RESULT]]
     return a if x else b
@@ -1019,7 +1019,7 @@ struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable & ImplicitlyDeletable](Mo
     def reap(deinit self, out result: Self.T):
         # "a" field is never used here so it is destroyed early.
         # CHECK-NEXT: [[AREF:%.*]] = lit.ref.struct.ger %self[a]
-        # CHECK-NEXT: lit.call{{.*}}__del__{{.*}}([[AREF]]
+        # CHECK-NEXT: lit.call{{.*}}__deinit__{{.*}}([[AREF]]
 
         # Transfer operator includes a lit.ownership.use.
         # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %self[b]
@@ -1043,7 +1043,7 @@ def field_sensitive_ref_last_use(var write_state : IntAndOptional):
     _ = msg.__len__()
 
     # CHECK: lit.call {{.*}}__init__{{.*}}copy"
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%write_state)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%write_state)
 
 @fieldwise_init
 struct IntAndOptional(Movable where False):
@@ -1066,7 +1066,7 @@ def caught_eh_cleanup():
       # Check for the error and handle it.
       # CHECK-NEXT: hlcf.if [[RAISE]] {
       # EH is never used, so it can be immediately released.
-      # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%eh1)
+      # CHECK-NEXT:    lit.call {{.*}}__deinit__{{.*}}(%eh1)
       # CHECK-NEXT:    lit.var.lifetime.end %eh1
 
       # Normal result is never used
@@ -1099,7 +1099,7 @@ def caught_eh_cleanup():
       # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[EH2]])
       eh2.use()
 
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%eh2)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%eh2)
     # CHECK-NEXT: lit.var.lifetime.end %eh2
 
 # CHECK-LABEL: lit.fn @"test_ref_field
@@ -1119,7 +1119,7 @@ def test_ref_field(var mem: MemPair):
   # CHECK: lit.ref.load %r
   # CHECK: lit.call {{.*}}__eq__
   _ = r == r
-  # CHECK-NEXT: lit.call {{.*}}MemPair::@"__del__
+  # CHECK-NEXT: lit.call {{.*}}MemPair::@"__deinit__
 
 def get_inner_ptr(s: String) -> UnsafePointer[UInt8, AnyOrigin[mut=True]]:
   return {}
@@ -1131,7 +1131,7 @@ def handleAnyLifetime1():
   # Make sure this keeps alive str until after the call.
   # CHECK: lit.call {{.*}}use_inner_pointer
   use_inner_pointer(get_inner_ptr(str))
-  # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%str)
+  # CHECK-NEXT: lit.call {{.*}}String::@"__deinit__{{.*}}(%str)
   # CHECK-NEXT: lit.var.lifetime.end %str
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime2
@@ -1177,7 +1177,7 @@ def handleAnyLifetime4():
   take_pack(ptr)
 
   # CHECK: lit.call {{.*}}take_pack
-  # CHECK: lit.call {{.*}}__del__{{.*}}(%str)
+  # CHECK: lit.call {{.*}}__deinit__{{.*}}(%str)
   # CHECK: lit.var.lifetime.end %str
 
 
@@ -1194,9 +1194,9 @@ def handleAnyLifetime5():
     # lit.ref.load needs to extend the lifetime of A.
     a = A[AnyOrigin[mut=True]]()
     # CHECK: [[INT_REF:%.*]] = {{.*}}UnsafePointer::@"__getitem__
-    # CHECK-NOT: lit.call {{.*}}__del__
+    # CHECK-NOT: lit.call {{.*}}__deinit__
     # CHECK: lit.ref.load [[INT_REF]]
-    # CHECK: lit.call {{.*}}__del__{{.*}}(%a)
+    # CHECK: lit.call {{.*}}__deinit__{{.*}}(%a)
     use_int(a.data[0])
 
 
@@ -1280,7 +1280,7 @@ def testConds2(cond: __mlir_type.`!kgen.scalar<bool>`, a: MemExample, b: MemExam
   # CHECK-NEXT: [[IFI:%.*]] = lit.ref.immut [[IF]]
   # CHECK-NEXT: lit.call {{.*}}useMemory{{.*}}([[IFI]])
   useMemory(MemExample() if cond else b)
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[IF]])
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[IF]])
   # CHECK-NEXT: lit.var.lifetime.end [[IF]]
 
 
@@ -1300,13 +1300,13 @@ def testConds3(cond: __mlir_type.`!kgen.scalar<bool>`, var a: MemExample, var b:
               var m: RegExample, var n: RegExample):
   # CHECK-NEXT: %t1 = lit.var.decl
   # CHECK-NEXT: hlcf.if %cond
-  # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%b)
+  # CHECK-NEXT:    lit.call {{.*}}__deinit__{{.*}}(%b)
   # CHECK-NEXT:    lit.ownership.use %a
   # CHECK-NEXT:    lit.var.lifetime.start %t1
   # CHECK-NEXT:    lit.call {{.*}}__init__{{.*}}move"
   # CHECK-NEXT:    hlcf.yield
   # CHECK-NEXT: } else {
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%a)
   # CHECK-NEXT:    lit.ownership.use %b
   # CHECK-NEXT:    lit.var.lifetime.start %t1
   # CHECK-NEXT:    lit.call {{.*}}__init__{{.*}}"{{.*}}(%b, %t1){{.*}}*, "move"
@@ -1315,12 +1315,12 @@ def testConds3(cond: __mlir_type.`!kgen.scalar<bool>`, var a: MemExample, var b:
   var t1 = a^ if cond else b^
 
   # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
-  # CHECK-NEXT:    lit.call {{.*}}RegExample::@"__del__{{.*}}(%n)
+  # CHECK-NEXT:    lit.call {{.*}}RegExample::@"__deinit__{{.*}}(%n)
   # CHECK-NEXT:    lit.ownership.use %m
   # CHECK-NEXT:    [[TMP:%.*]] = lit.load.consume %m
   # CHECK-NEXT:    hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:    lit.call {{.*}}RegExample::@"__del__{{.*}}(%m)
+  # CHECK-NEXT:    lit.call {{.*}}RegExample::@"__deinit__{{.*}}(%m)
   # CHECK-NEXT:    lit.ownership.use %n
   # CHECK-NEXT:    [[TMP:%.*]] = lit.load.consume %n
   # CHECK-NEXT:    hlcf.yield [[TMP]]{{.*}}
@@ -1363,9 +1363,9 @@ def test_min2(a: String):
     # CHECK-NEXT: [[SLICE:%.*]] = lit.call {{.*}}StringSlice::@"__init__{{.*}}(%a)
     # CHECK-NEXT: lit.call {{.*}}String::@"__iadd__{{.*}}([[REF]], [[SLICE]])
     my_min2(x, y) += a
-    # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%y)
+    # CHECK-NEXT: lit.call {{.*}}String::@"__deinit__{{.*}}(%y)
     # CHECK-NEXT: lit.var.lifetime.end %y
-    # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%x)
+    # CHECK-NEXT: lit.call {{.*}}String::@"__deinit__{{.*}}(%x)
     # CHECK-NEXT: lit.var.lifetime.end %x
 
 # MOCO-1500: Can't take origin of read-only String arg
@@ -1390,12 +1390,12 @@ def use_parameterized_field():
 # CHECK-LABEL: OuterStruct
 struct OuterStruct(Movable where False):
     var outers_field: RefResultStruct
-    # CHECK: lit.fn @"__del__
+    # CHECK: lit.fn @"__deinit__
     def __del__(deinit self):
         # CHECK: lit.call {{.*}}use(::String)
         use(self.outers_field.x)
         # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[outers_field]
-        # CHECK-NEXT: lit.call {{.*}}RefResultStruct::@"__del__{{.*}}([[TMP]])
+        # CHECK-NEXT: lit.call {{.*}}RefResultStruct::@"__deinit__{{.*}}([[TMP]])
         # CHECK: lit.ownership.mark_destroyed %self
 
 struct RefResultStruct(Movable where False):
@@ -1441,15 +1441,15 @@ struct ParametricTask[T1: Movable & ImplicitlyDeletable,
     # Verify that deinit causes the individual fields to be destroyed.
     # CHECK: lit.fn @"explicit_destroy
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[t1]
-    # CHECK-NEXT: lit.call{{.*}}__del__
+    # CHECK-NEXT: lit.call{{.*}}__deinit__
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[t2]
-    # CHECK-NEXT: lit.call{{.*}}__del__
+    # CHECK-NEXT: lit.call{{.*}}__deinit__
     def explicit_destroy(deinit self):
       pass
 
     # Verify that var causes the whole thing to be destroyed.
     # CHECK: lit.fn @"var_method
-    # CHECK-NEXT: lit.call {{.*}}ParametricTask::@"__del__
+    # CHECK-NEXT: lit.call {{.*}}ParametricTask::@"__deinit__
     def var_method(var self):
       pass
 
@@ -1494,7 +1494,7 @@ struct TestRaiseFromInit(Movable where False):
     def __init__(out self) raises Int:
         # CHECK-NEXT: %0 = lit.ref.struct.ger %self[y]
         # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}(%0)
-        # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%0)
+        # CHECK-NEXT: lit.call {{.*}}String::@"__deinit__{{.*}}(%0)
         # CHECK-NEXT: kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 42})>
         self.y = String()
         raise 42
@@ -1515,14 +1515,14 @@ def test_is_trivial(var a0: OccasionallyTrivial[0],
 
     a0.use()
     # CHECK-NEXT: lit.call {{.*}}OccasionallyTrivial::@"use{{.*}}(%a0)
-    # CHECK-NOT: __del__
+    # CHECK-NOT: __deinit__
 
     # CHECK-NEXT: lit.call {{.*}}marker
     marker()
 
     a1.use()
     # CHECK-NEXT: lit.call {{.*}}OccasionallyTrivial::@"use{{.*}}(%a1)
-    # CHECK-NEXT: lit.call {{.*}}OccasionallyTrivial::@"__del__{{.*}}(%a1)
+    # CHECK-NEXT: lit.call {{.*}}OccasionallyTrivial::@"__deinit__{{.*}}(%a1)
 
     # CHECK-NEXT: kgen.param.constant: none
 
@@ -1533,9 +1533,9 @@ struct TestConditionallyLinearType[T: Movable](
 ):
     var data: Self.T
 
-# CHECK: lit.fn @"__del__
+# CHECK: lit.fn @"__deinit__
 # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[data]
-# CHECK-NEXT: lit.call{{.*}}__del__{{.*}}([[TMP]])
+# CHECK-NEXT: lit.call{{.*}}__deinit__{{.*}}([[TMP]])
 # CHECK-NEXT: kgen.param.constant: none
 
     def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
@@ -1548,7 +1548,7 @@ struct TestSynthesizedConditionalDtor[T: Movable & ImplicitlyDeletable](
 ):
     var data: Self.T
 
-# CHECK: lit.fn @"__del__{{.*}}TestSynthesizedConditionalDtor{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, {{.*}}ImplicitlyDeletable{{.*}}synthetic
+# CHECK: lit.fn @"__deinit__{{.*}}TestSynthesizedConditionalDtor{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, {{.*}}ImplicitlyDeletable{{.*}}synthetic
 
 # MOCO-4059: Conditionally linear type with concrete struct.
 # CHECK-LABEL: lit.struct.decl @AConditionallyLinearType
@@ -1568,7 +1568,7 @@ struct AConditionallyLinearType[T: AnyType](
         # CHECK-NEXT: %_copy = lit.var.decl
         # CHECK-NEXT: lit.var.lifetime.start %_copy
         # CHECK-NEXT: lit.call {{.*}}@"copy
-        # CHECK-NEXT: lit.call {{.*}}@AConditionallyLinearType::@"__del__
+        # CHECK-NEXT: lit.call {{.*}}@AConditionallyLinearType::@"__deinit__
         # CHECK-NEXT: lit.var.lifetime.end %_copy
 
 
@@ -1592,7 +1592,7 @@ def test_mojo_3880():
 
     # CHECK: lit.call {{.*}}record_event
     # CHECK-NEXT: lit.ownership.use [[EVENT:%.*]] : !lit.ref<
-    # CHECK-NEXT: lit.call {{.*}}Event::@"__del__{{.*}}([[EVENT]])
+    # CHECK-NEXT: lit.call {{.*}}Event::@"__deinit__{{.*}}([[EVENT]])
     # CHECK-NEXT: lit.var.lifetime.end [[EVENT]]
-    # CHECK-NEXT: lit.call {{.*}}Driver::@"__del__{{.*}}(%driver)
+    # CHECK-NEXT: lit.call {{.*}}Driver::@"__deinit__{{.*}}(%driver)
     # CHECK-NEXT: lit.var.lifetime.end %driver

@@ -17,7 +17,7 @@ struct S:
         print("init", x)
         self.v = x
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         print("destroy", self.v)
 
     def __init__(out self, *, copy: Self):

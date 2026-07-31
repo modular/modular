@@ -1335,7 +1335,7 @@ struct Bound[T: AnyType](Movable where False):
 struct Match[lt: __mlir_type.`!lit.origin<false>`](Movable where False):
     pass
     # CHECK: kgen.conformance {{.*}}::ImplicitlyDeletable
-    # CHECK-NEXT: kgen.witness "__del__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<#Match <:origin<false> lt>>, mut *[0,0]> deinit_mem,
+    # CHECK-NEXT: kgen.witness "__deinit__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<#Match <:origin<false> lt>>, mut *[0,0]> deinit_mem,
 
 
 ##===----------------------------------------------------------------------===##

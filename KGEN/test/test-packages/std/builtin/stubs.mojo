@@ -161,7 +161,7 @@ struct Error(Copyable):
     def __init__(out self, value: Some[ErrorConversionTrait]):
         pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     def __init__(out self, *, copy: Self):
@@ -572,7 +572,7 @@ struct String(ErrorConversionTrait, ImplicitlyCopyable, KeyElement):
     def __init__(out self, *, deinit move: String):
         pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     def __len__(self) -> Int:
@@ -830,7 +830,7 @@ trait Movable:
 
 
 trait ImplicitlyDeletable:
-    def __del__(deinit self, /):
+    def __deinit__(deinit self, /):
         ...
 
     comptime __del__is_trivial: Bool
@@ -1513,7 +1513,7 @@ def paramfor_next_value[
 
 
 struct Optional[T: Movable](Copyable):
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     def __init__(out self):

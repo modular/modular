@@ -68,7 +68,7 @@ def testParametricMut(i: MemExample, mut m: MemExample):
 
 # CHECK-LABEL: lit.fn @"testUseConditional
 def testUseConditional(cond: __mlir_type.`!kgen.scalar<bool>`):
-  # CHECK-NOT: __del__
+  # CHECK-NOT: __deinit__
 
   # CHECK: lit.call {{.*}}__init__{{.*}}(%a)
   var a = MemExample()
@@ -87,14 +87,14 @@ def testUseConditional(cond: __mlir_type.`!kgen.scalar<bool>`):
   # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CV]])
   # CHECK-NEXT: lit.ref.immut [[MREF]]
   # CHECK-NEXT: lit.call {{.*}}noop
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%b)
   # CHECK-NEXT: lifetime.end %b
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%a)
   # CHECK-NEXT: lifetime.end %a
 
 # CHECK-LABEL: lit.fn @"testDefConditional
 def testDefConditional(cond: __mlir_type.`!kgen.scalar<bool>`):
-  # CHECK-NOT: lit.call {{[^)]*}}__del__
+  # CHECK-NOT: lit.call {{[^)]*}}__deinit__
 
   var a = MemExample()
   var b = MemExample()
@@ -117,7 +117,7 @@ def testDefConditional(cond: __mlir_type.`!kgen.scalar<bool>`):
   # CHECK: [[TMP:%.*]] = kgen.rebind %cptr
   # CHECK-NEXT: [[CP:%.*]] = lit.ref.load [[TMP]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CP]])
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[MREF]])
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[MREF]])
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[MREF]])
 
   # Overwriting is eligible for copy => move optimization as well.
@@ -129,20 +129,20 @@ def testDefConditional(cond: __mlir_type.`!kgen.scalar<bool>`):
   # CHECK-NEXT: lit.var.lifetime.end %cptr
   # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CP]])
   # CHECK-NEXT: lit.ref.immut
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[MREF]])
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[MREF]])
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}move"
   # CHECK-NEXT: lifetime.end %shouldBeMovedFrom
 
   # The mutation above could either of A or B, so we needed to extend both of
   # their origins, but now we can say goodbye.
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%b)
   # CHECK-NEXT: lifetime.end %b
 
   # A use so the assignment isn't dead.
   a.noop()
   # CHECK-NEXT: [[ATMP:%.*]] = lit.ref.immut %a
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[ATMP]])
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%a)
   # CHECK-NEXT: lifetime.end %a
 
 # ===----------------------------------------------------------------------=== #
@@ -172,7 +172,7 @@ def testUseConditionalReference(cond: __mlir_type.`!kgen.scalar<bool>`, immArg: 
   # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[AR]])
   aref[] = MemExample()
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF]])
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[REF]])
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[REF]])
 
   # The reference being alive doesn't keep the underlying stuff alive, only
@@ -187,7 +187,7 @@ def testUseConditionalReference(cond: __mlir_type.`!kgen.scalar<bool>`, immArg: 
   var aref2 = aref
 
   # Ok, this was the last use of A so it can go away.
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%a)
   # CHECK-NEXT: lifetime.end %a
 
   # Pointer can bind to immutable things as well, no problem.
@@ -307,7 +307,7 @@ def ref_copyability[*element_types: ImplicitlyCopyable & ImplicitlyDeletable](*a
   # CHECK: lit.call[!lit.generator<[2](*, "copy"{{.*}}#kgen.get_witness<{{.*}}__init__{{.*}}([[ITEM]], %_x)
   var _x = args[4]
 
-  # CHECK-NEXT: lit.call[{{.*}}#kgen.get_witness<{{.*}}__del__{{.*}}(%_x)
+  # CHECK-NEXT: lit.call[{{.*}}#kgen.get_witness<{{.*}}__deinit__{{.*}}(%_x)
 
 # Issue #37659: Parameter inference doesn't work with force-immut origins
 
@@ -374,7 +374,7 @@ def variadic_inout_mems_iter(mut *mems: MemExample):
   except:
     pass
 
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
+  # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%x)
   # CHECK-NEXT: lifetime.end %x
 
 
@@ -394,7 +394,7 @@ def test_pvalue_ref_formation[a: SelfRefTest]():
   # CHECK: [[REF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}([[REFERENCE]])
   # CHECK-NEXT: lit.call {{.*}}method{{.*}}([[REF]])
   _ = r[].method()
-  # CHECK-NEXT: lit.call {{.*}}SelfRefTest::@"__del__{{.*}}([[ANONTMP]])
+  # CHECK-NEXT: lit.call {{.*}}SelfRefTest::@"__deinit__{{.*}}([[ANONTMP]])
 
 # MOCO-1025 - Need hierarchical origins
 struct FieldRefPropagation(Movable where False):
@@ -452,8 +452,8 @@ def test_parameter_closure_captures(var x: MemExample, var y: MemExample):
     _ = y^
 
   # CHECK: lit.call[!lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
+  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%y)
+  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%x)
   capture()
 
 def higher_order_function[lts: __mlir_type.`!lit.origin.set`, //, f: def() capturing [lts] -> None]():
@@ -468,8 +468,8 @@ def test_higher_order_capture(var x: MemExample, var y: MemExample):
     _ = y^
 
   # CHECK: lit.call {{.*}}higher_order_function{{.*}} !lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
+  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%y)
+  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%x)
   higher_order_function[capture]()
 
 # CHECK-LABEL: lit.fn @"test_origin_ref_spec
@@ -558,7 +558,7 @@ def test_interior0():
     ref elt = list[]
     # CHECK: lit.call {{.*}}SIMD::@"__iadd__
     elt += 4
-    # CHECK: lit.call {{.*}}MyListInterior::@"__del__
+    # CHECK: lit.call {{.*}}MyListInterior::@"__deinit__
 
 # ===----------------------------------------------------------------------=== #
 # Subtree origins

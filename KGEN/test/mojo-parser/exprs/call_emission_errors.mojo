@@ -415,7 +415,7 @@ def call_param_inference_unrelated_error():
 struct MyRPStruct(RegisterPassable):
     var a: Int
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
@@ -423,7 +423,7 @@ struct MyRPStruct(RegisterPassable):
 struct MyRPStruct2(RegisterPassable):
     var b: MyRPStruct
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 

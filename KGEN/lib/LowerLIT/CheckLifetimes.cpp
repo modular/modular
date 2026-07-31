@@ -177,7 +177,7 @@ struct WholeProgramState {
   DenseMap<SymbolRefAttr, FnOp> funcMap;
   DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
 
-  // This is the ImplicitlyDeletable.__del__ trait member function.
+  // This is the ImplicitlyDeletable.__deinit__ trait member function.
   FnOp implicitlyDestructibleDtor;
 };
 } // namespace
@@ -202,8 +202,8 @@ WholeProgramState::WholeProgramState(Operation *module,
       if (!funcOp->getParentOfType<FnOp>())
         funcList.emplace_back(funcOp);
 
-      // Remember the ImplicitlyDeletable.__del__ member function.
-      if (funcOp.getSpecialFunctionKind() == SpecialFunctionKind::kDel &&
+      // Remember the ImplicitlyDeletable.__deinit__ member function.
+      if (funcOp.getSpecialFunctionKind() == SpecialFunctionKind::kDeinit &&
           isa<TraitDeclOp>(funcOp->getParentOp()) &&
           cast<TraitDeclOp>(funcOp->getParentOp()).getSymName() ==
               "ImplicitlyDeletable")
@@ -507,8 +507,8 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
         return SpecialMemberInfo::unavailable(message);
 
       // Otherwise, it is ImplicitlyDeletable, take the
-      // ImplicitlyDeletable.__del__ member function and rebind Self to the
-      // right type. If we didn't find ImplicitlyDeletable.__del__ (e.g. in
+      // ImplicitlyDeletable.__deinit__ member function and rebind Self to the
+      // right type. If we didn't find ImplicitlyDeletable.__deinit__ (e.g. in
       // LSP cases) just assume everything is trivial.
       FnOp delFn = shared->implicitlyDestructibleDtor;
       if (!delFn)
@@ -607,7 +607,7 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
         assert(!isTrivialAttr && "Multiple __del__is_trivial witnesses found");
         isTrivialAttr = witness.getValue();
       } else {
-        assert(witness.getName().starts_with("__del__(") &&
+        assert(witness.getName().starts_with("__deinit__(") &&
                "Unknown witness in ImplicitlyDeletable");
         assert(!dtorAttr && "Multiple dtors found in ImplicitlyDeletable");
         dtorAttr = witness.getValue();
@@ -648,8 +648,8 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
 
     // The witness will refer to any struct parameters by name, we need to
     // rewrite them to indexes.  For example:
-    //    struct Simple[a: Int]: def __del__(deinit self):
-    // will have a __del__ witness of type
+    //    struct Simple[a: Int]: def __deinit__(deinit self):
+    // will have a __deinit__ witness of type
     //    !lit.generator<[1]("self": !lit.ref<!lit.struct<#Simple <:!Int a>>,
     //                      mut *[0,0]> deinit_mem, |) -> !kgen.none>
     // we want to rewrite this to:

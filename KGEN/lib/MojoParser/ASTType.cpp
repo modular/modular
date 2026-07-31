@@ -825,7 +825,7 @@ TriState ASTType::isSpecialFunctionTrivial(llvm::SMLoc loc,
   switch (kind) {
   default:
     llvm_unreachable("Invalid special function kind");
-  case SpecialFunctionKind::kDel:
+  case SpecialFunctionKind::kDeinit:
     traitName = "ImplicitlyDeletable";
     isTrivialHook = "__del__is_trivial";
     break;
@@ -896,7 +896,7 @@ bool ASTType::isProvablyTriviallyMoveable(llvm::SMLoc loc,
 
 bool ASTType::isProvablyTriviallyDeletable(llvm::SMLoc loc,
                                            SharedState &shared) const {
-  return isSpecialFunctionTrivial(loc, SpecialFunctionKind::kDel, shared) ==
+  return isSpecialFunctionTrivial(loc, SpecialFunctionKind::kDeinit, shared) ==
          TriState::yes();
 }
 

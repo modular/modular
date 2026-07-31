@@ -737,7 +737,7 @@ struct SpecialFunctions(Movable where False):
     self*self # expected-error {{'SpecialFunctions' does not implement the '__mul__' method}}
 
   # expected-error @+1 {{destructor must not declare 'raises'; remove the 'raises' keyword}}
-  def __del__(deinit self) raises:
+  def __deinit__(self) raises:
      pass
 
 struct TestOwnedDeinitErrors(Movable where False):
@@ -837,14 +837,14 @@ struct InvalidMember(TrivialRegisterPassable):
   # expected-error @+2 {{redefinition of function '__init__', cannot overload on return type}}
   # expected-error @+1 {{trivial types must not declare explicit copy constructors; they are trivially copyable}}
   def __init__(out self, *, copy: Self): pass
-  # expected-error @+2 {{trivial types must not declare '__del__' methods; they are trivially destroyable}}
+  # expected-error @+2 {{trivial types must not declare '__deinit__' methods; they are trivially destroyable}}
   # expected-note @+1 {{trivial types have no identity; the compiler destroys them automatically with no observable effect}}
-  def __del__(deinit self): pass
+  def __deinit__(self): pass
 
 def noop():  # expected-error {{body must not be empty; use 'pass' or check that the lines below are indented}}
 
 struct BadDtor1(Movable where False):
-  def __del__(self): # expected-error {{'self' argument must be passed as 'deinit'}}
+  def __deinit__(mut self): # expected-error {{'self' argument must be passed as 'deinit'}}
     pass
 
   # expected-error @+1 {{'deinit' must only be applied to arguments of Self type}}
@@ -859,17 +859,21 @@ def invalid_deinit(deinit self: Int) raises:
     pass
 
 struct GoodDtor(Movable where False):
-   def __del__(deinit self): pass
+   def __deinit__(deinit self): pass
    def explicit_dtor(deinit self): pass
    def explicit_dtor2(deinit self, deinit other: Self): pass
    def normal_var(var self): pass
+
+struct BadDtorImplicitSelf(Movable where False):
+  # expected-error @+1 {{'self' argument must be passed as 'deinit'}}
+  def __deinit__(self): pass
 
 struct GoodDtor2[A: Int](Movable where False):
    def explicit_dtor(deinit self, deinit other: GoodDtor2[0]): pass
 
 def test_deinit_fn_types():
   var fp1 : def(var self: GoodDtor) thin -> None
-  fp1 = GoodDtor.__del__
+  fp1 = GoodDtor.__deinit__
   fp1 = GoodDtor.explicit_dtor
   fp1 = GoodDtor.normal_var
 
@@ -960,8 +964,8 @@ struct Outer34551(ImplicitlyCopyable, RegisterPassable): # expected-error {{all 
     def __init__(out self):
         self._inner = NotRegisterPassable()
     # The key point of this test is that these errors break an invariant needed
-    # for emission, so previously it would crash while emitting this __del__.
-    def __del__(deinit self):
+    # for emission, so previously it would crash while emitting this __deinit__.
+    def __deinit__(deinit self):
         _ = self._inner ^
 
 struct StructWithoutBody(RegisterPassable):
@@ -1310,7 +1314,7 @@ struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]](Movable where False):
     pass
 
 # https://github.com/modular/modular/issues/5479
-def __del__(): # expected-error {{'__del__' must be a method, not a global function}}
+def __deinit__(): # expected-error {{'__deinit__' must be a method, not a global function}}
   pass
 
 def raises_int() raises Int:

@@ -45,7 +45,7 @@ struct S1[X: Int](R1, R1Child, R2, TrivialRegisterPassable):
     def f2(self, x: Int):
         pass
 
-    # CHECK: lit.fn @"__del__[[DEL_NAME:.+]]"[
+    # CHECK: lit.fn @"__deinit__[[DEL_NAME:.+]]"[
     # Synthesized function:
     # CHECK: lit.fn @"__init__[[MOVEINIT_NAME:.+]]"[
 
@@ -53,7 +53,7 @@ struct S1[X: Int](R1, R1Child, R2, TrivialRegisterPassable):
     # CHECK-NEXT: }
 
     # CHECK: kgen.conformance @{{.*}}ImplicitlyDeletable
-    # CHECK-NEXT: kgen.witness "__del__{{.*}}" : {{.*}} = {{.*}}@S1::@"__del__{{.*}}"<:!Int X>
+    # CHECK-NEXT: kgen.witness "__deinit__{{.*}}" : {{.*}} = {{.*}}@S1::@"__deinit__{{.*}}"<:!Int X>
     # CHECK-NEXT: kgen.witness "__del__is_trivial" : !Bool = {:scalar<bool> true}
     # CHECK-NEXT: traitRef = [[ANYTYPE_NAME:(@[^:]+::)+@ImplicitlyDeletable]]
 

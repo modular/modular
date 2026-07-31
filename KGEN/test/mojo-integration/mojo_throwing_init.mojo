@@ -19,7 +19,7 @@ struct MemType1(ImplicitlyCopyable):
         self.value = copy.value + 1
         print("Copy to", self.value)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         print("MemType1(", self.value, ") destroyed")
 
 
@@ -40,7 +40,7 @@ struct PartialInitType:
         self.setTwice = MemType1(98)
         self.mem3 = MemType1(3)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         print("destroy PartialInitType")
 
 

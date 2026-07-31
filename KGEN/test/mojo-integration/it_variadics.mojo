@@ -16,7 +16,7 @@ struct TalkativeMem(Writable):
         self.state = state
         print("initializing", state)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         print("destroying", self.state)
 
     def write_to(self, mut writer: Some[Writer]):
@@ -32,7 +32,7 @@ struct TalkativeReg(RegisterPassable, Writable):
         self.state = state
         print("initializing", state)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         print("destroying", self.state)
 
     def write_to(self, mut writer: Some[Writer]):
@@ -52,7 +52,7 @@ struct TalkativeCopableReg(ImplicitlyCopyable, RegisterPassable, Writable):
         self.state = copy.state
         print("copying", self.state)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         print("destroying", self.state)
 
     def write_to(self, mut writer: Some[Writer]):
@@ -76,7 +76,7 @@ struct TalkativeCopableMovableMem(ImplicitlyCopyable, Writable):
         self.state = move.state
         print("moving", self.state)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         print("destroying", self.state)
 
     def write_to(self, mut writer: Some[Writer]):

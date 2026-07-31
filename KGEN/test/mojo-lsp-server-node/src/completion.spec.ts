@@ -189,7 +189,7 @@ def function(arg: Foo):
         "_foobar_",
         "_sunder_",
         "__baz__",
-        "__del__",
+        "__deinit__",
         "__init__",
         "__dunder__",
         "__copy_ctor_is_trivial",

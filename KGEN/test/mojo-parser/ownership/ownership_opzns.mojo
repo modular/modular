@@ -188,7 +188,7 @@ def takeOwnedInt(var x: Int):
 def passFieldToOwnedInt(var a: MemExample):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %a[x]
     # CHECK-NEXT: %1 = lit.ref.load %0
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%a)
     # CHECK-NEXT: [[RB:%.*]] = kgen.rebind %1
     # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*
     # CHECK-NEXT: lit.var.lifetime.start [[ANON]]
@@ -309,7 +309,7 @@ def optimizeCopyToMove():
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[M3]]
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     m3.noop()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[M3]])
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[M3]])
     # CHECK-NEXT: lit.var.lifetime.end %m1
 
     # All the copyinit's should be removed.
@@ -342,7 +342,7 @@ def optimizeCopyToMove():
     # CHECK-NEXT: [[R3I:%.*]] = lit.ref.immut %r3
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R3I]])
     r3.noop()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%r3)
+    # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%r3)
     # CHECK-NEXT: lifetime.end %r3
 
 

@@ -62,7 +62,7 @@ def with_it_err(handle: Bool) raises -> Int:
 
 @fieldwise_init
 struct MemoryType(ImplicitlyCopyable):
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         print("delete")
 
 

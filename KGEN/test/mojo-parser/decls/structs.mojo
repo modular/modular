@@ -33,7 +33,7 @@ struct DtorExample1(AnyType, TrivialRegisterPassable):
 struct DtorExample2(AnyType, RegisterPassable):
     var a: Int
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 

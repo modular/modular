@@ -218,7 +218,7 @@ ClosureEmitter::ClosureEmitter(SharedState &shared)
       copyName(StringAttr::get(ctx, "copy")),
       anyParent("AnyType", "", ClosureMethod::NONE),
       moveParent("Movable", "__init__", ClosureMethod::MOVE),
-      implicitlyDestructibleParent("ImplicitlyDeletable", "__del__",
+      implicitlyDestructibleParent("ImplicitlyDeletable", "__deinit__",
                                    ClosureMethod::DEL),
       registerPassableParent("RegisterPassable", "", ClosureMethod::NONE),
       trivialRegisterTypeParent("TrivialRegisterPassable", "",

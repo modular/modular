@@ -1299,7 +1299,8 @@ std::string PublicTraitDecl::getMarkdownDocString() const {
 llvm::json::Object PublicTraitDecl::toJSON(MojoParserContext &ctx) const {
   // Ignore some inherited functions.
   auto shouldHideFn = [](FnOp decl, StringRef name) {
-    return decl.getInheritedFrom() && name == "__del__";
+    return decl.getInheritedFrom() &&
+           decl.getSpecialFunctionKind() == SpecialFunctionKind::kDeinit;
   };
 
   auto aliases = extractChildDecls<PublicAliasDecl, AliasDeclOp>(*decl);

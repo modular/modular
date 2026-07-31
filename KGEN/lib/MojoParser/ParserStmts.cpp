@@ -24,6 +24,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
@@ -3493,6 +3494,14 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
                       /*forbidStartOfLine=*/true,
                       /*allowKeyword=*/true))
     return failure();
+
+  // Canonicalize deprecated special-function spellings (e.g. '__del__') to
+  // their canonical form as early as possible.
+  if (StringRef canonical =
+          SpecialFunctionInfo::getCanonicalSpelling(baseName.getValue());
+      canonical != baseName.getValue())
+    baseName = StringAttr::get(getContext(), canonical);
+
   if (nameIsKeyword && !isInTypeBody()) {
     emitError(loc) << "'" << baseName.getValue()
                    << "' cannot be used as a function name in this context";

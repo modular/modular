@@ -1198,7 +1198,7 @@ struct DestructTracer(Copyable, ImplicitlyDeletable, Movable):
         self.tag = tag
         print("init-dtor", self.tag)
 
-    def __del__(deinit self, /):
+    def __deinit__(deinit self, /):
         print("del-dtor", self.tag)
 
 
@@ -1209,7 +1209,7 @@ struct MarkedDestructTracer(Copyable, DtorMarker, ImplicitlyDeletable, Movable):
         self.tag = tag
         print("init-dtor", self.tag)
 
-    def __del__(deinit self, /):
+    def __deinit__(deinit self, /):
         print("del-dtor", self.tag)
 
 

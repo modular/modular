@@ -805,7 +805,7 @@ struct HList[T: ImplicitlyCopyable]:
 # CHECK:  "name": "__init__",
 # CHECK:     "signature": "def __init__(out self)",
 # CHECK:  "signature": "def __init__(out self, *, copy: Self)",
-# CHECK:  "name": "__del__",
+# CHECK:  "name": "__deinit__",
 
 # CHECK: "name": "__add__",
 # CHECK: "overloads":
@@ -868,7 +868,7 @@ struct InMemoryStruct(ImplicitlyCopyable, Sized):
     def __init__(out self, *, copy: Self):
         pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     def __add__(self, other: Self) -> Self:
