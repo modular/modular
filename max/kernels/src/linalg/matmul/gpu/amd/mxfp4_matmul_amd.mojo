@@ -443,7 +443,7 @@ struct BlockScaledMmaOp[
                     0
                 ]
             )
-            a_packed = a_packed | rebind[Scalar[DType.int32]](
+            a_packed = a_packed | bitcast[DType.int32](
                 byte_val << UInt32(m_mma * 8)
             )
         self._a_scale_packed.raw_store(k_tile_idx, a_packed)
@@ -463,7 +463,7 @@ struct BlockScaledMmaOp[
                     0
                 ]
             )
-            b_packed = b_packed | rebind[Scalar[DType.int32]](
+            b_packed = b_packed | bitcast[DType.int32](
                 byte_val << UInt32(n_mma * 8)
             )
         self._b_scale_packed.raw_store(k_tile_idx, b_packed)

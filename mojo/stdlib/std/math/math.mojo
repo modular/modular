@@ -2483,13 +2483,12 @@ def cbrt[
         return cbrt(x.cast[DType.float32]()).cast[dtype]()
     elif dtype == DType.float64:
         return _call_libm["cbrt"](x)
+    else:
+        var result = SIMD[DType.float32, width]()
+        for i in range(width):
+            result[i] = _cbrtf(rebind[Float32](x[i]))
 
-    var result = SIMD[DType.float32, width]()
-
-    for i in range(width):
-        result[i] = _cbrtf(rebind[Float32](x[i]))
-
-    return rebind[type_of(x)](result)
+        return rebind[type_of(x)](result)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2691,13 +2690,13 @@ def erfc[
         return erfc(x.cast[DType.float32]()).cast[dtype]()
     elif dtype == DType.float64:
         return _call_libm["erfc"](x)
+    else:
+        var result = SIMD[DType.float32, width]()
 
-    var result = SIMD[DType.float32, width]()
+        for i in range(width):
+            result[i] = _erfcf(rebind[Float32](x[i]))
 
-    for i in range(width):
-        result[i] = _erfcf(rebind[Float32](x[i]))
-
-    return rebind[type_of(x)](result)
+        return rebind[type_of(x)](result)
 
 
 # ===----------------------------------------------------------------------=== #

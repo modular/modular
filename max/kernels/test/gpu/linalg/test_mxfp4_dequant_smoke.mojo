@@ -137,9 +137,7 @@ def test_mxfp4_dequant[
     for i in range(in_size):
         in_host_buf[i] = in_host[i]
     for i in range(scales_size):
-        scales_host_buf[i] = rebind[Scalar[DType.float8_e8m0fnu]](
-            scales_host[i]
-        )
+        scales_host_buf[i] = bitcast[DType.float8_e8m0fnu](scales_host[i])
 
     ctx.enqueue_copy(in_device, in_host_buf)
     ctx.enqueue_copy(scales_device, scales_host_buf)
