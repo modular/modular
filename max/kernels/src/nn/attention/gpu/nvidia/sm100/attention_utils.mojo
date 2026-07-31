@@ -409,6 +409,30 @@ def pack_row[
 
 
 @always_inline
+def blasst_vote_unanimous(
+    blasst_vote: SharedMemPointer[UInt8], wg: UInt32, phase: UInt32
+) -> Bool:
+    """Reads the BLASST per-warp skip votes for `(wg, phase)` and ANDs them.
+
+    Shared by the softmax-side vote publisher (`blasst_observe`, which reads
+    back its own WG's vote right after publishing it) and the MMA-side
+    consumer (`blasst_should_skip`, which reads a vote published earlier by
+    the S-consumer pipeline's own synchronization). Only the read-back
+    itself is shared here -- each caller's surrounding synchronization
+    differs and stays local to that caller.
+    """
+    # One aligned 32-bit read replaces 4 byte reads + a short-circuit AND
+    # chain (which serializes the loads behind 3 branches). Legal because a
+    # `(wg, phase)` group's 4 slots are consecutive bytes at a 4-byte-aligned
+    # address (`blasst_vote_byte_offset` follows the UInt32 `tmem_addr`, and
+    # `base` is a multiple of 4) and every slot only ever holds 0 or 1
+    # (`kernel.mojo` zero-inits the region; `blasst_observe` writes 0/1), so
+    # "all four nonzero" == "the word is 0x01010101".
+    var base = (wg * UInt32(2) + phase) * UInt32(4)
+    return (blasst_vote + base).bitcast[UInt32]()[0] == UInt32(0x01010101)
+
+
+@always_inline
 def scale_pack_o_row[
     n: Int, //, output_type: DType, w: Int, start: Int = 0
 ](o_vals: Array[Scalar[DType.float32], n], inv_row_sum: Float32) -> SIMD[

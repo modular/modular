@@ -13,7 +13,7 @@
 """MMA warp logic for FA4 (SM100 Flash Attention)."""
 
 from std.math import align_up, ceildiv
-from std.sys import size_of
+from std.sys import size_of, get_defined_bool
 from std.gpu.primitives.id import cluster_dim
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
@@ -23,6 +23,7 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
+    blasst_vote_unanimous,
     elect,
     elect_mma_arrive,
     SM100TensorAccumulator,
@@ -240,6 +241,21 @@ def fa4_mma[
 
     e = elect()
 
+    # BLASST (arXiv 2512.12087): skip P@V (UMMA1) when all 4 of a WG's softmax
+    # warps voted to skip; QK' (UMMA0) and the V load are never skipped. `and
+    # not config.use_ws` since main's `_pv_ws` P@V path has no BLASST analog.
+    comptime ENABLE_BLASST = get_defined_bool[
+        "ENABLE_BLASST", False
+    ]() and not config.use_ws
+    var blasst_vote = smem.blasst_vote_smem()
+
+    # Called after consumer_s[*].wait(phase), which orders the vote write
+    # (softmax) before this read. Peel writes no vote -> reads 0 -> never skips.
+    @parameter
+    @always_inline
+    def blasst_should_skip(wg: UInt32, phase: UInt32) -> Bool:
+        return blasst_vote_unanimous(blasst_vote, wg, phase)
+
     @parameter
     @always_inline
     def _commit(
@@ -270,27 +286,51 @@ def fa4_mma[
         consumer_s: MBarType,
         wait_phase: UInt32,
         c_scale: UInt32,
+        wg: UInt32 = 0,
     ):
-        # V-smem tile outer; P-tmem stage inner. V-smem is the binding
-        # constraint, so each V region is fully contracted before the next.
-        comptime for v_stage in range(num_d_tiles):
+        # BLASST (gated): the wait always runs (orders the vote read); only
+        # the P@V UMMA is skipped on a unanimous vote, so O keeps its prior
+        # value. Depth-tiling waits are hoisted so the vote can be read after
+        # they retire.
+        comptime if ENABLE_BLASST:
             comptime for p_stage in range(num_pv_stages):
-                comptime if v_stage == 0:
-                    # First V pass: wait each P sub-stage exactly once (P stays
-                    # live in TMEM across all V regions; preserves the 3/4+1/4
-                    # P-stage overlap). Non-WS folds to today's stream.
-                    _ = consumer_s[p_stage].wait(wait_phase)
-                    UMMA1Type.mma[stage_idx=p_stage](
-                        s_tmem, v, o_tmem, elect=e, c_scale=c_scale
-                    )
-                else:
-                    UMMA1Type.mma[stage_idx=p_stage](
-                        s_tmem,
-                        v + UInt32(v_stage * v_region_bytes),
-                        o_tmem + UInt32(v_stage * depth_tile),
-                        elect=e,
-                        c_scale=c_scale,
-                    )
+                _ = consumer_s[p_stage].wait(wait_phase)
+            if not blasst_should_skip(wg, wait_phase):
+                comptime for v_stage in range(num_d_tiles):
+                    comptime for p_stage in range(num_pv_stages):
+                        comptime if v_stage == 0:
+                            UMMA1Type.mma[stage_idx=p_stage](
+                                s_tmem, v, o_tmem, elect=e, c_scale=c_scale
+                            )
+                        else:
+                            UMMA1Type.mma[stage_idx=p_stage](
+                                s_tmem,
+                                v + UInt32(v_stage * v_region_bytes),
+                                o_tmem + UInt32(v_stage * depth_tile),
+                                elect=e,
+                                c_scale=c_scale,
+                            )
+        else:
+            # V-smem tile outer; P-tmem stage inner. V-smem is the binding
+            # constraint, so each V region is fully contracted before the next.
+            comptime for v_stage in range(num_d_tiles):
+                comptime for p_stage in range(num_pv_stages):
+                    comptime if v_stage == 0:
+                        # First V pass: wait each P sub-stage exactly once (P
+                        # stays live in TMEM across all V regions; preserves the
+                        # 3/4+1/4 P-stage overlap). Non-WS folds to today's stream.
+                        _ = consumer_s[p_stage].wait(wait_phase)
+                        UMMA1Type.mma[stage_idx=p_stage](
+                            s_tmem, v, o_tmem, elect=e, c_scale=c_scale
+                        )
+                    else:
+                        UMMA1Type.mma[stage_idx=p_stage](
+                            s_tmem,
+                            v + UInt32(v_stage * v_region_bytes),
+                            o_tmem + UInt32(v_stage * depth_tile),
+                            elect=e,
+                            c_scale=c_scale,
+                        )
 
     @parameter
     @always_inline
@@ -302,31 +342,58 @@ def fa4_mma[
         wait_phase: UInt32,
         c_scale: UInt32,
         valid_k_mmas: UInt32,
+        wg: UInt32 = 0,
     ):
-        # V-smem tile outer; P-tmem stage inner (see `_pv_full`). `valid_k_mmas`
-        # is the KEY count, identical across V regions, so it passes through
-        # unchanged for every v_stage.
-        comptime for v_stage in range(num_d_tiles):
+        # BLASST (gated): see `_pv_full` -- same skip, partial-K variant.
+        comptime if ENABLE_BLASST:
             comptime for p_stage in range(num_pv_stages):
-                comptime if v_stage == 0:
-                    _ = consumer_s[p_stage].wait(wait_phase)
-                    UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
-                        s_tmem,
-                        v,
-                        o_tmem,
-                        c_scale=c_scale,
-                        elect=e,
-                        valid_k_mmas=valid_k_mmas,
-                    )
-                else:
-                    UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
-                        s_tmem,
-                        v + UInt32(v_stage * v_region_bytes),
-                        o_tmem + UInt32(v_stage * depth_tile),
-                        c_scale=c_scale,
-                        elect=e,
-                        valid_k_mmas=valid_k_mmas,
-                    )
+                _ = consumer_s[p_stage].wait(wait_phase)
+            if not blasst_should_skip(wg, wait_phase):
+                comptime for v_stage in range(num_d_tiles):
+                    comptime for p_stage in range(num_pv_stages):
+                        comptime if v_stage == 0:
+                            UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
+                                s_tmem,
+                                v,
+                                o_tmem,
+                                c_scale=c_scale,
+                                elect=e,
+                                valid_k_mmas=valid_k_mmas,
+                            )
+                        else:
+                            UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
+                                s_tmem,
+                                v + UInt32(v_stage * v_region_bytes),
+                                o_tmem + UInt32(v_stage * depth_tile),
+                                c_scale=c_scale,
+                                elect=e,
+                                valid_k_mmas=valid_k_mmas,
+                            )
+        else:
+            # V-smem tile outer; P-tmem stage inner (see `_pv_full`).
+            # `valid_k_mmas` is the KEY count, identical across V regions, so it
+            # passes through unchanged for every v_stage.
+            comptime for v_stage in range(num_d_tiles):
+                comptime for p_stage in range(num_pv_stages):
+                    comptime if v_stage == 0:
+                        _ = consumer_s[p_stage].wait(wait_phase)
+                        UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
+                            s_tmem,
+                            v,
+                            o_tmem,
+                            c_scale=c_scale,
+                            elect=e,
+                            valid_k_mmas=valid_k_mmas,
+                        )
+                    else:
+                        UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
+                            s_tmem,
+                            v + UInt32(v_stage * v_region_bytes),
+                            o_tmem + UInt32(v_stage * depth_tile),
+                            c_scale=c_scale,
+                            elect=e,
+                            valid_k_mmas=valid_k_mmas,
+                        )
 
     # Sliding-window / any non-zero `start_column` mask: the load and
     # softmax warps work the contraction in the `[start_column, num_keys)`
@@ -718,6 +785,10 @@ def fa4_mma[
 
         var c_scale: UInt32 = 0
 
+        # BLASST: epilogue P@V is WG1 by default; the 1Q odd-T tail re-points
+        # s1 aliases to WG0, so flip this there too (DCE'd when off).
+        var blasst_epi_wg: UInt32 = 1
+
         # 1Q: release V_e[0] (all sub-slots); load V_o[0] and hold its
         # first slot index in v_prev_idx for the first main-loop iter's
         # P_o @ V_o[0] MMA.
@@ -753,6 +824,7 @@ def fa4_mma[
                     consumer_s1,
                     phase,
                     c_scale,
+                    1,
                 )
             _commit(pipeline_o1.producer_mbar())
             c_scale = 1
@@ -776,6 +848,7 @@ def fa4_mma[
                     o1_tmem = o0_tmem
                     consumer_s1 = consumer_s0
                     pipeline_o1 = pipeline_o0
+                    blasst_epi_wg = 0  # aliased to WG0 side
                     phase ^= 1  # advance from this iter's K@s1 phase
                     # to the V@o0 phase the s0 wait needs.
                     break
@@ -874,6 +947,7 @@ def fa4_mma[
                     phase,
                     c_scale,
                     vkm,
+                    blasst_epi_wg,
                 )
         else:
             comptime if config.use_ws:
@@ -888,6 +962,7 @@ def fa4_mma[
                     consumer_s1,
                     phase,
                     c_scale,
+                    blasst_epi_wg,
                 )
         _commit(pipeline_o1.producer_mbar())
         _commit(kv_pipeline.consumer_mbar(v_prev_idx))  # V_last_d0
@@ -1043,6 +1118,9 @@ def fa4_mma[
 
         var c_scale: UInt32 = 0
 
+        # BLASST: see the fused-mode `blasst_epi_wg` above -- same 1Q tail flip.
+        var blasst_epi_wg: UInt32 = 1
+
         # vo_prev_idx tracks the held V_o slot index in 1Q (needed
         # by the deferred consumer_release_at). Declared at outer
         # scope so it's visible across the 1Q comptime-if blocks
@@ -1087,22 +1165,7 @@ def fa4_mma[
             _commit(pipeline_s0.producer_mbar())
 
             # O_1 + P_1 @ V_{n-1} (2Q) / O_o + P_o @ V_o[n-1] (1Q).
-            # V-smem tile outer; P-tmem stage inner.
-            comptime for v_stage in range(num_d_tiles):
-                comptime for p_stage in range(num_pv_stages):
-                    comptime if v_stage == 0:
-                        _ = consumer_s1[p_stage].wait(phase)
-                        UMMA1Type.mma[stage_idx=p_stage](
-                            s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
-                        )
-                    else:
-                        UMMA1Type.mma[stage_idx=p_stage](
-                            s1_tmem,
-                            vlatest + UInt32(v_stage * v_region_bytes),
-                            o1_tmem + UInt32(v_stage * depth_tile),
-                            elect=e,
-                            c_scale=c_scale,
-                        )
+            _pv_full(s1_tmem, vlatest, o1_tmem, consumer_s1, phase, c_scale, 1)
             _commit(pipeline_o1.producer_mbar())
             c_scale = 1
             # Release V_{n-1} (2Q at current state) / V_o[n-1] (1Q at
@@ -1131,6 +1194,7 @@ def fa4_mma[
                     o1_tmem = o0_tmem
                     consumer_s1 = consumer_s0
                     pipeline_o1 = pipeline_o0
+                    blasst_epi_wg = 0  # aliased to WG0 side
                     phase ^= 1
                     break
                 iter_count -= 1
@@ -1197,8 +1261,23 @@ def fa4_mma[
                 UInt32(UMMA1Type.MMA_K),
             )
             _pv_partial(
-                s1_tmem, vlatest, o1_tmem, consumer_s1, phase, c_scale, vkm
+                s1_tmem,
+                vlatest,
+                o1_tmem,
+                consumer_s1,
+                phase,
+                c_scale,
+                vkm,
+                blasst_epi_wg,
             )
         else:
-            _pv_full(s1_tmem, vlatest, o1_tmem, consumer_s1, phase, c_scale)
+            _pv_full(
+                s1_tmem,
+                vlatest,
+                o1_tmem,
+                consumer_s1,
+                phase,
+                c_scale,
+                blasst_epi_wg,
+            )
         _commit(pipeline_o1.producer_mbar())

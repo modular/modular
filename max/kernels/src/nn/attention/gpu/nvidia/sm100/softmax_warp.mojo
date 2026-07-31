@@ -16,9 +16,10 @@ from std.math import exp2, recip, align_up
 from std.math.constants import log2e
 from std.memory import bitcast
 from std.utils.numerics import min_or_neg_inf
-from std.sys import size_of, get_defined_int
+from std.sys import size_of, get_defined_int, get_defined_bool
 from std.sys.info import _accelerator_arch
 import std.gpu.primitives.warp as warp
+from std.gpu import block_idx
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.sync import (
@@ -50,6 +51,7 @@ from nn.attention.gpu.nvidia.sm100.attention import (
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     add_ftz,
     apply_mask,
+    blasst_vote_unanimous,
     combine_pack_o_row,
     elect,
     exp2_emulation,
@@ -2366,6 +2368,21 @@ def fa4_softmax[
     ) if size_of[qkv_type]() >= 2 else Scalar[accum_dtype](-2)
     comptime p_fp8_bias: Scalar[accum_dtype] = 8 + rescale_threshold
 
+    # BLASST (arXiv 2512.12087): a block is a skip candidate iff all 32 lanes
+    # agree its tile-local max sits `blasst_log_threshold` below the true
+    # running max `m_true`. `and not config.use_ws`: main's `_pv_ws` P@V path
+    # has no BLASST analog, so stripping would drop P while the MMA still ran
+    # P@V (wrong O).
+    comptime ENABLE_BLASST = get_defined_bool[
+        "ENABLE_BLASST", False
+    ]() and not config.use_ws
+    # Negative log2-domain threshold; the compiler rejects negative int
+    # defines, so it's passed as a positive milli-unit magnitude via
+    # -D BLASST_LOG_THRESHOLD_MAG and negated here.
+    comptime blasst_log_threshold: Scalar[accum_dtype] = -Float32(
+        get_defined_int["BLASST_LOG_THRESHOLD_MAG", 1_000_000_000]()
+    ) * Float32(0.001)
+
     @parameter
     @always_inline
     def mask_row[
@@ -2558,6 +2575,18 @@ def fa4_softmax[
         return maximum(
             load_mask_max_impl[mask_strategy=mask_strategy](kv_row), old_max
         )
+
+    # Same wait+fence+load as `load_mask_max`, but returns the pure tile-local
+    # max (no `old_max` fusion) so one reduction feeds both the running max
+    # and the BLASST vote.
+    @parameter
+    @always_inline
+    def load_mask_tile_max[
+        mask_strategy: MaskStrategy
+    ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
+        pipeline_s.wait()
+        tcgen05_fence_after()
+        return load_mask_max_impl[mask_strategy=mask_strategy](kv_row)
 
     @parameter
     @always_inline
@@ -2807,6 +2836,29 @@ def fa4_softmax[
             acc2 = add_ftz(acc2, s_load[i + 2]())
             acc3 = add_ftz(acc3, s_load[i + 3]())
         return add_ftz(add_ftz(acc0, acc1), add_ftz(acc2, acc3))
+
+    # Stripped sibling of store_exp for a WG-unanimous skip: no exp2/P-store/
+    # row-sum, but reproduces every barrier arrival so the MMA and correction
+    # warps stay in lockstep.
+    @parameter
+    @always_inline
+    def store_exp_skip():
+        # Match store_exp's tail ordering (no P store to fence, but keep the
+        # same tcgen05 wait/fence discipline before releasing S-consumer).
+        tcgen05_store_wait()
+        tcgen05_fence_before()
+        comptime if config.pair_cta:
+            comptime for pv_stage in range(config.num_pv_stages):
+                umma_arrive_leader_cta(pipeline_s.consumer_mbar[pv_stage]())
+            pipeline_s.step()
+        else:
+            comptime for pv_stage in range(config.num_pv_stages - 1):
+                pipeline_s.release_no_step[pv_stage]()
+            pipeline_s.release[config.num_pv_stages - 1]()
+        comptime if EnableForcedOrdering:
+            _ = order_s_arrive.unsafe_value()[].arrive()
+            order_phase ^= 1
+        pipeline_c.acquire()
 
     var kv_row: UInt32 = mask.start_column[BM_mask, BN, page_size](
         seq_info.prompt_idx, score_row
@@ -3191,6 +3243,45 @@ def fa4_softmax[
         else:
             return mul_ftz(m, neg_scale_log2e)
 
+    # TRUE per-lane running max, distinct from the lazy/stale `row_max`;
+    # orthogonal to the #92318 scaled-domain carry (raw units).
+    var m_true: Float32 = row_max
+
+    # Vote-ALL (not vote-ANY): skipping needs every lane's agreement, since
+    # P@V is monolithic over the WG and one dissenting row's contribution
+    # would be lost. Published to smem keyed by (wg, S-consumer phase) --
+    # double-buffered since softmax can run one block ahead of the MMA's
+    # P@V read; the peel's zero-inited region reads as "don't skip".
+    var blasst_vote = smem.blasst_vote_smem()
+    var blasst_warp_in_wg: UInt32 = warp_idx & UInt32(3)
+    var blasst_lane0: Bool = (tid % UInt32(32)) == UInt32(0)
+
+    @parameter
+    @always_inline
+    def blasst_observe(tile_max: Float32) -> Bool:
+        m_true = max_ftz(m_true, tile_max)
+        var diff_true = sub_ftz(tile_max, m_true)
+        comptime if use_fma:
+            diff_true = mul_ftz(diff_true, scale_log2e)
+        var would_skip = _vote_nvidia_helper(
+            diff_true < blasst_log_threshold
+        ) == UInt32(0xFFFFFFFF)
+        # `pipeline_s.state.phase()` is the S-consumer generation of the block
+        # softmax is currently producing (store_exp steps it AFTER this).
+        var vote_phase: UInt32 = pipeline_s.state.phase()
+        var vote_base: UInt32 = (
+            warp_group_idx * UInt32(2) + vote_phase
+        ) * UInt32(4)
+        if blasst_lane0:
+            blasst_vote[vote_base + blasst_warp_in_wg] = UInt8(
+                1
+            ) if would_skip else UInt8(0)
+        # Strip only on the WG-unanimous vote (P@V is monolithic over the WG;
+        # one warp skipping while a sibling keeps would multiply stale P).
+        # Barrier id = warp_group_idx so the two WGs never cross-sync.
+        named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
+        return blasst_vote_unanimous(blasst_vote, warp_group_idx, vote_phase)
+
     var row_sum: f32x2
     comptime if use_fma:
         neg_max_scaled = neg_scaled_max(row_max)
@@ -3277,12 +3368,110 @@ def fa4_softmax[
                 kv_row += UInt32(kv_row_stride)
                 # calculate rowmax
                 old_max = row_max
-                var new_row_max: Float32 = load_mask_max[mask_strategy](
-                    kv_row, old_max
-                )
+                var new_row_max: Float32
+                # WG-unanimous skip decision (comptime-False -> byte-identical
+                # OFF).
+                var blasst_wg_skip: Bool = False
+                comptime if ENABLE_BLASST:
+                    # One reduction feeds both: pure `tile_max` for the vote
+                    # (folding old_max in would suppress the skips BLASST
+                    # targets), and `new_row_max` via max_ftz (bitwise-identical
+                    # to the init-fused form, fewer instructions).
+                    var tile_max = maximum(
+                        load_mask_tile_max[mask_strategy](kv_row)
+                    )
+                    new_row_max = max_ftz(tile_max, old_max)
+                    blasst_wg_skip = blasst_observe(tile_max)
+                else:
+                    new_row_max = load_mask_max[mask_strategy](kv_row, old_max)
 
-                # Loop-body scoped so `nms_new` reaches the gate's adoption
-                # below (dead `0.0` for non-fma; DCE'd).
+                if not blasst_wg_skip:
+                    # Loop-body scoped so `nms_new` reaches the gate's adoption
+                    # below (dead `0.0` for non-fma; DCE'd).
+                    var nms_new: Float32 = 0.0
+                    comptime if use_fma:
+                        # scaled-domain carry: one FMUL (nms_new) feeds both
+                        # the correction diff and store_exp's bias.
+                        nms_new = neg_scaled_max(new_row_max)
+                        diff = sub_ftz(nms_new, neg_max_scaled)
+                    else:
+                        diff = sub_ftz(old_max, new_row_max)
+                    var correction: Float32
+
+                    comptime if rescale_threshold < 0:
+                        # old_max - new_row_max < -8
+                        # 8 < new_row_max - old_max
+                        if _vote_nvidia_helper(diff < rescale_threshold) != 0:
+                            row_max = new_row_max
+                            comptime if use_fma:
+                                neg_max_scaled = nms_new
+                            correction = exp2(diff)
+                        else:
+                            correction = 1
+                    else:
+                        row_max = new_row_max
+                        comptime if use_fma:
+                            neg_max_scaled = nms_new
+                        correction = exp2(diff)
+                    correction_smem[] = correction
+                    pipeline_c.commit()
+                    # update s->p
+                    comptime if use_fma:
+                        local_rowsum = store_exp(neg_max_scaled)
+                    else:
+                        local_rowsum = store_exp(row_max)
+                    row_sum = fma_ftz(row_sum, f32x2(correction), local_rowsum)
+                else:
+                    # Stripped: no exp2/P-store/row-sum; identity correction
+                    # leaves prior-block O untouched.
+                    correction_smem[] = 1.0
+                    pipeline_c.commit()
+                    store_exp_skip()
+                o_phase ^= 1
+    else:
+        while True:
+            kv_row += UInt32(kv_row_stride)
+            if kv_row >= num_keys:
+                break
+            cur_mask_status = mask.status(
+                seq_info.prompt_idx,
+                Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
+                Index[dtype=DType.int32](BM_mask, BN),
+            )
+            if cur_mask_status == TileMaskStatus.FULL_MASK:
+                continue
+            # calculate rowmax
+            old_max = row_max
+            var new_row_max: Scalar[accum_dtype]
+            # WG-unanimous skip decision (comptime-False -> byte-identical OFF).
+            var blasst_wg_skip: Bool = False
+            comptime if ENABLE_BLASST:
+                # See the main-loop note above: one reduction feeds both the
+                # pure tile_max (vote) and new_row_max (max_ftz fold).
+                var tile_max: Float32
+                if cur_mask_status == TileMaskStatus.PARTIAL_MASK:
+                    tile_max = maximum(
+                        load_mask_tile_max[
+                            MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS
+                        ](kv_row)
+                    )
+                else:
+                    tile_max = maximum(
+                        load_mask_tile_max[MaskStrategy.OUT_OF_BOUNDS](kv_row)
+                    )
+                new_row_max = max_ftz(tile_max, old_max)
+                blasst_wg_skip = blasst_observe(tile_max)
+            else:
+                if cur_mask_status == TileMaskStatus.PARTIAL_MASK:
+                    new_row_max = load_mask_max[
+                        MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS
+                    ](kv_row, old_max)
+                else:
+                    new_row_max = load_mask_max[MaskStrategy.OUT_OF_BOUNDS](
+                        kv_row, old_max
+                    )
+
+            if not blasst_wg_skip:
                 var nms_new: Float32 = 0.0
                 comptime if use_fma:
                     # scaled-domain carry: one FMUL (nms_new) feeds both the
@@ -3316,65 +3505,13 @@ def fa4_softmax[
                 else:
                     local_rowsum = store_exp(row_max)
                 row_sum = fma_ftz(row_sum, f32x2(correction), local_rowsum)
-                o_phase ^= 1
-    else:
-        while True:
-            kv_row += UInt32(kv_row_stride)
-            if kv_row >= num_keys:
-                break
-            cur_mask_status = mask.status(
-                seq_info.prompt_idx,
-                Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
-                Index[dtype=DType.int32](BM_mask, BN),
-            )
-            if cur_mask_status == TileMaskStatus.FULL_MASK:
-                continue
-            # calculate rowmax
-            old_max = row_max
-            var new_row_max: Scalar[accum_dtype]
-            if cur_mask_status == TileMaskStatus.PARTIAL_MASK:
-                new_row_max = load_mask_max[
-                    MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS
-                ](kv_row, old_max)
             else:
-                new_row_max = load_mask_max[MaskStrategy.OUT_OF_BOUNDS](
-                    kv_row, old_max
-                )
-
-            var nms_new: Float32 = 0.0
-            comptime if use_fma:
-                # scaled-domain carry: one FMUL (nms_new) feeds both the
-                # correction diff and store_exp's bias (see pre-loop note).
-                nms_new = neg_scaled_max(new_row_max)
-                diff = sub_ftz(nms_new, neg_max_scaled)
-            else:
-                diff = sub_ftz(old_max, new_row_max)
-            var correction: Float32
-
-            comptime if rescale_threshold < 0:
-                # old_max - new_row_max < -8
-                # 8 < new_row_max - old_max
-                if _vote_nvidia_helper(diff < rescale_threshold) != 0:
-                    row_max = new_row_max
-                    comptime if use_fma:
-                        neg_max_scaled = nms_new
-                    correction = exp2(diff)
-                else:
-                    correction = 1
-            else:
-                row_max = new_row_max
-                comptime if use_fma:
-                    neg_max_scaled = nms_new
-                correction = exp2(diff)
-            correction_smem[] = correction
-            pipeline_c.commit()
-            # update s->p
-            comptime if use_fma:
-                local_rowsum = store_exp(neg_max_scaled)
-            else:
-                local_rowsum = store_exp(row_max)
-            row_sum = fma_ftz(row_sum, f32x2(correction), local_rowsum)
+                # Stripped (see main-loop note): no exp2/P-store/row-sum.
+                correction_smem[] = 1.0
+                pipeline_c.commit()
+                store_exp_skip()
             o_phase ^= 1
+
     # Do the final correction and write.
     comptime assert size_of[output_type]() >= size_of[qkv_type]()
 

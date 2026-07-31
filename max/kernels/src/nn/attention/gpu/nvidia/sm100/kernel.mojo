@@ -484,6 +484,14 @@ struct SM100MHA2Q[
             if warp_idx == 0:
                 # Initialize all barriers (S/C/order/Q1Sync/K/V/O) in one call
                 misc_mbars.init(lane_idx=Int32(thread_idx.x))
+                # BLASST: zero the skip-vote region ("don't skip") before it's
+                # published CTA-wide; the peel writes no vote, so this makes the
+                # peel's P@V never skip.
+                comptime if Self.SmemType.blasst_vote_slots > 0:
+                    var blasst_vote = smem.blasst_vote_smem()
+                    var blasst_lane = UInt32(thread_idx.x)
+                    if blasst_lane < UInt32(Self.SmemType.blasst_vote_slots):
+                        blasst_vote[blasst_lane] = UInt8(0)
             else:  # warp_idx == 1
                 tcgen05_alloc[Int32(Self.cta_group)](
                     smem.tmem_addr_ptr(),

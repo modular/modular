@@ -61,7 +61,7 @@ in TMEM throughout the combine.
 """
 
 from std.memory import UnsafePointer
-from std.sys import size_of
+from std.sys import size_of, get_defined_bool
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.memory import AddressSpace, external_memory
 from layout.tma_async import SharedMemBarrier
@@ -261,6 +261,17 @@ struct SM100AttentionSMem[
         Self.mbar_byte_offset + Self.mbar_bytes
     )
 
+    # BLASST (arXiv 2512.12087) per-warp skip-vote region, placed after
+    # tmem_addr so it's 0 bytes (byte-identical layout) when off. Slot =
+    # (wg*2+phase)*4+warp_in_wg; double-buffered on phase since softmax can run
+    # one block ahead of the MMA's P@V consumption.
+    comptime _enable_blasst: Bool = get_defined_bool["ENABLE_BLASST", False]()
+    comptime blasst_vote_slots: Int = 2 * 2 * 4 if Self._enable_blasst else 0
+    comptime blasst_vote_byte_offset: Int = (
+        Self.tmem_addr_byte_offset + size_of[UInt32]()
+    )
+    comptime blasst_vote_bytes: Int = Self.blasst_vote_slots * size_of[UInt8]()
+
     # ---- element-count offsets (for compatibility with existing callers) ------
 
     # Q offset in elements of qkv_dtype.
@@ -384,8 +395,21 @@ struct SM100AttentionSMem[
         """Pointer to the single UInt32 storing the TMEM address."""
         return (self.base + Self.tmem_addr_byte_offset).bitcast[UInt32]()
 
+    @always_inline
+    def blasst_vote_smem(self) -> SharedMemPointer[UInt8]:
+        """Base of the BLASST per-warp skip-vote region (0-sized when off).
+
+        Slot `(wg*2 + phase)*4 + warp_in_wg` holds softmax warp `warp_in_wg`'s
+        skip vote for warp group `wg` at S-consumer phase `phase`.
+        """
+        return (self.base + Self.blasst_vote_byte_offset).bitcast[UInt8]()
+
     @staticmethod
     @always_inline
     def smem_size() -> Int:
         """Total dynamic shared memory bytes required."""
-        return Self.tmem_addr_byte_offset + size_of[UInt32]()
+        return (
+            Self.tmem_addr_byte_offset
+            + size_of[UInt32]()
+            + Self.blasst_vote_bytes
+        )
