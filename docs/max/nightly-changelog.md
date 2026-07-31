@@ -833,6 +833,8 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed a custom op with a data-dependent output dimension killing the process
+  when its kernel registers no shape function. It now reports a compile error.
 - Fixed KV-cache CLI flags replacing the entire `kv_cache` section of a
   `--config-file` recipe instead of overriding just the named setting. For
   example, passing `--kv-connector-config` alongside a recipe that sets
