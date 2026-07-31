@@ -676,6 +676,11 @@ This version is still a work in progress.
 - Added `max.graph.KernelLibrary.has_shape_function`, which reports whether
   a kernel in a loaded library registered a shape function.
 
+- The eager interpreter's last three Mojo-bound ops (`transpose`,
+  `broadcast_to`, mutable `store_slice`) now run through graph-compiler
+  models; no Mojo sources ship, removing the multi-minute first-import JIT
+  compile from wheel installs.
+
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
   machine's devices and drops a stamp. A later lazy eager process on the same

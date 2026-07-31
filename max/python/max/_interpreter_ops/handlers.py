@@ -24,7 +24,6 @@ from collections.abc import Callable, Sequence
 from math import prod
 from typing import Any, Protocol, cast
 
-import max._interpreter_ops as ops
 import numpy as np
 from max import _core, graph
 from max._core.dialects import builtin, kgen, mo, mosh
@@ -32,6 +31,7 @@ from max._interpreter_ops import (
     band_part_gc,
     cast_gc,
     conv_gc,
+    data_movement_gc,
     elementwise_binary_gc,
     gather_gc,
     gc_compile,
@@ -327,13 +327,15 @@ def _handle_mutable_store(
 def _handle_mutable_store_slice(
     op: mo.MutableStoreSliceOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer | None]:
-    """Handle mo.mutable.store.slice via MOGG's MutableStoreSlice kernel.
+    """Handle mo.mutable.store.slice via a graph-compiler model.
 
     Operand order: ``(in_buffer, slice, start, stop, step, in_chain)``;
     result is ``out_chain``. Numpy slice semantics apply to start/stop/step.
+    The op has no tensor outputs: ``data_movement_gc.store_slice`` mutates
+    ``in_buffer`` in place.
 
     Args:
-        op: The mutable store slice operation (unused).
+        op: The mutable store slice operation.
         inputs: ``(in_buffer, slice, start, stop, step, in_chain)``.
 
     Returns:
@@ -350,33 +352,12 @@ def _handle_mutable_store_slice(
     assert isinstance(stop_buf, Buffer)
     assert isinstance(step_buf, Buffer)
 
-    # fp4 needs sub-byte addressing the kernel doesn't do yet.
-    dtype = in_buffer.dtype
-    if dtype is DType.float4_e2m1fn:
-        raise NotImplementedError(
-            "mo.mutable.store.slice interpreter handler does not yet "
-            f"support dtype {dtype}"
-        )
-
-    # fp8 isn't in dispatch_dtype; reinterpret as uint8 (same storage size,
-    # pure byte copy).
-    dst = in_buffer
-    src = slice_tensor
-    if dtype.is_float8():
-        dst = in_buffer.view(DType.uint8)
-        src = slice_tensor.view(DType.uint8)
-
-    starts_list = [int(s) for s in start_buf.to_numpy().flatten()]
-    stops_list = [int(s) for s in stop_buf.to_numpy().flatten()]
-    steps_list = [int(s) for s in step_buf.to_numpy().flatten()]
-
-    ops.data_movement_ops.MutableStoreSlice(
-        dst,
-        src,
-        starts_list,
-        stops_list,
-        steps_list,
-        in_buffer.device._device_context_ptr(),
+    data_movement_gc.store_slice(
+        in_buffer,
+        slice_tensor,
+        start_buf.to_numpy().astype(np.int64).flatten(),
+        stop_buf.to_numpy().astype(np.int64).flatten(),
+        step_buf.to_numpy().astype(np.int64).flatten(),
     )
     return [None]
 
@@ -392,7 +373,8 @@ def _handle_transfer(
 
     TransferOp transfers tensor contents between devices (e.g. CPU<->GPU).
     When source and destination devices match and alwaysElideSameDeviceCopy is
-    True, the result aliases the input. When the flag is False, a copy is made.
+    True, the result aliases the input. When the flag is False, a driver copy
+    is made.
 
     Args:
         op: The transfer operation.
@@ -410,18 +392,12 @@ def _handle_transfer(
         if op.always_elide_same_device_copy:
             # Alias: return the input buffer directly (no copy).
             return [input_buffer, None]
-        # Flag is False: copy on the same device via broadcast to same shape.
         output = Buffer(
             shape=input_buffer.shape,
             dtype=input_buffer.dtype,
             device=target_device,
         )
-        ops.data_movement_ops.StaticBroadcastTo(
-            output,
-            input_buffer,
-            list(input_buffer.shape),
-            target_device._device_context_ptr(),
-        )
+        output.inplace_copy_from(input_buffer)
         return [output, None]
 
     # Cross-device transfer
@@ -565,7 +541,7 @@ def _handle_rebind(
 def _handle_static_broadcast_to(
     op: mo.StaticBroadcastToOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.static.broadcast_to using Mojo kernel.
+    """Handle mo.static.broadcast_to via a data_movement_gc model.
 
     Args:
         op: The static broadcast operation.
@@ -588,28 +564,20 @@ def _handle_static_broadcast_to(
         )
     target_shape = graph.Shape(shape).static_dims
 
-    # Allocate output buffer
-    output = Buffer(
-        shape=target_shape,
-        dtype=inputs[0].dtype,
-        device=target_device,
-    )
-
-    # Call Mojo kernel
-    ops.data_movement_ops.StaticBroadcastTo(
-        output, inputs[0], target_shape, target_device._device_context_ptr()
-    )
-
-    return [output]
+    return [
+        data_movement_gc.broadcast_to(
+            inputs[0], list(target_shape), target_device
+        )
+    ]
 
 
 @register_op_handler(mo.BroadcastToOp)
 def _handle_broadcast_to(
     op: mo.BroadcastToOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.broadcast_to using Mojo kernel.
+    """Handle mo.broadcast_to via a data_movement_gc model.
 
-    Supports both CPU and GPU tensors via the StaticBroadcastTo kernel.
+    Supports both CPU and GPU tensors.
 
     Args:
         op: The broadcast operation.
@@ -643,19 +611,11 @@ def _handle_broadcast_to(
             f"Cannot determine broadcast target shape for {op}"
         )
 
-    # Allocate output buffer on target device
-    output = Buffer(
-        shape=target_shape,
-        dtype=inputs[0].dtype,
-        device=target_device,
-    )
-
-    # Call Mojo kernel (supports both CPU and GPU)
-    ops.data_movement_ops.StaticBroadcastTo(
-        output, inputs[0], target_shape, target_device._device_context_ptr()
-    )
-
-    return [output]
+    return [
+        data_movement_gc.broadcast_to(
+            inputs[0], list(target_shape), target_device
+        )
+    ]
 
 
 # Shared shape/stride helpers
@@ -1071,9 +1031,9 @@ def _handle_merge_dim(
 def _handle_transpose(
     op: mo.TransposeOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.transpose using Mojo kernel.
+    """Handle mo.transpose via a data_movement_gc graph-compiler model.
 
-    Supports both CPU and GPU tensors via the Transpose kernel.
+    Supports both CPU and GPU tensors.
 
     Args:
         op: The transpose operation.
@@ -1088,32 +1048,8 @@ def _handle_transpose(
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
 
-    # Read permutation from the second input (int64 constant on CPU)
-    perm = inputs[1].to_numpy().tolist()
-    perm = [int(p) for p in perm]
-
-    # Compute output shape by applying permutation to input shape
-    in_shape = list(inputs[0].shape)
-    out_shape = [in_shape[p] for p in perm]
-
-    # Allocate output buffer on target device
-    output = Buffer(
-        shape=out_shape,
-        dtype=inputs[0].dtype,
-        device=target_device,
-    )
-
-    # Call Mojo kernel (supports both CPU and GPU)
-    ops.data_movement_ops.Transpose(
-        output,
-        inputs[0],
-        perm,
-        in_shape,
-        out_shape,
-        target_device._device_context_ptr(),
-    )
-
-    return [output]
+    perm = [int(p) for p in inputs[1].to_numpy()]
+    return [data_movement_gc.transpose(inputs[0], perm, target_device)]
 
 
 @register_op_handler(mo.SliceOp)

@@ -58,7 +58,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, Module, TensorType, ops
 
-MAX_RANK = 5  # Matches op_utils.MAX_RANK; sweep ranks 1..MAX_RANK.
+MAX_RANK = gc_compile.MAX_RANK  # Sweep ranks 1..MAX_RANK.
 
 _WIDTH_DTYPES = gc_compile.WIDTH_DTYPES
 
