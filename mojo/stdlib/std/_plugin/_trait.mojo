@@ -27,6 +27,8 @@ from std.collections.string.string_slice import (
 )
 from std.utils import StaticTuple
 
+from .selector import Plugin
+
 comptime _ReduceGeneratorPluginHookFnType = (
     def[
         num_reductions: Int,
@@ -49,7 +51,7 @@ comptime _ReduceGeneratorPluginHookFnType = (
 """Plugin-hook signature for `PluginHooks.reduce_generator_fn`; keep in sync with `_reduce_generator`."""
 
 
-trait PluginHooks:
+trait PluginHooks(Plugin):
     """Compile-time hook interface for pluggable stdlib behavior.
 
     Most hooks are `comptime OptionalReg[Callable]` fields; call sites invoke
