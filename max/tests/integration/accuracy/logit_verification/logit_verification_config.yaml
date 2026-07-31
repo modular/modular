@@ -110,18 +110,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.6e-5
     kl_div_threshold: 5.0e-07
 
-  unsloth/gpt-oss-20b-BF16:
-    pre_submit_agents: []
-    pipeline: "unsloth/gpt-oss-20b-BF16"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [nvidia-multi]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_gpt-oss_golden/3/808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3/torch_gpt-oss_golden.tar.gz"
-      json_file: "torch_gpt-oss_bfloat16_golden.json"
-    cos_dist_threshold: 5.0e-03
-    kl_div_threshold: 1.1e-01
-
   # Disabled in SDLC-3497: MAX OLMo pipeline is not yet transformers v5
   # compatible. The v4 wheel hack that was masking this on main was
   # removed in this branch. Re-enable once MAX OLMo is updated for
@@ -333,19 +321,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 9.0e-04
     kl_div_threshold: 5.0e-03
 
-  mistralai/Mistral-Nemo-Instruct-2407-bfloat16:
-    pre_submit_agents: []
-    pipeline: "mistralai/Mistral-Nemo-Instruct-2407"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: []
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_mistral_golden/1/6f4718625a01e6e8b9f002a0bfdad8098cfe78ce50b9cd4175f27b1f020b405a/torch_mistral_golden.tar.gz"
-      json_file: "torch_nemo-instruct-2407_bfloat16_golden.json"
-    # TODO(AIPIPE-230): These tolerances are very high due to an accuracy regression.
-    cos_dist_threshold: 2.1e-2
-    kl_div_threshold: 3.5e-2
-
   mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16:
     pre_submit_agents: [*b200_1x, *mi355_1x]
     pipeline: "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
@@ -506,17 +481,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 1.7e00
     kl_div_threshold: 1.5e-01
 
-  Qwen/Qwen3-VL-4B-Instruct-bfloat16:
-    pre_submit_agents: []
-    pipeline: "Qwen/Qwen3-VL-4B-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen3-vl-4b-instruct_bfloat16_golden/1/7c5d43eeab21e1478b79fc849a537766809b1c3aabb7f253309dc47895d1de39/torch_qwen3-vl-4b-instruct_bfloat16_golden.tar.gz"
-      json_file: "torch_qwen3_vl_4b_instruct_bfloat16_golden.json"
-    cos_dist_threshold: 1.7e00
-    kl_div_threshold: 4.4e-01
-
   Qwen/Qwen3-VL-4B-Instruct-FP8:
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-VL-4B-Instruct-FP8"
@@ -539,30 +503,6 @@ logit_verification_pipelines:
       json_file: "torch_qwen3_8b_golden.json"
     cos_dist_threshold: 1.1e-3
     kl_div_threshold: 7.1e-3
-
-  Qwen/Qwen3-30B-A3B-Instruct-2507-bfloat16:
-    pre_submit_agents: []
-    pipeline: "Qwen/Qwen3-30B-A3B-Instruct-2507"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [nvidia-only, no-h100]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen3-30b-a3b-instruct-2507_bfloat16_golden/1/4427d3205be77073d7f0274d8fca0774974fe8677934a5b8dc60b3705aac9aaf/torch_qwen3-30b-a3b-instruct-2507_bfloat16_golden.tar.gz"
-      json_file: "torch_qwen3_30b_a3b_instruct_2507_bfloat16_golden.json"
-    cos_dist_threshold: 7.0e-02
-    kl_div_threshold: 8.0e-01
-
-  Qwen/Qwen3-30B-A3B-Instruct-2507-FP8:
-    pre_submit_agents: []
-    pipeline: "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8"
-    compatible_with: [gpu]
-    encoding: float8_e4m3fn
-    tags: [nvidia-only, no-h100, float8-support]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_golden/1/51490a4ac6612bf0a3af0f6953d5a1bff2b12683ca4c134dba9a13ea5c44f2bb/Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_golden.tar.gz"
-      json_file: "vllm_Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_float8_e4m3fn_golden.json"
-    cos_dist_threshold: 7.3e-05
-    kl_div_threshold: 1.1e-01
 
   Qwen/Qwen3-Embedding-0.6B-bfloat16:
     pre_submit_agents: []

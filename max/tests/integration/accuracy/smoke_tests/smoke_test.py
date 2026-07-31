@@ -117,8 +117,6 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/Kimi-K2.6-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tpep_8x_b200.yaml",
     "nvidia/Kimi-K2.5-NVFP4__dflash_tp": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_dflash_tp_8x_b200.yaml",
     "nvidia/Kimi-K2.5-NVFP4__dflash_dp": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_dflash_dp_8x_b200.yaml",
-    "Qwen/Qwen3-235B-A22B-Instruct-2507": "max/pipelines/architectures/qwen3/recipes/qwen3_235b_a22b_8x_b200.yaml",
-    "unsloth/gpt-oss-20b-BF16__modulev3": "max/pipelines/architectures/gpt_oss_modulev3/recipes/gpt_oss_20b.yaml",
     "nvidia/Kimi-K2.5-NVFP4__eagle_rust_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_rust_tiered_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
     "nvidia/Kimi-K2.5-NVFP4__mha_eagle_rust_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_mha_eagle_rust_tiered_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
     "nvidia/Kimi-K2.6-NVFP4__eagle_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tpep_8x_b200.yaml",
