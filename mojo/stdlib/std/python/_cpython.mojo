@@ -3569,9 +3569,7 @@ struct CPython(Defaultable, Movable):
         # if this mismatches with the user's Python, then a `RuntimeWarning` is emitted according to the
         # docs.
         comptime module_api_version: c_int = 1013
-        # TODO(MOCO-4435): remove this temporary variable.
-        var def_ptr = Pointer(module_def_ptr)
-        return self._PyModule_Create2(def_ptr, module_api_version)
+        return self._PyModule_Create2(module_def_ptr, module_api_version)
 
     def PyModule_AddFunctions(
         self,

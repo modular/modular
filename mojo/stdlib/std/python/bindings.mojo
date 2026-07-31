@@ -652,8 +652,7 @@ struct PythonTypeBuilder(Copyable):
         if self.methods:
             self.methods.append(PyMethodDef())  # Zeroed item as terminator
             # FIXME: Avoid leaking the methods data pointer in this way.
-            # TODO(MOCO-4435): remove this temporary variable.
-            var methods_ptr = Pointer(
+            var methods_ptr = (
                 self.methods.unsafe_take_allocation().unsafe_leak()
             )
             self._insert_slot(PyType_Slot.tp_methods(methods_ptr))

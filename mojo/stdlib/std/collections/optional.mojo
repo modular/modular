@@ -297,59 +297,6 @@ struct Optional[T: AnyType](
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         Pointer(to=self).unsafe_bitcast[OptionalReg[Self.T]]()[] = optional_reg
 
-    # -------
-    # Special temporary constructors while Pointer unification is happening
-    # -------
-
-    # TODO(MSTDL-2846): Remove this constructor when `_safe` is no longer needed for UnsafePointer.
-    # Allows implicitly converting from Optional[Pointer] -> Optional[UnsafePointer]
-    @implicit
-    @doc_hidden
-    @always_inline("nodebug")
-    def __init__[
-        U: AnyType,
-        origin: Origin,
-        address_space: AddressSpace,
-    ](
-        other: Optional[Pointer[U, origin, address_space=address_space]],
-        out self: Optional[
-            UnsafePointer[U, origin, address_space=address_space]
-        ],
-    ):
-        self = Pointer(to=other).unsafe_bitcast[type_of(self)]()[]
-
-    # TODO(MSTDL-2846): Remove this constructor when `_safe` is no longer needed for UnsafePointer.
-    # Allows implicitly converting from Optional[UnsafePointer] -> Optional[Pointer]
-    @implicit
-    @doc_hidden
-    @always_inline("nodebug")
-    def __init__[
-        U: AnyType,
-        origin: Origin,
-        address_space: AddressSpace,
-    ](
-        other: Optional[UnsafePointer[U, origin, address_space=address_space]],
-        out self: Optional[Pointer[U, origin, address_space=address_space]],
-    ):
-        self = Pointer(to=other).unsafe_bitcast[type_of(self)]()[]
-
-    # TODO(MSTDL-2846): Remove this constructor when `_safe` is no longer needed for UnsafePointer.
-    # Allows `Pointer` -> `Optional[UnsafePointer]`
-    @implicit
-    @doc_hidden
-    @always_inline("nodebug")
-    def __init__(
-        other: Pointer[...],
-        out self: Optional[
-            UnsafePointer[
-                other.T,
-                other.origin,
-                address_space=other.address_space,
-            ]
-        ],
-    ):
-        self = {value = type_of(self).T(other)}
-
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#

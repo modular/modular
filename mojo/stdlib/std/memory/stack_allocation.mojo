@@ -175,14 +175,12 @@ def stack_allocation[
         A data pointer of the given type pointing to the allocated space.
     """
 
-    return UnsafePointer(
-        unsafe_stack_allocation[
-            count,
-            Scalar[dtype],
-            alignment=alignment,
-            address_space=address_space,
-        ]()
-    )
+    return unsafe_stack_allocation[
+        count,
+        Scalar[dtype],
+        alignment=alignment,
+        address_space=address_space,
+    ]()
 
 
 @always_inline
@@ -208,12 +206,10 @@ def stack_allocation[
         A data pointer of the given type pointing to the allocated space.
     """
 
-    return UnsafePointer(
-        unsafe_stack_allocation[
-            count,
-            type,
-            name=name,
-            alignment=alignment,
-            address_space=address_space,
-        ]()
-    )
+    return unsafe_stack_allocation[
+        count,
+        type,
+        name=name,
+        alignment=alignment,
+        address_space=address_space,
+    ]()
