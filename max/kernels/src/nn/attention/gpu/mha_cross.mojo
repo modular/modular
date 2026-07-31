@@ -22,7 +22,7 @@ from std.sys import align_of, simd_width_of
 
 from std.algorithm.functional import vectorize
 from std.gpu import block_idx, global_idx
-from std.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer
 from kv_cache.types import KVCacheT
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_layout import Layout

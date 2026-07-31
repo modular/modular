@@ -26,7 +26,7 @@ from std.gpu import (
     thread_idx,
 )
 import std.gpu.primitives.warp as warp
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
 from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation

@@ -24,7 +24,7 @@ The swapAB version just does it via: (B @ A^T)^T stored transposed = A @ B^T
 from std.math import ceildiv
 from std.sys import align_of
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
 from layout import Coord, CoordLike, TileTensor, row_major

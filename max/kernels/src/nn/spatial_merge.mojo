@@ -13,7 +13,7 @@
 """Implements spatial merge, which compresses vision token grids by merging spatial blocks before attention."""
 
 from std.gpu import block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_layout import Layout
 from std.utils.index import IndexList

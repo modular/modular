@@ -14,7 +14,7 @@
 
 
 from max.algorithm import elementwise
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor
 
 from std.utils.coord import Coord, coord_to_index_list

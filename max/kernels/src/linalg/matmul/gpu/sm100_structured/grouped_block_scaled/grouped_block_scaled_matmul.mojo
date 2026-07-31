@@ -51,7 +51,7 @@ from std.collections import Optional
 from std.math import align_up
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.info import B200
 from layout import TileTensor
 

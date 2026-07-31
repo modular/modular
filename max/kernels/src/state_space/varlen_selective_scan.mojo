@@ -21,7 +21,7 @@ from std.gpu import (
 from layout import TensorLayout, TileTensor
 from std.utils.index import IndexList
 from max.algorithm import sync_parallelize
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 import std.math
 from std.math import exp2
 from nn.activations import silu

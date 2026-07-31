@@ -21,7 +21,7 @@ from std.sys.defines import get_defined_int, is_defined
 
 import std.gpu.host._tracing as gpu_tracing
 import std.logger.logger as logger
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host._tracing import Color
 from std.gpu.host._tracing import _end_range as _end_gpu_range
 from std.gpu.host._tracing import _is_enabled as _gpu_is_enabled

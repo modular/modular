@@ -13,7 +13,7 @@
 """GPU implementation of stencil computation."""
 
 from std.gpu import block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.utils.index import IndexList

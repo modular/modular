@@ -22,7 +22,7 @@ backing memory alive (for example, inside the `OwnedByteBuffer` and
 
 from std.ffi import _CPointer, external_call
 
-from std.gpu.host import DeviceBuffer
+from max.gpu.host import DeviceBuffer
 
 
 # Opaque stand-in for the C++ `AsyncValue` type -- the reference-counted payload

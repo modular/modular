@@ -13,7 +13,7 @@
 """Provides a GPU argmax/argmin kernel that wraps top-k with K=1 for inner-dimension reductions."""
 
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.topk import topk_gpu
 

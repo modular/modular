@@ -30,7 +30,7 @@ from std.sys import (
     has_nvidia_gpu_accelerator,
 )
 
-from std.gpu.host import (
+from max.gpu.host import (
     ConstantMemoryMapping,
     DeviceAttribute,
     DeviceContext,
@@ -514,7 +514,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         compiling it first:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         def kernel():
             print("hello from the GPU")

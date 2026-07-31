@@ -33,7 +33,7 @@ not here -- this routine produces the per-element dequantized weight only.
 """
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from layout import TileTensor, Idx
 from layout.tile_layout import TensorLayout, row_major

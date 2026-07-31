@@ -22,7 +22,7 @@ from std.sys.info import simd_width_of
 
 from max.algorithm import sync_parallelize
 from max.algorithm.functional import _get_num_workers
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math.math import min as _min
 from layout import TileTensor
 

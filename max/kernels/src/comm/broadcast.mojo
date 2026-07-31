@@ -14,7 +14,7 @@
 
 from std.collections import Array
 from std.math import align_down, ceildiv
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     global_idx,

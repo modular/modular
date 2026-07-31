@@ -23,7 +23,7 @@ from max.runtime.tracing import Trace, TraceLevel
 
 from std.utils.numerics import FlushDenormals
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 # ===-----------------------------------------------------------------------===#
 # Parallelize

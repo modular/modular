@@ -17,7 +17,7 @@ from std.math.uutils import udivmod, ufloordiv
 
 from max.algorithm.reduction import _get_nd_indices_from_flat_index
 from std.gpu.primitives.block import broadcast
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -36,7 +36,7 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import warp
 from std.memory import unsafe_stack_allocation
 from std.atomic import Atomic

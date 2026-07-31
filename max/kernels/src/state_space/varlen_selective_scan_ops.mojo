@@ -20,7 +20,7 @@ This module registers operations for variable-length selective scan:
 from std.math import ceildiv
 
 import extensibility
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 
 from extensibility import InputTensor, OutputTensor

@@ -26,7 +26,7 @@ BF16 GMEM round trip).
 
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import UnsafePointer
 from layout import Coord, Idx, TileTensor, row_major

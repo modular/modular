@@ -22,7 +22,7 @@ from max.algorithm import elementwise
 from std._plugin import CurrentPlugin, PluginForTarget
 from std.collections.string.string_slice import get_static_string
 from std.math import ceildiv
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.sys.info import CompilationTarget, _accelerator_arch

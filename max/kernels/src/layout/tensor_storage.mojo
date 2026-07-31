@@ -15,7 +15,7 @@
 
 from std.builtin.device_passable import DevicePassable
 from std.builtin.int import index
-from std.gpu.host import DevicePointer
+from max.gpu.host import DevicePointer
 from std.math import exp
 from std.os import abort
 from std.sys import align_of, simd_width_of, size_of

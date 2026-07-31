@@ -30,7 +30,7 @@ from std.sys import (
 )
 from std.ffi import c_int, c_size_t
 
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceContext,
     DeviceFunction,
     DeviceStream,

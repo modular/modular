@@ -18,7 +18,7 @@ around the target location to compute the interpolated value.
 """
 from std.math import clamp, floor
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.info import is_gpu
 from std.gpu import block_dim, block_idx, thread_idx
 from layout import (

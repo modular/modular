@@ -71,7 +71,7 @@ load is an inline TileTensor access (no special decode to own), matching
 
 from std.collections import Optional
 from std.gpu import WARP_SIZE, global_idx, lane_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 import std.gpu.primitives.warp as warp
 from std.utils import IndexList

@@ -37,7 +37,7 @@ from std.atomic import Atomic
 from std.collections import Array
 
 from std.gpu import WARP_SIZE, barrier, block_idx, grid_dim, thread_idx
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
 from std.gpu.primitives.grid_controls import (
     PDLLevel,

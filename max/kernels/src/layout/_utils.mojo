@@ -15,7 +15,7 @@ from std.collections import Optional
 from std.sys import size_of
 from std.sys.intrinsics import readfirstlane
 
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.gpu.intrinsics import AMDBufferResource
 from max.gpu.compute.mma import mma
 from layout import *

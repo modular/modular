@@ -20,7 +20,7 @@ warp-specialized blockwise FP8 kernel with register-based accumulation.
 from std.math import align_up, ceildiv
 from std.sys import get_defined_bool, size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.info import B200
 from layout import TileTensor
 from structured_kernels.tile_types import create_tma_tile

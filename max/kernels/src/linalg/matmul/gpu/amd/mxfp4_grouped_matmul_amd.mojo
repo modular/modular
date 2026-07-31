@@ -25,7 +25,7 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.info import MI355X
 from std.gpu.memory import CacheOperation
 

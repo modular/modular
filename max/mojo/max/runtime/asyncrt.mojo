@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the low level concurrency library."""
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from std.runtime.asyncrt import parallelism_level as std_parallelism_level
 
@@ -30,7 +30,7 @@ def parallelism_level(ctx: Optional[DeviceContext]) -> Int:
     Returns:
         The parallelism level of the context.
     """
-    from std.gpu.host import DeviceAttribute
+    from max.gpu.host import DeviceAttribute
 
     if ctx:
         try:

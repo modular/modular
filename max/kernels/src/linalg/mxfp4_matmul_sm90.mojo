@@ -16,7 +16,7 @@ Dequantizes MXFP4 weights to FP8, then uses the SM90 warp-specialized FP8 GEMM.
 Activations (BF16) are cast to FP8 on-the-fly.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys.info import _accelerator_arch
 from layout import Coord, Idx, TileTensor, row_major
 

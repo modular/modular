@@ -49,7 +49,7 @@ Mirrors the structure of `nn.conv.gpu.amd.dispatch`.
 """
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys import simd_width_of

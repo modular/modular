@@ -16,7 +16,7 @@
 
 
 from std.math import ceildiv
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives.grid_controls import PDLLevel
 from layout import Coord, Idx, Layout, TileTensor, row_major
 from layout.tile_tensor import NullableTileTensor

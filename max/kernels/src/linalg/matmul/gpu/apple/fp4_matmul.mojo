@@ -47,7 +47,7 @@ tail loop, cast/epilogue store). The dense fp16/bf16/fp32 path is untouched.
 
 from std.collections import Optional
 from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.math import ceildiv
 from std.memory import unsafe_stack_allocation

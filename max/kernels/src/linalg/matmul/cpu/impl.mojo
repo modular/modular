@@ -24,7 +24,7 @@ from std.sys.info import align_of, simd_width_of
 from std.algorithm import tile, vectorize
 
 from max.algorithm import sync_parallelize
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,

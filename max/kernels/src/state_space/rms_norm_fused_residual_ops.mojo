@@ -14,7 +14,7 @@
 
 import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.info import is_gpu
 from extensibility import InputTensor, OutputTensor
 

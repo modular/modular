@@ -54,7 +54,7 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.memory import cp_async_bulk_prefetch
 from std.gpu.primitives.grid_controls import (
     PDLLevel,

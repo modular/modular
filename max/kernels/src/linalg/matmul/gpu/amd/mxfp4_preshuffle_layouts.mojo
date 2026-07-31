@@ -47,7 +47,7 @@ from std.gpu import (
     block_idx,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from std.math import align_up
 from std.math.uutils import udivmod, uceildiv
 from std.memory import bitcast

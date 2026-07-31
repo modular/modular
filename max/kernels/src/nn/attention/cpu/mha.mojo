@@ -23,7 +23,7 @@ from std.sys.info import CompilationTarget
 from std.algorithm import tile, vectorize
 
 from max.algorithm import sync_parallelize
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from max.algorithm.reduction import (
     _simd_max,
     _simd_max_elementwise,

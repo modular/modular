@@ -20,7 +20,7 @@ from std.sys.intrinsics import llvm_intrinsic
 from std.algorithm import tile
 
 from max.algorithm import sync_parallelize
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import LayoutTensor, TileTensor
 from linalg.accumulate import _Accumulator
 from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane

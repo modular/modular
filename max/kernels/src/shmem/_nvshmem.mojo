@@ -24,7 +24,7 @@ from std.ffi import (
 )
 from std.sys.info import CompilationTarget, is_nvidia_gpu
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUmodule, CUstream
 
 from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
