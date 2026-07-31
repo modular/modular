@@ -51,7 +51,7 @@ trait trait_name:
       {
         name: "foo",
         kind: SymbolKind.Function,
-        detail: "def foo(a: Pointer[Float32, MutAnyOrigin, _safe=False]) -> Float32",
+        detail: "def foo(a: Pointer[Float32, MutAnyOrigin]) -> Float32",
         children: [
           { name: "inner_fn", kind: SymbolKind.Function, detail: "def inner_fn()" },
         ],
