@@ -59,7 +59,9 @@ struct MTuple[T: ImplicitlyCopyable & ImplicitlyDeletable](
         if copy._len > 0:
             self._data = alloc[Self.Element]({count = copy._len}).unsafe_leak()
             for i in range(copy._len):
-                (self._data + i).unsafe_write(copy._data[i])
+                self._data.unsafe_offset(i).unsafe_write(
+                    copy._data[unsafe_offset=i]
+                )
         else:
             self._data = UnsafePointer[
                 Self.Element, MutUntrackedOrigin
@@ -67,7 +69,7 @@ struct MTuple[T: ImplicitlyCopyable & ImplicitlyDeletable](
 
     def __del__(deinit self):
         for i in range(self._len):
-            (self._data + i).unsafe_deinit_pointee()
+            self._data.unsafe_offset(i).unsafe_deinit_pointee()
         if self._cap > 0:
             dealloc(
                 ThinAllocation(
@@ -82,7 +84,9 @@ struct MTuple[T: ImplicitlyCopyable & ImplicitlyDeletable](
                 alloc[Self.Element]({count = new_cap}).unsafe_leak()
             )
             for i in range(self._len):
-                (new_data + i).unsafe_write((self._data + i).take_pointee())
+                new_data.unsafe_offset(i).unsafe_write(
+                    self._data.unsafe_offset(i).unsafe_take_pointee()
+                )
             if self._cap > 0:
                 dealloc(
                     ThinAllocation(
@@ -94,34 +98,34 @@ struct MTuple[T: ImplicitlyCopyable & ImplicitlyDeletable](
 
     def _append(mut self, value: Self.Element):
         self._grow_if_needed()
-        (self._data + self._len).unsafe_write(value)
+        self._data.unsafe_offset(self._len).unsafe_write(value)
         self._len += 1
 
     @always_inline
     def cons(self, var other: Self) -> Self:
         var new = self
         for i in range(other._len):
-            new._append(other._data[i])
+            new._append(other._data[unsafe_offset=i])
         return new
 
     @always_inline
     def __add__(self, var other: Self) -> Self:
         var new = Self()
         for i in range(self._len):
-            new._append(self._data[i])
+            new._append(self._data[unsafe_offset=i])
         for i in range(other._len):
-            new._append(other._data[i])
+            new._append(other._data[unsafe_offset=i])
         return new
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("(")
 
         for i in range(self._len):
-            if self._data[i].isa[Int]():
-                var value = self._data[i]
+            if self._data[unsafe_offset=i].isa[Int]():
+                var value = self._data[unsafe_offset=i]
                 writer.write(value[Int])
-            elif self._data[i].isa[MTuple[Self.T]]():
-                var value = self._data[i]
+            elif self._data[unsafe_offset=i].isa[MTuple[Self.T]]():
+                var value = self._data[unsafe_offset=i]
                 writer.write(value[MTuple[Self.T]])
             else:
                 writer.write("?")

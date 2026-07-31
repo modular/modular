@@ -208,7 +208,7 @@ def demo_origin_closure[
     var immut_ptr = ptr.as_imm()
 
     def read() {imm immut_ptr}:
-        print("read only", immut_ptr[0])
+        print("read only", immut_ptr[unsafe_offset=0])
 
     must_be_read_only_with_origin(read, immut_ptr)
 

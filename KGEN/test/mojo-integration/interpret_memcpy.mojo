@@ -20,8 +20,8 @@ def memcpy(
         _type=__mlir_type.`!kgen.scalar<bool>`
     ]():
         llvm_intrinsic["llvm.memcpy", NoneType](
-            dst.bitcast[Byte](),
-            src.bitcast[Byte](),
+            dst.unsafe_bitcast[Byte](),
+            src.unsafe_bitcast[Byte](),
             byte_count.__mlir_index__(),
         )
     else:
@@ -38,30 +38,30 @@ struct Data(ImplicitlyCopyable, Writable):
         self._data = alloc[Int]({count = size}).unsafe_leak()
         self._size = size
         for i in range(size):
-            self._data[i] = 0
+            self._data[unsafe_offset=i] = 0
 
     def __init__(out self, *data: Int):
         var num_elems = len(data)
         self._data = alloc[Int]({count = num_elems}).unsafe_leak()
         self._size = num_elems
         for i in range(num_elems):
-            self._data[i] = data[i]
+            self._data[unsafe_offset=i] = data[i]
 
     def __init__(out self, *, copy: Self):
         self._size = copy._size
         self._data = alloc[Int]({count = self._size}).unsafe_leak()
         for i in range(self._size):
-            self._data[i] = copy._data[i]
+            self._data[unsafe_offset=i] = copy._data[unsafe_offset=i]
 
     def write_to(self, mut writer: Some[Writer]):
         for i in range(self._size):
-            t"data[{i}] = {self._data[i]}\n".write_to(writer)
+            t"data[{i}] = {self._data[unsafe_offset=i]}\n".write_to(writer)
 
     def __add__(self, rhs: Self) -> Self:
         var size = self._size + rhs._size
         var result = Self(size=size)
         memcpy(result._data, self._data, self._size)
-        memcpy(result._data + self._size, rhs._data, rhs._size)
+        memcpy(result._data.unsafe_offset(self._size), rhs._data, rhs._size)
         return result
 
     def __del__(deinit self):

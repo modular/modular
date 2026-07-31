@@ -43,11 +43,11 @@ struct MyList(ImplicitlyCopyable):
     var size: Int
 
     def __setitem__(mut self, idx: Int, val: Int):
-        var ptr = self.start + idx
+        var ptr = self.start.unsafe_offset(idx)
         ptr[] = val
 
     def __getitem__(mut self, idx: Int) -> Int:
-        var ptr = self.start + idx
+        var ptr = self.start.unsafe_offset(idx)
         return ptr[]
 
     def __iter__(mut self) -> my_iter:

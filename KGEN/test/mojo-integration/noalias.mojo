@@ -26,7 +26,7 @@ def noalias(
     a0: UnsafePointer[Float32, ImmUnsafeAnyOrigin],
     b: UnsafePointer[Float32, MutAnyOrigin],
 ) abi("Mojo") -> Float32:
-    a = a0.as_noalias_ptr()
+    a = a0.unsafe_as_noalias()
 
     # CHECK: store
     b[] += a[] * b[]

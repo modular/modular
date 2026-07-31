@@ -237,7 +237,7 @@ def test_array_alignment() raises:
 
     # Stride is size_of[CacheAligned]() = 8 (just one Int), not 64
     # This is expected - @align doesn't pad struct size
-    var stride = Int(arr + 1) - Int(arr)
+    var stride = Int(arr.unsafe_offset(1)) - Int(arr)
     assert_equal(stride, 8)
 
     dealloc(arr_alloc^)
