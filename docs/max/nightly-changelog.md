@@ -663,6 +663,9 @@ This version is still a work in progress.
 - `random.uniform`'s samples depend on the kernel's SIMD grouping, so an eager
   graph can draw different values than a compiled one from the same seed.
 
+- Added `max.graph.KernelLibrary.has_shape_function`, which reports whether
+  a kernel in a loaded library registered a shape function.
+
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
   machine's devices and drops a stamp. A later lazy eager process on the same
