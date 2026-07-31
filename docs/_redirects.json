@@ -50,6 +50,16 @@
     "status": 302
   },
   {
+    "source": "/max/graph/(.*)",
+    "dest": "/develop/{0}",
+    "status": 302
+  },
+  {
+    "source": "/graph/(.*)",
+    "dest": "/develop/{0}",
+    "status": 302
+  },
+  {
     "source": "/max/api/kernels/(.*)",
     "dest": "/api/mojo/{0}",
     "status": 302
