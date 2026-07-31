@@ -1592,6 +1592,44 @@ CValue IREmitter::emitConstructorCall(ASTType type,
     return {};
   }
 
+  // Fast path for Bool(mlir_value: <scalar_bool>): build the struct attribute
+  // directly, avoiding emitConstructorCall → OverloadSet::lookup("__init__",
+  // Bool) → lookupAndResolveDecl → resolveBody(Bool).  resolveBody(Bool) can
+  // trigger Bool.__init__(value: Scalar[DType.bool]), which needs
+  // Scalar[DType.bool] → Scalar, causing a circular dependency when Scalar is
+  // already in declsCurrentlyProcessing (e.g. while evaluating SIMD's
+  // DevicePassable 'where' clause that uses dtype != DType.int).
+  //
+  // Detect: target type is Bool, single keyword arg `mlir_value`, value is a
+  // scalar<bool> attribute.
+  {
+    auto boolType = shared.lookupBuiltinType("Bool", declScope,
+                                             callOperands.getExpr()->getLoc());
+    if (type.isEqualCanon(boolType) && callOperands.size() == 1) {
+      auto &operand = callOperands[0];
+      auto mlirValueName = StringAttr::get(getContext(), "mlir_value");
+      if (operand.keyword == mlirValueName) {
+        if (PValue pval = operand.ir.getIfPValue()) {
+          if (auto simdAttr = dyn_cast<SIMDAttr>(pval.get())) {
+            if (isScalarOf<KGENDType::kBool>(simdAttr.getType())) {
+              if (auto boolStructType =
+                      sugarDynCast<LIT::StructType>(boolType.mlirType)) {
+                auto fieldName = StringAttr::get(getContext(), "_mlir_value");
+                std::tuple<StringAttr, TypedAttr> field{fieldName,
+                                                        (TypedAttr)simdAttr};
+                if (TypedAttr boolStructAttr =
+                        LITStructAttr::get({field}, boolStructType))
+                  return emitRValue({AnyValue(PValue(boolStructAttr)),
+                                     callOperands.getExpr()},
+                                    callOperands.dest);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Check to see if we can invoke an __init__ method to convert it.
   const ExprNode *expr = callOperands.getExpr();
   type = getConstructorLookupType(type, getDeclScope());

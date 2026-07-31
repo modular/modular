@@ -1402,8 +1402,35 @@ RValue IREmitter::emitScalarBool(ASTExprAnd<CValue> value,
   // Also, an object that doesn’t define a __bool__() method and whose __len__()
   // method returns zero is considered to be false in a Boolean context.
 
-  // Check for the presence of a __mlir_i1__ method.  If it exists, we can avoid
-  // a redundant call to __bool__ for Bool types.
+  // For stdlib Bool: handle it before the typeHasMember / extractStructField
+  // paths.  Both of those call lookupAndResolveDecl → resolveBody(Bool), which
+  // can trigger a circular dependency when evaluating a struct-conformance
+  // ‘where’ clause that involves Scalar (e.g. SIMD’s DevicePassable where
+  // clause): resolveBody(Bool) processes Bool.__del__is_trivial (= True),
+  // which resolves ALL Bool.__init__ overloads, including
+  // Bool.__init__(value: Scalar[DType.bool]). That resolution needs
+  // Scalar[DType.bool] → Scalar, which is already in declsCurrentlyProcessing.
+  //
+  // By handling Bool up front, we extract _mlir_value from the PValue
+  // attribute directly — zero resolution required.
+  ASTType boolType =
+      shared.lookupBuiltinType("Bool", declScope, value.expr->getLoc());
+  if (value.ir.getRValueType().isEqualCanon(boolType)) {
+    if (PValue pvalue = value.ir.getIfPValue()) {
+      if (auto structAttr = dyn_cast<LITStructAttr>(pvalue.get())) {
+        auto mlirValueName = StringAttr::get(getContext(), "_mlir_value");
+        for (auto &[name, val] : structAttr.getValues())
+          if (name == mlirValueName)
+            return emitRValue({PValue(val), value.expr}, context);
+      }
+      if (auto extractVal = ASTType::extractStructField(
+              pvalue.get(), "_mlir_value", value.expr->getLoc(), shared))
+        return emitRValue({PValue(extractVal), value.expr}, context);
+    }
+  }
+
+  // Check for the presence of a __mlir_bool__ method.  If it exists, we can
+  // avoid a redundant call to __bool__ for Bool types.
   if (!shared.typeHasMember(valueRValueType, "__mlir_bool__",
                             value.expr->getLoc())) {
     // Use the __bool__ method to convert the user defined type to
@@ -1415,13 +1442,16 @@ RValue IREmitter::emitScalarBool(ASTExprAnd<CValue> value,
                                                      {{value.ir, value.expr}}});
   }
 
-  // For stdlib Bool, directly extract the _mlir_value field instead of calling
-  // __mlir_bool__. This avoids unnecessary sugar wrapping that would show up in
-  // diagnostics.
-  ASTType boolType =
-      shared.lookupBuiltinType("Bool", declScope, value.expr->getLoc());
+  // Re-check after potential __bool__ conversion: if it’s now a Bool value,
+  // extract _mlir_value directly.
   if (value.ir.getRValueType().isEqualCanon(boolType)) {
     if (PValue pvalue = value.ir.getIfPValue()) {
+      if (auto structAttr = dyn_cast<LITStructAttr>(pvalue.get())) {
+        auto mlirValueName = StringAttr::get(getContext(), "_mlir_value");
+        for (auto &[name, val] : structAttr.getValues())
+          if (name == mlirValueName)
+            return emitRValue({PValue(val), value.expr}, context);
+      }
       if (auto extractVal = ASTType::extractStructField(
               pvalue.get(), "_mlir_value", value.expr->getLoc(), shared))
         return emitRValue({PValue(extractVal), value.expr}, context);
@@ -1479,6 +1509,31 @@ CValue IREmitter::emitIndex(const ExprNode *expr, ExprContext context) {
 CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ExprDest &dest) {
   ASTType boolType =
       shared.lookupBuiltinType("Bool", declScope, value.expr->getLoc());
+
+  // Fast path for scalar bool SIMD attributes (e.g. from True/False literals
+  // or `@always_inline("builtin")` comparisons): build the Bool struct
+  // attribute directly rather than going through emitConstructorCall →
+  // OverloadSet::lookup("__init__", Bool) → lookupAndResolveDecl →
+  // resolveBody(Bool).  resolveBody(Bool) triggers Bool.__del__is_trivial
+  // (= True), which resolves ALL Bool.__init__ overloads including
+  // Bool.__init__(value: Scalar[DType.bool]). That in turn needs
+  // Scalar[DType.bool] → Scalar, causing a circular dependency when Scalar is
+  // already in declsCurrentlyProcessing (e.g. while evaluating SIMD's
+  // DevicePassable 'where' clause).
+  if (auto simdAttr = dyn_cast<SIMDAttr>(value.ir.get())) {
+    if (isScalarOf<KGENDType::kBool>(simdAttr.getType())) {
+      if (auto boolStructType =
+              sugarDynCast<LIT::StructType>(boolType.mlirType)) {
+        auto mlirValueFieldName = StringAttr::get(getContext(), "_mlir_value");
+        std::tuple<StringAttr, TypedAttr> field{mlirValueFieldName,
+                                                (TypedAttr)simdAttr};
+        if (TypedAttr boolStructAttr =
+                LITStructAttr::get({field}, boolStructType))
+          return emitRValue({AnyValue(PValue(boolStructAttr)), value.expr},
+                            dest);
+      }
+    }
+  }
 
   CallOperands operands(CallSyntax::kImplicitConvert, value.expr,
                         std::move(dest), {value});
