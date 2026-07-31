@@ -642,6 +642,9 @@ TraitType TraitType::canonicalizeAndGet(MLIRContext *context,
   bool hasAnyNonTrivialConstraint = false;
 
   for (auto [symbol, constraint] : llvm::zip(symbols, constraints)) {
+    // Skip slots with false constraints - they are never satisfiable.
+    if (isTriviallyFalseConstraint(constraint))
+      continue;
 
     canonSymbols.push_back(symbol);
 

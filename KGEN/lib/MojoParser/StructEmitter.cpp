@@ -720,7 +720,8 @@ FnOp StructEmitter::synthesizeEmptyDtor(ConstraintAttr conformanceConstraint) {
   StringAttr selfName = builder.getStringAttr("self");
 
   SmallVector<ConstraintAttr> constraints;
-  if (conformanceConstraint)
+  if (conformanceConstraint &&
+      !isTriviallyTrueConstraint(conformanceConstraint))
     constraints.push_back(conformanceConstraint);
 
   // Create the FnOp and ASTDecl for the method.
@@ -789,7 +790,8 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(
       isMove ? ArgConvention::DeinitMem : ArgConvention::ReadMem;
 
   SmallVector<ConstraintAttr> constraints;
-  if (conformanceConstraint)
+  if (conformanceConstraint &&
+      !isTriviallyTrueConstraint(conformanceConstraint))
     constraints.push_back(conformanceConstraint);
 
   Type selfArgType = selfType.getRefForArgument("self", /*isMut=*/true);

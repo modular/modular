@@ -54,15 +54,14 @@ struct WrapsMadeFromPack[*Ts: AnyType](Movable where False):
         self.data = args
 
 
-struct Constructible(Movable where False):
+struct Constructible:
     @implicit
-    # expected-note @below {{candidate declared here with type 'def(arg: Int) thin -> Constructible'}}
     def __init__(out self, arg: Int):
         pass
 
 
 def init_self_conversion():
-    # expected-error @below {{no '__init__' candidates have type 'def() thin -> None'}}
+    # expected-error @below {{cannot implicitly convert 'def __init__(arg: Int) thin -> Constructible' value to 'def() thin -> None'}}
     comptime f: def() thin -> None = Constructible.__init__
 
 

@@ -3461,41 +3461,58 @@ static auto silenceErrors(MLIRContext *ctx) {
   };
 }
 
-static bool structDeclaresConformanceTo(ASTDecl &structDecl,
-                                        StringRef traitName) {
-  StructDeclOp structOp = cast<StructDeclOp>(structDecl.getIfOperation());
-  TraitType canonicalTrait = structOp.getCanonicalTrait();
-  if (canonicalTrait &&
-      llvm::any_of(canonicalTrait.getSymbols(), [&](SymbolRefAttr symbol) {
-        return symbol.getLeafReference() == traitName;
-      }))
-    return true;
-
-  // Temporary fallback: Catches an `__extension`'s conformances, which never
-  // enter the struct's canonical trait. This is sound as a satisfiability query
-  // only because extension conformances cannot yet be conditional.
-  auto conformance = ASTType(structOp.bindReference())
-                         .conformsToBuiltinTrait(traitName, structDecl.getLoc(),
-                                                 structDecl.getShared(), {});
-  return !conformance.first.isFalse();
+// True when the struct's own where-clause makes `condition` unsatisfiable.
+static bool conformancePrecluded(ArrayRef<TypedAttr> bodyPropositions,
+                                 TypedAttr condition) {
+  TypedAttr negated = ParamOperatorAttr::getNot(condition);
+  return isPropositionImplied(negated, bodyPropositions).isTrue();
 }
 
-// Look up the conditional conformance constraint for a specific trait from
-// the struct's canonical trait. Returns null for unconditional conformances.
-static ConstraintAttr getConformanceConstraint(StructDeclOp structOp,
-                                               StringRef traitName) {
-  TraitType canonTrait = structOp.getCanonicalTrait();
-  if (!canonTrait)
-    return {};
-  ArrayRef<ConstraintAttr> constraints = canonTrait.getConstraints();
-  if (constraints.empty())
-    return {};
-  ArrayRef<SymbolRefAttr> symbols = canonTrait.getSymbols();
+// Returns the condition under which the struct conforms to the trait (a
+// trivially-true constraint for an unconditional conformance), or std::nullopt
+// when the struct does not conform to the trait at all (including if the
+// conformance condition is precluded by the struct's own body constraints).
+static std::optional<ConstraintAttr>
+getConformanceCondition(ASTDecl &structDecl, StringRef traitName) {
+  StructDeclOp structOp = cast<StructDeclOp>(structDecl.getIfOperation());
+  TraitType canonicalTrait = structOp.getCanonicalTrait();
+  ArrayRef<SymbolRefAttr> symbols = canonicalTrait.getSymbols();
+  ArrayRef<ConstraintAttr> constraints = canonicalTrait.getConstraints();
+
+  SmallVector<TypedAttr> bodyPropositions = llvm::map_to_vector(
+      structOp.getSignature().getParamListAttrs().getBodyConstraints(),
+      [&](ConstraintAttr constraint) { return constraint.getProposition(); });
+  IndexRefRemapper remapper(structOp.getParamsAttr());
+
   for (auto [i, symbol] : llvm::enumerate(symbols)) {
-    if (symbol.getLeafReference() == traitName)
-      return constraints[i];
+    if (symbol.getLeafReference() != traitName)
+      continue;
+
+    MLIRContext *ctx = structDecl.getShared().getContext();
+
+    // An empty constraint array is the canonical form for a fully
+    // unconditional trait, so every slot is trivially true.
+    if (constraints.empty())
+      return getUnconditionalConstraint(ctx);
+
+    ConstraintAttr condition = constraints[i];
+    assert(!isTriviallyFalseConstraint(condition) &&
+           "trivially false conformance should have been erased during "
+           "canonical trait construction");
+
+    // A condition the struct's own trailing where-clause precludes is an
+    // opt-out.
+    if (!bodyPropositions.empty() &&
+        conformancePrecluded(bodyPropositions,
+                             remapper.replace(condition.getProposition())))
+      return std::nullopt;
+
+    return condition;
   }
-  return {};
+
+  // This intentionally does not handle extension conformances as that feature
+  // is not stable yet.
+  return std::nullopt;
 }
 
 /// Emits the diagnostic for a bare `@explicit_destroy` decorator, which now
@@ -3745,84 +3762,34 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Always generate SourceName for structs (even on non-debug builds).
   structOp.setSourceNameAttr(shared.getSourceName(structOp));
 
-  if (TraitType canonTrait = structOp.getCanonicalTrait()) {
-    ArrayRef<SymbolRefAttr> traitSymbols = canonTrait.getSymbols();
-    ArrayRef<ConstraintAttr> traitConstraints = canonTrait.getConstraints();
-
-    // Finalize conformance to `ImplicitlyDeletable`.
-    //
-    // - ImplicitlyDeletable where True =>
-    //     issue an error if the user wrote `@explicit_destroy`, since the
-    //     message will never be used.
-    // - ImplicitlyDeletable where (False | cond) =>
-    //     must set the linear type error message attr for CheckLifetimes to
-    //     use, so synthesize one if the user didn't set one.
-    for (auto [i, symbol] : llvm::enumerate(traitSymbols)) {
-      if (symbol.getLeafReference() != "ImplicitlyDeletable")
-        continue;
-      // Constraints is either empty (same as all true) or parallel with symbols
-      ConstraintAttr constraint =
-          i < traitConstraints.size() ? traitConstraints[i] : ConstraintAttr();
-
-      if (isTriviallyTrueConstraint(constraint)) {
-        // Unconditional ImplicitlyDeletable cannot be combined with
-        // @explicit_destroy.
-        if (linearTypeErrorMsg) {
-          auto diag = shared.emitError(std::get<1>(*linearTypeErrorMsg))
-                      << "@explicit_destroy is not valid on `struct` with "
-                         "unconditional conformance to `ImplicitlyDeletable`";
-          diag.attachNote(decl.getLoc())
-              << "Add `ImplicitlyDeletable where False` conformance or "
-                 "remove `@explicit_destroy`";
-          decl.setErroneous();
-          return failure();
-        }
-      } else if (!structOp.getLinearTypeErrorMsg().has_value()) {
-        // Non-unconditional ImplicitlyDeletable: the struct is linear.
-        // Synthesize a default message since the user didn't provide one.
-        std::string defaultMsg = [&] {
-          if (isTriviallyFalseConstraint(constraint)) {
-            // `ImplicitlyDeletable where False`: an unconditional opt-out.
-            return "type '" + structOp.getDeclName().str() +
-                   "' is not implicitly deletable and must be explicitly "
-                   "destroyed";
-          } else {
-            // `ImplicitlyDeletable where <cond>`: linear when unsatisfied.
-            return "type '" + structOp.getDeclName().str() +
-                   "' does not conditionally conform to 'ImplicitlyDeletable' "
-                   "for these parameters";
-          }
-        }();
-        structOp.setLinearTypeErrorMsg(
-            std::make_optional(llvm::StringRef(defaultMsg)));
+  if (std::optional<ConstraintAttr> implicitlyDeletableConstraint =
+          getConformanceCondition(decl, "ImplicitlyDeletable")) {
+    if (isTriviallyTrueConstraint(*implicitlyDeletableConstraint)) {
+      // Unconditional ImplicitlyDeletable cannot be combined with
+      // @explicit_destroy.
+      if (linearTypeErrorMsg) {
+        auto diag = shared.emitError(std::get<1>(*linearTypeErrorMsg))
+                    << "@explicit_destroy is not valid on `struct` with "
+                       "unconditional conformance to `ImplicitlyDeletable`";
+        diag.attachNote(decl.getLoc())
+            << "Add `ImplicitlyDeletable where False` conformance or "
+               "remove `@explicit_destroy`";
+        decl.setErroneous();
+        return failure();
       }
-      break;
+    } else if (!structOp.getLinearTypeErrorMsg().has_value()) {
+      structOp.setLinearTypeErrorMsg(
+          "type '" + structOp.getDeclName().str() +
+          "' does not conditionally conform to 'ImplicitlyDeletable' "
+          "for these parameters");
     }
-
-    // Check for unsupported conditional conformance to TrivialRegisterPassable,
-    // and finalize the linear-type message for conditional ImplicitlyDeletable.
-    //
-    // TrivialRegisterPassable depends on struct body (field triviality for
-    // copy/move/del) which creates parser cycle risks and requires composing
-    // the user's where-clause with field-level triviality witnesses.
-    //
-    // Conditional conformance to RegisterPassable IS allowed. The struct stays
-    // pessimistically MemoryOnly at declaration time; the parametric
-    // isMemoryOnly bit on the KGEN struct type is resolved per-instantiation.
-    if (!traitConstraints.empty()) {
-      for (auto [i, symbol] : llvm::enumerate(traitSymbols)) {
-        if (isTriviallyTrueConstraint(traitConstraints[i]))
-          continue;
-        StringRef traitName = symbol.getLeafReference();
-        if (traitName == "TrivialRegisterPassable") {
-          shared.emitError(traitConstraints[i].getLoc())
-              << "conditional conformance to 'TrivialRegisterPassable' is "
-                 "not supported";
-          decl.setErroneous();
-          return failure();
-        }
-      }
-    }
+  } else if (!structOp.getLinearTypeErrorMsg().has_value()) {
+    // Never ImplicitlyDeletable: the struct is linear.
+    // Synthesize a default message since the user didn't provide one.
+    structOp.setLinearTypeErrorMsg(
+        "type '" + structOp.getDeclName().str() +
+        "' is not implicitly deletable and must be explicitly "
+        "destroyed");
   }
 
   // Make the decl as signature resolved before we check rp conformance.
@@ -3831,21 +3798,29 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Only set the convention for unconditional RP conformance. Conditional RP
   // leaves the struct as MemoryOnly at declaration time; the parametric
   // isMemoryOnly bit resolves per-instantiation during lowering.
-  if (structDeclaresConformanceTo(decl, "RegisterPassable")) {
-    ConstraintAttr rpConstraint =
-        getConformanceConstraint(structOp, "RegisterPassable");
-    if (isTriviallyTrueConstraint(rpConstraint)) {
+  if (std::optional<ConstraintAttr> rpConstraint =
+          getConformanceCondition(decl, "RegisterPassable")) {
+    if (isTriviallyTrueConstraint(*rpConstraint)) {
       structOp.setConvention(TypeConvention::RegisterPassable);
     } else {
-      structOp.setRegisterPassableConstraintAttr(rpConstraint);
+      structOp.setRegisterPassableConstraintAttr(*rpConstraint);
     }
   }
 
   // TrivialRegisterPassable conforms to RegisterPassable, so should set this
-  // after setting RegisterPassable. Conditional TrivialRegisterPassable is
-  // rejected above, so this is always unconditional.
-  if (structDeclaresConformanceTo(decl, "TrivialRegisterPassable"))
+  // after setting RegisterPassable.
+  if (std::optional<ConstraintAttr> trpConstraint =
+          getConformanceCondition(decl, "TrivialRegisterPassable")) {
+    // Check for unsupported conditional conformance to TrivialRegisterPassable.
+    if (!isTriviallyTrueConstraint(*trpConstraint)) {
+      shared.emitError(trpConstraint->getLoc())
+          << "conditional conformance to 'TrivialRegisterPassable' is "
+             "not supported";
+      decl.setErroneous();
+      return failure();
+    }
     structOp.setConvention(TypeConvention::RegisterPassableTrivial);
+  }
 
   shared.notifyListenerOnStructDecl(decl, identifierLoc);
   return success();
@@ -4126,15 +4101,15 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   }
 
   // Determine if there is an explicit conformance to ImplicitlyDeletable.
-  if (structDeclaresConformanceTo(structDecl, "ImplicitlyDeletable")) {
+  if (std::optional<ConstraintAttr> implicitlyDeletableConstraint =
+          getConformanceCondition(structDecl, "ImplicitlyDeletable")) {
     // Synthesize an empty __deinit__ when the type conforms to
     // ImplicitlyDeletable
     // ([mojo-lang] Accept '__deinit__' as the canonical destructor spelling)
     // ImplicitlyDeletable but has no explicit destructor.
     if (!shared.typeHasMember(structDecl, "__deinit__", structDecl.getLoc()))
       (void)StructEmitter(structDecl)
-          .synthesizeEmptyDtor(
-              getConformanceConstraint(structOp, "ImplicitlyDeletable"));
+          .synthesizeEmptyDtor(*implicitlyDeletableConstraint);
 
     // If the structure conforms to "ImplicitlyDeletable", we populate the
     // trivial flag.
@@ -4144,26 +4119,26 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // If the struct conforms to well-known traits but doesn't have explicit
   // implementations of the corresponding methods, add signatures for them.
   // These can all be synthesized without resolving the members.
-  if (structDeclaresConformanceTo(structDecl, "Movable")) {
+  if (std::optional<ConstraintAttr> movableConstraint =
+          getConformanceCondition(structDecl, "Movable")) {
     FnOp moveFn = lookupSpecialInit(structDecl, SpecialFunctionKind::kMoveCtor);
     if (!moveFn)
       moveFn = StructEmitter(structDecl)
                    .synthesizeEmptyMoveOrCopyInit(
-                       /*isMove=*/true,
-                       getConformanceConstraint(structOp, "Movable"));
+                       /*isMove=*/true, *movableConstraint);
     if (moveFn) {
       synthesizeTrivialFlagIfNeeded("__move_ctor_");
       structOp.setMoveInitAttr(moveFn.getBoundSymbolRef(
           structDecl.getShared().getEvaluationContext()));
     }
   }
-  if (structDeclaresConformanceTo(structDecl, "Copyable")) {
+  if (std::optional<ConstraintAttr> copyableConstraint =
+          getConformanceCondition(structDecl, "Copyable")) {
     FnOp copyFn = lookupSpecialInit(structDecl, SpecialFunctionKind::kCopyCtor);
     if (!copyFn)
       copyFn = StructEmitter(structDecl)
                    .synthesizeEmptyMoveOrCopyInit(
-                       /*isMove=*/false,
-                       getConformanceConstraint(structOp, "Copyable"));
+                       /*isMove=*/false, *copyableConstraint);
     if (copyFn) {
       synthesizeTrivialFlagIfNeeded("__copy_ctor_");
       structOp.setCopyInitAttr(copyFn.getBoundSymbolRef(
@@ -4203,7 +4178,18 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // symbols.
   ArrayRef<ConstraintAttr> constraints = canonicalTrait.getConstraints();
   bool hasConstraints = !constraints.empty();
+  SmallVector<TypedAttr> bodyPropositions = llvm::map_to_vector(
+      structOp.getSignature().getParamListAttrs().getBodyConstraints(),
+      [&](ConstraintAttr constraint) { return constraint.getProposition(); });
+  IndexRefRemapper remapper(structOp.getParamsAttr());
   for (auto [i, parent] : llvm::enumerate(symbols)) {
+    // A conformance whose condition the struct's own where-clause precludes is
+    // an opt-out.
+    if (hasConstraints && !bodyPropositions.empty() &&
+        conformancePrecluded(bodyPropositions,
+                             remapper.replace(constraints[i].getProposition())))
+      continue;
+
     StringAttr name = b.getStringAttr(getFlattenedSymbolName(parent));
     ASTDecl &parentDecl = getDeclForTypeSymbol(parent);
     SymbolRefArrayAttr immediateParents =

@@ -278,6 +278,24 @@ def testWhereFalseCustomMessage():
     _ = WhereFalseCustom()
 
 
+# A conditional ImplicitlyDeletable slot that the struct's own where-clause
+# renders unsatisfiable (`where not (n > 0)` under `where n > 0`) is an opt-out
+# indistinguishable from the literal `where False` above: for any instantiable
+# `n`, the struct is linear and reports the *same* default message. This is
+# invariant 2 (semantic == literal unsatisfiability) applied to the message
+# text, not just to synthesis.
+struct ContradictedLinear[n: Int](
+    ImplicitlyDeletable where not (n > 0), Movable where False
+) where n > 0:
+    def __init__(out self):
+        pass
+
+
+def testContradictedLinear():
+    # expected-error @below {{abandoned without being explicitly destroyed: type 'ContradictedLinear' is not implicitly deletable and must be explicitly destroyed}}
+    _ = ContradictedLinear[1]()
+
+
 # ===----------------------------------------------------------------------=== #
 # Indirect mutable assignment of a linear type
 # ===----------------------------------------------------------------------=== #
