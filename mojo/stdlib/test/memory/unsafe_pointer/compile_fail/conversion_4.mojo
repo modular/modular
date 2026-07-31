@@ -25,5 +25,5 @@ def main() raises:
     var y = 55
 
     var p = Pointer(to=x)
-    # CHECK: value passed to 'p' cannot be converted from 'Pointer[Int, origin_of(x), _safe=True]' to 'Pointer[T, origin_of(y), _safe=True]'
+    # CHECK: value passed to 'p' cannot be converted from 'Pointer[Int, origin_of(x)]' to 'Pointer[T, origin_of(y)]'
     test_cannot_cast_between_different_named_origins[origin_of(y)](p)

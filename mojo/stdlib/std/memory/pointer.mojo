@@ -23,7 +23,7 @@ from std._plugin import CurrentPlugin
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.builtin.simd_length import SIMDLength
 from std.memory import UnsafeMaybeUninit
-from std.memory.unsafe_pointer import Pointer as _CommonPointer
+from std.memory.unsafe_pointer import Pointer as _Pointer
 from std.utils._nicheable import UnsafeSingleNicheable, NicheIndex
 
 # ===-----------------------------------------------------------------------===#
@@ -213,18 +213,5 @@ comptime ImmutPointer = ImmPointer
 # ===-----------------------------------------------------------------------===#
 
 
-comptime Pointer[
-    mut: Bool,
-    //,
-    T: AnyType,
-    origin: Origin[mut=mut],
-    address_space: AddressSpace = AddressSpace.GENERIC,
-] = _CommonPointer[T, origin, address_space=address_space, _safe=True]
-"""A non-nullable pointer to a value of `T`.
-
-Parameters:
-    mut: Whether the pointee data may be mutated through this.
-    T: The type the pointer points to.
-    origin: The origin of the pointer.
-    address_space: The address space of the pointee data.
-"""
+comptime Pointer = _Pointer
+"""A non-nullable pointer to a value of `T`."""

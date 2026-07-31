@@ -1018,8 +1018,7 @@ struct _Global[
         var ptr = OwnedPointer(Self.init_fn())
 
         var storage = ptr^.unsafe_take_allocation().unsafe_leak()
-        # TODO(MOCO-4435): remove this temporary variable.
-        var opaque = Pointer(storage.unsafe_bitcast[NoneType]())
+        var opaque = storage.unsafe_bitcast[NoneType]()
         return opaque
 
     @staticmethod
