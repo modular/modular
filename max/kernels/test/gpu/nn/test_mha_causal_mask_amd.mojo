@@ -26,9 +26,19 @@ from layout import (
     TileTensor,
     row_major,
 )
-from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
+from nn.attention.gpu.mha import (
+    _mha_decode_fold_ok,
+    flash_attention,
+    mha_gpu_naive,
+)
 from nn.attention.mha_mask import CausalMask
-from std.testing import assert_almost_equal
+from std.sys.info import _is_amd_rdna
+from std.testing import (
+    assert_almost_equal,
+    assert_equal,
+    assert_false,
+    assert_true,
+)
 
 from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
@@ -306,19 +316,105 @@ def test_helper[depth: Int](ctx: DeviceContext) raises:
     test[dtype, depth=depth, num_heads=16, group=16](1, 1024, ctx)
     test[dtype, depth=depth, num_heads=16, group=16](1, 5000, ctx)
     # Speculative-verify query lengths. On AMD these take the decode kernel's
-    # query-token fold, one instantiation per S (BM = num_heads*S = 32/48/64);
-    # elsewhere, and outside the fold's bf16 / single-KV-head / depth <= 128
-    # window, they take prefill. The num_keys span a single partition (29), a
-    # BN=128 straddle (208), an aligned length (1024), and split-K-heavy (5000).
+    # query-token fold, one instantiation per S; elsewhere, and outside the fold's
+    # bf16 / depth <= 128 window, they take prefill. The num_keys span a single
+    # partition (29), a BN=128 straddle (208), an aligned length (1024), and
+    # split-K-heavy (5000).
     comptime if not USE_FP8 and depth <= 128:
+        # Single KV head: rows are contiguous heads, BM = num_heads*S = 32/48/64
+        # stacked over warp M-tiles. S=5 is excluded by `num_heads*S <= 4*WM`.
         for seq_len in [2, 3, 4]:
             test[dtype, depth=depth, num_heads=16, group=16](seq_len, 29, ctx)
             test[dtype, depth=depth, num_heads=16, group=16](seq_len, 208, ctx)
             test[dtype, depth=depth, num_heads=16, group=16](seq_len, 1024, ctx)
             test[dtype, depth=depth, num_heads=16, group=16](seq_len, 5000, ctx)
+        # One query head per KV head: rows are the S tokens and the Q/O row
+        # stride becomes the BSHD token stride, which only num_heads > 1
+        # exercises; the KV-head base term in the split-K stat write needs
+        # num_keys past one partition (1024/5000).
+        for seq_len in [2, 3, 4, 5]:
+            test[dtype, depth=depth, num_heads=16, group=1](seq_len, 29, ctx)
+            test[dtype, depth=depth, num_heads=16, group=1](seq_len, 208, ctx)
+            test[dtype, depth=depth, num_heads=16, group=1](seq_len, 1024, ctx)
+            test[dtype, depth=depth, num_heads=16, group=1](seq_len, 5000, ctx)
+            test[dtype, depth=depth, num_heads=4, group=1](seq_len, 1024, ctx)
+            # The one shape both arms' group predicate admits, and the only one
+            # where the token stride equals the head stride.
+            test[dtype, depth=depth, num_heads=1, group=1](seq_len, 1024, ctx)
+
+
+def test_fold_eligibility() raises:
+    """Pin `_mha_decode_fold_ok`'s answer per shape.
+
+    Both the `is_token_generation` routing decision and the dispatch ladder call
+    it, and a shape it rejects just takes prefill — slower but correct, so
+    every numerical case in this file passes either way. This table is the only
+    signal that a shape meant to fold silently does not.
+    """
+    comptime bf16 = DType.bfloat16
+    # A rejection is arch-independent (the arch gate only ever rejects more), so
+    # the inadmissible half is asserted outright and the admissible half against
+    # a reference shape. That pins the shape logic without pinning which AMD
+    # parts carry the fold (RDNA carries none).
+    comptime available = _mha_decode_fold_ok[bf16, 128, 16, 1, 4]()
+    # Pin the reference itself on the parts that carry the fold, else every
+    # admissible assertion below passes vacuously wherever it is False.
+    comptime if not _is_amd_rdna():
+        assert_true(available)
+
+    # One query head per KV head: rows are the S tokens of one head, so any
+    # num_heads works and S is bounded only by the cap.
+    assert_equal(_mha_decode_fold_ok[bf16, 128, 16, 1, 2](), available)
+    assert_equal(_mha_decode_fold_ok[bf16, 128, 16, 1, 5](), available)
+    assert_equal(_mha_decode_fold_ok[bf16, 128, 4, 1, 5](), available)
+    assert_equal(_mha_decode_fold_ok[bf16, 64, 16, 1, 4](), available)
+    # num_heads == 1 satisfies both arms' group predicate; the stacked one
+    # rejects it (`1*S % 16 != 0`) so this is the narrow arm, where the token
+    # and head row strides coincide (`_q_stride0` collapses to `q_depth`).
+    assert_equal(_mha_decode_fold_ok[bf16, 128, 1, 1, 4](), available)
+    # Single KV head: rows are contiguous heads, so num_heads*S must tile 2 to 4
+    # 16-row warp M-tiles.
+    assert_equal(_mha_decode_fold_ok[bf16, 128, 16, 16, 2](), available)
+    assert_equal(_mha_decode_fold_ok[bf16, 128, 16, 16, 4](), available)
+    # Ragged exempts the padded-batch exclusion.
+    assert_equal(
+        _mha_decode_fold_ok[
+            bf16, 128, 16, 1, 4, use_valid_length=True, ragged=True
+        ](),
+        available,
+    )
+
+    # S=1 is plain decode, not a fold arm.
+    assert_false(_mha_decode_fold_ok[bf16, 128, 16, 1, 1]())
+    # Past `_MHA_DECODE_FOLD_MAX_S`.
+    assert_false(_mha_decode_fold_ok[bf16, 128, 16, 1, 6]())
+    # 1 < group < num_heads would need a token stride and a head stride at once.
+    assert_false(_mha_decode_fold_ok[bf16, 128, 32, 4, 4]())
+    # Single KV head at S=5: num_heads*S = 80 exceeds 4 warp M-tiles.
+    assert_false(_mha_decode_fold_ok[bf16, 128, 16, 16, 5]())
+    # depth > 128 is rejected for both arms by one shared conjunct, though the
+    # reason is the single-KV-head arm's WN == BN register pressure.
+    assert_false(_mha_decode_fold_ok[bf16, 256, 16, 16, 4]())
+    assert_false(_mha_decode_fold_ok[bf16, 256, 16, 1, 4]())
+    # fp16 shares the MMA shape but is untested through the fold.
+    assert_false(_mha_decode_fold_ok[DType.float16, 128, 16, 1, 4]())
+    # A sink lookup is the folded head only while num_heads == MMA_M.
+    assert_false(_mha_decode_fold_ok[bf16, 128, 16, 1, 4, sink=True]())
+    # A padded batch can hold a sequence shorter than S, whose split-K stats go
+    # unwritten and un-skipped.
+    assert_false(
+        _mha_decode_fold_ok[bf16, 128, 16, 1, 4, use_valid_length=True]()
+    )
+    # A mask needing a per-tile decode check reads an S-row span that underflows.
+    assert_false(
+        _mha_decode_fold_ok[
+            bf16, 128, 16, 1, 4, check_mask_during_decoding=True
+        ]()
+    )
 
 
 def main() raises:
+    test_fold_eligibility()
     with DeviceContext() as ctx:
         comptime if USE_FP8:
             comptime for depth in [128, 256]:
