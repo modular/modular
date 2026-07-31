@@ -18,7 +18,7 @@
 #        error, mut default error, out + return type error,
 #        variadic default error, out variadic error, __init__
 #        without out error, where on runtime arg error,
-#        Resource/__del__ (undefined _release), parse/parse_strict
+#        Resource/__deinit__ (undefined _release), parse/parse_strict
 #        (signature-only stubs), copy/move constructor snippets
 #        (no enclosing struct), configure keyword-only (pass-only
 #        body), overload-set import-shadowing snippet (fictional

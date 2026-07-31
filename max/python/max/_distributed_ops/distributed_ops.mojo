@@ -109,7 +109,7 @@ def _do_broadcast[
         out_ptrs[i] = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
             unsafe_from_address=out_addr
         )
-        # unsafe_write prevents DeviceContext.__del__ from dropping a
+        # unsafe_write prevents DeviceContext.__deinit__ from dropping a
         # refcount, so assigning into the uninitialized slot would destroy it
         var ctx_array_ptr: UnsafePointer[
             DeviceContext, origin_of(ctx_array)

@@ -392,13 +392,13 @@ def wrong(out result: Int) -> Int:
 ### `deinit`
 
 The function takes ownership and destroys the value. Required
-for `self` in `__del__` and the argument in move constructors:
+for `self` in `__deinit__` and the argument in move constructors:
 
 ```mojo
 struct Resource:
     var handle: Int
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         _release(self.handle)
 ```
 
@@ -640,17 +640,16 @@ constructors can't raise.
 They're always movable by copying a register.
 :::
 
-### `__del__()`
+### `__deinit__()`
 
 The destructor takes `deinit self`:
 
 ```mojo
-def __del__(deinit self):
+def __deinit__(deinit self):
     _release(self.handle)
 ```
 
-Destructors can't raise. Trivial types can't define a
-destructor.
+Destructors can't raise. Trivial types can't define a destructor.
 
 ## Nested functions
 

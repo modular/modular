@@ -50,7 +50,7 @@ struct _POpenHandle:
         if not self._handle:
             raise Error("unable to execute the command `", cmd, "`")
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Closes the handle opened via popen."""
         _ = pclose(self._handle)
 

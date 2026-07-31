@@ -146,9 +146,9 @@ struct Set[
         for e in elements:
             self.add(e.copy())
 
-    # TODO(MOCO-4228): remove this __del__ once an explicit __del__ is
+    # TODO(MOCO-4228): remove this __deinit__ once an explicit __deinit__ is
     # synthesized for conditionally-deletable types.
-    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroy all elements in the set and free its memory.
 
         Constraints:

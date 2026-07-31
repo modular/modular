@@ -1932,7 +1932,7 @@ struct CPython(Defaultable, Movable):
         # Common Object Structures
         self._Py_Is = Py_Is.load(self.lib.borrow())
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     def destroy(mut self):

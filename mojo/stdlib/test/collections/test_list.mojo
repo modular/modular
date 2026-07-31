@@ -681,7 +681,7 @@ def test_list_iter_mutable() raises:
 
 # We use `MutAnyOrigin` to bypass exclusivity checking
 # otherwise we cannot construct a list of Observables where
-# all point to the same copy/move/del counter.
+# all point to the same copy/move/deinit counter.
 comptime ObservableElement = Observable[
     CopyOrigin=MutAnyOrigin,
     MoveOrigin=MutAnyOrigin,

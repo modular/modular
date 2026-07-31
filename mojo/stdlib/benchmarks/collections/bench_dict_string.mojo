@@ -111,7 +111,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
             dest=self.keys_end, src=copy.keys_end, count=self.capacity
         )
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self.keys.unsafe_free()
         self.keys_end.unsafe_free()
 
@@ -277,7 +277,7 @@ struct StringDict[
         else:
             self.deleted_mask = alloc[UInt8](0)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self.slot_to_index.unsafe_free()
         self.deleted_mask.unsafe_free()
         self.key_hashes.unsafe_free()

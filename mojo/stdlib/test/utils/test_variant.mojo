@@ -68,7 +68,7 @@ struct Poison(ImplicitlyCopyable):
     def __init__(out self, *, deinit move: Self):
         _poison_ptr().unsafe_write(True)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         _poison_ptr().unsafe_write(True)
 
 
@@ -137,7 +137,7 @@ def test_del() raises:
     comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
     var v1 = TestDeleterVariant(ObservableDel(Pointer(to=deleted)))
-    _ = v1^  # call __del__
+    _ = v1^  # call __deinit__
     assert_true(deleted)
     # test that we didn't call the other deleter too!
     assert_no_poison()

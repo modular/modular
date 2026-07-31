@@ -200,9 +200,9 @@ struct ObservableMoveOnly[actions_origin: ImmOrigin](Movable):
         self.value = move.value
         self.actions.unsafe_mut_cast[True]()[].append("move ctor")
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroys the instance and records the operation."""
-        self.actions.unsafe_mut_cast[True]()[].append("__del__")
+        self.actions.unsafe_mut_cast[True]()[].append("__deinit__")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -469,7 +469,7 @@ struct DelRecorder[recorder_origin: ImmOrigin](ImplicitlyCopyable):
     var destructor_recorder: Pointer[List[Int], Self.recorder_origin]
     """Pointer to list for recording destructor calls."""
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Records this instance's value when destroyed."""
         self.destructor_recorder.unsafe_mut_cast[True]()[].append(self.value)
 
@@ -490,7 +490,7 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
     var target: Pointer[Bool, Self.origin]
     """Pointer to boolean flag set on destruction."""
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Sets the target flag to True when destroyed."""
         self.target.unsafe_write(True)
 
@@ -555,7 +555,7 @@ struct DelCounter[counter_origin: ImmOrigin, *, trivial_del: Bool = False](
     var counter: Pointer[Int, Self.counter_origin]
     """Pointer to counter incremented on destruction."""
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Increments the counter when destroyed."""
         self.counter.unsafe_mut_cast[True]()[] += 1
 
@@ -584,7 +584,7 @@ struct AbortOnDel(Copyable):
     """Test value payload."""
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Aborts the program if called."""
         abort(
             "We should never call the destructor of AbortOnDel",
@@ -709,8 +709,8 @@ struct Observable[
         if self._moves:
             self._moves.value()[] += 1
 
-    def __del__(deinit self):
-        """Destroy the Observable and increment the del count."""
+    def __deinit__(deinit self):
+        """Destroy the Observable and increment the deinit count."""
         if self._dels:
             self._dels.value()[] += 1
 

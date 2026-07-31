@@ -138,7 +138,7 @@ struct MyStruct(Sized, Writable):
     def __init__(out self, *, copy: Self)
     def __init__(out self, *, deinit move: Self)
 
-    def __del__(...)
+    def __deinit__(...)
 
     # ===-------------------------------------------------------------------===#
     # Factory methods

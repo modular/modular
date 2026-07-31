@@ -773,7 +773,7 @@ def _enqueue_apple_fp4_materialize_dense[
     lowering (a post-matmul multiply), identically for both paths.
 
     Buffer lifetime (the correctness hinge): the dense GEMM reads `wdense` after
-    this function returns -- `enqueue_*` is async. `DeviceBuffer.__del__`
+    this function returns -- `enqueue_*` is async. `DeviceBuffer.__deinit__`
     schedules a STREAM-ORDERED free (`AsyncRT_DeviceBuffer_release`: "the actual
     deallocation may occur asynchronously after all operations using this buffer
     have completed", `device_context.mojo`), so the free cannot race the GEMM

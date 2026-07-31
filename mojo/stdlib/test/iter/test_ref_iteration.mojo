@@ -90,7 +90,7 @@ struct MoveOnlyList[T: Movable & ImplicitlyDeletable]:
         self._len = 0
         self._capacity = 0
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         for i in range(self._len):
             self._data.unsafe_offset(i).unsafe_deinit_pointee()
         if self._capacity > 0:

@@ -431,7 +431,7 @@ def test_tuple_consume_elements_destroys_once() raises:
         Observed(2, actions_ptr),
         Observed(3, actions_ptr),
     )
-    assert_equal(actions_ptr[unsafe_offset=0].count("__del__"), 0)
+    assert_equal(actions_ptr[unsafe_offset=0].count("__deinit__"), 0)
 
     @parameter
     def handler[idx: Int](var elt: t.element_types[idx]):
@@ -441,7 +441,7 @@ def test_tuple_consume_elements_destroys_once() raises:
     t^.consume_elements[handler]()
     # Each element is destroyed once and `deinit self` disables the tuple's own
     # destructor, so there is no double-free.
-    assert_equal(actions_ptr[unsafe_offset=0].count("__del__"), 3)
+    assert_equal(actions_ptr[unsafe_offset=0].count("__deinit__"), 3)
 
 
 def test_tuple_consume_elements_heterogeneous() raises:

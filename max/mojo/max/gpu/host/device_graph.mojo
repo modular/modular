@@ -173,7 +173,7 @@ struct DeviceGraph(ImplicitlyCopyable):
         ](copy._handle)
         self._handle = copy._handle
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Releases resources associated with this device graph."""
         # void AsyncRT_DeviceGraph_release(DeviceGraph *graph)
         external_call[
@@ -450,7 +450,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         dependencies.extend(Span(self._implicit_deps))
         return dependencies^
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Releases resources associated with this graph builder."""
         # void AsyncRT_DeviceGraphBuilder_release(DeviceGraphBuilder *builder)
         external_call[

@@ -94,7 +94,7 @@ struct Node[
     comptime __del__is_trivial = is_trivially_deletable[Self.ElementType]()
 
     # TODO(MOCO-4228): Let the compiler synthesize this method
-    def __del__(
+    def __deinit__(
         deinit self,
     ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
         """Destroy the entry's key and value.
@@ -201,8 +201,8 @@ struct _LinkedListIterOwned[T: Movable & ImplicitlyDeletable](
     var _list: LinkedList[Self.T]
 
     @always_inline
-    def __del__(deinit self):
-        # LinkedList.__del__ handles destroying remaining nodes.
+    def __deinit__(deinit self):
+        # LinkedList.__deinit__ handles destroying remaining nodes.
         pass
 
     @always_inline
@@ -350,11 +350,11 @@ struct LinkedList[ElementType: Movable](
     ):
         """Hand each element to `destroy_func`, then free every node.
 
-        Shared teardown for `clear`, `__del__`, and `deinit_with`.
+        Shared teardown for `clear`, `__deinit__`, and `deinit_with`.
 
         Leaves the list "spent": `_head`/`_tail` dangle at freed memory, so the
         caller must either reset them (see `clear`) or be about to drop `self`
-        (see `__del__`/`deinit_with`).
+        (see `__deinit__`/`deinit_with`).
 
         Args:
             destroy_func: A closure called once per element to consume it.
@@ -374,7 +374,7 @@ struct LinkedList[ElementType: Movable](
             )
             curr = next
 
-    def __del__(
+    def __deinit__(
         deinit self,
     ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
         """Clean up the list by freeing all nodes.

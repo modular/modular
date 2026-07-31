@@ -1223,8 +1223,8 @@ struct MyInt(Movable):
         print("MyInt.__moveinit__", move.val)
         self.val = move.val
 
-    def __del__(deinit self):
-        print("MyInt.__del__", self.val)
+    def __deinit__(deinit self):
+        print("MyInt.__deinit__", self.val)
 
 
 @register_internal("testfuse.my_int.from_index")
@@ -1251,8 +1251,8 @@ struct MyIntReg2(ImplicitlyCopyable, RegisterPassable):
     def __init__(out self, val: Int):
         self.val = val
 
-    def __del__(deinit self):
-        print("MyIntReg2.__del__", self.val)
+    def __deinit__(deinit self):
+        print("MyIntReg2.__deinit__", self.val)
 
 
 @register_internal("testfuse.my_int_reg2.from_index")

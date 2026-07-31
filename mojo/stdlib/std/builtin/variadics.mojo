@@ -1179,7 +1179,7 @@ struct VariadicList[
     comptime __del__is_trivial: Bool = not Self.is_owned
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destructor that releases elements if owned."""
 
         # Destroy each element if this variadic has owned elements, destroy
@@ -1450,7 +1450,7 @@ struct VariadicPack[
     comptime __del__is_trivial: Bool = not Self.is_owned
 
     @always_inline("nodebug")
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destructor that releases elements if owned."""
 
         comptime if Self.is_owned:

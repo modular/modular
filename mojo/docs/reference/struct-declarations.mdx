@@ -83,7 +83,7 @@ A struct body can contain these elements:
 | Static method         | `@staticmethod def name(...)` | Type-level behavior        |
 | Compile-time constant | `comptime name = value`       | Evaluated at compile time  |
 | Initializer           | `def __init__(out self, ...)` | Constructs an instance     |
-| Destructor            | `def __del__(deinit self)`    | Cleanup at end of lifetime |
+| Destructor            | `def __deinit__(deinit self)` | Cleanup at end of lifetime |
 
 The most minimal struct uses `pass` for an empty body:
 
@@ -181,7 +181,7 @@ stores another instance of itself, even when nested within an Optional:
 ```mojo
 struct Node:
     var value: String
-    var next: Optional[Node]  # Error about this being a recursive 
+    var next: Optional[Node]  # Error about this being a recursive
                               # reference
 ```
 
@@ -265,7 +265,7 @@ def main():
 ```
 
 Without `ImplicitlyDeletable`, the compiler can't verify that the struct
-is safe to destroy using the built-in `__del__()` destructor:
+is safe to destroy using the built-in `__deinit__()` destructor:
 
 ```mojo
 @fieldwise_init
@@ -534,16 +534,16 @@ overloads.
 
 ## Instance tear-down with destructors
 
-`__del__()` runs when the compiler detects no further access to an instance.
-Its `self` uses the `deinit` convention:
+`__deinit__()` runs when the compiler detects no further access to an
+instance. Its `self` uses the `deinit` convention:
 
 ```mojo
-def __del__(deinit self):
+def __deinit__(deinit self):
     print("cleaning up")
 ```
 
-Implicitly deletable structs get a default `__del__()`. A custom `__del__()`
-overrides the default. `__del__()` can't be overloaded.
+Implicitly deletable structs get a default `__deinit__()`. A custom
+`__deinit__()` overrides the default. `__deinit__()` can't be overloaded.
 
 :::note
 Explicitly destroyed structs write their own cleanup logic, using a

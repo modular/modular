@@ -258,7 +258,7 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
         self._inner = _inner
 
     @no_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Delete the smart pointer.
 
         Decrement the reference count for the stored value. If there are no more
@@ -517,7 +517,7 @@ struct WeakPointer[T: Movable & ImplicitlyDeletable](
         self._inner = copy._inner
 
     @no_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Decrement the weak count and free the allocation if last."""
         if (
             self._inner
