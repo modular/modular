@@ -14,7 +14,7 @@
 This module contains the types for the key-value cache APIs.
 
 The module includes structs implementing several different types of
-[KV caches](/glossary/ai/kv-cache).
+[KV caches](https://handbook.modular.com/llm-inference-basics/how-does-llm-inference-work/#what-is-kv-cache).
 
 This module defines two traits that define the roles of the different structs
 
