@@ -161,14 +161,12 @@ def call_with_pack_metal[
     # Unchecked path: no `DevicePassable` encoding, so no arg is treated as
     # a device pointer for buffer binding purposes.
     #
-    # `is_dev_inline` is an `InlineArray` (not `unsafe_stack_allocation`) so the
+    # `is_dev_inline` is an `Array` (not `unsafe_stack_allocation`) so the
     # compiler tracks its lifetime as a named local. Without this, the
     # stack slot can be reused for `metal_args` below — `metal_args`'s
     # `arg_is_device_ptr` field still points at the old slot, which now
     # holds part of the `metal_args` struct rather than the bool array.
-    var is_dev_inline = InlineArray[Bool, num_captures_static + num_args](
-        fill=False
-    )
+    var is_dev_inline = Array[Bool, num_captures_static + num_args](fill=False)
     var dense_args_is_device_ptr: Pointer[Bool, MutUntrackedOrigin]
     if num_captures > num_captures_static:
         dense_args_is_device_ptr = alloc(
@@ -234,7 +232,7 @@ def call_with_pack_checked_metal[
     capture_sizes: Pointer[UInt64, ImmUntrackedOrigin],
     num_captures: Int,
     num_translated_args: Int,
-    translated_arg_offsets: InlineArray[Int, num_passed_args],
+    translated_arg_offsets: Array[Int, num_passed_args],
     extra_align: Int,
     translated_args_ptr: Pointer[Byte, MutAnyOrigin],
     dense_args_addrs: Pointer[OpaquePointer[MutAnyOrigin], MutUntrackedOrigin],
@@ -281,17 +279,17 @@ def call_with_pack_checked_metal[
             messages.
     """
     # Stack-allocated backing storage for the small-capture path. Using
-    # `InlineArray` (rather than `unsafe_stack_allocation`) gives the compiler a
+    # `Array` (rather than `unsafe_stack_allocation`) gives the compiler a
     # named local whose origin flows into the `MetalEnqueueFunctionArgs`
     # pointer fields below — that origin dependency keeps the storage
     # alive across the `ctx.enqueue` call, preventing stack-slot reuse
     # for `metal_args` from clobbering the sizes/is-device-ptr arrays.
-    var sizes_inline = InlineArray[
-        UInt64, num_captures_static + num_passed_args
-    ](fill=0)
-    var is_dev_inline = InlineArray[
-        Bool, num_captures_static + num_passed_args
-    ](fill=False)
+    var sizes_inline = Array[UInt64, num_captures_static + num_passed_args](
+        fill=0
+    )
+    var is_dev_inline = Array[Bool, num_captures_static + num_passed_args](
+        fill=False
+    )
 
     var dense_args_sizes: Pointer[UInt64, MutUntrackedOrigin]
     var dense_args_is_device_ptr: Pointer[Bool, MutUntrackedOrigin]

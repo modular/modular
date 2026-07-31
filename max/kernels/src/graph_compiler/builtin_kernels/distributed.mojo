@@ -1080,12 +1080,10 @@ struct DistributedAllGatherRMSNorm:
         comptime InputTensorType = type_of(
             inputs[0].to_tile_tensor[DType.int64]().as_immut()
         )
-        var in_tensors = InlineArray[InputTensorType, num_devices](
+        var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
             uninitialized=True
         )
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
 
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
@@ -1130,7 +1128,7 @@ struct DistributedAllGatherRMSNorm:
                 comptime OutViewType = type_of(
                     TileTensor(base, row_major(cols_rt, cols_rt))
                 )
-                var out_views = InlineArray[OutViewType, num_devices](
+                var out_views = Array[OutViewType, num_devices](
                     uninitialized=True
                 )
                 var row_off = 0

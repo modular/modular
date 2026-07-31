@@ -13,7 +13,6 @@
 """This module includes utilities for working with the
 warp-matrix-matrix-multiplication (wmma) instructions."""
 
-from std.collections import InlineArray
 from std.collections.string.string_slice import _get_kgen_string
 from std.sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, size_of
 from std.sys._assembly import inlined_assembly
@@ -664,7 +663,7 @@ def wgmma_async[
         n: Number of columns in matrix B and output matrix.
         k: Number of columns in matrix A / rows in matrix B.
         c_dtype: Data type of the output matrix C.
-        width: Width of the InlineArray register for matrix C.
+        width: Width of the StaticTuple register for matrix C.
         a_type: Data type of matrix A.
         b_type: Data type of matrix B.
         accum_type: Accumulation data type (defaults to c_dtype).

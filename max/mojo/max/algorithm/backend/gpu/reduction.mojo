@@ -498,9 +498,9 @@ def small_reduce_kernel[
 
             # One row per warp, warp collectively reads from global
             if warp_id() < warps_per_block:
-                var val = InlineArray[
-                    SIMD[accum_type, simd_width], num_reductions
-                ](fill=0)
+                var val = Array[SIMD[accum_type, simd_width], num_reductions](
+                    fill=0
+                )
 
                 comptime for i in range(num_reductions):
                     val[i] = init[i].cast[accum_type]()
@@ -516,7 +516,7 @@ def small_reduce_kernel[
                     comptime for i in range(num_reductions):
                         val[i] = init[i].cast[accum_type]()
 
-                var result = InlineArray[
+                var result = Array[
                     SIMD[accum_type, simd_width], num_reductions
                 ](fill=0)
 
@@ -757,7 +757,7 @@ def saturated_reduce_kernel[
             )
 
             # Declare & initialize registers
-            var val = InlineArray[SIMD[accum_type, simd_width], num_reductions](
+            var val = Array[SIMD[accum_type, simd_width], num_reductions](
                 uninitialized=True
             )
 
