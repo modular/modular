@@ -8,7 +8,14 @@ MOJO_SRCS = glob(["*.mojo"])
     mojo_binary(
         name = src.split(".")[0],
         srcs = [src],
-        copts = ["-Wno-error"],
+        copts = [
+            "--ignore-deprecated=a",
+            "--ignore-deprecated=b",
+        ] if src == "basic_deprecation.mojo" else [
+            "--ignore-deprecated=MyStruct",
+            "--ignore-deprecated=OtherStruct.function",
+            "--ignore-deprecated=pi",
+        ],
         deps = [
             "@mojo//:std",
         ],
