@@ -44,15 +44,6 @@ mojo_library(
     validate_missing_docs = True,
 )
 
-# The stdlib every `@mojo//:std` consumer resolves to. Point this at a
-# `mojo_library` built from an overlaid source tree (see `mojo_overlay_srcs`) to
-# swap individual stdlib files for a build without touching the checked-in tree.
-label_flag(
-    name = "std_impl",
-    build_setting_default = ":std",
-    visibility = ["//visibility:public"],
-)
-
 pkg_files(
     name = "docs",
     srcs = [":std.docs"],
