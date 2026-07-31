@@ -324,5 +324,5 @@ def main() raises:
             comptime for depth in [128, 256]:
                 test_helper[depth](ctx)
         else:
-            comptime for depth in [64, 128, 256]:
+            comptime for depth in [64, 80, 128, 256]:
                 test_helper[depth](ctx)
