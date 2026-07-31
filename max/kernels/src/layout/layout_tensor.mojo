@@ -2679,7 +2679,7 @@ struct LayoutTensor[
         return Self.StackTensorType(
             UnsafePointer(
                 unsafe_stack_allocation[
-                    Self.layout.size() * Self.element_layout.size(),
+                    Self.layout.cosize() * Self.element_layout.size(),
                     Self.dtype,
                     alignment=stack_alignment,
                     address_space=Self.address_space,
