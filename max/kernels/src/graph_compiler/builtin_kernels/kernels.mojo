@@ -36,7 +36,7 @@ from comm import MAX_GPUS, Signal
 from extensibility import StaticTensorSpec
 from max.gpu.host import CompletionFlag, DeviceContext, DeviceContextArray
 from layout.tile_tensor import row_major
-from std.gpu.host.info import B200, Vendor, is_cpu, is_gpu, is_valid_target
+from max.gpu.host.info import B200, Vendor, is_cpu, is_gpu, is_valid_target
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     ComptimeInt,

@@ -25,7 +25,7 @@ from std.atomic import Atomic
 
 import std.gpu.primitives.warp as warp
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.gpu.host.info import H100
+from max.gpu.host.info import H100
 from std.gpu import block_idx, thread_idx
 from std.gpu.primitives.id import cluster_dim
 from std.gpu.sync import barrier, named_barrier

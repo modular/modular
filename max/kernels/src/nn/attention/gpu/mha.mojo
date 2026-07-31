@@ -60,7 +60,7 @@ from std.gpu import (
 from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host import Dim as LaunchDim
 from max.gpu.host import FuncAttribute
-from std.gpu.host.info import A100, H100, GPUInfo, _is_sm10x_gpu
+from max.gpu.host.info import A100, H100, GPUInfo, _is_sm10x_gpu
 from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,

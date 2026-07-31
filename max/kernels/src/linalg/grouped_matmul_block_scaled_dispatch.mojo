@@ -18,7 +18,7 @@ and MXFP8 on SM100.
 """
 
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 from std.gpu.primitives.grid_controls import PDLLevel
 from layout import TileTensor
 

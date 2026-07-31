@@ -21,7 +21,7 @@ from ..tile_scheduler import MatmulSchedule, RasterOrder
 from internal_utils import TuningConfig
 from std.utils.index import Index, IndexList
 from std.collections import OptionalReg
-from std.gpu.host.info import H100
+from max.gpu.host.info import H100
 
 
 @fieldwise_init

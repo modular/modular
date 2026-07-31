@@ -50,7 +50,7 @@ from max.gpu.host import (
     FuncAttribute,
     get_gpu_target,
 )
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 from std.gpu.memory import AddressSpace, async_copy, external_memory
 from std.gpu.primitives.grid_controls import (
     PDLLevel,

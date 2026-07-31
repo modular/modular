@@ -35,7 +35,7 @@ from std.math import align_up, ceildiv
 from std.sys import size_of
 
 from max.gpu.host import DeviceContext, Dim, FuncAttribute
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 from std.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from layout import Coord, Idx, TileTensor, row_major

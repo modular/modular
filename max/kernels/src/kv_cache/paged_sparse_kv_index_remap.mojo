@@ -41,7 +41,7 @@ the output slot is written ``-1``.
 from std.math import ceildiv
 from std.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu
+from max.gpu.host.info import is_cpu
 from std.memory import UnsafePointer
 
 from extensibility import InputTensor

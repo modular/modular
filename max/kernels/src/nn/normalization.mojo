@@ -35,7 +35,7 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host.info import is_cpu, is_gpu
 from std.gpu.memory import external_memory
 from std.sys.info import is_apple_gpu
 from std.gpu.primitives import block

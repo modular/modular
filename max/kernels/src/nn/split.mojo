@@ -18,7 +18,7 @@ from std.sys.info import _current_target
 
 from max.algorithm import elementwise
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu
+from max.gpu.host.info import is_cpu
 from layout import (
     Coord,
     TensorLayout,

@@ -18,7 +18,7 @@
 
 from std.compile import compile_info
 from std.math.math import sin, cos
-from std.gpu.host.info import _get_h100_target
+from max.gpu.host.info import _get_h100_target
 
 
 def sin_func(x: Float64) raises -> Float64:

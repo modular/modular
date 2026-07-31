@@ -79,7 +79,7 @@ touches/resets `[0, total_m_blocks)`, so over-allocation is safe.
 import extensibility as compiler
 
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import is_gpu
+from max.gpu.host.info import is_gpu
 from std.math import ceildiv
 from std.memory import UnsafePointer
 

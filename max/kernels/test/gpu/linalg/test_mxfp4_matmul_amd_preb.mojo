@@ -25,7 +25,7 @@ Usage:
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
 from max.gpu.host import DeviceContext, HostBuffer
 from std.gpu.memory import CacheOperation
-from std.gpu.host.info import MI355X
+from max.gpu.host.info import MI355X
 from std.math import ceildiv
 from std.memory import bitcast
 from std.random import random_ui64, seed

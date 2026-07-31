@@ -39,6 +39,7 @@ lit_tests(
     name = "lit_tests",
     srcs = _LIT_TESTS,
     mojo_deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
     target_compatible_with = select({

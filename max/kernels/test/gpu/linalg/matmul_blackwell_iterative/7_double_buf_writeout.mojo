@@ -27,7 +27,7 @@ from std.gpu.primitives.cluster import (
 )
 from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 from std.gpu import block_id_in_cluster, block_idx, lane_id
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import fence_async_view_proxy, external_memory

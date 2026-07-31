@@ -21,7 +21,7 @@ from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import H100
+from max.gpu.host.info import H100
 from layout import Layout, TensorLayout, TileTensor
 from layout.tma_async import create_tensor_tile, create_tma_tile_template
 from std.logger import Logger

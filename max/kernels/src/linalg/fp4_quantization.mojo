@@ -59,7 +59,7 @@ from .fp4_utils import (
     get_scale_factor,
     get_scaling_kind,
 )
-from std.gpu.host.info import B200, MI355X, _is_sm10x_gpu, _is_sm12x_gpu
+from max.gpu.host.info import B200, MI355X, _is_sm10x_gpu, _is_sm12x_gpu
 from std.utils import StaticTuple
 from std.collections import Optional
 from linalg.utils import (

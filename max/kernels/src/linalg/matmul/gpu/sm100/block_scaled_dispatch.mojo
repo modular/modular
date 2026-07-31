@@ -30,7 +30,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     get_scaling_kind,
 )
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 from std.collections import Optional
 from linalg.utils import (
     elementwise_epilogue_type,

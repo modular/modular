@@ -26,7 +26,7 @@ ranges and alignment requirements differ between standard and scaled kernels.
 
 from std.collections.set import Set
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 from std.itertools.itertools import product
 from layout.tensor_core import get_mma_shape
 from std.utils.index import Index, IndexList

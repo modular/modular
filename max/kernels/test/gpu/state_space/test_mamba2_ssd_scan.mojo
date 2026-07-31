@@ -31,7 +31,7 @@ from state_space.mamba2_ssd_scan import (
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split,
 )
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 from std.testing import TestSuite, assert_almost_equal
 from std.utils.index import Index, IndexList
 

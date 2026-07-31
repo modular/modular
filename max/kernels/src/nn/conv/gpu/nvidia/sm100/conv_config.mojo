@@ -25,7 +25,7 @@ The convolution is mapped to GEMM as implicit im2col:
 
 from std.math import ceildiv
 
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.sys import size_of
 from std.utils.index import IndexList

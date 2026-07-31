@@ -15,7 +15,7 @@ from std.math import ceildiv, isclose
 from std.random import random_float64
 
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import A100
+from max.gpu.host.info import A100
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm

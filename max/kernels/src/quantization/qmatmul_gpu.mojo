@@ -43,7 +43,7 @@ from std.gpu import (
     thread_idx,
 )
 from max.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import is_gpu
+from max.gpu.host.info import is_gpu
 from std.gpu.memory import (
     AddressSpace,
     async_copy,

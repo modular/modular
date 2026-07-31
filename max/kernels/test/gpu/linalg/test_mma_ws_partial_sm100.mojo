@@ -124,7 +124,7 @@ from std.sys import size_of
 
 from std.gpu import barrier, thread_idx, warp_id as get_warp_id
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import (
     AddressSpace,

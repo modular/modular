@@ -18,7 +18,7 @@ from std.sys import argv
 from std.gpu import *
 from max.gpu.host import DeviceContext
 from std.sys import Vendor, has_amd_gpu_accelerator
-from std.gpu.host.info import (
+from max.gpu.host.info import (
     A100,
     H100,
     GPUInfo,

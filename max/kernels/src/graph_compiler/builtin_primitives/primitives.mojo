@@ -37,7 +37,7 @@ from max.gpu.host import (
     DeviceGraphBuilder,
 )
 from std.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
-from std.gpu.host.info import is_accelerator, is_cpu, is_gpu
+from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from std.memory import UnsafeMaybeUninit
 from layout import (
     Coord,

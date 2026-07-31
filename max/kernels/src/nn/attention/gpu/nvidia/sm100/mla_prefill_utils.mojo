@@ -48,7 +48,7 @@ from layout.tensor_core_async import (
 
 from linalg.arch.sm100.mma import smem_descriptor
 
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from std.gpu.memory import fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
