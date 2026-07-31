@@ -32,37 +32,54 @@
 
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | FileCheck %s
 
+# `Movable where False` is an opt-out: no move constructor is synthesized, so
+# each struct below carries only the unconditionally-injected `ImplicitlyDeletable`
+# `__del__`. The per-struct `CHECK-NOT`s (bounded by the next `CHECK-LABEL`)
+# pin that absence; without the opt-out honored, a move ctor or a "does not
+# implement all requirements for 'Movable'" error would appear here.
+
 # Self-conformance case: a struct's own arithmetic where-clause combined with
-# `Movable where False` on itself, no field composition needed. Checked via
-# Traits.cpp's canDischargeMethodConstraints.
+# `Movable where False` on itself, no field composition needed.
 # CHECK-LABEL: lit.struct.decl @SelfConstrained
+# CHECK-NOT: __init__(move:
 struct SelfConstrained[value: Int](Movable where False) where value >= 0:
     pass
 
 
 # Field-composition case: Outer has its own where-clause AND `Movable where
 # False`; Inner (used as Outer's field) is also `Movable where False`.
-# Checked via ASTType::isMovable -> isPropositionImplied, where the
-# assumptions mix Outer's own where-clause with the synthesized function's own
-# trivially-false conformance clause.
 # CHECK-LABEL: lit.struct.decl @ComposedInner
+# CHECK-NOT: __init__(move:
 struct ComposedInner[value: Int](Movable where False):
     pass
 
 # CHECK-LABEL: lit.struct.decl @ComposedOuter
+# CHECK-NOT: __init__(move:
 struct ComposedOuter[value: Int](Movable where False) where value >= 0:
     var field: ComposedInner[Self.value]
 
 
 # Mixed-conformance case: Inner additionally has a genuinely conditional
 # (non-False) conformance to a different trait, matching
-# explicit_destroy.mojo's PredicateOnStructInner shape.
+# explicit_destroy.mojo's PredicateOnStructInner shape. The conditional
+# `ImplicitlyDeletable` slot survives (`!constrained_..._Marker`) while the
+# `Movable where False` slot is dropped.
 # CHECK-LABEL: lit.struct.decl @MixedConformanceInner
+# CHECK-SAME: (!constrained_AnyType_ImplicitlyDeletable)
+# CHECK-NOT: __init__(move:
 struct MixedConformanceInner[value: Int](
     ImplicitlyDeletable where value >= 0, Movable where False,
 ):
     pass
 
 # CHECK-LABEL: lit.struct.decl @MixedConformanceOuter
+# CHECK-NOT: __init__(move:
 struct MixedConformanceOuter[value: Int](Movable where False) where value >= 0:
     var field: MixedConformanceInner[Self.value]
+
+
+# Sentinel: bounds the `CHECK-NOT` block above so it stops before the stdlib
+# decls (which legitimately synthesize move ctors) appear in the dump.
+# CHECK-LABEL: lit.struct.decl @WhereFalseSentinel
+struct WhereFalseSentinel:
+    pass

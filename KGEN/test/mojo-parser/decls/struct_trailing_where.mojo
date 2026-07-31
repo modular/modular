@@ -28,7 +28,9 @@ struct SingleLineTrailingWhere[T: Base] (Movable where False) where conforms_to(
 
 # CHECK-LABEL: lit.struct.decl @TrailingWhereWithParent
 # CHECK-SAME: <T: !AnyType_Base, {{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra))
-# CHECK-SAME: (!constrained_AnyType_ImplicitlyDeletable_Movable_Marker)
+# The `Movable where False` opt-out is erased from the canonical trait, leaving
+# the injected `AnyType`/`ImplicitlyDeletable` plus the unconditional `Marker`.
+# CHECK-SAME: (!AnyType_ImplicitlyDeletable_Marker)
 @fieldwise_init
 struct TrailingWhereWithParent[T: Base](Marker, Movable where False) where conforms_to(T, Extra):
     pass
@@ -36,7 +38,8 @@ struct TrailingWhereWithParent[T: Base](Marker, Movable where False) where confo
 
 # CHECK-LABEL: lit.struct.decl @MultilineParentTrailingWhere
 # CHECK-SAME: <T: !AnyType_Base, {{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra))
-# CHECK-SAME: (!constrained_AnyType_ImplicitlyDeletable_Movable_Marker1)
+# Same trait set as @TrailingWhereWithParent above, so it shares that alias.
+# CHECK-SAME: (!AnyType_ImplicitlyDeletable_Marker)
 @fieldwise_init
 struct MultilineParentTrailingWhere[T: Base](Marker, Movable where False) where conforms_to(
     T, Extra

@@ -13,7 +13,14 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+# The conformance is suppressed exactly like the literal `where False` spelling:
+# no move constructor is synthesized, only the unconditional `ImplicitlyDeletable`
+# `__del__` remains. The `CHECK-NOT`s (each bounded by the next `CHECK-LABEL`)
+# pin that absence; a leaked move ctor or a "does not implement all requirements
+# for 'Movable'" error would fail here.
+
 # CHECK-LABEL: lit.struct.decl @ContradictedByOwnClause
+# CHECK-NOT: __init__(move:
 struct ContradictedByOwnClause[n: Int](Movable where not (n > 0)) where n > 0:
     pass
 
@@ -22,7 +29,15 @@ struct ContradictedByOwnClause[n: Int](Movable where not (n > 0)) where n > 0:
 # rules: `Movable` canonicalizes to a multi-symbol trait, so the goal decomposes
 # into a conjunction that the negated assumption contradicts only as a whole.
 # CHECK-LABEL: lit.struct.decl @ContradictedByOwnConformsToClause
+# CHECK-NOT: __init__(move:
 struct ContradictedByOwnConformsToClause[T: AnyType](
     Movable where conforms_to(T, Movable)
 ) where not conforms_to(T, Movable):
+    pass
+
+
+# Sentinel: bounds the final `CHECK-NOT` block before the stdlib decls (which
+# legitimately synthesize move ctors) appear in the dump.
+# CHECK-LABEL: lit.struct.decl @ContradictedSentinel
+struct ContradictedSentinel:
     pass

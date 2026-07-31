@@ -259,11 +259,10 @@ struct NeverCopyableOuter(Copyable where False):
     var m: NeverCopyableInner
 
 
-# Discriminating variants for MOCO-4332: the fix must not over-broaden
-# acceptance. A field that's unconditionally Movable should compile fine
-# (unaffected by the fix), while a field with no Movable conformance at all
-# must still be correctly rejected -- with the same field-focused diagnostic
-# as before the fix, not the confusing struct-declaration-focused one.
+# Field-movability is irrelevant once the outer struct opts out: because a
+# `Movable where False` struct synthesizes no move constructor, its fields are
+# never checked for movability. Both a movable field and a wholly non-movable
+# one must therefore compile without any field-focused diagnostic.
 struct UnconditionallyMovableField(Movable):
     pass
 
@@ -277,7 +276,6 @@ struct NotMovableAtAll:
 
 
 struct NeverMovableOuterWithNonMovableField(Movable where False):
-    # expected-error @below {{cannot synthesize move constructor because field 'm' has non-movable and non-implicitly-copyable type 'NotMovableAtAll'}}
     var m: NotMovableAtAll
 
 
@@ -286,11 +284,9 @@ struct NeverMovableOuterWithNonMovableField(Movable where False):
 # ===----------------------------------------------------------------------=== #
 
 
-# MOCO-4303: a call resolving only to a compiler-synthesized candidate whose
-# own where clause can never be satisfied (e.g. the move-init synthesized for
-# a `Movable where False` conformance) should be diagnosed the same as having
-# no candidates at all, not by "explaining" why the never-callable candidate
-# doesn't match.
+# MOCO-4303: a `Movable where False` opt-out synthesizes no move constructor,
+# so a call that could only resolve to that synthesized candidate finds no
+# candidates at all rather than being "explained" against a never-callable one.
 struct NeverMovable[T: AnyType](Movable where False):
     pass
 
@@ -309,7 +305,9 @@ struct NeverCopyable(Movable, Copyable where False):
 
 def never_copyable_call_is_no_candidates_found():
     var a = NeverCopyable(1)
-    # expected-error @+1 {{invalid call to 'copy': no candidates found}}
+    # A `Copyable where False` opt-out synthesizes no copy constructor, so
+    # `copy` is not a member at all.
+    # expected-error @+1 {{'NeverCopyable' value has no attribute 'copy'}}
     var b = a.copy()
 
 
@@ -331,7 +329,9 @@ struct SilentGreeter(Greeter where False, Movable where False):
 
 def never_greeter_call_is_no_candidates_found():
     var s = SilentGreeter(1)
-    # expected-error @+1 {{invalid call to 'greet': no candidates found}}
+    # A `Greeter where False` opt-out synthesizes no default-method wrapper, so
+    # `greet` is not a member at all.
+    # expected-error @+1 {{'SilentGreeter' value has no attribute 'greet'}}
     var msg = s.greet()
 
 
