@@ -10,16 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""High performance data operations: vectorization, parallelization, reduction, memory.
-
-PRECOMMIT: Update wording to mention `std.algorithm` has non-accelerator
-algorithms.
+"""High performance data operations: parallelization, reduction, memory.
 
 The `algorithm` package provides high-performance primitives for data-parallel
-operations. It includes tools for vectorization (SIMD operations on contiguous
-data), parallelization (distributing work across multiple cores), and reduction
-operations (aggregating values). These building blocks enable efficient
-computational kernels without manual SIMD intrinsics or thread management.
+operations that run on both CPUs and accelerators. It includes tools for
+parallelization (distributing work across multiple cores), elementwise and
+stencil traversal, and reductions (aggregating values). These building blocks
+enable efficient computational kernels without manual SIMD intrinsics or thread
+management. The `std.algorithm` package retains the non-accelerator algorithms,
+such as vectorization and tiling.
 
 Use this package for large datasets, numerical algorithms, or compute-intensive
 code. For element-wise operations on small data, standard loops may be simpler.
