@@ -41,11 +41,11 @@ def execute_ragged_flash_attention[
     var num_layers = 1
     var layer_idx = 0
 
-    var true_ce_prompt_lens = [100, 200, 300, 400]
-    var mixed_ce_prompt_lens = [50, 100, 150, 100]
+    var true_ce_prompt_lens: List = [100, 200, 300, 400]
+    var mixed_ce_prompt_lens: List = [50, 100, 150, 100]
 
-    var true_ce_cache_lens = [0, 0, 0, 0]
-    var mixed_ce_cache_lens = [50, 100, 150, 300]
+    var true_ce_cache_lens: List = [0, 0, 0, 0]
+    var mixed_ce_cache_lens: List = [50, 100, 150, 300]
 
     var batch_size = len(true_ce_prompt_lens)
 

@@ -13,27 +13,27 @@
 
 
 def append():
-    list = [1, 2, 3, 4, 5]
+    list: List = [1, 2, 3, 4, 5]
     list.append(6)
     print(list)  # [1, 2, 3, 4, 5, 6]
 
 
 def insert():
-    list = ["one", "three"]
+    list: List = ["one", "three"]
     list.insert(1, "two")
     print(list)  # ['one', 'two', 'three']
 
 
 def extend():
-    list = ["one", "two", "three"]
-    more = ["four", "five"]
+    list: List = ["one", "two", "three"]
+    more: List = ["four", "five"]
     list.extend(more^)  # more's values are consumed
     # print(more)      # Error: use of initialized value
     print(list)  # ['one', 'two', 'three', 'four', 'five']
 
 
 def extend_span():
-    numbers = [1, 2, 3]
+    numbers: List = [1, 2, 3]
     more = [4, 5, 6]
     numbers.extend(Span(more))
     print(numbers)  # [1, 2, 3, 4, 5, 6]
@@ -60,7 +60,7 @@ def extend_dtype_count():
 
 
 def pop():
-    numbers = ["1", "2", "3", "4", "5"]
+    numbers: List = ["1", "2", "3", "4", "5"]
     value = numbers.pop()
     print(value)  # 5
     print("length", len(numbers))  # length 4
@@ -72,7 +72,7 @@ def pop():
 
 
 def resize():
-    list = ["z", "y", "x", "w"]
+    list: List = ["z", "y", "x", "w"]
     list.resize(3, "v")
     print(list)  # ['z', 'y', 'x']
     list.resize(6, "v")
@@ -80,7 +80,7 @@ def resize():
 
 
 def unsafe_resize():
-    list = [1, 2, 3]
+    list: List = [1, 2, 3]
     list.resize(
         unsafe_uninit_length=5
     )  # Indices 3 and 4 are uninitialized memory
@@ -91,20 +91,20 @@ def unsafe_resize():
 
 
 def shrink():
-    numbers = [1, 2, 3, 4, 5, 6]
+    numbers: List = [1, 2, 3, 4, 5, 6]
     numbers.shrink(2)
     print(numbers)  # [1, 2]
     # numbers.shrink(8)               # Error: new size is bigger than current
 
 
 def reverse():
-    list = ["o", "l", "l", "e", "H"]
+    list: List = ["o", "l", "l", "e", "H"]
     list.reverse()
     print("".join(list))  # Hello
 
 
 def clear():
-    list = ["o", "l", "l", "e", "H"]
+    list: List = ["o", "l", "l", "e", "H"]
     print(len(list))  # 5
     list.clear()
     print(len(list))  # 0
@@ -126,7 +126,7 @@ def unsafe_take_allocation():
 
 
 def count():
-    list = ["a", "b", "c", "b", "b", "a", "c"]
+    list: List = ["a", "b", "c", "b", "b", "a", "c"]
     print(list.count("b"))  # 3
 
 

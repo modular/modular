@@ -270,12 +270,12 @@ def test_return_value() raises:
 
 
 def test_early_exit_found() raises:
-    var items = [1, 2, 3, 4, 5]
+    var items: List = [1, 2, 3, 4, 5]
     assert_equal(early_exit(items, 3), True)
 
 
 def test_early_exit_not_found() raises:
-    var items = [1, 2, 3, 4, 5]
+    var items: List = [1, 2, 3, 4, 5]
     assert_equal(early_exit(items, 99), False)
 
 

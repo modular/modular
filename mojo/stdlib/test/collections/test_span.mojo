@@ -20,7 +20,7 @@ from std.collections import ImmSpan, MutSpan
 
 
 def test_span_list_int() raises:
-    var l = [1, 2, 3, 4, 5, 6, 7]
+    var l: List = [1, 2, 3, 4, 5, 6, 7]
     var s = Span(list=l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
@@ -284,8 +284,8 @@ def test_swap_elements() raises:
 
 
 def test_merge() raises:
-    var a = [1, 2, 3]
-    var b = [4, 5, 6]
+    var a: List = [1, 2, 3]
+    var b: List = [4, 5, 6]
 
     def inner(cond: Bool, mut a: List[Int], mut b: List[Int]):
         var either = Span(a) if cond else Span(b)

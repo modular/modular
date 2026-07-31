@@ -115,7 +115,7 @@ def _get_tuning_list_bf16[
     size_factor: Int, mma_k: Int, BK: Int
 ]() -> List[TuningConfigSM90]:
     # kprofile -s oss/modular/max/kernels/src/linalg/matmul/gpu/sm90/tuning.mojo.snippet oss/modular/max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml
-    comptime config_list = [
+    comptime config_list: List[TuningConfigSM90] = [
         # ----------------BEGIN-TUNING-LIST-BF16----------------
         # Automatically generated from [max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml]
         # index: [0]

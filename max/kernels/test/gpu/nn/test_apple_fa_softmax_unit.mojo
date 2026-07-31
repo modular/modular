@@ -188,7 +188,7 @@ def test_apple_fa_softmax_unit(ctx: DeviceContext) raises:
     for r in range(SQ):
         var m = Float32(-3.0e38)
         var l = Float32(0)
-        var o_ref = [Float32(0)] * OUT_N
+        var o_ref = List[Float32](length=OUT_N, fill=0)
 
         # tile 0
         var m0 = Float32(-3.0e38)

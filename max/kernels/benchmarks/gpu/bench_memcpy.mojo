@@ -201,7 +201,7 @@ def bench_p2p(
         bencher_iter_custom[kernel_launch](b, ctx1)
 
     # Create list of throughput measures
-    var measures = [
+    var measures: List = [
         # Raw bandwidth (considering only one transfer)
         ThroughputMeasure(BenchMetric.bytes, length_in_bytes),
     ]
