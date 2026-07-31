@@ -1209,6 +1209,42 @@ async def test_openai_chat_completion_reasoning(
     assert response.usage.completion_tokens == expected_completion_tokens
 
 
+async def test_openai_chat_completion_usage_present_with_max_tokens_one(
+    patch_openai_metrics: None,
+) -> None:
+    """CENG-920: max_tokens=1 must still report usage, not null.
+
+    A single-token budget can be spent without incrementing either token
+    counter (e.g. hitting the length cap before any content or reasoning
+    token is produced), but ``prompt_tokens`` is always known once the
+    request ran, so ``usage`` must never collapse to ``None``.
+    """
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.MAXIMUM_LENGTH,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=12,
+        ),
+    ]
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+
+    mock_request = _make_mock_request()
+
+    generator = OpenAIChatResponseGenerator(mock_pipeline)
+    response = await generator.complete([mock_request])
+
+    assert response.choices[0].finish_reason == "length"
+    assert response.usage is not None
+    assert response.usage.prompt_tokens == 12
+    assert response.usage.completion_tokens == 0
+    assert response.usage.total_tokens == 12
+
+
 def _all_reasoning_chunks(
     status: GenerationStatus,
 ) -> list[TokenGeneratorOutput]:

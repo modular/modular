@@ -1105,21 +1105,17 @@ class OpenAIChatResponseGenerator(
                             reasoning_message,
                         )
 
-            usage = None
-            if n_reasoning_tokens > 0 or n_tokens > 0:
-                usage = CompletionUsage(
-                    prompt_tokens=n_prompt_tokens,
-                    completion_tokens=n_reasoning_tokens + n_tokens,
-                    total_tokens=n_prompt_tokens
-                    + n_reasoning_tokens
-                    + n_tokens,
-                    prompt_tokens_details=PromptTokensDetails(
-                        cached_tokens=n_cached_prompt_tokens,
-                    ),
-                    completion_tokens_details=CompletionTokensDetails(
-                        reasoning_tokens=n_reasoning_tokens,
-                    ),
-                )
+            usage = CompletionUsage(
+                prompt_tokens=n_prompt_tokens,
+                completion_tokens=n_reasoning_tokens + n_tokens,
+                total_tokens=n_prompt_tokens + n_reasoning_tokens + n_tokens,
+                prompt_tokens_details=PromptTokensDetails(
+                    cached_tokens=n_cached_prompt_tokens,
+                ),
+                completion_tokens_details=CompletionTokensDetails(
+                    reasoning_tokens=n_reasoning_tokens,
+                ),
+            )
 
             response = CreateChatCompletionResponse(
                 id=str(request.request_id),
