@@ -426,14 +426,16 @@ def _accelerator_arch() -> StaticString:
 
 @fieldwise_init
 struct Vendor(Equatable, TrivialRegisterPassable, Writable):
-    """Represents GPU vendors.
+    """Represents GPU and accelerator vendors.
 
     This struct provides identifiers for different GPU vendors and utility
     methods for comparison and string representation.
 
-    The Vendor struct defines constants for common GPU vendors (NVIDIA, AMD)
-    and includes a NO_GPU option for systems without GPU support. It provides
-    comparison operators and string conversion methods for vendor identification.
+    The struct defines a constant for each vendor the stdlib knows about, a
+    `NO_GPU` option for systems without an accelerator, and a
+    `PLUGIN_ACCELERATOR` option for hardware contributed by a stdlib plugin. It
+    provides comparison operators and string conversion methods for vendor
+    identification.
     """
 
     var _value: Int8
@@ -450,6 +452,21 @@ struct Vendor(Equatable, TrivialRegisterPassable, Writable):
 
     comptime APPLE_GPU = Self(3)
     """Represents Apple GPU vendor."""
+
+    comptime PLUGIN_ACCELERATOR = Self(4)
+    """Represents an accelerator supplied by a stdlib plugin.
+
+    A plugin backend stamps this on the `GPUInfo` records it contributes;
+    keeping one value for every plugin lets a backend describe hardware the
+    stdlib has no built-in knowledge of. `_vendor_from_arch` never returns this
+    value: a plugin's accelerator arch string classifies as `Vendor.NO_GPU`, so
+    `GPUInfo.vendor` is the only place a plugin accelerator is identified as one.
+
+    Because every plugin shares the value, it says what kind of vendor a device
+    has and not which plugin supplied it. Code that dispatches on a specific
+    backend should compare `GPUInfo.api` for a device, or `stdlib_plugin()` for
+    the target being compiled for.
+    """
 
     def __eq__(self, other: Self) -> Bool:
         """Checks if two `Vendor` instances are equal.
@@ -491,6 +508,9 @@ struct Vendor(Equatable, TrivialRegisterPassable, Writable):
             return
         if self == Vendor.NVIDIA_GPU:
             writer.write("nvidia_gpu")
+            return
+        if self == Vendor.PLUGIN_ACCELERATOR:
+            writer.write("plugin_accelerator")
             return
 
         # Unreachable. Can't use `os.abort` here (`std.os` imports `std.sys`,
