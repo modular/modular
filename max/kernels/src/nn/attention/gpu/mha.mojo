@@ -285,13 +285,21 @@ def flash_attention[
 
 
 # Speculative-decode token fold (AMD). A verify step has query length S > 1, so
-# decode's `seq_len == 1` gate would send it to prefill, which reads K/V once per
-# query head (S x group x the unique traffic). The fold instead packs the S tokens
-# into the MMA M dimension as heads-inner rows (row = token*num_heads + head,
-# BM = num_heads*S), so one CTA covers all S tokens of all heads and reads K/V
-# once. Each eligible S is its own instantiation, so this cap is a compile-time
-# budget, not a hardware limit.
-comptime _MHA_DECODE_FOLD_MAX_S = 4
+# decode's `seq_len == 1` gate would send it to prefill. The fold instead packs
+# the S tokens into the MMA M dimension as heads-inner rows
+# (row = token*group + head), so one CTA covers all S tokens of its KV head.
+# At `group > 1` that spares prefill's `group` re-reads of each KV head; at
+# `group == 1` it buys the key-dim split-K prefill lacks, which otherwise pins
+# parallelism at `num_heads*batch` CTAs (half-idle on 256 CUs below batch 16).
+#
+# Each eligible S is its own instantiation, so the cap is a compile-time budget,
+# not a hardware limit. It must clear the largest query length a caller
+# DECLARES: for a 1+K speculative cycle that is K+2, not K+1 — the target
+# verifies K+1 tokens and an EAGLE3 draft's step-0 catch-up declares that width
+# plus one, so K=3 needs 5. Only `group == 1` has an arm at S=5, since
+# `group == num_heads` needs `num_heads*S <= 4*WM`, which no multiple-of-16 head
+# count satisfies there.
+comptime _MHA_DECODE_FOLD_MAX_S = 5
 # One 16-row MFMA M-tile per warp.
 comptime _MHA_DECODE_FOLD_WM = 16
 
@@ -337,26 +345,23 @@ def _mha_decode_fold_ok[
         # fp16 shares the bf16 decode MMA shape and should work, but is untested
         # through the fold; widen once a test covers it.
         and dtype == DType.bfloat16
-        # Flat query-row addressing (`Attention._q_stride0 == depth`) resolves
-        # row = token*group + head only with a single KV head.
-        and group == num_heads
         # At WN == BN each warp's K and V register tiles span the whole depth,
         # so anything wider spills.
         and depth <= 128
         # The sink lookup `q_head_idx()` (= lane % MMA_M) is the folded head only
         # while num_heads == MMA_M.
-        # TODO(anand): derive the sink index from the absolute fold row instead.
+        # TODO: derive the sink index from the absolute fold row instead.
         and not sink
         # A PADDED batch can hold a sequence shorter than S, whose pad rows'
         # split-K stats are never written and which `mha_splitk_reduce` does not
         # skip — its `scale > 0` blend guard accepts uninitialized floats. Ragged
         # is exempt: pad rows are the next sequence's, written by its own CTA.
-        # TODO(anand): skip pad rows in `mha_splitk_reduce` to lift this.
+        # TODO: skip pad rows in `mha_splitk_reduce` to lift this.
         and not (use_valid_length and not ragged)
         # `Attention.mask_status` bases its S-row span at `num_keys - S`, which
         # underflows for a sequence holding fewer than S keys (a mixed ragged
         # batch can). Only `check_mask_during_decoding` masks consult it.
-        # TODO(anand): clamp that span to the runtime seq_len and widen this.
+        # TODO: clamp that span to the runtime seq_len and widen this.
         and not check_mask_during_decoding
         # `mha_decode_streaming` carries no fold geometry, and dispatch routes the
         # same `Attention` to it under this flag; instantiating a fold arm would
@@ -364,14 +369,36 @@ def _mha_decode_fold_ok[
         and not get_defined_bool["MHA_STREAMING_DECODE", False]()
         and S > 1
         and S <= _MHA_DECODE_FOLD_MAX_S
-        # BM = num_heads*S must tile whole 16-row warp M-tiles, and needs two of
-        # them: at num_warps_m == 1 P stops being warp-local
-        # (`Attention._warp_local_p`) and falls back to the register-resident P
-        # chain documented there as never exercised.
-        and (num_heads * S) % _MHA_DECODE_FOLD_WM == 0
-        and num_heads * S >= 2 * _MHA_DECODE_FOLD_WM
-        # At most 4 warps / 256 threads — the single-token decode block size.
-        and num_heads * S <= 4 * _MHA_DECODE_FOLD_WM
+        # A CTA owns `group*S` rows and addresses them with ONE Q/O row stride
+        # (`Attention._fold_token_strided` picks it), which admits only two
+        # groups. Each brings its own block geometry:
+        and (
+            (
+                # Single KV head: `num_heads*S` rows stack over 16-row warp
+                # M-tiles, so they must tile evenly and need two — at
+                # num_warps_m == 1 P stops being warp-local
+                # (`Attention._warp_local_p`) and falls back to the
+                # register-resident P chain never exercised there. The 4-tile
+                # ceiling is the single-token decode block size (256 threads).
+                group == num_heads
+                and (num_heads * S) % _MHA_DECODE_FOLD_WM == 0
+                and num_heads * S >= 2 * _MHA_DECODE_FOLD_WM
+                and num_heads * S <= 4 * _MHA_DECODE_FOLD_WM
+            )
+            or (
+                # One query head per KV head: a CTA owns just its S token rows,
+                # which fit one 16-row M-tile, so it keeps the single-token
+                # geometry (`_fold_narrow` below) instead of stacking tiles. No
+                # 2-warp floor: that geometry splits N across 4 warps, so P
+                # stays SMEM-backed via `BN != WN`. The row bound is redundant
+                # while the cap is <= WM; keep it so raising the cap past WM
+                # cannot silently overflow the tile. WM stands in for that
+                # geometry's BM here — the two coincide at 16, and a wider BM
+                # would only make the bound conservative.
+                group == 1
+                and S <= _MHA_DECODE_FOLD_WM
+            )
+        )
     )
 
 
@@ -1396,12 +1423,13 @@ def flash_attention_dispatch[
                 # num warps in M and N, multiplied by warp size.
                 comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-                # Key tile for the S > 1 fold arms below. The fold sets WN == BN
-                # (one warp owns the whole key tile, so softmax needs no
-                # cross-warp reduction), so this knob sets per-warp K/V register
-                # pressure and LDS footprint. 64 measured 0.9-8.2% slower: the
-                # kernel is HBM-bound, so a narrower tile only buys more,
-                # shorter bursts.
+                # Key tile for the single-KV-head fold arm below, the only one
+                # that sets WN == BN (one warp owns the whole key tile, so
+                # softmax needs no cross-warp reduction); the `group == 1` arm
+                # keeps the single-token BN/WN instead. So this knob sets that
+                # arm's per-warp K/V register pressure and LDS footprint. 64
+                # measured 0.9-8.2% slower: the kernel is HBM-bound, so a
+                # narrower tile only buys more, shorter bursts.
                 comptime fold_BN = 128
 
                 comptime accum_type = get_accum_type[q.dtype]()
@@ -1577,12 +1605,21 @@ def flash_attention_dispatch[
                                 check_mask_during_decoding=mask_t.check_mask_during_decoding,
                             ]():
                                 if max_prompt_len == S:
-                                    comptime BM_S = BM if S == 1 else num_heads * S
-                                    comptime BN_S = BN if S == 1 else fold_BN
-                                    comptime WM_S = (
-                                        WM if S == 1 else _MHA_DECODE_FOLD_WM
+                                    # `group == 1` folds only the S token rows,
+                                    # which fit one M-tile, so it keeps the
+                                    # S == 1 geometry; a single KV head stacks
+                                    # `num_heads*S` rows over warp M-tiles.
+                                    comptime _fold_narrow = S == 1 or group == 1
+                                    comptime BM_S = (
+                                        BM if _fold_narrow else num_heads * S
                                     )
-                                    comptime WN_S = WN if S == 1 else BN_S
+                                    comptime BN_S = (
+                                        BN if _fold_narrow else fold_BN
+                                    )
+                                    comptime WM_S = (
+                                        WM if _fold_narrow else _MHA_DECODE_FOLD_WM
+                                    )
+                                    comptime WN_S = WN if _fold_narrow else BN_S
                                     comptime num_threads_S = (
                                         (BM_S // WM_S)
                                         * (BN_S // WN_S)

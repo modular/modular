@@ -58,6 +58,9 @@ struct MaskTileOp[
     # rows. Defaults (group, group) reproduce single-token decode (S=1).
     num_heads_per_token: Int = group,
     valid_rows: Int = group,
+    # Query heads one grid_y step advances past, for the folded row -> head map:
+    # `group` for MHA (a CTA per KV head), 0 for MLA (grid_y is a query tile).
+    head_base_stride: Int = 0,
     # The fold applies only to AMD decode (MLA always, MHA at S>1). False on the
     # shared prefill / single-token-decode callers, where it makes the fold
     # arithmetic comptime-dead (byte-identical legacy mask).
@@ -92,6 +95,8 @@ struct MaskTileOp[
             head = row % H (defaults to `group`).
         valid_rows: Number of live query rows M = H * S across all heads and
             sequence positions (defaults to `group`).
+        head_base_stride: Query heads spanned by one `grid_y` step, used to base
+            a folded row's head index (defaults to 0).
         fold_mode: Whether the token fold applies, for AMD decode only; when
             False the fold arithmetic is comptime-dead (defaults to False).
         num_warps_m: Number of warps splitting the MMA M dimension (= BM //
@@ -300,9 +305,10 @@ struct MaskTileOp[
 
                     else:
                         # Prefill: q_head_idx = block_idx.x. Decode: block_idx.y
-                        # * group + lane_group; fold (S>1): head = row % H. S==1
-                        # is split out (byte-identical). Only head-keyed masks
-                        # consume this; Causal/Null ignore it.
+                        # * group + lane_group; fold (S>1): the row's head based
+                        # at its KV head's first. S==1 is split out
+                        # (byte-identical). Only head-keyed masks consume this;
+                        # Causal/Null ignore it.
                         var q_head_idx = Int(block_idx.x)
                         comptime if Self.token_gen:
                             comptime if fold_seq_len == 1:
@@ -310,10 +316,18 @@ struct MaskTileOp[
                                     lane_id(), Self.mma_shape[0]
                                 )
                             else:
+                                # Mirrors `Attention`'s `r_abs` stat key. At
+                                # `group == 1` H is 1, so `row % H` alone
+                                # collapses every row to head 0; the base term
+                                # supplies the CTA's KV head.
+                                var head_in_token = (
+                                    Int(mask_frag_row)
+                                    % Self.num_heads_per_token
+                                )
                                 q_head_idx = (
-                                    Int(block_idx.y) * Self.valid_rows
-                                    + Int(mask_frag_row)
-                                ) % Self.num_heads_per_token
+                                    Int(block_idx.y) * Self.head_base_stride
+                                    + head_in_token
+                                )
                         comptime for j in range(0, output_frag_size, 1):
                             comptime fragment_col = Int(
                                 Self.FragmentLayoutT()(Idx[j])
