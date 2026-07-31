@@ -133,13 +133,6 @@ PIPELINES: list[PipelineEntry] = [
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
-        pipeline="deepseek-ai/DeepSeek-R1-0528",
-        runner="modrunner-b200-8x",
-        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
-        instance_type="bm.gpu.b200.8",
-        timeout=90,  # 1.5 hours
-    ),
-    PipelineEntry(
         pipeline="RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic",
         runner="modrunner-b200-4x",
         gpu_flag="--devices gpu:0,1,2,3",
