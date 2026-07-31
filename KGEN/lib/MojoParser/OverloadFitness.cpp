@@ -329,30 +329,8 @@ closureParamCapturesIfClosure(ASTDecl *funcIfDirect,
     return {};
 
   SharedState &shared = funcIfDirect->getShared();
-  auto lookup = [&](Operation *op) -> ArrayRef<ClosureParamCapture> {
-    if (ClosureParamCaptures *captures =
-            shared.getClosureParamCapturesForOp(op)) {
-      auto ptr = captures->find(closureName);
-      if (ptr != captures->end())
-        return ptr->second;
-    }
-    return {};
-  };
-
-  StructDeclOp structScope;
-  for (Operation *op = mlirValue.getParentBlock()->getParentOp(); op;
-       op = op->getParentOp()) {
-    if (isa<FnOp>(op)) {
-      if (ArrayRef<ClosureParamCapture> captures = lookup(op);
-          !captures.empty())
-        return captures;
-    } else if (auto structOp = dyn_cast<StructDeclOp>(op)) {
-      structScope = structScope ? structScope : structOp;
-    }
-  }
-  if (structScope)
-    return lookup(structScope);
-  return {};
+  return shared.lookupClosureCaptureFromOp(
+      mlirValue.getParentBlock()->getParentOp(), closureName);
 }
 
 /// Determine whether the specified signature can be invoked with the

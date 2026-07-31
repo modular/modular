@@ -213,6 +213,74 @@ def demo_origin_closure[
     must_be_read_only_with_origin(read, immut_ptr)
 
 
+def sinkClosureResult[
+    T: ImplicitlyCopyable & ImplicitlyDeletable, F: def() -> T
+](*, call: F) -> T:
+    return call()
+
+
+# COM: Forward a closure-typed parameter whose result type is only known equal
+# COM: to the enclosing scope's `T` through the captured-parameter `where`
+# COM: clause `eq(G.T, T)`.
+def forwardClosureResult[
+    T: ImplicitlyCopyable & ImplicitlyDeletable, //, G: def() -> T
+](*, call: G) -> T:
+    return sinkClosureResult(call=call)
+
+
+# COM: Same forward, but the result is declared with the witness spelling `G.T`.
+def forwardClosureResultWitness[
+    T: ImplicitlyCopyable & ImplicitlyDeletable, //, G: def() -> T
+](*, call: G) -> G.T:
+    return sinkClosureResult(call=call)
+
+
+def addsViaForwardedClosure(x: Int, y: Int) -> Int:
+    def make() {var} -> Int:
+        return x + y
+
+    return forwardClosureResult(call=make)
+
+
+def addsViaForwardedClosureWitness(x: Int, y: Int) -> Int:
+    def make() {var} -> Int:
+        return x + y
+
+    return forwardClosureResultWitness(call=make)
+
+
+@fieldwise_init
+struct Boxed[T: ImplicitlyCopyable & ImplicitlyDeletable](
+    ImplicitlyCopyable, ImplicitlyDeletable
+):
+    var value: Self.T
+
+
+# COM: Sink whose signature carries the nesting: the leaf `T` binds directly,
+# COM: so no lazy conformance (binding `T := Boxed[T]`) is required.
+def sinkBoxedResult[
+    T: ImplicitlyCopyable & ImplicitlyDeletable, F: def() -> Boxed[T]
+](*, call: F) -> Boxed[T]:
+    return call()
+
+
+# COM: Forward a closure whose result is the *nested* type `Boxed[T]`. The
+# COM: captured-parameter `where` clause binds only the leaf (`eq(G.T, T)`), so
+# COM: the forwarded call comes back spelled `Boxed[G.T]`; the call-site rebind
+# COM: externs the capture structurally back to `Boxed[T]`.
+def forwardBoxedResult[
+    T: ImplicitlyCopyable & ImplicitlyDeletable, //, G: def() -> Boxed[T]
+](*, call: G) -> Boxed[T]:
+    return sinkBoxedResult(call=call)
+
+
+def addsViaForwardedBoxedClosure(x: Int, y: Int) -> Int:
+    def make() {var} -> Boxed[Int]:
+        return Boxed(x + y)
+
+    return forwardBoxedResult(call=make).value
+
+
 def main() raises:
     var one = atol(argv()[1])
     var four = atol(argv()[2])
@@ -252,3 +320,15 @@ def main() raises:
 
     # CHECK: 3
     testParamInf()
+
+    # COM: Forward a closure result through a captured-parameter `where` clause.
+    # CHECK: 5
+    print(addsViaForwardedClosure(one, four))
+
+    # COM: Same forward, but the return type is spelled as the witness `G.T`.
+    # CHECK: 5
+    print(addsViaForwardedClosureWitness(one, four))
+
+    # COM: Forward a closure whose result is the nested type `Boxed[T]`.
+    # CHECK: 5
+    print(addsViaForwardedBoxedClosure(one, four))
