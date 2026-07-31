@@ -18,6 +18,7 @@ modular_eager_py_test(
         "test_module.py",
         "test_module_typing.py",
         "test_print_hook.py",
+        "test_qkv_linear.py",
         "test_sequential.py",
         "test_subgraph.py",
         "test_transparent_module.py",
