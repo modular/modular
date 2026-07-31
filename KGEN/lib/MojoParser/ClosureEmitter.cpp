@@ -2320,20 +2320,21 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
   SmallPtrSet<StringAttr, 8> promotedOriginNames = collectPromotedOrigins(
       ctx, concreteFieldDecls, concreteParams, concreteStructBindings);
 
+  mlir::AttrTypeReplacer promoteOriginRefs;
+  promoteOriginRefs.addReplacement(
+      [&](TypedAttr attr) -> std::optional<TypedAttr> {
+        if (!isa<OriginType>(attr.getType()))
+          return std::nullopt;
+        auto originRef =
+            dyn_cast<ParamDeclRefAttr>(OriginType::stripMutCastAndRebind(attr));
+        if (!originRef || !promotedOriginNames.contains(originRef.getName()))
+          return std::nullopt;
+        return ParamDeclRefAttr::get(originRef.getName(),
+                                     OriginType::get(ctx, false));
+      });
+
   if (!promotedOriginNames.empty()) {
     FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
-    mlir::AttrTypeReplacer promoteOriginRefs;
-    promoteOriginRefs.addReplacement(
-        [&](TypedAttr attr) -> std::optional<TypedAttr> {
-          if (!isa<OriginType>(attr.getType()))
-            return std::nullopt;
-          auto originRef = dyn_cast<ParamDeclRefAttr>(
-              OriginType::stripMutCastAndRebind(attr));
-          if (!originRef || !promotedOriginNames.contains(originRef.getName()))
-            return std::nullopt;
-          return ParamDeclRefAttr::get(originRef.getName(),
-                                       OriginType::get(ctx, false));
-        });
     promoteOriginRefs.recursivelyReplaceElementsIn(nestedFn,
                                                    /*replaceAttrs=*/true,
                                                    /*replaceLocs=*/true,
@@ -2641,10 +2642,20 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
           traitAliases.push_back(alias);
       assert(traitAliases.size() == aliases.size() &&
              "trait capture aliases must mirror closure captures");
-      for (auto [alias, param] : llvm::zip_equal(traitAliases, aliases))
+      for (auto [alias, param] : llvm::zip_equal(traitAliases, aliases)) {
+        StringAttr paramName = StringAttr::get(ctx, param.first);
+        Type paramType = param.second;
+        if (!promotedOriginNames.empty()) {
+          // Remap promoted origins.
+          if (isa<OriginType>(paramType) &&
+              promotedOriginNames.contains(paramName))
+            paramType = OriginType::get(ctx, false);
+          else
+            paramType = promoteOriginRefs.replace(paramType);
+        }
         WitnessOp::create(builder, alias.getParamDecl().getName(),
-                          ParamDeclRefAttr::get(
-                              StringAttr::get(ctx, param.first), param.second));
+                          ParamDeclRefAttr::get(paramName, paramType));
+      }
     }
   };
 
