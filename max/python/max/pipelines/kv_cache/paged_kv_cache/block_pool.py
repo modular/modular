@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import logging
 
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
 
 from .block_utils import FreeKVCacheBlockQueue, KVCacheBlock
@@ -41,14 +40,10 @@ class BlockPool:
     @traced
     def __init__(
         self,
-        memory_tier: MemoryTier,
         total_num_blocks: int,
-        enable_prefix_caching: bool,
         enable_runtime_checks: bool = False,
     ) -> None:
-        self.memory_tier = memory_tier
         self.total_num_blocks = total_num_blocks
-        self.enable_prefix_caching = enable_prefix_caching
         self.enable_runtime_checks = enable_runtime_checks
 
         # A Block pool of all kv-cache blocks.
@@ -142,7 +137,6 @@ class BlockPool:
 
         # If the block is committed into prefix cache, evict it.
         block_hash = curr_block.block_hash
-        assert self.enable_prefix_caching or block_hash is None
         if block_hash is not None:
             self.uncommit_block(curr_block)
 

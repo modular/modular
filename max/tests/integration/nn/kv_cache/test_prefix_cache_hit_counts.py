@@ -32,7 +32,6 @@ import numpy as np
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
     BlockManager,
     PrefixCacheHits,
@@ -69,7 +68,6 @@ def _make_block_manager(
     enable_prefix_caching: bool = True,
 ) -> BlockManager:
     return BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=32,
         block_size=BLOCK_SIZE,
         connector=cast(object, connector or NullConnector()),  # type: ignore[arg-type]
@@ -359,9 +357,7 @@ def _make_tiered_connector_stub(
     """
     connector = TieredConnector.__new__(TieredConnector)
     host_pool = BlockPool(
-        MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=8,
-        enable_prefix_caching=True,
         enable_runtime_checks=False,
     )
     for h in host_hashes:

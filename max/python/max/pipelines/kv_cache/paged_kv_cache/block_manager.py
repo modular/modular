@@ -43,7 +43,6 @@ from max.pipelines.kv_cache.kv_connector import (
     KVConnectorTransfer,
     TransferDirection,
 )
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
@@ -197,7 +196,6 @@ class BlockManager:
     @traced
     def __init__(
         self,
-        device_memory_tier: MemoryTier,
         total_num_blocks: int,
         block_size: int,
         connector: KVConnector,
@@ -277,9 +275,7 @@ class BlockManager:
         # One pool of device blocks per replica.
         self.device_block_pools: list[BlockPool] = [
             BlockPool(
-                device_memory_tier,
                 total_num_blocks,
-                enable_prefix_caching,
                 enable_runtime_checks=enable_runtime_checks,
             )
             for _ in range(self.num_replicas)
