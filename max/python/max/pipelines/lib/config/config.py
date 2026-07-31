@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from max.config import ConfigFileModel
@@ -332,6 +333,16 @@ class PipelineConfig(ConfigFileModel):
         session._use_experimental_kernels(self.runtime.use_experimental_kernels)
         session._use_vendor_blas(self.runtime.use_vendor_blas)
         session._use_vendor_ccl(self.runtime.use_vendor_ccl)
+        # BLASST prefill sparsity sweep hook (off unless ENABLE_BLASST is set in
+        # the env). Injects the comptime defines the SM100 2Q attention kernel
+        # reads via get_defined_{bool,int}. Values must be str/int, never Python
+        # True (a UnitAttr fails KGEN's string coercion). No effect when unset.
+        if os.environ.get("ENABLE_BLASST"):
+            session._set_mojo_define("ENABLE_BLASST", "true")
+            session._set_mojo_define(
+                "BLASST_LOG_THRESHOLD_MAG",
+                int(os.environ.get("BLASST_LOG_THRESHOLD_MAG", "13000")),
+            )
 
     def estimate_signal_buffer_memory(
         self, arch_config: ArchConfig | None = None

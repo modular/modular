@@ -842,6 +842,12 @@ struct FA4Config[
         # BK1: Full BN since V loading is not staged (V must be complete
         # for P@V)
         self.BK1 = self.BN
+
+        # BLASST skip-vote region: must match SM100AttentionSMem.blasst_vote_bytes
+        # or the launch smem_used undershoots -> CUDA_ERROR_ILLEGAL_ADDRESS.
+        comptime if get_defined_bool["ENABLE_BLASST", False]():
+            smem_use += 2 * 2 * 4 * size_of[UInt8]()
+
         self.smem_used = smem_use
 
     def supported(self) -> Bool:
