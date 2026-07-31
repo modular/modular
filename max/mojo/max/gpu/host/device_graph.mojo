@@ -106,7 +106,7 @@ struct DeviceGraphNode[arena_origin: ImmOrigin](
 
 @doc_hidden
 @fieldwise_init
-struct _GraphDepArgs(TrivialRegisterPassable):
+struct _GraphDepArgs[origin: ImmOrigin](TrivialRegisterPassable):
     """C ABI representation of the dependency list passed to the
     `AsyncRT_DeviceGraphBuilder_add*` exports.
 
@@ -115,7 +115,7 @@ struct _GraphDepArgs(TrivialRegisterPassable):
     side never dereferences it).
     """
 
-    var ids: Pointer[Int32, ImmUntrackedOrigin]
+    var ids: ImmPointer[Int32, Self.origin]
     var count: Int64
 
 
@@ -123,21 +123,20 @@ struct _GraphDepArgs(TrivialRegisterPassable):
 @always_inline
 def _pack_dep_args[
     o: ImmOrigin
-](deps: List[DeviceGraphNode[o]]) -> _GraphDepArgs:
+](deps: Span[DeviceGraphNode[o], _]) -> _GraphDepArgs[deps.origin]:
     """Packs an explicit dependency list into the (ids, count) pair used by
     the AsyncRT_DeviceGraphBuilder_add* C ABI exports.
 
-    `DeviceGraphNode` is a single-Int32 struct, so `List.unsafe_ptr()` can
+    `DeviceGraphNode` is a single-Int32 struct, so `Span.unsafe_ptr()` can
     be bitcast directly to `Pointer[Int32]`. The matching C++ side
     static_asserts this layout invariant in MojoBindings.cpp.
 
-    The returned `ids` pointer borrows from the input `deps` and is only
-    valid for as long as `deps` is alive at the call site.
+    The returned `_GraphDepArgs` carries `deps.origin`, so the borrow
+    checker keeps `deps` alive for as long as the packed `ids` pointer is
+    in use.
     """
-    return _GraphDepArgs(
-        ids=deps.unsafe_ptr()
-        .unsafe_bitcast[Int32]()
-        .unsafe_origin_cast[ImmUntrackedOrigin](),
+    return _GraphDepArgs[deps.origin](
+        ids=deps.unsafe_ptr().unsafe_bitcast[Int32](),
         count=Int64(len(deps)),
     )
 
