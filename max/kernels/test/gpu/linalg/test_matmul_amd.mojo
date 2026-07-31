@@ -18,7 +18,7 @@ from std.math import ceildiv
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.host.info import MI355X
+from max.gpu.host.info import MI355X
 from layout import (
     Coord,
     Idx,

@@ -19,7 +19,7 @@ from std.math import align_up, ceildiv
 from std.sys.info import align_of, simd_width_of
 
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_valid_target
+from max.gpu.host.info import is_cpu, is_valid_target
 from layout import (
     Layout,
     LayoutTensor,

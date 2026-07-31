@@ -39,7 +39,7 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from std.gpu.host.info import is_gpu
+from max.gpu.host.info import is_gpu
 from layout import (
     Coord,
     Idx,

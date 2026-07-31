@@ -36,7 +36,7 @@ from std.benchmark import (
 )
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 from std.gpu.primitives import block
 from std.memory import alloc, dealloc
 from internal_utils import (

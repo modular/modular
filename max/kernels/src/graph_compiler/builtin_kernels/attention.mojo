@@ -27,7 +27,7 @@ import extensibility
 
 from max.gpu.host import DeviceContext
 from layout.tile_tensor import row_major
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host.info import is_cpu, is_gpu
 from kv_cache.paged_sparse_kv_index_remap import paged_sparse_kv_index_remap
 from kv_cache.types import KVCacheStaticParams
 from layout import (

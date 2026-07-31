@@ -18,7 +18,7 @@ from std.sys import get_defined_bool
 from std.bit import prev_power_of_two
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 from std.gpu.primitives.grid_controls import PDLLevel
 from kv_cache.types import _kv_fold_base_ok, kv_sub_tile_rows
 

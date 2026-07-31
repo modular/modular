@@ -15,7 +15,7 @@
 
 from std.gpu import barrier
 from std.gpu.host.compile import _compile_code
-from std.gpu.host.info import MI355X
+from max.gpu.host.info import MI355X
 
 comptime MI355X_TARGET = MI355X.target()
 

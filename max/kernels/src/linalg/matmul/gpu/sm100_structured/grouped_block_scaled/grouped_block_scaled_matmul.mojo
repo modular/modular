@@ -52,7 +52,7 @@ from std.math import align_up
 from std.sys import size_of
 
 from max.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 from layout import TileTensor
 
 from structured_kernels.tile_types import create_tma_tile

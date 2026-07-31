@@ -27,7 +27,7 @@ from std.gpu import (
 )
 import std.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu
+from max.gpu.host.info import is_cpu
 from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 from layout import Idx, TensorLayout, TileTensor, row_major

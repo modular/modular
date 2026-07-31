@@ -19,7 +19,7 @@ from std.memory.alloc import Layout as AllocLayout
 from std.sys.info import align_of, simd_width_of
 from std.gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host.info import is_cpu, is_gpu
 from std.gpu.memory import AddressSpace
 from std.collections import OptionalReg
 from kv_cache.types import (

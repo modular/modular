@@ -37,7 +37,7 @@ from std.gpu import (
 )
 from std.gpu.primitives.grid_controls import PDLLevel
 from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
+from max.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
 from layout import (
     Coord,
     Idx,

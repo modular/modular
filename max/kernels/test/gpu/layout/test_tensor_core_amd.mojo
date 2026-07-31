@@ -13,7 +13,7 @@
 
 from std.gpu import WARP_SIZE, lane_id
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import MI300X, MI355X
+from max.gpu.host.info import MI300X, MI355X
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout.tensor_core import load_b_tr

@@ -42,7 +42,7 @@ from std.sys import argv, has_nvidia_gpu_accelerator
 
 from std.gpu import *
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 from std.utils.index import Index
 from std.utils.numerics import isnan
 from layout import (

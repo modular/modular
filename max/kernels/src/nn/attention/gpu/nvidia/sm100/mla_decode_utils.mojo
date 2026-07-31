@@ -26,7 +26,7 @@ from std.gpu import barrier, thread_idx, block_idx, warp_id
 from std.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.primitives.grid_controls import launch_dependent_grids
 from max.gpu.compute.arch.mma_nvidia_sm100 import (

@@ -30,7 +30,7 @@ from max.algorithm.functional import _get_num_workers
 from std.bit import log2_floor
 from std.math.math import max as _max, min as _min
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_valid_target
+from max.gpu.host.info import is_cpu, is_valid_target
 
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 

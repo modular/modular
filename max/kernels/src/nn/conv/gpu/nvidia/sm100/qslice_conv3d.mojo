@@ -69,7 +69,7 @@ from std.math import ceildiv, gcd
 from std.math.uutils import udivmod
 from std.gpu import global_idx
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 from layout import Coord, Idx, TileTensor, row_major
 from std.sys import align_of, simd_width_of
 from std.utils import IndexList

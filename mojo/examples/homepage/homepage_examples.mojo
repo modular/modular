@@ -16,7 +16,7 @@
 from std.algorithm import vectorize
 from std.gpu import global_idx
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host.info import is_cpu, is_gpu
 from std.math import ceildiv
 from std.python import Python, PythonObject
 from std.reflection import reflect

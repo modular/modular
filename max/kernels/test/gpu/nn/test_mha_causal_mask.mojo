@@ -18,7 +18,7 @@ from std.sys.defines import get_defined_int
 
 from std.gpu import *
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import A100, H100, _is_sm10x_gpu
+from max.gpu.host.info import A100, H100, _is_sm10x_gpu
 from layout import (
     Idx,
     TileTensor,

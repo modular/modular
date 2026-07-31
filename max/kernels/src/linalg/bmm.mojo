@@ -30,7 +30,7 @@ from max.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
 from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import A100, is_cpu, is_valid_target
+from max.gpu.host.info import A100, is_cpu, is_valid_target
 from layout import (
     ComptimeInt,
     Coord,
@@ -53,7 +53,7 @@ from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from std.gpu.host.info import H100, _is_sm10x_gpu
+from max.gpu.host.info import H100, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple

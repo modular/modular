@@ -26,7 +26,7 @@ from std.gpu import (
     block_idx,
 )
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import MI355X
+from max.gpu.host.info import MI355X
 from std.gpu.memory import CacheOperation
 
 from layout import Coord, Idx, TensorLayout, TileTensor

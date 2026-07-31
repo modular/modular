@@ -70,7 +70,7 @@ from max.gpu.host import (
     DeviceBuffer,
     Dim as LaunchDim,
 )
-from std.gpu.host.info import A100, H100, B200, _is_sm10x_gpu
+from max.gpu.host.info import A100, H100, B200, _is_sm10x_gpu
 from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -135,7 +135,7 @@ from nn.softmax import (
 from .amd_structured.mla_decode import Attention
 from .amd_structured.mla_prefill import Attention
 from .nvidia.sm100.mla_prefill import mla_sm100_prefill
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from max.gpu.host.info import B200, _is_sm10x_gpu
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
     mla_decode_sm100_dispatch,

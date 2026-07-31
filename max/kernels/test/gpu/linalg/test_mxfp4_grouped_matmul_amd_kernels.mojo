@@ -39,7 +39,7 @@ Usage:
 """
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from std.gpu.host.info import MI355X
+from max.gpu.host.info import MI355X
 from std.gpu.memory import CacheOperation
 from std.math import align_up, ceildiv
 from std.memory import bitcast

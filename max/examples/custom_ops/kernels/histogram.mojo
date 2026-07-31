@@ -23,7 +23,7 @@ from std.gpu import (
     global_idx,
     thread_idx,
 )
-from std.gpu.host.info import is_cpu
+from max.gpu.host.info import is_cpu
 from max.gpu.host import DeviceBuffer
 from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation

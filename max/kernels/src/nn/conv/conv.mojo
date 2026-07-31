@@ -106,7 +106,7 @@ from std.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,

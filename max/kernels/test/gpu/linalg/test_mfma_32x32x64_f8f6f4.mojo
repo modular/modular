@@ -25,7 +25,7 @@ CDNA4 block-scaled shapes lives in `test_block_scaled_mma_amd.mojo`.
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, lane_id
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import MI355X
+from max.gpu.host.info import MI355X
 from std.memory import bitcast
 from std.testing import assert_true
 from std.utils import StaticTuple

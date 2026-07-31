@@ -21,7 +21,7 @@ from max.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
 from std.algorithm.functional import tile
 from std.atomic import Atomic
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host.info import is_cpu, is_gpu
 from layout import (
     Coord,
     Idx,

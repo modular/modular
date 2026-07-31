@@ -20,7 +20,7 @@ import std.gpu.primitives.block as block
 from max.algorithm.functional import elementwise
 from std.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import is_gpu
+from max.gpu.host.info import is_gpu
 from layout import TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 

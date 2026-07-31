@@ -73,7 +73,7 @@ from std.sys import size_of
 
 from std.gpu import barrier, thread_idx
 from max.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, external_memory
 from std.gpu.sync import named_barrier

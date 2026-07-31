@@ -22,7 +22,7 @@ from std.math import ceildiv
 
 import extensibility
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host.info import is_cpu, is_gpu
 
 from extensibility import InputTensor, OutputTensor
 from std.utils.index import IndexList

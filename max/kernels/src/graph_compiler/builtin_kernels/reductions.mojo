@@ -31,7 +31,7 @@ from max.algorithm import product, sum
 from max.algorithm.reduction import _reduce_generator
 
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import is_gpu
+from max.gpu.host.info import is_gpu
 from nn import arg_nonzero
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu

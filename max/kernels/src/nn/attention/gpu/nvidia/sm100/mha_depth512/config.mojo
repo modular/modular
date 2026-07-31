@@ -30,7 +30,7 @@ from std.sys import size_of
 from std.bit import prev_power_of_two
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 
 from nn.attention.gpu.nvidia.sm100.attention import SM100_RESERVED_SMEM_BYTES
 

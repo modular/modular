@@ -60,7 +60,7 @@ from std.memory import alloc
 from std.utils.numerics import isinf, isnan
 from nn.attention.mha_mask import CausalMask
 from nn.attention.gpu.mla import flare_mla_prefill
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 from std.testing import assert_equal
 

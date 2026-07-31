@@ -48,7 +48,7 @@ shmem package — use bmojo / bazel):
 """
 
 from max.gpu.host import DeviceContext, HostBuffer
-from std.gpu.host.info import MI355X
+from max.gpu.host.info import MI355X
 from std.math import align_up, exp, isfinite
 from std.random import random_float64, seed
 

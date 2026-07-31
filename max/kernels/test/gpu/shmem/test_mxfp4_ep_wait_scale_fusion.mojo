@@ -58,7 +58,7 @@ shmem package — use bazel mojo):
 
 from std.gpu import block_idx
 from max.gpu.host import DeviceContext, HostBuffer
-from std.gpu.host.info import MI355X
+from max.gpu.host.info import MI355X
 from std.gpu.primitives import warp_id
 from std.math import align_up
 from std.random import random_ui64, seed

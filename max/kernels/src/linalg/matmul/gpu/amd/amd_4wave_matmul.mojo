@@ -49,7 +49,7 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import MI355X
+from max.gpu.host.info import MI355X
 from std.gpu.intrinsics import AMDBufferResource
 from std.gpu.sync import schedule_barrier, s_waitcnt
 
