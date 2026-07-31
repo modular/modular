@@ -53,11 +53,6 @@ def main(cpu_target: str, family: str | None) -> None:
     # slot, so the sweep and stamp are CPU-only.
     set_virtual_cpu_target(cpu_target)
 
-    print(
-        f"XARCH_WARM_CPU: warming CPU-only + host {cpu_target} "
-        f"(family={family or 'all'})",
-        flush=True,
-    )
     derived = os.environ["MODULAR_DERIVED_PATH"]
     entries = warm_lib.export_slots(
         derived,
@@ -81,11 +76,6 @@ def main(cpu_target: str, family: str | None) -> None:
         "toolchain": {"mode": "asserted"},
     }
     warm_lib.write_manifest(envelope, entries)
-    print(
-        f"XARCH_WARM_CPU: wrote {len(entries)} CPU MEFs + manifest.json "
-        f"({sorted(e['device_class'] for e in entries)})",
-        flush=True,
-    )
 
 
 if __name__ == "__main__":
