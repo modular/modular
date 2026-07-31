@@ -14,7 +14,7 @@
 from std.sys import has_amd_gpu_accelerator
 
 from max.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host.compile import _compile_code
 from layout import ComptimeInt, RowMajorLayout
 from linalg.matmul.gpu import _amdgpu_matmul_config_from_block_shape
 from linalg.matmul.gpu.amd import AMDMatmul, AMDPingPongMatmul, KernelConfig

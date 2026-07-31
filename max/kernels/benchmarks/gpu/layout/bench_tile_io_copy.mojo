@@ -22,7 +22,7 @@ from std.benchmark import (
 )
 from std.gpu import barrier, thread_idx
 from max.gpu.host import DeviceContext
-from std.gpu.host.compile import get_gpu_target
+from max.gpu.host.compile import get_gpu_target
 from std.gpu.memory import AddressSpace
 from std.memory import bitcast
 from std.os import abort

@@ -27,7 +27,7 @@ from std.gpu import (
 )
 from std.gpu.globals import WARP_SIZE
 from max.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host.compile import _compile_code
 from std.gpu.intrinsics import (
     ds_read_tr8_b64,
     ds_read_tr16_b64,

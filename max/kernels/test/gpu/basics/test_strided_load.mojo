@@ -13,7 +13,7 @@
 
 from std.sys.intrinsics import strided_load
 
-from std.gpu.host.compile import _compile_code
+from max.gpu.host.compile import _compile_code
 from std.testing import assert_true
 
 

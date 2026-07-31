@@ -30,7 +30,7 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host.compile import _compile_code
 from std.memory import unsafe_memset_zero, unsafe_stack_allocation
 from std.testing import *
 

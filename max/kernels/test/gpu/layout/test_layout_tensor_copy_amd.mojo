@@ -14,7 +14,7 @@
 
 from std.gpu import barrier
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host.compile import _compile_code
 from std.gpu import thread_idx
 from std.gpu.memory import CacheOperation
 from layout import *

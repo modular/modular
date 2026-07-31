@@ -13,7 +13,7 @@
 
 from std.gpu import thread_idx
 from max.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host.compile import _compile_code
 from std.gpu.memory import external_memory
 
 

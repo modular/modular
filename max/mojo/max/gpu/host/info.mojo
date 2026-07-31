@@ -18,9 +18,9 @@ from std.gpu.host.info import (
     _get_a100_target,
     _get_h100_target,
     _get_metal_m1_target,
+    _get_metal_m2_target,
     _get_mi300x_target,
     _get_mi355x_target,
-    _get_metal_m2_target,
     _is_sm10x_gpu,
     _is_sm12x_gpu,
 )
