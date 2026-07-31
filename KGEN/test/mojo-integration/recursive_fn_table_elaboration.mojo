@@ -86,8 +86,8 @@ def int_to_json(v: Value) raises -> String:
 
 # The table must hold at least two distinct thin functions to trigger the bug.
 @always_inline
-def serializer_table() -> InlineArray[Serializer, 3]:
-    var table = InlineArray[Serializer, 3](fill=int_to_json)
+def serializer_table() -> Array[Serializer, 3]:
+    var table = Array[Serializer, 3](fill=int_to_json)
     table[Value.STRING] = string_to_json
     return table^
 
