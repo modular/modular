@@ -49,11 +49,13 @@ def flashattention_forward_kernel(
     Q: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     K: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     V: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    N: Int,
+    N_dev: Int32,
     scaling: Float32,
     out_D: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     out_O: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
 ):
+    # Int is not device-passable; widen the fixed-width arg.
+    var N = Int(N_dev)
     var T_r = N // B_r
     var T_c = N // B_c
 
@@ -318,7 +320,7 @@ def main() raises:
         d_Q,
         d_K,
         d_V,
-        N,
+        Int32(N),
         scaling,
         d_D_out,
         d_O,

@@ -182,7 +182,7 @@ def bench_shape[
             stride,
             IndexList[2](1, 1),
             pad,
-            1,
+            Int32(1),
             grid_dim=(gx, gy, gz),
             block_dim=(block_size, block_size),
         )

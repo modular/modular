@@ -261,7 +261,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             SplitAccumType=Self.SplitAccumType,
         ],
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        indices_stride: Int,
+        indices_stride_dev: Int32,
         topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         attn_sink_ptr: OptionalReg[
@@ -276,7 +276,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        extra_indices_stride: Int,
+        extra_indices_stride_dev: Int32,
         extra_scales_ptr: OptionalReg[
             UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
         ],
@@ -304,6 +304,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         comptime num_reg_other = 64
         comptime num_reg_reswizzle = 72
 
+        var indices_stride = Int(indices_stride_dev)
+        var extra_indices_stride = Int(extra_indices_stride_dev)
         var batch_size = Int(scalar_args.ptr[0])
         var q_max_seq_len = Int(scalar_args.ptr[1])
         var num_partitions = mla_decode_pack.num_partitions

@@ -59,8 +59,9 @@ def _histogram_gpu(
     def kernel(
         output: UnsafePointer[Int64, MutAnyOrigin],
         input: UnsafePointer[UInt8, MutAnyOrigin],
-        n: Int,
+        n_dev: Int32,
     ):
+        var n = Int(n_dev)
         var tid = global_idx.x
 
         if tid >= n:
@@ -108,7 +109,7 @@ def _histogram_gpu(
     ctx.enqueue_function[kernel](
         output_device,
         input_device,
-        n,
+        Int32(n),
         block_dim=block_dim,
         grid_dim=grid_dim,
     )

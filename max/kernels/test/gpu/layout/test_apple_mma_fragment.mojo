@@ -782,10 +782,12 @@ def bounded_mma_kernel(
     a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
     d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    m_valid: Int,
-    k_valid: Int,
+    m_valid_dev: Int32,
+    k_valid_dev: Int32,
 ):
     """Bounded MMA: 16x16 @ 16x16 with partial valid region."""
+    var m_valid = Int(m_valid_dev)
+    var k_valid = Int(k_valid_dev)
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
@@ -806,10 +808,12 @@ def bounded_store_kernel(
     a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
     d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    m_valid: Int,
-    n_valid: Int,
+    m_valid_dev: Int32,
+    n_valid_dev: Int32,
 ):
     """Bounded MMA + bounded store: partial valid output region."""
+    var m_valid = Int(m_valid_dev)
+    var n_valid = Int(n_valid_dev)
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
@@ -860,8 +864,8 @@ def test_bounded_mma(ctx: DeviceContext) raises:
         a_dev,
         b_dev,
         d_dev,
-        M_VALID,
-        K_VALID,
+        Int32(M_VALID),
+        Int32(K_VALID),
         grid_dim=(1),
         block_dim=(WARP_SIZE),
     )
@@ -948,8 +952,8 @@ def test_store_bounded(ctx: DeviceContext) raises:
         a_dev,
         b_dev,
         d_dev,
-        M_VALID,
-        N_VALID,
+        Int32(M_VALID),
+        Int32(N_VALID),
         grid_dim=(1),
         block_dim=(WARP_SIZE),
     )

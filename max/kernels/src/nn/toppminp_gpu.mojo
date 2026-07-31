@@ -48,9 +48,9 @@ def topk_wrapper[
     largest: Bool = True,
     _test_sort: Bool = False,
 ](
-    K: Int,
-    num_elements: Int,
-    num_blocks_per_input: Int,
+    K: Int32,
+    num_elements: Int32,
+    num_blocks_per_input: Int32,
     in_buffer: UnsafePointer[Scalar[input_type], ImmUntrackedOrigin],
     local_topk_vals: UnsafePointer[
         Scalar[input_type], MutUntrackedOrigin
@@ -84,12 +84,15 @@ def topk_wrapper[
         p_threshold: UnsafePointer[Scalar[input_type]] - Threshold for top-p sampling if is_top_p is True else min-p coefficient
         skip_sort: UnsafePointer[Scalar[DType.bool]] - Output buffer to store whether sorting is needed
     """
+    var _K = Int(K)
+    var _num_elements = Int(num_elements)
+    var _num_blocks_per_input = Int(num_blocks_per_input)
     var tid = thread_idx.x
     var bid = block_idx.x
 
-    var batch_id, block_lane = divmod(bid, num_blocks_per_input)
+    var batch_id, block_lane = divmod(bid, _num_blocks_per_input)
 
-    var _in_buffer = in_buffer + batch_id * num_elements
+    var _in_buffer = in_buffer + batch_id * _num_elements
 
     # # Allocate shared memory for the values and indices
     var topk_sram = UnsafePointer(
@@ -102,15 +105,15 @@ def topk_wrapper[
 
     # Pack the topk_vals and topk_idxs into shared memory
     var block_offset = block_lane * block_size
-    var stride = block_size * num_blocks_per_input
+    var stride = block_size * _num_blocks_per_input
     topk_sram[tid] = TopK_2[input_type, largest]()
-    for i in range(tid + block_offset, num_elements, stride):
+    for i in range(tid + block_offset, _num_elements, stride):
         topk_sram[tid].insert(_in_buffer[i], i)
 
     barrier()
 
-    # Prepare for K iterations to find the local top-K elements
-    for k in range(K):
+    # Prepare for _K iterations to find the local top-_K elements
+    for k in range(_K):
         # Initialize each thread with its own TopK_2 value and index
         var partial = topk_sram[tid]
 
@@ -118,10 +121,10 @@ def topk_wrapper[
         var total = _block_reduce_topk[ascending=largest](partial)
 
         if tid == 0:
-            # Store the local top-K values and indices in global memory
+            # Store the local top-_K values and indices in global memory
             var vector_idx = total.p
-            local_topk_vals[bid * K + k] = total.u
-            local_topk_idxs[bid * K + k] = Scalar[DType.int](vector_idx).cast[
+            local_topk_vals[bid * _K + k] = total.u
+            local_topk_idxs[bid * _K + k] = Scalar[DType.int](vector_idx).cast[
                 index_type
             ]()
 
@@ -282,7 +285,7 @@ def radix_sort_pairs_kernel[
         Scalar[out_idx_type], MutUntrackedOrigin
     ],  # modifies input
     output_key_ids_: UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin],
-    num_keys: Int,
+    num_keys: Int32,
     skip_sort: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
 ):
     """
@@ -308,16 +311,17 @@ def radix_sort_pairs_kernel[
     AMD. Introduction to GPU Radix Sort. GPUOpen, 2017. Available at:
     https://gpuopen.com/download/publications/Introduction_to_GPU_Radix_Sort.pdf.
     """
+    var _num_keys = Int(num_keys)
 
     var tid = thread_idx.x
     var batch_id = block_idx.x
-    var elems_per_thread = ceildiv(num_keys, BLOCK_SIZE)
+    var elems_per_thread = ceildiv(_num_keys, BLOCK_SIZE)
     comptime NUM_BUCKETS = 2**NUM_BITS_PER_PASS
 
-    var input_keys = input_keys_ + batch_id * num_keys
-    var output_keys = output_keys_ + batch_id * num_keys
-    var input_key_ids = input_key_ids_ + batch_id * num_keys
-    var output_key_ids = output_key_ids_ + batch_id * num_keys
+    var input_keys = input_keys_ + batch_id * _num_keys
+    var output_keys = output_keys_ + batch_id * _num_keys
+    var input_key_ids = input_key_ids_ + batch_id * _num_keys
+    var output_key_ids = output_key_ids_ + batch_id * _num_keys
 
     if skip_sort[batch_id]:
         return
@@ -366,7 +370,7 @@ def radix_sort_pairs_kernel[
 
     # Process elements and compute counts for each thread
     for index in range(tid * elems_per_thread, (tid + 1) * elems_per_thread):
-        if index < num_keys:
+        if index < _num_keys:
             var key = input_keys[index]
             var normalized_key = normalize(key)
             comptime KeyType = type_of(normalized_key)
@@ -454,7 +458,7 @@ def radix_sort_pairs_kernel[
 
     # Now, each thread processes its elements, computes destination index, write to output
     for index in range(tid * elems_per_thread, (tid + 1) * elems_per_thread):
-        if index < num_keys:
+        if index < _num_keys:
             var key = input_keys[index]
             var normalized_key = normalize(key)
             comptime KeyType = type_of(normalized_key)
@@ -608,7 +612,7 @@ def run_radix_sort_pairs_gpu[
             keys.alternate(ctx),
             key_ids.current(ctx),
             key_ids.alternate(ctx),
-            vocab_size,
+            Int32(vocab_size),
             skip_sort_device,
             grid_dim=Dim(batch_size),
             block_dim=Dim(BLOCK_SIZE),
@@ -629,7 +633,7 @@ def topp_minp_sampling_kernel[
     sorted_ids_: UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin],
     out_token_ids: UnsafePointer[Scalar[out_idx_type], MutUntrackedOrigin],
     skip_sort: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
-    vocab_size: Int,
+    vocab_size: Int32,
 ):
     """
     Top P-Min P sampling kernel.
@@ -647,6 +651,7 @@ def topp_minp_sampling_kernel[
         vocab_size: Number of tokens in the vocabulary per batch, used to
             iterate over the sorted probability and id buffers.
     """
+    var _vocab_size = Int(vocab_size)
     var tid = thread_idx.x
     var batch_id = block_idx.x
 
@@ -655,18 +660,18 @@ def topp_minp_sampling_kernel[
         return
 
     var p_threshold = p_thresholds_[batch_id]
-    var sorted_probs = sorted_probs_ + batch_id * vocab_size
-    var sorted_ids = sorted_ids_ + batch_id * vocab_size
+    var sorted_probs = sorted_probs_ + batch_id * _vocab_size
+    var sorted_ids = sorted_ids_ + batch_id * _vocab_size
 
     comptime if is_top_p:
         if tid == 0:
             var rng_state = Random(seed=SEED)
             var rng = rng_state.step_uniform()
             var r = p_threshold * rng[0].cast[dtype]()
-            for i in range(vocab_size):
+            for i in range(_vocab_size):
                 r -= sorted_probs[i]
 
-                if r <= 0.0 or i == vocab_size - 1:
+                if r <= 0.0 or i == _vocab_size - 1:
                     comptime if DEBUG_FILE:
                         print("sorted_probs[i]: ", sorted_probs[i])
                         print("r: ", r)
@@ -683,7 +688,7 @@ def topp_minp_sampling_kernel[
             # Step 1: Filter out tokens with probabilities less than the min-p threshold
             var sum_filtered_probs = Scalar[dtype](0.0)
             var num_filtered_tokens = 0
-            for i in range(vocab_size):
+            for i in range(_vocab_size):
                 if sorted_probs[i] >= p_threshold:
                     sum_filtered_probs += sorted_probs[i]
                     num_filtered_tokens += 1
@@ -696,7 +701,7 @@ def topp_minp_sampling_kernel[
             for i in range(num_filtered_tokens):
                 r -= sorted_probs[i]
 
-                if r <= 0.0 or i == vocab_size - 1:
+                if r <= 0.0 or i == _vocab_size - 1:
                     out_token_ids[batch_id] = sorted_ids[i]
 
                     comptime if DEBUG_FILE:
@@ -839,9 +844,9 @@ def _topp_minp_sampling_gpu[
     ]
 
     ctx.enqueue_function[topk_kernel](
-        K,
-        vocab_size,
-        num_blocks_per_input,
+        Int32(K),
+        Int32(vocab_size),
+        Int32(num_blocks_per_input),
         probs_buf,
         max_vals,
         out_token_ids.to_device_buffer(ctx),
@@ -895,7 +900,7 @@ def _topp_minp_sampling_gpu[
         ids_buf,
         out_token_ids.to_device_buffer(ctx),
         skip_sort,
-        vocab_size,
+        Int32(vocab_size),
         grid_dim=Dim(batch_size),
         block_dim=Dim(BLOCK_SIZE),
     )

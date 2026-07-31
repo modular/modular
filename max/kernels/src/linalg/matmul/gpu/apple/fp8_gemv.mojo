@@ -175,8 +175,8 @@ def fp8_gemv_kernel[
     c: TileTensor[c_type, c_layout, MutAnyOrigin],  # [1, N]
     a: TileTensor[DType.bfloat16, a_layout, ImmutAnyOrigin],  # [1, K]
     weight: TileTensor[DType.float8_e4m3fn, w_layout, ImmutAnyOrigin],  # [N, K]
-    n: Int,
-    k: Int,
+    n_arg: Int32,
+    k_arg: Int32,
 ):
     """One warp per output column; 32 lanes stride down K widening FP8 -> f32.
 
@@ -184,6 +184,8 @@ def fp8_gemv_kernel[
     weight `[N, K]`. Accumulation is fp32. Produces the RAW `x @ W_fp8^T`; the
     per-tensor scalar `weight_scale` is folded post-matmul by the graph lowering.
     """
+    var n = Int(n_arg)
+    var k = Int(k_arg)
     # No flat-rank asserts: `a.load`/`c.store` are `Coord`-based (not `t[r, c]`
     # subscripts), so no N-D-index evidence is required, matching `fp4_gemv`.
     comptime TILE_K = _FP8_GEMV_TILE_K
@@ -269,8 +271,8 @@ def enqueue_apple_fp8_gemv[
         c,
         a,
         weight,
-        n,
-        k,
+        Int32(n),
+        Int32(k),
         grid_dim=grid,
         block_dim=BLK,
     )
@@ -411,9 +413,9 @@ def _enqueue_apple_fp8_materialize_dense[
             c,
             a,
             wdense_tt.as_immut(),
-            m,
-            n,
-            k,
+            Int32(m),
+            Int32(n),
+            Int32(k),
             grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
             block_dim=(4 * WARP_SIZE,),
         )

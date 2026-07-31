@@ -27,7 +27,7 @@ def matrix_mul_tiled_kernel(
     M: UnsafePointer[Float32, MutUntrackedOrigin],
     N: UnsafePointer[Float32, MutUntrackedOrigin],
     P: UnsafePointer[Float32, MutUntrackedOrigin],
-    Width: Int,
+    width_dev: Int32,
 ):
     """Tiled matrix multiplication kernel using shared memory.
 
@@ -35,8 +35,10 @@ def matrix_mul_tiled_kernel(
         M: Input matrix M (device).
         N: Input matrix N (device).
         P: Output matrix P = M * N (device).
-        Width: Matrix dimension (Width x Width matrices).
+        width_dev: Matrix dimension (Width x Width matrices).
     """
+    # Int is not device-passable; widen the fixed-width arg.
+    var Width = Int(width_dev)
     comptime TILE_WIDTH = 16
 
     # Allocate shared memory tiles
@@ -126,7 +128,7 @@ def matmul_tiled(
         d_a,
         d_b,
         d_c,
-        width,
+        Int32(width),
         grid_dim=(grid_dim_x, grid_dim_y, 1),
         block_dim=(block_dim_x, block_dim_y, 1),
     )

@@ -21,8 +21,9 @@ from std.utils.numerics import inf, isnan, nan, neg_inf
 def id(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -56,7 +57,7 @@ def run_vec_add(ctx: DeviceContext) raises:
     ctx.enqueue_function[kernel](
         in_device,
         out_device,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )

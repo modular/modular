@@ -503,7 +503,7 @@ def _index_matmul_max[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     k_lut: k_type,
-    max_seq_len: Int,
+    max_seq_len: Int32,
 ):
     comptime num_heads = q_layout.shape[1].value()
     comptime depth = q_layout.shape[2].value()
@@ -751,7 +751,7 @@ def fp8_index_naive[
         k_lt,
         valid_length_lt,
         k_operand,
-        max_seq_len,
+        Int32(max_seq_len),
         grid_dim=(
             ceildiv(max_seq_len, 16),
             ceildiv(max_num_keys, 16),

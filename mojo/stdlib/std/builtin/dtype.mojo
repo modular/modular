@@ -484,10 +484,13 @@ struct DType(
 
     @doc_hidden
     @always_inline("builtin")
-    def _as_ui8(self) -> UInt8._mlir_type:
-        return __mlir_op.`pop.cast_from_builtin`[_type=UInt8._mlir_type](
-            __mlir_op.`pop.dtype.to_ui8`(self._mlir_value)
-        )
+    # Raw MLIR type avoids a circular dependency: UInt8._mlir_type would pull
+    # in UInt8 = Scalar[DType.uint8] → Scalar → SIMD signature → DevicePassable
+    # where-clause → _as_ui8 → UInt8 (cycle) during constraint evaluation.
+    def _as_ui8(self) -> __mlir_type.`!kgen.scalar<ui8>`:
+        return __mlir_op.`pop.cast_from_builtin`[
+            _type=__mlir_type.`!kgen.scalar<ui8>`
+        ](__mlir_op.`pop.dtype.to_ui8`(self._mlir_value))
 
     @doc_hidden
     @always_inline("builtin")
@@ -496,7 +499,7 @@ struct DType(
 
     @doc_hidden
     @always_inline("builtin")
-    def _match(self, mask: UInt8._mlir_type) -> Bool:
+    def _match(self, mask: __mlir_type.`!kgen.scalar<ui8>`) -> Bool:
         return Bool(
             mlir_value=__mlir_op.`pop.cmp`[
                 pred=__mlir_attr.`#kgen<cmp_pred ne>`

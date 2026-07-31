@@ -85,9 +85,9 @@ def gated_delta_conv1d_fwd_gpu[
     input_row_offsets_LT: TensorLayout,
     conv_output_ragged_LT: TensorLayout,
 ](
-    batch_size: Int,
-    total_seq_len: Int,
-    conv_dim: Int,
+    batch_size: Int32,
+    total_seq_len: Int32,
+    conv_dim: Int32,
     qkv_input_ragged: TileTensor[
         work_dtype, qkv_input_ragged_LT, MutUntrackedOrigin
     ],
@@ -123,6 +123,9 @@ def gated_delta_conv1d_fwd_gpu[
     conv_channel) pair for the entire sequence; the channel's K weights live
     in registers across the token loop.
     """
+    var _batch_size = Int(batch_size)
+    var _total_seq_len = Int(total_seq_len)
+    var _conv_dim = Int(conv_dim)
     var batch_item_idx = Int(block_idx.x)
     var channel_block_idx = Int(block_idx.y)
     var thread_within_block = Int(thread_idx.x)
@@ -131,7 +134,7 @@ def gated_delta_conv1d_fwd_gpu[
         channel_block_idx * CONV1D_BLOCK_DIM + thread_within_block
     )
 
-    if batch_item_idx >= batch_size or conv_channel_idx >= conv_dim:
+    if batch_item_idx >= _batch_size or conv_channel_idx >= _conv_dim:
         return
 
     # Read the pool slot for this batch item exactly once. The caller

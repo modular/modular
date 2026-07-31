@@ -3629,7 +3629,7 @@ def conv2d_gpu_naive_nhwc_rscf[
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
-    num_groups: Int,
+    num_groups: Int32,
 ):
     """Naive GPU kernel for 2D NHWC convolution with RSCF filter layout.
 
@@ -3661,6 +3661,7 @@ def conv2d_gpu_naive_nhwc_rscf[
         num_groups: Number of convolution groups for grouped
             convolution.
     """
+    var _num_groups = Int(num_groups)
     var N = input.dim[0]()
     var H = input.dim[1]()
     var W = input.dim[2]()
@@ -3671,7 +3672,7 @@ def conv2d_gpu_naive_nhwc_rscf[
     var H_out = output.dim[1]()
     var W_out = output.dim[2]()
     var C_out = output.dim[3]()  # channel_out or #F
-    var F_per_group = C_out // num_groups
+    var F_per_group = C_out // _num_groups
     var pad_h = padding[0]
     var pad_w = padding[1]
     var stride_h = stride[0]
@@ -5602,7 +5603,7 @@ def conv_gpu[
                 stride,
                 dilation,
                 symmetric_padding,
-                num_groups,
+                Int32(num_groups),
                 grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                 block_dim=(block_size, block_size),
             )
@@ -5779,7 +5780,7 @@ def conv_gpu[
                 stride,
                 dilation,
                 symmetric_padding,
-                num_groups,
+                Int32(num_groups),
                 grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                 block_dim=(block_size, block_size),
             )
@@ -5804,7 +5805,7 @@ def conv3d_gpu_naive_ndhwc_qrscf[
     stride: IndexList[3],
     dilation: IndexList[3],
     padding: IndexList[3],
-    num_groups: Int,
+    num_groups: Int32,
 ):
     """Naive GPU kernel for 3D NDHWC convolution with QRSCF filter layout.
 
@@ -5836,6 +5837,7 @@ def conv3d_gpu_naive_ndhwc_qrscf[
             width)`.
         num_groups: Number of convolution groups for grouped convolution.
     """
+    var _num_groups = Int(num_groups)
     var N = input.dim[0]()
     var D = input.dim[1]()  # depth
     var H = input.dim[2]()
@@ -5845,13 +5847,13 @@ def conv3d_gpu_naive_ndhwc_qrscf[
     var Q = filter.dim[0]()
     var R = filter.dim[1]()
     var S = filter.dim[2]()
-    var C_per_group = filter.dim[3]()  # C_in / num_groups
+    var C_per_group = filter.dim[3]()  # C_in / _num_groups
 
     var D_out = output.dim[1]()  # depth
     var H_out = output.dim[2]()
     var W_out = output.dim[3]()
     var C_out = output.dim[4]()  # channel_output
-    var F_per_group = C_out // num_groups
+    var F_per_group = C_out // _num_groups
 
     var pad_d = padding[0]
     var pad_h = padding[1]

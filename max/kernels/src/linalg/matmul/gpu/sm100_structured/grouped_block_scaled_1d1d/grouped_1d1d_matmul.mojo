@@ -452,14 +452,14 @@ def grouped_matmul_block_scaled[
             _to_1d[DType.int32](expert_ids),
             _to_1d[DType.float32](expert_scales),
             c_device,
-            num_active_experts,
+            Int32(num_active_experts),
             UInt32(K),
             # AB_swapped: SFB data comes from a_scales.
             rebind[UnsafePointer[Scalar[sfa_dtype], ImmutAnyOrigin]](
                 a_scales._storage
             ),
-            Int(a_scales.layout.shape[1]().value()) * _sfb_K_TILE_ELEMS,
-            Int(a_scales.layout.shape[1]().value()),
+            Int32(Int(a_scales.layout.shape[1]().value()) * _sfb_K_TILE_ELEMS),
+            Int32(Int(a_scales.layout.shape[1]().value())),
             swiglu_out,
             trace_buf,
             grid_dim=grid_dim,
@@ -525,14 +525,14 @@ def grouped_matmul_block_scaled[
             _to_1d[DType.int32](expert_ids),
             _to_1d[DType.float32](expert_scales),
             c_device,
-            num_active_experts,
+            Int32(num_active_experts),
             UInt32(K),
             # Non-swapped: SFB data comes from _b_scales.
             rebind[UnsafePointer[Scalar[sfb_dtype], ImmutAnyOrigin]](
                 _b_scales._storage
             ),
-            Int(_b_scales.layout.shape[2]().value()) * _sfb_K_TILE_ELEMS,
-            Int(_b_scales.layout.shape[2]().value()),
+            Int32(Int(_b_scales.layout.shape[2]().value()) * _sfb_K_TILE_ELEMS),
+            Int32(Int(_b_scales.layout.shape[2]().value())),
             swiglu_out,
             trace_buf,
             grid_dim=grid_dim,

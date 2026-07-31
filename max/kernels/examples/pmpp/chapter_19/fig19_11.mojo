@@ -37,12 +37,12 @@ comptime TILE_WIDTH = 16
 
 
 def conv_layer_mm_kernel(
-    C: Int,
-    M: Int,
-    H: Int,
-    W: Int,
-    K: Int,
-    N_batch: Int,
+    C_dev: Int32,
+    M_dev: Int32,
+    H_dev: Int32,
+    W_dev: Int32,
+    K_dev: Int32,
+    N_batch_dev: Int32,
     F: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     X: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     Y: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
@@ -54,16 +54,23 @@ def conv_layer_mm_kernel(
     to matrix form (im2col) during the load to shared memory.
 
     Args:
-        C: Input channels.
-        M: Output channels.
-        H: Input height.
-        W: Input width.
-        K: Kernel size.
-        N_batch: Batch size.
+        C_dev: Input channels.
+        M_dev: Output channels.
+        H_dev: Input height.
+        W_dev: Input width.
+        K_dev: Kernel size.
+        N_batch_dev: Batch size.
         F: Filter tensor pointer.
         X: Input tensor pointer.
         Y: Output tensor pointer.
     """
+    # Int is not device-passable; widen the fixed-width args.
+    var C = Int(C_dev)
+    var M = Int(M_dev)
+    var H = Int(H_dev)
+    var W = Int(W_dev)
+    var K = Int(K_dev)
+    var N_batch = Int(N_batch_dev)
     var H_out = H - K + 1
     var W_out = W - K + 1
 
@@ -219,12 +226,12 @@ def main() raises:
     print("Launching MM Kernel with Grid(", grid_x, ",", grid_y, ",", N, ")")
 
     ctx.enqueue_function[conv_layer_mm_kernel](
-        C,
-        M,
-        H,
-        W,
-        K,
-        N,
+        Int32(C),
+        Int32(M),
+        Int32(H),
+        Int32(W),
+        Int32(K),
+        Int32(N),
         d_F,
         d_X,
         d_Y,

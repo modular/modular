@@ -87,15 +87,15 @@ def _allgather_rmsnorm_kernel[
     threads_per_block: Int,
 ](
     src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
-    in_lengths: StaticTuple[Int, ngpus],
+    in_lengths: StaticTuple[Int32, ngpus],
     gamma: TileTensor[in_dtype, GammaLayoutType, origin],
     normed_out: TileTensor[mut=True, in_dtype, NormedLayoutType, normed_origin],
     sum_out: TileTensor[mut=True, in_dtype, SumLayoutType, sum_origin],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    cols: Int,
+    cols_dev: Int32,
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    my_rank: Int,
+    my_rank_dev: Int32,
 ):
     """Gather every source-GPU row into `[rows, cols]` and RMSNorm it in registers.
 
@@ -103,6 +103,8 @@ def _allgather_rmsnorm_kernel[
     `[prefix(g), prefix(g)+in_lengths[g])`; `normed_out`/`sum_out` are the full
     replicated outputs, indexed by GLOBAL row.
     """
+    var cols = Int(cols_dev)
+    var my_rank = Int(my_rank_dev)
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     # 2D stores below use Coord(grow, col_idx).
     comptime assert normed_out.flat_rank >= 2
@@ -130,7 +132,7 @@ def _allgather_rmsnorm_kernel[
     var rows = 0
     comptime for g in range(ngpus):
         row_starts[g] = rows
-        rows += in_lengths[g]
+        rows += Int(in_lengths[g])
 
     # Start barrier: we P2P-read peers' shards, so all ranks must be ready.
     _multi_gpu_barrier[ngpus, is_start=True](
@@ -232,17 +234,20 @@ def _allgather_rmsnorm_launch[
         simd_width=simd_width,
         threads_per_block=threads_per_block,
     ]
+    var in_lengths_dev = StaticTuple[Int32, ngpus](0)
+    comptime for i in range(ngpus):
+        in_lengths_dev[i] = Int32(in_lengths[i])
     ctx.enqueue_function[kernel](
         src_ptrs,
-        in_lengths,
+        in_lengths_dev,
         gamma,
         normed_out,
         sum_out,
         epsilon,
         weight_offset,
-        cols,
+        Int32(cols),
         rank_sigs,
-        my_rank,
+        Int32(my_rank),
         grid_dim=grid_size,
         block_dim=block_dim,
     )

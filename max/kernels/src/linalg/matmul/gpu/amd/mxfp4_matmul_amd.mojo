@@ -1144,9 +1144,9 @@ def _launch_mxfp4_split_k[
     ctx.enqueue_function[reduce_kernel](
         workspace.scratch.unsafe_ptr(),
         c.ptr,
-        total_elems,
-        elems_per_split,
-        N,
+        Int32(total_elems),
+        Int32(elems_per_split),
+        Int32(N),
         grid_dim=num_blocks,
         block_dim=block_dim_x,
     )

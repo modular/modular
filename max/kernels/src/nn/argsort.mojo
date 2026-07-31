@@ -119,13 +119,14 @@ def _bitonic_local_sort_kernel[
         mut=True, indices_dtype, IndicesLayoutType, MutAnyOrigin
     ],
     input_arg: TileTensor[mut=True, input_dtype, InputLayoutType, MutAnyOrigin],
-    n_arg: Int,
+    n_arg: Int32,
 ):
     """GPU kernel: local bitonic sort using shared memory.
 
     Each block independently sorts 256 elements. Fuses all stages from 1 to
     log2(256)=8 into a single kernel launch.
     """
+    var _n_arg = Int(n_arg)
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
     var gid: Int = block_idx.x * BLOCK_SIZE + tid
@@ -147,7 +148,7 @@ def _bitonic_local_sort_kernel[
         ]()
     )
 
-    if gid < n_arg:
+    if gid < _n_arg:
         shared_vals[tid] = vals[gid]
         shared_idxs[tid] = idxs[gid]
     else:
@@ -181,7 +182,7 @@ def _bitonic_local_sort_kernel[
         k <<= 1
 
     barrier()
-    if gid < n_arg:
+    if gid < _n_arg:
         vals[gid] = shared_vals[tid]
         idxs[gid] = shared_idxs[tid]
 
@@ -201,8 +202,8 @@ def _bitonic_merge_local_kernel[
         mut=True, indices_dtype, IndicesLayoutType, MutAnyOrigin
     ],
     input_arg: TileTensor[mut=True, input_dtype, InputLayoutType, MutAnyOrigin],
-    n_arg: Int,
-    stage: Int,
+    n_arg: Int32,
+    stage: Int32,
 ):
     """GPU kernel: fused local merge using shared memory.
 
@@ -210,6 +211,7 @@ def _bitonic_merge_local_kernel[
     Each block loads 256 contiguous elements, performs all local merge
     steps, then writes back.
     """
+    var _stage = Int(stage)
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
     var gid: Int = block_idx.x * BLOCK_SIZE + tid
@@ -248,7 +250,7 @@ def _bitonic_merge_local_kernel[
             else:
                 cmp_val = vi < vp
 
-            var direction = (gid & stage) == 0
+            var direction = (gid & _stage) == 0
             if cmp_val == direction:
                 shared_vals[tid] = vp
                 shared_vals[partner] = vi
@@ -309,23 +311,26 @@ def _argsort_gpu_impl[
             indices.dtype, indices.LayoutType, indices.origin
         ],
         input_arg: TileTensor[input.dtype, input.LayoutType, input.origin],
-        n_arg: Int,
-        step: Int,
-        stage: Int,
+        n_arg: Int32,
+        step: Int32,
+        stage: Int32,
     ):
+        var _n_arg = Int(n_arg)
+        var _step = Int(step)
+        var _stage = Int(stage)
         var i = global_idx.x
-        if i >= n_arg:
+        if i >= _n_arg:
             return
 
-        var partner = i ^ step
-        if partner > i and partner < n_arg:
+        var partner = i ^ _step
+        if partner > i and partner < _n_arg:
             var cmp_val: Bool
             comptime if ascending:
                 cmp_val = input_arg[i] > input_arg[partner]
             else:
                 cmp_val = input_arg[i] < input_arg[partner]
 
-            var bitonic_merge_direction = (i & stage) == 0
+            var bitonic_merge_direction = (i & _stage) == 0
             if cmp_val == bitonic_merge_direction:
                 swap(input_arg[i], input_arg[partner])
                 swap(indices_arg[i], indices_arg[partner])
@@ -344,7 +349,7 @@ def _argsort_gpu_impl[
     ctx.enqueue_function[local_sort_kernel](
         indices,
         input,
-        n,
+        Int32(n),
         block_dim=BLOCK_SIZE,
         grid_dim=ceildiv(n, BLOCK_SIZE),
     )
@@ -359,9 +364,9 @@ def _argsort_gpu_impl[
             ctx.enqueue_function[global_step_kernel](
                 indices,
                 input,
-                n,
-                j,
-                k,
+                Int32(n),
+                Int32(j),
+                Int32(k),
                 block_dim=BLOCK_SIZE,
                 grid_dim=ceildiv(n, BLOCK_SIZE),
             )
@@ -378,8 +383,8 @@ def _argsort_gpu_impl[
         ctx.enqueue_function[merge_local_kernel](
             indices,
             input,
-            n,
-            k,
+            Int32(n),
+            Int32(k),
             block_dim=BLOCK_SIZE,
             grid_dim=ceildiv(n, BLOCK_SIZE),
         )

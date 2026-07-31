@@ -342,8 +342,8 @@ struct Matmul2dFp8[
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
         a_offsets: TileTensor[mut=False, DType.uint32, ao_layout, MutAnyOrigin],
         expert_ids: TileTensor[mut=False, DType.int32, ei_layout, MutAnyOrigin],
-        N: Int,
-        K: Int,
+        N_arg: Int32,
+        K_arg: Int32,
     ):
         """Grouped (MoE) W8A16 kernel entry: one expert group per `block_idx.z`.
 
@@ -370,6 +370,8 @@ struct Matmul2dFp8[
         element access inside `_gemm_body` is TileTensor-indexed (MMA fragment
         loaders + guarded `c.store`).
         """
+        var N = Int(N_arg)
+        var K = Int(K_arg)
         var z = Int(block_idx.z)
         var a_start = Int(a_offsets[z])
         var M = Int(a_offsets[z + 1]) - a_start
@@ -573,8 +575,8 @@ def enqueue_grouped_matmul2d_fp8[
         b.as_immut(),
         a_offsets,
         expert_ids,
-        n,
-        k,
+        Int32(n),
+        Int32(k),
         grid_dim=(grid_n, grid_m, num_active_experts),
         block_dim=(MM.THREADS_PER_BLOCK),
     )

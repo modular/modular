@@ -926,7 +926,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_scales_type, a_scales_rank, a_scales_tile_shape, a_scales_desc_shape
     ],
     cluster_dim: StaticTuple[Int32, 3],
-    num_iters: Int,
+    num_iters: Int32,
     b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     problem_shape: StaticTuple[Int32, 3],
 ):
@@ -974,6 +974,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         b_scales: B blockwise scales used to rescale FP8 partial products.
         problem_shape: Full GEMM problem dimensions `(M, N, K)`.
     """
+    var _num_iters = Int(num_iters)
     comptime num_output_warps = 4
 
     comptime accum_type = get_accum_type[a_type]()
@@ -1267,7 +1268,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
             # DO TMA LOAD
 
-            for i in range(num_iters):
+            for i in range(_num_iters):
                 load_AB[
                     block_tile_shape=config.block_tile_shape,
                     mma_shape=config.mma_shape,
@@ -1348,7 +1349,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             clc_pipe_consumer_state.step()
             # DO MMA
             if elect_one_cta:
-                for _ in range(num_iters):
+                for _ in range(_num_iters):
                     var mma_output_mma_stage = (
                         mma_output_pipeline.producer_stage()
                     )
@@ -1431,7 +1432,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             comptime if is_lower_frag_required:
                 _ = c_lower_main_tile.fill(0.0)
 
-            for k_iter in range(num_iters):
+            for k_iter in range(_num_iters):
                 promote_accumulators[
                     block_tile_shape=config.block_tile_shape,
                     mma_shape=config.mma_shape,
@@ -1686,7 +1687,7 @@ def sm100_warp_specialized_blockwise_fp8[
         c_tma_op,
         a_scales_tma_op,
         cluster_dim,
-        ceildiv(K, BK),
+        Int32(ceildiv(K, BK)),
         b_scales,
         problem_shape,
         grid_dim=grid_dim,

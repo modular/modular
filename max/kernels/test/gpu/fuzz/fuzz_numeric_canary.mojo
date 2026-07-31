@@ -38,8 +38,10 @@ comptime BLOCK = 256
 def numeric_canary_kernel(
     dst: UnsafePointer[Float32, MutAnyOrigin],
     inp: UnsafePointer[Float32, MutAnyOrigin],
-    n: Int,
+    n_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var n = Int(n_dev)
     var gid = global_idx.x
     if gid < n:
         var v = inp[gid] * Float32(2.0)
@@ -78,7 +80,7 @@ def run_one_case(
     ctx.enqueue_function[numeric_canary_kernel](
         out_dev,
         in_dev,
-        n,
+        Int32(n),
         grid_dim=ceildiv(n, BLOCK),
         block_dim=BLOCK,
     )

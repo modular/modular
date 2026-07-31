@@ -58,7 +58,7 @@ def _verify_buffers_gpu[
 ](
     output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
     reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    length: Int,
+    length_dev: Int32,
     atol: Float32,
     rtol: Float32,
     result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
@@ -72,6 +72,7 @@ def _verify_buffers_gpu[
       [3] out_nz — 1.0 if any output element is nonzero
       [4] ref_nz — 1.0 if any reference element is nonzero
     """
+    var length = Int(length_dev)
     # Per-thread accumulators
     var abs_diff_sum: Float32 = 0
     var abs_ref_sum: Float32 = 0
@@ -211,7 +212,7 @@ def verify_matmul[
     ctx.enqueue_function[kernel](
         c_device,
         c_device_ref,
-        c_size,
+        Int32(c_size),
         atol,
         rtol,
         result_device,

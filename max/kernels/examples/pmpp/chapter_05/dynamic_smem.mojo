@@ -27,8 +27,8 @@ def matrixMulKernel(
     M: UnsafePointer[Float32, MutUntrackedOrigin],
     N: UnsafePointer[Float32, MutUntrackedOrigin],
     P: UnsafePointer[Float32, MutUntrackedOrigin],
-    Width: Int,
-    tile_width: Int,
+    width_dim: Int32,
+    tile_width_dim: Int32,
 ):
     """Matrix multiplication kernel with parameterized tile width.
 
@@ -36,9 +36,12 @@ def matrixMulKernel(
         M: Input matrix M (device).
         N: Input matrix N (device).
         P: Output matrix P = M * N (device).
-        Width: Matrix dimension (Width x Width matrices).
-        tile_width: Tile width for this execution.
+        width_dim: Matrix dimension (Width x Width matrices).
+        tile_width_dim: Tile width for this execution.
     """
+    # `Int` is not device-passable; widen the fixed-width args for indexing.
+    var Width = Int(width_dim)
+    var tile_width = Int(tile_width_dim)
     # Allocate shared memory using external_memory (following working pattern)
     # Use max tile size of 32x32 for allocation
     var Mds = rebind[
@@ -199,8 +202,8 @@ def main() raises:
             d_a,
             d_b,
             d_c,
-            width,
-            tile_width,
+            Int32(width),
+            Int32(tile_width),
             grid_dim=(grid_dim_x, grid_dim_y, 1),
             block_dim=(block_dim_x, block_dim_y, 1),
             shared_mem_bytes=shared_mem_bytes,

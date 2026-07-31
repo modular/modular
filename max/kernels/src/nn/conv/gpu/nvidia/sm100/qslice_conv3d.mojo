@@ -91,17 +91,18 @@ def _accum_bf16_to_fp32_kernel[
 ](
     accum_fp32_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     src_bf16_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    per_batch_elems: Int,
+    per_batch_elems: Int32,
 ):
     """Elementwise `accum_fp32[i] += src_bf16[i].cast[fp32]()`.
 
     One thread per element; no atomics. Each thread owns its slot.
     """
+    var _per_batch_elems = Int(per_batch_elems)
     comptime bf16_alignment = align_of[SIMD[dtype, output_simd_width]]()
     comptime fp32_alignment = align_of[SIMD[DType.float32, output_simd_width]]()
 
     var accum_idx = global_idx.x * output_simd_width
-    if accum_idx >= per_batch_elems:
+    if accum_idx >= _per_batch_elems:
         return
     var src_val = src_bf16_ptr.load[
         width=output_simd_width, alignment=bf16_alignment
@@ -121,11 +122,12 @@ def _fp32_to_dtype_plain_kernel[
 ](
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     src_fp32_ptr: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    output_elems: Int,
+    output_elems: Int32,
 ):
     """Elementwise cast fp32 → `dtype` with no epilogue."""
+    var _output_elems = Int(output_elems)
     var output_idx = global_idx.x * output_simd_width
-    if output_idx >= output_elems:
+    if output_idx >= _output_elems:
         return
     dst_ptr.store[alignment=align_of[SIMD[dtype, output_simd_width]]()](
         output_idx,
@@ -144,26 +146,31 @@ def _fp32_to_dtype_epilogue_kernel[
     output_simd_width: Int,
 ](
     src_fp32_ptr: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    batch: Int,
-    D_out: Int,
-    H_out: Int,
-    W_out: Int,
-    output_elems: Int,
+    batch: Int32,
+    D_out: Int32,
+    H_out: Int32,
+    W_out: Int32,
+    output_elems: Int32,
 ):
     """Elementwise cast fp32 → `dtype`, then call the caller's 5-D
     epilogue. The epilogue is expected to perform the write
     (matching the MOGG `output._lambda_store` contract).
     """
+    var _batch = Int(batch)
+    var _D_out = Int(D_out)
+    var _H_out = Int(H_out)
+    var _W_out = Int(W_out)
+    var _output_elems = Int(output_elems)
     var output_idx = global_idx.x * output_simd_width
-    if output_idx >= output_elems:
+    if output_idx >= _output_elems:
         return
-    var DHW_out = D_out * H_out * W_out
-    var HW_out = H_out * W_out
+    var DHW_out = _D_out * _H_out * _W_out
+    var HW_out = _H_out * _W_out
     var b, rem = udivmod(output_idx, DHW_out * C_out)
     var d: Int
     d, rem = udivmod(rem, HW_out * C_out)
     var h: Int
-    h, rem = udivmod(rem, W_out * C_out)
+    h, rem = udivmod(rem, _W_out * C_out)
     var w: Int
     var c: Int
     w, c = udivmod(rem, C_out)
@@ -357,7 +364,7 @@ def dispatch_qslice_conv3d_sm100[
             ctx.enqueue_function[accum_kernel](
                 accum_n_ptr,
                 temp_bf16_buf,
-                per_batch_elems,
+                Int32(per_batch_elems),
                 grid_dim=accum_grid,
                 block_dim=accum_block,
             )
@@ -373,11 +380,11 @@ def dispatch_qslice_conv3d_sm100[
         ]
         ctx.enqueue_function[output_kernel](
             accum_fp32_ptr,
-            batch,
-            D_out,
-            H_out,
-            W_out,
-            output_elems,
+            Int32(batch),
+            Int32(D_out),
+            Int32(H_out),
+            Int32(W_out),
+            Int32(output_elems),
             grid_dim=final_grid,
             block_dim=final_block,
         )
@@ -388,7 +395,7 @@ def dispatch_qslice_conv3d_sm100[
         ctx.enqueue_function[output_kernel](
             output.ptr,
             accum_fp32_ptr,
-            output_elems,
+            Int32(output_elems),
             grid_dim=final_grid,
             block_dim=final_block,
         )

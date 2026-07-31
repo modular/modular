@@ -49,20 +49,20 @@ def _im2col_nhwc_kernel[
 ](
     output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    batch_size: Int,
-    H: Int,
-    W: Int,
-    C: Int,
-    R: Int,
-    S: Int,
-    H_out: Int,
-    W_out: Int,
-    pad_h: Int,
-    pad_w: Int,
-    stride_h: Int,
-    stride_w: Int,
-    m_offset: Int,
-    m_count: Int,
+    batch_size: Int32,
+    H: Int32,
+    W: Int32,
+    C: Int32,
+    R: Int32,
+    S: Int32,
+    H_out: Int32,
+    W_out: Int32,
+    pad_h: Int32,
+    pad_w: Int32,
+    stride_h: Int32,
+    stride_w: Int32,
+    m_offset: Int32,
+    m_count: Int32,
 ):
     """Write rows [m_offset, m_offset + m_count) of the 4D im2col matrix.
 
@@ -74,37 +74,51 @@ def _im2col_nhwc_kernel[
     Block-per-row layout: one block handles a single output pixel (row of
     the im2col matrix); threads within the block cooperate on the K axis.
     """
+    var _batch_size = Int(batch_size)
+    var _H = Int(H)
+    var _W = Int(W)
+    var _C = Int(C)
+    var _R = Int(R)
+    var _S = Int(S)
+    var _H_out = Int(H_out)
+    var _W_out = Int(W_out)
+    var _pad_h = Int(pad_h)
+    var _pad_w = Int(pad_w)
+    var _stride_h = Int(stride_h)
+    var _stride_w = Int(stride_w)
+    var _m_offset = Int(m_offset)
+    var _m_count = Int(m_count)
     var local_m = block_idx.x
-    if local_m >= m_count:
+    if local_m >= _m_count:
         return
 
-    var K = R * S * C
-    var m = m_offset + local_m
+    var K = _R * _S * _C
+    var m = _m_offset + local_m
 
     # Per-block decomposition (amortized across block_dim threads).
-    var HW_out = H_out * W_out
+    var HW_out = _H_out * _W_out
     var batch, spatial = udivmod(m, HW_out)
-    var h_out, w_out = udivmod(spatial, W_out)
+    var h_out, w_out = udivmod(spatial, _W_out)
 
-    var h_in_base = h_out * stride_h - pad_h
-    var w_in_base = w_out * stride_w - pad_w
-    var batch_base = batch * H * W * C
-    var hw_stride = W * C
-    var w_stride = C
+    var h_in_base = h_out * _stride_h - _pad_h
+    var w_in_base = w_out * _stride_w - _pad_w
+    var batch_base = batch * _H * _W * _C
+    var hw_stride = _W * _C
+    var w_stride = _C
 
-    var SC = S * C
+    var SC = _S * _C
 
     var row_base = local_m * K
     var k = thread_idx.x
     while k < K:
         var r, sc = udivmod(k, SC)
-        var s, c = udivmod(sc, C)
+        var s, c = udivmod(sc, _C)
 
         var h_in = h_in_base + r
         var w_in = w_in_base + s
 
         var val = Scalar[dtype](0)
-        if 0 <= h_in < H and 0 <= w_in < W:
+        if 0 <= h_in < _H and 0 <= w_in < _W:
             var in_idx = batch_base + h_in * hw_stride + w_in * w_stride + c
             val = input_ptr[in_idx]
 
@@ -119,30 +133,34 @@ def _transpose_filter_to_nk[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    R: Int,
-    S: Int,
-    C: Int,
-    F: Int,
+    R: Int32,
+    S: Int32,
+    C: Int32,
+    F: Int32,
 ):
     """Transpose RSCF or FCRS filter layout to [F, R*S*C] for matmul transpose_b.
     """
-    var K = R * S * C
-    var total = F * K
+    var _R = Int(R)
+    var _S = Int(S)
+    var _C = Int(C)
+    var _F = Int(F)
+    var K = _R * _S * _C
+    var total = _F * K
     var tid = global_idx.x
     if tid >= total:
         return
 
     var f, k = udivmod(tid, K)
 
-    var SC = S * C
+    var SC = _S * _C
     var r, sc = udivmod(k, SC)
-    var s, c = udivmod(sc, C)
+    var s, c = udivmod(sc, _C)
 
     var src_idx: Int
     comptime if filter_is_fcrs:
-        src_idx = f * C * R * S + c * R * S + r * S + s
+        src_idx = f * _C * _R * _S + c * _R * _S + r * _S + s
     else:
-        src_idx = (r * S + s) * C * F + c * F + f
+        src_idx = (r * _S + s) * _C * _F + c * _F + f
     dst_ptr.store(tid, src_ptr.load(src_idx))
 
 
@@ -223,30 +241,30 @@ def dispatch_im2col_matmul_conv2d[
         return False
 
     var batch = Int(input.dim[0]())
-    var H = Int(input.dim[1]())
-    var W = Int(input.dim[2]())
+    var _H = Int(input.dim[1]())
+    var _W = Int(input.dim[2]())
     var C_in = Int(input.dim[3]())
 
-    var H_out = Int(output.dim[1]())
-    var W_out = Int(output.dim[2]())
+    var _H_out = Int(output.dim[1]())
+    var _W_out = Int(output.dim[2]())
     var C_out = Int(output.dim[3]())
 
-    var R: Int
-    var S: Int
+    var _R: Int
+    var _S: Int
     comptime if filter_is_fcrs:
-        R = Int(filter.dim[2]())
-        S = Int(filter.dim[3]())
+        _R = Int(filter.dim[2]())
+        _S = Int(filter.dim[3]())
     else:
-        R = Int(filter.dim[0]())
-        S = Int(filter.dim[1]())
+        _R = Int(filter.dim[0]())
+        _S = Int(filter.dim[1]())
 
     # The vectorized naive kernel beats cuDNN on 1x1, and K is too small
     # to amortize the matmul launch overhead there.
-    if R == 1 and S == 1:
+    if _R == 1 and _S == 1:
         return False
 
-    var full_M = batch * H_out * W_out
-    var K = R * S * C_in
+    var full_M = batch * _H_out * _W_out
+    var K = _R * _S * C_in
     var N = C_out
 
     # Minimum sane K. _matmul_gpu's SM100 path handles small K fine, but
@@ -289,10 +307,10 @@ def dispatch_im2col_matmul_conv2d[
     ctx.enqueue_function[_transpose_filter_to_nk[filter_type, filter_is_fcrs]](
         filter.ptr,
         filter_nk_ptr,
-        R_dim,
-        S_dim,
-        C_dim,
-        F_dim,
+        Int32(R_dim),
+        Int32(S_dim),
+        Int32(C_dim),
+        Int32(F_dim),
         grid_dim=transpose_grid,
         block_dim=transpose_block,
     )
@@ -314,7 +332,7 @@ def dispatch_im2col_matmul_conv2d[
     var im2col_buf = ctx.enqueue_create_buffer[input_type](m_tile * K)
     var im2col_ptr = im2col_buf.unsafe_ptr()
 
-    var HW_out = H_out * W_out
+    var HW_out = _H_out * _W_out
 
     var m_offset = 0
     while m_offset < full_M:
@@ -326,20 +344,20 @@ def dispatch_im2col_matmul_conv2d[
         ctx.enqueue_function[_im2col_nhwc_kernel[input_type]](
             im2col_ptr,
             input.ptr,
-            batch,
-            H,
-            W,
-            C_in,
-            R,
-            S,
-            H_out,
-            W_out,
-            symmetric_padding[0],
-            symmetric_padding[1],
-            stride[0],
-            stride[1],
-            m_offset,
-            m_count,
+            Int32(batch),
+            Int32(_H),
+            Int32(_W),
+            Int32(C_in),
+            Int32(_R),
+            Int32(_S),
+            Int32(_H_out),
+            Int32(_W_out),
+            Int32(symmetric_padding[0]),
+            Int32(symmetric_padding[1]),
+            Int32(stride[0]),
+            Int32(stride[1]),
+            Int32(m_offset),
+            Int32(m_count),
             grid_dim=m_count,
             block_dim=im2col_block,
         )
@@ -355,7 +373,7 @@ def dispatch_im2col_matmul_conv2d[
 
             @parameter
             @always_inline
-            @__copy_capture(HW_out, W_out, m_offset)
+            @__copy_capture(HW_out, _W_out, m_offset)
             def _gemm_epilogue[
                 _dtype: DType,
                 _width: SIMDLength,
@@ -366,8 +384,8 @@ def dispatch_im2col_matmul_conv2d[
                 var n_idx = coords_2d[1]
                 var batch_idx = full_m // HW_out
                 var sp = full_m - batch_idx * HW_out
-                var h_idx = sp // W_out
-                var w_idx = sp - h_idx * W_out
+                var h_idx = sp // _W_out
+                var w_idx = sp - h_idx * _W_out
                 epilogue_4d(
                     IndexList[4](batch_idx, h_idx, w_idx, n_idx),
                     rebind[SIMD[output_type, _width]](val),
@@ -475,8 +493,8 @@ def dispatch_fused_im2col_conv2d_apple[
     var W = Int(input.dim[2]())
     var C_in = Int(input.dim[3]())
 
-    var H_out = Int(output.dim[1]())
-    var W_out = Int(output.dim[2]())
+    var _H_out = Int(output.dim[1]())
+    var _W_out = Int(output.dim[2]())
     var C_out = Int(output.dim[3]())
 
     var R: Int
@@ -491,7 +509,7 @@ def dispatch_fused_im2col_conv2d_apple[
     if R == 1 and S == 1:
         return False
 
-    var full_M = batch * H_out * W_out
+    var full_M = batch * _H_out * _W_out
     var K = R * S * C_in
     var N = C_out
 
@@ -537,10 +555,10 @@ def dispatch_fused_im2col_conv2d_apple[
     ctx.enqueue_function[_transpose_filter_to_nk[filter_type, filter_is_fcrs]](
         filter.ptr,
         filter_nk_ptr,
-        R_dim,
-        S_dim,
-        C_dim,
-        F_dim,
+        Int32(R_dim),
+        Int32(S_dim),
+        Int32(C_dim),
+        Int32(F_dim),
         grid_dim=transpose_grid,
         block_dim=transpose_block,
     )
@@ -564,8 +582,8 @@ def dispatch_fused_im2col_conv2d_apple[
         C=Int32(C_in),
         R=Int32(R),
         S=Int32(S),
-        H_out=Int32(H_out),
-        W_out=Int32(W_out),
+        H_out=Int32(_H_out),
+        W_out=Int32(_W_out),
         pad_h=Int32(symmetric_padding[0]),
         pad_w=Int32(symmetric_padding[1]),
         stride_h=Int32(stride[0]),
@@ -574,11 +592,11 @@ def dispatch_fused_im2col_conv2d_apple[
 
     comptime if maybe_epilogue_func:
         comptime epilogue_4d = maybe_epilogue_func.value()
-        var HW_out = H_out * W_out
+        var HW_out = _H_out * _W_out
 
         @parameter
         @always_inline
-        @__copy_capture(HW_out, W_out)
+        @__copy_capture(HW_out, _W_out)
         def _gemm_epilogue[
             _dtype: DType,
             _width: SIMDLength,
@@ -589,8 +607,8 @@ def dispatch_fused_im2col_conv2d_apple[
             var n_idx = coords_2d[1]
             var batch_idx = full_m // HW_out
             var sp = full_m - batch_idx * HW_out
-            var h_idx = sp // W_out
-            var w_idx = sp - h_idx * W_out
+            var h_idx = sp // _W_out
+            var w_idx = sp - h_idx * _W_out
             epilogue_4d(
                 IndexList[4](batch_idx, h_idx, w_idx, n_idx),
                 rebind[SIMD[output_type, _width]](val),

@@ -26,14 +26,16 @@
 # RUN: not %t 5 2>&1 | FileCheck %s
 
 # CHECK: AddressSanitizer: heap-buffer-overflow on amdgpu device
-# CHECK: at {{.*}}test_amd_asan_oob.mojo:37
+# CHECK: at {{.*}}test_amd_asan_oob.mojo:39
 
 from std.sys import argv
 
 from max.gpu.host import DeviceContext
 
 
-def bad_func(ptr: UnsafePointer[Int32, MutAnyOrigin], i: Int):
+def bad_func(ptr: UnsafePointer[Int32, MutAnyOrigin], i_dev: Int32):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var i = Int(i_dev)
     # Potential out of bounds access
     ptr[i] = 42
 
@@ -43,7 +45,7 @@ def test(ctx: DeviceContext, i: Int) raises:
     var buf = ctx.enqueue_create_buffer[DType.int32](n)
 
     comptime kernel = bad_func
-    ctx.enqueue_function[kernel](buf, i, grid_dim=(1), block_dim=(1))
+    ctx.enqueue_function[kernel](buf, Int32(i), grid_dim=(1), block_dim=(1))
     ctx.synchronize()
 
 

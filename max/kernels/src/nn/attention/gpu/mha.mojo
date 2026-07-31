@@ -1346,9 +1346,9 @@ def flash_attention_dispatch[
                     v,
                     output_device,
                     scale,
-                    batch_size,
-                    max_prompt_len,
-                    max_cache_valid_length,
+                    Int32(batch_size),
+                    Int32(max_prompt_len),
+                    Int32(max_cache_valid_length),
                     valid_length.value(),
                     kv_input_row_offsets,
                     sink_weights,
@@ -1621,8 +1621,8 @@ def flash_attention_dispatch[
                                         exp_sum_buf,
                                         qk_max_buf,
                                         scale,
-                                        batch_size,
-                                        num_partitions_value,
+                                        Int32(batch_size),
+                                        Int32(num_partitions_value),
                                         valid_length.value(),
                                         sink_weights,
                                         mask_functor,
@@ -1881,8 +1881,8 @@ def flash_attention_dispatch[
                             output_device,
                             exp_sum_device,
                             qk_max_device,
-                            num_q_rows,
-                            num_partitions_value,
+                            Int32(num_q_rows),
+                            Int32(num_partitions_value),
                             grid_dim=(
                                 1,
                                 num_heads,
@@ -2587,9 +2587,9 @@ def mha[
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     scale: Float32,
-    batch_size: Int,
-    seq_len_arg: Int,
-    num_keys_arg: Int,
+    batch_size: Int32,
+    seq_len_arg: Int32,
+    num_keys_arg: Int32,
     valid_length: LayoutTensor[
         DType.uint32,
         valid_length_layout,
@@ -2605,53 +2605,16 @@ def mha[
     ],
     mask: mask_t,
 ):
-    """Flash-attention prefill GPU kernel (FA2/FA3 algorithm).
-
-    One CTA processes one `(batch, head)` tile of the attention output.
-    Iterates over KV tiles in the outer loop, accumulates the online-softmax
-    numerator and denominator in registers, then writes the normalised output.
-    Supports GQA (`group > 1`), ragged batches, shared-KV layouts, and
-    attention sinks.
-
-    Parameters:
-        q_type: Element type of the query tensor.
-        k_t: Key operand type (dense or KV-cache).
-        v_t: Value operand type (dense or KV-cache).
-        output_type: Element type of the output tensor.
-        mask_t: Attention mask type.
-        valid_length_layout: Layout of the valid-length tensor.
-        config: Tile/pipeline configuration.
-        group: GQA group size (query heads per KV head).
-        ragged: `True` for ragged-batch (variable-length) inputs.
-        is_shared_kv: `True` when K and V share the same SMEM buffer.
-        sink: `True` to enable attention-sink mode.
-        _use_valid_length: `True` to read per-sequence valid lengths.
-        _is_cache_length_accurate: `True` when cache length already
-            accounts for the newest tokens.
-        _padded_ndbuffer: `True` for padded dense N-dimensional inputs.
-
-    Args:
-        q_ptr: Pointer to the query data.
-        k: Key operand.
-        v: Value operand.
-        output_ptr: Pointer to the output buffer.
-        scale: Softmax temperature scale.
-        batch_size: Number of sequences in the batch.
-        seq_len_arg: Maximum query sequence length.
-        num_keys_arg: Maximum key sequence length.
-        valid_length: Per-sequence valid lengths (or row offsets for ragged).
-        kv_input_row_offsets: Row offsets for cross-attention KV inputs.
-        sink_weights: Sink-token weights for attention-sink mode.
-        mask: Mask instance.
-    """
-
+    var _batch_size = Int(batch_size)
+    var _seq_len_arg = Int(seq_len_arg)
+    var _num_keys_arg = Int(num_keys_arg)
     var batch_idx = block_idx.z
 
     # mha inputs
     var seq_len: Int
-    var max_seq_len = seq_len_arg
+    var max_seq_len = _seq_len_arg
     var num_keys: Int
-    var mask_tensor_col = num_keys_arg
+    var mask_tensor_col = _num_keys_arg
     var start_pos: UInt32 = 0
 
     @always_inline
@@ -2705,8 +2668,8 @@ def mha[
             seq_len = Int(valid_length[batch_idx])
             num_keys = seq_len
         else:
-            seq_len = seq_len_arg
-            num_keys = num_keys_arg
+            seq_len = _seq_len_arg
+            num_keys = _num_keys_arg
 
         if seq_len < q_block_idx() * config.block_m():
             return
@@ -4337,8 +4300,8 @@ def mha_decoding[
     exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
-    batch_size: Int,
-    num_partitions: Int,
+    batch_size: Int32,
+    num_partitions: Int32,
     valid_length: LayoutTensor[
         DType.uint32,
         valid_length_layout,
@@ -4398,6 +4361,8 @@ def mha_decoding[
         mask: Mask instance.
     """
 
+    var _batch_size = Int(batch_size)
+    var _num_partitions = Int(num_partitions)
     comptime accum_type = get_accum_type[q_type]()
     var batch_idx = block_idx.z
 
@@ -4435,18 +4400,18 @@ def mha_decoding[
         # no extra kernel argument needed. This is what makes a non-uniform batch
         # correct: each sequence writes exactly the rows it owns.
         row_base = start_of_seq
-        row_stride = Int(valid_length[batch_size])
+        row_stride = Int(valid_length[_batch_size])
     elif _use_valid_length:
         # treat valid_lengths as valid lengths
         q_batch_offset = depth * num_heads * q_seq_len * batch_idx
         seq_len = Int(valid_length[batch_idx])
         row_base = q_seq_len * batch_idx
-        row_stride = q_seq_len * batch_size
+        row_stride = q_seq_len * _batch_size
     else:
         seq_len = q_seq_len
         q_batch_offset = depth * num_heads * q_seq_len * batch_idx
         row_base = q_seq_len * batch_idx
-        row_stride = q_seq_len * batch_size
+        row_stride = q_seq_len * _batch_size
 
     # split-k offsets
     var partition_idx = block_idx.x
@@ -4459,13 +4424,13 @@ def mha_decoding[
     )
     var exp_sum_offset = qk_max_offset
 
-    # split-k intermediate buffers — only used when num_partitions > 1
+    # split-k intermediate buffers — only used when _num_partitions > 1
     var qk_max_batch_ptr = qk_max_ptr
-    if num_partitions > 1:
+    if _num_partitions > 1:
         qk_max_batch_ptr = qk_max_ptr + qk_max_offset
 
     var exp_sum_batch_ptr = exp_sum_ptr
-    if num_partitions > 1:
+    if _num_partitions > 1:
         exp_sum_batch_ptr = exp_sum_ptr + exp_sum_offset
 
     var num_keys = k.cache_length(batch_idx)
@@ -4497,7 +4462,7 @@ def mha_decoding[
                 qk_max_batch_ptr,
                 scale,
                 num_keys,
-                num_partitions,
+                _num_partitions,
                 sink_weights,
                 mask,
                 batch_idx,
@@ -4525,7 +4490,7 @@ def mha_decoding[
                 qk_max_batch_ptr,
                 scale,
                 num_keys,
-                num_partitions,
+                _num_partitions,
                 mask,
                 batch_idx,
                 sink_weights,
@@ -4577,7 +4542,7 @@ def mha_decoding[
             attention.mha_decode(
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
-                num_partitions,
+                _num_partitions,
             )
         else:
             # The fold needs the runtime query length (it drives the per-token
@@ -4607,13 +4572,13 @@ def mha_decoding[
                 attention.mha_decode_streaming(
                     exp_sum_batch_ptr,
                     qk_max_batch_ptr,
-                    num_partitions,
+                    _num_partitions,
                 )
             else:
                 attention.mha_decode(
                     exp_sum_batch_ptr,
                     qk_max_batch_ptr,
-                    num_partitions,
+                    _num_partitions,
                 )
     else:
         CompilationTarget.unsupported_target_error[
@@ -5994,8 +5959,8 @@ def mha_splitk_reduce[
     qk_max_ptr: UnsafePointer[
         Scalar[get_accum_type[output_type]()], ImmutAnyOrigin
     ],
-    batch_size: Int,
-    num_partitions: Int,
+    batch_size: Int32,
+    num_partitions: Int32,
 ):
     """Single-warp reduction kernel that merges split-K partial attention outputs.
 
@@ -6028,6 +5993,8 @@ def mha_splitk_reduce[
     """
 
     # we only reduce over a warp so limit number of warps to 1
+    var _batch_size = Int(batch_size)
+    var _num_partitions = Int(num_partitions)
     comptime assert num_threads == WARP_SIZE, (
         "num_threads: "
         + String(num_threads)
@@ -6053,22 +6020,22 @@ def mha_splitk_reduce[
     var q_head_idx = block_idx.y
 
     assert (
-        num_partitions <= WARP_SIZE
+        _num_partitions <= WARP_SIZE
     ), "number of partitions should be less than or equal to the warp_size"
     var partition_idx = thread_idx.x
 
     var qk_max_offset = (
         num_heads * batch_idx
-        + num_heads * batch_size * partition_idx
+        + num_heads * _batch_size * partition_idx
         + q_head_idx
     )
     var l = min_or_neg_inf[accum_type]()
-    if partition_idx < num_partitions:
+    if partition_idx < _num_partitions:
         l = qk_max_ptr[qk_max_offset]
 
     var qk_max = warp.lane_group_max[WARP_SIZE](l)
 
-    # since num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
+    # since _num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
     var exp_sums = TileTensor(
         UnsafePointer(
             unsafe_stack_allocation[
@@ -6088,20 +6055,20 @@ def mha_splitk_reduce[
     ](
         intermediate_ptr,
         RuntimeLayout[intermediate_layout].row_major(
-            Index(num_partitions, batch_size, num_heads, depth)
+            Index(_num_partitions, _batch_size, num_heads, depth)
         ),
     )
     comptime output_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
     var output = LayoutTensor[output_type, output_layout](
         output_ptr,
         RuntimeLayout[output_layout].row_major(
-            Index(batch_size, num_heads, depth)
+            Index(_batch_size, num_heads, depth)
         ),
     )
 
     var rescaled_exp_sum: Scalar[accum_type] = 0
     comptime exp_fn = _exp2_concrete if use_exp2 else _exp_concrete
-    if partition_idx < num_partitions:
+    if partition_idx < _num_partitions:
         rescaled_exp_sum = exp_sum_ptr[qk_max_offset] * exp_fn(l - qk_max)
         exp_sums[partition_idx] = rescaled_exp_sum
 
@@ -6124,8 +6091,8 @@ def mha_splitk_reduce[
     var depth_idx = thread_idx.x * width
 
     # Precompute base pointer and partition stride to avoid ptr_at_offset in inner loop
-    # Layout is [num_partitions, batch_size, num_heads, depth] in row-major
-    var partition_stride = batch_size * num_heads * depth
+    # Layout is [_num_partitions, _batch_size, num_heads, depth] in row-major
+    var partition_stride = _batch_size * num_heads * depth
     var base_offset = (
         batch_idx * num_heads * depth + q_head_idx * depth + depth_idx
     )
@@ -6158,7 +6125,7 @@ def mha_splitk_reduce[
     if depth_idx < depth:
         # simd_width=8 is based on experimentation
         # we may want to use a lower value if number of partitions are lower
-        vectorize[8](num_partitions, accum_fn)
+        vectorize[8](_num_partitions, accum_fn)
 
         acc *= inv_global_exp_sum
 
@@ -6172,7 +6139,7 @@ def mha_splitk_reduce[
 
 # ===-----------------------------------------------------------------------===#
 # Naive GPU multihead attention supporting flexible dimensions and
-# batch_size > 1.
+# _batch_size > 1.
 # ===-----------------------------------------------------------------------===#
 
 comptime _NAIVE_BMM_BLOCK_DIM = LaunchDim(32, 16, 1)
@@ -6301,12 +6268,12 @@ def mha_gpu_naive[
         k,
         valid_length,
         scale,
-        batch_size,
-        max_prompt_len,
-        max_cache_size,
-        num_heads,
-        depth,
-        group,
+        Int32(batch_size),
+        Int32(max_prompt_len),
+        Int32(max_cache_size),
+        Int32(num_heads),
+        Int32(depth),
+        Int32(group),
         mask_functor,
         grid_dim=(
             ceildiv(num_keys, 32),
@@ -6345,11 +6312,11 @@ def mha_gpu_naive[
         p_device,
         v,
         valid_length,
-        max_prompt_len,
-        max_cache_size,
-        num_heads,
-        depth,
-        group,
+        Int32(max_prompt_len),
+        Int32(max_cache_size),
+        Int32(num_heads),
+        Int32(depth),
+        Int32(group),
         grid_dim=(
             ceildiv(depth, 32),
             ceildiv(max_prompt_len, 16),
@@ -6383,15 +6350,21 @@ def _bmm0_bs[
         ImmutAnyOrigin,
     ],
     scale: Float32,
-    batch_size: Int,
-    max_prompt_len: Int,
-    max_cache_size: Int,
-    num_heads: Int,
-    depth: Int,
-    group: Int,
+    batch_size: Int32,
+    max_prompt_len: Int32,
+    max_cache_size: Int32,
+    num_heads: Int32,
+    depth: Int32,
+    group: Int32,
     mask_functor: mask_t,
 ):
     # In the num_keys dim.
+    var _batch_size = Int(batch_size)
+    var _max_prompt_len = Int(max_prompt_len)
+    var _max_cache_size = Int(max_cache_size)
+    var _num_heads = Int(num_heads)
+    var _depth = Int(depth)
+    var _group = Int(group)
     var x = global_idx.x
     # In the prompt length dim.
     var y = global_idx.y
@@ -6399,13 +6372,13 @@ def _bmm0_bs[
     comptime k_type = k_t.dtype
 
     var batch_head = block_idx.z
-    var batch, head = udivmod(batch_head, num_heads)
+    var batch, head = udivmod(batch_head, _num_heads)
 
     var cur_query_len: Int
     var q_offset: Int
     var cur_cache_len: Int
-    var padded_num_keys = max_cache_size
-    var p_offset = batch_head * max_prompt_len * padded_num_keys
+    var padded_num_keys = _max_cache_size
+    var p_offset = batch_head * _max_prompt_len * padded_num_keys
     var start_pos: UInt32 = 0
 
     comptime if ragged:
@@ -6415,11 +6388,11 @@ def _bmm0_bs[
         seq_start = Int(valid_length[batch])
         seq_end = Int(valid_length[batch + 1])
         cur_query_len = seq_end - seq_start
-        q_offset = depth * (seq_start * num_heads + head)
+        q_offset = _depth * (seq_start * _num_heads + head)
         cur_cache_len = Int(start_pos) + cur_query_len
     elif _use_valid_length:
         cur_query_len = Int(valid_length[batch])
-        q_offset = depth * (head + num_heads * max_prompt_len * batch)
+        q_offset = _depth * (head + _num_heads * _max_prompt_len * batch)
         comptime if _is_cache_length_accurate:
             cur_cache_len = cur_query_len
         else:
@@ -6427,20 +6400,20 @@ def _bmm0_bs[
     # When inputs are all dense tensors i.e. all sequences in batch have the same
     # length and same cache length
     else:
-        cur_query_len = max_prompt_len
-        q_offset = depth * (head + num_heads * max_prompt_len * batch)
-        cur_cache_len = max_cache_size
-        p_offset = batch_head * max_prompt_len * max_cache_size
+        cur_query_len = _max_prompt_len
+        q_offset = _depth * (head + _num_heads * _max_prompt_len * batch)
+        cur_cache_len = _max_cache_size
+        p_offset = batch_head * _max_prompt_len * _max_cache_size
 
-    assert cur_query_len <= max_prompt_len, "Invalid cur_query_len"
+    assert cur_query_len <= _max_prompt_len, "Invalid cur_query_len"
     assert cur_cache_len <= padded_num_keys, "Invalid cur_cache_len"
 
-    if x >= padded_num_keys or y >= max_prompt_len:
+    if x >= padded_num_keys or y >= _max_prompt_len:
         return
 
     var q = q_ptr + q_offset
 
-    var kv_head = ufloordiv(head, group)
+    var kv_head = ufloordiv(head, _group)
 
     var p = p_ptr + p_offset
 
@@ -6458,10 +6431,10 @@ def _bmm0_bs[
 
         def accum_fn[
             width: Int
-        ](offset: Int) {q, y, num_heads, depth, k_ptr, mut}:
+        ](offset: Int) {q, y, _num_heads, _depth, k_ptr, mut}:
             var q_val = q.load[
                 width=width, alignment=align_of[SIMD[q_type, width]]()
-            ](y * num_heads * depth + offset)
+            ](y * _num_heads * _depth + offset)
             var k_val = k_ptr.load[
                 width=width, alignment=align_of[SIMD[k_type, width]]()
             ](offset)
@@ -6472,11 +6445,11 @@ def _bmm0_bs[
             else:
                 accum_vec += rebind[type_of(accum_vec)](qk_val)
 
-        if depth % accum_width == 0:
-            vectorize[accum_width](depth, accum_fn)
+        if _depth % accum_width == 0:
+            vectorize[accum_width](_depth, accum_fn)
             accum += accum_vec.reduce_add()
         else:
-            vectorize[1](depth, accum_fn)
+            vectorize[1](_depth, accum_fn)
 
     var score_row = y + cur_cache_len - cur_query_len
     var score_col = x
@@ -6514,27 +6487,32 @@ def _bmm1_bs[
         valid_length_layout,
         ImmutAnyOrigin,
     ],
-    max_prompt_len: Int,
-    max_cache_size: Int,
-    num_heads: Int,
-    depth: Int,
-    group: Int,
+    max_prompt_len: Int32,
+    max_cache_size: Int32,
+    num_heads: Int32,
+    depth: Int32,
+    group: Int32,
 ):
+    var _max_prompt_len = Int(max_prompt_len)
+    var _max_cache_size = Int(max_cache_size)
+    var _num_heads = Int(num_heads)
+    var _depth = Int(depth)
+    var _group = Int(group)
     comptime v_type = v_t.dtype
 
-    # In the depth dim.
+    # In the _depth dim.
     var x = global_idx.x
     # IN the sequence length dim.
     var y = global_idx.y
 
     var batch_head = block_idx.z
-    var batch, head = udivmod(batch_head, num_heads)
+    var batch, head = udivmod(batch_head, _num_heads)
 
     var cur_query_len: Int
     var output_offset: Int
     var cur_cache_len: Int
-    var padded_num_keys = max_cache_size
-    var p_offset = batch_head * max_prompt_len * padded_num_keys
+    var padded_num_keys = _max_cache_size
+    var p_offset = batch_head * _max_prompt_len * padded_num_keys
     var start_pos: UInt32 = 0
 
     comptime if ragged:
@@ -6544,11 +6522,11 @@ def _bmm1_bs[
         seq_start = Int(valid_length[batch])
         seq_end = Int(valid_length[batch + 1])
         cur_query_len = seq_end - seq_start
-        output_offset = (seq_start * num_heads + head) * depth
+        output_offset = (seq_start * _num_heads + head) * _depth
         cur_cache_len = cur_query_len + Int(start_pos)
     elif _use_valid_length:
         cur_query_len = Int(valid_length[batch])
-        output_offset = depth * (head + num_heads * max_prompt_len * batch)
+        output_offset = _depth * (head + _num_heads * _max_prompt_len * batch)
         comptime if _is_cache_length_accurate:
             cur_cache_len = cur_query_len
         else:
@@ -6556,19 +6534,19 @@ def _bmm1_bs[
     # When inputs are all dense tensors i.e. all sequences in batch have the same
     # length and same cache length
     else:
-        cur_query_len = max_prompt_len
-        output_offset = depth * (head + num_heads * max_prompt_len * batch)
-        cur_cache_len = max_cache_size
-        p_offset = batch_head * max_prompt_len * max_cache_size
+        cur_query_len = _max_prompt_len
+        output_offset = _depth * (head + _num_heads * _max_prompt_len * batch)
+        cur_cache_len = _max_cache_size
+        p_offset = batch_head * _max_prompt_len * _max_cache_size
 
-    assert cur_query_len <= max_prompt_len, "Invalid cur_query_len"
+    assert cur_query_len <= _max_prompt_len, "Invalid cur_query_len"
 
-    if x >= depth or y >= cur_query_len:
+    if x >= _depth or y >= cur_query_len:
         return
 
     var p = p_ptr + p_offset
 
-    var kv_head = ufloordiv(head, group)
+    var kv_head = ufloordiv(head, _group)
     var output = output_ptr + output_offset
 
     var accum = Float32(0.0)
@@ -6582,7 +6560,7 @@ def _bmm1_bs[
             * v_ptr[0].cast[DType.float32]()
         )
 
-    output[y * num_heads * depth + x] = accum.cast[output_type]()
+    output[y * _num_heads * _depth + x] = accum.cast[output_type]()
 
 
 # ===-----------------------------------------------------------------------===#

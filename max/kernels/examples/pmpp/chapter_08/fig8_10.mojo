@@ -31,7 +31,7 @@ def stencil_kernel(
     d_in: UnsafePointer[Float32, ImmutAnyOrigin],
     d_out: UnsafePointer[Float32, MutAnyOrigin],
     d_c: UnsafePointer[Float32, ImmutAnyOrigin],  # Stencil coefficients
-    N: Int,
+    n_dev: Int32,
 ):
     """3D stencil kernel with thread coarsening in z-direction.
 
@@ -43,8 +43,10 @@ def stencil_kernel(
         d_in: Input 3D array (flattened).
         d_out: Output 3D array (flattened).
         d_c: Stencil coefficients [7] (center, k-1, k+1, j-1, j+1, i-1, i+1).
-        N: Dimension size (N x N x N).
+        n_dev: Dimension size (N x N x N).
     """
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var N = Int(n_dev)
     # Allocate shared memory for three 2D planes
     var prev_in_s = UnsafePointer(
         unsafe_stack_allocation[
@@ -276,7 +278,7 @@ def main() raises:
         d_in,
         d_out,
         d_c,
-        N,
+        Int32(N),
         grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
         block_dim=(block_dim_x, block_dim_y, block_dim_z),
     )

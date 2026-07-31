@@ -129,10 +129,10 @@ def gated_delta_recurrence_fwd_gpu[
     slot_idx_LT: TensorLayout,
     input_row_offsets_LT: TensorLayout,
 ](
-    batch_size: Int,
-    num_value_heads: Int,  # nv
-    num_key_heads: Int,  # nk; heads_expansion_ratio = nv / nk
-    key_dim: Int,  # num_key_heads * key_head_dim
+    batch_size: Int32,
+    num_value_heads: Int32,  # nv
+    num_key_heads: Int32,  # nk; heads_expansion_ratio = nv / nk
+    key_dim: Int32,  # num_key_heads * key_head_dim
     recurrence_output: TileTensor[
         work_dtype, recurrence_output_LT, MutUntrackedOrigin
     ],
@@ -244,6 +244,10 @@ def gated_delta_recurrence_fwd_gpu[
         recurrence_output_valuedim_stride: Stride between consecutive
             value-dim elements in `recurrence_output`.
     """
+    var _batch_size = Int(batch_size)
+    var _num_value_heads = Int(num_value_heads)
+    var _num_key_heads = Int(num_key_heads)
+    var _key_dim = Int(key_dim)
     comptime assert (
         KEY_HEAD_DIM == VALUE_HEAD_DIM
     ), "gated_delta_recurrence_fwd_gpu requires KEY_HEAD_DIM == VALUE_HEAD_DIM"
@@ -252,13 +256,13 @@ def gated_delta_recurrence_fwd_gpu[
     var block = Int(block_idx.x)
 
     # ── block -> (batch_item, value_head) ───────────────────────────────────
-    var batch_item_idx = block // num_value_heads
-    var value_head_idx = block % num_value_heads
-    if batch_item_idx >= batch_size:
+    var batch_item_idx = block // _num_value_heads
+    var value_head_idx = block % _num_value_heads
+    if batch_item_idx >= _batch_size:
         return
 
     # GQA: map value head to key head.
-    var heads_expansion_ratio = num_value_heads // num_key_heads
+    var heads_expansion_ratio = _num_value_heads // _num_key_heads
     var key_head_idx = value_head_idx // heads_expansion_ratio
 
     # Read the pool slot for this batch item exactly once. The caller
@@ -302,9 +306,9 @@ def gated_delta_recurrence_fwd_gpu[
 
     # Precompute constant channel offsets for Q, K, V in the conv_dim layout.
     var query_channel_base = UInt32(key_head_idx * KEY_HEAD_DIM)
-    var key_channel_base = UInt32(key_dim + key_head_idx * KEY_HEAD_DIM)
+    var key_channel_base = UInt32(_key_dim + key_head_idx * KEY_HEAD_DIM)
     var value_channel = UInt32(
-        2 * key_dim + value_head_idx * VALUE_HEAD_DIM + tid
+        2 * _key_dim + value_head_idx * VALUE_HEAD_DIM + tid
     )
     var query_scale = Float32(1.0) / std.math.sqrt(Float32(KEY_HEAD_DIM))
 

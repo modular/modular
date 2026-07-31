@@ -22,10 +22,11 @@ from max.gpu.host import DeviceContext
 from std.memory.pointer import AddressSpace
 
 
-def _kernel(addr: Int):
+def _kernel(addr: Int64):
     # `addr` is a runtime value larger than a 32-bit `SHARED` pointer can hold.
+    # `Int` is not device-passable, so it arrives as a fixed-width `Int64`.
     var p = Pointer[Int, MutAnyOrigin, address_space=AddressSpace.SHARED](
-        unsafe_from_address=addr
+        unsafe_from_address=Int(addr)
     )
     _ = p
 
@@ -37,7 +38,7 @@ def main() raises:
     with DeviceContext() as ctx:
         # 2**33 fits in `Int` (64-bit) but not a 32-bit `SHARED` pointer.
         # CHECK: Assert Error: address 8589934592 does not fit in this pointer's address space
-        ctx.enqueue_function[_kernel](1 << 33, grid_dim=1, block_dim=1)
+        ctx.enqueue_function[_kernel](Int64(1 << 33), grid_dim=1, block_dim=1)
         ctx.synchronize()
 
     # CHECK-NOT: is never reached

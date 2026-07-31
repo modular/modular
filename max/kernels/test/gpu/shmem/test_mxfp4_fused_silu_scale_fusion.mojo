@@ -239,7 +239,7 @@ def _run_fusion_check[
         ),
         input_tt,
         a_off_tt,
-        0,  # max_padded_M unused when fuse_a_scale_preshuffle=False
+        Int32(0),  # max_padded_M unused when fuse_a_scale_preshuffle=False
         alpha,
         limit,
         grid_dim=hw.sm_count,
@@ -290,7 +290,7 @@ def _run_fusion_check[
         ),
         input_tt,
         a_off_tt,
-        max_padded_M,
+        Int32(max_padded_M),
         alpha,
         limit,
         grid_dim=hw.sm_count,
@@ -430,7 +430,7 @@ def _run_activation_probe[
         ),
         input_tt,
         a_off_tt,
-        0,  # max_padded_M unused when fuse_a_scale_preshuffle=False
+        Int32(0),  # max_padded_M unused when fuse_a_scale_preshuffle=False
         alpha,
         limit,
         grid_dim=hw.sm_count,

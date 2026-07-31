@@ -599,6 +599,12 @@ struct SIMD[dtype: DType, size: SIMDLength](
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         """Device type mapping is the identity function."""
+        # `where` clause on the conformance would be cleaner but triggers a
+        # KGEN parameter-evaluator crash when instantiated in certain scopes.
+        comptime assert Self.dtype != DType.int and Self.dtype != DType.uint, (
+            "Int and UInt do not conform to DevicePassable; use a "
+            "fixed-width type such as Int32 or Int64 instead"
+        )
         encoder.encode(self, target)
 
     @staticmethod

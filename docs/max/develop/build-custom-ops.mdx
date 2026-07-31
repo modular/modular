@@ -356,7 +356,8 @@ def _vector_addition_gpu(
     var vector_length = output.dim_size(0)
 
     @parameter
-    def vector_addition_gpu_kernel(length: Int):
+    def vector_addition_gpu_kernel(length_dev: Int32):
+        var length = Int(length_dev)
         var tid = block_dim.x * block_idx.x + thread_idx.x
         if tid < length:
             var result = lhs[tid] + rhs[tid]
@@ -364,7 +365,7 @@ def _vector_addition_gpu(
 
     var num_blocks = ceildiv(vector_length, BLOCK_SIZE)
     ctx.enqueue_function[vector_addition_gpu_kernel](
-        vector_length, grid_dim=num_blocks, block_dim=BLOCK_SIZE
+        Int32(vector_length), grid_dim=num_blocks, block_dim=BLOCK_SIZE
     )
 ```
 

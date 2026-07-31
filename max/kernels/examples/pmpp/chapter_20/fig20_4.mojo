@@ -70,8 +70,10 @@ def softmax_kernel(
     S: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     D: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     P: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    N: Int,
+    N_dev: Int32,
 ):
+    # Int is not device-passable; widen the fixed-width arg.
+    var N = Int(N_dev)
     var D_ptr = D
     var P_ptr = P
 
@@ -209,7 +211,7 @@ def main() raises:
             d_S,
             d_D,
             d_P,
-            N,
+            Int32(N),
             grid_dim=(N, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),
         )

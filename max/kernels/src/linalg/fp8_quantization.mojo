@@ -331,7 +331,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 scaled_output.address_space_cast[AddressSpace.GENERIC](),
                 scales.address_space_cast[AddressSpace.GENERIC](),
                 scale_ub.cast[scales_dtype](),
-                num_rows,
+                Int32(num_rows),
             )
 
             ctx.enqueue_function(
@@ -704,7 +704,7 @@ struct _QuantizeFp8KernelPerTensor[
         linear_idx_type=Self.scales_idx_type,
     ]
     var scale_ub: Scalar[Self.scales_type]
-    var num_rows: Int
+    var num_rows_dev: Int32
 
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -725,7 +725,7 @@ struct _QuantizeFp8KernelPerTensor[
         var output = TileTensor(self.output.ptr, self.output.layout)
         var scales = TileTensor(self.scales.ptr, self.scales.layout)
         var scale_ub = self.scale_ub
-        var num_rows = self.num_rows
+        var num_rows = Int(self.num_rows_dev)
         comptime accum_type = get_accum_type[Self.in_type]()
 
         var tid = thread_idx.x

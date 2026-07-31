@@ -976,8 +976,9 @@ struct AppleInt8ActQuant[in_type: DType = DType.bfloat16, *, THREADS: Int = 64]:
         q: TileTensor[DType.int8, q_layout, MutAnyOrigin],
         a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
         a_scale: TileTensor[DType.float32, s_layout, MutAnyOrigin],
-        K: Int,
+        K_arg: Int32,
     ):
+        var K = Int(K_arg)
         var row = Int(block_idx.x)
         var tid = Int(thread_idx.x)
 
@@ -1070,7 +1071,7 @@ def enqueue_apple_int8_quantize_activation[
         q,
         a.as_immut(),
         a_scale,
-        k,
+        Int32(k),
         grid_dim=(m),
         block_dim=(QK.THREADS),
     )

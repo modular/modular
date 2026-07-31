@@ -59,38 +59,34 @@ def _dequant_mxfp4_to_fp8_kernel[
     SF_VECTOR_SIZE: Int = 32,
     ELEMENTS_PER_THREAD: Int = 8,
 ](
-    output: TileTensor[
-        out_dtype, output_layout, MutAnyOrigin, Storage=output_storage
-    ],
-    input: TileTensor[
-        in_dtype, input_layout, MutAnyOrigin, Storage=input_storage
-    ],
-    scales: TileTensor[
-        scales_dtype, scales_layout, MutAnyOrigin, Storage=scales_storage
-    ],
-    num_rows: Int,
-    num_cols: Int,
+    output: TileTensor[out_dtype, output_layout, MutAnyOrigin],
+    input: TileTensor[in_dtype, input_layout, MutAnyOrigin],
+    scales: TileTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    num_rows: Int32,
+    num_cols: Int32,
 ):
     """Kernel that dequantizes MXFP4 packed uint8 to out_dtype (FP8 or BF16).
 
     Scales are 2D [num_rows, num_cols // SF_VECTOR_SIZE], one scale per block
     of SF_VECTOR_SIZE elements.
     """
+    var _num_rows = Int(num_rows)
+    var _num_cols = Int(num_cols)
     comptime assert output.flat_rank >= 2
     comptime assert input.flat_rank >= 2
     comptime assert scales.flat_rank >= 2
     comptime BYTES_PER_THREAD = ELEMENTS_PER_THREAD // 2
 
     with PDL():
-        for global_row_idx in range(block_idx.x, num_rows, grid_dim.x):
+        for global_row_idx in range(block_idx.x, _num_rows, grid_dim.x):
             for col_thread_idx in range(
                 thread_idx.x,
-                ceildiv(num_cols, ELEMENTS_PER_THREAD),
+                ceildiv(_num_cols, ELEMENTS_PER_THREAD),
                 block_dim.x,
             ):
                 var global_col_idx = col_thread_idx * ELEMENTS_PER_THREAD
 
-                if global_col_idx >= num_cols:
+                if global_col_idx >= _num_cols:
                     continue
 
                 # Load packed uint8 bytes
@@ -235,8 +231,8 @@ def dequant_mxfp4[
         output,
         input_tt,
         scales_tt,
-        num_rows,
-        num_cols,
+        Int32(num_rows),
+        Int32(num_cols),
         block_dim=block_dim_val,
         grid_dim=grid_dim_val,
         attributes=pdl_launch_attributes(pdl_level),

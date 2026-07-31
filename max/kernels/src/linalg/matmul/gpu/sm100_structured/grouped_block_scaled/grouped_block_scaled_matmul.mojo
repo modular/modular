@@ -436,7 +436,7 @@ def grouped_block_scaled_matmul[
             sfb_ptrs,
             # Problem sizes and group count
             problem_sizes,
-            num_groups,
+            Int32(num_groups),
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,
@@ -467,7 +467,7 @@ def grouped_block_scaled_matmul[
             sfb_ptrs,
             # Problem sizes and group count
             problem_sizes,
-            num_groups,
+            Int32(num_groups),
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,

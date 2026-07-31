@@ -117,7 +117,7 @@ def tma_umma_kernel_sgs[
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b: LayoutTensor[b_gmem_type, b_layout, ImmutAnyOrigin],  # FP8 in gmem
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
     """Kernel with A via TMA to smem, B from gmem->registers->cast->smem.
 
@@ -125,6 +125,7 @@ def tma_umma_kernel_sgs[
     Matrix B: FP8 in global memory, loaded to registers, cast to BF16, stored to smem
     MMA: Uses BF16 operands (KIND_F16)
     """
+    var num_iters = Int(num_iters_dev)
     comptime assert num_threads == 128 or num_threads == 256
     comptime assert (
         a_type == DType.bfloat16
@@ -574,7 +575,7 @@ def test_tma_umma_fp8_b[
         a_tma_op,
         b.device_tensor(),
         c.device_tensor(),
-        Int(K // BK),
+        Int32(K // BK),
         grid_dim=(N // BN, M // BM),
         block_dim=(block_dim),
         shared_mem_bytes=Int(smem_use),

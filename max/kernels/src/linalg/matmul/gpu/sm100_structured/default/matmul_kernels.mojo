@@ -1698,7 +1698,7 @@ struct BlackwellMatmulSM100Kernel[
         rank_sigs: Optional[
             Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
         ] = None,
-        my_rank: Int = 0,
+        my_rank_dev: Int32 = 0,
     ):
         """Main kernel entry point for SM100 matrix multiplication.
 
@@ -1720,9 +1720,10 @@ struct BlackwellMatmulSM100Kernel[
             workspace: Workspace buffer for profiling and scheduling state.
             rank_sigs: Per-rank signal pointers for multi-GPU
                 reduce-scatter synchronization (defaults to `None`).
-            my_rank: Rank index of this GPU for multi-GPU reduce-scatter
+            my_rank_dev: Rank index of this GPU for multi-GPU reduce-scatter
                 (defaults to 0).
         """
+        var my_rank = Int(my_rank_dev)
         Self.validate_constraints()
 
         # Access shared memory via bitcast
@@ -2570,7 +2571,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
         c: TileTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
-        num_iters: Int,
+        num_iters: Int32,
     ):
         """Run the fallback matmul kernel.
 
@@ -2580,6 +2581,7 @@ struct BlackwellMatmulSM100FallbackKernel[
             c: Output tensor C (TileTensor, direct global memory writes).
             num_iters: Number of K-dimension iterations.
         """
+        var _num_iters = Int(num_iters)
         Self.validate_constraints()
 
         # Setup shared memory for A and B tiles
@@ -2654,7 +2656,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         ]()
 
         # Main loop over K dimension
-        for i in range(num_iters):
+        for i in range(_num_iters):
             # Only one thread per CTA does the copy
             if elect_one_thread:
                 tma_mbar[0].expect_bytes(Int32(expected_bytes))

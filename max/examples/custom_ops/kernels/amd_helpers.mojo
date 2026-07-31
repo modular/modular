@@ -593,9 +593,9 @@ def max_reduce_kernel[
     layout: TensorLayout,
 ](
     relative_error: TileTensor[dtype, layout, MutAnyOrigin],
-    elements: Int,
-    offset: Int,
-    max_idx: Int,
+    elements_dev: Int32,
+    offset_dev: Int32,
+    max_idx_dev: Int32,
 ):
     """
     GPU kernel that computes the maximum relative error in a subset of a tensor.
@@ -606,10 +606,14 @@ def max_reduce_kernel[
 
     Args:
         relative_error: The relative error tensor to reduce.
-        elements: The number of elements per block to reduce.
-        offset: The stride/offset for accessing elements.
-        max_idx: Maximum valid index to prevent out-of-bounds access.
+        elements_dev: The number of elements per block to reduce.
+        offset_dev: The stride/offset for accessing elements.
+        max_idx_dev: Maximum valid index to prevent out-of-bounds access.
     """
+
+    var elements = Int(elements_dev)
+    var offset = Int(offset_dev)
+    var max_idx = Int(max_idx_dev)
 
     # Get thread and block indices
     var tid = thread_idx.x
@@ -705,9 +709,9 @@ def compare_equal[
         comptime reduce_kernel = max_reduce_kernel[dtype, layout]
         gpu_ctx.enqueue_function[reduce_kernel](
             max_relative_error,
-            num_elements,
-            offset,
-            m * n,
+            Int32(num_elements),
+            Int32(offset),
+            Int32(m * n),
             grid_dim=(num_threadblocks, 1),
             block_dim=(512, 1),
         )

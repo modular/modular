@@ -41,8 +41,10 @@ def reduce_add(
     # matches the declared param type exactly, so a safe `Pointer` won't match.
     res_add: UnsafePointer[Float32, MutAnyOrigin],
     vec: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
 
     if tid >= len:
@@ -57,8 +59,10 @@ def reduce_add_via_cas(
     # matches the declared param type exactly, so a safe `Pointer` won't match.
     res_add: UnsafePointer[Float32, MutAnyOrigin],
     vec: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
 
     if tid >= len:
@@ -79,11 +83,13 @@ def reduce_add_via_shared_cas(
     # matches the declared param type exactly, so a safe `Pointer` won't match.
     res_add: UnsafePointer[Float32, MutAnyOrigin],
     vec: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
     """Same CAS-retry-loop reduction as `reduce_add_via_cas`, but on
     threadgroup (`AddressSpace.SHARED`) memory, to exercise Apple GPU's
     local-address-space `cmpxchg` path."""
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var shared = UnsafePointer(
         unsafe_stack_allocation[1, Float32, address_space=AddressSpace.SHARED]()
     )
@@ -114,8 +120,10 @@ def reduce_min_max(
     res_min: UnsafePointer[Float32, MutAnyOrigin],
     res_max: UnsafePointer[Float32, MutAnyOrigin],
     vec: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
 
     if tid >= len:
@@ -158,7 +166,7 @@ def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     ctx.enqueue_function[reduce_add](
         res_add_device,
         vec_device,
-        n,
+        Int32(n),
         grid_dim=ceildiv(n, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
@@ -179,7 +187,7 @@ def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
             res_min_device,
             res_max_device,
             vec_device,
-            n,
+            Int32(n),
             grid_dim=ceildiv(n, BLOCK_SIZE),
             block_dim=BLOCK_SIZE,
         )
@@ -237,7 +245,7 @@ def run_reduce_via_cas(ctx: DeviceContext) raises:
     ctx.enqueue_function[reduce_add_via_cas](
         res_device,
         vec_device,
-        n,
+        Int32(n),
         grid_dim=ceildiv(n, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
@@ -247,7 +255,7 @@ def run_reduce_via_cas(ctx: DeviceContext) raises:
     ctx.enqueue_function[reduce_add_via_shared_cas](
         res_shared_device,
         vec_device,
-        n,
+        Int32(n),
         grid_dim=ceildiv(n, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )

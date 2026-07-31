@@ -20,8 +20,9 @@ def add_constant_fn(
     output: UnsafePointer[Float32, MutAnyOrigin],
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     constant: Float32,
-    len: Int,
+    len_dev: Int32,
 ):
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -46,7 +47,7 @@ def run_add_constant(ctx: DeviceContext) raises:
         out_device,
         in_device,
         constant,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )

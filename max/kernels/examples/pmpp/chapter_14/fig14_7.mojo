@@ -36,9 +36,9 @@ def radix_sort_iter(
     input: UnsafePointer[UInt32, ImmutAnyOrigin],
     output: UnsafePointer[UInt32, MutAnyOrigin],
     bits: UnsafePointer[UInt32, MutAnyOrigin],
-    N: Int,
-    iter: Int,
-    block_dim_x: Int,
+    N_dev: Int32,
+    iter_dev: Int32,
+    block_dim_x_dev: Int32,
 ):
     """Radix sort iteration kernel - extracts bits.
 
@@ -46,10 +46,14 @@ def radix_sort_iter(
         input: Input array.
         output: Output array.
         bits: Bit array.
-        N: Size of array.
-        iter: Current bit position.
-        block_dim_x: Block dimension.
+        N_dev: Size of array.
+        iter_dev: Current bit position.
+        block_dim_x_dev: Block dimension.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var N = Int(N_dev)
+    var iter = Int(iter_dev)
+    var block_dim_x = Int(block_dim_x_dev)
     var i = block_idx.x * block_dim_x + thread_idx.x
 
     if i < N:
@@ -63,9 +67,9 @@ def radix_scatter(
     output: UnsafePointer[UInt32, MutAnyOrigin],
     bits: UnsafePointer[UInt32, MutAnyOrigin],
     scanResult: UnsafePointer[UInt32, ImmutAnyOrigin],
-    N: Int,
-    iter: Int,
-    block_dim_x: Int,
+    N_dev: Int32,
+    iter_dev: Int32,
+    block_dim_x_dev: Int32,
 ):
     """Scatter elements based on scan results.
 
@@ -74,10 +78,14 @@ def radix_scatter(
         output: Output array.
         bits: Bit array.
         scanResult: Scan result array.
-        N: Size of array.
-        iter: Current bit position.
-        block_dim_x: Block dimension.
+        N_dev: Size of array.
+        iter_dev: Current bit position.
+        block_dim_x_dev: Block dimension.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var N = Int(N_dev)
+    var iter = Int(iter_dev)
+    var block_dim_x = Int(block_dim_x_dev)
     var i = block_idx.x * block_dim_x + thread_idx.x
 
     if i < N:
@@ -230,9 +238,9 @@ def main() raises:
             current_input,
             current_output,
             d_bits,
-            N,
-            iter,
-            threads_per_block,
+            Int32(N),
+            Int32(iter),
+            Int32(threads_per_block),
             grid_dim=(num_blocks, 1, 1),
             block_dim=(threads_per_block, 1, 1),
         )
@@ -259,9 +267,9 @@ def main() raises:
             current_output,
             d_bits,
             d_bits,
-            N,
-            iter,
-            threads_per_block,
+            Int32(N),
+            Int32(iter),
+            Int32(threads_per_block),
             grid_dim=(num_blocks, 1, 1),
             block_dim=(threads_per_block, 1, 1),
         )

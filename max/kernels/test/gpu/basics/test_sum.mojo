@@ -27,8 +27,9 @@ def warp_sum_kernel[
 ](
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    size: Int,
+    size_dev: Int32,
 ):
+    var size = Int(size_dev)
     var tid = global_idx.x
     if tid >= size:
         return
@@ -55,7 +56,7 @@ def test_warp_sum(ctx: DeviceContext) raises:
     ctx.enqueue_function[kernel](
         out_device,
         in_device,
-        size,
+        Int32(size),
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,
     )
@@ -81,8 +82,9 @@ def block_sum_kernel[
 ](
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    size: Int,
+    size_dev: Int32,
 ):
+    var size = Int(size_dev)
     var tid = global_idx.x
     if tid >= size:
         return
@@ -111,7 +113,7 @@ def test_block_sum(ctx: DeviceContext) raises:
     ctx.enqueue_function[kernel](
         out_device,
         in_device,
-        size,
+        Int32(size),
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,
     )

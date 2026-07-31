@@ -458,9 +458,11 @@ def _fp8_index_score_kernel_sm100[
     valid_length: TileTensor[DType.uint32, VLLT, ImmutAnyOrigin],
     q_s: TileTensor[DType.float32, QSLT, ImmutAnyOrigin],
     output: TileTensor[DType.float32, OutLT, MutAnyOrigin],
-    max_num_keys: Int,
-    causal: Int,
+    max_num_keys_dev: Int32,
+    causal_dev: Int32,
 ):
+    var max_num_keys = Int(max_num_keys_dev)
+    var causal = Int(causal_dev)
     var b = block_idx.x
     var key_start = Int(block_idx.y) * BM_key
     var start_of_seq = Int(valid_length[b])
@@ -526,9 +528,11 @@ def _fp8_index_score_kernel_sm100_split[
     valid_length: TileTensor[DType.uint32, VLLT, ImmutAnyOrigin],
     q_s: TileTensor[DType.float32, QSLT, ImmutAnyOrigin],
     output: TileTensor[DType.float32, OutLT, MutAnyOrigin],
-    max_num_keys: Int,
-    causal: Int,
+    max_num_keys_dev: Int32,
+    causal_dev: Int32,
 ):
+    var max_num_keys = Int(max_num_keys_dev)
+    var causal = Int(causal_dev)
     var b = block_idx.x
     var key_start = Int(block_idx.y) * BM_key
     var start_of_seq = Int(valid_length[b])
@@ -782,8 +786,8 @@ def fp8_index_score_sm100[
             valid_length.as_immut(),
             q_s,
             output,
-            max_num_keys,
-            Int(causal),
+            Int32(max_num_keys),
+            Int32(causal),
             grid_dim=(batch_size, ceildiv(max_num_keys, BM_key), num_slices),
             block_dim=128,
             shared_mem_bytes=smem_bytes_rt,
@@ -800,8 +804,8 @@ def fp8_index_score_sm100[
             valid_length.as_immut(),
             q_s,
             output,
-            max_num_keys,
-            Int(causal),
+            Int32(max_num_keys),
+            Int32(causal),
             grid_dim=(batch_size, ceildiv(max_num_keys, BM_key), 1),
             block_dim=128,
             shared_mem_bytes=smem_bytes_rt,

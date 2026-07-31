@@ -55,7 +55,8 @@ def _vector_addition_gpu(
 
     # The function that will be launched and distributed across GPU threads.
     @parameter
-    def vector_addition_gpu_kernel(length: Int):
+    def vector_addition_gpu_kernel(length_dev: Int32):
+        var length = Int(length_dev)
         var tid = block_dim.x * block_idx.x + thread_idx.x
         if tid < length:
             var idx = IndexList[output.rank](tid)
@@ -69,7 +70,7 @@ def _vector_addition_gpu(
     # The GPU function is compiled and enqueued to run on the GPU across the
     # 1-D vector, split into blocks of `BLOCK_SIZE` width.
     gpu_ctx.enqueue_function[vector_addition_gpu_kernel](
-        vector_length, grid_dim=num_blocks, block_dim=BLOCK_SIZE
+        Int32(vector_length), grid_dim=num_blocks, block_dim=BLOCK_SIZE
     )
 
 

@@ -24,8 +24,9 @@ def vec_add(
     output: UnsafePointer[Float32, MutAnyOrigin],
     in0: UnsafePointer[Float32, ImmutAnyOrigin],
     in1: UnsafePointer[Float32, ImmutAnyOrigin],
-    length: Int,
+    length_dev: Int32,
 ):
+    var length = Int(length_dev)
     var tid = global_idx.x
     if tid >= length:
         return
@@ -34,9 +35,11 @@ def vec_add(
 
 def fill_constant(
     output: UnsafePointer[Float32, MutAnyOrigin],
-    val: Int,
-    length: Int,
+    val_dev: Int32,
+    length_dev: Int32,
 ):
+    var val = Int(val_dev)
+    var length = Int(length_dev)
     var tid = global_idx.x
     if tid >= length:
         return
@@ -45,9 +48,11 @@ def fill_constant(
 
 def add_in_place(
     buf: UnsafePointer[Float32, MutAnyOrigin],
-    delta: Int,
-    length: Int,
+    delta_dev: Int32,
+    length_dev: Int32,
 ):
+    var delta = Int(delta_dev)
+    var length = Int(length_dev)
     var tid = global_idx.x
     if tid >= length:
         return
@@ -76,7 +81,7 @@ def test_vec_add_kernel_node(ctx: DeviceContext) raises:
             out_dev,
             in0_dev,
             in1_dev,
-            length,
+            Int32(length),
             grid_dim=ceildiv(length, block_dim),
             block_dim=block_dim,
         )
@@ -120,7 +125,7 @@ def test_parameterized_kernel_node(ctx: DeviceContext) raises:
             out_dev,
             in0_dev,
             in1_dev,
-            length,
+            Int32(length),
             grid_dim=ceildiv(length, block_dim),
             block_dim=block_dim,
         )
@@ -160,8 +165,9 @@ def test_capturing_parameterized_kernel_node(ctx: DeviceContext) raises:
             output: UnsafePointer[Float32, MutAnyOrigin],
             in0: UnsafePointer[Float32, ImmutAnyOrigin],
             in1: UnsafePointer[Float32, ImmutAnyOrigin],
-            length: Int,
+            length_dev: Int32,
         ):
+            var length = Int(length_dev)
             var tid = global_idx.x
             if tid >= length:
                 return
@@ -171,7 +177,7 @@ def test_capturing_parameterized_kernel_node(ctx: DeviceContext) raises:
             out_dev,
             in0_dev,
             in1_dev,
-            length,
+            Int32(length),
             grid_dim=ceildiv(length, block_dim),
             block_dim=block_dim,
         )
@@ -356,7 +362,7 @@ def test_add_output(ctx: DeviceContext) raises:
             out_dev,
             in0_dev,
             in1_dev,
-            length,
+            Int32(length),
             grid_dim=ceildiv(length, block_dim),
             block_dim=block_dim,
         )
@@ -397,16 +403,16 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
         var a0 = builder.add_function(
             func,
             buf_a,
-            1,
-            length,
+            Int32(1),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
         )
         var a1 = builder.add_function(
             func,
             buf_a,
-            2,
-            length,
+            Int32(2),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
             dependencies=[a0],
@@ -414,8 +420,8 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
         _ = builder.add_function(
             func,
             buf_a,
-            3,
-            length,
+            Int32(3),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
             dependencies=[a1],
@@ -426,16 +432,16 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
         var b0 = builder.add_function(
             func,
             buf_b,
-            4,
-            length,
+            Int32(4),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
         )
         var b1 = builder.add_function(
             func,
             buf_b,
-            5,
-            length,
+            Int32(5),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
             dependencies=[b0],
@@ -443,8 +449,8 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
         _ = builder.add_function(
             func,
             buf_b,
-            6,
-            length,
+            Int32(6),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
             dependencies=[b1],
@@ -646,8 +652,8 @@ def test_region_with_dependencies(ctx: DeviceContext) raises:
             _ = b.add_function(
                 fill,
                 buf,
-                5,
-                length,
+                Int32(5),
+                Int32(length),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 dependencies=[],
@@ -662,8 +668,8 @@ def test_region_with_dependencies(ctx: DeviceContext) raises:
             _ = b.add_function(
                 incr,
                 buf,
-                10,
-                length,
+                Int32(10),
+                Int32(length),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 dependencies=[],
@@ -702,8 +708,8 @@ def test_region_passthrough_dependencies(
             _ = b.add_function(
                 fill,
                 buf,
-                5,
-                length,
+                Int32(5),
+                Int32(length),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 dependencies=[],
@@ -725,8 +731,8 @@ def test_region_passthrough_dependencies(
         _ = builder.add_function(
             incr,
             buf,
-            10,
-            length,
+            Int32(10),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
             dependencies=[passthrough],
@@ -763,10 +769,20 @@ def test_as_context_kernel_chain(ctx: DeviceContext) raises:
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         with builder.recording_context() as rec:
             rec.enqueue_function(
-                fill, buf, 5, length, grid_dim=grid_dim, block_dim=block_dim
+                fill,
+                buf,
+                Int32(5),
+                Int32(length),
+                grid_dim=grid_dim,
+                block_dim=block_dim,
             )
             rec.enqueue_function(
-                incr, buf, 10, length, grid_dim=grid_dim, block_dim=block_dim
+                incr,
+                buf,
+                Int32(10),
+                Int32(length),
+                grid_dim=grid_dim,
+                block_dim=block_dim,
             )
 
     var graph = DeviceGraph.create(ctx, build)

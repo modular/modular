@@ -27,9 +27,11 @@ from std.testing import assert_almost_equal, assert_equal
 def shared_memory_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
     """A kernel that uses shared memory to test occupancy calculations."""
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     var thread_id = thread_idx.x
     var block_size = block_dim.x
@@ -68,9 +70,11 @@ def shared_memory_kernel(
 def occupancy_test_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
     """A simple kernel for testing occupancy - just copies input to output."""
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -202,7 +206,7 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     ctx.enqueue_function[kernel](
         input_device,
         output_device,
-        length,
+        Int32(length),
         grid_dim=grid_dim,
         block_dim=optimal_block_size,
     )

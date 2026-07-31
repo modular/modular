@@ -96,8 +96,10 @@ def _vec_func_zero(
     in0: UnsafePointer[S, MutAnyOrigin],
     in1: UnsafePointer[S, MutAnyOrigin],
     output: UnsafePointer[S, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -116,8 +118,10 @@ def _vec_func_not_zero(
     in0: UnsafePointer[S, MutAnyOrigin],
     in1: UnsafePointer[S, MutAnyOrigin],
     output: UnsafePointer[S, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -138,8 +142,10 @@ def _vec_func[
     in0: UnsafePointer[S, MutAnyOrigin],
     in1: UnsafePointer[S, MutAnyOrigin],
     output: UnsafePointer[S, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -213,7 +219,7 @@ def _run_test_function_checked(ctx: DeviceContext) raises:
         in0,
         in1,
         out,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )

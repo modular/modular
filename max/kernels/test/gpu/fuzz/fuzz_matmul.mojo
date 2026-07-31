@@ -58,9 +58,9 @@ def naive_matmul_ref_kernel(
     c: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
     """C[m,n] = sum_k A[m,k]*B[n,k] with fp32 accumulation (transpose_b).
 
@@ -68,6 +68,10 @@ def naive_matmul_ref_kernel(
     fp32, exposing shared-rounding/reduction bugs the bf16 tensor-core path and
     a same-precision vendor reference would both hide.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     var col = global_idx.x
     var row = global_idx.y
     if row < m and col < n:
@@ -149,9 +153,9 @@ def run_one_case(
             c_ref_dev,
             a_dev,
             b_dev,
-            m,
-            N,
-            K,
+            Int32(m),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(N, BX), ceildiv(m, BY)),
             block_dim=(BX, BY),
         )

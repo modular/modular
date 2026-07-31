@@ -1251,7 +1251,7 @@ struct AMD4WaveMatmul[
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
         source_ptr: UnsafePointer[Scalar[Self.c_type], ImmutAnyOrigin],
-        source_row_stride: Int,
+        source_row_stride: Int32,
         beta: Float32,
     ):
         """Runs the 4-wave kernel as a 2D convolution via implicit-GEMM.
@@ -1306,6 +1306,7 @@ struct AMD4WaveMatmul[
             beta: Residual scale. Unused when `has_residual=False`.
         """
         Self.validate_config()
+        var _source_row_stride = Int(source_row_stride)
 
         comptime BM = Self.BM
         comptime BN = Self.BN
@@ -1808,7 +1809,7 @@ struct AMD4WaveMatmul[
             # this fix replaces), making workgroups with
             # `pid_m >= num_pid_m/2` read OOB → SRD-clamped to 0.
             # Keep both expressed in elements.
-            var src_size_elem = M * source_row_stride
+            var src_size_elem = M * _source_row_stride
             var src_bc = AMDBufferResource(
                 readfirstlane(source_ptr), readfirstlane(src_size_elem)
             )
@@ -1832,7 +1833,7 @@ struct AMD4WaveMatmul[
                         + lane_group * c_frag_size
                     )
                     var elem_off = Int32(
-                        m_logical * source_row_stride + n_global
+                        m_logical * _source_row_stride + n_global
                     )
                     prefetched[m_mma * num_n_mmas + n_mma] = src_bc.load[
                         Self.c_type, c_frag_size

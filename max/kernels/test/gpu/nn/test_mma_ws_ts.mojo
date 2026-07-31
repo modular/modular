@@ -821,9 +821,9 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
         c_ref_tt,
         a_tt,
         b_tt,
-        P_REF_ROWS,  # m
-        P_REF_COLS,  # n
-        COLS,  # k
+        Int32(P_REF_ROWS),  # m
+        Int32(P_REF_COLS),  # n
+        Int32(COLS),  # k
         grid_dim=(
             ceildiv(P_REF_ROWS, NAIVE_BLOCK_DIM),
             ceildiv(P_REF_COLS, NAIVE_BLOCK_DIM),
@@ -1068,9 +1068,9 @@ def test_sparse_mma_ws_ts[
         c_ref_tt,
         a_tt,
         b_tt,
-        p_ref_rows,
-        p_ref_cols,
-        cols,
+        Int32(p_ref_rows),
+        Int32(p_ref_cols),
+        Int32(cols),
         grid_dim=(
             ceildiv(p_ref_rows, naive_block_dim),
             ceildiv(p_ref_cols, naive_block_dim),
@@ -1392,9 +1392,9 @@ def test_sparse_paged_mma_ws_ts[
         c_ref_tt,
         a_tt,
         b_tt,
-        p_ref_rows,
-        p_ref_cols,
-        cols,
+        Int32(p_ref_rows),
+        Int32(p_ref_cols),
+        Int32(cols),
         grid_dim=(
             ceildiv(p_ref_rows, naive_block_dim),
             ceildiv(p_ref_cols, naive_block_dim),

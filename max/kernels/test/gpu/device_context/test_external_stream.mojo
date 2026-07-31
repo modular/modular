@@ -34,9 +34,11 @@ def native_stream_ptr(
 def scale_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    n: Int,
+    n_dev: Int32,
     scale: Float32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var n = Int(n_dev)
     var tid = global_idx.x
     if tid >= n:
         return
@@ -75,7 +77,7 @@ def main() raises:
             func,
             dev_in,
             dev_out,
-            length,
+            Int32(length),
             scale,
             grid_dim=ceildiv(length, 32),
             block_dim=32,

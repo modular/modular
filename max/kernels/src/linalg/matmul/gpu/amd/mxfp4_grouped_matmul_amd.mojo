@@ -161,9 +161,11 @@ struct PreShuffledBGroupedGEMM[
         expert_ids: TileTensor[
             mut=False, DType.int32, ExpertIdsLayout, ImmutAnyOrigin
         ],
-        num_active_experts: Int,
-        max_padded_M: Int,
+        num_active_experts: Int32,
+        max_padded_M: Int32,
     ):
+        var _num_active_experts = Int(num_active_experts)
+        var _max_padded_M = Int(max_padded_M)
         comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
         comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
@@ -186,7 +188,7 @@ struct PreShuffledBGroupedGEMM[
         comptime K_SCALES = a_tensor.static_shape[1] // 16
         comptime gx_n = ceildiv(N, BN)
 
-        if N == 0 or num_active_experts == 0:
+        if N == 0 or _num_active_experts == 0:
             return
 
         var linear_wg = Int(block_idx.x)
@@ -202,7 +204,7 @@ struct PreShuffledBGroupedGEMM[
         # the current tile in the grid stride loop, all WGs start at tile 0
         var current_tile = 0
 
-        for expert_slot in range(num_active_experts):
+        for expert_slot in range(_num_active_experts):
             var M = a_offsets[expert_slot + 1] - a_offsets[expert_slot]
 
             # No real work — skip this expert and don't update current_tile.
@@ -243,7 +245,7 @@ struct PreShuffledBGroupedGEMM[
             # stores) write only real-token scales; the pad-row matmul outputs
             # are discarded after the gather, so the slot tail is not
             # zero-filled.
-            var sfa_start_row = UInt32(expert_slot * max_padded_M)
+            var sfa_start_row = UInt32(expert_slot * _max_padded_M)
             var sfa_padded_M = align_up(Int(M), 32)
 
             var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
@@ -365,9 +367,10 @@ struct PreShuffledBGroupedGEMM[
         expert_ids: TileTensor[
             mut=False, DType.int32, ExpertIdsLayout, ImmutAnyOrigin
         ],
-        num_active_experts: Int,
-        max_padded_M: Int,
+        num_active_experts: Int32,
+        max_padded_M: Int32,
     ):
+        var _max_padded_M = Int(max_padded_M)
         comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
         comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
@@ -401,7 +404,7 @@ struct PreShuffledBGroupedGEMM[
         var a_start_row = a_offsets[block_idx.z]
         # Preshuffled A-scales: fixed-stride slot at e * max_padded_M.
         # Per-expert tight V# bound = align_up(num_tokens, 32).
-        var sfa_start_row = UInt32(Int(block_idx.z) * max_padded_M)
+        var sfa_start_row = UInt32(Int(block_idx.z) * _max_padded_M)
         var sfa_padded_M = align_up(Int(M), 32)
 
         var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
@@ -562,8 +565,8 @@ struct PreShuffledBGroupedGEMM[
                 b_scales_i,
                 a_off_i,
                 expert_ids_i,
-                num_active_experts,
-                max_padded_M,
+                Int32(num_active_experts),
+                Int32(max_padded_M),
                 grid_dim=(Self.total_wg, 1, 1),
                 block_dim=MatmulDeviceFunctionType.num_threads,
             )
@@ -609,8 +612,8 @@ struct PreShuffledBGroupedGEMM[
                 b_scales_i,
                 a_off_i,
                 expert_ids_i,
-                num_active_experts,
-                max_padded_M,
+                Int32(num_active_experts),
+                Int32(max_padded_M),
                 grid_dim=(
                     ceildiv(N, BN),
                     ceildiv(m_cap, BM),
@@ -656,7 +659,7 @@ def mxfp4_grouped_matmul_amd_kernel[
     expert_ids: TileTensor[
         mut=False, DType.int32, ExpertIdsLayout, ImmutAnyOrigin
     ],
-    num_active_experts: Int,
+    num_active_experts: Int32,
 ):
     """MXFP4 grouped matmul kernel with expert dispatch via block_idx.z.
 
@@ -905,7 +908,7 @@ def _launch_mxfp4_grouped[
         sfb_2d,
         a_off_i,
         expert_ids_i,
-        num_active_experts,
+        Int32(num_active_experts),
         grid_dim=(
             ceildiv(N, BN),
             ceildiv(max_num_tokens_per_expert, BM),

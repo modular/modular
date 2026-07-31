@@ -206,9 +206,9 @@ def run_slot_indexed_gpu[
     with ctx.push_context():
         ctx.enqueue_function(
             compiled_func,
-            batch_size,
-            total_seq_len,
-            conv_dim,
+            Int32(batch_size),
+            Int32(total_seq_len),
+            Int32(conv_dim),
             qkv_input_tt,
             conv_weight_tt,
             conv_state_tt,

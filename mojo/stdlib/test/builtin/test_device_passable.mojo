@@ -22,8 +22,10 @@ from std.utils.coord import ComptimeInt, Coord, Idx
 # bit-copy is observably distinct from a proper dispatch to `_to_device_type`.
 @fieldwise_init
 struct ScaledInt(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
-    comptime device_type: AnyType = Int
-    var raw: Int
+    # `Int`/`UInt` are not device-passable, so the encoded value is a
+    # fixed-width `Int32`.
+    comptime device_type: AnyType = Int32
+    var raw: Int32
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
@@ -40,7 +42,7 @@ struct ScaledInt(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
 @fieldwise_init
 struct ScaledIntBox(ImplicitlyCopyable, TrivialRegisterPassable):
     var scaled: ScaledInt
-    var tag: Int
+    var tag: Int32
 
 
 # A second level of nesting: the `DevicePassable` member is reachable only
@@ -48,14 +50,14 @@ struct ScaledIntBox(ImplicitlyCopyable, TrivialRegisterPassable):
 @fieldwise_init
 struct ScaledIntBoxBox(ImplicitlyCopyable, TrivialRegisterPassable):
     var box: ScaledIntBox
-    var tag2: Int
+    var tag2: Int32
 
 
 # A register-passable aggregate with no `DevicePassable` member anywhere.
 @fieldwise_init
 struct PlainPair(ImplicitlyCopyable, TrivialRegisterPassable):
-    var a: Int
-    var b: Int
+    var a: Int32
+    var b: Int32
 
 
 # A register-passable aggregate holding a `DevicePassable` `StaticTuple` field
@@ -63,7 +65,7 @@ struct PlainPair(ImplicitlyCopyable, TrivialRegisterPassable):
 @fieldwise_init
 struct TupleBox(ImplicitlyCopyable, TrivialRegisterPassable):
     var tup: StaticTuple[ScaledInt, 2]
-    var tag: Int
+    var tag: Int32
 
 
 # A register-passable aggregate holding a `DevicePassable` member (`ScaledInt`,
@@ -140,11 +142,11 @@ def test_encode_fields_bit_copies_plain_fields() raises:
     buf.unsafe_free()
 
 
-# `StaticTuple[ScaledInt, N].device_type` is `StaticTuple[Int, N]`, so the
+# `StaticTuple[ScaledInt, N].device_type` is `StaticTuple[Int32, N]`, so the
 # encoded buffer is read back through that device type.
 def test_encode_static_tuple_dispatches_device_passable_element() raises:
     var tup = StaticTuple[ScaledInt, 2](ScaledInt(raw=4), ScaledInt(raw=5))
-    var buf = alloc[StaticTuple[Int, 2]](1)
+    var buf = alloc[StaticTuple[Int32, 2]](1)
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_static_tuple(tup, buf.unsafe_bitcast[NoneType]())
     # Each element is `DevicePassable`, so `ScaledInt._to_device_type` runs and
@@ -156,7 +158,7 @@ def test_encode_static_tuple_dispatches_device_passable_element() raises:
 
 def test_static_tuple_to_device_type_dispatches_elements() raises:
     var tup = StaticTuple[ScaledInt, 2](ScaledInt(raw=6), ScaledInt(raw=7))
-    var buf = alloc[StaticTuple[Int, 2]](1)
+    var buf = alloc[StaticTuple[Int32, 2]](1)
     var encoder = DefaultDeviceTypeEncoder()
     # `_to_device_type` now encodes element-wise instead of bit-copying.
     tup._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
@@ -166,11 +168,11 @@ def test_static_tuple_to_device_type_dispatches_elements() raises:
 
 
 def test_encode_static_tuple_identity_scalar() raises:
-    var tup = StaticTuple[Int, 3](10, 20, 30)
-    var buf = alloc[StaticTuple[Int, 3]](1)
+    var tup = StaticTuple[Int32, 3](10, 20, 30)
+    var buf = alloc[StaticTuple[Int32, 3]](1)
     var encoder = DefaultDeviceTypeEncoder()
-    # `Int` is `DevicePassable` with an identity `device_type`, so element-wise
-    # encoding reproduces the values unchanged.
+    # `Int32` is `DevicePassable` with an identity `device_type`, so
+    # element-wise encoding reproduces the values unchanged.
     encoder.encode_static_tuple(tup, buf.unsafe_bitcast[NoneType]())
     assert_equal(buf[].get[0](), 10)
     assert_equal(buf[].get[1](), 20)
@@ -214,7 +216,7 @@ def test_encode_static_tuple_recurses_into_composite_element() raises:
 
 def test_encode_fields_delegates_static_tuple() raises:
     var tup = StaticTuple[ScaledInt, 2](ScaledInt(raw=4), ScaledInt(raw=5))
-    var buf = alloc[StaticTuple[Int, 2]](1)
+    var buf = alloc[StaticTuple[Int32, 2]](1)
     var encoder = DefaultDeviceTypeEncoder()
     # `encode_fields` used to `abort` on `StaticTuple`; it now delegates to
     # `_to_device_type`, encoding element-wise.
@@ -234,18 +236,18 @@ def test_encode_fields_dispatches_static_tuple_field() raises:
     encoder.encode_fields(box, buf.unsafe_bitcast[NoneType]())
     # The `StaticTuple` field is `DevicePassable`, so each element is doubled;
     # the plain `tag` is bit-copied. `ScaledInt` is layout-identical to its
-    # `Int` device type, so the doubled values read back through `.raw`.
+    # `Int32` device type, so the doubled values read back through `.raw`.
     assert_equal(buf[].tup.get[0]().raw, 8)
     assert_equal(buf[].tup.get[1]().raw, 10)
     assert_equal(buf[].tag, 42)
     buf.unsafe_free()
 
 
-# `Array[ScaledInt, N].device_type` is `Array[Int, N]`, so the
+# `Array[ScaledInt, N].device_type` is `Array[Int32, N]`, so the
 # encoded buffer is read back through that device type.
 def test_encode_array_dispatches_device_passable_element() raises:
     var arr: Array[ScaledInt, 2] = [ScaledInt(raw=4), ScaledInt(raw=5)]
-    var buf = alloc[Array[Int, 2]](1)
+    var buf = alloc[Array[Int32, 2]](1)
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_array(arr, buf.unsafe_bitcast[NoneType]())
     # Each element is `DevicePassable`, so `ScaledInt._to_device_type` runs and
@@ -257,7 +259,7 @@ def test_encode_array_dispatches_device_passable_element() raises:
 
 def test_inline_array_to_device_type_dispatches_elements() raises:
     var arr: Array[ScaledInt, 2] = [ScaledInt(raw=6), ScaledInt(raw=7)]
-    var buf = alloc[Array[Int, 2]](1)
+    var buf = alloc[Array[Int32, 2]](1)
     var encoder = DefaultDeviceTypeEncoder()
     # `_to_device_type` now encodes element-wise instead of bit-copying.
     arr._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
@@ -267,11 +269,11 @@ def test_inline_array_to_device_type_dispatches_elements() raises:
 
 
 def test_encode_array_identity_scalar() raises:
-    var arr: Array[Int, 3] = [10, 20, 30]
-    var buf = alloc[Array[Int, 3]](1)
+    var arr: Array[Int32, 3] = [10, 20, 30]
+    var buf = alloc[Array[Int32, 3]](1)
     var encoder = DefaultDeviceTypeEncoder()
-    # `Int` is `DevicePassable` with an identity `device_type`, so element-wise
-    # encoding reproduces the values unchanged.
+    # `Int32` is `DevicePassable` with an identity `device_type`, so
+    # element-wise encoding reproduces the values unchanged.
     encoder.encode_array(arr, buf.unsafe_bitcast[NoneType]())
     assert_equal(buf[][0], 10)
     assert_equal(buf[][1], 20)

@@ -90,8 +90,10 @@ def run_copy_via_shared(ctx: DeviceContext) raises:
 def copy_with_src_size(
     src: UnsafePointer[Float32, ImmutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
-    src_size: Int,
+    src_size_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var src_size = Int(src_size_dev)
     var smem = UnsafePointer(
         unsafe_stack_allocation[
             8, DType.float32, address_space=AddressSpace.SHARED
@@ -174,7 +176,7 @@ def test_copy_with_src_size(ctx: DeviceContext) raises:
     ctx.enqueue_function[kernel](
         a_device,
         b_device,
-        src_size,
+        Int32(src_size),
         grid_dim=(1, 1, 1),
         block_dim=(1, 1, 1),
     )

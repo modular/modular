@@ -977,14 +977,16 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
         dtype, k_gamma_layout, k_gamma_origin, Storage=k_gamma_storage
     ],
     epsilon: Float32,
-    weight_offset: Scalar[dtype],
+    weight_offset: Float32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[
         DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
-    q_num_heads: Int,
-    num_cols: Int,
+    q_num_heads: Int32,
+    num_cols: Int32,
 ):
+    var _q_num_heads = Int(q_num_heads)
+    var _num_cols = Int(num_cols)
     comptime assert q_output.flat_rank == 3, "q_output must have rank 3"
     comptime assert q_proj.flat_rank == 3, "q_proj must have rank 3"
     comptime assert q_gamma.flat_rank == 1, "q_gamma must have rank 1"
@@ -998,7 +1000,7 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
 
     var tid = thread_idx.x
     var combined_row = Int(block_idx.x)
-    var q_rows = Int(total_seq_len) * q_num_heads
+    var q_rows = Int(total_seq_len) * _q_num_heads
     var is_k = combined_row >= q_rows
 
     var global_token_idx: Int
@@ -1009,13 +1011,13 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
         global_token_idx = k_row // k_num_heads
         head_idx = k_row % k_num_heads
     else:
-        global_token_idx = combined_row // q_num_heads
-        head_idx = combined_row % q_num_heads
+        global_token_idx = combined_row // _q_num_heads
+        head_idx = combined_row % _q_num_heads
 
     var idx = tid * simd_width
     var vec_data = SIMD[accum_type, simd_width](0)
     var gamma_val = SIMD[dtype, simd_width](0)
-    if idx < num_cols:
+    if idx < _num_cols:
         if is_k:
             var batch_idx = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
@@ -1046,10 +1048,10 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
         gamma_val,
         epsilon,
         weight_offset_accum,
-        num_cols,
+        _num_cols,
     )
 
-    if idx < num_cols:
+    if idx < _num_cols:
         if is_k:
             var batch_idx = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
@@ -1200,11 +1202,11 @@ def fused_qk_rms_norm_ragged_paged[
             q_gamma,
             k_gamma,
             epsilon,
-            weight_offset,
+            weight_offset.cast[DType.float32](),
             total_seq_len,
             input_row_offsets,
-            q_num_heads,
-            cols,
+            Int32(q_num_heads),
+            Int32(cols),
             grid_dim=rows,
             block_dim=block_dim_value,
         )
@@ -1481,14 +1483,16 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
         freq_dtype, freqs_layout, freqs_origin, Storage=freqs_storage
     ],
     epsilon: Float32,
-    weight_offset: Scalar[dtype],
+    weight_offset: Float32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[
         DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
-    q_num_heads: Int,
-    num_cols: Int,
+    q_num_heads: Int32,
+    num_cols: Int32,
 ):
+    var _q_num_heads = Int(q_num_heads)
+    var _num_cols = Int(num_cols)
     comptime assert q_output.flat_rank == 3, "q_output must have rank 3"
     comptime assert q_gamma.flat_rank == 1, "q_gamma must have rank 1"
     comptime assert k_gamma.flat_rank == 1, "k_gamma must have rank 1"
@@ -1498,7 +1502,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     ), "input_row_offsets must be rank 1"
 
     var combined_row = Int(block_idx.x)
-    var q_rows = Int(total_seq_len) * q_num_heads
+    var q_rows = Int(total_seq_len) * _q_num_heads
     var is_k = combined_row >= q_rows
 
     var global_token_idx: Int
@@ -1508,7 +1512,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
         var k_row = combined_row - q_rows
         global_token_idx, head_idx = divmod(k_row, k_num_heads)
     else:
-        global_token_idx, head_idx = divmod(combined_row, q_num_heads)
+        global_token_idx, head_idx = divmod(combined_row, _q_num_heads)
 
     _fused_qk_rms_norm_rope_process_row[
         q_input_fn,
@@ -1528,9 +1532,9 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
         k_gamma,
         freqs_cis,
         epsilon,
-        weight_offset,
+        Scalar[dtype](weight_offset),
         input_row_offsets,
-        num_cols,
+        _num_cols,
     )
 
 
@@ -1712,11 +1716,11 @@ def fused_qk_rms_norm_rope_ragged_paged[
             k_gamma,
             freqs_cis,
             epsilon,
-            weight_offset,
+            weight_offset.cast[DType.float32](),
             total_seq_len,
             input_row_offsets,
-            q_num_heads,
-            cols,
+            Int32(q_num_heads),
+            Int32(cols),
             grid_dim=rows,
             block_dim=block_dim_value,
         )
@@ -1808,15 +1812,18 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     ],
     main_epsilon: Float32,
     index_epsilon: Float32,
-    weight_offset: Scalar[dtype],
+    weight_offset: Float32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[
         DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
-    q_main_num_heads: Int,
-    q_index_num_heads: Int,
-    num_cols: Int,
+    q_main_num_heads_dev: Int32,
+    q_index_num_heads_dev: Int32,
+    num_cols_dev: Int32,
 ):
+    var q_main_num_heads = Int(q_main_num_heads_dev)
+    var q_index_num_heads = Int(q_index_num_heads_dev)
+    var num_cols = Int(num_cols_dev)
     # Four-band grid: [ q_main | k_main | q_index | k_index ], each band
     # tsl * heads rows. The band is a function of block_idx only, so it is
     # uniform across the block; the barrier inside the shared per-row helper is
@@ -1858,7 +1865,7 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
             k_main_gamma,
             freqs_cis,
             main_epsilon,
-            weight_offset,
+            Scalar[dtype](weight_offset),
             input_row_offsets,
             num_cols,
         )
@@ -1892,7 +1899,7 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
             k_index_gamma,
             freqs_cis,
             index_epsilon,
-            weight_offset,
+            Scalar[dtype](weight_offset),
             input_row_offsets,
             num_cols,
         )
@@ -2144,12 +2151,12 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
             freqs_cis,
             main_epsilon,
             index_epsilon,
-            weight_offset,
+            weight_offset.cast[DType.float32](),
             total_seq_len,
             input_row_offsets,
-            q_main_num_heads,
-            q_index_num_heads,
-            cols,
+            Int32(q_main_num_heads),
+            Int32(q_index_num_heads),
+            Int32(cols),
             grid_dim=rows,
             block_dim=block_dim_value,
         )
