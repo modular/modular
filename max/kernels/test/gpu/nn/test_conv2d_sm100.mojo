@@ -41,7 +41,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from nn.conv.conv import conv_gpu

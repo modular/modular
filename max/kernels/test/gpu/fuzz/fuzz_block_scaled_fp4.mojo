@@ -21,7 +21,7 @@
 
 from std.sys import size_of
 from std.random import seed
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.sys.defines import get_defined_int
 from std.utils.index import Index

@@ -13,7 +13,7 @@
 
 from std.compile import compile_info
 from std.ffi import external_call
-from std.gpu.host import get_gpu_target
+from max.gpu.host import get_gpu_target
 from std.memory import UnsafeMaybeUninit
 from std.memory.unsafe_pointer import pointer_to_int
 from std.sys import align_of, bit_width_of, size_of

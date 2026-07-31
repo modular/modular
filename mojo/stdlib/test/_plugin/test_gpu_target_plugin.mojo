@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std._plugin._overlay import STD_PLUGINS
-from std.gpu.host.info import (
+from max.gpu.host.info import (
     _get_a100_target,
     _get_h100_target,
     _get_metal_m1_target,

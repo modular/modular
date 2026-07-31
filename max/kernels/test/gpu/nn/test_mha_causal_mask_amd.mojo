@@ -17,7 +17,7 @@ from std.sys import argv, get_defined_bool
 
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,

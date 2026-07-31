@@ -13,7 +13,7 @@
 
 from std.math import rsqrt
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random

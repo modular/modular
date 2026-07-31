@@ -40,7 +40,7 @@ from std.math import align_up, ceildiv
 from std.random import randn
 from std.testing import assert_almost_equal
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import alloc
 from std.utils.index import Index, IndexList
 

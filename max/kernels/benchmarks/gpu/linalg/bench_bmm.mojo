@@ -30,7 +30,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import arg_parse
 from internal_utils._utils import (
     InitializationType,

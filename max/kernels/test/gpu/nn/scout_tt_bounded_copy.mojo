@@ -27,7 +27,7 @@ from layout.tile_layout import (
 from layout.tile_io import copy_dram_to_sram_async
 from layout.coord import ComptimeInt, Coord, Idx
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.sync import barrier
 from std.gpu.memory import (
     AddressSpace,

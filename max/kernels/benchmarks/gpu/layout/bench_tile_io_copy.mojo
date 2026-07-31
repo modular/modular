@@ -21,7 +21,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.compile import get_gpu_target
 from std.gpu.memory import AddressSpace
 from std.memory import bitcast

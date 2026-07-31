@@ -26,7 +26,7 @@ Launched single-threaded (grid=1/block=1) for deterministic output. The
 `CHECK-NEXT` rejects stray lines bleeding in between.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.io.io import _printf
 
 

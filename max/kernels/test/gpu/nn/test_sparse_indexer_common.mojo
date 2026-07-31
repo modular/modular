@@ -27,7 +27,7 @@ of bounds.
 
 from std.collections import Set
 from std.gpu import block_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.math import min
 from std.random import rand
 from std.testing import assert_equal, assert_true

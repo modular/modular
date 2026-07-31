@@ -24,7 +24,7 @@ value rather than a real P.V product, so the test isolates the softmax algebra.
 """
 
 from std.gpu import WARP_SIZE, lane_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import exp2
 from std.sys.info import _accelerator_arch
 

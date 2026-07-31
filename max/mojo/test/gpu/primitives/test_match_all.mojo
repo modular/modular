@@ -21,7 +21,7 @@ and the Apple Silicon shuffle check.
 
 from std.gpu import lane_id
 from std.gpu.globals import WARP_SIZE
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.warp import match_all
 from std.testing import assert_equal, TestSuite
 

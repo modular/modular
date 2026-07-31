@@ -16,7 +16,7 @@ from std.sys import get_defined_int
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from layout import TileTensor, row_major
 from nn.moe import (

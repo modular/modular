@@ -28,7 +28,7 @@
 # "fail") in the normal GPU suite or the nightly sanitizer lane.
 
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 
 def oob_global_write(dst: UnsafePointer[Float32, MutAnyOrigin], n: Int):

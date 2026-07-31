@@ -24,7 +24,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from internal_utils import arg_parse, human_readable_size
 from std.testing import assert_almost_equal, assert_true
 

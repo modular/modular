@@ -16,7 +16,7 @@ from std.random import rand, seed
 from std.sys import argv
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys import Vendor, has_amd_gpu_accelerator
 from std.gpu.host.info import (
     A100,

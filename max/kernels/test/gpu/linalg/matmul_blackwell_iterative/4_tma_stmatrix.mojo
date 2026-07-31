@@ -19,7 +19,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import WARP_SIZE, barrier
 from std.gpu import warp_id, block_idx, thread_idx
 from std.gpu.primitives.cluster import block_rank_in_cluster
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import external_memory, fence_async_view_proxy
 from max.gpu.compute.mma import st_matrix

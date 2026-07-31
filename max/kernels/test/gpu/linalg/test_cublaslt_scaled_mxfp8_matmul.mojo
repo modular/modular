@@ -13,7 +13,7 @@
 
 from std.math import ceildiv, align_up
 from std.random import random_ui64
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand
 from linalg.matmul.vendor.blas import matmul

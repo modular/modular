@@ -36,7 +36,7 @@ from std.random import rand, randn, seed
 from std.sys import size_of
 
 from std.gpu import barrier, thread_idx, warp_id as get_warp_id
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     prefetch_tma_descriptor,

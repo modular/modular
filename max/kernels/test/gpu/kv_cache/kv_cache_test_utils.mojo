@@ -16,7 +16,7 @@ from std.math import ceildiv
 from std.random import shuffle
 from std.utils.numerics import isinf, isnan
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 

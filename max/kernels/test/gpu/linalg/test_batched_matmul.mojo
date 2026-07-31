@@ -16,7 +16,7 @@ from std.sys import has_nvidia_gpu_accelerator, simd_width_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, PointerStorage, TileTensor, row_major
 from layout.tile_layout import Layout
 from linalg.bmm import _batched_matmul_gpu

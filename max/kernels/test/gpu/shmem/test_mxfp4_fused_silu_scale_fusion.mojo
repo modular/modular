@@ -47,7 +47,7 @@ shmem package — use bmojo / bazel):
       max/kernels/test/gpu/shmem/test_mxfp4_fused_silu_scale_fusion.mojo
 """
 
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from std.gpu.host.info import MI355X
 from std.math import align_up, exp, isfinite
 from std.random import random_float64, seed

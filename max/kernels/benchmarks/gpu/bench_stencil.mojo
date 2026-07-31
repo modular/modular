@@ -29,7 +29,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList

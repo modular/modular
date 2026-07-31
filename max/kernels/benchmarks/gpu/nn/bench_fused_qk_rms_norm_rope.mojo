@@ -39,7 +39,7 @@ from std.benchmark import (
     Bencher,
     BenchId,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import (
     KVCacheStaticParams,

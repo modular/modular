@@ -32,7 +32,7 @@ from max.gpu.compute.arch.mma_apple import (
     apple_mma_load,
     apple_mma_store,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 comptime _N = 16
 comptime _NUM_ELEMENTS = _N * _N

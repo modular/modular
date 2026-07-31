@@ -24,7 +24,7 @@ from comm.allreduce_residual_rmsnorm import (
     allreduce_rmsnorm,
 )
 from comm.sync import enable_p2p, init_signal_buffer
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import (
     Coord,
     Idx,

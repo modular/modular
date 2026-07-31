@@ -14,7 +14,7 @@
 from std.sys import size_of
 
 from std.gpu import thread_idx, block_dim, barrier, warp_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import (
     AddressSpace,
     cp_async_bulk_global_shared_cta,

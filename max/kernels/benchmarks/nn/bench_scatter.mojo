@@ -14,7 +14,7 @@
 from std.random import rand, randint
 
 from std.benchmark import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import alloc, dealloc
 from nn.gather_scatter import scatter_elements
 from extensibility import DynamicTensor

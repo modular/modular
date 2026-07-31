@@ -32,7 +32,7 @@
 # same finite-guard as the FP8 dynamic-quant reciprocal.
 
 from std.math import ceildiv
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from std.utils.numerics import isinf, isnan
 from layout import CoordLike, Coord, Idx, TileTensor, row_major

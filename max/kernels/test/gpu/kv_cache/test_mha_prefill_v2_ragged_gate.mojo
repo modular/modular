@@ -37,7 +37,7 @@ An independent gpu_naive-based correctness check is a follow-up.
 from std.math import ceildiv, rsqrt
 from std.random import seed
 from layout._utils import ManagedLayoutTensor
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,

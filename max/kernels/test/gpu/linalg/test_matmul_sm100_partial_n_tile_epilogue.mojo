@@ -24,7 +24,7 @@ Both ``transpose_c`` branches of ``apply_to_fragment`` are exercised
 
 from std.collections import Optional
 from std.sys import align_of, size_of
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from internal_utils import assert_almost_equal

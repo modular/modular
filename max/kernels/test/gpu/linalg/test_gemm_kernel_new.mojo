@@ -14,7 +14,7 @@
 from std.math import ceildiv, isclose
 from std.sys import argv
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx, global_idx, warp_id
 from std.gpu.memory import async_copy_wait_all
 from std.gpu.sync import barrier

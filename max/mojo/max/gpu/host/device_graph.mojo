@@ -204,7 +204,7 @@ struct DeviceGraph(ImplicitlyCopyable):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
+        from max.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
 
         def kernel():
             print("replaying")
@@ -262,7 +262,7 @@ struct DeviceGraph(ImplicitlyCopyable):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
+        from max.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
 
         def kernel(x: Int):
             print("Value:", x)
@@ -318,7 +318,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     Example:
 
     ```mojo
-    from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
+    from max.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
 
     def kernel(x: Int):
         print("Value:", x)
@@ -706,7 +706,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
 
         ```mojo
         from std.gpu import global_idx
-        from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
+        from max.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
 
         with DeviceContext() as ctx:
             var scale: Float32 = 2.0
@@ -841,7 +841,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         it first:
 
         ```mojo
-        from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
+        from max.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
 
         def kernel(x: Int):
             print("Value:", x)
@@ -1329,7 +1329,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
+        from max.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
 
         with DeviceContext() as ctx:
             var buf_a = ctx.enqueue_create_buffer[DType.uint8](100)

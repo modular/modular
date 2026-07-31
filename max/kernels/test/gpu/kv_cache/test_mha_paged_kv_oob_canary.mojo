@@ -35,7 +35,7 @@ from std.utils.numerics import max_or_inf
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from kv_cache.types import (
     KVCacheStaticParams,

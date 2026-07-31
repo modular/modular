@@ -63,7 +63,7 @@
 
 from std.collections import Set
 from std.gpu import block_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.math import max, min
 from std.random import rand, random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int

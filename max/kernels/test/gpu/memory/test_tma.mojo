@@ -13,7 +13,7 @@
 
 from std.io.io import _printf
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from std.gpu import block_idx
 from std.gpu.memory import (

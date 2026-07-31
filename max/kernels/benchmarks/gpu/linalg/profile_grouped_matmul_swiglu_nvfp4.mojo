@@ -47,7 +47,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from layout import Coord, Idx, TileTensor, row_major
 

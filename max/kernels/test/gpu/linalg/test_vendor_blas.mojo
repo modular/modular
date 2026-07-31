@@ -16,7 +16,7 @@ from std.random import random_float64
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import block_dim
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_almost_equal

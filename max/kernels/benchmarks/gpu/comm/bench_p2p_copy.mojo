@@ -55,7 +55,7 @@ from std.gpu import (
     grid_dim,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import arg_parse, human_readable_size
 from std.memory import dealloc
 from std.utils import StaticTuple

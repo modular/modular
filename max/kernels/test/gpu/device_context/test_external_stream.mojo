@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.ffi import _CPointer
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext, DeviceStream
+from max.gpu.host import DeviceContext, DeviceStream
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
 from std.memory.unsafe_pointer import unsafe_cast

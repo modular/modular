@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.math.uutils import udivmod
 
 from std.gpu import AddressSpace, barrier, block_idx, global_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import (
     unsafe_memset_zero,
     unsafe_stack_allocation,

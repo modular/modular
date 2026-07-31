@@ -25,7 +25,7 @@ Covers two paths:
 from std.collections import Optional
 from std.random import random_si64
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.sys.info import _accelerator_arch
 from std.utils import IndexList
 

@@ -28,7 +28,7 @@ from std.gpu import (
     lane_id,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.memory import external_memory
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor

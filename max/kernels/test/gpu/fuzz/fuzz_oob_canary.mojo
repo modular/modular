@@ -26,7 +26,7 @@
 # planted bug from generated specs.
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int

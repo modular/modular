@@ -29,7 +29,7 @@ Complements the Python-layer regression tests for the KV cache manager.
 """
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import unsafe_memset_zero
 from std.utils import IndexList
 

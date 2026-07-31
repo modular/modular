@@ -28,7 +28,7 @@ cheaper to diagnose than a full multi-stream graph:
 
 from asyncrt_test_utils import create_test_device_context
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 

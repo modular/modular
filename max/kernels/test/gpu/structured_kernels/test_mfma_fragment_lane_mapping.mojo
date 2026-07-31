@@ -34,7 +34,7 @@ downstream is built on bad assumptions.
 """
 
 from std.gpu import lane_id, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.compute.mma import mma as gpu_mma
 from std.memory import AddressSpace
 from std.testing import assert_equal

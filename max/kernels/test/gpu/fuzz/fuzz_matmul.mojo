@@ -38,7 +38,7 @@ from std.random import rand, seed
 from std.sys.defines import get_defined_int
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 

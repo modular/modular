@@ -21,7 +21,7 @@ and dedicated tests cover actual skipping for single- and multi-component
 indices.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys.info import has_apple_gpu_accelerator
 from std.testing import assert_equal
 from layout import TileTensor, row_major

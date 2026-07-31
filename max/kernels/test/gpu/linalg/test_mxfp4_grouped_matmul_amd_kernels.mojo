@@ -38,7 +38,7 @@ Usage:
   br test_mxfp4_grouped_matmul_amd_kernels.mojo.test
 """
 
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.gpu.host.info import MI355X
 from std.gpu.memory import CacheOperation
 from std.math import align_up, ceildiv

@@ -13,7 +13,7 @@
 
 from std.math import *
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite
 
 

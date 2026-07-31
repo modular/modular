@@ -32,6 +32,7 @@ lit_tests(
     srcs = _GPU_LIT_TESTS,
     gpu_constraints = ["//:has_gpu"],
     mojo_deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
     tags = ["gpu"],

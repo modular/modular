@@ -16,7 +16,7 @@ from std.pathlib import Path
 from std.sys._assembly import inlined_assembly
 
 from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.compile import _compile_code
 from std.gpu.host.info import A100
 from std.memory import unsafe_stack_allocation

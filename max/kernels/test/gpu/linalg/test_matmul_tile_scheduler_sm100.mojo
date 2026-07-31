@@ -16,7 +16,7 @@ from std.gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import fence_mbarrier_init
 from std.gpu.sync import syncwarp

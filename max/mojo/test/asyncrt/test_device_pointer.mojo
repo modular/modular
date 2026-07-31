@@ -25,7 +25,7 @@ property.
 """
 
 from asyncrt_test_utils import create_test_device_context
-from std.gpu.host import DevicePointer
+from max.gpu.host import DevicePointer
 from std.testing import (
     TestSuite,
     assert_equal,

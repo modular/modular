@@ -52,7 +52,7 @@ depth-tiles x 32 FP8 elts/fragment per lane.
 """
 
 from std.gpu import WARP_SIZE, barrier, lane_id, thread_idx, warp_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.sync import s_waitcnt
 from std.memory import AddressSpace
 from std.sys.intrinsics import readfirstlane

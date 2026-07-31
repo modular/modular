@@ -23,7 +23,7 @@ mirrors that path via `encode_fields`.
 """
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 from std.utils.coord import Coord
 

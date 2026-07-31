@@ -42,7 +42,7 @@ valid_length=64 (-> stays in 1Q territory, not pair-CTA).
 from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from kv_cache.types import (

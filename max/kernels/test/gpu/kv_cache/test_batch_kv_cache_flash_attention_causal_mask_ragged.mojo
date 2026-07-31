@@ -16,7 +16,7 @@ from std.math import rsqrt
 from std.memory import unsafe_memcpy
 from std.random import random_ui64, seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache_test_utils import random_distinct
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,

@@ -25,7 +25,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, TileTensor, row_major, coord_to_index_list
 from nn.concat import _concat_gpu_elementwise, _concat_inner_most_single_dim
 

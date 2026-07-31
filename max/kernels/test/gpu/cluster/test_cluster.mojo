@@ -25,7 +25,7 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_id_in_cluster, lane_id
 from std.gpu.intrinsics import Scope
 from std.gpu.memory import fence_mbarrier_init

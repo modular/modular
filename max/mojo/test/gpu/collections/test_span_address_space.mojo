@@ -18,7 +18,7 @@ preserve the address space.
 """
 
 from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 

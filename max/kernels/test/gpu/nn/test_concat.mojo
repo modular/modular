@@ -15,7 +15,7 @@ from std.collections import Optional
 from std.math import ceildiv
 from std.sys import size_of
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.concat import (
     _concat_gpu,

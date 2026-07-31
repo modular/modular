@@ -33,7 +33,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from nn.conv.conv import Naive2dConvolution, conv_gpu
 from nn.conv.conv_utils import elementwise_simd_epilogue_type
 from nn.conv.gpu.im2col_matmul_2d import (

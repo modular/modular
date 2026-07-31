@@ -50,7 +50,7 @@ from std.sys import (
 from std.sys.defines import get_defined_int
 from std.utils import IndexList
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import (
     Coord,
     Layout,

@@ -16,7 +16,7 @@ from std.random import random_ui64, seed
 from std.sys import size_of
 
 from std.gpu import barrier
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, thread_idx
 from std.gpu.memory import fence_async_view_proxy

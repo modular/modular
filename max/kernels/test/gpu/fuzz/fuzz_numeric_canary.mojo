@@ -23,7 +23,7 @@
 # cannot, and that boundary generation finds the shape-dependent numeric bug.
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.random import rand, seed
 from std.sys.defines import get_defined_int

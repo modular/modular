@@ -23,7 +23,7 @@ from std.sys import (
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, TileTensor, row_major, coord_to_index_list
 from layout._fillers import arange as arange, random
 from linalg.matmul.gpu import _matmul_gpu, multistage_gemm

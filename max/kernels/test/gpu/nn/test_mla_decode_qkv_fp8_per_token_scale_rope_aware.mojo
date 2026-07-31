@@ -40,7 +40,7 @@ from std.math import ceildiv, nan
 from std.random import randn, seed
 from std.sys import has_nvidia_gpu_accelerator
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCache,

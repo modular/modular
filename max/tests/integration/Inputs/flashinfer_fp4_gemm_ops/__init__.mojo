@@ -14,7 +14,7 @@
 
 import extensibility
 import std.format
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUstream
 from std.memory import stack_allocation
 from std.collections import Span

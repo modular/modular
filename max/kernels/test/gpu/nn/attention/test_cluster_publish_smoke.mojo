@@ -51,7 +51,7 @@ relies on. Passing for `P in {2, 4, 8}` clears the M4 #1 risk.
 """
 
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext, Dim
+from max.gpu.host import DeviceContext, Dim
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from std.memory import unsafe_stack_allocation

@@ -23,7 +23,7 @@ Usage:
 """
 
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from std.gpu.memory import CacheOperation
 from std.gpu.host.info import MI355X
 from std.math import ceildiv

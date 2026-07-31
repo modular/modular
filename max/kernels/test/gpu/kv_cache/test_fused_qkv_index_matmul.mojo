@@ -37,7 +37,7 @@ scale-factor machinery and NO SF-atom band-alignment constraint.
 
 from std.random import random_ui64, seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import unsafe_memset_zero
 from std.testing import assert_true
 
