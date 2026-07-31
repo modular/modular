@@ -1033,6 +1033,14 @@ This version is still a work in progress.
   traced back to a compile-time constant; it now also packs a non-constant
   filter when `groups > 1`, since the kernel cannot run without one.
 
+- Fixed `maxserve_time_to_first_token_milliseconds` under-reporting TTFT. The
+  timer started when the request reached the token-generation pipeline, so
+  request parsing, validation and media resolution were excluded and the
+  metric disagreed with client-observed TTFT under load. It now starts when
+  the API server receives the request, matching the origin already used by
+  `maxserve_request_time_milliseconds`. Expect a step up in reported TTFT that
+  reflects measurement, not a regression.
+
 ## Mojo language
 
 For all the updates to the Mojo language, standard library, and tools,

@@ -102,7 +102,12 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.time_to_first_token": _meter.create_histogram(
         "maxserve.time_to_first_token",
         unit="ms",
-        description="Time to first token",
+        description=(
+            "Time to first token, measured from when the API server received "
+            "the request (same origin as 'maxserve.request_time'), so it "
+            "includes request parsing, validation and media resolution as "
+            "well as tokenization, queueing and prefill."
+        ),
     ),  # type: ignore
     "maxserve.num_input_tokens": _meter.create_counter(
         "maxserve.num_input_tokens", description="Count of input tokens"
