@@ -40,6 +40,16 @@
     "status": 302
   },
   {
+    "source": "/max/changelog/v0.(.*)",
+    "dest": "/releases/v{0}",
+    "status": 302
+  },
+  {
+    "source": "/changelog/v0.(.*)",
+    "dest": "/releases/v{0}",
+    "status": 302
+  },
+  {
     "source": "/max/inference/(.*)",
     "dest": "/serve/{0}",
     "status": 302
@@ -52,6 +62,16 @@
   {
     "source": "/max/graph/(.*)",
     "dest": "/develop/{0}",
+    "status": 302
+  },
+  {
+    "source": "/inference/(.*)",
+    "dest": "/serve/{0}",
+    "status": 302
+  },
+  {
+    "source": "/deploy/(.*)",
+    "dest": "/serve/{0}",
     "status": 302
   },
   {
