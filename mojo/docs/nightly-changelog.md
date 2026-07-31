@@ -215,6 +215,14 @@ This version is still a work in progress.
 
 ## Language changes
 
+- `size_of` now returns the allocation size: the store size rounded up to the
+  type's alignment, which is the stride between adjacent elements of an array
+  of that type. This changes the result only for types whose store size is not
+  a multiple of their alignment (e.g., structs + whose `@align(N)` exceeds
+  their natural alignment) and fixes memory corruption when such types were
+  used in `List` and other collections whose growth copies `count * size_of`
+  bytes.
+
 - Mojo now rejects function overloads that differ only in argument convention
   (`imm` vs `mut`).
 
