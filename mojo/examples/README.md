@@ -44,10 +44,6 @@ extension for VS Code, and getting started with Mojo programming, see the
   tutorial solution. An introduction to GPU programming in Mojo with a
   simple vector addition kernel.
 
-- `gpu-functions/`: GPU kernel implementations including vector addition,
-  grayscale conversion, matrix multiplication, Mandelbrot set calculation, and
-  reduction operations.
-
 - `gpu-block-and-warp/`: Advanced GPU programming demonstrating
   block-level and warp-level synchronization and operations.
 
