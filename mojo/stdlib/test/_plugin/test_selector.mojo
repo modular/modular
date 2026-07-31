@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std._plugin.selector import get_plugin_index
+from std._plugin._overlay import STD_PLUGINS
 from std.testing import assert_equal, TestSuite
 
 
 def _idx[target: __mlir_type.`!kgen.target`]() -> Int:
-    return Int(SIMDLength(mlir_value=get_plugin_index[target]()))
+    return Int(SIMDLength(mlir_value=STD_PLUGINS.index_for_target[target]))
 
 
-# PLUGINS order: [DefaultPlugin=0, MetalPlugin=1, CUDAPlugin=2, HIPPlugin=3]
+# STD_PLUGINS order: [DefaultPlugin=0, MetalPlugin=1, CUDAPlugin=2, HIPPlugin=3]
 
 comptime _t_default = __mlir_attr[
     `#kgen.target<triple = "x86_64-unknown-linux-gnu", arch = "x86-64",`,

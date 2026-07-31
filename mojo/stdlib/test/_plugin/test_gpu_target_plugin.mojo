@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std._plugin.selector import get_plugin_index
+from std._plugin._overlay import STD_PLUGINS
 from std.gpu.host.info import (
     _get_a100_target,
     _get_h100_target,
@@ -21,11 +21,11 @@ from std.gpu.host.info import (
 from std.testing import assert_equal, TestSuite
 
 
-# PLUGINS order: [DefaultPlugin=0, MetalPlugin=1, CUDAPlugin=2, HIPPlugin=3]
+# STD_PLUGINS order: [DefaultPlugin=0, MetalPlugin=1, CUDAPlugin=2, HIPPlugin=3]
 
 
 def _idx[target: __mlir_type.`!kgen.target`]() -> Int:
-    return Int(SIMDLength(mlir_value=get_plugin_index[target]()))
+    return Int(SIMDLength(mlir_value=STD_PLUGINS.index_for_target[target]))
 
 
 def test_nvidia_targets_select_cuda_plugin() raises:

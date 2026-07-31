@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from ._trait import DefaultPlugin, PluginHooks
+from .selector import PluginSelector
 from .cuda import CUDAPlugin
 from .hip import HIPPlugin
 from .metal import MetalPlugin
 
-comptime PLUGINS = TypeList.of[
-    Trait=PluginHooks, DefaultPlugin, MetalPlugin, CUDAPlugin, HIPPlugin
+comptime STD_PLUGINS = PluginSelector[
+    DefaultPlugin, MetalPlugin, CUDAPlugin, HIPPlugin
 ]
