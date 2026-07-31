@@ -928,6 +928,7 @@ class Module(Generic[_P, _R]):
         custom_extensions: Iterable[Path] = (),
         allow_subgraphs: bool = True,
         weights_to_transfer: Mapping[str, Tensor] | None = None,
+        is_device_graph: bool = False,
     ) -> tuple[
         Graph,
         list[_InputSlot],
@@ -956,6 +957,7 @@ class Module(Generic[_P, _R]):
             type(self).__qualname__,
             input_types=graph_types,
             custom_extensions=custom_extensions,
+            is_device_graph=is_device_graph,
         )
 
         # Extract signal BufferValues from the graph inputs (at the end).
@@ -1064,6 +1066,7 @@ class Module(Generic[_P, _R]):
         custom_extensions: Iterable[Path] = (),
         auto_cast: bool = False,
         allow_subgraphs: bool = True,
+        is_device_graph: bool = False,
     ) -> CompiledModel[_P, _R]:
         """Compiles the module to an optimized executable through graph tracing.
 
@@ -1200,6 +1203,8 @@ class Module(Generic[_P, _R]):
                 :func:`subgraphable` module instead of emitting shared
                 subgraphs, tracing the whole model into one flat graph. Defaults
                 to :obj:`True`.
+            is_device_graph: If :obj:`True`, the device graph based execution is
+                used for the generated :class:`~max.graph.Graph`.
 
         Returns:
             Callable[..., Any]
@@ -1241,6 +1246,7 @@ class Module(Generic[_P, _R]):
                     custom_extensions=custom_extensions,
                     allow_subgraphs=allow_subgraphs,
                     weights_to_transfer=weights_to_transfer,
+                    is_device_graph=is_device_graph,
                 )
             timer.mark_build_complete()
             with Tracer("Module.compile.session_load"):
