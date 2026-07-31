@@ -19,7 +19,7 @@ from std.sys import bit_width_of
 from std.builtin.dtype import _uint_type_of_width
 from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
 import std.gpu.primitives.warp as warp
-from std.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.dim import Dim
 from std.sys.info import has_apple_gpu_accelerator
 from std.random import Random

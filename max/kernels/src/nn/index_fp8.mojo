@@ -27,7 +27,7 @@ from layout import (
 )
 from layout.tile_layout import row_major
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.sync import barrier
 from std.gpu.memory import external_memory
 from nn.attention.mha_operand import RaggedMHAOperand, MHAOperand

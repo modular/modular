@@ -26,7 +26,7 @@ inserted by the NanCheckPass compiler pass. The architecture is:
 
 from max.algorithm import elementwise
 from std.gpu import barrier, block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu
 from std.memory import alloc, dealloc, unsafe_stack_allocation
 from std.memory.alloc import Layout as AllocLayout

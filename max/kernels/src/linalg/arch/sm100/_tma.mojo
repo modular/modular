@@ -32,7 +32,7 @@ from layout.int_tuple import depth, to_index_list, product
 from layout.runtime_tuple import to_index_list as runtime_tuple_to_index_list
 from layout.copy import CopyPolicy
 from layout.tma_async import SharedMemBarrier
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.sys import size_of
 from layout.swizzle import Swizzle
 from std.bit import log2_floor

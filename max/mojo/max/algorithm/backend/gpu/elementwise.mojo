@@ -33,7 +33,7 @@ from std.gpu.primitives.cluster import (
 from std.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )  # @doc_hidden
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.info import B200
 from std.gpu.sync import mbarrier_init, mbarrier_arrive_expect_tx_relaxed
 from std.math import ceildiv, clamp

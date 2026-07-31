@@ -16,7 +16,7 @@ from std.math import ceildiv, divmod
 from std.sys.info import simd_width_of
 
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TensorLayout, TileTensor
 
 

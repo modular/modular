@@ -100,7 +100,7 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.compile import CompilationTarget
 from std.math import ceildiv
 from std.gpu.sync import (

@@ -30,7 +30,7 @@ from max.algorithm import min as reduce_min
 from max.algorithm import product, sum
 from max.algorithm.reduction import _reduce_generator
 
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_gpu
 from nn import arg_nonzero
 from nn.argmaxmin import argmax, argmin

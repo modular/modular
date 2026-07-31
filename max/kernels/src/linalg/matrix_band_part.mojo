@@ -16,7 +16,7 @@
 from std.algorithm.functional import unswitch
 
 from max.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor
 
 

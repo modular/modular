@@ -25,7 +25,7 @@ from std.gpu import (
     block_idx,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import is_gpu
 from std.gpu.memory import external_memory
 from std.gpu.primitives.grid_controls import (

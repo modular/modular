@@ -31,7 +31,7 @@ from extensibility import (
 )
 from std.collections import Array
 from std.gpu import block_idx
-from std.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host import (
     DeviceGraph,
     DeviceGraphBuilder,

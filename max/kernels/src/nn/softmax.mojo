@@ -44,7 +44,7 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
-from std.gpu.host import DeviceAttribute, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceAttribute, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
 from std.gpu.primitives import block
 from layout._utils import idx2crd

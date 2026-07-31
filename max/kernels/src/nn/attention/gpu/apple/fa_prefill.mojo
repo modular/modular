@@ -50,7 +50,7 @@ from max.gpu.compute.arch.mma_apple import (
     _apple_frag_layout,
     _mma_apple_transposable,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.warp import shuffle_xor
 from std.math import ceildiv, exp2

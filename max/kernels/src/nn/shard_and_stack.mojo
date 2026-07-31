@@ -14,7 +14,7 @@
 
 from max.algorithm import parallelize, sync_parallelize
 from std.collections import Array
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
+from max.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from std.memory import unsafe_memcpy
 from extensibility import InputVariadicTensors, OutputVariadicTensors
 from std.utils import product

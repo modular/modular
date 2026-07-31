@@ -27,8 +27,6 @@ from std.pathlib import Path
 from std.sys import get_defined_bool
 from std.sys.arg import argv
 
-from std.gpu.host import DeviceContext
-
 from std.utils.numerics import FlushDenormals
 
 from .benchmark import _run_impl, _run_impl_fixed, _RunOptions

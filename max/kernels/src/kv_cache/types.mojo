@@ -23,7 +23,7 @@ This module defines two traits that define the roles of the different structs
 """
 
 from std.math import align_up
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
 from std.gpu.memory import (
     CacheEviction,

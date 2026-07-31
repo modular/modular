@@ -15,7 +15,7 @@ from std.sys.info import _current_target, simd_width_of
 from std.math.uutils import ufloordiv
 
 from max.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
 from layout import LayoutTensor, TileTensor
 from layout import Coord, Idx, coord_to_index_list

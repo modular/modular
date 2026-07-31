@@ -22,7 +22,7 @@ and MLA decode shapes.
 """
 
 from std.bit import next_power_of_two
-from std.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceAttribute, DeviceContext
 from std.math import ceildiv, clamp
 
 

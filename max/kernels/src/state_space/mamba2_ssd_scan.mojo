@@ -56,7 +56,7 @@ from std.gpu import (
     block_idx,
     thread_idx,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.warp import lane_group_sum
 from max.algorithm import sync_parallelize
 from std.math import exp2

@@ -53,7 +53,7 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
+from max.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import (
     external_memory,

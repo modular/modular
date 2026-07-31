@@ -25,7 +25,7 @@ from max.algorithm import (
     sync_parallelize,
     unsafe_parallel_memcpy,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor
 from std.memory import unsafe_memcpy
 from max.runtime.asyncrt import parallelism_level

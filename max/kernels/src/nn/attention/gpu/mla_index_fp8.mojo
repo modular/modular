@@ -24,7 +24,7 @@ from layout import (
 )
 
 from std.gpu import block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 
 from kv_cache.types import KVCollectionT
 

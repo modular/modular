@@ -28,7 +28,7 @@ ported to `TileTensor` and the tile path is productionized (see GEX-3919).
 import extensibility
 
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.info import is_gpu
 from std.gpu.memory import AddressSpace
 from std.math import sqrt

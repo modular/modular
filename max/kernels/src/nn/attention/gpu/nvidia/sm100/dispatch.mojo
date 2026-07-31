@@ -21,7 +21,7 @@ from std.collections import OptionalReg
 from std.math import ceildiv
 from std.sys import get_defined_int
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     Dim,

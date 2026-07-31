@@ -57,9 +57,9 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
-from std.gpu.host import DeviceContext, DeviceBuffer
-from std.gpu.host import Dim as LaunchDim
-from std.gpu.host import FuncAttribute
+from max.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import Dim as LaunchDim
+from max.gpu.host import FuncAttribute
 from std.gpu.host.info import A100, H100, GPUInfo, _is_sm10x_gpu
 from std.gpu.memory import (
     AddressSpace,

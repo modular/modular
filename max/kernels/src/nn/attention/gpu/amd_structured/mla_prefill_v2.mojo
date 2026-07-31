@@ -107,7 +107,7 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.compute.mma import mma as gpu_mma
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.compile import CompilationTarget
 from std.gpu.sync import s_waitcnt
 from std.math import ceildiv

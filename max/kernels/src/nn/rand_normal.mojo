@@ -13,7 +13,7 @@
 """Generates tensors filled with values drawn from a normal (Gaussian) distribution for CPU and GPU."""
 
 from max.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import NormalRandom
 from extensibility import _dot_prod
 

@@ -59,7 +59,7 @@ from std.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from std.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import _is_sm10x_gpu
 
 from std.utils import StaticTuple

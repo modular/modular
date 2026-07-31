@@ -17,7 +17,7 @@ from std.math import ceildiv
 from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.algorithm.backend.vectorize import vectorize
 
 from .parallelize import _get_num_workers, sync_parallelize

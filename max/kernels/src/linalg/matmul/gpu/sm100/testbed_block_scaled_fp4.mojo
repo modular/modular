@@ -19,7 +19,7 @@ scaling formats via the `scales_dtype` parameter.
 from std.math import align_up, ceildiv
 from std.sys import argv
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc, bitcast, dealloc, ThinAllocation
 from std.memory.alloc import Layout as AllocLayout

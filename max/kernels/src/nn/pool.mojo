@@ -15,7 +15,7 @@
 from std.sys.info import simd_width_of
 
 from max.algorithm import stencil, stencil_gpu
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from layout import Coord, TileTensor, coord_to_index_list
 

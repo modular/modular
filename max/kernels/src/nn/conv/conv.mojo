@@ -103,7 +103,7 @@ from linalg.utils import (
     partial_simd_store,
 )
 from std.gpu import block_dim, block_idx, thread_idx
-from std.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
+from max.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
 from std.gpu.host.info import _is_sm10x_gpu
@@ -3815,7 +3815,7 @@ def _get_cudnn_meta(
     IMPORTANT: this function _must_ be called with `ctx`'s CUcontext active via:
 
     ```mojo
-    from std.gpu.host import DeviceContext
+    from max.gpu.host import DeviceContext
     var ctx = DeviceContext()
     with ctx.push_context():
         ptr_meta = _get_cudnn_meta(ctx)

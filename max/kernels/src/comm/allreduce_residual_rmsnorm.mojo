@@ -75,7 +75,7 @@ from std.gpu import (
     grid_dim,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
 from layout import (
     Coord,

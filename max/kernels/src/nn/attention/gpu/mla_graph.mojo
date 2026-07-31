@@ -40,7 +40,7 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import _is_sm10x_gpu
 from std.utils.coord import Coord, Idx, coord_to_index_list
 from layout import (

@@ -62,7 +62,7 @@ accumulators.
 """
 
 from std.gpu import WARP_SIZE, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.sys import align_of
 

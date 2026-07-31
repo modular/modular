@@ -19,7 +19,7 @@ from std.sys.info import _current_target, align_of, simd_width_of
 from max.algorithm.functional import elementwise
 from std.utils.numerics import get_accum_type
 from std.complex import ComplexSIMD
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
 from kv_cache.types import KVCacheT, KVCollectionT
 from layout import (

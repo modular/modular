@@ -59,7 +59,7 @@ Two hard M5 constraints, both satisfied by the width-16 decode:
 
 from std.collections import Optional
 from std.gpu import WARP_SIZE, global_idx, lane_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 import std.gpu.primitives.warp as warp
 from std.utils import IndexList

@@ -22,7 +22,7 @@ from std.algorithm.functional import unswitch
 
 from max.algorithm.functional import elementwise
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.collections import Optional, OptionalReg

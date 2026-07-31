@@ -32,7 +32,7 @@ Usage:
 
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.info import B200
 from layout import TileTensor, flatten_leading
 from structured_kernels.tile_types import create_tma_tile

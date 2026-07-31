@@ -29,7 +29,7 @@ in a generic heuristic, or an AMD import in an SM100 file), so it lives in a
 device-generic location instead.
 """
 
-from std.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceAttribute, DeviceContext
 
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,

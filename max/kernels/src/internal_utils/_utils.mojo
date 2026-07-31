@@ -28,7 +28,7 @@ from std.benchmark import (
 )
 from std.compile import compile_info
 from std.gpu import block_dim, global_idx, grid_dim
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
+from max.gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
 from std.random import Random
 from std.utils import IndexList
 

@@ -82,7 +82,7 @@ Three attention routes, picked at runtime from `kv_collection.max_seq_length`
 import extensibility
 
 from std.collections import OptionalReg
-from std.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer
 from std.math import ceildiv, min
 from std.memory import UnsafePointer
 from std.sys.info import has_amd_gpu_accelerator

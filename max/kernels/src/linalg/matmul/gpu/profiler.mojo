@@ -22,7 +22,7 @@ timeline entry to the workspace.
 
 from std.time.time import global_perf_counter_ns
 from std.gpu import WARP_SIZE, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.info import B200
 from std.gpu import sm_id
 

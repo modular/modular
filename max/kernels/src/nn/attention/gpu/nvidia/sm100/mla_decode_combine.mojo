@@ -32,7 +32,7 @@ from std.math.constants import log2e
 
 import std.gpu.primitives.warp as warp
 from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, warp_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import (
     wait_on_dependent_grids,

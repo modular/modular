@@ -29,7 +29,7 @@ from std.gpu import (
     thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from layout import (
     Coord,

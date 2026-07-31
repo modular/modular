@@ -34,7 +34,7 @@ from std.gpu import (
     thread_idx,
 )
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from max.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import H100
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc

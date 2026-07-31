@@ -44,7 +44,7 @@ tiles take the bounded path. See KB `kernels/apple-m5-int8-matmul`.
 
 from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
 from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace, build_edge_mask, gmem_edge_masked_load
 from std.collections import Optional
 from std.math import round

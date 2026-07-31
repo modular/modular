@@ -46,7 +46,7 @@ from max.algorithm import (
     elementwise,
     sync_parallelize,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     TensorLayout,

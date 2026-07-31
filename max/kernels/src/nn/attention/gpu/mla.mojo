@@ -63,7 +63,7 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceContext,
     FuncAttribute,
     get_gpu_target,

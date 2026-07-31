@@ -23,7 +23,7 @@ from std.collections import OptionalReg
 from std.math import ceildiv
 from std.sys import size_of
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Idx, TileTensor, row_major
 from std.utils.index import IndexList

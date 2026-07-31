@@ -41,7 +41,7 @@ Mirrors the structure of `nn.conv.gpu.amd.rdna.dispatch` and
 """
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.sys import simd_width_of
 from std.sys.info import _accelerator_arch
