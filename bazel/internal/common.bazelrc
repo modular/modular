@@ -195,8 +195,6 @@ build --experimental_remote_cache_eviction_retries=3
 build --grpc_keepalive_time=30s
 build --remote_upload_local_results
 build --remote_exec_header=x-buildbuddy-platform.default-timeout=15m
-# Set local builds to higher than CI priority
-build --remote_execution_priority=-1
 
 build:cache --bes_backend=grpcs://modular.buildbuddy.io
 build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
@@ -239,8 +237,6 @@ build:ci-no-config --strategy=CppCompile=remote,worker,sandboxed,standalone
 build:ci-no-config --strategy=CppLink=remote,worker,sandboxed,standalone
 
 build:ci --config=ci-no-config
-# Set CI builds to lower priority than local builds, some CI builds override this
-build:ci --remote_execution_priority=20
 test:ci --remote_download_outputs=minimal
 
 build:ci-gpu-common --config=ci
