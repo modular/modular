@@ -405,6 +405,11 @@ This version is still a work in progress.
   can use them to state the mutability it requires of a string argument without
   spelling out the `origin` parameter.
 
+- `Vendor` has a new `PLUGIN_ACCELERATOR` value, for the `GPUInfo` records a
+  stdlib plugin contributes for hardware the stdlib has no built-in knowledge
+  of. The accompanying `GPUInfo.name` and `GPUInfo.api` identify the
+  accelerator.
+
 - `Span` now has a keyword-only `address_space` parameter (defaulting to
   `AddressSpace.GENERIC`), so a span can view memory in a non-default address
   space, such as GPU shared memory:

@@ -20,6 +20,7 @@ def test_vendor_write_to() raises:
     assert_equal(String(Vendor.AMD_GPU), "amd_gpu")
     assert_equal(String(Vendor.NVIDIA_GPU), "nvidia_gpu")
     assert_equal(String(Vendor.APPLE_GPU), "apple_gpu")
+    assert_equal(String(Vendor.PLUGIN_ACCELERATOR), "plugin_accelerator")
 
 
 def test_vendor_equality() raises:
