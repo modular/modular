@@ -63,6 +63,12 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     # per-layer attention dispatch picks ``kv_blocks_per_layer[layer_idx]``.
     # ``None`` (the default) for every non-per-layer cache.
     kv_blocks_per_layer: list[_Buffer] | None = None
+    # One single-layer scale buffer per layer, the quantized-scale analog of
+    # ``kv_blocks_per_layer`` (used with ``per_layer_buffers`` + a quantized KV
+    # cache). ``kv_scales`` aliases ``kv_scales_per_layer[0]``; a per-layer
+    # attention dispatch picks ``kv_scales_per_layer[layer_idx]``. ``None`` for
+    # every non-per-layer / unquantized cache.
+    kv_scales_per_layer: list[_Buffer] | None = None
 
     def __post_init__(self) -> None:
         _verify_rank1_int64_tensor(
@@ -107,6 +113,7 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             # Per-layer buffers are appended at the tail so the leading fields
             # stay byte-identical for every non-per-layer cache (``None`` -> ()).
             *(self.kv_blocks_per_layer or ()),
+            *(self.kv_scales_per_layer or ()),
         ]
 
     # TODO: FIX THIS HACK!!!
@@ -123,6 +130,7 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             # Tail per-layer buffers (see ``flatten``). Attention dispatch clears
             # this field before calling an op, so this is ``()`` at op sites.
             *(self.kv_blocks_per_layer or ()),
+            *(self.kv_scales_per_layer or ()),
         ]
 
     def unflatten(
@@ -150,11 +158,17 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             draft_mla_num_partitions=next(it)
             if self.draft_mla_num_partitions
             else None,
-            # Consumed last, matching the tail append in ``flatten``.
+            # Consumed last, matching the tail append in ``flatten``
+            # (kv_blocks_per_layer, then kv_scales_per_layer).
             kv_blocks_per_layer=[
                 next(it) for _ in range(len(self.kv_blocks_per_layer))
             ]
             if self.kv_blocks_per_layer
+            else None,
+            kv_scales_per_layer=[
+                next(it) for _ in range(len(self.kv_scales_per_layer))
+            ]
+            if self.kv_scales_per_layer
             else None,
         )
 
