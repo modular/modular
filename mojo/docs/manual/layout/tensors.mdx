@@ -4,13 +4,13 @@ sidebar_position: 2
 description: Using LayoutTensor to manipulate multidimensional data.
 ---
 
-A [`LayoutTensor`](/docs/layout/layout_tensor/LayoutTensor/)
-provides a view of multi-dimensional data stored in a linear
-array. `LayoutTensor` abstracts the logical organization of multi-dimensional
-data from its actual arrangement in memory. You can generate new tensor "views"
-of the same data without copying the underlying data.
-This facilitates essential patterns for writing performant computational
-algorithms, such as:
+A
+[`LayoutTensor`](https://docs.modular.com/api/mojo/layout/layout_tensor/LayoutTensor/)
+provides a view of multi-dimensional data stored in a linear array.
+`LayoutTensor` abstracts the logical organization of multi-dimensional data from
+its actual arrangement in memory. You can generate new tensor "views" of the
+same data without copying the underlying data. This facilitates essential
+patterns for writing performant computational algorithms, such as:
 
 - Extracting tiles (sub-tensors) from existing tensors. This is especially
   valuable on the GPU, allowing a thread block to load a tile into shared
@@ -363,7 +363,7 @@ dimensions at runtime.
 ### Extracting a tile
 
 The
-[`LayoutTensor.tile()`](/docs/layout/layout_tensor/LayoutTensor/#tile)
+[`LayoutTensor.tile()`](https://docs.modular.com/api/mojo/layout/layout_tensor/LayoutTensor/#tile)
 method extracts a tile with a given size at a given set of coordinates:
 
 ```mojo
@@ -423,7 +423,8 @@ for i in range (rows):
 
 ### Tiled iterators
 
-The [`LayoutTensorIter`](/docs/layout/layout_tensor/LayoutTensorIter/)
+The
+[`LayoutTensorIter`](https://docs.modular.com/api/mojo/layout/layout_tensor/LayoutTensorIter/)
 struct provides a way to iterate through a block of memory, generating a layout
 tensor for each position. There are two ways to use `LayoutTensorIter`:
 
@@ -482,7 +483,7 @@ beginning.
 ### Tiling a `LayoutTensor`
 
 To iterate over an existing tensor, call the
-[`tiled_iterator()`](/docs/layout/layout_tensor/LayoutTensor/#tiled_iterator)
+[`tiled_iterator()`](https://docs.modular.com/api/mojo/layout/layout_tensor/LayoutTensor/#tiled_iterator)
 method, which produces a `LayoutTensorIter`:
 
 ```mojo
@@ -515,7 +516,8 @@ example, if you're working with 4 byte values and the GPU supports 16 byte copy
 operations, you can use a vector width of 4.) The `LayoutTensor` copy operations
 support copy sizes up to 16 bytes.
 
-The [`vectorize()`](/docs/layout/layout_tensor/LayoutTensor/#vectorize)
+The
+[`vectorize()`](https://docs.modular.com/api/mojo/layout/layout_tensor/LayoutTensor/#vectorize)
 method creates a new view of the tensor where each element of the tensor is a
 vector of values.
 
@@ -540,7 +542,7 @@ layout and element layout changes, as shown in Figure 4.
 
 When working with tensors on the GPU, it's sometimes desirable to distribute the
 elements of a tensor across the threads in a thread block. The
-[`distribute()`](/docs/layout/layout_tensor/LayoutTensor/#distribute)
+[`distribute()`](https://docs.modular.com/api/mojo/layout/layout_tensor/LayoutTensor/#distribute)
 method takes a thread layout and a thread ID and returns a thread-specific
 *fragment* of the tensor.
 
@@ -585,10 +587,10 @@ can transform a tensor by copying it to a tensor with a different layout.
 
 `LayoutTensor` itself provides two methods for copying tensor data:
 
-- [`copy_from()`](/docs/layout/layout_tensor/LayoutTensor/#copy_from)
+- [`copy_from()`](https://docs.modular.com/api/mojo/layout/layout_tensor/LayoutTensor/#copy_from)
   copies data from a source tensor to the current tensor, which may be in a
   different memory space.
-- [`copy_from_async()`](/docs/layout/layout_tensor/LayoutTensor/#copy_from_async)
+- [`copy_from_async()`](https://docs.modular.com/api/mojo/layout/layout_tensor/LayoutTensor/#copy_from_async)
   is an optimized copy mechanism for asynchronously copying from GPU global
   memory to shared memory.
 
@@ -674,11 +676,12 @@ def copy_from_async_example():
 
 ### Thread-aware copy functions
 
-The [`layout_tensor` package](/docs/layout/layout_tensor/) also includes
-a number of specialized copy functions for different scenarios, such as copying
-from shared memory to local memory. These functions are all *thread-aware*:
-instead of passing in tensor fragments, you pass in a thread layout which the
-function uses to partition the work.
+The
+[`layout_tensor` package](https://docs.modular.com/api/mojo/layout/layout_tensor/)
+also includes a number of specialized copy functions for different scenarios,
+such as copying from shared memory to local memory. These functions are all
+*thread-aware*: instead of passing in tensor fragments, you pass in a thread
+layout which the function uses to partition the work.
 
 As with the `copy_from()` and `copy_from_async()` methods, use the `vectorize()`
 method prior to copying to take advantage of vectorized copy operations.

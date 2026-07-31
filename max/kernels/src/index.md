@@ -16,10 +16,8 @@ extension points for adding your own operations.
 
 - Program a GPU directly with [`max.gpu`](/api/mojo/max/gpu/): thread and block
   indexing, memory spaces, synchronization, and host-side device management.
-- Describe how tensors sit in memory with
-  [`layout`](https://mojolang.org/docs/layout/): layouts, tiling, and the tensor
-  types kernels are written against. It publishes on the Mojo site today and
-  will move into this section.
+- Describe how tensors sit in memory with [`layout`](/api/mojo/layout/):
+  layouts, tiling, and the tensor types kernels are written against.
 - Call ready-made compute kernels from [`linalg`](/api/mojo/linalg/) for linear
   algebra such as matrix multiplication, [`nn`](/api/mojo/nn/) for
   neural-network operators such as attention and convolution,

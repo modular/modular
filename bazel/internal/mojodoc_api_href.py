@@ -21,14 +21,11 @@ knows the published site layout and rewrites those paths into hyperlinks.
 The ``hosted_on_mojolang`` flag chooses root-relative vs absolute, so that
 each href works regardless of where the rendered Markdown lives:
 
-- Mojolang-hosted (stdlib, layout): std/layout hrefs are root-relative;
-  cross-site MAX Mojo API hrefs are absolute ``https://docs.modular.com/...``.
+- Mojolang-hosted (stdlib): std hrefs are root-relative; cross-site MAX Mojo
+  API hrefs are absolute ``https://docs.modular.com/...``.
 - Docs.modular.com-hosted (kernels and MAX Mojo library): API hrefs are
-  root-relative; cross-site std/layout hrefs are absolute ``https://mojolang.org/...``.
-- ``/kernels/layout`` cross-references resolve to mojolang ``/docs/layout/...``
-  because layout docs are not published under ``/api/mojo/``.
-- Layout package self-references (``/layout/...``) stay on mojolang
-  ``/docs/layout/...`` when ``hosted_on_mojolang`` is set."""
+  root-relative; cross-site std hrefs are absolute
+  ``https://mojolang.org/...``."""
 
 from __future__ import annotations
 
@@ -72,7 +69,7 @@ def resolve_api_href(
         path: JSON ``path`` from ``mojo doc`` (root-relative, e.g.
             ``/std/builtin/Int`` or ``/kernels/linalg/foo/Bar``).
         hosted_on_mojolang: Set True for ``mojo_library`` targets whose Markdown
-            ships on mojolang.org (stdlib, layout).
+            ships on mojolang.org (stdlib).
 
     Returns:
         Empty string when ``path`` is empty; otherwise the resolved href.
@@ -92,19 +89,6 @@ def resolve_api_href(
 
     # Stdlib type referenced from any package
     if path == "/std" or path.startswith("/std/"):
-        href = _mojolang_href(
-            f"{MOJOLANG_PATH_PREFIX}{path}",
-            hosted_on_mojolang=hosted_on_mojolang,
-        )
-    # Layout type referenced from a kernel package (linalg uses `LayoutTensor`)
-    elif path == "/kernels/layout" or path.startswith("/kernels/layout/"):
-        layout_suffix = path[len("/kernels/layout") :]
-        href = _mojolang_href(
-            f"{MOJOLANG_PATH_PREFIX}/layout{layout_suffix}",
-            hosted_on_mojolang=hosted_on_mojolang,
-        )
-    # Layout package referencing its own internal types (published on mojolang)
-    elif path == "/layout" or path.startswith("/layout/"):
         href = _mojolang_href(
             f"{MOJOLANG_PATH_PREFIX}{path}",
             hosted_on_mojolang=hosted_on_mojolang,

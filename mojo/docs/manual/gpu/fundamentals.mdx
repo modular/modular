@@ -489,12 +489,12 @@ and to exchange blocks of data between host and device.
 The following table lists the most commonly used types in the Mojo libraries
 that conform to the `DevicePassable` trait.
 
-| Host type                                                                | Device Type                                                                       | Description                                                                                                     |
-|--------------------------------------------------------------------------|-----------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
-| [`Int`](/docs/std/builtin/int/Int/)                                      | `Int`                                                                             | Signed integer                                                                                                  |
-| [`SIMD[dtype, width]`](/docs/std/builtin/simd/SIMD/)                     | `SIMD[dtype, width]`                                                              | Small vector backed by a hardware vector element                                                                |
-| [`DeviceBuffer[dtype]`](/docs/std/gpu/host/device_context/DeviceBuffer/) | [`UnsafePointer[SIMD[dtype, 1]]`](/docs/std/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values                                                                                 |
-| [`TileTensor`](/docs/layout/tile_tensor/TileTensor/)                     | `TileTensor`                                                                      | A powerful abstraction for multi-dimensional data. See [Using `TileTensor`](/docs/manual/tile-tensor/tensors/). |
+| Host type                                                                        | Device Type                                                                       | Description                                                                                                     |
+|----------------------------------------------------------------------------------|-----------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| [`Int`](/docs/std/builtin/int/Int/)                                              | `Int`                                                                             | Signed integer                                                                                                  |
+| [`SIMD[dtype, width]`](/docs/std/builtin/simd/SIMD/)                             | `SIMD[dtype, width]`                                                              | Small vector backed by a hardware vector element                                                                |
+| [`DeviceBuffer[dtype]`](/docs/std/gpu/host/device_context/DeviceBuffer/)         | [`UnsafePointer[SIMD[dtype, 1]]`](/docs/std/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values                                                                                 |
+| [`TileTensor`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/) | `TileTensor`                                                                      | A powerful abstraction for multi-dimensional data. See [Using `TileTensor`](/docs/manual/tile-tensor/tensors/). |
 
 ### `DeviceBuffer` and `HostBuffer`
 

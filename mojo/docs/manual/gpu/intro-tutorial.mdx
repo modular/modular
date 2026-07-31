@@ -606,15 +606,15 @@ the copy operations in the previous example with the following equivalent code:
 ## 8. Create `TileTensor` views
 
 One last step before writing the kernel function is that we're going to create a
-[`TileTensor`](/docs/layout/tile_tensor/TileTensor/) view for each
-of the vectors. `TileTensor` provides a powerful abstraction for
+[`TileTensor`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/)
+view for each of the vectors. `TileTensor` provides a powerful abstraction for
 multi-dimensional data with precise control over memory organization. It
 supports various memory layouts (row-major, column-major, tiled),
-hardware-specific optimizations, and efficient parallel access patterns.
-We don't need all of these features for this tutorial, but in more
-complex kernels, it's a useful tool for manipulating data. Even though it
-isn't strictly necessary for this example, we'll use `TileTensor` so that
-you can get familiar with it.
+hardware-specific optimizations, and efficient parallel access patterns. We
+don't need all of these features for this tutorial, but in more complex kernels,
+it's a useful tool for manipulating data. Even though it isn't strictly
+necessary for this example, we'll use `TileTensor` so that you can get familiar
+with it.
 
 First, add the following import to the top of the file:
 
@@ -622,11 +622,11 @@ First, add the following import to the top of the file:
 from layout import TileTensor, row_major
 ```
 
-A [`Layout`](/docs/layout/tile_layout/Layout/) is a representation of memory
-layouts using shape and stride information, and it maps between logical
-coordinates and linear memory indices. We'll need to use the same `Layout`
-definition multiple times, so add the following `comptime` value to the top of
-the file after the other `comptime` declarations:
+A [`Layout`](https://docs.modular.com/api/mojo/layout/tile_layout/Layout/) is a
+representation of memory layouts using shape and stride information, and it maps
+between logical coordinates and linear memory indices. We'll need to use the
+same `Layout` definition multiple times, so add the following `comptime` value
+to the top of the file after the other `comptime` declarations:
 
 ```mojo title="vector_addition.mojo"
 comptime layout = row_major[vector_size]()
