@@ -13,20 +13,15 @@
 
 """Python bindings for the MO interpreter ops.
 
-This module defines the operation handler registry and the Mojo op bindings
-for the MO graph interpreter.
+This module defines the operation handler registry and the graph-compiler-
+backed op bindings for the MO graph interpreter.
 """
 
-import mojo.importer
-
-# Import op bindings from categorized Mojo modules
-# matmul / unary-elementwise handlers are backed by graph-compiler models
-# (compiled below), unlike the Mojo op bindings above.
-from . import (  # type: ignore[attr-defined]
+from . import (
     band_part_gc,
     cast_gc,
     conv_gc,
-    data_movement_ops,
+    data_movement_gc,
     elementwise_binary_gc,
     gather_gc,
     gc_compile,
@@ -51,7 +46,7 @@ from . import (  # type: ignore[attr-defined]
 )
 
 # Import handlers after the op modules to avoid circular import issues:
-# handlers.py imports the op bindings above (via the package).
+# handlers.py imports the op modules above (via the package).
 # Re-export the warm-adoption query (from gc_compile) so a consumer can assert
 # the ops were force-loaded from the manifest rather than cold-compiled.
 from .gc_compile import adopted_from_manifest

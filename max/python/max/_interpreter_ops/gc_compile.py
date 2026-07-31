@@ -91,6 +91,9 @@ _UINT_FOR_SIZE = {
 WIDTH_DTYPES = list(_UINT_FOR_SIZE.values())
 """The four uint widths a pure-copy family sweeps instead of real dtypes."""
 
+MAX_RANK = 5
+"""Historical interpreter rank cap, shared by every rank-capped family."""
+
 
 def uint_view_dtype(dtype: DType) -> DType:
     """Returns the same-bit-width unsigned int a dtype is bit-cast to for copying.
@@ -164,7 +167,8 @@ def flat_index_strides(indexed_shape: Sequence[int]) -> list[int]:
     Used by gather_nd/scatter_nd to flatten a multi-dimensional index vector
     into a single scalar: ``flat_idx = sum(idx[j] * stride[j])``. E.g.
     ``(4, 3, 2) -> [6, 2, 1]``. Plain Python arithmetic on a list of at most
-    ``op_utils.MAX_RANK`` small ints -- never touches a Buffer.
+    a handful of small ints (bounded by the interpreter's rank cap) --
+    never touches a Buffer.
     """
     n = len(indexed_shape)
     strides = [1] * n

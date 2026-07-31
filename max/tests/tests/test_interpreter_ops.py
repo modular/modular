@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""End-to-end tests for MO interpreter with Mojo ops.
+"""End-to-end tests for MO interpreter op handlers.
 
-These tests verify that the Mojo op implementations produce correct results
-by comparing against numpy reference implementations.
+These tests verify that the graph-compiler-backed op handlers produce
+correct results by comparing against numpy reference implementations.
 """
 
 from collections.abc import Generator, Sequence
@@ -25,6 +25,7 @@ import numpy as np
 import pytest
 from max._core.dialects import mo, rmo
 from max._interpreter_ops import (
+    data_movement_gc,
     elementwise_binary_gc,
     gather_gc,
     gc_compile,
@@ -1806,6 +1807,103 @@ class TestStaticBroadcastToOp:
             [[2.0, 3.0, 4.0], [2.0, 3.0, 4.0]], dtype=np.float32
         )
         np.testing.assert_array_equal(result, expected)
+
+    def test_broadcast_rank0_to_rank0(self) -> None:
+        """Broadcasting a rank-0 (scalar) tensor to a rank-0 target shape.
+
+        Exercises ``data_movement_gc.broadcast_to``'s rank-0 special case: the
+        fixed-rank data_movement_gc graph needs at least one axis, so a
+        rank-0 target must fall back to a driver copy rather than a
+        compiled model call.
+        """
+        input_np = np.array(42.0, dtype=np.float32)
+
+        x = Tensor.from_dlpack(input_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=[])
+
+        result = np.from_dlpack(y)
+        assert result.shape == ()
+        np.testing.assert_array_equal(result, input_np)
+
+    def test_broadcast_zero_extent_dim(self) -> None:
+        """Broadcasting to a zero-extent target dim must produce an empty
+        result, not fail in the padded fixed-rank graph."""
+        input_np = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(input_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=[0, 3])
+
+        result = np.from_dlpack(y)
+        assert result.shape == (0, 3)
+        np.testing.assert_array_equal(result, np.broadcast_to(input_np, (0, 3)))
+
+
+class TestTransposeOp:
+    """Tests for TransposeOp using the Tensor API with MO interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype", REARRANGE_FLOAT_DTYPES + INT_DTYPES + UINT_DTYPES
+    )
+    def test_permute_rank3_non_adjacent(self, dtype: DType) -> None:
+        """Test permute with a non-adjacent rank-3 permutation (2, 0, 1)."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(24, dtype=np_dtype).reshape(2, 3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.permute([2, 0, 1])
+
+        result = np.from_dlpack(y)
+        expected = np.transpose(x_np, (2, 0, 1))
+        np.testing.assert_array_equal(result, expected)
+
+    def test_transpose_rank0_scalar(self) -> None:
+        """Transposing a scalar (rank-0) tensor via ``Tensor.transpose``.
+
+        ``ops.transpose`` accepts axes ``-1``/``0`` on a rank-0 tensor and
+        emits an empty perm, so ``_handle_transpose`` must special-case
+        rank 0 rather than reaching the fixed-rank ``data_movement_gc``
+        graph (which needs at least one axis).
+        """
+        x_np = np.array(3.5, dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.transpose(-1, 0)
+
+        result = np.from_dlpack(y)
+        assert result.shape == ()
+        np.testing.assert_array_equal(result, x_np)
+
+    def test_transpose_zero_extent_dim(self) -> None:
+        """Transposing a tensor with a zero-extent dim must produce the
+        permuted empty shape, not fail in the padded fixed-rank graph."""
+        x_np = np.empty((0, 3), dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = x.permute([1, 0])
+
+        result = np.from_dlpack(y)
+        assert result.shape == (3, 0)
+        np.testing.assert_array_equal(result, np.transpose(x_np, (1, 0)))
 
 
 class TestMatmulOp:
@@ -9497,3 +9595,86 @@ class TestLazyGCModelCompilation:
             KeyError, match="Unsupported shape-rearrange rank 5"
         ):
             shape_rearrange_gc.model(mo.TileOp, CPU(), DType.uint8, rank=5)
+
+
+class TestDataMovementGCFamily:
+    """Direct family-level tests for data_movement_gc graphs.
+
+    Every graph is built at ``data_movement_gc.MAX_RANK``; the handlers
+    pad lower-rank shapes to it with leading 1s, so these direct model
+    calls use rank-5 inputs (the padded form the handlers produce).
+    """
+
+    def test_family_transpose_model(self) -> None:
+        x = np.arange(24, dtype=np.uint32).reshape(1, 1, 2, 3, 4)
+        model = data_movement_gc.model(mo.TransposeOp, CPU(), DType.uint32)
+        (out,) = model(
+            Buffer.from_numpy(x),
+            Buffer.from_numpy(np.array([0, 1, 4, 2, 3], dtype=np.int64)),
+        )
+        np.testing.assert_array_equal(
+            out.to_numpy(), np.transpose(x, (0, 1, 4, 2, 3))
+        )
+
+    def test_family_broadcast_model(self) -> None:
+        x = np.array([[1], [2]], dtype=np.uint64).reshape(1, 1, 1, 2, 1)
+        model = data_movement_gc.model(mo.BroadcastToOp, CPU(), DType.uint64)
+        # Output dims bind from the shapes of the host carrier inputs.
+        (out,) = model(
+            Buffer.from_numpy(x),
+            *(
+                Buffer.from_numpy(np.zeros(dim, dtype=np.uint8))
+                for dim in (1, 1, 1, 2, 3)
+            ),
+        )
+        np.testing.assert_array_equal(
+            out.to_numpy(), np.broadcast_to(x, (1, 1, 1, 2, 3))
+        )
+
+    def test_family_store_slice_model(self) -> None:
+        dst = Buffer.from_numpy(np.zeros((1, 1, 1, 4, 4), dtype=np.uint8))
+        src = Buffer.from_numpy(np.ones((1, 1, 1, 2, 2), dtype=np.uint8) * 5)
+        model = data_movement_gc.model(
+            mo.MutableStoreSliceOp, CPU(), DType.uint8
+        )
+        model(
+            dst,
+            src,
+            Buffer.from_numpy(np.array([0, 0, 0, 1, 1], dtype=np.int64)),
+            Buffer.from_numpy(np.array([1, 1, 1, 3, 3], dtype=np.int64)),
+            Buffer.from_numpy(np.array([1, 1, 1, 1, 1], dtype=np.int64)),
+        )
+        expected = np.zeros((1, 1, 1, 4, 4), dtype=np.uint8)
+        expected[..., 1:3, 1:3] = 5
+        np.testing.assert_array_equal(dst.to_numpy(), expected)
+
+    def test_broadcast_gc_rejects_rank_over_max(self) -> None:
+        """The fixed-rank graphs cap at MAX_RANK; a rank-6 target must
+        raise the handler's clear error, not an opaque compile failure."""
+        input_buf = Buffer.from_numpy(np.zeros((1,) * 6, dtype=np.float32))
+        with pytest.raises(ValueError, match="at most rank-5"):
+            data_movement_gc.broadcast_to(input_buf, [1] * 6, CPU())
+
+    def test_broadcast_gc_rank0_is_a_copy(self) -> None:
+        """Rank 0 bypasses the compiled model (ranks 1..MAX_RANK only) and
+        falls back to a driver copy in ``data_movement_gc.broadcast_to``;
+        result is a distinct buffer, not an alias of the input."""
+        input_buf = Buffer.from_numpy(np.array(7.0, dtype=np.float32))
+        out = data_movement_gc.broadcast_to(input_buf, [], CPU())
+
+        assert out is not input_buf
+        np.testing.assert_array_equal(out.to_numpy(), input_buf.to_numpy())
+
+        # Mutating the output must not affect the input: proves a real
+        # copy rather than an aliased view.
+        out.to_numpy()[...] = 99.0
+        assert float(input_buf.to_numpy()) == 7.0
+
+    def test_broadcast_gc_rejects_illegal_shape(self) -> None:
+        """An input dim that is neither 1 nor equal to the target dim is an
+        illegal broadcast; ``data_movement_gc.broadcast_to`` must raise rather
+        than silently dispatching a model that would misbehave."""
+        input_buf = Buffer.from_numpy(np.zeros(3, dtype=np.float32))
+
+        with pytest.raises(ValueError, match="dim 0"):
+            data_movement_gc.broadcast_to(input_buf, [5], CPU())

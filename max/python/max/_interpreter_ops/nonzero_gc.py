@@ -59,8 +59,9 @@ def _supported_dtypes() -> list[DType]:
     The shared CPU float policy (:data:`gc_compile.CPU_FLOAT_DTYPES`), plus
     the four uint widths that stand in for every signed int, unsigned int, and
     bool width (see the module docstring). This is narrower than the deleted
-    ``argnonzero_ops.mojo`` binding, which dispatched through
-    ``op_utils.dispatch_dtype`` and also handled float16/bfloat16 on CPU.
+    ``argnonzero_ops.mojo`` binding, which dispatched through the
+    interpreter's generic dtype-dispatch helper and also handled
+    float16/bfloat16 on CPU.
     """
     return gc_compile.CPU_FLOAT_DTYPES + gc_compile.WIDTH_DTYPES
 
