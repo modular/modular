@@ -42,7 +42,7 @@ from std.gpu.sync import schedule_group_barrier
 
 # Import AMD helper functions and structs from the kernels subdirectory
 
-from kernels.amd_helpers import (
+from .amd_helpers import (
     AMD_MMA,
     MMATileBuffers,
     amd_scheduling_hints,
