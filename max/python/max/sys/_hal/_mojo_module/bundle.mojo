@@ -113,10 +113,10 @@ def compile_to_python_bundle[
 
     # Move the RuntimeBundle out of the tuple. `var (a, b) = ...`
     # would implicitly copy each element, and RuntimeBundle isn't
-    # ImplicitlyCopyable — so use take_pointee + forget_deinit to
+    # ImplicitlyCopyable — so use unsafe_take_pointee + forget_deinit to
     # consume index [0] and skip the tuple's destructor (which would
     # otherwise re-drop the already-moved bundle).
-    var hal_bundle = UnsafePointer(to=compile_result[0]).take_pointee()
+    var hal_bundle = UnsafePointer(to=compile_result[0]).unsafe_take_pointee()
     forget_deinit(compile_result^)
 
     return PythonObject(

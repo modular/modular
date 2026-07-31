@@ -118,11 +118,11 @@ def gather_op[
         var i = Int(idx[0].value())
         var outer_idx, rem = divmod(i, out_axis_stride)
         var idx_pos, inner_idx = divmod(rem, inner_size)
-        var gather_idx = Int(indices_ptr[idx_pos])
+        var gather_idx = Int(indices_ptr[unsafe_offset=idx_pos])
         var in_flat = (
             outer_idx * in_axis_stride + gather_idx * inner_size + inner_idx
         )
-        out_ptr[i] = in_ptr[in_flat]
+        out_ptr[unsafe_offset=i] = in_ptr[unsafe_offset=in_flat]
 
     if ctx.api() == "cpu":
         elementwise[simd_width=1](func, Coord(total), ctx)
@@ -314,18 +314,18 @@ def gather_nd_op[
         # Unrolled loop over index_depth (max MAX_RANK=5) to avoid
         # dynamic loop and Array capture in GPU kernels.
         if index_depth >= 1:
-            in_offset += Int(indices_ptr[idx_base]) * s0
+            in_offset += Int(indices_ptr[unsafe_offset=idx_base]) * s0
         if index_depth >= 2:
-            in_offset += Int(indices_ptr[idx_base + 1]) * s1
+            in_offset += Int(indices_ptr[unsafe_offset=idx_base + 1]) * s1
         if index_depth >= 3:
-            in_offset += Int(indices_ptr[idx_base + 2]) * s2
+            in_offset += Int(indices_ptr[unsafe_offset=idx_base + 2]) * s2
         if index_depth >= 4:
-            in_offset += Int(indices_ptr[idx_base + 3]) * s3
+            in_offset += Int(indices_ptr[unsafe_offset=idx_base + 3]) * s3
         if index_depth >= 5:
-            in_offset += Int(indices_ptr[idx_base + 4]) * s4
+            in_offset += Int(indices_ptr[unsafe_offset=idx_base + 4]) * s4
 
         in_offset += suffix_idx
-        out_ptr[i] = in_ptr[in_offset]
+        out_ptr[unsafe_offset=i] = in_ptr[unsafe_offset=in_offset]
 
     if ctx.api() == "cpu":
         elementwise[simd_width=1](func, Coord(total), ctx)
@@ -518,11 +518,11 @@ def scatter_op[
     for i in range(total):
         var outer_idx, rem = divmod(i, upd_axis_stride)
         var _, inner_idx = divmod(rem, inner_size)
-        var scatter_idx = Int(indices_ptr[i])
+        var scatter_idx = Int(indices_ptr[unsafe_offset=i])
         var out_flat = (
             outer_idx * out_axis_stride + scatter_idx * inner_size + inner_idx
         )
-        out_ptr[out_flat] = updates_ptr[i]
+        out_ptr[unsafe_offset=out_flat] = updates_ptr[unsafe_offset=i]
 
 
 def scatter_dispatcher(
@@ -692,11 +692,11 @@ def scatter_add_op[
     for i in range(total):
         var outer_idx, rem = divmod(i, upd_axis_stride)
         var _, inner_idx = divmod(rem, inner_size)
-        var scatter_idx = Int(indices_ptr[i])
+        var scatter_idx = Int(indices_ptr[unsafe_offset=i])
         var out_flat = (
             outer_idx * out_axis_stride + scatter_idx * inner_size + inner_idx
         )
-        out_ptr[out_flat] += updates_ptr[i]
+        out_ptr[unsafe_offset=out_flat] += updates_ptr[unsafe_offset=i]
 
 
 def scatter_add_dispatcher(
@@ -870,11 +870,13 @@ def scatter_max_op[
     for i in range(total):
         var outer_idx, rem = divmod(i, upd_axis_stride)
         var _, inner_idx = divmod(rem, inner_size)
-        var scatter_idx = Int(indices_ptr[i])
+        var scatter_idx = Int(indices_ptr[unsafe_offset=i])
         var out_flat = (
             outer_idx * out_axis_stride + scatter_idx * inner_size + inner_idx
         )
-        out_ptr[out_flat] = max(out_ptr[out_flat], updates_ptr[i])
+        out_ptr[unsafe_offset=out_flat] = max(
+            out_ptr[unsafe_offset=out_flat], updates_ptr[unsafe_offset=i]
+        )
 
 
 def scatter_max_dispatcher(
@@ -1048,11 +1050,13 @@ def scatter_min_op[
     for i in range(total):
         var outer_idx, rem = divmod(i, upd_axis_stride)
         var _, inner_idx = divmod(rem, inner_size)
-        var scatter_idx = Int(indices_ptr[i])
+        var scatter_idx = Int(indices_ptr[unsafe_offset=i])
         var out_flat = (
             outer_idx * out_axis_stride + scatter_idx * inner_size + inner_idx
         )
-        out_ptr[out_flat] = min(out_ptr[out_flat], updates_ptr[i])
+        out_ptr[unsafe_offset=out_flat] = min(
+            out_ptr[unsafe_offset=out_flat], updates_ptr[unsafe_offset=i]
+        )
 
 
 def scatter_min_dispatcher(
@@ -1226,11 +1230,11 @@ def scatter_mul_op[
     for i in range(total):
         var outer_idx, rem = divmod(i, upd_axis_stride)
         var _, inner_idx = divmod(rem, inner_size)
-        var scatter_idx = Int(indices_ptr[i])
+        var scatter_idx = Int(indices_ptr[unsafe_offset=i])
         var out_flat = (
             outer_idx * out_axis_stride + scatter_idx * inner_size + inner_idx
         )
-        out_ptr[out_flat] *= updates_ptr[i]
+        out_ptr[unsafe_offset=out_flat] *= updates_ptr[unsafe_offset=i]
 
 
 def scatter_mul_dispatcher(
@@ -1434,18 +1438,18 @@ def scatter_nd_op[
         var idx_base = batch_idx * idx_batch_stride + outer_idx * index_depth
 
         if index_depth >= 1:
-            out_offset += Int(indices_ptr[idx_base]) * s0
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base]) * s0
         if index_depth >= 2:
-            out_offset += Int(indices_ptr[idx_base + 1]) * s1
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 1]) * s1
         if index_depth >= 3:
-            out_offset += Int(indices_ptr[idx_base + 2]) * s2
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 2]) * s2
         if index_depth >= 4:
-            out_offset += Int(indices_ptr[idx_base + 3]) * s3
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 3]) * s3
         if index_depth >= 5:
-            out_offset += Int(indices_ptr[idx_base + 4]) * s4
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 4]) * s4
 
         out_offset += suffix_idx
-        out_ptr[out_offset] = updates_ptr[i]
+        out_ptr[unsafe_offset=out_offset] = updates_ptr[unsafe_offset=i]
 
     if ctx.api() == "cpu":
         elementwise[simd_width=1](func, Coord(total), ctx)
@@ -1651,20 +1655,20 @@ def scatter_nd_add_op[
         var idx_base = batch_idx * idx_batch_stride + outer_idx * index_depth
 
         if index_depth >= 1:
-            out_offset += Int(indices_ptr[idx_base]) * s0
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base]) * s0
         if index_depth >= 2:
-            out_offset += Int(indices_ptr[idx_base + 1]) * s1
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 1]) * s1
         if index_depth >= 3:
-            out_offset += Int(indices_ptr[idx_base + 2]) * s2
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 2]) * s2
         if index_depth >= 4:
-            out_offset += Int(indices_ptr[idx_base + 3]) * s3
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 3]) * s3
         if index_depth >= 5:
-            out_offset += Int(indices_ptr[idx_base + 4]) * s4
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 4]) * s4
 
         out_offset += suffix_idx
 
         comptime if dtype.is_numeric():
-            out_ptr[out_offset] += updates_ptr[i]
+            out_ptr[unsafe_offset=out_offset] += updates_ptr[unsafe_offset=i]
         else:
             raise Error(
                 "scatter_nd_add: dtype must be numeric, got " + String(dtype)
@@ -1857,20 +1861,22 @@ def scatter_nd_max_op[
         var idx_base = batch_idx * idx_batch_stride + outer_idx * index_depth
 
         if index_depth >= 1:
-            out_offset += Int(indices_ptr[idx_base]) * s0
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base]) * s0
         if index_depth >= 2:
-            out_offset += Int(indices_ptr[idx_base + 1]) * s1
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 1]) * s1
         if index_depth >= 3:
-            out_offset += Int(indices_ptr[idx_base + 2]) * s2
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 2]) * s2
         if index_depth >= 4:
-            out_offset += Int(indices_ptr[idx_base + 3]) * s3
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 3]) * s3
         if index_depth >= 5:
-            out_offset += Int(indices_ptr[idx_base + 4]) * s4
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 4]) * s4
 
         out_offset += suffix_idx
 
         comptime if dtype.is_numeric():
-            out_ptr[out_offset] = max(out_ptr[out_offset], updates_ptr[i])
+            out_ptr[unsafe_offset=out_offset] = max(
+                out_ptr[unsafe_offset=out_offset], updates_ptr[unsafe_offset=i]
+            )
         else:
             raise Error(
                 "scatter_nd_max: dtype must be numeric, got " + String(dtype)
@@ -2063,20 +2069,22 @@ def scatter_nd_min_op[
         var idx_base = batch_idx * idx_batch_stride + outer_idx * index_depth
 
         if index_depth >= 1:
-            out_offset += Int(indices_ptr[idx_base]) * s0
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base]) * s0
         if index_depth >= 2:
-            out_offset += Int(indices_ptr[idx_base + 1]) * s1
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 1]) * s1
         if index_depth >= 3:
-            out_offset += Int(indices_ptr[idx_base + 2]) * s2
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 2]) * s2
         if index_depth >= 4:
-            out_offset += Int(indices_ptr[idx_base + 3]) * s3
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 3]) * s3
         if index_depth >= 5:
-            out_offset += Int(indices_ptr[idx_base + 4]) * s4
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 4]) * s4
 
         out_offset += suffix_idx
 
         comptime if dtype.is_numeric():
-            out_ptr[out_offset] = min(out_ptr[out_offset], updates_ptr[i])
+            out_ptr[unsafe_offset=out_offset] = min(
+                out_ptr[unsafe_offset=out_offset], updates_ptr[unsafe_offset=i]
+            )
         else:
             raise Error(
                 "scatter_nd_min: dtype must be numeric, got " + String(dtype)
@@ -2269,20 +2277,20 @@ def scatter_nd_mul_op[
         var idx_base = batch_idx * idx_batch_stride + outer_idx * index_depth
 
         if index_depth >= 1:
-            out_offset += Int(indices_ptr[idx_base]) * s0
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base]) * s0
         if index_depth >= 2:
-            out_offset += Int(indices_ptr[idx_base + 1]) * s1
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 1]) * s1
         if index_depth >= 3:
-            out_offset += Int(indices_ptr[idx_base + 2]) * s2
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 2]) * s2
         if index_depth >= 4:
-            out_offset += Int(indices_ptr[idx_base + 3]) * s3
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 3]) * s3
         if index_depth >= 5:
-            out_offset += Int(indices_ptr[idx_base + 4]) * s4
+            out_offset += Int(indices_ptr[unsafe_offset=idx_base + 4]) * s4
 
         out_offset += suffix_idx
 
         comptime if dtype.is_numeric():
-            out_ptr[out_offset] *= updates_ptr[i]
+            out_ptr[unsafe_offset=out_offset] *= updates_ptr[unsafe_offset=i]
         else:
             raise Error(
                 "scatter_nd_mul: dtype must be numeric, got " + String(dtype)

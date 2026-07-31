@@ -93,7 +93,7 @@ struct TVMFFIObject:
             abort(
                 "Invalid type: {} != {}".format(self.type_index, T.type_index)
             )
-        return (UnsafePointer(to=self) + 1).bitcast[T]()[]
+        return UnsafePointer(to=self).unsafe_offset(1).unsafe_bitcast[T]()[]
 
 
 struct TVMFFIErrorCell(

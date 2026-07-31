@@ -39,7 +39,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
         # The lifetime of `existing` continues unchanged
 
     def __del__(deinit self):
-        self.data.free()
+        self.data.unsafe_free()
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -62,10 +62,10 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def __getitem__(self, row: Int, col: Int) -> Int8:
-        return (self.data + row * Self.cols + col)[]
+        return self.data.unsafe_offset(row * Self.cols + col)[]
 
     def __setitem__(mut self, row: Int, col: Int, value: Int8) -> None:
-        (self.data + row * Self.cols + col)[] = value
+        self.data.unsafe_offset(row * Self.cols + col)[] = value
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations

@@ -78,11 +78,11 @@ def mojo_incr_np_array(
     print("  nd:", nd)
     print("  dimensions:", end=" ")
     for i in range(nd):
-        print(py_array_object_ptr[].dimensions[i], end=" ")
+        print(py_array_object_ptr[].dimensions[unsafe_offset=i], end=" ")
     print()
     print("  strides:", end=" ")
     for i in range(nd):
-        print(py_array_object_ptr[].strides[i], end=" ")
+        print(py_array_object_ptr[].strides[unsafe_offset=i], end=" ")
     print()
     print("  descr:", py_array_object_ptr[].descr)
     print("  flags:", hex(py_array_object_ptr[].flags))
@@ -94,11 +94,11 @@ def mojo_incr_np_array(
 
     var num_elts = 1
     for i in range(nd):
-        dim = py_array_object_ptr[].dimensions[i]
+        dim = py_array_object_ptr[].dimensions[unsafe_offset=i]
         num_elts *= dim
 
     for i in range(num_elts):
-        data_ptr[i] += 1
+        data_ptr[unsafe_offset=i] += 1
 
     print("Goodbye from mojo_incr_np_array")
     return PythonObject(None)

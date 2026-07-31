@@ -474,13 +474,13 @@ def memcpy_op[
         count: Number of elements to copy.
         ctx: Device context.
     """
-    var d = dst_ptr + dst_offset
-    var s = src_ptr + src_offset
+    var d = dst_ptr.unsafe_offset(dst_offset)
+    var s = src_ptr.unsafe_offset(src_offset)
 
     @always_inline
     def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
-        d.store[width=width](i, s.load[width=width](i))
+        d.unsafe_store[width=width](i, s.unsafe_load[width=width](i))
 
     if ctx.api() == "cpu":
         elementwise[simd_width=simd_width_of[dtype]()](func, Coord(count), ctx)

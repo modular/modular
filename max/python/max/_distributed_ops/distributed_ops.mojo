@@ -114,7 +114,7 @@ def _do_broadcast[
         var ctx_array_ptr: UnsafePointer[
             DeviceContext, origin_of(ctx_array)
         ] = ctx_array.unsafe_ptr()
-        (ctx_array_ptr + i).unsafe_write(
+        ctx_array_ptr.unsafe_offset(i).unsafe_write(
             DeviceContext(
                 OpaquePointer[MutUntrackedOrigin](unsafe_from_address=ctx_addr)
             )
