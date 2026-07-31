@@ -266,6 +266,21 @@ kgen.generator @pop_cmp() -> !kgen.scalar<bool> {
   kgen.return %2 : !kgen.scalar<bool>
 }
 
+// COM: Adjacent non-power-of-two SIMD elements stride by the alloc size
+// COM: (16 bytes for simd<3, f32>), not the 12-byte store size.
+kgen.generator @npot_simd_stride(%arg0: !kgen.simd<3, f32>, %arg1: !kgen.simd<3, f32>) -> f32 {
+  %buf = pop.stack_allocation 2 x simd<3, f32>
+  pop.store %arg0, %buf : !kgen.pointer<simd<3, f32>>
+  %idx1 = index.constant 1
+  %elt1 = pop.offset %buf[%idx1] : !kgen.pointer<simd<3, f32>>
+  pop.store %arg1, %elt1 : !kgen.pointer<simd<3, f32>>
+  %f32s = pop.pointer.bitcast %buf : !kgen.pointer<simd<3, f32>> to !kgen.pointer<f32>
+  %idx4 = index.constant 4
+  %lane = pop.offset %f32s[%idx4] : !kgen.pointer<f32>
+  %0 = pop.load %lane : !kgen.pointer<f32>
+  kgen.return %0 : f32
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -451,6 +466,13 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: constant: scalar<bool> = <false>
   kgen.param.constant: scalar<bool> = <apply(:() -> !kgen.scalar<bool> @pop_cmp)>
+
+  // COM: Lane 0 of the second simd<3, f32> element lives at byte 16
+  // COM: (f32 index 4); a 12-byte stride would place 6.5 there instead.
+  // CHECK-NEXT: constant: f32 = <5.500000e+00>
+  kgen.param.constant: f32 = <apply(
+    :(!kgen.simd<3, f32>, !kgen.simd<3, f32>) -> f32 @npot_simd_stride,
+    <"0.5", "1.5", "2.5">, <"5.5", "6.5", "7.5">)>
 
   kgen.return
 }

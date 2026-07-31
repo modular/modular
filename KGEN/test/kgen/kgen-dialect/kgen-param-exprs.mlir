@@ -597,7 +597,8 @@ kgen.generator @param_canonicalize<p1, p2>() {
 kgen.generator @datalayout_operators() {
   // CHECK-NEXT: <4>
   kgen.param.constant: index = <get_sizeof(si32, #target)>
-  // CHECK-NEXT: <3>
+  // i20 stores in 3 bytes but allocates 4: get_sizeof reports the alloc size.
+  // CHECK-NEXT: <4>
   kgen.param.constant: index = <get_sizeof(i20, #target)>
   // CHECK-NEXT: <8>
   kgen.param.constant: index = <get_sizeof(f64, #target)>

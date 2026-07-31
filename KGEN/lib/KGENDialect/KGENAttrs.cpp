@@ -3655,7 +3655,9 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
   auto target = sugarDynCast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
-  std::optional<int64_t> size = DataLayoutInterface::getTypeStoreSize(
+  // The alloc size (store size rounded up to the ABI alignment) gives 'sizeof'
+  // semantics in C: it is the stride between adjacent array elements.
+  std::optional<int64_t> size = DataLayoutInterface::getTypeAllocSize(
       target.getTarget(), typeCst.getMlirType());
   if (!size)
     return {};
