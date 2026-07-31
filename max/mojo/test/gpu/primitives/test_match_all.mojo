@@ -33,7 +33,9 @@ def _match_all_probe[
     out_masks: UnsafePointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())
-    out_masks[lane] = match_all(values[lane]).cast[DType.uint64]()
+    out_masks[unsafe_offset=lane] = match_all(values[unsafe_offset=lane]).cast[
+        DType.uint64
+    ]()
 
 
 def _check[

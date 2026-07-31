@@ -857,7 +857,7 @@ struct Pointer[
         Returns:
             An offset pointer.
         """
-        return self + (-1 * index(offset))
+        return self.unsafe_offset(-1 * index(offset))
 
     @doc_hidden
     @always_inline
@@ -870,7 +870,7 @@ struct Pointer[
         Args:
             offset: The offset index.
         """
-        self = self + offset
+        self = self.unsafe_offset(offset)
 
     @doc_hidden
     @always_inline
@@ -883,7 +883,7 @@ struct Pointer[
         Args:
             offset: The offset index.
         """
-        self = self - offset
+        self = self.unsafe_offset(-1 * index(offset))
 
     @doc_hidden
     @__unsafe_nested_origins_read_only

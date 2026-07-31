@@ -133,7 +133,7 @@ def _run_fake_memcpy(
     var first_out_dev = DeviceBuffer[DType.int64](
         ctx, out_ptr, half_length, owning=use_take_ptr
     )
-    var interior_out_ptr = out_ptr + half_length
+    var interior_out_ptr = out_ptr.unsafe_offset(half_length)
     var second_out_dev = DeviceBuffer[DType.int64](
         ctx, interior_out_ptr, half_length, owning=False
     )

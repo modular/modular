@@ -49,7 +49,9 @@ def _vote_probe[
     out_masks: UnsafePointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())
-    out_masks[lane] = vote[ret_type](preds[lane] != 0).cast[DType.uint64]()
+    out_masks[unsafe_offset=lane] = vote[ret_type](
+        preds[unsafe_offset=lane] != 0
+    ).cast[DType.uint64]()
 
 
 def _check[

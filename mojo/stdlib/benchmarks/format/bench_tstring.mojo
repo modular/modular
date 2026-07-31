@@ -37,7 +37,7 @@ struct NullWriter(Writer):
             Byte, origin_of(self.array)
         ] = self.array.unsafe_ptr()
         for i in range(len(bytes)):
-            (array_ptr + i).store(bytes.unsafe_get(i))
+            array_ptr.unsafe_offset(i).unsafe_store(bytes.unsafe_get(i))
         keep(self.array)
 
 

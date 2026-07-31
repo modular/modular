@@ -68,7 +68,7 @@ def reduce_add_via_cas(
     # failure just costs one extra loop iteration.
     var expected = Atomic.load(res_add)
     while True:
-        var desired = expected + vec[tid]
+        var desired = expected + vec[unsafe_offset=tid]
         if Atomic.compare_exchange[weak=True](res_add, expected, desired):
             return
 
@@ -89,7 +89,7 @@ def reduce_add_via_shared_cas(
     )
 
     if thread_idx.x == 0:
-        shared[0] = 0
+        shared[unsafe_offset=0] = 0
 
     barrier()
 
@@ -97,14 +97,14 @@ def reduce_add_via_shared_cas(
     if tid < len:
         var expected = Atomic.load(shared)
         while True:
-            var desired = expected + vec[tid]
+            var desired = expected + vec[unsafe_offset=tid]
             if Atomic.compare_exchange[weak=True](shared, expected, desired):
                 break
 
     barrier()
 
     if thread_idx.x == 0:
-        _ = Atomic.fetch_add(res_add, shared[0])
+        _ = Atomic.fetch_add(res_add, shared[unsafe_offset=0])
 
 
 def reduce_min_max(
