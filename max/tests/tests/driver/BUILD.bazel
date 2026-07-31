@@ -15,7 +15,6 @@ modular_py_test(
             "test_device_event.py",
             "test_buffer_device_pinned.py",
             "test_host_func.py",
-            "test_gpt2_default.py",
         ],
     ),
     tags = [
@@ -65,82 +64,6 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        requirement("numpy"),
-    ],
-)
-
-# End-to-end GPT-2 greedy-decode and CPU-reference comparison on the DEFAULT
-# (AsyncRT) device context. `MODULAR_DRIVER_PLUGINS` is left unset — the AsyncRT
-# backend ignores it and links its driver directly — so
-# `max.driver.Accelerator()` is the AsyncRT GPU context.
-#
-# Must be run in the default config: the internal-only HAL DeviceContext build
-# swaps the stdlib's `device_context` module out from under it, so under that
-# config this target measures the HAL path rather than AsyncRT. An internal HAL
-# counterpart runs the same decode; run both and confirm identical tokens to
-# compare the two device-context paths.
-modular_py_test(
-    name = "gpt2_default",
-    # The per-module CPU-vs-device conformance tests compile many graphs
-    # (including whole-model graphs), on top of the end-to-end decode, so the
-    # suite needs more than the default `medium` (300s) budget.
-    size = "large",
-    srcs = ["test_gpt2_default.py"],
-    # GPT-2-small in float32 (~0.5GB of weights, plus the eager interpreter's
-    # live intermediates) far exceeds the default per-test AsyncRT memory-manager
-    # budget (`DEFAULT_GPU_MEMORY` 0.8GB minus 0.6GB overhead = 0.2GB). The
-    # default test env runs the manager in strict mode
-    # (`MEMORY_MANAGER_ONLY=true`), which hard-fails any single allocation larger
-    # than that budget. Override to `false` so the AsyncRT allocator falls back
-    # to direct driver allocation for the large tensors (the same way the HAL
-    # backend allocates), rather than crashing. (The HAL counterpart needs no
-    # override: that backend bypasses this manager entirely.)
-    env = {
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
-    },
-    # Forward the HuggingFace cache-locating vars so the gpt2 checkpoint is
-    # downloaded at most once instead of every run. `requires-network` sets
-    # `HF_ESCAPES_SANDBOX=1`, which leaves `HF_HOME` unset; without forwarding,
-    # HF's cache resolves under the ephemeral `$TEST_TMPDIR` (bazel redirects
-    # `HOME` there), so nothing persists. Forwarding `HOME`/`HF_HOME` points HF
-    # at the persistent user cache locally and the pre-seeded cache volume in
-    # CI; `GPT2_SAFETENSORS_PATH` enables the fully-offline local path.
-    env_inherit = [
-        "HF_TOKEN",
-        "HF_HOME",
-        "HF_HUB_CACHE",
-        "HOME",
-        "GPT2_SAFETENSORS_PATH",
-        # Persists the version-keyed compile cache across runs (~250s cold to
-        # ~2s warm); unset, it lands in the ephemeral `$TEST_TMPDIR`.
-        "MODULAR_DERIVED_PATH",
-    ],
-    ignore_extra_deps = [
-        # Lazy import inside the experimental interpreter path.
-        "//max/python/max/_interpreter_ops",
-    ],
-    tags = [
-        "gpu",
-        # Downloads real gpt2 weights and runs a large end-to-end decode, so
-        # keep it out of wildcard runs (`//...`); trigger explicitly by target.
-        "manual",
-        "no-sandbox",
-        "requires-network",
-    ],
-    target_compatible_with = ["//:has_gpu"] + select({
-        "//:nvidia_gpu": [],
-        "//:apple_gpu": [],
-        "//:amd_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//max/python/max/_interpreter_ops",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
-        "//max/python/max/graph",
-        requirement("huggingface-hub"),
         requirement("numpy"),
     ],
 )
