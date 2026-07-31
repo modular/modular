@@ -78,7 +78,6 @@ kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
 // CHECK-LABEL: @simd_normal()
 kgen.generator @simd_normal() {
   // FIXME: get_alignof isn't implemented in terms of DataLayout::getFloatABIAlign.
-  // FIXME: get_sizeof doesn't round up to alignment either.
   // https://github.com/modularml/modular/issues/28137
 
   // CHECK-NEXT: <16>
@@ -94,6 +93,39 @@ kgen.generator @simd_normal() {
 
   // CHECK-NEXT: <0>
   kgen.param.constant: index = <get_sizeof(scalar<invalid>, #target)>
+  kgen.return
+}
+
+// `get_sizeof` returns the alloc size: the store size rounded up to the
+// alignment, i.e. the stride between adjacent array elements. The two differ
+// for non-power-of-two SIMD vectors and for structs whose `align(N)` exceeds
+// their natural alignment.
+// CHECK-LABEL: @sizeof_rounds_up_to_alignment()
+kgen.generator @sizeof_rounds_up_to_alignment() {
+  // CHECK-NEXT: <16>
+  kgen.param.constant: index = <get_sizeof(simd<3, f32>, #target)>
+  // CHECK-NEXT: <16>
+  kgen.param.constant: index = <get_alignof(simd<3, f32>, #target)>
+  // CHECK-NEXT: <32>
+  kgen.param.constant: index = <get_sizeof(simd<5, f32>, #target)>
+  // CHECK-NEXT: <32>
+  kgen.param.constant: index = <get_sizeof(simd<6, f32>, #target)>
+  // CHECK-NEXT: <32>
+  kgen.param.constant: index = <get_alignof(simd<6, f32>, #target)>
+  // Sub-byte element vectors stay bit-packed within their padded size.
+  // CHECK-NEXT: <1>
+  kgen.param.constant: index = <get_sizeof(simd<3, si1>, #target)>
+  // CHECK-NEXT: <2>
+  kgen.param.constant: index = <get_sizeof(simd<3, si4>, #target)>
+
+  // A struct's explicit alignment pads its size up to a full stride.
+  // CHECK-NEXT: <32>
+  kgen.param.constant: index = <get_sizeof(struct<(f32) align(32)>, #target)>
+  // CHECK-NEXT: <32>
+  kgen.param.constant: index = <get_alignof(struct<(f32) align(32)>, #target)>
+  // A non-power-of-two SIMD field occupies its full padded stride.
+  // CHECK-NEXT: <32>
+  kgen.param.constant: index = <get_sizeof(struct<(simd<3, f32>, f32)>, #target)>
   kgen.return
 }
 
