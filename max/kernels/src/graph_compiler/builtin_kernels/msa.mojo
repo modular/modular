@@ -98,13 +98,11 @@ from nn.attention.mha_operand import KVCacheMHAOperand
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_utils import MHAConfig, StaticInt
 
-from msa.sparse_indexer_prefill import (
-    sparse_indexer_prefill,
-    sparse_indexer_prefill_topk,
-)
+from msa.sparse_indexer_prefill import sparse_indexer_prefill
 from msa.sparse_indexer_decode import (
     sparse_indexer_decode,
     sparse_indexer_decode_score_mtp,
+    sparse_indexer_decode_topk_mtp,
 )
 from msa.msa_1q import msa_sm100_decode
 from msa.msa_2q import msa_sm100_prefill_plan, msa_sm100_prefill_run
@@ -267,12 +265,10 @@ struct Struct_msa_indexer_ragged_paged:
                 tt_row_major(num_index_heads, total_q, max_num_blocks),
             )
 
-            # AMD speculative widths use the decode-style scorer: each K vector
-            # is loaded once and reused across the compile-time query width.
-            # Selection remains the existing prefill top-k so this does not
-            # duplicate or fuse the KERN-3285 top-k work. Width one retains the
-            # established decode route; widths five through eight retain
-            # prefill until production enables wider AMD speculation.
+            # AMD speculative widths 2-4 use the decode-style scorer and top-k.
+            # Width one retains the established decode route; widths five
+            # through eight retain prefill until production enables wider AMD
+            # speculation.
             comptime USE_AMD_MTP_SCORER = (
                 has_amd_gpu_accelerator()
                 and num_index_heads == 1
@@ -306,11 +302,11 @@ struct Struct_msa_indexer_ragged_paged:
                             scale,
                             ctx,
                         )
-                        sparse_indexer_prefill_topk[
-                            num_index_heads, block_size
+                        sparse_indexer_decode_topk_mtp[
+                            query_width, num_index_heads, block_size
                         ](
-                            input_row_offsets.to_tile_tensor[DType.int64](),
                             prefix_lens.to_tile_tensor[DType.int64](),
+                            input_row_offsets.to_tile_tensor[DType.int64](),
                             score,
                             out_idxs.to_tile_tensor[DType.int64](),
                             batch,
