@@ -42,7 +42,7 @@ from std.gpu.host._tensormap import (
     SwizzleMode as _SwizzleMode,
     create_tensormap_im2col as _create_tensormap_im2col,
 )
-from std.gpu.host.nvidia.tma import (
+from max.gpu.host.nvidia.tma import (
     TensorMapL2Promotion,
     TensorMapSwizzle,
     TMADescriptor,

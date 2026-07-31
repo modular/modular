@@ -33,7 +33,7 @@ from std.gpu._utils import (
     llvm_struct_to_simd,
     simd_to_llvm_struct,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 from std.memory import bitcast
 

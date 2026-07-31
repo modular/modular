@@ -42,7 +42,7 @@ from std.sys.info import size_of
 
 from std.gpu import block_dim, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import (
+from max.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     TMADescriptor,
     create_tma_descriptor,

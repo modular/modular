@@ -16,7 +16,7 @@ from std.sys import align_of
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import barrier
 from max.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, thread_idx
 from std.gpu.memory import (
     AddressSpace,

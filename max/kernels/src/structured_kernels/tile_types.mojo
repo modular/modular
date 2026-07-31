@@ -30,7 +30,7 @@ from std.sys import size_of
 
 from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     ComptimeInt,
     Coord,

@@ -119,7 +119,7 @@ from layout.tma_async import (
     _gather4_box_width,
     _default_desc_shape,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLAPrefillSparseCommon,

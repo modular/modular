@@ -42,7 +42,7 @@ from max.gpu.compute.arch.tcgen05 import (
 from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout.swizzle import make_swizzle
 from layout.tma_async import RaggedTMA3DTile
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
     EnableForcedOrdering,

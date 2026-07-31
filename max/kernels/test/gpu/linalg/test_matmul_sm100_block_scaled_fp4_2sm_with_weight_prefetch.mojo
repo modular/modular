@@ -21,7 +21,7 @@
 from std.math import align_up, ceildiv
 from std.sys import size_of
 from max.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from std.random import rand
 

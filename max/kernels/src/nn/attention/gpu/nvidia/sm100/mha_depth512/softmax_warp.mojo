@@ -60,7 +60,7 @@ from layout import IntTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import tile_layout_k_major
 from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect,
     SharedMemPointer,

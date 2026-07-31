@@ -48,7 +48,7 @@ from std.gpu.primitives.warp import broadcast
 from std.gpu.memory import AddressSpace
 from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
 from max.gpu.compute.arch.tcgen05 import tcgen05_alloc
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.utils.index import Index
 from nn.attention.gpu.mha import q_num_matrix_view_rows

@@ -24,7 +24,7 @@ from std.sys.info import (
 
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100, _is_sm10x_gpu, is_gpu
 from std.gpu import block_idx, global_idx, warp_id, lane_id, thread_idx
 from std.gpu.memory import external_memory

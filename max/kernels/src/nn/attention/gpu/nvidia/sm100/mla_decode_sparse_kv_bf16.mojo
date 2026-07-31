@@ -51,7 +51,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_before,
     tcgen05_release_allocation_lock,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
