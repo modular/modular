@@ -26,12 +26,14 @@ import pytest
 from max._core.dialects import mo, rmo
 from max._interpreter_ops import (
     elementwise_binary_gc,
+    gather_gc,
     gc_compile,
     matmul_gc,
     nms_gc,
     nonzero_gc,
     random_gc,
     range_gc,
+    scatter_nd_gc,
     select_gc,
     shape_rearrange_gc,
     unary_elementwise_gc,
@@ -4145,6 +4147,13 @@ class TestCumsumOps:
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
 
 
+def test_flat_index_strides() -> None:
+    """Row-major strides used to flatten a multi-dim index into a scalar."""
+    assert gc_compile.flat_index_strides((4, 3, 2)) == [6, 2, 1]
+    assert gc_compile.flat_index_strides((5,)) == [1]
+    assert gc_compile.flat_index_strides(()) == []
+
+
 class TestGatherOp:
     """Tests for gather op via MO interpreter."""
 
@@ -4407,6 +4416,68 @@ class TestGatherNdOp:
 
         expected = np.array([x_np[2, 1], x_np[0, 3]], dtype=np.float32)
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+
+class TestGatherNdFusedModel:
+    """Tests for gather_gc's fused flatten-index + real gather_nd graph.
+
+    ``handlers.py`` isn't updated until Task 4R, so these call
+    :func:`gather_gc.gather_nd_model`/:func:`gather_gc.gather_nd_operand_views`
+    directly rather than through ``F.gather_nd`` (see ``TestGatherNdOp`` for
+    the handler-level suite, which stays red until Task 4R lands).
+    """
+
+    def test_batch_dims_0(self) -> None:
+        """batch_dims=0: single flat batch, multi-dim index fully flattened."""
+        device = CPU()
+        x_np = np.arange(12, dtype=np.uint32).reshape(3, 4)
+        idx_np = np.array([[0, 1], [2, 3]], dtype=np.int64)  # m=2, k=2
+
+        data_view, idx_view, strides = gather_gc.gather_nd_operand_views(
+            x_np.shape, idx_np.shape, batch_dims=0
+        )
+        strides_np = np.array(strides, dtype=np.int64)
+
+        model = gather_gc.gather_nd_model(device, DType.uint32, DType.int64)
+        (out,) = model(
+            Buffer.from_numpy(x_np.reshape(data_view)),
+            Buffer.from_numpy(idx_np.reshape(idx_view)),
+            Buffer.from_numpy(strides_np),
+        )
+
+        # flat indices: 0*4+1=1, 2*4+3=11 -> x.flat[[1, 11]]
+        expected = np.array(
+            [[[x_np.flat[1]], [x_np.flat[11]]]], dtype=np.uint32
+        )
+        np.testing.assert_array_equal(out.to_numpy(), expected)
+
+    def test_batch_dims_gt_0_multi_index_per_batch(self) -> None:
+        """batch_dims=1, batch>1, m>1: per-batch-distinct indices via the
+        real ``batch_dims=1`` handling -- no batch-folding hack needed."""
+        device = CPU()
+        x_np = np.arange(24, dtype=np.uint32).reshape(2, 3, 4)
+        # Per batch, 2 index vectors of depth 1 (index into the size-3 dim).
+        idx_np = np.array([[[1], [0]], [[2], [1]]], dtype=np.int64)
+
+        data_view, idx_view, strides = gather_gc.gather_nd_operand_views(
+            x_np.shape, idx_np.shape, batch_dims=1
+        )
+        strides_np = np.array(strides, dtype=np.int64)
+
+        model = gather_gc.gather_nd_model(device, DType.uint32, DType.int64)
+        (out,) = model(
+            Buffer.from_numpy(x_np.reshape(data_view)),
+            Buffer.from_numpy(idx_np.reshape(idx_view)),
+            Buffer.from_numpy(strides_np),
+        )
+
+        expected = np.stack(
+            [
+                np.stack([x_np[0, 1], x_np[0, 0]]),
+                np.stack([x_np[1, 2], x_np[1, 1]]),
+            ]
+        )
+        np.testing.assert_array_equal(out.to_numpy(), expected)
 
 
 class TestGatherSumOp:
@@ -5055,9 +5126,7 @@ class TestScatterAddOp:
         # Explicit check: slot 1 must be 30.0, not 20.0.
         assert float(np.from_dlpack(y)[1]) == 30.0
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
     def test_dtypes(self, dtype: DType) -> None:
         """Test scatter_add with numeric dtypes."""
         np_dtype = dtype.to_numpy()
@@ -5188,9 +5257,7 @@ class TestScatterMaxOp:
         expected = self._scatter_max_ref(x_np, updates_np, indices_np, axis=-1)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
     def test_dtypes(self, dtype: DType) -> None:
         np_dtype = dtype.to_numpy()
         x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
@@ -5301,9 +5368,7 @@ class TestScatterMinOp:
         expected = self._scatter_min_ref(x_np, updates_np, indices_np, axis=-1)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
     def test_dtypes(self, dtype: DType) -> None:
         np_dtype = dtype.to_numpy()
         x_np = (np.arange(12, dtype=np.float32).reshape(3, 4) + 100).astype(
@@ -5416,9 +5481,7 @@ class TestScatterMulOp:
         expected = self._scatter_mul_ref(x_np, updates_np, indices_np, axis=-1)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
     def test_dtypes(self, dtype: DType) -> None:
         np_dtype = dtype.to_numpy()
         x_np = np.ones((3, 4), dtype=np_dtype) * 2
@@ -5438,6 +5501,108 @@ class TestScatterMulOp:
 
         expected = self._scatter_mul_ref(x_np, updates_np, indices_np, axis=0)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestScatterNdFusedModel:
+    """Tests for scatter_nd_gc's fused flatten-index + real scatter_nd graph.
+
+    ``handlers.py`` isn't updated until Task 4R, so these call
+    :func:`scatter_nd_gc.scatter_nd_model`/
+    :func:`scatter_nd_gc.scatter_nd_operand_views` directly rather than
+    through ``F.scatter_nd``/``F.scatter_nd_add`` (see ``TestScatterNdOp``/
+    ``TestScatterNdAddOp`` for the handler-level suites, which stay red until
+    Task 4R lands).
+    """
+
+    def test_overwrite(self) -> None:
+        """ScatterNdOp: last-write-wins overwrite through the fused graph."""
+        device = CPU()
+        x_np = np.arange(12, dtype=np.uint32).reshape(3, 4)
+        updates_np = np.array([100, 200], dtype=np.uint32)
+        idx_np = np.array([[0, 1], [2, 3]], dtype=np.int64)  # m=2, k=2
+
+        input_view, updates_view, indices_view, strides = (
+            scatter_nd_gc.scatter_nd_operand_views(x_np.shape, idx_np.shape)
+        )
+        strides_np = np.array(strides, dtype=np.int64)
+
+        model = scatter_nd_gc.scatter_nd_model(
+            mo.ScatterNdOp, device, DType.uint32, DType.int64
+        )
+        (out,) = model(
+            Buffer.from_numpy(x_np.reshape(input_view)),
+            Buffer.from_numpy(updates_np.reshape(updates_view)),
+            Buffer.from_numpy(idx_np.reshape(indices_view)),
+            Buffer.from_numpy(strides_np),
+        )
+
+        expected = x_np.copy()
+        expected[0, 1] = 100
+        expected[2, 3] = 200
+        np.testing.assert_array_equal(
+            out.to_numpy().reshape(x_np.shape), expected
+        )
+
+    def test_reduce_add_with_duplicate_indices(self) -> None:
+        """ScatterNdAddOp: duplicate index vectors accumulate through the
+        fused graph, exercising the real reduce kernel (not just overwrite)."""
+        device = CPU()
+        x_np = np.zeros((3, 4), dtype=np.float32)
+        # Two update rows target the same index vector -> must accumulate.
+        updates_np = np.array([1.0, 2.0, 5.0], dtype=np.float32)
+        idx_np = np.array([[0, 1], [0, 1], [2, 3]], dtype=np.int64)
+
+        input_view, updates_view, indices_view, strides = (
+            scatter_nd_gc.scatter_nd_operand_views(x_np.shape, idx_np.shape)
+        )
+        strides_np = np.array(strides, dtype=np.int64)
+
+        model = scatter_nd_gc.scatter_nd_model(
+            mo.ScatterNdAddOp, device, DType.float32, DType.int64
+        )
+        (out,) = model(
+            Buffer.from_numpy(x_np.reshape(input_view)),
+            Buffer.from_numpy(updates_np.reshape(updates_view)),
+            Buffer.from_numpy(idx_np.reshape(indices_view)),
+            Buffer.from_numpy(strides_np),
+        )
+
+        expected = x_np.copy()
+        expected[0, 1] = 1.0 + 2.0
+        expected[2, 3] = 5.0
+        np.testing.assert_array_equal(
+            out.to_numpy().reshape(x_np.shape), expected
+        )
+
+    def test_precompile_raises_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With =1, a supported-but-unswept scatter_nd target is a hard
+        error. Each op-keyed family (scatter_nd/_add/_max/_min/_mul) must
+        dispatch through its own registered family object on a miss."""
+        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
+        monkeypatch.setattr(
+            scatter_nd_gc._FAMILIES[mo.ScatterNdOp], "cache", {}
+        )
+        with pytest.raises(KeyError, match="No pre-compiled scatter_nd model"):
+            scatter_nd_gc.scatter_nd_model(
+                mo.ScatterNdOp, CPU(), DType.uint32, DType.int64
+            )
+
+    def test_lazy_default_compiles_on_miss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """By default (env var unset) a supported miss compiles lazily."""
+        monkeypatch.delenv(
+            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
+        )
+        monkeypatch.setattr(
+            scatter_nd_gc._FAMILIES[mo.ScatterNdOp], "cache", {}
+        )
+        model = scatter_nd_gc.scatter_nd_model(
+            mo.ScatterNdOp, CPU(), DType.uint32, DType.int64
+        )
+        assert model is not None
 
 
 class TestScatterNdOp:
@@ -5589,7 +5754,7 @@ class TestScatterNdOp:
 
 
 class TestScatterNdAddOp:
-    """Tests for scatter_nd_add op via the MO interpreter (CPU-only).
+    """Tests for scatter_nd_add op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_add`` which routes through ``ops.scatter_nd_add`` ->
     ``rmo.MoScatterNdAddOp`` -> ``mo.scatter_nd.add`` -> interpreter handler.
@@ -5694,9 +5859,7 @@ class TestScatterNdAddOp:
         # Explicit check: slot 1 must be 30.0, not 20.0.
         assert float(np.from_dlpack(y)[1]) == 30.0
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
     def test_dtypes(self, dtype: DType) -> None:
         """Test scatter_nd_add with various numeric dtypes."""
         np_dtype = dtype.to_numpy()
@@ -5739,7 +5902,7 @@ class TestScatterNdAddOp:
 
 
 class TestScatterNdMaxOp:
-    """Tests for scatter_nd_max op via the MO interpreter (CPU-only).
+    """Tests for scatter_nd_max op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_max`` which routes through ``ops.scatter_nd_max`` ->
     ``rmo.MoScatterNdMaxOp`` -> ``mo.scatter_nd.max`` -> interpreter handler.
@@ -5842,9 +6005,7 @@ class TestScatterNdMaxOp:
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
         assert float(np.from_dlpack(y)[1]) == 20.0
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
     def test_dtypes(self, dtype: DType) -> None:
         """Test scatter_nd_max with various numeric dtypes."""
         np_dtype = dtype.to_numpy()
@@ -5867,7 +6028,7 @@ class TestScatterNdMaxOp:
 
 
 class TestScatterNdMinOp:
-    """Tests for scatter_nd_min op via the MO interpreter (CPU-only).
+    """Tests for scatter_nd_min op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_min`` which routes through ``ops.scatter_nd_min`` ->
     ``rmo.MoScatterNdMinOp`` -> ``mo.scatter_nd.min`` -> interpreter handler.
@@ -5970,9 +6131,7 @@ class TestScatterNdMinOp:
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
         assert float(np.from_dlpack(y)[1]) == 10.0
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
     def test_dtypes(self, dtype: DType) -> None:
         """Test scatter_nd_min with various numeric dtypes."""
         np_dtype = dtype.to_numpy()
@@ -5995,7 +6154,7 @@ class TestScatterNdMinOp:
 
 
 class TestScatterNdMulOp:
-    """Tests for scatter_nd_mul op via the MO interpreter (CPU-only).
+    """Tests for scatter_nd_mul op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_mul`` which routes through ``ops.scatter_nd_mul`` ->
     ``rmo.MoScatterNdMulOp`` -> ``mo.scatter_nd.mul`` -> interpreter handler.
@@ -6098,9 +6257,7 @@ class TestScatterNdMulOp:
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
         assert float(np.from_dlpack(y)[1]) == 15.0
 
-    @pytest.mark.parametrize(
-        "dtype", [DType.float32, DType.float16, DType.int32]
-    )
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.int32])
     def test_dtypes(self, dtype: DType) -> None:
         """Test scatter_nd_mul with various numeric dtypes."""
         np_dtype = dtype.to_numpy()

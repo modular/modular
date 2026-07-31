@@ -3659,6 +3659,128 @@ class TestScatterNdGPU:
         )
 
 
+class TestScatterNdReduceGPU:
+    """GPU tests for the scatter_nd reduce variants (add/max/min/mul).
+
+    The GPU reduce kernels fold duplicate index vectors with a compare-and-swap
+    loop (KERN-3231), so the result is order-independent and matches the CPU
+    fold; ``test_duplicate_indices`` is the direct check that no update races.
+    """
+
+    _REDUCERS = {
+        "add": F.scatter_nd_add,
+        "max": F.scatter_nd_max,
+        "min": F.scatter_nd_min,
+        "mul": F.scatter_nd_mul,
+    }
+
+    @staticmethod
+    def _ref_torch(
+        reduce_op: str,
+        x_torch: "torch.Tensor",
+        updates_torch: "torch.Tensor",
+        indices_np: "Any",
+    ) -> "torch.Tensor":
+        """Sequential fold matching the kernel's per-index-vector reduction."""
+        import numpy as np
+
+        out = x_torch.clone()
+        index_depth = indices_np.shape[-1]
+        for batch_idx in np.ndindex(indices_np.shape[:-1]):
+            idx_vec = tuple(
+                int(indices_np[batch_idx + (k,)]) for k in range(index_depth)
+            )
+            update = updates_torch[batch_idx]
+            if reduce_op == "add":
+                out[idx_vec] = out[idx_vec] + update
+            elif reduce_op == "mul":
+                out[idx_vec] = out[idx_vec] * update
+            elif reduce_op == "max":
+                out[idx_vec] = torch.maximum(out[idx_vec], update)
+            else:
+                out[idx_vec] = torch.minimum(out[idx_vec], update)
+        return out
+
+    @pytest.mark.parametrize("reduce_op", ["add", "max", "min", "mul"])
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.bfloat16, DType.int32]
+    )
+    def test_reduce_dtypes(self, reduce_op: str, dtype: DType) -> None:
+        """scatter_nd reduce on GPU across float and int dtypes."""
+        import numpy as np
+        from max.experimental.tensor import Tensor, realization_context
+
+        torch_dtype = {
+            DType.float32: torch.float32,
+            DType.bfloat16: torch.bfloat16,
+            DType.int32: torch.int32,
+        }[dtype]
+        x_torch = torch.full((4, 3), 4, dtype=torch_dtype, device="cuda")
+        updates_torch = (
+            torch.arange(1, 7, dtype=torch.float32, device="cuda")
+            .reshape(2, 3)
+            .to(torch_dtype)
+        )
+        indices_np = np.array([[0], [2]], dtype=np.int64)
+        indices_torch = torch.from_numpy(indices_np).to("cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        updates = Tensor.from_dlpack(updates_torch)
+        indices = Tensor.from_dlpack(indices_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = self._REDUCERS[reduce_op](x, updates, indices)
+
+        expected = self._ref_torch(
+            reduce_op, x_torch, updates_torch, indices_np
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-2, atol=1e-2
+        )
+
+    @pytest.mark.parametrize("reduce_op", ["add", "max", "min", "mul"])
+    def test_duplicate_indices(self, reduce_op: str) -> None:
+        """Two updates hit slot 1; the reducer must fold both, not race."""
+        import numpy as np
+        from max.experimental.tensor import Tensor, realization_context
+
+        # Base + update values chosen so folding both duplicates is observable
+        # for each reducer (dropping either changes slot 1).
+        base, update_vals = {
+            "add": (0.0, [10.0, 20.0, 30.0]),
+            "mul": (1.0, [2.0, 3.0, 4.0]),
+            "max": (0.0, [10.0, 20.0, 5.0]),
+            "min": (100.0, [30.0, 20.0, 50.0]),
+        }[reduce_op]
+
+        x_torch = torch.full((4,), base, dtype=torch.float32, device="cuda")
+        updates_torch = torch.tensor(
+            update_vals, dtype=torch.float32, device="cuda"
+        )
+        indices_np = np.array([[1], [1], [3]], dtype=np.int64)
+        indices_torch = torch.from_numpy(indices_np).to("cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        updates = Tensor.from_dlpack(updates_torch)
+        indices = Tensor.from_dlpack(indices_torch)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = self._REDUCERS[reduce_op](x, updates, indices)
+
+        expected = self._ref_torch(
+            reduce_op, x_torch, updates_torch, indices_np
+        )
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=0, atol=0
+        )
+
+
 _NEED_2_GPUS = pytest.mark.skipif(
     accelerator_count() < 2,
     reason="Requires at least 2 accelerator devices",

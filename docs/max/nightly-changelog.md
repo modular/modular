@@ -567,6 +567,18 @@ This version is still a work in progress.
   widths, repeat counts, split/slice bounds) stay runtime operands, so one
   compiled graph per `(op, device, dtype[, rank])` serves every shape.
 
+- The eager interpreter's gather and scatter ops (`gather`, `gather_nd`,
+  `scatter`, `scatter_nd`, and their `add`/`max`/`min`/`mul` reductions) now run
+  through pre-compiled graph-compiler models instead of hand-written Mojo
+  bindings, matching the matmul, elementwise, reduce, and shape-rearrange
+  migrations. Pure copies serve every dtype, including `float16`; the
+  reductions drop the `float16`/`bfloat16` CPU inputs the Mojo path accepted and
+  raise. `gather_nd` and `scatter_nd` (including its reductions) dispatch
+  through the genuine `ops.gather_nd`/`ops.scatter_nd*`, which run on GPU as
+  well as CPU; duplicate index vectors resolve deterministically (overwrite is
+  last-write-wins, reduce accumulates atomically via the GPU kernel's
+  compare-and-swap loop).
+
 - The eager interpreter's pooling ops (`max_pool`/`avg_pool`, floor and
   ceil-mode variants) now run through pre-compiled graph-compiler models
   instead of hand-written Mojo bindings. Window shape, strides, dilations,

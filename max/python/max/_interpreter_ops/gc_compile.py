@@ -158,6 +158,21 @@ def canonical_rank3(shape: Sequence[int], axis: int) -> tuple[int, int, int]:
     return (prod(shape[:axis]), shape[axis], prod(shape[axis + 1 :]))
 
 
+def flat_index_strides(indexed_shape: Sequence[int]) -> list[int]:
+    """Row-major strides of *indexed_shape* (product of trailing sizes).
+
+    Used by gather_nd/scatter_nd to flatten a multi-dimensional index vector
+    into a single scalar: ``flat_idx = sum(idx[j] * stride[j])``. E.g.
+    ``(4, 3, 2) -> [6, 2, 1]``. Plain Python arithmetic on a list of at most
+    ``op_utils.MAX_RANK`` small ints -- never touches a Buffer.
+    """
+    n = len(indexed_shape)
+    strides = [1] * n
+    for i in range(n - 2, -1, -1):
+        strides[i] = strides[i + 1] * indexed_shape[i + 1]
+    return strides
+
+
 def discover_devices() -> list[Device]:
     """Returns CPU + every accelerator slot in sweep/warm key order."""
     return load_devices([DeviceSpec.cpu()]) + load_devices(
