@@ -2293,7 +2293,7 @@ OpFoldResult PointerToIndexOp::fold(FoldAdaptor adaptor) {
 LogicalResult PointerToIndexOp::canonicalize(PointerToIndexOp op,
                                              PatternRewriter &b) {
   auto bitcast = op.getValue().getDefiningOp<PointerBitcastOp>();
-  if (!bitcast)
+  if (!bitcast || !isa<PointerType>(bitcast.getInput().getType()))
     return failure();
   b.modifyOpInPlace(op, [&] { op.getValueMutable().set(bitcast.getInput()); });
   return success();
