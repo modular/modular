@@ -1021,55 +1021,6 @@ private:
   bool &passFailed;
 };
 
-//===----------------------------------------------------------------------===//
-// ConvertKGENRebind
-//===----------------------------------------------------------------------===//
-
-/// Intercept unfolded rebind ops to give a better error message.
-struct ConvertKGENRebind : public ConvertPOPToLLVMPattern<RebindOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(RebindOp op, RebindOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // Get llvm types to compare because something like
-    // !kgen.pointer<index> is same as !kgen.pointer<scalar<index>> when
-    // lowered to llvm and should be allowed. But also, be aware that
-    // llvm.ptr is opaque, so we need to compare the llvm types for
-    // the elements.
-    std::function<bool(Type, Type)> cmpTypes = [&](Type src,
-                                                   Type dest) -> bool {
-      auto rType = getTypeConverter()->convertType(src);
-      auto iType = getTypeConverter()->convertType(dest);
-      if (auto resultPtr = dyn_cast<KGEN::PointerType>(src)) {
-        if (auto inputPtr = dyn_cast<KGEN::PointerType>(dest)) {
-          // Pointer-level properties must match before recursing, since the
-          // opaque llvm.ptr hides them.
-          if (resultPtr.getAddressSpace() != inputPtr.getAddressSpace() ||
-              resultPtr.getIsNonNull() != inputPtr.getIsNonNull())
-            return false;
-
-          // check element types recursively for
-          // !kgen.pointer<pointer<pointer...>>> case.
-          return cmpTypes(resultPtr.getElementType(),
-                          inputPtr.getElementType());
-        }
-      }
-      return (rType == iType && rType);
-    };
-
-    rewriter.replaceOp(op, op.getInput());
-    if (!cmpTypes(op.getType(), op.getInput().getType())) {
-      std::string str;
-      llvm::raw_string_ostream os(str);
-      os << op.getInput().getType() << " to " << op.getType();
-      return emitError(op.getLoc(),
-                       "invalid rebind between two unequal types: " + str);
-    }
-
-    return success();
-  }
-};
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -1235,7 +1186,6 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENStructGEP,
       ConvertKGENStructGet,
       ConvertKGENStructReplace,
-      ConvertKGENRebind,
       ConvertKGENReturn,
       ConvertKGENUnreachable
       // clang-format on

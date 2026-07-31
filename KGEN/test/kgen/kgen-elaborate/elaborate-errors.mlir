@@ -113,6 +113,26 @@ kgen.generator @invalid_rebind(%arg0: !kgen.scalar<si32>) {
 
 // -----
 
+// A rebind is checked even when only its input type is parametric.
+
+// expected-note @below {{function instantiation failed}}
+kgen.generator @invalid_rebind_parametric_input<p>(
+    %arg0: !kgen.pointer<array<p, i8>>) -> !kgen.pointer<array<2, i8>> {
+  // expected-note @below {{error: rebind input type '!kgen.pointer<array<1, i8>>' does not match result type '!kgen.pointer<array<2, i8>>'}}
+  %0 = kgen.rebind %arg0 : !kgen.pointer<array<p, i8>> to !kgen.pointer<array<2, i8>>
+  kgen.return %0 : !kgen.pointer<array<2, i8>>
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator @invalid_rebind_parametric_input_caller(
+    %arg0: !kgen.pointer<array<1, i8>>) {
+  // expected-note @below {{call expansion failed with parameter value(s): ("p": 1)}}
+  %0 = kgen.call @invalid_rebind_parametric_input<1>(%arg0) : (!kgen.pointer<array<1, i8>>) -> !kgen.pointer<array<2, i8>>
+  kgen.return
+}
+
+// -----
+
 // expected-note @below {{failed to interpret function @fails}}
 kgen.generator @fails() -> index {
   // expected-note @below {{failed to fold operation kgen.unreachable()}}

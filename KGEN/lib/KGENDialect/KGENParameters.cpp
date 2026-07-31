@@ -625,9 +625,12 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
   // don't contain parameter expressions or parameter uses. Defer to the
   // interface if it is implemented; otherwise, consider all generator users to
   // be parametric.
+  // A rebind must be visited even when neither type mentions a parameter, since
+  // its input and result types still have to be checked against each other.
   auto isImplicitlyParametric = [&] {
     return (itf && itf.isImplicitlyParametric()) ||
-           isa<GeneratorUserOpInterface, DeferredOp, CodeGenReachableOp>(op);
+           isa<GeneratorUserOpInterface, DeferredOp, CodeGenReachableOp,
+               RebindOp>(op);
   };
 
   // If the operation is parametric, add it to the list.
