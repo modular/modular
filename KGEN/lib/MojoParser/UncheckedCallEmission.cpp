@@ -28,6 +28,7 @@
 
 #include "Support/Compiler/OperationUtils.h"
 
+#include "mlir/IR/AttrTypeSubElements.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/SaveAndRestore.h"
 
@@ -1749,6 +1750,44 @@ static bool shouldEmitParameterCall(RValue callee,
   return false;
 }
 
+/// Rewrite closure-capture witnesses inside `type` back to the external value
+/// they are known to equal.
+static Type externClosureCapturesInType(Type type, ASTDecl &declScope) {
+  // Start the capture search from the nearest enclosing operation.
+  Operation *startOp = nullptr;
+  for (ASTDecl *scope = &declScope; scope && !startOp;
+       scope = scope->getParentDecl())
+    startOp = scope->getIfOperation();
+  if (!startOp)
+    return type;
+
+  SharedState &shared = declScope.getShared();
+
+  // `startOp` is fixed for this call, so memoize the capture lookup per closure
+  // parameter name.
+  DenseMap<StringAttr, ArrayRef<ClosureParamCapture>> captureCache;
+  auto capturesFor = [&](StringAttr name) -> ArrayRef<ClosureParamCapture> {
+    auto [it, inserted] = captureCache.try_emplace(name);
+    if (inserted)
+      it->second = shared.lookupClosureCaptureFromOp(startOp, name);
+    return it->second;
+  };
+
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](GetWitnessAttr witness) -> TypedAttr {
+    auto closureParam = sugarDynCast<ParamDeclRefAttr>(witness.getTypeValue());
+    if (!closureParam)
+      return witness;
+    for (const ClosureParamCapture &capture :
+         capturesFor(closureParam.getName()))
+      if (capture.first == witness.getWitnessName())
+        return ParamDeclRefAttr::get(witness.getWitnessName(),
+                                     witness.getType());
+    return witness;
+  });
+  return replacer.replace(type);
+}
+
 CValue IREmitter::emitCallUnchecked(RValue callee,
                                     CallOperands &&callOperands) {
   const ExprNode *callExpr = callOperands.callExpr;
@@ -1877,6 +1916,15 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
               findSugaredResultTypeFor(paramCallResult.getType()))
         paramCallResult =
             ParamOperatorAttr::getRebind(paramCallResult, sugaredResult);
+    }
+
+    // Re-express any forwarded closure-capture witness as captured type.
+    if (paramCallResult) {
+      Type externed =
+          externClosureCapturesInType(paramCallResult.getType(), declScope);
+      if (externed != paramCallResult.getType())
+        paramCallResult =
+            ParamOperatorAttr::getRebind(paramCallResult, externed);
     }
 
     // The dest might force further calls.  We delay calling it until after
@@ -2088,6 +2136,18 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       sugaredResult = callResult.getMValueType().getWithElement(sugaredResult);
     callResult = rebindValue({callResult, callExpr}, sugaredResult);
     assert(callResult && "rebindValue always succeeds");
+  }
+
+  // Re-express any forwarded closure-capture witness as captured type.
+  if (callResult) {
+    Type externed =
+        externClosureCapturesInType(callResult.getRValueType(), declScope);
+    if (externed != callResult.getRValueType()) {
+      if (callResult.isMValue())
+        externed = callResult.getMValueType().getWithElement(externed);
+      callResult = rebindValue({callResult, callExpr}, externed);
+      assert(callResult && "rebindValue always succeeds");
+    }
   }
 
   // Apply type refinement to the call result if it has a parametric type

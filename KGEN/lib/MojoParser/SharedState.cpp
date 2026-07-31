@@ -2798,6 +2798,33 @@ ClosureParamCaptures *SharedState::getClosureParamCapturesForOp(Operation *op) {
   return &ptr->second;
 }
 
+ArrayRef<ClosureParamCapture>
+SharedState::lookupClosureCaptureFromOp(Operation *startOp,
+                                        StringAttr closureName) {
+  auto lookup = [&](Operation *op) -> ArrayRef<ClosureParamCapture> {
+    if (ClosureParamCaptures *captures = getClosureParamCapturesForOp(op)) {
+      auto ptr = captures->find(closureName);
+      if (ptr != captures->end())
+        return ptr->second;
+    }
+    return {};
+  };
+
+  StructDeclOp structScope;
+  for (Operation *op = startOp; op; op = op->getParentOp()) {
+    if (isa<FnOp>(op)) {
+      if (ArrayRef<ClosureParamCapture> captures = lookup(op);
+          !captures.empty())
+        return captures;
+    } else if (auto structOp = dyn_cast<StructDeclOp>(op)) {
+      structScope = structScope ? structScope : structOp;
+    }
+  }
+  if (structScope)
+    return lookup(structScope);
+  return {};
+}
+
 void SharedState::setClosureParamCaptures(
     ASTDecl &functionDecl, ClosureParamCaptures closureParamCaptures) {
   getImpl().closureParamCaptures[functionDecl.getIfOperation()] =

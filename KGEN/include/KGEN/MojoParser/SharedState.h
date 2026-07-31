@@ -666,6 +666,11 @@ public:
   /// function represented by \p op. Returns nullptr if no captures have been
   /// registered for this op.
   ClosureParamCaptures *getClosureParamCapturesForOp(Operation *op);
+
+  /// Look up the captures registered for the closure named \p closureName as
+  /// visible from \p startOp.
+  ArrayRef<ClosureParamCapture>
+  lookupClosureCaptureFromOp(Operation *startOp, StringAttr closureName);
   /// Set the captured parameters map for a given function.
   void setClosureParamCaptures(ASTDecl &functionDecl,
                                ClosureParamCaptures closureParamCaptures);
