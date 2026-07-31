@@ -1199,7 +1199,7 @@ struct DestructTracer(Copyable, ImplicitlyDeletable, Movable):
         print("init-dtor", self.tag)
 
     def __deinit__(deinit self, /):
-        print("del-dtor", self.tag)
+        print("deinit-dtor", self.tag)
 
 
 struct MarkedDestructTracer(Copyable, DtorMarker, ImplicitlyDeletable, Movable):
@@ -1210,7 +1210,7 @@ struct MarkedDestructTracer(Copyable, DtorMarker, ImplicitlyDeletable, Movable):
         print("init-dtor", self.tag)
 
     def __deinit__(deinit self, /):
-        print("del-dtor", self.tag)
+        print("deinit-dtor", self.tag)
 
 
 def destroy_via_where[
@@ -1244,28 +1244,28 @@ def test_refined_implicitly_destructible():
     print("dtor-where")
     # CHECK:      init-dtor 1
     # CHECK-NEXT: use-dtor
-    # CHECK-NEXT: del-dtor 1
+    # CHECK-NEXT: deinit-dtor 1
     destroy_via_where(DestructTracer(1))
 
     # CHECK-LABEL: dtor-comptime-assert
     print("dtor-comptime-assert")
     # CHECK:      init-dtor 2
     # CHECK-NEXT: use-dtor
-    # CHECK-NEXT: del-dtor 2
+    # CHECK-NEXT: deinit-dtor 2
     destroy_via_comptime_assert(DestructTracer(2))
 
     # CHECK-LABEL: dtor-comptime-if
     print("dtor-comptime-if")
     # CHECK:      init-dtor 3
     # CHECK-NEXT: use-dtor
-    # CHECK-NEXT: del-dtor 3
+    # CHECK-NEXT: deinit-dtor 3
     destroy_via_comptime_if(DestructTracer(3))
 
     # CHECK-LABEL: dtor-chained-refinement
     print("dtor-chained-refinement")
     # CHECK:      init-dtor 4
     # CHECK-NEXT: use-dtor
-    # CHECK-NEXT: del-dtor 4
+    # CHECK-NEXT: deinit-dtor 4
     destroy_via_chained_refinement(MarkedDestructTracer(4))
 
 

@@ -33,7 +33,7 @@ struct AlignedTrivialParam[n: Int](TrivialRegisterPassable):
 struct MultiParam[T: __mlir_type.`!kgen.type`, align_val: Int]:
     var value: Self.T
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 

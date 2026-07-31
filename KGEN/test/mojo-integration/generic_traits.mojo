@@ -101,7 +101,7 @@ def like_father_like(value: Son) abi("Mojo"):
 
 
 struct SomeType(ImplicitlyCopyable, RegisterPassable):
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 

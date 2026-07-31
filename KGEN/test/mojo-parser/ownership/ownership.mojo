@@ -24,7 +24,7 @@ struct MemExample(ImplicitlyCopyable, Copyable):
   # CHECK-NEXT:    %none = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT:    lit.ownership.mark_destroyed %self
   # CHECK-NEXT:    kgen.return %none : !kgen.none
-  def __del__(deinit self):
+  def __deinit__(deinit self):
     self.noop()
 
 def consume(var a: MemExample): pass
@@ -55,7 +55,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
   # CHECK-NEXT: kgen.return
-  def __del__(deinit self):
+  def __deinit__(deinit self):
     pass
 
   def mutate(mut self):
@@ -155,7 +155,7 @@ def indirect_call[detail_fn: def() thin -> MemExample]():
 struct Parameterized[level: Int](Movable where False):
     def __init__(out self): pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 # CHECK-LABEL: lit.fn @"test_parameterized
@@ -424,7 +424,7 @@ def test_result_consume_reg(cond: __mlir_type.`!kgen.scalar<bool>`) -> RegExampl
     # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume %example2
     # CHECK-NEXT: lifetime.end %example2
     # CHECK-NEXT: kgen.return [[TMP2]]
-    return example2  # copy/del -> move optimization.
+    return example2  # copy/deinit -> move optimization.
 
 # CHECK: lit.fn @"consumeMem
 def consumeMem(var x: MemExample):
@@ -567,7 +567,7 @@ struct ExoticDelExample(RegisterPassable):
   var c: RegExample
 
  # CHECK-LABEL: lit.fn @"__deinit__
-  def __del__(deinit self):
+  def __deinit__(deinit self):
     # self.b gets destroyed ASAP since it isn't used.
     # CHECK-NEXT: [[BPTR:%.*]] = lit.ref.struct.ger %self[b]
     # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[BPTR]])
@@ -643,11 +643,11 @@ trait SomeTrait:
     pass
 
 struct GenericType(SomeTrait, Movable where False):
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 struct GenericRegType(RegisterPassable, SomeTrait):
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 # CHECK-LABEL: lit.fn @"destruct_generic_return
@@ -665,7 +665,7 @@ def destruct_generic_return():
 
 # CHECK-LABEL: lit.struct.decl @RegisterExistingDtor
 struct RegisterExistingDtor(RegisterPassable):
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 struct RegisterNoDtor(RegisterPassable):
@@ -1185,7 +1185,7 @@ struct A[origin: MutOrigin](Movable where False):
     var data: UnsafePointer[Int, Self.origin]
     def __init__(out self):
         self.data = UnsafePointer[Int, Self.origin].unsafe_dangling()
-    def __del__(deinit self): pass
+    def __deinit__(deinit self): pass
 
 def use_int(a: Int): pass
 
@@ -1391,7 +1391,7 @@ def use_parameterized_field():
 struct OuterStruct(Movable where False):
     var outers_field: RefResultStruct
     # CHECK: lit.fn @"__deinit__
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # CHECK: lit.call {{.*}}use(::String)
         use(self.outers_field.x)
         # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[outers_field]
@@ -1484,7 +1484,7 @@ struct InheritDefaultFromHasBarWVariadicPack(HasBarWVariadicPack, Movable where 
 # CHECK-NEXT: kgen.return %0
 
 # https://github.com/modular/modular/issues/5722
-# `__del__` incorrectly runs when `__init__` raises before all fields are initialized.
+# `__deinit__` incorrectly runs when `__init__` raises before all fields are initialized.
 # CHECK-LABEL: lit.struct.decl @TestRaiseFromInit
 struct TestRaiseFromInit(Movable where False):
     var x: Int
@@ -1502,7 +1502,7 @@ struct TestRaiseFromInit(Movable where False):
 # This is a type whose members are sometimes trivial!
 struct OccasionallyTrivial[a: Int](Movable where False):
     # This is trivial when a == 0.
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     comptime __del__is_trivial: Bool = Self.a == 0
@@ -1538,7 +1538,7 @@ struct TestConditionallyLinearType[T: Movable](
 # CHECK-NEXT: lit.call{{.*}}__deinit__{{.*}}([[TMP]])
 # CHECK-NEXT: kgen.param.constant: none
 
-    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         pass
 
 
@@ -1559,7 +1559,7 @@ struct AConditionallyLinearType[T: AnyType](
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
 ):
 
-    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
       pass
 
     # CHECK-LABEL: lit.fn @"example_method
@@ -1576,11 +1576,11 @@ struct AConditionallyLinearType[T: AnyType](
 # MOCO-3880: The destructor for one value can extend the lifetime of another value.
 @fieldwise_init
 struct Driver(Movable where False):
-    def __del__(deinit self): pass
+    def __deinit__(deinit self): pass
 
 @fieldwise_init
 struct Event[origin: ImmOrigin](Movable where False):
-    def __del__(deinit self): pass
+    def __deinit__(deinit self): pass
 
 def record_event(driver: Driver) -> Event[origin_of(driver)]:
     return {}

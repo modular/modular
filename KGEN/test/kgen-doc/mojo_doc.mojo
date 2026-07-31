@@ -1017,8 +1017,8 @@ struct DeprecatedStruct:
 # CHECK:    "functions":
 # CHECK:      "hasDefaultImplementation": false,
 # CHECK:      "kind": "function",
-# Check that we don't generate inherited methods (like __del__ from AnyType).
-# CHECK-NOT: "name": "__del__"
+# Check that we don't generate inherited methods (like __deinit__ from AnyType).
+# CHECK-NOT: "name": "__deinit__"
 # CHECK:      "name": "f",
 # CHECK:      "summary": "This is a trait function doc."
 # CHECK:      "hasDefaultImplementation": true,

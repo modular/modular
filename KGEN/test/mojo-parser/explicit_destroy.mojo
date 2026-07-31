@@ -11,7 +11,7 @@ struct MyAffine(Movable where False):
     def __init__(out self):
         pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
@@ -79,12 +79,12 @@ struct ImplicitlyDeletableContainerOfExplicit(Movable where False):
     def __init__(out self):
         self.m = EmptyExplicit()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self.m^.consume()
 
 
 def foo1[T: Movable](var x: T) -> T:
-    # Is fine, we move it away instead of calling x.__del__()
+    # Is fine, we move it away instead of calling x.__deinit__()
     return x^
 
 
@@ -94,7 +94,7 @@ def foo2[T: AnyType](x: T):
 
 
 def foo3[T: ImplicitlyDeletable](var x: T):
-    # Is fine, there's a x.__del__() available
+    # Is fine, there's a x.__deinit__() available
     pass
 
 
@@ -117,7 +117,7 @@ struct _MapIterator[
         while True:
             pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 

@@ -22,8 +22,8 @@ struct MyList[T: AnyType](Movable where False):
     def __init__(out self):
         self.data = UnsafePointer[Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
 
-    def __del__(deinit self):
-        pass # Explicit del so it isn't considered trivial and elided.
+    def __deinit__(deinit self):
+        pass # Explicit deinit so it isn't considered trivial and elided.
 
     def mutate(mut self): # must invalidate all interior origins.
         pass

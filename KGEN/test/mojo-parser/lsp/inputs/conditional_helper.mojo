@@ -18,5 +18,5 @@ struct ConditionalHelper[T: Movable](
     def __init__(out self, var value: Self.T):
         self.value = value^
 
-    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         pass

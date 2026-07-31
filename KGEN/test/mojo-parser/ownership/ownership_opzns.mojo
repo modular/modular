@@ -31,7 +31,7 @@ struct MemExample(ImplicitlyCopyable):
     def __bool__(self) -> Bool:
         return True
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
@@ -46,7 +46,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
     def noop(self):
         pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     def mutate(mut self):
@@ -91,7 +91,7 @@ struct MemoryMovableCopyable(ImplicitlyCopyable):
     def __init__(out self, *, copy: Self):
         self.state = copy.state
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
@@ -126,7 +126,7 @@ struct RegUniqueMovable(RegisterPassable):
     def __init__(out self):
         return
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
@@ -137,7 +137,7 @@ struct RegMovableCopyable(ImplicitlyCopyable, RegisterPassable):
     def __init__(out self, *, copy: Self):
         return
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
