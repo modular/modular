@@ -75,12 +75,14 @@ deepseek-ai/DeepSeek-R1-Distill-Llama-8B	6a6f4aa4197940add57724a7707d069478df56b
 deepseek-ai/DeepSeek-V2-Lite-Chat	85864749cd611b4353ce1decdb286193298f64c7
 deepseek-ai/DeepSeek-V3.1-Terminus	19510d6dc61f79dbd925bd51ee8a9081c509a4b6
 deepseek-ai/DeepSeek-V3.2-Exp	194c67e12b1b0d6df0ef373ddcf215bc84027409
+deepseek-ai/dspark_gemma4_12b_block7	2fa72e765eec2965fc4d86a8663ce6769eba6218
 fausap/peft-smollm2-lora-gtx1660	6b3a770dc8dceb01b1d1f4c593f1d516a03882c2
 google/diffusiongemma-26B-A4B-it	0f28bc42f588fbd8f71e08102b1c3960298a1358
 google/gemma-3-12b-it	96b6f1eccf38110c56df3a15bffe176da04bfd80
 google/gemma-3-1b-it	dcc83ea841ab6100d6b47a070329e1ba4cf78752
 google/gemma-3-27b-it	005ad3404e59d6023443cb575daa05336842228a
 google/gemma-3-4b-it	cf8f8525e9e9984d410dab2ea7f8a294ab58db8c
+google/gemma-4-12B-it	707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7
 google/gemma-4-26B-A4B-it	47b6801b24d15ff9bcd8c96dfaea0be9ed3a0301
 google/gemma-4-26B-A4B-it-assistant	d8888482e6d3cc4637fa8b25c1033cd3573b88ba
 google/gemma-4-31B-it	419b2efe421994fdfd3394e621983d4cc511cd4f

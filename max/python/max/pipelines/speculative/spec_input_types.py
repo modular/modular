@@ -38,6 +38,10 @@ class SpecDecodeInputTypeSpec:
     vision_hidden_size: int | None = None
     include_in_thinking_phase: bool = False
     enable_structured_output: bool = False
+    include_signal_buffers: bool = False
+    """Declare signal-buffer inputs even when not distributed, for targets
+    whose layers unconditionally use collectives (e.g. Gemma4's
+    VocabParallelEmbedding on a single device). Implied by ``distributed``."""
 
 
 def build_spec_decode_input_types(
@@ -50,10 +54,10 @@ def build_spec_decode_input_types(
     """Builds the canonical unified spec-decode graph input signature.
 
     Order: tokens, [vision], device_offsets, [host_offsets], return_n_logits,
-    [data_parallel_splits, signals], kv_cache_tree, [batch_context_lengths, ep],
-    draft_tokens, seed, temperature, top_k, max_k, top_p, min_top_p,
-    [in_thinking_phase], [bitmask triple]. Bracketed groups are gated by the
-    spec flags; the tail mirrors
+    [data_parallel_splits], [signals], kv_cache_tree,
+    [batch_context_lengths, ep], draft_tokens, seed, temperature, top_k,
+    max_k, top_p, min_top_p, [in_thinking_phase], [bitmask triple]. Bracketed
+    groups are gated by the spec flags; the tail mirrors
     ``UnifiedSpecDecodeInputs._spec_decode_tail_buffers``.
 
     ``kv_params`` is the unified ``{"target", "draft"}`` KV tree; its flattened
@@ -112,6 +116,7 @@ def build_spec_decode_input_types(
                 device=DeviceRef.CPU(),
             )
         )
+    if spec.distributed or spec.include_signal_buffers:
         all_input_types.extend(Signals(devices=devices).input_types())
 
     all_input_types.extend(kv_params.flattened_kv_inputs())

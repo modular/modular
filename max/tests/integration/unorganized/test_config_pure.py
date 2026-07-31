@@ -608,6 +608,22 @@ class TestSpeculativeArchitectureOverride:
         )
         assert self._resolved_arch(cfg) == "UnifiedMTPGemma4ForCausalLM"
 
+    def test_gemma4_unified_dspark(self) -> None:
+        cfg = self._make_config(
+            "Gemma4UnifiedForConditionalGeneration",
+            is_dflash=True,
+            draft_arch="Gemma4DSparkModel",
+        )
+        assert self._resolved_arch(cfg) == "UnifiedDSparkGemma4ForCausalLM"
+
+    def test_gemma4_unified_without_dspark_draft_is_noop(self) -> None:
+        cfg = self._make_config(
+            "Gemma4UnifiedForConditionalGeneration", draft_arch=None
+        )
+        assert (
+            self._resolved_arch(cfg) == "Gemma4UnifiedForConditionalGeneration"
+        )
+
     def test_no_speculative_is_noop(self) -> None:
         cfg = self._make_config(
             "DeepseekV3ForCausalLM", speculative=False, draft_arch=None

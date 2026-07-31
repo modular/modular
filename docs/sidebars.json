@@ -455,6 +455,7 @@
                 "api/python/pipelines.architectures.step3p5",
                 "api/python/pipelines.architectures.unified_dflash_kimi_k25",
                 "api/python/pipelines.architectures.unified_dflash_llama3",
+                "api/python/pipelines.architectures.unified_dspark_gemma4",
                 "api/python/pipelines.architectures.unified_eagle_llama3",
                 "api/python/pipelines.architectures.unified_mtp_deepseekV3",
                 "api/python/pipelines.architectures.unified_mtp_gemma4",

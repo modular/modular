@@ -37,8 +37,10 @@ only on full success. Progress lines go to stderr.
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
+from pathlib import Path
 
 import click
 from huggingface_hub import HfApi, snapshot_download
@@ -54,15 +56,60 @@ def _log(msg: str) -> None:
     click.echo(msg, err=True)
 
 
+def _snapshot_incomplete_reason(path: str) -> str | None:
+    """Return why the snapshot can't serve weights, or None if it looks whole.
+
+    A cached snapshot directory can resolve while missing content: an
+    interrupted download or blob eviction leaves the small config files in
+    place with no weights, and snapshot_download(local_files_only=True) only
+    checks that the directory exists (offline there is no manifest to verify
+    against). Serving needs every cached entry readable, at least one weight
+    file, and every shard named by a safetensors index.
+    """
+    root = Path(path)
+    weight_files: list[Path] = []
+    index_files: list[Path] = []
+    for entry in root.rglob("*"):
+        if entry.is_symlink() and not entry.exists():
+            return f"broken symlink (evicted blob?): {entry.relative_to(root)}"
+        if not entry.is_file():
+            continue
+        if entry.name.endswith((".safetensors", ".gguf")):
+            weight_files.append(entry)
+        elif entry.name.endswith(".safetensors.index.json"):
+            index_files.append(entry)
+    if not weight_files:
+        return "no weight files (*.safetensors / *.gguf) in the snapshot"
+    for index in index_files:
+        try:
+            weight_map = json.loads(index.read_text()).get("weight_map", {})
+        except (OSError, json.JSONDecodeError):
+            return f"unreadable safetensors index: {index.relative_to(root)}"
+        shards = {str(shard) for shard in weight_map.values()}
+        missing = sorted(
+            shard for shard in shards if not (index.parent / shard).is_file()
+        )
+        if missing:
+            return (
+                f"{index.relative_to(root)} names {len(missing)} missing "
+                f"shard(s), e.g. {missing[0]}"
+            )
+    return None
+
+
 def _cache_path(repo: str, revision: str | None) -> str | None:
-    """Return the snapshot path if cached locally, else None.
+    """Return the snapshot path if fully cached locally, else None.
 
     Uses local_files_only=True so this never opens a socket.
     """
     try:
-        return snapshot_download(repo, revision=revision, local_files_only=True)
+        path = snapshot_download(repo, revision=revision, local_files_only=True)
     except LocalEntryNotFoundError:
         return None
+    if reason := _snapshot_incomplete_reason(path):
+        _log(f"  Cached snapshot at {path} is incomplete: {reason}.")
+        return None
+    return path
 
 
 def _ensure(
@@ -79,7 +126,7 @@ def _ensure(
         _log(f"  Already cached at {path}")
         return repo
 
-    _log("  Not in the local cache.")
+    _log("  Not fully cached locally.")
 
     if HF_HUB_OFFLINE:
         _log(

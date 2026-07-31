@@ -20,7 +20,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.transformer import ReturnLogits
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import (
     _HIDDEN_ACTIVATION_MAP,
     Gemma3Config,
@@ -132,6 +132,14 @@ class Gemma4TextConfig(Gemma3Config):
 
     sliding_window_rope_theta: float = 10000.0
     """Rope theta used for the RoPE embeddings used in sliding window attention."""
+
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    """Which hidden states the text model returns alongside logits."""
+
+    target_layer_ids: list[int] | None = None
+    """For ``ReturnHiddenStates.SELECTED_LAYERS``, the zero-based layer
+    indices whose post-block hidden states are captured and concatenated
+    along the feature dimension (used by spec-decode drafters)."""
 
     layer_types: list[str]
 

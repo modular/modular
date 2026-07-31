@@ -61,6 +61,7 @@ def distributed_logits_postprocess(
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     logits_scaling: float = 1.0,
     logit_softcapping: float | None = None,
+    capture_hidden_states: list[list[TensorValue]] | None = None,
 ) -> tuple[TensorValue, ...]:
     """Common logits postprocessing for multi-device sharded models.
 
@@ -80,6 +81,9 @@ def distributed_logits_postprocess(
             states are passed directly to lm_head without normalization.
         return_hidden_states: Which hidden states to return.
         logits_scaling: Scaling factor for logits.
+        capture_hidden_states: For ``SELECTED_LAYERS`` mode, the per-layer
+            captured hidden states gathered during the layer loop. See
+            :func:`extract_hs`.
 
     Returns:
         Tuple of (last_logits, [logits, offsets], [hidden_states]).
@@ -169,6 +173,7 @@ def distributed_logits_postprocess(
         last_token_hs_distributed=last_token_h,
         all_hs_distributed=h,
         normalizer=norm_shards,
+        capture_hidden_states=capture_hidden_states,
     )
     return ret_val
 
@@ -196,6 +201,7 @@ class DistributedLogitsPostprocessMixin:
         input_row_offsets: Sequence[TensorValue],
         return_n_logits: TensorValue,
         signal_buffers: Sequence[BufferValue],
+        capture_hidden_states: list[list[TensorValue]] | None = None,
     ) -> tuple[TensorValue, ...]:
         return distributed_logits_postprocess(
             h,
@@ -209,6 +215,7 @@ class DistributedLogitsPostprocessMixin:
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
             logit_softcapping=self.logit_softcapping,
+            capture_hidden_states=capture_hidden_states,
         )
 
 

@@ -66,6 +66,7 @@ family.
    pipelines.architectures.step3p5
    pipelines.architectures.unified_dflash_kimi_k25
    pipelines.architectures.unified_dflash_llama3
+   pipelines.architectures.unified_dspark_gemma4
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
    pipelines.architectures.unified_mtp_gemma4
@@ -119,6 +120,7 @@ Text generation
    ~max.pipelines.architectures.step3p5
    ~max.pipelines.architectures.unified_dflash_kimi_k25
    ~max.pipelines.architectures.unified_dflash_llama3
+   ~max.pipelines.architectures.unified_dspark_gemma4
    ~max.pipelines.architectures.unified_eagle_llama3
    ~max.pipelines.architectures.unified_mtp_deepseekV3
    ~max.pipelines.architectures.unified_mtp_gemma4

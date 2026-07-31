@@ -53,7 +53,7 @@ from max.graph import (
 )
 from max.nn.comm.allreduce import Signals
 from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.transformer import ReturnLogits
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     create_empty_embeddings,
     create_empty_indices,
@@ -789,3 +789,123 @@ def test_text_model_execution_matches_torch(seq_len: int) -> None:
         rtol=0.02,
         atol=0.07,
     )
+
+
+def test_text_model_selected_layer_hidden_states() -> None:
+    """SELECTED_LAYERS returns per-layer post-block taps at target_layer_ids.
+
+    Spec-decode drafters (DFlash/DSpark) condition on the target's hidden
+    states at a fixed set of layers, fusing the per-layer taps themselves
+    (see ``fuse_captured_hidden_states``). Verifies both the per-tap shape
+    ``[seq, hidden]`` and, against the torch reference with per-layer
+    forward hooks, that the captures come from the right layers in order.
+    """
+    device = Accelerator(0)
+    device_ref = DeviceRef.GPU()
+    seq_len = 4
+    target_layer_ids = [1, 3, 5]
+
+    config = _make_small_model_config([device_ref])
+    config.text_config.return_hidden_states = ReturnHiddenStates.SELECTED_LAYERS
+    config.text_config.target_layer_ids = target_layer_ids
+    max_model = Gemma4TextModel(config)
+    _stub_attention_shards(max_model)
+
+    torch_model = TorchGemma4TextModel(
+        vocab_size=_EXEC_VOCAB,
+        hidden_size=_EXEC_HIDDEN,
+        num_hidden_layers=_EXEC_NUM_LAYERS,
+        intermediate_size=_EXEC_INTERMEDIATE,
+        hidden_activation=TEXT_HIDDEN_ACTIVATION,
+        rms_norm_eps=TEXT_RMS_NORM_EPS,
+        layer_types=_EXEC_LAYER_TYPES,
+        attn_factory=_torch_identity_attn_factory,
+    )
+
+    shared_weights = _build_shared_weights(max_model)
+    max_model.load_state_dict(shared_weights)
+    torch_model.load_state_dict(shared_weights, strict=False)
+
+    torch.manual_seed(99)
+    tokens = torch.randint(0, _EXEC_VOCAB, (seq_len,), dtype=torch.int64)
+
+    # Capture each tapped layer's post-block output (torch layers return a
+    # tuple whose first element is the hidden state).
+    captured: dict[int, torch.Tensor] = {}
+
+    def _make_hook(layer_id: int) -> Any:
+        def _hook(module: torch.nn.Module, args: Any, output: Any) -> None:
+            captured[layer_id] = output[0].detach()
+
+        return _hook
+
+    for layer_id in target_layer_ids:
+        torch_model.layers[layer_id].register_forward_hook(_make_hook(layer_id))
+    torch_model = torch_model.to(TORCH_DTYPE)
+    with torch.no_grad():
+        torch_model(tokens)
+    torch_taps = torch.cat(
+        [captured[i] for i in target_layer_ids], dim=-1
+    ).float()
+
+    signals = Signals([device_ref])
+    session = InferenceSession(devices=[device])
+    with Graph(
+        "test_text_model_selected_layers",
+        input_types=[
+            TensorType(DType.int64, [seq_len], device=device_ref),
+            TensorType(DType.uint32, [2], device=device_ref),
+            TensorType(DType.uint32, [1], device=DeviceRef.CPU()),
+            *signals.input_types(),
+        ],
+    ) as graph:
+        tokens_in, row_offsets_in, return_n_logits_in, signal_buf = graph.inputs
+        assert isinstance(tokens_in, TensorValue)
+        assert isinstance(row_offsets_in, TensorValue)
+        assert isinstance(return_n_logits_in, TensorValue)
+        assert isinstance(signal_buf, BufferValue)
+
+        results = max_model(
+            tokens_in,
+            signal_buffers=[signal_buf],
+            sliding_kv_collections=[None],  # type: ignore[list-item]
+            global_kv_collections=[None],  # type: ignore[list-item]
+            return_n_logits=return_n_logits_in,
+            input_row_offsets=[row_offsets_in],
+            image_embeddings=[
+                ops.constant(
+                    create_empty_embeddings(
+                        [device], _EXEC_HIDDEN, DType.bfloat16
+                    )[0]
+                )
+            ],
+            image_token_indices=[
+                ops.constant(create_empty_indices([device])[0])
+            ],
+        )
+        # LAST_TOKEN logits + SELECTED_LAYERS returns
+        # (last_logits, *per_layer_taps), one tap per target layer.
+        graph.output(*results[1:])
+
+    compiled = session.load(graph, weights_registry=max_model.state_dict())
+
+    tokens_gpu = Buffer.from_dlpack(tokens).to(device)
+    row_offsets = torch.tensor([0, seq_len], dtype=torch.uint32)
+    row_offsets_gpu = Buffer.from_dlpack(row_offsets).to(device)
+    return_n_logits = torch.tensor([1], dtype=torch.uint32)
+    result_bufs = compiled.execute(
+        tokens_gpu, row_offsets_gpu, return_n_logits, *signals.buffers()
+    )
+    assert len(result_bufs) == len(target_layer_ids), (
+        f"Expected {len(target_layer_ids)} taps, got {len(result_bufs)}"
+    )
+    tap_tensors: list[torch.Tensor] = []
+    for result_buf in result_bufs:
+        assert isinstance(result_buf, Buffer)
+        tap = torch.from_dlpack(result_buf).cpu().float()
+        assert tap.shape == (seq_len, _EXEC_HIDDEN), (
+            f"Unexpected tap shape {tuple(tap.shape)}"
+        )
+        tap_tensors.append(tap)
+    max_taps = torch.cat(tap_tensors, dim=-1)
+    torch.testing.assert_close(torch_taps, max_taps, rtol=0.02, atol=0.5)
