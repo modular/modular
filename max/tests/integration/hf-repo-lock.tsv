@@ -29,10 +29,7 @@ Qwen/Qwen2.5-VL-32B-Instruct	7cfb30d71a1f4f49a57592323337a4a4727301da
 Qwen/Qwen2.5-VL-3B-Instruct	66285546d2b821cf421d4f5eb2576359d3770cd3
 Qwen/Qwen2.5-VL-7B-Instruct	cc594898137f460bfe9f0759e9844b3ce807cfb5
 Qwen/Qwen3-14B	40c069824f4251a91eefaf281ebe4c544efd3e18
-Qwen/Qwen3-235B-A22B-Instruct-2507	ac9c66cc9b46af7306746a9250f23d47083d689e
 Qwen/Qwen3-30B-A3B	f0abbbee7f4db139f64a2c3be5dc133fd7328acb
-Qwen/Qwen3-30B-A3B-Instruct-2507	0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe
-Qwen/Qwen3-30B-A3B-Instruct-2507-FP8	5a5a776300a41aaa681dd7ff0106608ef2bc90db
 Qwen/Qwen3-32B	d47b0d4ae4b48fde975756bf360a63a9cca8d470
 Qwen/Qwen3-4B	1cfa9a7208912126459214e8b04321603b3df60c
 Qwen/Qwen3-8B	895c8d171bc03c30e113cd7a28c02494b5e068b7
@@ -42,8 +39,6 @@ Qwen/Qwen3-Embedding-8B	1d8ad4ca9b3dd8059ad90a75d4983776a23d44af
 Qwen/Qwen3-VL-235B-A22B-Instruct	710c13861be6c466e66de3f484069440b8f31389
 Qwen/Qwen3-VL-30B-A3B-Instruct	9c4b90e1e4ba969fd3b5378b57d966d725f1b86c
 Qwen/Qwen3-VL-30B-A3B-Instruct-FP8	d9748a51ae66354c4dad665aab2c71f26cf2c8cd
-Qwen/Qwen3-VL-30B-A3B-Thinking	d0ed0380729be07a546fdefafbb4fe411f341e92
-Qwen/Qwen3-VL-4B-Instruct	ebb281ec70b05090aa6165b016eac8ec08e71b17
 Qwen/Qwen3-VL-4B-Instruct-FP8	fefbb44cbcce8d1bb7e20b920b94f77432b3446d
 Qwen/Qwen3.5-9B	c202236235762e1c871ad0ccb60c8ee5ba337b9a
 Qwen/Qwen3.6-27B	6a9e13bd6fc8f0983b9b99948120bc37f49c13e9
@@ -142,7 +137,6 @@ sentence-transformers/all-mpnet-base-v2	9a3225965996d404b775526de6dbfe85d3368642
 stepfun-ai/Step-3.5-Flash	ab446a3de5e171ea341227e24bb1f090e1b771f7
 tngtech/OLMo-2-Instruct-Math-32B	a56b4594c7a3aa5c72c893519d962607be46db5e
 trl-internal-testing/tiny-random-LlamaForCausalLM	2c542e4731d42d3bb68324c4eca16df9f93b8b33
-unsloth/gpt-oss-20b-BF16	cc89b3e7fd423253264883a80a4fa5abc619649f
 z-lab/Kimi-K2.5-DFlash	e2db14df8337367b5eae8a6c206ea0d7d01a42a8
 z-lab/LLaMA3.1-8B-Instruct-DFlash-UltraChat	d3af30def9601abdd10810aba220d692f0e803f0
 zai-org/GLM-5.1-FP8	f396cf805182f4ca10fa675e1a99815b3ca384db

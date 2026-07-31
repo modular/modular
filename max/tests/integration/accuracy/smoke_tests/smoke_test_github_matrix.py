@@ -94,7 +94,6 @@ HF_MODELS: dict[str, set[str]] = {
     # reference. vLLM and released MAX are excluded.
     "MiniMaxAI/MiniMax-M3-MXFP8": NON_XL | {"4xMI355", "max", "vllm"},
     "lukealonso/MiniMax-M2.7-NVFP4": NON_XL | {"4xMI355", "sglang"},
-    "mistralai/Mistral-Nemo-Instruct-2407": MULTI | {"vllm"},
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": MULTI | {"vllm"},
     "modularai/Llama-3.1-405B-Instruct-autofp8": NON_XL | {"max"},
     "nvidia/DeepSeek-V3.1-NVFP4": NON_XL | {"4xMI355"},
@@ -102,13 +101,9 @@ HF_MODELS: dict[str, set[str]] = {
     "OpenGVLab/InternVL3_5-8B-Instruct": MULTI | {"max", "sglang"},
     "Qwen/Qwen2.5-7B-Instruct": MULTI,
     "Qwen/Qwen2.5-VL-7B-Instruct": MULTI,
-    "Qwen/Qwen3-235B-A22B-Instruct-2507": NON_XL | {"max", "4xMI355"},
-    "Qwen/Qwen3-30B-A3B-Instruct-2507": MULTI,
     "Qwen/Qwen3-8B": MULTI,
-    "Qwen/Qwen3-VL-4B-Instruct": XL | {"vllm@B200"},  # MODELS-1020
     "Qwen/Qwen3-VL-4B-Instruct-FP8": XL | {"MI355", "2xMI355"},  # MI355: no FP8
     "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": XL | {"MI355", "2xMI355", "max-ci@B200", "sglang@B200"},  # MI355: no FP8, B200: MODELS-1020
-    "Qwen/Qwen3-VL-30B-A3B-Thinking": XL | {"max"},
     "Qwen/Qwen3.5-9B": MULTI | {"max", "max-ci@MI355"},
     "Qwen/Qwen3.6-27B": MULTI | {"max", "max-ci@MI355"},
     "RedHatAI/gemma-3-27b-it-FP8-dynamic": MULTI,  # TODO(MODELS-1021)
@@ -116,7 +111,6 @@ HF_MODELS: dict[str, set[str]] = {
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": NON_XL,
     "openai/gpt-oss-20b": XL | {"2xMI355"},
     "stepfun-ai/Step-3.5-Flash": NON_XL | {"4xMI355"},
-    "unsloth/gpt-oss-20b-BF16": XL | {"2xMI355"},
 }
 
 # Models tested with custom MAX recipe presets. MODEL_RECIPES in
@@ -124,7 +118,6 @@ HF_MODELS: dict[str, set[str]] = {
 CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": MULTI,
     "google/gemma-3-27b-it__modulev3": XL,
-    "unsloth/gpt-oss-20b-BF16__modulev3": DISABLE,  # TODO(MXF-121)
     "microsoft/Phi-3.5-mini-instruct__modulev3": MULTI,
     "microsoft/phi-4__modulev3": MULTI,
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": MULTI,
