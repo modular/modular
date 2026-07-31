@@ -65,6 +65,7 @@ from .module import (
 from .norm import GemmaRMSNorm, GroupNorm, LayerNorm, RMSNorm
 from .rope import RotaryEmbedding, TransposedRotaryEmbedding
 from .sequential import ModuleList, Sequential
+from .transparent_module import TransparentModule
 
 __all__ = [
     "CompiledModel",
@@ -80,6 +81,7 @@ __all__ = [
     "RMSNorm",
     "RotaryEmbedding",
     "Sequential",
+    "TransparentModule",
     "TransposedRotaryEmbedding",
     "module_dataclass",
     "subgraphable",

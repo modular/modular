@@ -20,6 +20,7 @@ modular_eager_py_test(
         "test_print_hook.py",
         "test_sequential.py",
         "test_subgraph.py",
+        "test_transparent_module.py",
     ],
     cpu_only = True,
     data = ["//max/tests/integration/Inputs/kernel_verification_ops"],

@@ -477,10 +477,26 @@ class Module(Generic[_P, _R]):
             dot-separated qualified path of the parameter and ``parameter``
             is the :class:`~max.experimental.tensor.Tensor`.
         """
+        seen: set[str] = set()
+        for name, parameter in self._named_parameters():
+            if name in seen:
+                raise ValueError(
+                    f"duplicate parameter path {name!r}: two parameters "
+                    "resolve to the same qualified name (see _qualify_name)."
+                )
+            seen.add(name)
+            yield name, parameter
+
+    def _named_parameters(self) -> Iterable[tuple[str, Tensor]]:
+        """Yields ``(name, parameter)`` without the duplicate-path check.
+
+        Recurses into each child, qualifying the child's names with
+        :meth:`_qualify_name`.
+        """
         yield from self.local_parameters
-        for prefix, descendant in self.descendants:
-            for name, parameter in descendant.local_parameters:
-                yield f"{prefix}.{name}", parameter
+        for prefix, child in self.children:
+            for name, parameter in child._named_parameters():
+                yield child._qualify_name(prefix, name), parameter
 
     @property
     def children(self) -> Iterable[tuple[str, Module[..., Any]]]:
@@ -505,7 +521,17 @@ class Module(Generic[_P, _R]):
         for prefix, child in self.children:
             yield prefix, child
             for name, descendant in child.descendants:
-                yield f"{prefix}.{name}", descendant
+                yield child._qualify_name(prefix, name), descendant
+
+    def _qualify_name(self, prefix: str, name: str) -> str:
+        """Qualifies a descendant's ``name`` with this module's ``prefix``.
+
+        ``name`` is given relative to this module; the default prepends
+        ``prefix`` (dot-joined). This is the one place the name-to-path rule
+        lives -- override to change how (or whether) this module's name appears
+        in its descendants' paths.
+        """
+        return f"{prefix}.{name}"
 
     def apply_to_local_parameters(
         self, f: Callable[[str, Tensor], Tensor]
@@ -582,12 +608,13 @@ class Module(Generic[_P, _R]):
         """
         self.apply_to_local_parameters(f)
         for prefix, child in self.children:
-            # Bind an explicit reference to `prefix` into the closure
-            # See https://stackoverflow.com/a/54289183
             child.apply_to_parameters(
                 functools.partial(
-                    (lambda prefix, name, t: f(f"{prefix}.{name}", t)),
+                    lambda prefix, child, name, t: f(
+                        child._qualify_name(prefix, name), t
+                    ),
                     prefix,
+                    child,
                 )
             )
 
@@ -899,7 +926,7 @@ class Module(Generic[_P, _R]):
             primary_device = target.devices[0]
         else:
             raise TypeError(
-                f"to() expects Device, DeviceMesh, or DeviceMapping, "
+                "to() expects Device, DeviceMesh, or DeviceMapping, "
                 f"got {type(target).__name__}"
             )
 
