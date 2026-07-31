@@ -99,7 +99,7 @@ obtains a reference to the GPU device. Using any editor, create a file named
 `vector_addition.mojo` with the following code:
 
 ```mojo title="vector_addition.mojo"
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys import has_accelerator
 
 def main() raises:
@@ -196,7 +196,7 @@ Modify the `main()` function so that your program looks like this:
 ```mojo title="vector_addition.mojo"
 from std.sys import has_accelerator
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
 
 
@@ -466,7 +466,7 @@ After making these changes, your `vector_addition.mojo` file should look like
 this:
 
 ```mojo title="vector_addition.mojo"
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
 from std.sys import has_accelerator
 
@@ -751,7 +751,7 @@ back to the CPU. Add the following code to the end of the `main()` function:
 from std.math import ceildiv
 from std.sys import has_accelerator
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_dim, block_idx, thread_idx
 from layout import TileTensor, row_major
 

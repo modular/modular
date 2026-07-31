@@ -13,7 +13,7 @@
 
 from std.sys import has_accelerator
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_dim, block_idx, global_idx, thread_idx
 
 

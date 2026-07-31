@@ -13,7 +13,7 @@
 
 # start-initialize-tensor-from-cpu-example
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor, stack_allocation, row_major
 from std.sys import has_accelerator
 

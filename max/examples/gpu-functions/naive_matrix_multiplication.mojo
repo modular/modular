@@ -16,7 +16,7 @@ from std.math import ceildiv
 from std.sys import has_accelerator
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 
 comptime float_dtype = DType.float32

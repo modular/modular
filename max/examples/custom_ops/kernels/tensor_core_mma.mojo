@@ -30,7 +30,7 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,

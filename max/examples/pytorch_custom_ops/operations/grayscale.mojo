@@ -15,7 +15,7 @@
 
 import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from extensibility import InputTensor, OutputTensor, foreach
 
 from std.utils.coord import Coord, coord_to_index_list

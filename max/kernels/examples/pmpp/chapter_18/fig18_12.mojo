@@ -23,7 +23,7 @@ on unvisited vertices are harmless as they all write the same level.
 """
 
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.atomic import Atomic
 from std.collections import List
 

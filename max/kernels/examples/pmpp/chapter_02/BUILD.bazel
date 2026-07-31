@@ -21,6 +21,7 @@ _NO_MAIN = [
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"],
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
         ],
     )

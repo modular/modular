@@ -18,7 +18,7 @@ reducing contention on global memory atomics.
 """
 
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 from std.atomic import Atomic

@@ -21,7 +21,7 @@ multiple grid point calculations.
 
 from std.math import sqrt
 from std.gpu import block_idx, thread_idx, block_dim
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.itertools import product
 
 from dcs_utils import GridDim, init_atoms, verify_grid

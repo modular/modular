@@ -292,7 +292,7 @@ initializing a `TileTensor` from the CPU and passing it to a GPU kernel.
 
 ```mojo
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor, stack_allocation
 from layout.tile_layout import row_major
 
@@ -750,7 +750,7 @@ from std.gpu import (
     barrier,
     WARP_SIZE,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import async_copy_commit_group, async_copy_wait_all
 from layout import TileTensor, stack_allocation
 from layout.tile_io import GenericToSharedAsyncTileCopier, SharedToGenericTileCopier

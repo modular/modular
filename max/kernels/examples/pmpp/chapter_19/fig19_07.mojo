@@ -24,7 +24,7 @@ The grid dimensions are organized as:
 """
 
 from std.gpu import block_idx, thread_idx, grid_dim
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from conv_utils import idx_x, idx_f, idx_y, conv_cpu, init_data, verify_results
 

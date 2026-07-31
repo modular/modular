@@ -19,6 +19,7 @@ _USES_EXTERNAL_MEMORY = [
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"],
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
         ],
     )
@@ -39,6 +40,7 @@ _USES_EXTERNAL_MEMORY = [
             "//conditions:default": [],
         }),
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
         ],
     )
