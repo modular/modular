@@ -627,7 +627,7 @@ struct Variant[*Ts: AnyType](
         Constraints:
             All types in `Ts` must conform to `ImplicitlyDeletable`.
         """
-        self._storage^.__del__()
+        self._storage^.__deinit__()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -960,7 +960,7 @@ struct Variant[*Ts: AnyType](
         # Destroy-then-emplace is exception-safe only because `init_with` cannot
         # raise (closure types are not `raises`); a throw here would leave the
         # discriminant set with no value written for `__del__` to destroy.
-        self._storage^.__del__()
+        self._storage^.__deinit__()
         self._storage = Self._Storage(unsafe_uninitialized=())
         self._storage.unsafe_set_active[T]()
         # Placement-new the replacement value directly into the storage slot.

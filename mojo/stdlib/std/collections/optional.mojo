@@ -837,8 +837,8 @@ struct Optional[T: AnyType](
         else:
             # Retire the empty `Optional` by destroying its `_NoneType`
             # payload through `Variant.deinit_with`. `_NoneType` is
-            # trivially destructible, so `_NoneType.__del__` is a no-op.
-            self._value^.deinit_with[_NoneType](_NoneType.__del__)
+            # trivially destructible, so `_NoneType.__deinit__` is a no-op.
+            self._value^.deinit_with[_NoneType](_NoneType.__deinit__)
 
     def deinit_assert_empty(deinit self):
         """Destroys an empty `Optional`, asserting that it holds no value.
@@ -860,7 +860,7 @@ struct Optional[T: AnyType](
             not self,
             "`deinit_assert_empty()` called on a non-empty `Optional`",
         )
-        self._value^.deinit_with[_NoneType](_NoneType.__del__)
+        self._value^.deinit_with[_NoneType](_NoneType.__deinit__)
 
     def or_else(
         deinit self, var default: Self.T

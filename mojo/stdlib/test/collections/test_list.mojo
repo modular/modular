@@ -1079,7 +1079,7 @@ def test_list_dtor() raises:
     l.append(DelCounter(ptr))
     assert_equal(dtor_count, 0)
 
-    l^.__del__()
+    l^.__deinit__()
     assert_equal(dtor_count, 1)
 
 
@@ -1090,7 +1090,7 @@ def test_destructor_trivial_elements() raises:
     var l = List[DelCounter[ptr.origin, trivial_del=True]]()
     l.append(DelCounter[ptr.origin, trivial_del=True](ptr))
 
-    l^.__del__()
+    l^.__deinit__()
 
     assert_equal(dtor_count, 0)
 

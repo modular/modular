@@ -227,7 +227,7 @@ def test_variant_linear_type_deinit_with() raises:
 
     # Test destroying a non-linear variant element in-place
     var v2 = Variant[ExplicitDelOnly, String]("notlinear")
-    v2^.deinit_with[String](String.__del__)
+    v2^.deinit_with[String](String.__deinit__)
 
 
 def test_variant_pinned_linear_type_deinit_with() raises:

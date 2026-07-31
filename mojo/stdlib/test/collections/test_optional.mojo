@@ -481,7 +481,7 @@ def _unwrap_linear_opt(var x: ExplicitDelOnly) -> Optional[Int]:
 
 def test_map_linear_type() raises:
     # `map` moves the linear value out and consumes the `Optional`; the
-    # emptied `Optional` is destroyed without instantiating `Variant.__del__`.
+    # emptied `Optional` is destroyed without instantiating `Variant.__deinit__`.
     var opt = Optional(ExplicitDelOnly(5))
     var result = opt^.map(_unwrap_linear)
     assert_equal(result.value(), 5)
@@ -606,10 +606,10 @@ def test_optional_niched_storage_deinit_with() raises:
     var some = Optional[PointerType](
         Pointer(to=x).unsafe_origin_cast[AnyOrigin[mut=True]]()
     )
-    some^.deinit_with(PointerType.__del__)
+    some^.deinit_with(PointerType.__deinit__)
 
     var empty = Optional[PointerType](None)
-    empty^.deinit_with(PointerType.__del__)
+    empty^.deinit_with(PointerType.__deinit__)
 
     var empty2 = Optional[PointerType](None)
     empty2^.deinit_assert_empty()

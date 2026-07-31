@@ -595,7 +595,7 @@ def test_list_dtor() raises:
     l.append(DelCounter(ptr))
     assert_equal(dtor_count, 0)
 
-    l^.__del__()
+    l^.__deinit__()
     assert_equal(dtor_count, 1)
 
 
