@@ -26,7 +26,7 @@ from layout import Layout, LayoutTensor
 from std.gpu import barrier, thread_idx
 from max.gpu.host import DeviceContext, FuncAttribute
 from std.testing import assert_false
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, external_memory
 from layout import Layout, LayoutTensor
 

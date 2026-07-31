@@ -34,7 +34,7 @@ from std.gpu.memory import (
     ReduceOp,
 )
 from std.gpu.sync import cp_async_bulk_commit_group
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from structured_kernels.barriers import WarpGroupBarrier
 from layout import (
     Coord,

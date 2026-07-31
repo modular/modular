@@ -64,7 +64,7 @@ from std.gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
 )
 import std.gpu.primitives.warp as warp
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 from layout import Layout, RowMajorLayout, TileTensor, row_major
 from layout.tma_async import SharedMemBarrier, TMATensorTile, _idx_product

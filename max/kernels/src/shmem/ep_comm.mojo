@@ -54,7 +54,7 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import (
     external_memory,
     fence_async_view_proxy,

@@ -43,7 +43,7 @@ from std.gpu import WARP_SIZE, block_idx, lane_id
 from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from std.gpu.sync import syncwarp
-from std.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from std.sys import inlined_assembly
 from layout import (
     Coord,

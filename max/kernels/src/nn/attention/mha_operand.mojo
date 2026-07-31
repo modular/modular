@@ -18,7 +18,7 @@ TMA (tensor memory accelerator) descriptors are constructed for them.
 """
 
 from max.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
 from kv_cache.types import (
     KVCacheT,
     PagedRowIndices,

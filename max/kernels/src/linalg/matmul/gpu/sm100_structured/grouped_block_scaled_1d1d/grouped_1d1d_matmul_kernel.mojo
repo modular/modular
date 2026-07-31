@@ -78,7 +78,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 from layout.tma_async import PipelineState
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
     Idx,

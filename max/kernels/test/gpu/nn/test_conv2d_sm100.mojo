@@ -42,7 +42,7 @@ from layout import (
     row_major,
 )
 from max.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from nn.conv.conv import conv_gpu
 from nn.conv.conv_utils import elementwise_simd_epilogue_type

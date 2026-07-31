@@ -23,7 +23,7 @@ from std.math import ceildiv
 from std.sys import size_of
 from linalg.matmul.gpu.sm100.config import MatmulConfig, GEMMKind
 from max.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from internal_utils import (
     assert_almost_equal,

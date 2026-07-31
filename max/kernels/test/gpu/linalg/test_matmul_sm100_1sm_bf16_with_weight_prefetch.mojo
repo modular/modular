@@ -22,7 +22,7 @@ from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.primitives.grid_controls import PDLLevel
 from linalg.utils import elementwise_epilogue_type
 
