@@ -118,7 +118,7 @@ def test_multiple_undefined_vars():
 # =============================================================================
 
 def test_unmaterializable_value_in_tstring():
-    comptime l = [1, 2, 3]
+    comptime l: List[Int] = [1, 2, 3]
     # expected-error @below {{cannot materialize comptime value of type 'List[Int]' to runtime because it is not 'ImplicitlyCopyable'}}
     # expected-note @below {{use 'materialize' to explicitly materialize the value}}
     _ = t"List: {l}"

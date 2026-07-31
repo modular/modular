@@ -88,7 +88,7 @@ def test_list_literal():
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create
     # CHECK: [[NONE_MARKER:%.*]] = kgen.param.constant: !NoneType
-    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[NONE_MARKER]], %a)
+    # CHECK: lit.call {{.*}}@Array::@"__init__{{.*}}({{.*}}, [[NONE_MARKER]], %a)
     var a = [1, 2, 3]
 
     # CHECK-DAG: [[TMP1:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>

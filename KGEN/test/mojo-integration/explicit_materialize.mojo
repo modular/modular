@@ -8,7 +8,7 @@
 
 
 def make_int_list() -> List[Int]:
-    var l = [1, 2, 3]
+    var l: List = [1, 2, 3]
     return l^
 
 

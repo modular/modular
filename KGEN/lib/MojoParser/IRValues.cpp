@@ -654,11 +654,11 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
 
     // Add the __list_literal__ kwarg.
     addNoneLiteralMarker(operands, "__list_literal__", emitter);
-    auto listType = emitter.shared.getStandardCollectionType(
-        get().callExpr->getLoc(), "List");
-    if (!listType)
+    auto arrayType = emitter.shared.getStandardCollectionType(
+        get().callExpr->getLoc(), "Array");
+    if (!arrayType)
       return {};
-    return emitter.emitConstructorCall(listType, std::move(operands));
+    return emitter.emitConstructorCall(arrayType, std::move(operands));
   }
   case Syntax::kDictLiteral: {
     // Let the nested list literals try to infer their own common element
