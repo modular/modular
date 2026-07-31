@@ -13,7 +13,7 @@
 
 
 from max.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host.compile import _compile_code
 from std.gpu.memory import CacheEviction, async_copy
 from std.gpu.sync import async_copy_arrive, mbarrier_init, mbarrier_test_wait
 from std.memory import unsafe_stack_allocation

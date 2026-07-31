@@ -10,24 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Re-exports accelerator compile functionality from `std.gpu.host.compile`."""
 
-from max.gpu.host import get_gpu_target
-from max.gpu.host.compile import _compile_code
-
-
-def outer[y: Int]():
-    @parameter
-    def param[x: Int](y: SIMD[DType.float32, y], /):
-        pass
-
-    print(
-        _compile_code[
-            param[y],
-            target=get_gpu_target["sm_90a"](),
-        ]()
-    )
-
-
-def main():
-    # CHECK: .debug_
-    outer[2]()
+from std.gpu.host.compile import *
+from std.gpu.host.compile import (
+    _cross_compilation,
+    _compile_code,
+    _to_sass,
+    _ptxas_compile,
+)

@@ -14,7 +14,7 @@
 
 import std.sys
 
-from std.gpu.host.compile import _compile_code, get_gpu_target
+from max.gpu.host.compile import _compile_code, get_gpu_target
 from layout import Coord, Idx
 from std.testing import assert_true
 

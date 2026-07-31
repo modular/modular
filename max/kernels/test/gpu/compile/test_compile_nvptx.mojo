@@ -17,7 +17,7 @@ from std.sys._assembly import inlined_assembly
 
 from std.gpu import barrier, thread_idx
 from max.gpu.host import DeviceContext
-from std.gpu.host.compile import _compile_code
+from max.gpu.host.compile import _compile_code
 from max.gpu.host.info import A100
 from std.memory import unsafe_stack_allocation
 

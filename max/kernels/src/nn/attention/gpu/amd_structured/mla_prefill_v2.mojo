@@ -108,7 +108,7 @@ from std.gpu import (
 )
 from max.gpu.compute.mma import mma as gpu_mma
 from max.gpu.host import DeviceContext
-from std.gpu.host.compile import CompilationTarget
+from max.gpu.host.compile import CompilationTarget
 from std.gpu.sync import s_waitcnt
 from std.math import ceildiv
 from std.memory import AddressSpace

@@ -101,7 +101,7 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.host import DeviceContext
-from std.gpu.host.compile import CompilationTarget
+from max.gpu.host.compile import CompilationTarget
 from std.math import ceildiv
 from std.gpu.sync import (
     AMDScheduleBarrierMask,
