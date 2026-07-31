@@ -51,7 +51,7 @@ def test_erf_libm() raises:
     ####################
     var y32 = alloc[Scalar[test_dtype]](N)
     for i in range(N):
-        y32[i] = erf(x32[i])  # math.erf
+        y32[unsafe_offset=i] = erf(x32[unsafe_offset=i])  # math.erf
 
     ####################
     ## libm erf result
@@ -64,7 +64,7 @@ def test_erf_libm() raises:
 
     var libm_out = alloc[Scalar[test_dtype]](N)
     for i in range(N):
-        libm_out[i] = erf_libm(x32[i])
+        libm_out[unsafe_offset=i] = erf_libm(x32[unsafe_offset=i])
 
     # abs_rel_err = (abs_min, abs_max, rel_min, rel_max)
     var abs_rel_err = SIMD[test_dtype, 4](
