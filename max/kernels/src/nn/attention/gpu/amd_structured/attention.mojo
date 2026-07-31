@@ -39,7 +39,7 @@ from layout.tile_layout import (
     Layout as TileLayout,
 )
 from layout.coord import Coord
-from structured_kernels.amd_tile_io import RegTileWriter
+from structured_kernels.amd_tile_io import RegTileEpilogue, RegTileWriter
 from layout.tensor_core import num_matrix_reg
 from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
@@ -334,9 +334,14 @@ struct Attention[
             or Self.amd_structured_config.double_buffer_k_only
         ) else 1
     )
+    comptime _v_smem_physical_depth = ceildiv(
+        Self.depth, Self._bk_smem
+    ) * Self._bk_smem
     comptime _v_smem_size = (
         Self.BN if Self.amd_structured_config.full_kv else Self.BK
-    ) * Self.depth * (2 if Self.amd_structured_config.double_buffer else 1)
+    ) * Self._v_smem_physical_depth * (
+        2 if Self.amd_structured_config.double_buffer else 1
+    )
     comptime _max_kv_smem_size = max(Self._k_smem_size, Self._v_smem_size)
 
     comptime QRegisterBufferType = QRegisterBuffer[
@@ -349,6 +354,11 @@ struct Attention[
         depth=Self.q_depth,
         thread_rows=Self.warp_rows,
         thread_cols=Self.warp_cols,
+        zero_partial_tile_pad=(
+            Self.token_gen
+            or Self.depth % Self.BK == 0
+            or Self.depth % Self.BK % Self.mma_shape[2] != 0
+        ),
     ]
 
     # --- MMA op alias ---
@@ -1022,11 +1032,6 @@ struct Attention[
         var output_warp_tile = self.output_tile.tile[
             Self.WM, Self.output_depth // Self.num_warps_n
         ](self.warp_row, self.warp_col)
-        var writer = RegTileWriter[
-            Self.output_type,
-            Self.warp_rows,
-            Self.warp_cols,
-        ](self.output_tile)
         # vectorize[1, 4] works for both MMA sizes:
         #  - 16×16: output_frag_size == 4, so [1, 4] = [frag_num_rows,
         #    output_frag_size] exactly.
@@ -1046,10 +1051,11 @@ struct Attention[
         comptime sub_layout = row_major[
             Self.num_n_mmas_output, Self.output_frag_size
         ]()
+        comptime output_cols_per_warp = (Self.output_depth // Self.num_warps_n)
         comptime for m_mma in range(Self.num_m_mmas):
             var sub_warp_tile = output_warp_tile.tile[
                 Self.mma_shape[0],
-                Self.output_depth // Self.num_warps_n,
+                output_cols_per_warp,
             ](m_mma, 0)
             var sub_reg = tt_stack_allocation[
                 Self.accum_type, address_space=AddressSpace.LOCAL
@@ -1059,10 +1065,50 @@ struct Attention[
                     sub_reg[n_mma, k] = self.out_reg_buffer.reg_tile[
                         n_mma * Self.num_m_mmas + m_mma, k
                     ]
-            writer.store[mfma32=Self.mma_shape[0] == 32](
-                sub_warp_tile.vectorize[1, 4](),
-                sub_reg,
-            )
+            comptime if output_cols_per_warp % Self.mma_shape[1] == 0:
+                var writer = RegTileWriter[
+                    Self.output_type,
+                    Self.warp_rows,
+                    Self.warp_cols,
+                ](self.output_tile)
+                writer.store[mfma32=Self.mma_shape[0] == 32](
+                    sub_warp_tile.vectorize[1, 4](),
+                    sub_reg,
+                )
+            else:
+                comptime assert Self.mma_shape[0] == 32
+                var lane = Int(lane_id())
+                var output_row = (
+                    self.warp_row * Self.WM
+                    + m_mma * Self.mma_shape[0]
+                    + (lane & 31)
+                )
+                var lane_col_offset = 4 if lane >= 32 else 0
+                var epilogue = RegTileEpilogue[Self.output_type, 1](
+                    self.output_tile
+                )
+                if output_row < Int(self.output_tile.dim[0]()):
+                    comptime for n_mma in range(Self.num_n_mmas_output):
+                        comptime for k in range(Self.output_frag_size):
+                            comptime col_in_lane = ((k // 4) * 8 + (k % 4))
+                            var output_col = (
+                                self.warp_col * output_cols_per_warp
+                                + n_mma * Self.mma_shape[1]
+                                + col_in_lane
+                                + lane_col_offset
+                            )
+                            var data = SIMD[Self.accum_type, 1](
+                                sub_reg[n_mma, k]
+                            ).cast[Self.output_type]()
+                            if (
+                                output_col
+                                < (self.warp_col + 1) * output_cols_per_warp
+                            ):
+                                epilogue.store(
+                                    data,
+                                    m=output_row,
+                                    n=output_col,
+                                )
 
     # --- Decode-specific methods ---
 

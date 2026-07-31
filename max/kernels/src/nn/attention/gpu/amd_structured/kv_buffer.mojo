@@ -349,7 +349,12 @@ struct KVBuffer[
         Self.BN // Self.warp_tile_rows
     ) * Self._dma_col_groups
     comptime _tiles_per_warp = ceildiv(Self._total_tiles, Self._num_warps)
-    comptime vm_instrs_per_load = UInt32(Self._tiles_per_warp * 2)
+    # A nonuniform tile split has no single safe per-wave outstanding count;
+    # zero makes pipelined consumers wait for every wave's DMA to finish.
+    comptime vm_instrs_per_load = UInt32(
+        Self._tiles_per_warp * 2 if Self._total_tiles % Self._num_warps
+        == 0 else 0
+    )
 
     comptime _mma_total_rows = Self.num_mmas * Self.num_k_mmas2 * Self._reg_num_k_tiles
     comptime mma_layout = row_major[

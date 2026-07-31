@@ -82,6 +82,7 @@ struct QRegisterBuffer[
     depth: Int,
     thread_rows: Int,
     thread_cols: Int,
+    zero_partial_tile_pad: Bool = True,
 ]:
     """Holds the Q query tile in register memory for gfx950 attention MMAs.
 
@@ -111,6 +112,8 @@ struct QRegisterBuffer[
             col-major thread distribution.
         thread_cols: Per-thread fragment columns for the
             `RegTileLoader` col-major thread distribution.
+        zero_partial_tile_pad: Whether to zero the invalid tail of a
+            partial BK strip after loading it.
     """
 
     comptime reg_dtype = Self.dtype
@@ -196,64 +199,26 @@ struct QRegisterBuffer[
                 dst,
                 src.vectorize[1, load_width](),
             )
-        # Q partial-tile pad zero (AITER-style, mirrors K's
-        # `zero_partial_tile_pad` in `kv_buffer.mojo`).
-        #
-        # NOTE: keep in sync with `KVBuffer.zero_partial_tile_pad`. Both
-        # sites compute the same `valid_per_lane` / `zero_per_lane` split
-        # and share the upper-half-is-pad assumption (asserted below). A
-        # future config that violates that assumption (`valid_cols >
-        # BK/2`) needs a different zero pattern in both sites.
-        #
-        # When `depth % BK != 0`, the partial Q-tile (i = depth // BK)
-        # spans `BK` MFMA-K positions but only `valid_cols = depth -
-        # i*BK` are valid; the trailing `BK - valid_cols` are pad and
-        # must read as zero in the MFMA.
-        #
-        # The per-thread fragment from `RegTileLoader`'s
-        # `col_major[thread_rows, thread_cols]` distribute over the
-        # `(WM, BK/load_width)` vector grid is (M=1, N=2) per lane and
-        # gets stored row-major: fragment element [0..load_width) is
-        # the lower-K vector and [load_width..2*load_width) is the
-        # upper-K vector, with the two vectors offset by `BK/2`
-        # source-cols. So every lane's upper-half fragment elements
-        # correspond to MFMA-K positions in [BK/2, BK), and for the
-        # partial tile those positions land at global depth >=
-        # `BK/2 + valid_cols` -- the pad portion -- when
-        # `valid_cols <= BK/2`. Zero the upper portion per lane.
-        #
-        # NOTE: zeroing whole lanes >= some thread_col threshold is
-        # WRONG — it also clears valid data in those lanes' lower half
-        # (those MFMA-K positions are valid for the partial tile).
-        # Sparse inputs can mask this; random inputs expose it.
-        comptime if Self.depth % Self.BK != 0:
-            comptime _partial_tile_idx = Self.depth // Self.BK
-            comptime _valid_cols_in_partial = Self.depth - (
-                _partial_tile_idx * Self.BK
-            )
-            # The upper-half-is-pad layout assumption above only holds
-            # when the valid portion fits into the lower-K half of each
-            # lane's fragment. Today (depth=576, BK=128) `valid_cols`
-            # is exactly BK/2; a future config with `valid_cols > BK/2`
-            # would need a different zero pattern.
-            comptime assert _valid_cols_in_partial <= Self.BK // 2, (
+        # RegTileLoader stores each lane's lower and upper BK halves
+        # contiguously. Zero only the trailing per-lane elements; zeroing whole
+        # lanes would also erase valid lower-half data. Keep this in sync with
+        # KVBuffer.zero_partial_tile_pad.
+        comptime if (Self.zero_partial_tile_pad and Self.depth % Self.BK != 0):
+            comptime partial_tile_idx = Self.depth // Self.BK
+            comptime valid_cols = Self.depth - partial_tile_idx * Self.BK
+            comptime assert valid_cols <= Self.BK // 2, (
                 "Q partial-tile zero assumes valid cols fit in the"
                 " lower-K half of the per-lane fragment"
             )
-            comptime _valid_per_lane = (
-                Self.input_frag_size * _valid_cols_in_partial // Self.BK
+            comptime valid_per_lane = (
+                Self.input_frag_size * valid_cols // Self.BK
             )
-            comptime _zero_per_lane = (Self.input_frag_size - _valid_per_lane)
-            comptime assert (
-                _zero_per_lane > 0
-            ), "Q partial-tile pad zero: _zero_per_lane must be positive"
-            # Zero cols [_valid_per_lane .. input_frag_size) of every
-            # lane's partial-tile fragment slot.
+            comptime zero_per_lane = Self.input_frag_size - valid_per_lane
             _ = (
                 self.reg_tile.tile[Self._rows_per_tile, Self.input_frag_size](
-                    _partial_tile_idx, 0
+                    partial_tile_idx, 0
                 )
-                .tile[Self._rows_per_tile, _zero_per_lane](0, 1)
+                .tile[Self._rows_per_tile, zero_per_lane](0, 1)
                 .fill(0)
             )
 

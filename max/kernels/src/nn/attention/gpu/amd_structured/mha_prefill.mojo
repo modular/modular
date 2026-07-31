@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Unified gfx950 MHA prefill kernel.
 
-Handles BF16+FP8, any mask, depth∈{64,128,256,512}, with and without sink.
+Handles BF16+FP8, any mask, depth∈{64,80,128,256,512}, with and without sink.
 Consolidates the two older kernels (pipelined `mha_prefill` and
 non-pipelined `mha_prefill_gfx950`) into one, matching `amd/mha.mojo`
 from main but built on `KVBuffer` (our version of KVBuffer).
@@ -30,6 +30,7 @@ Sink is handled entirely in `Attention.__init__` (rowmax/rowsum are
 pre-filled from sink_weights); the kernel body needs no sink-specific code.
 """
 
+from std.math import ceildiv
 from std.sys import llvm_intrinsic, get_defined_bool
 from std.sys.intrinsics import readfirstlane
 from std.gpu import warp_id as get_warp_id
@@ -71,7 +72,7 @@ def block_sync_lds_direct_load[*, vmcnt: UInt32 = 0]():
 
 __extension Attention:
     def mha_prefill(mut self):
-        """Unified gfx950 MHA prefill: BF16+FP8, any mask, depth∈{64,128,256,512}.
+        """Unified gfx950 MHA prefill: BF16+FP8, any mask, depth∈{64,80,128,256,512}.
 
         See module docstring for the recipe.
         """
@@ -82,16 +83,18 @@ __extension Attention:
         ), "BK must be 32, 64, or 128"
         comptime assert (
             Self.depth == 64
+            or Self.depth == 80
             or Self.depth == 128
             or Self.depth == 256
             or Self.depth == 512
-        ), "depth must be 64, 128, 256, or 512"
+        ), "depth must be 64, 80, 128, 256, or 512"
         comptime assert not Self.q_type.is_float8() or (
             Self.depth == 128 or Self.depth == 256
         ), "fp8 only supports depth=128 or 256"
         comptime assert (
             Self.depth % Self.BK == 0
-        ), "depth must be a multiple of BK"
+            or Self.depth % Self.BK % Self.mma_shape[2] == 0
+        ), "depth % BK must be a multiple of the MFMA K dimension"
         comptime assert Self.BN % Self.BK == 0, "BN must be a multiple of BK"
         # `mha_prefill` hard-codes `full_kv=True` for both K and V buffers, so
         # trap any caller that instantiates it with the windowed-KV config.
@@ -106,13 +109,14 @@ __extension Attention:
         comptime prescale_q = get_defined_bool[
             "PRESCALE_Q", True
         ]() and Self.depth <= 128 and not Self.q_type.is_float8()
-        comptime num_qk_strips = Self.depth // Self.BK
+        comptime num_qk_strips = ceildiv(Self.depth, Self.BK)
 
         # --- Buffer init ---
 
         var warp_id = UInt32(
             readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
         )
+        comptime _smem_depth = ceildiv(Self.depth, Self.BK) * Self.BK
         comptime KBufT = KVBuffer[
             kv_t=Self.k_t,
             mma_shape=Self.mma_shape,
@@ -126,6 +130,7 @@ __extension Attention:
             kv_num_heads=Self.num_heads // Self.group,
             transpose=True,
             full_kv=True,
+            smem_depth=_smem_depth,
         ]
         comptime VBufT = KVBuffer[
             kv_t=Self.v_t,
@@ -139,6 +144,7 @@ __extension Attention:
             kv_num_heads=Self.num_heads // Self.group,
             transpose=False,
             full_kv=True,
+            smem_depth=_smem_depth,
         ]
         var k_buffer = KBufT(
             self.k,
@@ -189,11 +195,22 @@ __extension Attention:
             self.zero_p_buffer[0]()
             comptime for strip in range(num_qk_strips):
                 comptime for k_mma in range(Self.num_k_mmas2):
-                    QKMmaOp.mma[swap_a_b=Self.swap_a_b](
-                        self.q_buffer.mma_tile[strip, Int(k_mma)](),
-                        k_buffer.get_mma_tile[Int(k_mma), strip](),
-                        self.p_reg_buffer.stage_tile[0](),
+                    comptime k_mma_start = k_mma * Self.mma_shape[2]
+                    comptime partial_valid = (
+                        Self.depth % Self.BK
+                    ) if Self.depth % Self.BK != 0 else Self.BK
+                    comptime is_partial_strip = (
+                        strip == num_qk_strips - 1 and Self.depth % Self.BK != 0
                     )
+                    comptime skip = (
+                        is_partial_strip and k_mma_start >= partial_valid
+                    )
+                    comptime if not skip:
+                        QKMmaOp.mma[swap_a_b=Self.swap_a_b](
+                            self.q_buffer.mma_tile[strip, Int(k_mma)](),
+                            k_buffer.get_mma_tile[Int(k_mma), strip](),
+                            self.p_reg_buffer.stage_tile[0](),
+                        )
 
         @always_inline
         @parameter
