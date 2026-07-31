@@ -19,9 +19,11 @@ communication in distributed inference scenarios.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -34,6 +36,7 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
@@ -89,6 +92,61 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
     dispatch_wait_size = 4 * n_experts + 4
     combine_wait_size = 2 * n_experts
     return dispatch_async_size + dispatch_wait_size + combine_wait_size
+
+
+@dataclass
+class EPCommBuffers:
+    """SHMEM communication buffers for one Expert Parallelism MoE forward pass.
+
+    Bundles the per-device send, receive, and synchronization tensors produced
+    by ``EPBatchManager.comm_buffers()`` into a single value so they can be
+    passed through the subgraph pytree machinery as one forward argument. The
+    ``__tree_flatten__`` / ``__tree_unflatten__`` hooks expose the
+    :class:`~max.experimental.tensor.Tensor` leaves to that machinery.
+    """
+
+    atomic_counters: list[list[Tensor]]
+    """Atomic synchronization counters, indexed as ``[group][device]``, used to
+    coordinate thread blocks during the dispatch and combine phases."""
+
+    send_buf_ptrs: list[Tensor]
+    """Per-group SHMEM send-buffer device pointers, one entry per buffer group.
+    Each tensor holds the per-device addresses of the staging buffers for
+    outgoing tokens."""
+
+    recv_buf_ptrs: list[Tensor]
+    """Per-group SHMEM receive-buffer device pointers, one entry per buffer
+    group. Each tensor holds the per-device addresses of the buffers for
+    incoming tokens from remote devices."""
+
+    recv_count_ptrs: list[Tensor]
+    """Per-group SHMEM receive-count device pointers, one entry per buffer
+    group. Each tensor holds the per-device addresses of the buffers that signal
+    transfer completion."""
+
+    eplb_log2phy: dict[int, Tensor] | None = None
+    """Per-device Expert Parallelism load-balancing (EPLB) logical-to-physical
+    expert map, keyed by device ID. Populated only when EPLB is enabled;
+    otherwise ``None``."""
+
+    eplb_logcnt: dict[int, Tensor] | None = None
+    """Per-device count of physical replicas per logical expert (EPLB), keyed by
+    device ID. Populated only when EPLB is enabled; otherwise ``None``."""
+
+    def __tree_flatten__(
+        self,
+    ) -> tuple[tuple[object, ...], tuple[str, ...]]:
+        """Exposes the Tensor leaves to the subgraph pytree machinery."""
+        names = tuple(f.name for f in dataclasses.fields(self))
+        children = tuple(getattr(self, name) for name in names)
+        return children, names
+
+    @classmethod
+    def __tree_unflatten__(
+        cls, aux: tuple[str, ...], children: Sequence[Any]
+    ) -> EPCommBuffers:
+        """Rebuilds an :class:`EPCommBuffers` from flattened leaves."""
+        return cls(**dict(zip(aux, children, strict=True)))
 
 
 class EPBatchManager:
@@ -334,6 +392,68 @@ class EPBatchManager:
             }
             start_idx += n_gpus
 
+    def comm_buffers(self, input_vals: Iterable[Value[Any]]) -> EPCommBuffers:
+        """Fetches the EP buffers and wraps them as an :class:`EPCommBuffers`.
+
+        Args:
+            input_vals: Graph input values containing all buffer references,
+                in the same order as :meth:`input_types`.
+
+        Returns:
+            Dataclass containing the EP comm tensors.
+        """
+        self.fetch_buffers(input_vals)
+        eplb_log2phy: dict[int, Tensor] | None = None
+        eplb_logcnt: dict[int, Tensor] | None = None
+        if self.config.eplb_enabled:
+            eplb_log2phy = {
+                i: Tensor.from_graph_value(b)
+                for i, b in self._eplb_log2phy_per_device.items()
+            }
+            eplb_logcnt = {
+                i: Tensor.from_graph_value(b)
+                for i, b in self._eplb_logcnt_per_device.items()
+            }
+        return EPCommBuffers(
+            atomic_counters=[
+                [Tensor.from_graph_value(b) for b in group]
+                for group in self.atomic_counters
+            ],
+            send_buf_ptrs=[
+                Tensor.from_graph_value(v) for v in self.send_buf_ptrs
+            ],
+            recv_buf_ptrs=[
+                Tensor.from_graph_value(v) for v in self.recv_buf_ptrs
+            ],
+            recv_count_ptrs=[
+                Tensor.from_graph_value(v) for v in self.recv_count_ptrs
+            ],
+            eplb_log2phy=eplb_log2phy,
+            eplb_logcnt=eplb_logcnt,
+        )
+
+    def bind_comm_buffers(self, comm: EPCommBuffers) -> None:
+        """Rebinds the buffer fields from a threaded :class:`EPCommBuffers`.
+
+        Called at the top of the EP MoE forward so the kernel-dispatch helpers,
+        which read ``self._send_buf_ptrs`` etc., see the (subgraph-rebound)
+        buffer values passed in as a forward argument.
+        """
+        self._atomic_counters = [
+            [BufferValue(t) for t in group] for group in comm.atomic_counters
+        ]
+        self._send_buf_ptrs = [TensorValue(t) for t in comm.send_buf_ptrs]
+        self._recv_buf_ptrs = [TensorValue(t) for t in comm.recv_buf_ptrs]
+        self._recv_count_ptrs = [TensorValue(t) for t in comm.recv_count_ptrs]
+        if comm.eplb_log2phy is not None:
+            self._eplb_log2phy_per_device = {
+                i: BufferValue(t) for i, t in comm.eplb_log2phy.items()
+            }
+        if comm.eplb_logcnt is not None:
+            self._eplb_logcnt_per_device = {
+                i: BufferValue(t) for i, t in comm.eplb_logcnt.items()
+            }
+
     def ep_dispatch_async(
         self,
         input_tokens: TensorValue,
@@ -532,7 +652,6 @@ class EPBatchManager:
 
         # Store the symbolic token numbers for the combine phase
         self._dispatch_dim[device_id] = input_tokens.shape[0]
-
         results = call_ep_dispatch(
             input_tokens,
             topk_ids,

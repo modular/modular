@@ -150,7 +150,10 @@ def constant(
 
 
 def constant_external(
-    name: str, type: TensorType, align: int | None = None
+    name: str,
+    type: TensorType,
+    align: int | None = None,
+    is_placeholder: bool = False,
 ) -> TensorValue:
     """Registers an external constant (weight) in the graph of a given type.
 
@@ -165,6 +168,9 @@ def constant_external(
         type: The type of the constant value.
         align: The alignment of the constant. If not provided,
             the default alignment for the type's dtype will be used.
+        is_placeholder: When :obj:`True`, marks the constant as a placeholder
+            whose name is resolved at :func:`~max.graph.ops.call` time by the
+            call's ``prefix``.
 
     Returns:
         A ``TensorValue`` of the specified type, representing the weight value
@@ -180,7 +186,7 @@ def constant_external(
         ),
         device=type.device,
         has_alias=False,
-        is_placeholder=False,
+        is_placeholder=is_placeholder,
     )[0]
 
 

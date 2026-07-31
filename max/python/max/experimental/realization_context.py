@@ -499,6 +499,9 @@ class LazyRealizationContext(EagerRealizationContext):
 
     #: Subgraph dedup table; armed per instance by ``lazy()``.
     subgraph_cache: dict[Any, Any] | None = None
+    #: Output tree structure per keyed subgraph (see
+    #: :attr:`GraphRealizationContext.subgraph_out_defs`).
+    subgraph_out_defs: dict[str, Any] = {}
 
     def __exit__(
         self,
@@ -544,6 +547,10 @@ class GraphRealizationContext(RealizationContext):
     signal_buffers: list[BufferValue] | None
     #: Subgraph dedup table; armed by ``Module.compile``, ``None`` inlines.
     subgraph_cache: dict[Any, Any] | None
+    #: Output tree structure per keyed subgraph, so a caller that reuses a
+    #: cached subgraph (skipping its body trace) can still rebuild the call's
+    #: results. Keyed by the same dedup key as :attr:`subgraph_cache`.
+    subgraph_out_defs: dict[str, Any]
 
     def __init__(
         self,
@@ -560,6 +567,7 @@ class GraphRealizationContext(RealizationContext):
         self.graph = graph
         self.signal_buffers = signal_buffers
         self.subgraph_cache = None
+        self.subgraph_out_defs = {}
 
     async def realize_all(self) -> list[Tensor]:
         """Raises TypeError - graph contexts cannot realize tensors.
@@ -679,6 +687,7 @@ def lazy() -> Generator[None]:
     with LazyRealizationContext() as ctx, realization_context(ctx):
         # Arm subgraph dedup: a lazy block builds one graph, like compile.
         ctx.subgraph_cache = {}
+        ctx.subgraph_out_defs = {}
         yield
 
 
@@ -687,13 +696,21 @@ def define_subgraph(
     name: str,
     input_types: Sequence[Type[Any]],
     build_body: Callable[[list[Value[Any]]], Sequence[Value[Any]]],
+    *,
+    key: str | None = None,
 ) -> Graph:
-    """Defines a content-deduplicated subgraph on ``ctx`` and returns it.
+    """Defines a deduplicated subgraph on ``ctx`` and returns it.
 
     Works for any graph-building context — ahead-of-time graph or lazy — since
     it reasons only in graph values and so is independent of when ``ctx``
-    realizes. ``build_body(inputs) -> outputs`` traces the body; bodies that
-    print to identical IR share a single definition and the duplicate is erased.
+    realizes. ``build_body(inputs) -> outputs`` traces the body.
+
+    Bodies are deduplicated so a repeated call reuses one definition. When
+    ``key`` is given, it is the dedup key: two calls with the same ``key`` share
+    a definition and the caller vouches that their bodies match. When ``key`` is
+    ``None``, the body's IR hash is the key, so only bodies that print to
+    identical IR share.
+
     ``ctx``'s signal buffers are appended as trailing subgraph inputs so
     collectives in the body work; the caller passes the matching signal values
     (``ctx.signal_buffers``) when it emits :func:`~max.graph.ops.call`.
@@ -701,8 +718,12 @@ def define_subgraph(
     cache = ctx.subgraph_cache
     if cache is None:
         raise TypeError("define_subgraph requires the root trace context.")
+
+    if key is not None and (subgraph := cache.get(key)) is not None:
+        return subgraph
+
     signals = ctx.signal_buffers or []
-    name = _fresh_subgraph_name(ctx.graph, name)
+    name = _fresh_subgraph_name(ctx.graph, key or name)
     subgraph = ctx.graph.add_subgraph(
         name,
         input_types=[*input_types, *(b.type for b in signals)],
@@ -718,15 +739,18 @@ def define_subgraph(
     with realization_context(child), child:
         subgraph.output(*build_body(list(subgraph.inputs[:n])))
 
-    # Key on the body: blank only the first ``"{name}"`` (the op's own sym_name),
-    # leaving an identical name string in the body (e.g. a custom op) untouched.
-    asm = subgraph._mlir_op.get_asm(
-        assume_verified=True,
-        enable_debug_info=False,
-        print_generic_op_form=True,
-        use_local_scope=True,
-    ).replace(f'"{name}"', '"_"', 1)
-    key = hashlib.sha256(asm.encode()).hexdigest()
+    if key is None:
+        # No user key: dedup on the body's IR. Blank only the first ``"{name}"``
+        # (the op's own sym_name), leaving an identical name string in the body
+        # (e.g. a custom op) untouched, so an identical body hashes the same
+        # regardless of its fresh name.
+        asm = subgraph._mlir_op.get_asm(
+            assume_verified=True,
+            enable_debug_info=False,
+            print_generic_op_form=True,
+            use_local_scope=True,
+        ).replace(f'"{name}"', '"_"', 1)
+        key = hashlib.sha256(asm.encode()).hexdigest()
     if key in cache:
         ctx.graph._subgraphs.pop(name, None)
         subgraph._mlir_op.erase()

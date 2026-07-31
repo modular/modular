@@ -94,16 +94,16 @@ def _make_realized_sharded(
 
 class TestSlotDescriptors:
     def test_input_slot_fields(self) -> None:
-        slot = _InputSlot(start=0, count=4, dist=None)
+        slot = _InputSlot(start=0, count=4, mapping=None)
         assert slot.start == 0
         assert slot.count == 4
-        assert slot.dist is None
+        assert slot.mapping is None
 
-    def test_input_slot_with_dist(self) -> None:
+    def test_input_slot_with_mapping(self) -> None:
         mesh = mesh_1d(2)
-        dt = DistributedTensorType(DType.float32, [8, 4], mesh, [Sharded(0)])
-        slot = _InputSlot(start=1, count=2, dist=dt)
-        assert slot.dist is dt
+        mapping = PlacementMapping(mesh, (Sharded(0),))
+        slot = _InputSlot(start=1, count=2, mapping=mapping)
+        assert slot.mapping is mapping
         assert slot.count == 2
 
     def test_output_slot_fields(self) -> None:
@@ -119,7 +119,7 @@ class TestSlotDescriptors:
         assert slot.mapping is mapping
 
     def test_slots_are_frozen(self) -> None:
-        slot = _InputSlot(start=0, count=1, dist=None)
+        slot = _InputSlot(start=0, count=1, mapping=None)
         with pytest.raises(AttributeError):
             slot.start = 5  # type: ignore[misc]
 
@@ -136,7 +136,7 @@ class TestFlattenInputTypes:
         assert len(flat) == 1
         assert flat[0] is tt
         assert slots[0].count == 1
-        assert slots[0].dist is None
+        assert slots[0].mapping is None
 
     def test_distributed_expands(self) -> None:
         mesh = mesh_1d(4)
@@ -144,7 +144,7 @@ class TestFlattenInputTypes:
         flat, slots = _flatten_input_types([dt])
         assert len(flat) == 4
         assert slots[0].count == 4
-        assert slots[0].dist is dt
+        assert slots[0].mapping is not None
 
     def test_mixed_inputs(self) -> None:
         mesh = mesh_1d(2)
@@ -190,15 +190,16 @@ class TestFlattenInputTypes:
 class TestUnflattenArgs:
     def test_non_distributed_passthrough(self) -> None:
         buf = Buffer.zeros([4, 8], dtype=DType.float32, device=CPU())
-        slot = _InputSlot(start=0, count=1, dist=None)
+        slot = _InputSlot(start=0, count=1, mapping=None)
         flat = flatten_input_buffers([buf], [slot])
         assert len(flat) == 1
         assert flat[0] is buf
 
     def test_distributed_tensor_expands(self) -> None:
         mesh = mesh_1d(2)
-        dt = DistributedTensorType(DType.float32, [8, 4], mesh, [Sharded(0)])
-        slot = _InputSlot(start=0, count=2, dist=dt)
+        slot = _InputSlot(
+            start=0, count=2, mapping=PlacementMapping(mesh, (Sharded(0),))
+        )
         t = _make_realized_sharded([4, 4], 2, shard_axis=0)
         flat = flatten_input_buffers([t], [slot])
         assert len(flat) == 2
@@ -207,9 +208,10 @@ class TestUnflattenArgs:
 
     def test_mixed_args(self) -> None:
         mesh = mesh_1d(2)
-        dt = DistributedTensorType(DType.float32, [8, 4], mesh, [Sharded(0)])
-        slot_plain = _InputSlot(start=0, count=1, dist=None)
-        slot_dist = _InputSlot(start=1, count=2, dist=dt)
+        slot_plain = _InputSlot(start=0, count=1, mapping=None)
+        slot_dist = _InputSlot(
+            start=1, count=2, mapping=PlacementMapping(mesh, (Sharded(0),))
+        )
 
         buf = Buffer.zeros([3, 4], dtype=DType.float32, device=CPU())
         t = _make_realized_sharded([4, 4], 2, shard_axis=0)
@@ -220,8 +222,8 @@ class TestUnflattenArgs:
         assert isinstance(flat[2], Buffer)
 
     def test_non_distributed_tensor_passthrough(self) -> None:
-        """Non-distributed Tensor with dist=None passes through unchanged."""
-        slot = _InputSlot(start=0, count=1, dist=None)
+        """Non-distributed Tensor with mapping=None passes through unchanged."""
+        slot = _InputSlot(start=0, count=1, mapping=None)
         t = Tensor.zeros([4, 8], dtype=DType.float32, device=CPU())
         flat = flatten_input_buffers([t], [slot])
         assert len(flat) == 1

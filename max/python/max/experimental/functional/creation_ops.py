@@ -751,6 +751,7 @@ def constant_external(
     type: TensorType,
     device: Device | DeviceMapping | DeviceRef | None = None,
     align: int | None = None,
+    is_placeholder: bool = False,
 ) -> Tensor:
     """Creates a constant tensor from external (weight) data.
 
@@ -767,6 +768,10 @@ def constant_external(
             distributed placement.
         align: The alignment of the constant. If not provided,
             the default alignment for the type's dtype will be used.
+        is_placeholder: When :obj:`True`, marks the constant as a placeholder
+            whose name is resolved by the enclosing subgraph call's ``prefix``
+            (see :func:`max.graph.ops.call`). Used to thread per-layer weights
+            through a shared subgraph body under layer-relative names.
 
     Returns:
         A tensor on the requested placement initialized from the
@@ -774,7 +779,7 @@ def constant_external(
     """
     mapping = _normalized_device(device) if device is not None else None
     with ensure_context():
-        tv = ops.constant_external(name, type, align)
+        tv = ops.constant_external(name, type, align, is_placeholder)
         t = Tensor.from_graph_value(tv)
     if mapping is not None:
         return transfer_to(t, mapping)

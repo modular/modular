@@ -15,9 +15,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
@@ -94,6 +95,21 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
             attention_dispatch_metadata=attention_dispatch_metadata,
             mla_num_partitions=mla_num_partitions,
         )
+
+    def __tree_flatten__(
+        self,
+    ) -> tuple[tuple[Tensor | None, ...], tuple[str, ...]]:
+        """Exposes the Tensor leaves to the subgraph pytree machinery."""
+        names = tuple(f.name for f in dataclasses.fields(self))
+        children = tuple(getattr(self, name) for name in names)
+        return children, names
+
+    @classmethod
+    def __tree_unflatten__(
+        cls, aux: tuple[str, ...], children: Sequence[Any]
+    ) -> PagedCacheValues:
+        """Rebuilds a :class:`PagedCacheValues` from flattened leaves."""
+        return cls(**dict(zip(aux, children, strict=True)))
 
     @property
     def n_devices(self) -> int:
