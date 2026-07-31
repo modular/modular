@@ -74,7 +74,6 @@ HF_MODELS: dict[str, set[str]] = {
     # MODELS-1611: M3 is a private arch, so max-ci only.
     "amd/MiniMax-M3-MXFP4": NON_XL | {"8xB200", "max"},
     "ByteDance-Seed/academic-ds-9B": MULTI | {"max", "max-ci", "sglang@B200", "vllm@B200"},  # SERVOPT-1120
-    "deepseek-ai/DeepSeek-R1-0528": NON_XL | {"max", "sglang", "4xMI355"},  # 4xMI355: needs nvshmem
     "deepseek-ai/DeepSeek-V2-Lite-Chat": MULTI | {"max", "max-ci", "vllm@B200"},  # SERVOPT-1120
     "deepseek-ai/DeepSeek-V3.1-Terminus": NON_XL | {"4xMI355"},
     "google/diffusiongemma-26B-A4B-it": MULTI | {"max", "max-ci"},
@@ -121,7 +120,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "microsoft/Phi-3.5-mini-instruct__modulev3": MULTI,
     "microsoft/phi-4__modulev3": MULTI,
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": MULTI,
-    "deepseek-ai/DeepSeek-R1-0528__modulev3": NON_XL | {"4xMI355"},
+    "deepseek-ai/DeepSeek-V3.1-Terminus__modulev3": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": NON_XL | {"4xMI355"},

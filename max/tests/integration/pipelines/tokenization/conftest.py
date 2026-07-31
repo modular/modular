@@ -81,10 +81,8 @@ TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
     TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REPO_ID
 )
 
-QWEN_32B_PREVIEW_HF_REPO_ID = "Qwen/QwQ-32B-Preview"
-QWEN_32B_PREVIEW_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
-    QWEN_32B_PREVIEW_HF_REPO_ID
-)
+QWQ_32B_HF_REPO_ID = "Qwen/QwQ-32B"
+QWQ_32B_HF_REVISION = hf_repo_lock.revision_for_hf_repo(QWQ_32B_HF_REPO_ID)
 
 MISTRAL_NEMO_INSTRUCT_2407_HF_REPO_ID = "mistralai/Mistral-Nemo-Instruct-2407"
 MISTRAL_NEMO_INSTRUCT_2407_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
@@ -385,20 +383,20 @@ def tiny_random_llama_for_causal_lm_local_path() -> str:
 
 
 @pytest.fixture
-def qwen_32b_preview_local_path() -> str:
-    assert isinstance(QWEN_32B_PREVIEW_HF_REVISION, str), (
-        "QWEN_32B_PREVIEW_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+def qwq_32b_local_path() -> str:
+    assert isinstance(QWQ_32B_HF_REVISION, str), (
+        "QWQ_32B_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
     try:
         model_path = generate_local_model_path(
-            QWEN_32B_PREVIEW_HF_REPO_ID, QWEN_32B_PREVIEW_HF_REVISION
+            QWQ_32B_HF_REPO_ID, QWQ_32B_HF_REVISION
         )
     except FileNotFoundError as e:
         logger.warning(f"Failed to generate local model path: {e}")
         logger.warning(
-            f"Falling back to repo_id: {QWEN_32B_PREVIEW_HF_REPO_ID} as config to PipelineConfig"
+            f"Falling back to repo_id: {QWQ_32B_HF_REPO_ID} as config to PipelineConfig"
         )
-        model_path = QWEN_32B_PREVIEW_HF_REPO_ID
+        model_path = QWQ_32B_HF_REPO_ID
     return model_path
 
 
