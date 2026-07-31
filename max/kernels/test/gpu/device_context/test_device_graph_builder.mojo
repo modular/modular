@@ -802,6 +802,41 @@ def test_as_context_kernel_chain(ctx: DeviceContext) raises:
             assert_equal(host[i], Float32(15))
 
 
+def test_create_buffer(ctx: DeviceContext) raises:
+    print("Test allocating graph-owned device and host buffers.")
+    comptime length = 1024
+
+    var host_dst = ctx.enqueue_create_host_buffer[DType.uint8](length)
+    for i in range(length):
+        host_dst[i] = 0
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        # A device allocation is graph-scoped, so the graph copies it out to
+        # storage the test owns rather than handing back the buffer itself.
+        var dev_buf = builder.create_buffer[DType.uint8](length, is_host=False)
+        var memset = builder.add_memset(dev_buf, UInt8(0x5A))
+        _ = builder.add_copy(host_dst, dev_buf, dependencies=[memset])
+
+        # A host allocation comes from the pool's other memory manager: writing
+        # through it here would fault if it had been served as device memory.
+        var pool_host = builder.create_buffer[DType.uint8](length, is_host=True)
+        var ptr = pool_host.unsafe_ptr()
+
+        # Slightly questionable way to check that this is a host allocation.
+        for i in range(length):
+            ptr[i] = UInt8(i % 251)
+
+        for i in range(length):
+            assert_equal(ptr[i], UInt8(i % 251))
+
+    var graph = DeviceGraph.create(ctx, build)
+    graph.replay()
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_dst[i], UInt8(0x5A))
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_vec_add_kernel_node(ctx)
@@ -821,3 +856,4 @@ def main() raises:
         test_region_empty(ctx)
         test_region_with_dependencies(ctx)
         test_region_passthrough_dependencies(ctx)
+        test_create_buffer(ctx)
