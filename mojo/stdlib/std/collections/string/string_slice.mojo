@@ -57,6 +57,20 @@ from std.python import Python, PythonObject
 from std.format._utils import _write_hex
 
 
+comptime MutStringSlice[origin: MutOrigin] = StringSlice[origin]
+"""A string slice providing mutable access to the string data it views.
+
+Parameters:
+    origin: The origin of the string data.
+"""
+
+comptime ImmStringSlice[origin: ImmOrigin] = StringSlice[origin]
+"""A string slice providing read-only access to the string data it views.
+
+Parameters:
+    origin: The origin of the string data.
+"""
+
 comptime StaticString = StringSlice[ImmStaticOrigin]
 """An immutable static string slice.
 

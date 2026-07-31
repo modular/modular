@@ -82,6 +82,8 @@ from .string_slice import (
     BytesIter,
     CodepointsIter,
     GraphemeSliceIter,
+    ImmStringSlice,
+    MutStringSlice,
     StaticString,
     StringSlice,
 )
