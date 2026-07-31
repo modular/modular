@@ -142,6 +142,19 @@ struct OwnedByteBuffer(ImplicitlyCopyable, Movable):
         self.view = view
         self.storage = storage^
 
+    def __init__(out self, var buffer: DeviceBuffer[DType.int8]):
+        """Builds the composite from a DeviceBuffer.
+
+        Args:
+            buffer: A DeviceBuffer which owns the underlying memory.
+        """
+        var shape = Index(len(buffer))
+
+        var view = MutByteBuffer(buffer.unsafe_ptr(), shape)
+        var storage = AnyAsyncValueRef(storage_buf=buffer^)
+
+        self = Self(view, storage^)
+
     def __init__(out self, *, copy: Self):
         """Creates a copy sharing the same backing memory (retains the storage).
 
@@ -582,27 +595,15 @@ def mgp_buffer_alloc(
     # alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
 
     # This primitive has a byte-size input, so always assume a byte format
-    var shape = IndexList[1](byte_size)
-    var buf = dev_context.enqueue_create_buffer[DType.int8](byte_size)
-    # Build a non-owning view over the memory, then wrap the live owning
-    # DeviceBuffer in an AsyncValue storage handle (net-zero take of the buffer's
-    # handle). The composite carries the view + storage, mirroring the C++
-    # TensorBufferRef; the pack site later surrenders the storage net-zero.
-    var view = MutByteBuffer(buf.unsafe_ptr(), shape)
-    var storage = AnyAsyncValueRef(storage_buf=buf^)
-    return OwnedByteBuffer(view, storage^)
+    return {dev_context.enqueue_create_buffer[DType.int8](byte_size)}
 
 
 @register_internal("mgp.device_graph.alloc")
 @no_inline
-def mgp_device_graph_alloc(
-    byte_size: Int, builder: DeviceGraphBuilder
-) raises -> OwnedByteBuffer:
-    # The device-graph counterpart of `mgp_buffer_alloc`: it takes the recording
-    # builder instead of a device context. For now it just allocates via the
-    # builder's device context; later the builder can track device-graph
-    # memory-pool allocations here.
-    return mgp_buffer_alloc(byte_size, builder.context())
+def mgp_device_graph_alloc[
+    is_host: Bool
+](byte_size: Int, builder: DeviceGraphBuilder) raises -> OwnedByteBuffer:
+    return {builder.create_buffer[DType.int8](byte_size, is_host=is_host)}
 
 
 @register_internal("mgp.buffer.constant")

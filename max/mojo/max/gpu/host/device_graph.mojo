@@ -1452,6 +1452,52 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         return DeviceGraph(result)
 
+    def create_buffer[
+        dtype: DType
+    ](self, size: Int, is_host: Bool, out result: DeviceBuffer[dtype]) raises:
+        """Allocates a buffer for use in the current device graph.
+
+        Device graph allocations have lifetimes tied to the device graph that
+        creates this. All allocations created for a device graph should go
+        through this method rather than `DeviceContext.enqueue_create_buffer`.
+
+        Parameters:
+            dtype: The element type of the resulting buffer.
+
+        Args:
+            size: The number of elements to allocate for the buffer.
+            is_host: Allocate host-addressable memory instead of device memory.
+
+        Returns:
+            The newly allocated DeviceBuffer.
+
+        Raises:
+            If memory allocation fails.
+        """
+
+        comptime elem_size = size_of[dtype]()
+
+        var cpp_handle: _DeviceBufferPtr[mut=True] = {}
+        var device_ptr: Optional[result._DevicePtr] = {}
+
+        # const char * AsyncRT_DeviceGraph_createBuffer(DeviceBuffer **result, void **devicePtr, DeviceGraphBuilder *builder, size_t len, size_t elemSize, bool isHost)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraph_createBuffer",
+                _CString[],
+            ](
+                Pointer(to=cpp_handle),
+                Pointer(to=device_ptr),
+                self._handle,
+                c_size_t(size),
+                c_size_t(elem_size),
+                is_host,
+            ),
+            location=call_location(),
+        )
+
+        result = {cpp_handle, device_ptr.value()}
+
 
 @doc_hidden
 struct _DeviceGraphBuilderEnqueuer[
