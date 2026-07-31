@@ -40,10 +40,14 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.pipelines.architectures.kimik2_5.batch_processor import (
+    KimiK2_5BatchProcessor,
+)
 from max.pipelines.architectures.kimik2_5.layers.language_model import (
     KimiK2_5MoEDecoder,
 )
@@ -57,6 +61,7 @@ from max.pipelines.architectures.kimik2_5.unified_eagle_mha_pipeline_model impor
 from max.pipelines.architectures.kimik2_5.unified_eagle_pipeline_model import (
     Eagle3KimiK25Model,
 )
+from max.pipelines.context import ImageMetadata
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 
 _N_DEVICES = 4
@@ -222,3 +227,35 @@ def test_eagle_inputs_pack_finalized_vision_merge_buffers(
             strict=True,
         )
     )
+
+
+def test_collect_uncached_image_inputs_matches_by_span() -> None:
+    """Miss images are collected by span position, not object identity.
+
+    Regression test for MXSERV-330: a selection whose miss list holds
+    reconstructed ``ImageMetadata`` instances for the same logical image
+    collected zero per-image entries under identity matching and tripped
+    the non-empty assertion in ``encode_uncached_chunked``.
+    """
+    processor = cast(Any, object.__new__(KimiK2_5BatchProcessor))
+    pixels = np.zeros((4, 8), dtype=np.float32)
+    stored = ImageMetadata(
+        start_idx=2, end_idx=4, pixel_values=pixels, image_hash=0xB
+    )
+    reconstructed = ImageMetadata(
+        start_idx=2, end_idx=4, pixel_values=pixels, image_hash=0xB
+    )
+    ctx = SimpleNamespace(
+        images=[stored],
+        grid_thws=[(1, 2, 2)],
+        position_ids=np.arange(4, dtype=np.int64),
+    )
+
+    per_image = processor._collect_uncached_image_inputs(
+        [(cast(Any, ctx), [reconstructed])]
+    )
+
+    assert len(per_image) == 1
+    assert per_image[0]["pixel_values"] is pixels
+    np.testing.assert_array_equal(per_image[0]["grid_thw"], [1, 2, 2])
+    np.testing.assert_array_equal(per_image[0]["position_ids"], [0, 1, 2, 3])

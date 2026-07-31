@@ -758,25 +758,25 @@ class VisionEncoderCache(Generic[VLMContextType]):
         scatter positions OOB-masked.
 
         ``get_uncached_contexts`` scans ``ctx.images`` (all images) rather than
-        ``next_images`` to decide which contexts to return. That is consistent
-        because a fully-processed image (in ``ctx.images`` but not
-        ``next_images``) is always cache-resident: a request holds a ref on
-        every image it has encoded, so the entry can't be evicted while the
-        request is live, and the ``ctx.images`` scan sees it as a hit.
+        ``next_images`` to decide which contexts are candidates, so a context
+        can be a candidate solely because of an uncached image ahead of the
+        window (e.g. a later chunk's image) while every in-window image is a
+        cache hit. Such contexts have an empty miss set and are excluded from
+        the returned selection: there is nothing to encode for them this
+        iteration, and assembly reads their in-window hits from the cache and
+        zero-fills out-of-window images from ``context_batch`` directly.
         """
         uncached = self.get_uncached_contexts(context_batch)
-        return [
-            (
-                ctx,
-                [
-                    img
-                    for img in ctx.next_images_in_window
-                    if img.image_hash is None
-                    or self.lookup(img.image_hash) is None
-                ],
-            )
-            for ctx in uncached
-        ]
+        selection: list[tuple[VLMContextType, list[ImageMetadata]]] = []
+        for ctx in uncached:
+            misses = [
+                img
+                for img in ctx.next_images_in_window
+                if img.image_hash is None or self.lookup(img.image_hash) is None
+            ]
+            if misses:
+                selection.append((ctx, misses))
+        return selection
 
     @traced
     def cache_vision_embeddings(
