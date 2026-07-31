@@ -33,8 +33,8 @@ from std.utils.coord import Coord
 # `_shape`/`_stride` are `Coord`s).
 @fieldwise_init
 struct CoordBox(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
-    var dims: Coord[Int, Int]
-    var tag: Int
+    var dims: Coord[Int64, Int64]
+    var tag: Int64
 
     comptime device_type = Self
 
@@ -61,7 +61,9 @@ def _read_back_kernel(box: CoordBox, dst: UnsafePointer[Int64, MutAnyOrigin]):
 
 def test_coord_field_survives_device_launch() raises:
     with DeviceContext() as ctx:
-        var box = CoordBox(dims=Coord[Int, Int](Int(11), Int(22)), tag=33)
+        var box = CoordBox(
+            dims=Coord[Int64, Int64](Int64(11), Int64(22)), tag=33
+        )
         var out_dev = ctx.enqueue_create_buffer[DType.int64](3)
         ctx.enqueue_function[_read_back_kernel](
             box, out_dev.unsafe_ptr(), grid_dim=1, block_dim=1

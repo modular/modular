@@ -140,64 +140,9 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     a_scales: LayoutTensor[a_scales_type, a_scales_layout, MutAnyOrigin],
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters: Int32,
 ):
-    """Computes one blockwise-scaled FP8 grouped GEMM tile per CTA on SM100.
-
-    Loads A and B tiles via TMA, runs UMMA into TMEM, then promotes the
-    TMEM accumulators to registers while applying per-128-block A and B
-    scales, and writes the result back to global memory.
-
-    Parameters:
-        a_type: Element dtype of the A activation operand.
-        b_type: Element dtype of the B weight operand.
-        c_type: Element dtype of the output `C` tensor.
-        a_scales_type: Element dtype of the A per-block scales.
-        b_scales_type: Element dtype of the B per-block scales.
-        accum_type: Accumulator dtype for the MMA result; must be
-            `float32`.
-        a_layout: Layout of the A activation tensor.
-        b_layout: Layout of the B weight tensor.
-        a_offsets_layout: Layout of the `a_offsets` tensor.
-        expert_ids_layout: Layout of the `expert_ids` tensor.
-        a_scales_layout: Layout of the A per-block scales tensor.
-        b_scales_layout: Layout of the B per-block scales tensor.
-        c_static_N: Compile-time N dimension of the output matrix.
-        a_tile_rank: Rank of the A TMA tile descriptor.
-        a_tile_shape: Shape of each A TMA tile copy.
-        a_desc_shape: Descriptor shape of the A TMA tensor.
-        b_tile_rank: Rank of the B TMA tile descriptor.
-        b_tile_shape: Shape of each B TMA tile copy.
-        b_desc_shape: Descriptor shape of the B TMA tensor.
-        block_tile_shape: Block tile shape as (BM, BN, BK).
-        mma_shape: MMA instruction shape as (MMA_M, MMA_N, MMA_K).
-        transpose_b: Whether `B` is stored transposed (defaults to
-            `True`); must be `True`.
-        cluster_shape: CTA cluster shape as (x, y, z) (defaults to
-            (1, 1, 1)).
-        a_swizzle: TMA swizzle mode for the A SMEM buffer (defaults to
-            `SWIZZLE_128B`).
-        b_swizzle: TMA swizzle mode for the B SMEM buffer (defaults to
-            `SWIZZLE_128B`).
-        num_threads: Threads per CTA (defaults to 128); must be 128.
-        elementwise_lambda_fn: Optional epilogue applied to each output
-            element before storing (defaults to `None`).
-
-    Args:
-        a_tma_op: TMA descriptor for loading A activation tiles.
-        b_tma_op: TMA descriptor for loading B weight tiles.
-        a_offsets: Cumulative row offsets per expert, length
-            `num_active_experts + 1`; entry `i + 1` minus entry `i`
-            gives the row count for expert `i`.
-        expert_ids: Expert index for each active expert slot, mapping
-            the grid Z index to the corresponding row offset in `B`.
-        c_ptr: Pointer to the output `C` buffer in global memory.
-        a_scales: Per-block scales for `A` of shape
-            `[K // BK, total_tokens]`.
-        b_scales: Per-block scales for `B` of shape `[num_experts,
-            N // BN, K // BK]`.
-        num_iters: Number of K-block iterations, equal to `K // BK`.
-    """
+    var _num_iters = Int(num_iters)
     comptime assert transpose_b, "Only support transposed B"
     comptime assert num_threads == 128
     comptime assert (
@@ -406,7 +351,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     ), "total_repeat must be divisible by repeat"
     var c_frag_temp: Array[Scalar[accum_type], temp_cfrags_size]
 
-    for k_iter in range(num_iters):
+    for k_iter in range(_num_iters):
         if elect_one_thread:
             tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
@@ -791,7 +736,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
         c_tensor.ptr,
         a_scales_tensor,
         b_scales_tensor,
-        ceildiv(K, BK),
+        Int32(ceildiv(K, BK)),
         grid_dim=(
             ceildiv(N, BN),
             ceildiv(max_num_tokens_per_expert, BM),
@@ -2069,7 +2014,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     expert_ids_layout: Layout,
     b_scales_n: Int,
 ](
-    num_active_experts: Int,
+    num_active_experts: Int32,
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c_tma_op: TMATensorTile[
@@ -2083,7 +2028,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_scales_desc_shape,
     ],
     a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, ImmutAnyOrigin],
-    num_iters: Int,
+    num_iters: Int32,
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ImmutAnyOrigin],
     problem_shape: StaticTuple[Int32, 3],
@@ -2092,59 +2037,8 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_scales_type, a_scales_gmem_layout, ImmutAnyOrigin
     ],
 ):
-    """Implements the warp-specialized persistent SM100 kernel for blockwise-scaled FP8 grouped GEMM.
-
-    Splits the CTA into scheduler, TMA-load, MMA, and epilogue warps that
-    cooperate through producer-consumer pipelines: the load warp streams A,
-    B, and A scales tiles via multicast TMA, the MMA warp runs UMMA into
-    TMEM, and the epilogue warps promote the accumulators with blockwise
-    scales and write the result back to global memory.
-
-    Parameters:
-        a_type: Element dtype of the A activation operand.
-        b_type: Element dtype of the B weight operand.
-        c_type: Element dtype of the C output operand.
-        a_tile_rank: Rank of the A TMA tile descriptor.
-        a_tile_shape: Shape of each A TMA tile copy.
-        a_desc_shape: Descriptor shape of the A TMA tensor.
-        b_tile_rank: Rank of the B TMA tile descriptor.
-        b_tile_shape: Shape of each B TMA tile copy.
-        b_desc_shape: Descriptor shape of the B TMA tensor.
-        c_tile_rank: Rank of the C TMA tile descriptor.
-        c_tile_shape_param: Shape of each C TMA tile store.
-        c_desc_shape: Descriptor shape of the C TMA tensor.
-        a_scales_tile_rank: Rank of the A scales TMA tile descriptor.
-        a_scales_tile_shape: Shape of each A scales TMA tile copy.
-        a_scales_desc_shape: Descriptor shape of the A scales TMA tensor.
-        a_scales_type: Element dtype of the A per-block scales.
-        a_offsets_layout: Layout of the per-expert A row-offset tensor.
-        a_gmem_layout: Layout of the A activation tensor in global memory.
-        a_scales_gmem_layout: Layout of the A scales tensor in global memory.
-        b_scales_type: Element dtype of the B per-block scales.
-        b_scales_layout: Layout of the 2D B scales tensor.
-        transpose_b: Whether B is stored K-major (transposed).
-        config: Matmul config holding tile, MMA, swizzle, and pipeline params.
-        num_pipeline_stages: Number of load-MMA pipeline buffer stages.
-        cluster_shape: CTA cluster dimensions as (M, N, 1).
-        expert_n: Output N dimension (columns of C per expert).
-        expert_ids_layout: Layout of the expert-IDs mapping tensor.
-        b_scales_n: Number of B scale blocks along the N dimension.
-
-    Args:
-        num_active_experts: Number of experts with at least one token.
-        a_tma_op: TMA descriptor for loading A activation tiles.
-        b_tma_op: TMA descriptor for loading B weight tiles.
-        c_tma_op: TMA descriptor for storing C output tiles.
-        c_ptr: Base pointer to the C output buffer in global memory.
-        a_scales_tma_op: TMA descriptor for loading A scales tiles.
-        a_offsets: Per-expert start row offsets into the A buffer.
-        num_iters: Number of K-block iterations, computed as ceildiv(K, BK).
-        b_scales: B scales reshaped to 2D as (experts * N_blocks, K_blocks).
-        expert_ids: Maps each expert group index to its B row offset.
-        problem_shape: Full problem dimensions as (M, N, K).
-        a_gmem: A activation tensor for the partial-TMA fallback path.
-        a_scales_gmem: A scales tensor for the partial-TMA fallback path.
-    """
+    var _num_active_experts = Int(num_active_experts)
+    var _num_iters = Int(num_iters)
     comptime num_output_warps = 4
 
     comptime accum_type = get_accum_type[a_type]()
@@ -2388,7 +2282,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             config.block_tile_shape[2],
         ),
         swapAB=False,
-    ](num_active_experts, a_offsets)
+    ](_num_active_experts, a_offsets)
 
     var work_info = scheduler.fetch_next_work()
 
@@ -2447,7 +2341,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 a_scales_type, config.block_tile_shape[0]
             ](m_tile_global_start, total_m)
 
-            for i in range(num_iters):
+            for i in range(_num_iters):
                 if not use_full_tma:
                     load_AB_partial[
                         a_smem_layout=a_smem_layout,
@@ -2529,7 +2423,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             next_work_info = scheduler.fetch_next_work()
             # DO MMA
             if elect_one_cta:
-                for _ in range(num_iters):
+                for _ in range(_num_iters):
                     var mma_output_mma_stage = (
                         mma_output_pipeline.producer_stage()
                     )
@@ -2625,7 +2519,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             comptime if is_lower_frag_required:
                 _ = c_lower_main_tile.fill(0.0)
 
-            for k_iter in range(num_iters):
+            for k_iter in range(_num_iters):
                 promote_accumulators[
                     a_scales_smem_layout=a_scales_smem_layout,
                     block_tile_shape=config.block_tile_shape,
@@ -3011,14 +2905,14 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     )
 
     ctx.enqueue_function[kernel, dump_asm=False](
-        num_active_experts,
+        Int32(num_active_experts),
         a_tma_op,
         b_tma_op,
         c_tma_op,
         c_tensor.ptr,
         a_scales_tma_op,
         a_offsets_tensor,
-        ceildiv(K, BK),
+        Int32(ceildiv(K, BK)),
         b_scales_2d,
         expert_ids_tensor,
         problem_shape,

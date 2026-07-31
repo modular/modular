@@ -31,10 +31,14 @@ def matmul(
     a_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     c_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     var a = TileTensor(a_ptr, row_major(Coord(m, k)))
     var b = TileTensor(b_ptr, row_major(Coord(k, n)))
     var c = TileTensor(c_ptr, row_major(Coord(m, n)))
@@ -137,9 +141,9 @@ def run_matmul(ctx: DeviceContext) raises:
         a_device,
         b_device,
         c_device,
-        m,
-        n,
-        k,
+        Int32(m),
+        Int32(n),
+        Int32(k),
         grid_dim=(ceildiv(m, TILE_SZ_A), ceildiv(n, TILE_SZ_B)),
         block_dim=(TILE_SZ_A, 1),
     )

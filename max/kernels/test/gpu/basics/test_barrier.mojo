@@ -24,8 +24,9 @@ def kernel[
     input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     shared_data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    size: Int,
+    size_dev: Int32,
 ):
+    var size = Int(size_dev)
     var global_tid = global_idx.x
     if global_tid >= size:
         return
@@ -63,7 +64,7 @@ def test_barrier[dtype: DType](ctx: DeviceContext) raises:
         input_buffer,
         output_buffer,
         shared_buffer,
-        buffer_size,
+        Int32(buffer_size),
         grid_dim=1,
         block_dim=block_size,
     )

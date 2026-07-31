@@ -2753,7 +2753,7 @@ struct Struct_ep_fused_silu_mxfp4:
                 scales_tensor,
                 input_tensor,
                 row_offsets_tensor,
-                max_padded_M,
+                Int32(max_padded_M),
                 alpha,
                 limit,
                 grid_dim=hw_info.sm_count,

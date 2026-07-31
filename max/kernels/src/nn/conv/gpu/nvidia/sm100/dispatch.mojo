@@ -41,20 +41,24 @@ def _transpose_rscf_to_krsc[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    R: Int,
-    S: Int,
-    C: Int,
-    F: Int,
+    R: Int32,
+    S: Int32,
+    C: Int32,
+    F: Int32,
 ):
     """GPU kernel: transpose filter RSCF [R,S,C,F] -> KRSC [K,R,S,C]."""
+    var _R = Int(R)
+    var _S = Int(S)
+    var _C = Int(C)
+    var _F = Int(F)
     var tid = global_idx.x
-    if tid >= R * S * C * F:
+    if tid >= _R * _S * _C * _F:
         return
-    var k, rem = divmod(tid, R * S * C)
+    var k, rem = divmod(tid, _R * _S * _C)
     var r: Int
-    r, rem = divmod(rem, S * C)
-    var s, c = divmod(rem, C)
-    var src_idx = r * S * C * F + s * C * F + c * F + k
+    r, rem = divmod(rem, _S * _C)
+    var s, c = divmod(rem, _C)
+    var src_idx = r * _S * _C * _F + s * _C * _F + c * _F + k
     dst_ptr.store(tid, src_ptr.load(src_idx))
 
 
@@ -64,20 +68,24 @@ def _transpose_fcrs_to_krsc[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    F: Int,
-    C: Int,
-    R: Int,
-    S: Int,
+    F: Int32,
+    C: Int32,
+    R: Int32,
+    S: Int32,
 ):
     """GPU kernel: transpose filter FCRS [F,C,R,S] -> KRSC [K,R,S,C]."""
+    var _F = Int(F)
+    var _C = Int(C)
+    var _R = Int(R)
+    var _S = Int(S)
     var tid = global_idx.x
-    if tid >= F * C * R * S:
+    if tid >= _F * _C * _R * _S:
         return
-    var k, rem = divmod(tid, R * S * C)
+    var k, rem = divmod(tid, _R * _S * _C)
     var r: Int
-    r, rem = divmod(rem, S * C)
-    var s, c = divmod(rem, C)
-    var src_idx = k * C * R * S + c * R * S + r * S + s
+    r, rem = divmod(rem, _S * _C)
+    var s, c = divmod(rem, _C)
+    var src_idx = k * _C * _R * _S + c * _R * _S + r * _S + s
     dst_ptr.store(tid, src_ptr.load(src_idx))
 
 
@@ -202,10 +210,10 @@ def dispatch_sm100_conv2d[
             ctx.enqueue_function[_transpose_fcrs_to_krsc[filter_type]](
                 filter.ptr,
                 filter_krsc_ptr,
-                F,
-                C,
-                R,
-                S,
+                Int32(F),
+                Int32(C),
+                Int32(R),
+                Int32(S),
                 grid_dim=grid,
                 block_dim=transpose_block,
             )
@@ -217,10 +225,10 @@ def dispatch_sm100_conv2d[
             ctx.enqueue_function[_transpose_rscf_to_krsc[filter_type]](
                 filter.ptr,
                 filter_krsc_ptr,
-                R,
-                S,
-                C,
-                F,
+                Int32(R),
+                Int32(S),
+                Int32(C),
+                Int32(F),
                 grid_dim=grid,
                 block_dim=transpose_block,
             )

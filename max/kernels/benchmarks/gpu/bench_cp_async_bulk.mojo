@@ -94,7 +94,7 @@ def bulk_memcpy_kernel[
 ](
     src: UnsafePointer[UInt8, ImmutAnyOrigin],
     dst: UnsafePointer[UInt8, MutAnyOrigin],
-    total_chunks: Int,
+    total_chunks: Int32,
 ):
     comptime NUM_WARPS = NUM_THREADS // 32
     comptime DATA_BYTES = NUM_WARPS * S * BYTES_PER_COPY
@@ -120,7 +120,7 @@ def bulk_memcpy_kernel[
 
     var first = Int(block_idx.x) * NUM_WARPS + w
     var stride = Int(gpu_grid_dim.x) * NUM_WARPS
-    var my_total = max(0, (total_chunks - first + stride - 1) // stride)
+    var my_total = max(0, (Int(total_chunks) - first + stride - 1) // stride)
 
     if not is_leader:
         return
@@ -243,7 +243,7 @@ def main() raises:
                 ](
                     src_dev,
                     dst_dev,
-                    total_chunks,
+                    Int32(total_chunks),
                     grid_dim=(grid,),
                     block_dim=(NUM_THREADS,),
                     shared_mem_bytes=smem_bytes,

@@ -89,11 +89,11 @@ def p2p_copy_kernel[
 ](
     dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    num_elements: Int,
+    num_elements: Int32,
 ):
     var global_tid = global_idx.x
     var stride = grid_dim.x * BLOCK_SIZE
-    var num_vectors = num_elements // width
+    var num_vectors = Int(num_elements) // width
 
     comptime vec_align = width * size_of[dtype]()
 
@@ -206,7 +206,7 @@ def bench_p2p[
             ctx_inner.enqueue_function[copy_kernel](
                 dst,
                 src,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
@@ -235,14 +235,14 @@ def bench_p2p[
             ctx0.enqueue_function[copy_kernel](
                 buf1_write,
                 buf0_read,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
             ctx1.enqueue_function[copy_kernel](
                 buf0_write,
                 buf1_read,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
@@ -251,14 +251,14 @@ def bench_p2p[
             ctx0.enqueue_function[copy_kernel](
                 buf0_write,
                 buf1_read,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
             ctx1.enqueue_function[copy_kernel](
                 buf1_write,
                 buf0_read,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
@@ -294,7 +294,7 @@ def bench_p2p[
             ctx0.enqueue_function[copy_kernel](
                 buf1_write,
                 buf0_write,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
@@ -313,7 +313,7 @@ def bench_p2p[
             ctx0.enqueue_function[copy_kernel](
                 buf0_write,
                 buf1_write,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )

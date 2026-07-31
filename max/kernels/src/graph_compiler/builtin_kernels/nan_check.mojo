@@ -46,7 +46,7 @@ def _nan_check_gpu_kernel[
     dtype: DType,
 ](
     src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    total_elements: Int,
+    total_elements: Int32,
     out_nan: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
     out_inf: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
 ):
@@ -62,10 +62,11 @@ def _nan_check_gpu_kernel[
         inf_local[0] = Int32(0)
     barrier()
 
+    var _total_elements = Int(total_elements)
     var tid = block_idx.x * block_dim.x + thread_idx.x
     var my_nan = Int32(0)
     var my_inf = Int32(0)
-    if tid < total_elements:
+    if tid < _total_elements:
         var val = src_ptr.load(tid)
         if isnan(val):
             my_nan = Int32(1)
@@ -161,8 +162,10 @@ def nan_check_count[
 
         comptime kernel = _nan_check_gpu_kernel[dtype]
         gpu_ctx.enqueue_function[kernel](
-            input.unsafe_ptr(),
-            total,
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                input.unsafe_ptr()
+            ),
+            Int32(total),
             out_nan_ptr,
             out_inf_ptr,
             grid_dim=grid,

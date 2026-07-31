@@ -470,11 +470,11 @@ def run_mla_prefill_v2[
                     o_tt,
                     mask,
                     scale,
-                    cache_seq_len,  # num_keys (self-attention)
-                    0,  # start_pos
+                    Int32(cache_seq_len),  # num_keys (self-attention)
+                    Int32(0),  # start_pos
                     work_indptr_ptr,
                     work_info_ptr,
-                    num_works,
+                    Int32(num_works),
                     grid_dim=(gx, gy, gz),
                     block_dim=_kernel.NUM_THREADS,
                 )

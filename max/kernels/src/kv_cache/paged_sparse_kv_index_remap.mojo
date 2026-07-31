@@ -98,30 +98,38 @@ def _paged_sparse_kv_index_remap_row_offs_kernel(
     row_offsets: UnsafePointer[UInt32, ImmutAnyOrigin],
     lut: UnsafePointer[UInt32, MutAnyOrigin],
     physical_out: UnsafePointer[Int32, MutAnyOrigin],
-    num_indices: Int,
-    lut_cols: Int,
-    lut_rows: Int,
-    page_size: Int,
+    num_indices: Int32,
+    lut_cols: Int32,
+    lut_rows: Int32,
+    page_size: Int32,
     invalid_block_id: UInt32,
-    indices_stride: Int,
-    num_batches: Int,
-    logical_stride0: Int,
-    logical_stride1: Int,
+    indices_stride: Int32,
+    num_batches: Int32,
+    logical_stride0: Int32,
+    logical_stride1: Int32,
 ):
+    var _num_indices = Int(num_indices)
+    var _lut_cols = Int(lut_cols)
+    var _lut_rows = Int(lut_rows)
+    var _page_size = Int(page_size)
+    var _indices_stride = Int(indices_stride)
+    var _num_batches = Int(num_batches)
+    var _logical_stride0 = Int(logical_stride0)
+    var _logical_stride1 = Int(logical_stride1)
     var tid = block_idx.x * block_dim.x + thread_idx.x
-    if tid >= num_indices:
+    if tid >= _num_indices:
         return
-    var r = tid // indices_stride
-    var c = tid - r * indices_stride
-    var loff = r * logical_stride0 + c * logical_stride1
-    var batch_u32 = _find_batch_for_row(r, row_offsets, num_batches)
+    var r = tid // _indices_stride
+    var c = tid - r * _indices_stride
+    var loff = r * _logical_stride0 + c * _logical_stride1
+    var batch_u32 = _find_batch_for_row(r, row_offsets, _num_batches)
     physical_out[tid] = _remap_one(
         logical[loff],
         batch_u32,
         lut,
-        lut_cols,
-        lut_rows,
-        page_size,
+        _lut_cols,
+        _lut_rows,
+        _page_size,
         invalid_block_id,
     )
 
@@ -200,15 +208,15 @@ def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
             input_row_offsets,
             lut,
             physical_out,
-            num_indices,
-            lut_cols,
-            lut_rows,
-            page_size,
+            Int32(num_indices),
+            Int32(lut_cols),
+            Int32(lut_rows),
+            Int32(page_size),
             invalid_block_id,
-            indices_stride,
-            num_batches,
-            logical_stride0,
-            logical_stride1,
+            Int32(indices_stride),
+            Int32(num_batches),
+            Int32(logical_stride0),
+            Int32(logical_stride1),
             grid_dim=grid,
             block_dim=BLOCK,
         )

@@ -818,9 +818,9 @@ def _enqueue_apple_fp4_materialize_dense[
             c,
             a,
             wdense_tt.as_immut(),
-            m,
-            n,
-            k,
+            Int32(m),
+            Int32(n),
+            Int32(k),
             grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
             block_dim=(4 * WARP_SIZE,),
         )

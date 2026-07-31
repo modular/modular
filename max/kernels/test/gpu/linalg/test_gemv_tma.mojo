@@ -67,10 +67,14 @@ def gemv_tma_kernel[
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
     a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
     b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
+    M_dev: Int32,
+    N_dev: Int32,
+    K_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var M = Int(M_dev)
+    var N = Int(N_dev)
+    var K = Int(K_dev)
     var bidx = block_idx.x
     var block_row = bidx * BLOCK_SIZE_M
 
@@ -290,9 +294,9 @@ def gemv_tma[
         c,
         a,
         b,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
         shared_mem_bytes=smem_use,

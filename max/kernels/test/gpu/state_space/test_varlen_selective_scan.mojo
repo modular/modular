@@ -501,9 +501,9 @@ def run_varlen_selective_scan_fwd_gpu[
 
     ctx.enqueue_function(
         compiled_kernel,
-        dim,
-        ngroups,
-        batch,
+        Int32(dim),
+        Int32(ngroups),
+        Int32(batch),
         Int32(-1),  # pad_slot_id
         Int8(1) if delta_softplus else Int8(0),
         u_gpu_tt,

@@ -26,8 +26,10 @@ def vec_func(
     in0: UnsafePointer[Float32, MutAnyOrigin],
     in1: UnsafePointer[Float32, MutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -98,7 +100,7 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in0_dev1,
         in1_dev1,
         out_dev1,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -109,7 +111,7 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in0_dev2,
         in1_dev2,
         out_dev2,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -120,7 +122,7 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in0_dev3,
         in1_dev3,
         out_dev3,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -223,7 +225,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in_dev1,  # in0 - last use
         in_dev4,  # in1 - last use
         out_dev1,  # output
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -242,7 +244,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in_dev2,  # in0 - last use
         out_dev1,  # in1 - last use
         out_dev2,  # output
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -251,7 +253,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in_dev3,  # in0 - last use
         in_dev5,  # in1 - last use
         out_dev3,  # output
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -266,7 +268,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         out_dev2,  # in0 - last use
         out_dev3,  # in1 - last use
         out_dev4,  # output
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )

@@ -1337,8 +1337,8 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         o: TileTensor[output_dtype, o_layout, MutAnyOrigin],
         mask_functor: mask_t,
         scale: Float32,
-        num_keys: Int,
-        start_pos: Int,
+        num_keys: Int32,
+        start_pos: Int32,
         sink_weights_ptr: UnsafePointer[Scalar[q_dtype], ImmutAnyOrigin],
     ):
         """Multi-block 8-warp MHA forward (inference-only).
@@ -1417,6 +1417,8 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         # matches `config.dtype` (BF16 or FP8), o matches
         # `config.output_dtype`. The downstream rebind is a no-op identity
         # given the assert.
+        var _num_keys = Int(num_keys)
+        var _start_pos = Int(start_pos)
         comptime assert (
             q_dtype == Self.config.dtype
         ), "MhaPrefillV2.run: `q.dtype` must equal `config.dtype`"
@@ -1427,7 +1429,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             TileTensor[Self.config.dtype, q_layout, ImmutAnyOrigin]
         ](q)
         # `seq_len` from the layout's runtime dim and `num_tiles` from
-        # the runtime `num_keys` arg are wave-uniform by construction.
+        # the runtime `_num_keys` arg are wave-uniform by construction.
         # Wrapping in `readfirstlane` here — at the actual use site
         # inside the kernel — is what materializes the uniformity into
         # SGPR-resident operands across the main loop. Upstream
@@ -1436,7 +1438,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         var seq_len = Int(readfirstlane(Int32(q.dim[1]())))
         var num_tiles = Int(
             readfirstlane(
-                Int32((num_keys + Self.KV_BLOCK - 1) // Self.KV_BLOCK)
+                Int32((_num_keys + Self.KV_BLOCK - 1) // Self.KV_BLOCK)
             )
         )
         comptime assert Self.NUM_HEADS % Self.NUM_KV_HEADS == 0, (
@@ -1531,7 +1533,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         )
         var max_q_end_pos = (
             max_tile_idx_local + 1
-        ) * Self.Q_BLOCK_SIZE + start_pos
+        ) * Self.Q_BLOCK_SIZE + _start_pos
         var max_num_tiles_calc = (
             max_q_end_pos + Self.KV_BLOCK - 1
         ) // Self.KV_BLOCK
@@ -1553,7 +1555,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             # pairs (main loop advances `j` by 2; epilogue drains 4). An
             # ODD tile count double-processes tile `N-3` across the
             # main-loop/epilogue boundary and corrupts the output (FLUX
-            # i2i: num_keys=8623 -> 135 tiles, odd). Round up to even with
+            # i2i: _num_keys=8623 -> 135 tiles, odd). Round up to even with
             # a phantom trailing tile: the SRD clamp zeros its K/V and the
             # kbound mask excludes its score-0 columns, so it contributes
             # nothing. `CausalMask` is unaffected (its cap fixes the
@@ -1728,7 +1730,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             _batch_idx_u32,
             _kv_head_idx_u32,
             0,
-            num_keys,
+            _num_keys,
             w_id,
             l_id,
         )
@@ -1744,7 +1746,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 1,
-                num_keys,
+                _num_keys,
                 w_id,
                 l_id,
             )
@@ -1754,7 +1756,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             _batch_idx_u32,
             _kv_head_idx_u32,
             0,
-            num_keys,
+            _num_keys,
             w_id,
             l_id,
         )
@@ -1777,11 +1779,11 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             att_block_0,
             tile_idx,
             0,
-            start_pos,
+            _start_pos,
             UInt32(head_idx),
             _batch_idx_u32,
             l_id,
-            num_keys,
+            _num_keys,
         )
 
         # Tile-0 partial softmax (no rescale: first tile).
@@ -1806,7 +1808,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 2,
-                num_keys,
+                _num_keys,
                 w_id,
                 l_id,
             )
@@ -1817,7 +1819,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 1,
-                num_keys,
+                _num_keys,
                 w_id,
                 l_id,
             )
@@ -1864,7 +1866,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 j,
-                num_keys,
+                _num_keys,
                 w_id,
                 l_id,
             )
@@ -1875,11 +1877,11 @@ struct MhaPrefillV2[config: MhaConfigV2]:
                     att_block_1,
                     tile_idx,
                     j - 2,
-                    start_pos,
+                    _start_pos,
                     UInt32(head_idx),
                     _batch_idx_u32,
                     l_id,
-                    num_keys,
+                    _num_keys,
                 )
             _cluster_barrier()
 
@@ -1905,7 +1907,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 j - 1,
-                num_keys,
+                _num_keys,
                 w_id,
                 l_id,
             )
@@ -1941,7 +1943,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 j + 1,
-                num_keys,
+                _num_keys,
                 w_id,
                 l_id,
             )
@@ -1951,11 +1953,11 @@ struct MhaPrefillV2[config: MhaConfigV2]:
                 att_block_0,
                 tile_idx,
                 j - 1,
-                start_pos,
+                _start_pos,
                 UInt32(head_idx),
                 _batch_idx_u32,
                 l_id,
-                num_keys,
+                _num_keys,
             )
             sched_dsread_valu_pairs[
                 32, valu_cnt=1, group=Self._SCHED_MAIN_C5_DSREAD
@@ -1984,7 +1986,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 j,
-                num_keys,
+                _num_keys,
                 w_id,
                 l_id,
             )
@@ -2020,7 +2022,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             _batch_idx_u32,
             _kv_head_idx_u32,
             N - 1,
-            num_keys,
+            _num_keys,
             w_id,
             l_id,
         )
@@ -2030,11 +2032,11 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             att_block_1,
             tile_idx,
             N - 3,
-            start_pos,
+            _start_pos,
             UInt32(head_idx),
             _batch_idx_u32,
             l_id,
-            num_keys,
+            _num_keys,
         )
         _cluster_barrier()
 
@@ -2060,7 +2062,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             _batch_idx_u32,
             _kv_head_idx_u32,
             N - 2,
-            num_keys,
+            _num_keys,
             w_id,
             l_id,
         )
@@ -2087,11 +2089,11 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             att_block_0,
             tile_idx,
             N - 2,
-            start_pos,
+            _start_pos,
             UInt32(head_idx),
             _batch_idx_u32,
             l_id,
-            num_keys,
+            _num_keys,
         )
         sched_dsread_valu_pairs[
             32, valu_cnt=1, group=Self._SCHED_EPI_C5_DSREAD
@@ -2120,7 +2122,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             _batch_idx_u32,
             _kv_head_idx_u32,
             N - 1,
-            num_keys,
+            _num_keys,
             w_id,
             l_id,
         )
@@ -2147,11 +2149,11 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             att_block_1,
             tile_idx,
             N - 1,
-            start_pos,
+            _start_pos,
             UInt32(head_idx),
             _batch_idx_u32,
             l_id,
-            num_keys,
+            _num_keys,
         )
         sched_dsread_valu_pairs[
             32, valu_cnt=1, group=Self._SCHED_EPI_C9_DSREAD
@@ -2382,8 +2384,8 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             o_tt,
             mask_functor,
             scale,
-            num_keys,
-            start_pos,
+            Int32(num_keys),
+            Int32(start_pos),
             sink_weights_ptr,
         )
 
@@ -2629,8 +2631,8 @@ def mha_prefill_v2[
         o,
         mask_functor,
         scale,
-        num_keys,
-        start_pos,
+        Int32(num_keys),
+        Int32(start_pos),
         sink_weights_ptr,
         grid_dim=(
             config.num_heads,

@@ -177,8 +177,8 @@ def _fp8_index_score_prefill_kernel_sm100[
     valid_length: TileTensor[DType.uint32, VLLT, ImmutAnyOrigin],
     q_s: TileTensor[DType.float32, QSLT, ImmutAnyOrigin],
     output: TileTensor[DType.float32, OutLT, MutAnyOrigin],
-    max_num_keys: Int,
-    causal: Int,
+    max_num_keys_dev: Int32,
+    causal_dev: Int32,
 ):
     comptime assert valid_length.flat_rank == 1
     comptime MMA_N = N_TOKENS * num_heads
@@ -195,6 +195,9 @@ def _fp8_index_score_prefill_kernel_sm100[
     comptime TMA_WARP = 5
     comptime MMA_LANE = MMA_WARP * WARP_SIZE  # lane 0 of the MMA warp issues MMAs
 
+    # `Int` is not device-passable; widen the fixed-width args for use below.
+    var max_num_keys = Int(max_num_keys_dev)
+    var causal = Int(causal_dev)
     var tid = Int(thread_idx.x)
     var b = Int(block_idx.x)
     var token_block = Int(block_idx.y)
@@ -530,8 +533,8 @@ def fp8_index_score_sm100_prefill[
         valid_length.as_immut(),
         q_s,
         output,
-        max_num_keys,
-        causal,
+        Int32(max_num_keys),
+        Int32(causal),
         grid_dim=(batch_size, ceildiv(max_seq_len, N_TOKENS), 1),
         block_dim=_PREFILL_NTHREADS,
         shared_mem_bytes=smem_bytes,

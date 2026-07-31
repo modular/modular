@@ -478,7 +478,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # C tensor for bounds-checked stores
         c_device: Self.CDeviceTile,
         # Number of active experts
-        num_active_experts: Int,
+        num_active_experts: Int32,
         # K dimension for iteration
         K: UInt32,
     ):
@@ -506,6 +506,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             K: K contraction dimension; the inner reduction axis length used
                 to compute `ceildiv(K, BK)` K iterations.
         """
+        var _num_active_experts = Int(num_active_experts)
         Self.validate_config()
 
         # ===== Shared Memory Setup =====
@@ -582,7 +583,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # ===== TMA LOAD WARP =====
         if Self.WarpRole.is_load():
             var load_iter = Self.WorkIterator(
-                num_active_experts, a_offsets, expert_ids, expert_scales
+                _num_active_experts, a_offsets, expert_ids, expert_scales
             )
 
             with input_pipeline.producer() as producer:
@@ -616,7 +617,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # epilogue reads TMEM per-K to accumulate in registers).
         if Self.WarpRole.is_mma():
             var mma_iter = Self.WorkIterator(
-                num_active_experts, a_offsets, expert_ids, expert_scales
+                _num_active_experts, a_offsets, expert_ids, expert_scales
             )
 
             var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
@@ -647,7 +648,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # ===== EPILOGUE WARPS =====
         if Self.WarpRole.is_epilogue():
             var epi_iter = Self.WorkIterator(
-                num_active_experts, a_offsets, expert_ids, expert_scales
+                _num_active_experts, a_offsets, expert_ids, expert_scales
             )
             Self.MmaEpilogueSync.wait()
 

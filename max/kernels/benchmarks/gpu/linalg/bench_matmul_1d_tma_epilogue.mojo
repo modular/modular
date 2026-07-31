@@ -69,7 +69,7 @@ def _verify_buffers_gpu[
 ](
     output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
     reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    length: Int,
+    length: Int32,
     atol: Float32,
     rtol: Float32,
     result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
@@ -82,7 +82,7 @@ def _verify_buffers_gpu[
 
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
-    while i < length:
+    while i < Int(length):
         var x = output[i].cast[DType.float32]()
         var y = reference[i].cast[DType.float32]()
         abs_diff_sum += abs(x - y)
@@ -132,7 +132,7 @@ def _check_verification_result[
     ctx.enqueue_function[kernel](
         c_device,
         c_device_ref,
-        c_size,
+        Int32(c_size),
         atol,
         rtol,
         result_device,

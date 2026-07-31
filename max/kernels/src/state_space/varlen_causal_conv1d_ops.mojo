@@ -195,10 +195,10 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch,
-                    dim,
-                    seqlen,
-                    state_len,
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(state_len),
                     x_tt,
                     weight_tt,
                     bias_tt,
@@ -249,10 +249,10 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch,
-                    dim,
-                    seqlen,
-                    state_len,
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(state_len),
                     x_tt,
                     weight_tt,
                     bias_tt,
@@ -303,10 +303,10 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch,
-                    dim,
-                    seqlen,
-                    state_len,
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(state_len),
                     x_tt,
                     weight_tt,
                     bias_tt,
@@ -357,10 +357,10 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch,
-                    dim,
-                    seqlen,
-                    state_len,
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(state_len),
                     x_tt,
                     weight_tt,
                     bias_tt,
@@ -510,10 +510,10 @@ struct CausalConv1DVarlenStates:
             ]()
             gpu_ctx.enqueue_function(
                 compiled_func,
-                total_tokens,
-                dim,
-                batch,
-                state_len,
+                Int32(total_tokens),
+                Int32(dim),
+                Int32(batch),
+                Int32(state_len),
                 x_tt,
                 cu_seqlens_tt,
                 states_tt,

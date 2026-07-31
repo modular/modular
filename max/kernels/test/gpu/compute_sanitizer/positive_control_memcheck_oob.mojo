@@ -31,7 +31,9 @@ from std.gpu import thread_idx
 from max.gpu.host import DeviceContext
 
 
-def oob_global_write(dst: UnsafePointer[Float32, MutAnyOrigin], n: Int):
+def oob_global_write(dst: UnsafePointer[Float32, MutAnyOrigin], n_dev: Int32):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var n = Int(n_dev)
     var thread_id = Int(thread_idx.x)
     # In-bounds write first: an observable side effect that guarantees the
     # kernel is launched and not elided.
@@ -51,7 +53,7 @@ def main() raises:
         var dst = ctx.enqueue_create_buffer[DType.float32](n)
         ctx.enqueue_function[oob_global_write](
             dst,
-            n,
+            Int32(n),
             grid_dim=(1,),
             block_dim=(n,),
         )

@@ -147,8 +147,8 @@ def _mha_prefill_v2_launch[
         o,
         mask_functor,
         scale,
-        num_keys,
-        start_pos,
+        Int32(num_keys),
+        Int32(start_pos),
         sink_weights_ptr,
         grid_dim=(
             config.num_heads,

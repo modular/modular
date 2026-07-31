@@ -32,10 +32,10 @@ def vec_func(
     in0: UnsafePointer[Float32, ImmutAnyOrigin],
     in1: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len: Int32,
 ):
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= Int(len):
         return
     output[tid] = in0[tid] + in1[tid]
 
@@ -66,7 +66,7 @@ def bench_vec_add(
             in0_device,
             in1_device,
             out_device,
-            length,
+            Int32(length),
             grid_dim=(length // block_dim),
             block_dim=(block_dim),
         )

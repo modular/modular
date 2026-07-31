@@ -96,7 +96,9 @@ def global_reduction_kernel[
     input_fn: def[width: Int, _rank: Int](
         idx: IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
-](d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin], num_cols: Int):
+](d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin], num_cols_dev: Int32,):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_cols = Int(num_cols_dev)
     var tid = thread_idx.x
     var row = block_idx.x
     var idx = tid * simd_width
@@ -124,11 +126,14 @@ def tma_reduction_kernel[
     simd_width: Int,
 ](
     descriptor: TMADescriptor,
-    rows: Int,
-    cols: Int,
+    rows_dev: Int32,
+    cols_dev: Int32,
     d_data: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var rows = Int(rows_dev)
+    var cols = Int(cols_dev)
     var shmem = UnsafePointer(
         external_memory[
             Scalar[dtype], address_space=AddressSpace.SHARED, alignment=128
@@ -219,8 +224,8 @@ def test_tma_block_reduce[
             ]
             ctx.enqueue_function[kernel](
                 tma_desc,
-                rows,
-                cols,
+                Int32(rows),
+                Int32(cols),
                 d_data,
                 d_out,
                 grid_dim=grid_dim,
@@ -251,7 +256,7 @@ def test_tma_block_reduce[
 
             ctx.enqueue_function[kernel](
                 d_out,
-                cols,  # num_cols
+                Int32(cols),  # num_cols
                 grid_dim=grid_dim,
                 block_dim=block_dim,
             )

@@ -63,7 +63,7 @@ def apply_mask_kernel[
     valid_length: TileTensor[DType.uint32, VLLayoutType, vl_origin],
     cache_lengths: TileTensor[DType.uint32, CLLayoutType, ImmutAnyOrigin],
     mask: mask_t,
-    max_num_keys: Int,
+    max_num_keys: Int32,
 ):
     """Apply causal mask to the output scores.
 
@@ -98,7 +98,7 @@ def apply_mask_kernel[
 
     var global_seq_idx = start_of_seq + UInt32(seq_idx)
     var current_val = output.raw_load(
-        Int(global_seq_idx) * max_num_keys + key_idx
+        Int(global_seq_idx) * Int(max_num_keys) + key_idx
     )
 
     # Apply mask: coord = [batch, head, query_idx, key_idx]
@@ -108,7 +108,9 @@ def apply_mask_kernel[
     var coord = Index(batch_idx, 0, cache_len + seq_idx, key_idx)
     var masked_val = mask.mask(coord, current_val)
 
-    output.raw_store(Int(global_seq_idx) * max_num_keys + key_idx, masked_val)
+    output.raw_store(
+        Int(global_seq_idx) * Int(max_num_keys) + key_idx, masked_val
+    )
 
 
 @__name(t"mla_fill_invalid_topk_{use_causal_mask}")
@@ -124,9 +126,9 @@ def fill_invalid_topk_kernel[
     cache_lengths: TileTensor[
         DType.uint32, cache_lengths_layout, ImmutAnyOrigin
     ],
-    total_seq_len: Int,
-    top_k: Int,
-    effective_k: Int,
+    total_seq_len: Int32,
+    top_k: Int32,
+    effective_k: Int32,
 ):
     """Scatter the compact top-k indices into the top_k-strided output, with
     invalid positions set to -1.
@@ -170,9 +172,12 @@ def fill_invalid_topk_kernel[
     """
     comptime assert cache_lengths.flat_rank == 1
 
+    var _total_seq_len = Int(total_seq_len)
+    var _top_k = Int(top_k)
+    var _effective_k = Int(effective_k)
     var token_idx = block_idx.x
 
-    if token_idx >= total_seq_len:
+    if token_idx >= _total_seq_len:
         return
 
     # Token-level quantities (independent of k): find which batch this token
@@ -202,27 +207,27 @@ def fill_invalid_topk_kernel[
         # No causal mask: all keys in the batch are valid
         num_keys = cache_len + seq_len
 
-    # Cover ALL top_k output columns. The launch caps block_dim at 1024, which
-    # is smaller than top_k when top_k > 1024 (e.g. the indexer's top_k=2048),
+    # Cover ALL _top_k output columns. The launch caps block_dim at 1024, which
+    # is smaller than _top_k when _top_k > 1024 (e.g. the indexer's _top_k=2048),
     # so each thread strides across multiple columns. Without this grid-stride
-    # loop, columns [block_dim, top_k) were never written (garbage, not -1).
+    # loop, columns [block_dim, _top_k) were never written (garbage, not -1).
     var k_idx = Int(thread_idx.x)
-    while k_idx < top_k:
-        # Output index: [token_idx, k_idx] with top_k stride
-        var out_idx = Int(token_idx) * top_k + k_idx
+    while k_idx < _top_k:
+        # Output index: [token_idx, k_idx] with _top_k stride
+        var out_idx = Int(token_idx) * _top_k + k_idx
 
-        if k_idx >= effective_k:
+        if k_idx >= _effective_k:
             # No computed value at this position: must be -1.
             output_indices[out_idx] = -1
         else:
-            # Read topk's selection from the compact (effective_k-strided)
+            # Read topk's selection from the compact (_effective_k-strided)
             # buffer, then invalidate it if it is out of range:
             # 1. position beyond the valid keys (k_idx >= num_keys)
             # 2. the index VALUE points beyond valid keys (idx_val >= num_keys),
             #    which can happen because topk operates on
             #    max_num_keys >= num_keys for this token/batch.
             var idx_val = Int(
-                topk_indices[Int(token_idx) * effective_k + k_idx]
+                topk_indices[Int(token_idx) * _effective_k + k_idx]
             )
             if k_idx >= num_keys or idx_val >= num_keys or idx_val < 0:
                 output_indices[out_idx] = -1
@@ -434,7 +439,7 @@ def mla_indexer_ragged_float8_paged[
                     input_row_offsets.as_immut(),
                     cache_lengths,
                     mask,
-                    max_num_keys,
+                    Int32(max_num_keys),
                     grid_dim=(
                         batch_size,
                         ceildiv(max_new_tokens, 16),
@@ -519,9 +524,9 @@ def mla_indexer_ragged_float8_paged[
         ),
         input_row_offsets.as_immut(),
         cache_lengths,
-        total_seq_len,
-        top_k,
-        effective_k,
+        Int32(total_seq_len),
+        Int32(top_k),
+        Int32(effective_k),
         grid_dim=(total_seq_len, 1, 1),
         block_dim=(block_size, 1, 1),
     )

@@ -528,9 +528,9 @@ struct Shuffler[E: Int]:
         sfa_raw: TileTensor[DType.uint8, SrcLayout, ImmutAnyOrigin],
         sfa_pre: TileTensor[mut=True, DType.uint8, DstLayout, MutAnyOrigin],
         a_offsets: TileTensor[DType.uint32, AOffsetsLayout, ImmutAnyOrigin],
-        num_active_experts: Int,
-        max_padded_M: Int,
-        total_wg: Int,
+        num_active_experts: Int32,
+        max_padded_M: Int32,
+        total_wg: Int32,
     ):
         """Persistent grid-strided per-expert scale preshuffle.
 
@@ -552,6 +552,9 @@ struct Shuffler[E: Int]:
         so the matmul reads expert `e` at offset `e * max_padded_M *
         K_SCALES` unchanged.
         """
+        var _num_active_experts = Int(num_active_experts)
+        var _max_padded_M = Int(max_padded_M)
+        var _total_wg = Int(total_wg)
         var tid = thread_idx.x
         var linear_wg = block_idx.x
 
@@ -561,7 +564,7 @@ struct Shuffler[E: Int]:
         var target_tile = linear_wg
         var current_tile = 0
 
-        for expert_slot in range(num_active_experts):
+        for expert_slot in range(_num_active_experts):
             var token_start = Int(a_offsets[Coord(expert_slot)])
             var num_tokens = (
                 Int(a_offsets[Coord(expert_slot + 1)]) - token_start
@@ -615,13 +618,13 @@ struct Shuffler[E: Int]:
 
                 var cell_byte_off = Self.scale_4d_slot_byte_off[
                     K_SCALES=K_SCALES, packed_mode=True
-                ](expert_slot, cell_mn_base, cell_k_base, max_padded_M)
+                ](expert_slot, cell_mn_base, cell_k_base, _max_padded_M)
                 var dst_ptr = (sfa_pre.ptr + cell_byte_off).bitcast[
                     Scalar[DType.int32]
                 ]()
                 dst_ptr[0] = bitcast[DType.int32, 1](cell_bytes)[0]
 
-                target_tile += total_wg
+                target_tile += _total_wg
 
             current_tile = expert_end
 
@@ -678,9 +681,9 @@ struct Shuffler[E: Int]:
             raw_any,
             pre_any,
             a_off_any,
-            num_active_experts,
-            max_padded_M,
-            total_wg,
+            Int32(num_active_experts),
+            Int32(max_padded_M),
+            Int32(total_wg),
             grid_dim=(total_wg,),
             block_dim=Self.NUM_THREADS,
         )

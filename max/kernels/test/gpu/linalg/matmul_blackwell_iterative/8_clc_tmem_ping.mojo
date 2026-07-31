@@ -532,8 +532,9 @@ def kernel_8[
     b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
     cluster_dim: StaticTuple[Int32, 3],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    var num_iters = Int(num_iters_dev)
     comptime num_output_warps = 4
 
     comptime SCHEDULER_THREADS = WARP_SIZE
@@ -1128,7 +1129,7 @@ def blackwell_kernel_8[
         b_tma_op,
         c_tma_op,
         cluster_dim,
-        K // BK,
+        Int32(K // BK),
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
         block_dim=(32 * 7),

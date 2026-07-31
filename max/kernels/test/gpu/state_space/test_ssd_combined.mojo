@@ -333,11 +333,11 @@ def run_ssd_combined_gpu[
 
     ctx.enqueue_function(
         compiled_kernel,
-        total_batch_dim,
-        batch,
-        dim,
-        seqlen,
-        group_size,
+        Int32(total_batch_dim),
+        Int32(batch),
+        Int32(dim),
+        Int32(seqlen),
+        Int32(group_size),
         Int8(1) if delta_softplus else Int8(0),
         output_gpu_lt,
         x_gpu_lt,

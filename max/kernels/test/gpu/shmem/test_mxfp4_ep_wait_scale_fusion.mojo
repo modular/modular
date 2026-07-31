@@ -116,11 +116,15 @@ def _ep_wait_copy_kernel[
     output_scales: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
     recv_buf: UnsafePointer[UInt8, MutUntrackedOrigin],
     a_offsets: TileTensor[DType.uint32, aoff_layout, ImmutAnyOrigin],
-    msg_bytes: Int,
-    num_active: Int,
-    total_tokens: Int,
-    max_padded_M: Int,
+    msg_bytes_dev: Int32,
+    num_active_dev: Int32,
+    total_tokens_dev: Int32,
+    max_padded_M_dev: Int32,
 ):
+    var msg_bytes = Int(msg_bytes_dev)
+    var num_active = Int(num_active_dev)
+    var total_tokens = Int(total_tokens_dev)
+    var max_padded_M = Int(max_padded_M_dev)
     var fmt = MXFP4TokenFormat[
         hidden_size, top_k, fuse_a_scale_preshuffle=fuse_a_scale_preshuffle
     ](output_tokens, output_scales, max_padded_M)
@@ -282,10 +286,10 @@ def _run_fusion_check[
         raw_scales_tt,
         recv_d.unsafe_ptr(),
         a_off_tt,
-        msg_bytes,
-        num_active,
-        total_tokens,
-        max_padded_M,
+        Int32(msg_bytes),
+        Int32(num_active),
+        Int32(total_tokens),
+        Int32(max_padded_M),
         grid_dim=grid_blocks,
         block_dim=warps_per_block * WARP_SIZE,
     )
@@ -337,10 +341,10 @@ def _run_fusion_check[
         fused_slots_tt,
         recv_d.unsafe_ptr(),
         a_off_tt,
-        msg_bytes,
-        num_active,
-        total_tokens,
-        max_padded_M,
+        Int32(msg_bytes),
+        Int32(num_active),
+        Int32(total_tokens),
+        Int32(max_padded_M),
         grid_dim=grid_blocks,
         block_dim=warps_per_block * WARP_SIZE,
     )

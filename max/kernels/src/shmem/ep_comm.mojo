@@ -4940,8 +4940,7 @@ def fused_silu_mxfp4_kernel[
     scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
     input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
     row_offsets: TileTensor[DType.uint32, offsets_layout, ImmUntrackedOrigin],
-    max_padded_M: Int = 0,
-    # Clamped-variant alpha/L; unused when clamp_activation=False.
+    max_padded_M: Int32 = 0,  # Clamped-variant alpha/L; unused when clamp_activation=False.
     alpha: Float32 = 0.0,
     limit: Float32 = 0.0,
 ):
@@ -4963,6 +4962,7 @@ def fused_silu_mxfp4_kernel[
         scales_offsets: The offsets to determine the position of the scales tiles.
         input_scales: Per-expert input scale factors.
     """
+    var _max_padded_M = Int(max_padded_M)
     comptime accum_dtype = DType.float32
     comptime assert (
         output_tensor.flat_rank >= 2
@@ -5073,19 +5073,19 @@ def fused_silu_mxfp4_kernel[
                     var token_start = Int(row_offsets[Coord(expert_slot)])
                     var local_row = Int(m) - token_start
                     debug_assert(
-                        max_padded_M > 0,
-                        "KS64 fused scale store requires max_padded_M > 0",
+                        _max_padded_M > 0,
+                        "KS64 fused scale store requires _max_padded_M > 0",
                     )
                     debug_assert(
-                        local_row < max_padded_M,
+                        local_row < _max_padded_M,
                         (
                             "KS64 fused scale store: local_row exceeds the"
-                            " per-expert slot capacity (max_padded_M)"
+                            " per-expert slot capacity (_max_padded_M)"
                         ),
                     )
                     var dst_off = Shuffler[1].scale_4d_slot_byte_off[
                         K_SCALES=K_SCALES
-                    ](expert_slot, local_row, k_scale, max_padded_M)
+                    ](expert_slot, local_row, k_scale, _max_padded_M)
                     scales_tensor._storage[dst_off] = fp8_scale_factor
                 else:
                     scales_tensor.store((m, k_scale), fp8_scale_factor)

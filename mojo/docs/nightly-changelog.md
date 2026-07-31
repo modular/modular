@@ -1114,6 +1114,18 @@ This version is still a work in progress.
 
 ## GPU programming
 
+- `Int` and `UInt` no longer conform to `DevicePassable` and can no longer be
+  passed as arguments to GPU kernels (via `DeviceContext.enqueue_function` or
+  `compile_function`). They are platform-sized index types whose bit width
+  depends on the host, so passing them to an accelerator miscompiles when the
+  host and device disagree on the width (for example a 64-bit host driving a
+  32-bit GPU index domain). Use a fixed-width type — `Int32`, `Int64`,
+  `UInt32`, or `UInt64` — for kernel scalar arguments and parameters, and
+  convert back with `Int(...)` inside the kernel body if you need a platform
+  `Int` there. A kernel that still takes a bare `Int`/`UInt` argument now fails
+  to compile with: "Int and UInt are not passable to device kernels; use a
+  fixed-width type such as Int32 or Int64 instead".
+
 - Added programmatic Metal GPU frame capture in `std.gpu.host`:
   `_start_metal_trace_capture(ctx, path)` and `_end_metal_trace_capture(ctx)`
   bracket GPU work and write a `.gputrace` file for offline replay (requires

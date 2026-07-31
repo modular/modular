@@ -119,7 +119,7 @@ comptime num_elements = 20
 
 
 def scalar_add(
-    vector: UnsafePointer[Float32, MutAnyOrigin], size: Int, scalar: Float32
+    vector: UnsafePointer[Float32, MutAnyOrigin], size: Int32, scalar: Float32
 ):
     """
     Kernel function to add a scalar to all elements of a vector.
@@ -145,7 +145,7 @@ def scalar_add(
     # Bounds checking: ensure we don't access memory beyond the vector size.
     # This is crucial when the number of threads doesn't exactly match vector
     # size.
-    if idx < size:
+    if idx < Int(size):
         # Each thread adds the scalar to its corresponding vector element
         # This operation happens in parallel across all GPU threads
         vector[unsafe_offset=idx] += scalar
@@ -461,8 +461,8 @@ process out-of-bounds elements:
 ```mojo
 from std.gpu import global_idx
 
-def process_vector(vector: UnsafePointer[Float32, MutAnyOrigin], size: Int):
-    if global_idx.x < size:
+def process_vector(vector: UnsafePointer[Float32, MutAnyOrigin], size: Int32):
+    if global_idx.x < Int(size):
         # Process vector[global_idx.x] in some way
 ```
 
@@ -491,7 +491,6 @@ that conform to the `DevicePassable` trait.
 
 | Host type                                                                        | Device Type                                                                       | Description                                                                                                     |
 |----------------------------------------------------------------------------------|-----------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
-| [`Int`](/docs/std/builtin/int/Int/)                                              | `Int`                                                                             | Signed integer                                                                                                  |
 | [`SIMD[dtype, width]`](/docs/std/builtin/simd/SIMD/)                             | `SIMD[dtype, width]`                                                              | Small vector backed by a hardware vector element                                                                |
 | [`DeviceBuffer[dtype]`](/docs/std/gpu/host/device_context/DeviceBuffer/)         | [`UnsafePointer[SIMD[dtype, 1]]`](/docs/std/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values                                                                                 |
 | [`TileTensor`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/) | `TileTensor`                                                                      | A powerful abstraction for multi-dimensional data. See [Using `TileTensor`](/docs/manual/tile-tensor/tensors/). |
@@ -721,7 +720,7 @@ parameter in this case):
 ```mojo
 ctx.enqueue_function[scalar_add](
     device_buffer,
-    num_elements,
+    Int32(num_elements),
     Float32(20.0),
     grid_dim=1,
     block_dim=num_elements,

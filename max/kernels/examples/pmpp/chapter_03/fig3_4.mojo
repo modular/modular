@@ -26,17 +26,20 @@ from std.itertools import product
 def color_to_grayscale_kernel(
     p_out: UnsafePointer[UInt8, MutUntrackedOrigin],
     p_in: UnsafePointer[UInt8, MutUntrackedOrigin],
-    width: Int,
-    height: Int,
+    width_dev: Int32,
+    height_dev: Int32,
 ):
     """GPU kernel for color to grayscale conversion.
 
     Args:
         p_out: Output grayscale image (device).
         p_in: Input RGB image (device).
-        width: Image width in pixels.
-        height: Image height in pixels.
+        width_dev: Image width in pixels.
+        height_dev: Image height in pixels.
     """
+    # Int is not device-passable; widen the fixed-width args.
+    var width = Int(width_dev)
+    var height = Int(height_dev)
     comptime CHANNELS = 3
 
     var col = global_idx.x
@@ -98,8 +101,8 @@ def color_to_grayscale(
     ctx.enqueue_function[color_to_grayscale_kernel](
         d_output,
         d_input,
-        width,
-        height,
+        Int32(width),
+        Int32(height),
         grid_dim=(grid_dim_x, grid_dim_y, 1),
         block_dim=(block_dim_x, block_dim_y, 1),
     )

@@ -32,11 +32,12 @@ def test_metal_print_basic() raises:
 def test_metal_print_int() raises:
     print("test_metal_print_int")
 
-    def do_print(x: Int):
+    def do_print(x_dev: Int32):
+        var x = Int(x_dev)
         print("x =", x)
 
     with DeviceContext() as ctx:
-        ctx.enqueue_function[do_print](Int(42), grid_dim=1, block_dim=1)
+        ctx.enqueue_function[do_print](Int32(42), grid_dim=1, block_dim=1)
         ctx.synchronize()
 
     # CHECK: x = 42

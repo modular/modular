@@ -1134,8 +1134,9 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     b_scales_tensor: LayoutTensor[
         b_scales_type, b_scales_layout, ImmutAnyOrigin
     ],
-    num_iters: Int,
+    num_iters: Int32,
 ):
+    var _num_iters = Int(num_iters)
     comptime c_2d_layout: Layout = _2D_layout[c_layout]
     comptime b_scales_2d_layout: Layout = _2D_layout[b_scales_layout]
 
@@ -1214,7 +1215,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         c_tt,
         a_scales_tma_op,
         b_scales_tt,
-        num_iters,
+        Int32(_num_iters),
     )
 
 
@@ -1420,7 +1421,7 @@ def bmm_sm100_blockwise_scaled_fp8[
         c,
         a_scales_tma_op,
         b_scales,
-        ceildiv(K, BK),
+        Int32(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,

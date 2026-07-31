@@ -1781,8 +1781,8 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         o: TileTensor[output_dtype, o_layout, MutAnyOrigin],
         mask_functor: mask_t,
         scale: Float32,
-        num_keys: Int,
-        start_pos: Int,
+        num_keys_dev: Int32,
+        start_pos_dev: Int32,
         work_indptr_ptr: UnsafePointer[
             Scalar[DType.int32], ImmutAnyOrigin
         ] = UnsafePointer[
@@ -1793,7 +1793,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         ] = UnsafePointer[
             Scalar[DType.int32], ImmutAnyOrigin
         ].unsafe_dangling(),
-        num_works: Int = 0,
+        num_works_dev: Int32 = 0,
     ):
         """Multi-block 8-warp MLA forward: reference integrated cadence.
 
@@ -1835,8 +1835,8 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             o: Output tile tensor at d_pv = depth.
             mask_functor: Per-tile mask predicate (causal / null / ...).
             scale: Softmax scale (`1/sqrt(d_qk)`).
-            num_keys: Runtime length of the K/V sequence.
-            start_pos: Position of the first Q row in the global
+            num_keys_dev: Runtime length of the K/V sequence.
+            start_pos_dev: Position of the first Q row in the global
                 sequence.
             work_indptr_ptr: Persistent-prefill work partition
                 prefix-sum `[num_cu+1]` (device). Threaded for the S2
@@ -1844,9 +1844,12 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             work_info_ptr: Persistent-prefill flat `WorkInfo`
                 array `[num_works*8]` int32 (device). Threaded for S2;
                 unused by the current static grid.
-            num_works: Total number of work-tiles in `work_info_ptr`.
+            num_works_dev: Total number of work-tiles in `work_info_ptr`.
                 Threaded for S2; unused by the current static grid.
         """
+        var num_keys = Int(num_keys_dev)
+        var start_pos = Int(start_pos_dev)
+        var num_works = Int(num_works_dev)
         comptime assert Self._IS_DSV_MLA_SHAPE, (
             "MlaPrefillV2: only the FP8 / KV>=128 / 32x32x64 shape is"
             " supported in Phase 1 (the reference integrated cadence target)."
@@ -2222,8 +2225,8 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             o_tt,
             mask_functor,
             scale,
-            num_keys,
-            start_pos,
+            Int32(num_keys),
+            Int32(start_pos),
         )
 
 

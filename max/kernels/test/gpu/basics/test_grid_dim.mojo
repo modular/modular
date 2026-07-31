@@ -20,8 +20,9 @@ from std.testing import assert_equal
 
 def kernel(
     output: UnsafePointer[Float32, MutAnyOrigin],
-    size: Int,
+    size_dev: Int32,
 ):
+    var size = Int(size_dev)
     var global_tid = global_idx.x
     if global_tid >= size:
         return
@@ -46,7 +47,7 @@ def test_grid_dim(ctx: DeviceContext) raises:
 
     ctx.enqueue_function[kernel](
         output_buffer,
-        buffer_size,
+        Int32(buffer_size),
         grid_dim=(20, 15, 10),
         block_dim=20,
     )

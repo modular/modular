@@ -37,12 +37,14 @@ comptime BLOCK_SIZE = 256
 def bfs_kernel(
     coo_src: UnsafePointer[UInt32, MutAnyOrigin],
     coo_dst: UnsafePointer[UInt32, MutAnyOrigin],
-    num_edges: Int,
+    num_edges_dev: Int32,
     level: UnsafePointer[UInt32, MutAnyOrigin],
     new_vertex_visited: UnsafePointer[UInt32, MutAnyOrigin],
     curr_level: UInt32,
 ):
     """BFS kernel: edge-centric traversal using COO graph."""
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_edges = Int(num_edges_dev)
     var edge = block_idx.x * block_dim.x + thread_idx.x
 
     if edge < num_edges:
@@ -107,7 +109,7 @@ def main() raises:
         ctx.enqueue_function[bfs_kernel](
             d_coo_src,
             d_coo_dst,
-            num_edges,
+            Int32(num_edges),
             d_level,
             d_new_vertex_visited,
             curr_level,

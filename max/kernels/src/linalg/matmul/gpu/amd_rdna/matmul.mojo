@@ -91,9 +91,9 @@ def gemm_kernel_rdna[
     c: TileTensor[c_type, c_layout, MutAnyOrigin],
     a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
     b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m: Int32,
+    n: Int32,
+    k: Int32,
 ):
     """GEMM kernel for AMD RDNA GPUs.
 
@@ -138,6 +138,9 @@ def gemm_kernel_rdna[
         n: Number of columns in the output and in `b`.
         k: Contraction dimension shared by `a` and `b`.
     """
+    var _m = Int(m)
+    var _n = Int(n)
+    var _k = Int(k)
     comptime assert c.flat_rank == 2, "c must have flat_rank == 2"
     comptime assert a.flat_rank == 2, "a must have flat_rank == 2"
     comptime assert b.flat_rank == 2, "b must have flat_rank == 2"
@@ -156,7 +159,7 @@ def gemm_kernel_rdna[
             transpose_b,
             elementwise_lambda_fn,
             s_type,
-        ](c, a, b, m, n, k)
+        ](c, a, b, _m, _n, _k)
     else:
         _wmma_matmul_kernel[
             c_type,
@@ -175,7 +178,7 @@ def gemm_kernel_rdna[
             WARPS_N,
             WARP_TILE_M,
             WARP_TILE_N,
-        ](c, a, b, m, n, k)
+        ](c, a, b, _m, _n, _k)
 
 
 def _naive_matmul_kernel[

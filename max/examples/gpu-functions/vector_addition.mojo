@@ -52,7 +52,7 @@ def main() raises:
         lhs_tensor,
         rhs_tensor,
         out_tensor,
-        VECTOR_WIDTH,
+        Int32(VECTOR_WIDTH),
         grid_dim=grid_dim,
         block_dim=BLOCK_SIZE,
     )
@@ -67,9 +67,10 @@ def vector_addition(
     lhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
     rhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
     out_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
-    size: Int,
+    size_dev: Int32,
 ):
     """The calculation to perform across the vector on the GPU."""
+    var size = Int(size_dev)
     var global_tid = global_idx.x
     if global_tid < size:
         out_tensor[global_tid] = lhs_tensor[global_tid] + rhs_tensor[global_tid]

@@ -195,9 +195,11 @@ struct MXFP4MoERoutedMatmul[
         sfb_pre_tt: TileTensor[DType.uint8, ...],
         sorted_token_ids: TileTensor[DType.uint32, ...],
         expert_ids: TileTensor[DType.int32, ...],
-        num_tokens: Int,
-        size_expert_ids: Int,
+        num_tokens: Int32,
+        size_expert_ids: Int32,
     ):
+        var _num_tokens = Int(num_tokens)
+        var _size_expert_ids = Int(size_expert_ids)
         comptime out_dtype = type_of(c).dtype
         comptime assert (
             Self.num_m_mmas * Self.pack_K <= 4
@@ -216,7 +218,7 @@ struct MXFP4MoERoutedMatmul[
         var by_n: Int
         comptime if Self.enable_swizzle:
             comptime num_pid_n = ceildiv(N, Self.BN)
-            var num_pid_m = size_expert_ids
+            var num_pid_m = _size_expert_ids
             var wgid_raw = Int(block_idx.y) * num_pid_n + Int(block_idx.x)
             var pid = _xcd_wgm_swizzle(wgid_raw, num_pid_m, num_pid_n)
             bx = pid[0]
@@ -455,7 +457,7 @@ struct MXFP4MoERoutedMatmul[
                 var t = Int(fused & UInt32(0xFFFFFF))
                 var s = Int(fused >> UInt32(24))
                 c_dst_rows[i] = t * Self.topk + s
-                row_valids[i] = (t < num_tokens) and (s < Self.topk)
+                row_valids[i] = (t < _num_tokens) and (s < Self.topk)
 
             comptime for n_mma in range(Self.num_n_mmas):
                 var c_col = (
@@ -515,8 +517,8 @@ def _mxfp4_moe_matmul_routed_kernel[
     sfb_pre: TileTensor[DType.uint8, SFBLayout, ImmutAnyOrigin],
     sorted_token_ids: TileTensor[DType.uint32, STILayout, ImmutAnyOrigin],
     expert_ids: TileTensor[DType.int32, EILayout, ImmutAnyOrigin],
-    num_tokens: Int,
-    size_expert_ids: Int,
+    num_tokens: Int32,
+    size_expert_ids: Int32,
 ):
     MXFP4MoERoutedMatmul[
         BM=BM,
@@ -643,8 +645,8 @@ def mxfp4_moe_matmul_amd_routed[
         sfb_pre,
         sorted_token_ids,
         expert_ids,
-        num_tokens,
-        size_expert_ids,
+        Int32(num_tokens),
+        Int32(size_expert_ids),
         grid_dim=(ceildiv(N, Kernel.BN), size_expert_ids),
         block_dim=Kernel.num_threads,
     )

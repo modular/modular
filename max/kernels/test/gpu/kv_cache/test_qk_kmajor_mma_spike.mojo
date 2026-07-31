@@ -217,8 +217,10 @@ def qk_mma_kernel[
         ab_type, k_tile_rank, k_tile_shape, k_desc_shape, is_k_major=True
     ],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_iters = Int(num_iters_dev)
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -526,7 +528,7 @@ def run_qk_spike[
             q_tma_op,
             k_tma_op,
             o.device_tensor(),
-            K // BK,
+            Int32(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
@@ -560,7 +562,7 @@ def run_qk_spike[
             q_tma_op,
             k_tma_op,
             o.device_tensor(),
-            K // BK,
+            Int32(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,

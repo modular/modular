@@ -1114,8 +1114,9 @@ def multistage_gemm_split_k_kernel[
     a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
     b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
     work_space: LayoutTensor[work_space_type, workspace_layout, MutAnyOrigin],
-    num_partitions: Int,
+    num_partitions: Int32,
 ):
+    var _num_partitions = Int(num_partitions)
     var M = c.dim[0]()
     comptime N = b.shape[0]() if transpose_b else b.shape[1]()
     comptime K = b.shape[1]() if transpose_b else b.shape[0]()
@@ -1184,10 +1185,10 @@ def multistage_gemm_split_k_kernel[
         # If K is not divisible by num_partitions, the first
         # num_partitions-1 parts are rounded up to a multiple of BK.
         var a_part = a.split[axis=1, split_alignment=BK](
-            num_partitions, block_idx.z
+            _num_partitions, block_idx.z
         )
         var b_part = b.split[axis=1 if transpose_b else 0, split_alignment=BK](
-            num_partitions, block_idx.z
+            _num_partitions, block_idx.z
         )
         var a_tt = lt_to_tt(a_part)
         var b_tt = lt_to_tt(b_part)

@@ -51,11 +51,14 @@ def block_scaled_matmul_ref(
     a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
     b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
     c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
+    M_dev: Int32,
+    N_dev: Int32,
+    K_dev: Int32,
 ):
     """Per-element GPU reference for MXFP4 block-scaled matmul."""
+    var M = Int(M_dev)
+    var N = Int(N_dev)
+    var K = Int(K_dev)
 
     @always_inline
     def cast_fp4x2_to_fp32x2[
@@ -305,9 +308,9 @@ def _test_case[
         sfa_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
         sfb_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
         c_ref_d,
-        M_static,
-        N_static,
-        K_static,
+        Int32(M_static),
+        Int32(N_static),
+        Int32(K_static),
         grid_dim=(ceildiv(M_static, BLOCK_DIM), ceildiv(N_static, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )

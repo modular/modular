@@ -550,7 +550,7 @@ def bench_conv2d[
                     stride_idx,
                     dilation_idx,
                     pad_idx,
-                    1,
+                    Int32(1),
                     grid_dim=(grid_dim_x, grid_dim_y, 1),
                     block_dim=(block_size, block_size, 1),
                 )

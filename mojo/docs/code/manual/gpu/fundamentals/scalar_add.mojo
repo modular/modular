@@ -21,7 +21,7 @@ comptime num_elements = 20
 
 
 def scalar_add(
-    vector: UnsafePointer[Float32, MutAnyOrigin], size: Int, scalar: Float32
+    vector: UnsafePointer[Float32, MutAnyOrigin], size: Int32, scalar: Float32
 ):
     """
     Kernel function to add a scalar to all elements of a vector.
@@ -47,7 +47,7 @@ def scalar_add(
     # Bounds checking: ensure we don't access memory beyond the vector size.
     # This is crucial when the number of threads doesn't exactly match vector
     # size.
-    if idx < size:
+    if idx < Int(size):
         # Each thread adds the scalar to its corresponding vector element
         # This operation happens in parallel across all GPU threads
         vector[unsafe_offset=idx] += scalar
@@ -93,7 +93,7 @@ def main() raises:
         ctx.enqueue_function(
             scalar_add_kernel,
             device_buffer,
-            num_elements,
+            Int32(num_elements),
             Float32(20.0),
             grid_dim=1,
             block_dim=num_elements,

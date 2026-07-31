@@ -206,7 +206,7 @@ def grouped_matmul_1d2d_blockwise_fp8[
         expert_ids,
         expert_scales,
         c_device,
-        num_active_experts,
+        Int32(num_active_experts),
         UInt32(K),
         grid_dim=grid_dim,
         block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),

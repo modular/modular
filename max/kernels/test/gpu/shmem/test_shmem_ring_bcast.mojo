@@ -22,10 +22,12 @@ from std.testing import assert_equal
 
 def ring_bcast(
     data: UnsafePointer[c_int, MutAnyOrigin],
-    nelem: Int,
+    nelem_dev: Int32,
     root: c_int,
     psync: UnsafePointer[UInt64, MutAnyOrigin],
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var nelem = Int(nelem_dev)
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes
@@ -62,7 +64,7 @@ def test_ring_bcast(ctx: SHMEMContext) raises:
     ctx.barrier_all()
     ctx.enqueue_function_collective_checked[ring_bcast](
         data,
-        data_len,
+        Int32(data_len),
         root,
         DeviceBuffer[DType.uint64](ctx._ctx, psync, 1, owning=False),
         grid_dim=1,

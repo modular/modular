@@ -30,8 +30,8 @@ def convolution_tiled_2D_const_mem_kernel(
     N: UnsafePointer[Float32, ImmutAnyOrigin],
     F: UnsafePointer[Float32, ImmutAnyOrigin],
     P: UnsafePointer[Float32, MutAnyOrigin],
-    width: Int,
-    height: Int,
+    width_dev: Int32,
+    height_dev: Int32,
 ):
     """Tiled 2D convolution kernel using shared memory for input tiles.
 
@@ -39,9 +39,12 @@ def convolution_tiled_2D_const_mem_kernel(
         N: Input array (device).
         F: Filter array in constant/global memory (device).
         P: Output array (device).
-        width: Input width.
-        height: Input height.
+        width_dev: Input width.
+        height_dev: Input height.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var width = Int(width_dev)
+    var height = Int(height_dev)
     comptime IN_TILE_DIM = 32
     comptime FILTER_RADIUS = 2
     comptime OUT_TILE_DIM = IN_TILE_DIM - 2 * FILTER_RADIUS
@@ -140,8 +143,8 @@ def convolution_tiled_2d_const_mem(
         d_in,
         d_filter,
         d_out,
-        width,
-        height,
+        Int32(width),
+        Int32(height),
         grid_dim=(grid_dim_x, grid_dim_y, 1),
         block_dim=(IN_TILE_DIM, IN_TILE_DIM, 1),
     )

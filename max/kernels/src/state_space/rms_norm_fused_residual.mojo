@@ -449,43 +449,15 @@ def rms_norm_fused_residual_gpu_block[
 ](
     gamma: TileTensor[dtype, GammaLayout, MutAnyOrigin],
     epsilon: Float32,
-    weight_offset: Scalar[dtype],
-    num_cols: Int,
-    dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
+    weight_offset: Float32,
+    num_cols: Int32,
+    dropout_p: Float32 = Float32(0.0),
     seed: UInt64 = 0,
 ):
-    """GPU block kernel: fused residual add, optional dropout, and RMS normalization.
-
-    Processes one row per thread block. Each block cooperatively computes the
-    RMS over `num_cols` elements using a warp-level reduction, then normalizes
-    and scales by `gamma + weight_offset`. Input, residual, output, and
-    residual-output are accessed through caller-supplied lambda functions so the
-    kernel can be composed with arbitrary fused load/store patterns.
-
-    Parameters:
-        dtype: Element data type.
-        GammaLayout: Layout of the `gamma` `TileTensor`.
-        simd_width: SIMD vector width used for memory access.
-        max_warps_per_block: Maximum number of warps per block, used to size
-            shared memory.
-        input_fn: Lambda that loads a `SIMD[dtype, width]` vector for
-            `(row, col)`.
-        residual_input_fn: Lambda that loads the residual vector for
-            `(row, col)`.
-        output_fn: Lambda that stores the normalized output vector.
-        output_residual_fn: Lambda that stores the updated residual vector
-            (input + residual, before normalization).
-        multiply_before_cast: When `True`, multiplies by `gamma` before
-            casting to the output dtype.
-
-    Args:
-        gamma: Scale vector with shape `(num_cols,)`.
-        epsilon: Small constant added to the RMS denominator.
-        weight_offset: Scalar added to each `gamma` element before scaling.
-        num_cols: Number of columns in the input row.
-        dropout_p: Dropout probability; 0.0 disables dropout.
-        seed: RNG seed for dropout.
-    """
+    var _num_cols = Int(num_cols)
+    var _epsilon = Scalar[dtype](epsilon)
+    var _weight_offset = Scalar[dtype](weight_offset)
+    var _dropout_p = Scalar[dtype](dropout_p)
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     var shared_mem = UnsafePointer(
@@ -498,28 +470,28 @@ def rms_norm_fused_residual_gpu_block[
     )
     with PDL():
         # First stage: apply dropout, add residual to input and store in shared memory.
-        # Loop to handle cases where num_cols > block_dim * simd_width,
+        # Loop to handle cases where _num_cols > block_dim * simd_width,
         # matching the loop structure in _rms_norm_gpu_block_subkernel.
         var tid = thread_idx.x
         var row = block_idx.x
 
-        for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
+        for x in range(ceildiv(_num_cols // simd_width, block_dim.x)):
             var idx = x * block_dim.x * simd_width + tid * simd_width
 
-            if idx < num_cols:
+            if idx < _num_cols:
                 var input_val = input_fn[simd_width](row, idx)
 
                 # Apply dropout if enabled
                 var zero_scalar = Scalar[dtype](0.0)
-                if dropout_p > zero_scalar:
+                if _dropout_p > zero_scalar:
                     var one_scalar = Scalar[dtype](1.0)
-                    var dropout_scale = one_scalar / (one_scalar - dropout_p)
+                    var dropout_scale = one_scalar / (one_scalar - _dropout_p)
 
                     for i in range(simd_width):
-                        if idx + i < num_cols:
+                        if idx + i < _num_cols:
                             # Use element position as offset for RNG to ensure different values per element
                             var element_offset = (
-                                UInt64(row) * UInt64(num_cols)
+                                UInt64(row) * UInt64(_num_cols)
                                 + UInt64(idx)
                                 + UInt64(i)
                             )
@@ -528,7 +500,7 @@ def rms_norm_fused_residual_gpu_block[
                             )
                             var rng = generator.step_uniform()
                             var rng_val = rng[0].cast[dtype]()
-                            if rng_val >= dropout_p:
+                            if rng_val >= _dropout_p:
                                 input_val[i] = input_val[i] * dropout_scale
                             else:
                                 input_val[i] = zero_scalar
@@ -564,7 +536,7 @@ def rms_norm_fused_residual_gpu_block[
             shared_mem_input_fn,
             output_fn,
             multiply_before_cast,
-        ](gamma, epsilon, weight_offset, num_cols)
+        ](gamma, epsilon, _weight_offset, _num_cols)
 
 
 def rms_norm_fused_residual_gpu[
@@ -696,10 +668,10 @@ def rms_norm_fused_residual_gpu[
     ]
     ctx.enqueue_function[kernel](
         gamma,
-        epsilon,
-        weight_offset,
-        cols,
-        dropout_p,
+        epsilon.cast[DType.float32](),
+        weight_offset.cast[DType.float32](),
+        Int32(cols),
+        dropout_p.cast[DType.float32](),
         seed,
         grid_dim=grid_dim,
         block_dim=block_dim,

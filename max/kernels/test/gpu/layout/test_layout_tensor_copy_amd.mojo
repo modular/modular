@@ -32,7 +32,8 @@ def copy_dram_to_sram_buffer_load_kernel[
     BN: Int,
     BK: Int,
     thread_layout: Layout,
-](input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], m: Int,):
+](input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], m_dev: Int32,):
+    var m = Int(m_dev)
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
         dtype, layout, _, masked=True, address_space=AddressSpace.GLOBAL
@@ -92,7 +93,7 @@ def run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
     ]
     ctx.enqueue_function[kernel](
         input.device_tensor().ptr,
-        3,
+        Int32(3),
         grid_dim=1,
         block_dim=(comptime (thread_layout.size())),
     )
@@ -105,7 +106,8 @@ def copy_dram_to_local_buffer_load_kernel[
     BN: Int,
     BK: Int,
     thread_layout: Layout,
-](input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], m: Int,):
+](input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], m_dev: Int32,):
+    var m = Int(m_dev)
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
         dtype, layout, _, masked=True, address_space=AddressSpace.GLOBAL
@@ -180,7 +182,7 @@ def run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     ]
     ctx.enqueue_function[kernel](
         input.device_tensor().ptr,
-        3,
+        Int32(3),
         grid_dim=1,
         block_dim=(comptime (thread_layout.size())),
     )

@@ -119,8 +119,9 @@ def tma_wgmma_kernel[
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    var num_iters = Int(num_iters_dev)
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -345,7 +346,7 @@ def test_tma_wgmma[
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
-        K // BK,
+        Int32(K // BK),
         grid_dim=(N // BN, M // BM),
         block_dim=(128),
     )

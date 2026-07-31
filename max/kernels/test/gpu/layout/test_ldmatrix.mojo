@@ -32,10 +32,11 @@ def test_ldmatrix_fp32(
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     a_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     b_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
+    var n = Int(n_dev)
     comptime mma_m: Int = 16
     comptime mma_n: Int = 8
     comptime mma_k: Int = 8
@@ -225,9 +226,9 @@ def check_ldmatrix_transposed_bf16[
         c_ref_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
@@ -292,9 +293,9 @@ def check_ldmatrix(
         c_device,
         a_device,
         b_device,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=1,
         block_dim=WARP_SIZE,
     )
@@ -343,9 +344,9 @@ def check_ldmatrix(
         c_ref_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )

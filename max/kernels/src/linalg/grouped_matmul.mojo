@@ -271,71 +271,9 @@ def grouped_matmul_kernel_sm100[
         mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
     ],
     c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters: Int32,
 ):
-    """Computes the SM100 (Blackwell) grouped matmul using TMA async copies into shared memory and tcgen05 tensor-memory MMA accumulation, with an optional elementwise epilogue.
-
-    Each block processes one expert tile; A tiles are loaded via TMA into
-    shared memory and accumulated in tensor memory (``tcgen05``), then
-    drained to registers and stored to global memory (or passed to the
-    elementwise epilogue).
-
-    Parameters:
-        a_type: Element `DType` of the A activation tensor.
-        b_type: Element `DType` of the B weight tensor.
-        c_type: Element `DType` of the C output tensor.
-        static_K: The contraction dimension K, known at
-            compile time.
-        a_tile_rank: Rank of the A TMA descriptor's tile
-            shape.
-        a_tile_shape: Per-copy tile shape for A TMA loads
-            from global to shared memory.
-        a_desc_shape: Global-tensor descriptor shape backing
-            the A TMA tile.
-        b_tile_rank: Rank of the B TMA descriptor's tile
-            shape.
-        b_tile_shape: Per-copy tile shape for B TMA loads
-            from global to shared memory.
-        b_desc_shape: Global-tensor descriptor shape backing
-            the B TMA tile.
-        CLayout: `TensorLayout` of the output tensor `c`.
-        AOffsetsLayout: `TensorLayout` of the `a_offsets`
-            tensor.
-        ExpertIdsLayout: `TensorLayout` of the `expert_ids`
-            tensor.
-        block_tile_shape: Per-block tile dimensions `(BM,`
-            BN, BK)` for the M, N, and K axes.
-        mma_shape: `tcgen05` MMA instruction shape `(MMA_M,
-            MMA_N, MMA_K)`.
-        a_swizzle: TMA swizzle mode for A shared-memory
-            loads (defaults to `SWIZZLE_128B`).
-        b_swizzle: TMA swizzle mode for B shared-memory
-            loads (defaults to `SWIZZLE_128B`).
-        c_swizzle: Swizzle mode for C output stores (defaults
-            to `SWIZZLE_NONE`).
-        transpose_b: Whether B is stored in transposed layout
-            (defaults to `True`).
-        num_threads: Number of threads per block, either 128
-            or 256 (defaults to 128).
-        elementwise_lambda_fn: Optional elementwise epilogue
-            applied to each output element (defaults to
-            `None`).
-    Args:
-        a_tma_op: TMA tensor tile descriptor for loading A
-            tiles from global into shared memory.
-        b_tma_op: TMA tensor tile descriptor for loading B
-            tiles from global into shared memory.
-        a_offsets: Rank-1 `uint32` tensor where
-            `[a_offsets[z], a_offsets[z+1])` gives expert
-            `z`'s row range in A and C.
-        expert_ids: Rank-1 `int32` tensor where
-            `expert_ids[z]` selects B's expert slice for
-            group `z`, or `-1` for an inactive block.
-        c: Output tensor of shape `(total_M, N)` accumulating
-            the grouped matmul results.
-        num_iters: Number of K-tile iterations to run
-            (`ceildiv(K, BK)`).
-    """
+    var _num_iters = Int(num_iters)
     comptime assert transpose_b, "Only support transposed B in layout"
     comptime assert num_threads == 128 or num_threads == 256
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
@@ -481,7 +419,7 @@ def grouped_matmul_kernel_sm100[
     ]()
 
     for i in range(
-        num_iters
+        _num_iters
     ):  # K // BK, which is K // 64 or K // 128 depending on BK
         # so only one thread per CTA does the copy
         if elect_one_thread:
@@ -708,7 +646,7 @@ def grouped_matmul_sm100[
         a_offsets,
         expert_ids,
         c,
-        ceildiv(K, BK),
+        Int32(ceildiv(K, BK)),
         grid_dim=(
             ceildiv(N, BN),
             ceildiv(max_num_tokens_per_expert, BM),
@@ -745,7 +683,7 @@ def grouped_matmul_amd_kernel_launcher[
     expert_ids: TileTensor[
         mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
     ],
-    num_active_experts: Int,
+    num_active_experts: Int32,
 ):
     """Computes the AMD GPU grouped matmul by dispatching per-expert tiles through ``AMDMatmul``, with separate zero-fill handling for inactive (``expert_id == -1``) blocks.
 
@@ -1042,7 +980,7 @@ def grouped_matmul_amd[
             b_2d,
             a_offsets,
             expert_ids,
-            num_active_experts,
+            Int32(num_active_experts),
             grid_dim=(
                 ceildiv(N, config.block_tile_shape[1]),
                 ceildiv(max_num_tokens_per_expert, config.block_tile_shape[0]),

@@ -21,19 +21,23 @@ from std.random import random_ui64
 def sort_kernel(
     data: UnsafePointer[UInt32, MutAnyOrigin],
     hasChanged: UnsafePointer[UInt32, MutAnyOrigin],
-    N: Int,
-    isOddStep: Int,
-    block_dim_x: Int,
+    N_dev: Int32,
+    isOddStep_dev: Int32,
+    block_dim_x_dev: Int32,
 ):
     """Parallel odd-even sort kernel.
 
     Args:
         data: Array to sort.
         hasChanged: Flag to indicate if any swaps were made.
-        N: Size of array.
-        isOddStep: 1 for odd phase, 0 for even phase.
-        block_dim_x: Block dimension.
+        N_dev: Size of array.
+        isOddStep_dev: 1 for odd phase, 0 for even phase.
+        block_dim_x_dev: Block dimension.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var N = Int(N_dev)
+    var isOddStep = Int(isOddStep_dev)
+    var block_dim_x = Int(block_dim_x_dev)
     var i = 2 * (block_idx.x * block_dim_x + thread_idx.x) + (
         1 if isOddStep == 1 else 0
     )
@@ -151,9 +155,9 @@ def main() raises:
         ctx.enqueue_function[sort_kernel](
             d_data,
             d_hasChanged,
-            N,
-            1,
-            threads_per_block,
+            Int32(N),
+            Int32(1),
+            Int32(threads_per_block),
             grid_dim=(num_blocks, 1, 1),
             block_dim=(threads_per_block, 1, 1),
         )
@@ -162,9 +166,9 @@ def main() raises:
         ctx.enqueue_function[sort_kernel](
             d_data,
             d_hasChanged,
-            N,
-            0,
-            threads_per_block,
+            Int32(N),
+            Int32(0),
+            Int32(threads_per_block),
             grid_dim=(num_blocks, 1, 1),
             block_dim=(threads_per_block, 1, 1),
         )
