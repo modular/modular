@@ -45,10 +45,10 @@ struct Pack1:
 # CHECK-DAG: kgen.call_indirect {{.*}} : (!kgen.scalar<index>, !kgen.scalar<index>) -> !kgen.scalar<index>
 # CHECK-DAG: kgen.call_indirect {{.*}} : (!kgen.scalar<index>) -> !kgen.scalar<index>
 def main():
-    var p2 = UnsafePointer(to=c_add).bitcast[
+    var p2 = UnsafePointer(to=c_add).unsafe_bitcast[
         def(* args: * Tuple[Int, Int].element_types) thin -> Int
     ]()[]
-    var p1 = UnsafePointer(to=c_neg).bitcast[
+    var p1 = UnsafePointer(to=c_neg).unsafe_bitcast[
         def(* args: * Tuple[Int].element_types) thin -> Int
     ]()[]
     print(Pack2(p2)(3, 4))

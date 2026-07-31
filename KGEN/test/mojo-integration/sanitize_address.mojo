@@ -18,4 +18,4 @@ def main() raises:
     # CHECK: #0 {{.*}} in sanitize_address::main() {{.*}}sanitize_address.mojo:[[@LINE+3]]
     # CHECK: is located 0 bytes after 8-byte region
     var p = UnsafePointer(alloc[Int]({count = 1}).unsafe_leak())
-    p[1] = 4
+    p[unsafe_offset=1] = 4
