@@ -16,7 +16,7 @@
 from std.math import ceildiv
 from std.sys import has_accelerator
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_dim, block_idx, thread_idx
 from layout import TileTensor, row_major
 

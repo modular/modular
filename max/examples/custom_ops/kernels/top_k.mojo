@@ -14,7 +14,7 @@
 import extensibility
 
 from std.memory import UnsafePointer
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import iota
 from std.sys import align_of, size_of
 

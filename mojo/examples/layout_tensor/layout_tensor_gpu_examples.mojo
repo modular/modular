@@ -22,7 +22,7 @@ from std.gpu import (
     WARP_SIZE,
 )
 from std.gpu.memory import async_copy_wait_all
-from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
+from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from layout import Layout, LayoutTensor, print_layout
 from layout.layout_tensor import copy_sram_to_local
 from std.memory import UnsafePointer

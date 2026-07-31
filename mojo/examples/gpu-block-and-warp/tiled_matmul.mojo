@@ -33,7 +33,7 @@ from std.sys import exit, has_accelerator
 
 # GPU programming imports from open source stdlib
 from std.gpu.sync import barrier
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import thread_idx, block_idx
 from std.gpu.memory import AddressSpace
 

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.memory import UnsafePointer
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 comptime `✅`: Int32 = 1
 comptime `❌`: Int32 = 0

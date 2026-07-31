@@ -25,6 +25,7 @@ _EXTRA_CONSTRAINTS = {
             [],
         ),
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
         ],
     )

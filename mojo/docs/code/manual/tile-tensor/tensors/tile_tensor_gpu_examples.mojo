@@ -20,7 +20,7 @@ from std.gpu import (
     lane_id,
     WARP_SIZE,
 )
-from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
+from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from layout import Coord, Idx, stack_allocation, TileTensor
 from layout.tile_layout import row_major, blocked_product
 from std.sys import has_accelerator

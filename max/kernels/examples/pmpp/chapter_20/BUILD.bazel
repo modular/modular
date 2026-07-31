@@ -22,6 +22,7 @@ _MACOS_INCOMPATIBLE_TESTS = [
             }) if src in _MACOS_INCOMPATIBLE_TESTS else []
         ),
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
         ],
     )

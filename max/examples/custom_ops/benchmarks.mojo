@@ -29,7 +29,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.bit import log2_floor
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.tensor_core_mma import TensorCoreMMA
 from kernels.top_k import TopK

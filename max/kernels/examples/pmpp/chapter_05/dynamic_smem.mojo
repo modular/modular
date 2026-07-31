@@ -17,7 +17,7 @@
 
 from std.math import ceildiv, sqrt
 from std.gpu import block_idx, thread_idx, barrier
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace, external_memory
 
 # ========================== KERNEL CODE ==========================

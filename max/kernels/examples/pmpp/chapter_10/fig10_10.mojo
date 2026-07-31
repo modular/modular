@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 from std.random import random_float64

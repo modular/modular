@@ -19,7 +19,7 @@ marks itself as visited at the current level.
 """
 
 from std.gpu import block_dim, block_idx, grid_dim, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.atomic import Atomic
 from std.collections import List
 

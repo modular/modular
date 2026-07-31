@@ -112,7 +112,7 @@ later sections of this document.
 from std.math import iota
 from std.sys import exit, has_accelerator
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_dim, block_idx, thread_idx
 
 comptime num_elements = 20
@@ -330,7 +330,7 @@ thread block index, thread index, and global index for each thread.
 ```mojo title="print_threads.mojo"
 from std.sys import has_accelerator
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_dim, block_idx, global_idx, thread_idx
 
 

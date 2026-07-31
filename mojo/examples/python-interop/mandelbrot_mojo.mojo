@@ -17,7 +17,7 @@ from std.sys import has_accelerator
 
 from std.complex import ComplexSIMD, ComplexScalar
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder

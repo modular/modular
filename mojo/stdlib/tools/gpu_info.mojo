@@ -13,7 +13,7 @@
 
 from std.sys.arg import argv
 
-import std.gpu.host
+import max.gpu.host
 import std.gpu.host._nvidia_cuda as cuda
 
 

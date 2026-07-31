@@ -19,7 +19,7 @@ from std.sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
 
 import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -29,7 +29,7 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
-from std.gpu.host import DeviceBuffer
+from max.gpu.host import DeviceBuffer
 from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,

@@ -16,7 +16,7 @@ from std.random import rand
 from std.collections import Array
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
 from std.gpu.memory import AddressSpace
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
 from std.gpu.primitives.warp import (
     shuffle_idx,

@@ -556,7 +556,7 @@ struct Bench(Writable):
         Format,
     )
     from std.utils import IndexList
-    from std.gpu.host import DeviceContext
+    from max.gpu.host import DeviceContext
     from std.pathlib import Path
 
     def example_kernel():

@@ -54,7 +54,7 @@ leading to the final output.
 
 from std.math import exp
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx
 from std.gpu.memory import AddressSpace
 from std.gpu.sync import barrier

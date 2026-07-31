@@ -410,7 +410,7 @@ To check that your system's GPU is accessible at runtime, try a minimal GPU
 program:
 
 ```mojo title="check_gpu.mojo"
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 def main():
     var ctx = DeviceContext()

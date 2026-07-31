@@ -15,7 +15,7 @@ from std.math import iota
 
 import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.complex import ComplexSIMD
 
 from extensibility import OutputTensor, foreach

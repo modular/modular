@@ -24,6 +24,7 @@ filegroup(
             "//conditions:default": [],
         }),
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
         ],
     )

@@ -14,7 +14,7 @@
 # DOC: max/develop/build-custom-ops.mdx
 import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 
 from std.gpu import block_dim, block_idx, thread_idx

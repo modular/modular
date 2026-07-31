@@ -14,7 +14,7 @@
 """Figure 14.7: Radix sort iteration kernel implementation in Mojo."""
 
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import random_ui64
 
 

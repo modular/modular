@@ -28,7 +28,7 @@ from std.bit import log2_floor
 from std.gpu import barrier, block_dim, block_idx, thread_idx
 from std.gpu.primitives import warp
 from std.gpu.globals import WARP_SIZE
-from std.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal

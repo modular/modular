@@ -15,7 +15,7 @@
 
 
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from std.sys import has_accelerator
 
