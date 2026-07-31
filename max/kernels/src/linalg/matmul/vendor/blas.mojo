@@ -214,12 +214,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     """
 
     comptime resolved_backend = _resolve_backend[Self.backend]()
-    # TODO(MSTDL-2941): Restore `OpaquePointer` here once the generated
-    # cuBLAS typedefs use safe pointers. The flavors must match because
-    # implicit conversion does not lift through `Optional`.
-    comptime _cublas_type = Optional[
-        UnsafePointer[NoneType, AnyOrigin[mut=True]]
-    ]
+    comptime _cublas_type = Optional[OpaquePointer[MutAnyOrigin]]
     comptime _rocblas_type = _rocblas.Handle
     comptime _hipblaslt_type = hipblasLtHandle_t
     comptime type = Variant[
@@ -963,9 +958,6 @@ def _rocblas_matmul[
         var a_lead = Int32(a.dynamic_stride(0))
         var b_lead = Int32(b.dynamic_stride(0))
         var c_lead = Int32(c.layout.stride[0]().value())
-        # TODO(MSTDL-2941): Inline this again once a call-result arg
-        # converts to a safe Optional pointer param (MOCO-4334).
-        var c_void = _ffi_void_ptr(c.ptr)
         return _rocblas.check_error(
             rocblas_gemm_ex(
                 handle,
@@ -982,10 +974,10 @@ def _rocblas_matmul[
                 _rocblas.DataType(a_type),
                 a_lead,
                 UnsafePointer(to=beta).bitcast[NoneType](),
-                c_void,
+                _ffi_void_ptr(c.ptr),
                 _rocblas.DataType(c_type),
                 c_lead,
-                c_void,
+                _ffi_void_ptr(c.ptr),
                 _rocblas.DataType(c_type),
                 c_lead,
                 compute_type,
@@ -995,7 +987,6 @@ def _rocblas_matmul[
             )
         )
     # Default column-major.
-    var c_void = _ffi_void_ptr(c.ptr)
     _rocblas.check_error(
         rocblas_gemm_ex(
             handle,
@@ -1012,10 +1003,10 @@ def _rocblas_matmul[
             _rocblas.DataType(b_type),
             Int32(N) if transpose_b else Int32(K),
             UnsafePointer(to=beta).bitcast[NoneType](),
-            c_void,
+            _ffi_void_ptr(c.ptr),
             _rocblas.DataType(c_type),
             Int32(M),
-            c_void,
+            _ffi_void_ptr(c.ptr),
             _rocblas.DataType(c_type),
             Int32(M),
             compute_type,
