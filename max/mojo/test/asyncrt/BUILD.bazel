@@ -6,10 +6,6 @@ _TEST_DATA = [
     "asyncrt_test_utils.mojo",
 ]
 
-_EXTRA_DEPS = {
-    "test_elementwise.mojo": ["//max:max_mojo"],
-}
-
 _CPU_TESTS = [
     "test_smoke.mojo",
     "test_copies.mojo",
@@ -67,8 +63,9 @@ _CPU_EXTRA_CONSTRAINTS = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
-        ] + _EXTRA_DEPS.get(src, []),
+        ],
     )
     for src in glob(
         ["**/*.mojo"],
@@ -87,6 +84,7 @@ _CPU_EXTRA_CONSTRAINTS = {
         main = src,
         target_compatible_with = _CPU_EXTRA_CONSTRAINTS.get(src, []),
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
         ],
     )

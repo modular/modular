@@ -27,7 +27,7 @@ Shape sources:
 """
 
 from std.benchmark import keep
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import rand
 from std.sys import get_defined_dtype
 from std.time import perf_counter_ns

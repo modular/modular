@@ -36,7 +36,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx
 from layout.tile_layout import row_major
 from std.memory import UnsafePointer, dealloc

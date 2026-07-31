@@ -15,7 +15,7 @@
 from std.random import random_float64
 
 from std.gpu import block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from std.testing import assert_equal, TestSuite
 
 

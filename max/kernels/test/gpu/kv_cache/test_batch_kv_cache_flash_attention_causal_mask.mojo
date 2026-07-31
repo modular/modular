@@ -14,7 +14,7 @@
 from std.math import rsqrt
 from std.random import seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache_test_utils import random_distinct
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,

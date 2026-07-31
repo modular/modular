@@ -15,7 +15,7 @@ from std.sys import argv, size_of
 import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
 from linalg.fp4_quantization import naive_block_scaled_matmul
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from std.random import rand

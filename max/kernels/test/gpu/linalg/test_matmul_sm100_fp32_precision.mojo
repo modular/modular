@@ -39,7 +39,7 @@ reference computed from the same fp32 inputs:
 
 from std.random import random_float64, seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_true
 from layout import TileTensor, Coord, Idx, PointerStorage, row_major
 from linalg.matmul.gpu import _matmul_gpu

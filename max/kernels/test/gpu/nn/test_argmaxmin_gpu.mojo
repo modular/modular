@@ -13,7 +13,7 @@
 
 from std.random import random_float64
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu

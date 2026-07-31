@@ -15,7 +15,7 @@
 
 from std.ffi import c_int, c_size_t
 
-from std.gpu.host import DeviceBuffer
+from max.gpu.host import DeviceBuffer
 from shmem import *
 from std.testing import assert_equal
 

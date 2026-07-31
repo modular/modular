@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import extensibility
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.device_context import DeviceExternalFunction
 from std.os import abort, getenv
 from extensibility import (

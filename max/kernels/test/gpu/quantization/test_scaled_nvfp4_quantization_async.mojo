@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
 from layout._fillers import random

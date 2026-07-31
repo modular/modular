@@ -43,7 +43,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import InitializationType, init_vector_launch
 from layout import Idx, Layout, LayoutTensor, TileTensor, row_major

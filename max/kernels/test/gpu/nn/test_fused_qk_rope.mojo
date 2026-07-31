@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,

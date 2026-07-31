@@ -89,7 +89,7 @@ from std.math import ceildiv, isnan, sqrt
 from std.random import randn, seed
 from std.testing import assert_equal, assert_true
 
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from std.utils import IndexList
 from std.utils.numerics import nan
 

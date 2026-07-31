@@ -14,7 +14,7 @@
 from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 from std.sys.info import CompilationTarget
 
-from std.gpu.host import get_gpu_target
+from max.gpu.host import get_gpu_target
 from std.gpu.host.compile import _compile_code
 from nn.attention.mha_mask import (
     AndMask,

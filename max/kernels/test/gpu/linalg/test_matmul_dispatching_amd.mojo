@@ -21,7 +21,7 @@ the production dispatch path instead of calling ping_pong_matmul directly.
 from std.sys import align_of, get_defined_bool
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,

@@ -42,7 +42,7 @@ from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_bool, get_defined_int
 from std.memory.unsafe import bitcast
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_mxfp8_dispatch,

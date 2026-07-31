@@ -54,7 +54,7 @@ to `SM100MHA2Q` (the FA4 2Q prefill kernel).
 
 from std.math import sqrt, exp
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     TileTensor,

@@ -27,7 +27,7 @@ Compile-time configuration:
 from std.sys import align_of, get_defined_int
 
 from layout import Coord, Idx, TileTensor, row_major
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils import IndexList
 import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal

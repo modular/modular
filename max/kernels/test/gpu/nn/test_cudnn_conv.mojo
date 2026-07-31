@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from nn.conv.conv import conv_cudnn, conv_gpu

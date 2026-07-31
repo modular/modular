@@ -97,6 +97,7 @@ mojo_test(
     tags = ["gpu"],
     target_compatible_with = ["//:mi355_gpu"],
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

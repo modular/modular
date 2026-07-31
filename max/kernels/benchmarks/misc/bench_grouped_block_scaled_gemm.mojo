@@ -35,7 +35,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand, seed
 from std.utils import Index

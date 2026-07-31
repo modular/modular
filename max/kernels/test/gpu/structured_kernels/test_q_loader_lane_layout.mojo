@@ -35,7 +35,7 @@ fragment matches the contiguous formula
 """
 
 from std.gpu import barrier, lane_id, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import AddressSpace
 from std.testing import assert_equal
 

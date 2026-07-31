@@ -25,7 +25,7 @@ from std.gpu import (
     wait_on_dependent_grids,
 )
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 
 def copy1(

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import block_idx, global_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 comptime buffer_size = 1024

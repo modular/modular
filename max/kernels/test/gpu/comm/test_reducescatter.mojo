@@ -26,7 +26,7 @@ from comm.reducescatter import (
     elementwise_epilogue_type,
 )
 from internal_utils._testing import test_value_for_gpu_element
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,

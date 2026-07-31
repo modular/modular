@@ -13,7 +13,7 @@
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bencher
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal, assert_true
 
 

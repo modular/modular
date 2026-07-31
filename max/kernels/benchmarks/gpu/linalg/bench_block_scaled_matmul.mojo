@@ -28,7 +28,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,

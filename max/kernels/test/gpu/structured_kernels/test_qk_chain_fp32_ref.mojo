@@ -57,7 +57,7 @@ If FP8 fails -> K loader / mma_QK chain is wrong. The mismatch pattern
 """
 
 from std.gpu import lane_id, thread_idx, barrier
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import AddressSpace
 from std.testing import assert_true
 

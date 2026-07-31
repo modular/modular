@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import NamedBarrierSemaphore
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor

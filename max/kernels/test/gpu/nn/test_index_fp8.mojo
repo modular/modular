@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys.info import _has_blackwell_tcgen05
 from nn.index_fp8 import fp8_index, fp8_index_naive
 from std.random import rand

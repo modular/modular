@@ -43,7 +43,7 @@ from layout import (
     LayoutTensor,
     TileTensor,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from nn.conv.conv import conv2d_gpu_naive_nhwc_rscf
 from nn.conv.gpu.im2col_matmul_2d import (
     dispatch_fused_im2col_conv2d_apple,

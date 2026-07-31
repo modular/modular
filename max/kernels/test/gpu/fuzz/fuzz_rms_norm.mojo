@@ -21,7 +21,7 @@ from std.math import sqrt
 from std.random import rand, seed
 from std.sys.defines import get_defined_int
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.normalization import *
 from std.utils.index import Index

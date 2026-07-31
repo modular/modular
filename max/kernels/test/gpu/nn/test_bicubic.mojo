@@ -13,7 +13,7 @@
 
 from std.math import isclose
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord, row_major
 
 from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic

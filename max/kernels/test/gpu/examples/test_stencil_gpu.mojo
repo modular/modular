@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.algorithm.functional import stencil, stencil_gpu
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, TileTensor, coord_to_index_list, row_major
 from layout._utils import ManagedLayoutTensor
 from layout.tile_tensor import stack_allocation

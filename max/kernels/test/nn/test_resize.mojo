@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor, row_major
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,

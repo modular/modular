@@ -28,7 +28,7 @@ Multiple expert shapes are exercised (single expert, multi-expert with
 ragged token counts) to cover the per-expert offset / SF-block-id math.
 """
 from std.math import align_up, ceildiv, exp, recip
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import alloc
 from std.memory.unsafe import bitcast
 

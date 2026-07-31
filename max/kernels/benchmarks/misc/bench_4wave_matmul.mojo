@@ -28,7 +28,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives import block
 from std.memory import dealloc
 from internal_utils import (

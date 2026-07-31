@@ -25,7 +25,7 @@ prefill, `num_simdgroups=16`) against the fp32 reference for every shape/mask.
 """
 
 from std.collections import OptionalReg
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import exp, isinf, isnan, sqrt
 from std.random import rand, seed
 from std.sys.info import _accelerator_arch

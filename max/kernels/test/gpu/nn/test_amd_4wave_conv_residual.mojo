@@ -23,7 +23,7 @@ Uses HK MHA in-main parametrization — single BUILD target, dtype
 iteration in `main()`. PyTorch-like tolerance per dtype.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import rand
 from std.testing import assert_equal
 from std.utils import IndexList

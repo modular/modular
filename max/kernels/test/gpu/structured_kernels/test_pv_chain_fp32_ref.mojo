@@ -64,7 +64,7 @@ Diagnosis on failure:
 """
 
 from std.gpu import lane_id, thread_idx, barrier
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import AddressSpace
 from std.testing import assert_true
 

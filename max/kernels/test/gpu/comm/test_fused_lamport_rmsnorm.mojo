@@ -30,7 +30,7 @@ from std.sys import size_of
 from std.random import random_float64
 from std.memory import bitcast
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 
 from layout import Coord, TileTensor, row_major
 

@@ -36,7 +36,7 @@ transpose bugs are detectable). Full nibble range 0..15 covers
 negative FP4 values.
 """
 
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from std.gpu.host.info import MI355X
 from std.math import ceildiv
 from std.random import rand

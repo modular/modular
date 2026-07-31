@@ -36,7 +36,7 @@
 # not by itself indict the kernel). The finding that matters for the Kimi NaN is
 # whether a *plausible* (denormal/zero) loaded scale can yield NaN: it must not.
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     CoordLike,
     Coord,

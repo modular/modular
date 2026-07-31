@@ -42,7 +42,7 @@ the rescale at their old scale and contributing a bounded artifact
 removes that artifact entirely.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
 from layout import LayoutTensor, TileTensor

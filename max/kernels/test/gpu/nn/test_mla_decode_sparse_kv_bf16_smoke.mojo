@@ -19,7 +19,7 @@ lives in `test_mla_decode_sparse_kv_bf16.mojo`.
 """
 
 from std.sys import has_nvidia_gpu_accelerator
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_sparse_kv_bf16 import (
     MLA_SM100_Decode_Sparse_KV_BF16,

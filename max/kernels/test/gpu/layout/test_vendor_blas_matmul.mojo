@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.os import abort
 from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import UnsafePointer
 from internal_utils import assert_almost_equal
 from std.random import rand

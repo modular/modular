@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import TestSuite, assert_equal
 
 

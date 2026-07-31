@@ -14,7 +14,7 @@
 from std.sys import get_defined_int
 
 import extensibility
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.logger import Logger
 from extensibility import foreach, OutputTensor, InputTensor
 

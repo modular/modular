@@ -19,7 +19,7 @@
 # RUN: rm -fr %t/test_compile_via_param/
 
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 
 def test_compile_function() raises:

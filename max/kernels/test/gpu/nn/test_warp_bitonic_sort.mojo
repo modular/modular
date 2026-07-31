@@ -13,7 +13,7 @@
 
 """Test warp-level bitonic sort correctness in MoE router."""
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from nn.moe import router_group_limited, single_group_router
 from std.testing import assert_equal

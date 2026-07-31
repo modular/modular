@@ -13,7 +13,7 @@
 
 from std.compile import compile_info
 from std.gpu import barrier, thread_idx
-from std.gpu.host import get_gpu_target
+from max.gpu.host import get_gpu_target
 from std.memory import unsafe_stack_allocation
 from std.testing import *
 from std.testing import TestSuite

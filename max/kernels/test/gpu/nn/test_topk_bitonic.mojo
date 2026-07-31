@@ -22,7 +22,7 @@ Tests `persistent_topk_block` (`topk_bitonic.mojo`) in isolation:
 """
 
 from std.collections import Set
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import max
 from std.random import seed
 from std.testing import assert_equal, assert_true

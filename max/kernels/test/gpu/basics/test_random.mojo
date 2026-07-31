@@ -15,7 +15,7 @@ from std.sys import simd_width_of
 
 from max.algorithm.functional import elementwise
 from std.gpu import *
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.random import NormalRandom, Random
 from std.testing import *
 from std.sys import has_apple_gpu_accelerator

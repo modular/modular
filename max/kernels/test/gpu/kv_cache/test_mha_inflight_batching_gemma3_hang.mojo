@@ -23,7 +23,7 @@ from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
 from layout._utils import ManagedLayoutTensor
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,

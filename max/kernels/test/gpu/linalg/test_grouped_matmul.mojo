@@ -13,7 +13,7 @@
 
 from std.collections import Optional
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.info import B200, H100, _is_sm10x_gpu
 from layout import (
     Coord,

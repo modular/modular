@@ -28,7 +28,7 @@ from std.collections import Set
 from std.math import rsqrt
 from std.random import random_ui64, seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys import has_apple_gpu_accelerator
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,

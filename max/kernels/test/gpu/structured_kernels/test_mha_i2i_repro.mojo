@@ -50,7 +50,7 @@ Deterministic construction (no reliance on undefined adjacent memory):
   output deviates by orders of magnitude.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
 from layout import LayoutTensor, TileTensor

@@ -14,7 +14,7 @@
 from std.math import iota
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.reflection import reflect
 from std.testing import assert_equal
 

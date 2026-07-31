@@ -15,7 +15,7 @@ from std.math import align_down, ceildiv
 
 from std.algorithm.functional import tile_and_unswitch
 from std.gpu import barrier, global_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor, Coord, Idx, row_major
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_false

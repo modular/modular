@@ -53,7 +53,7 @@ from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.reducescatter import reducescatter, ReduceScatterConfig
 from comm.reducescatter_rmsnorm import reducescatter_rmsnorm, _dispatch_rs_norm
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 
 from layout import Coord, TileTensor, row_major

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout._fillers import arange
 from layout import TileTensor, row_major
 from nn.pool import (

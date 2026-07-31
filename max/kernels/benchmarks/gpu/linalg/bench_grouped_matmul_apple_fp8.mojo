@@ -34,7 +34,7 @@ the fixed per-launch overhead is amortized and the ratio is a conservative lower
 bound on the pure kernel delta.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.time import perf_counter
 
 from layout import Coord, Idx, TileTensor, row_major

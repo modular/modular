@@ -33,7 +33,7 @@ from std.benchmark import (
     Bencher,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout import TileTensor, row_major
 from nn.gather_scatter import scatter_nd_generator

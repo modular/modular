@@ -10,17 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Re-exports accelerator target information from `std.gpu.host.info`."""
 
-from comm.sync import enable_p2p
-from max.gpu.host import DeviceContext
-from test_reducescatter import run_reducescatter_sweep
-from std.testing import assert_true
-
-
-def main() raises:
-    assert_true(
-        DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
-    )
-    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
-
-    run_reducescatter_sweep[use_multimem=True]()
+from std.gpu.host.info import *
+from std.gpu.host.info import (
+    _get_a100_target,
+    _get_h100_target,
+    _get_metal_m1_target,
+    _get_mi300x_target,
+)

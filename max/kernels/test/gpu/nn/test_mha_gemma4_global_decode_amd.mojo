@@ -33,7 +33,7 @@ from layout import (
 )
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf

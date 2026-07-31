@@ -32,7 +32,7 @@ within a row of V. So o_reg[i, m] = mean over all k_global of
 (k_global / 32) = (total_K - 1) / 64  (independent of i, m).
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
 from layout import LayoutTensor, TileTensor

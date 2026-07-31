@@ -35,7 +35,7 @@ from layout import Idx, TileTensor, row_major
 from comm.sync import enable_p2p
 from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
 
 from std.testing import assert_true

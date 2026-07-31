@@ -25,11 +25,6 @@ _EXTRA_COPTS = {
     ],
 }
 
-_EXTRA_DEPS = {
-    "test_cuda_target.mojo": ["//max:max_mojo"],
-    "test_wmma_nvptx.mojo": ["//max:max_mojo"],
-}
-
 _EXTRA_CONSTRAINTS = {
     "test_amd_target.mojo": ["//:amd_gpu"],
     "test_compile_nvptx.mojo": ["//:nvidia_gpu"],
@@ -55,6 +50,7 @@ _EXTRA_CONSTRAINTS = {
             "//conditions:default": [],
         }),
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
         ],
     )
@@ -73,8 +69,9 @@ _EXTRA_CONSTRAINTS = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
-        ] + _EXTRA_DEPS.get(src, []),
+        ],
     )
     for src in glob(
         ["**/*.mojo"],

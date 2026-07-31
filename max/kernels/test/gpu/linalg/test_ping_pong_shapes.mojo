@@ -18,7 +18,7 @@ Documents known limitations:
 """
 
 from layout import TileTensor, row_major
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
 from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
     amd_ping_pong_matmul as ping_pong_matmul,

@@ -37,7 +37,7 @@ from comm.sync import enable_p2p, init_signal_buffer
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,

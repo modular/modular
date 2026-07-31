@@ -28,7 +28,7 @@ from std.random import rand
 from std.testing import assert_false
 
 from layout import Idx, TileTensor, row_major
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from nn.conv.conv import conv_gpu, conv_cudnn
 
 from std.utils.index import IndexList

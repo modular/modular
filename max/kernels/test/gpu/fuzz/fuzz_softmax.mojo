@@ -21,7 +21,7 @@ from std.math import exp
 from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_int
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Layout,

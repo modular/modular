@@ -34,7 +34,7 @@ from std.sys import (
 )
 
 from std.math import rsqrt
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from std.testing import assert_true

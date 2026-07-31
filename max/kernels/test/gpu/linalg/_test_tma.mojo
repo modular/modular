@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.sys import size_of
 
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     IntTuple,
     Layout,

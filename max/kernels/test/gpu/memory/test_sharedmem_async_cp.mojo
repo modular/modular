@@ -14,7 +14,7 @@
 import std.time
 
 from std.gpu import memory, sync, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
 
 

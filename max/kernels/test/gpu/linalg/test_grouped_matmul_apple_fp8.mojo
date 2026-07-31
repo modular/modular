@@ -38,7 +38,7 @@ expert count.
 
 from std.collections import Optional
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul

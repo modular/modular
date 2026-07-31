@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, PointerStorage, TileTensor, row_major
 
 from nn.pad import pad_constant as pad_cpu

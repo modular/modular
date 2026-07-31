@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for mla_indexer_ragged_float8_paged."""
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     KVCollectionT,

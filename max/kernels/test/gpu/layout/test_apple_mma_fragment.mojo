@@ -29,7 +29,7 @@ from std.sys.info import _accelerator_arch
 
 from std.gpu import WARP_SIZE, barrier, lane_id
 from max.gpu.compute.arch.mma_apple import _apple_frag_layout
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from layout import TileTensor
 from layout.tile_layout import row_major, col_major

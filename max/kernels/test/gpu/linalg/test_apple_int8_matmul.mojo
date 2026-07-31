@@ -37,7 +37,7 @@ accuracy.
 
 from std.collections import Optional
 from std.random import random_float64, random_si64, seed
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from std.math import round
 
 from layout import TileTensor

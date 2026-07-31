@@ -51,7 +51,7 @@ Assert byte-equal: O_test == O_ref and S_test == S_ref (match_bf16=True);
 or rtol/atol-bounded fp32 dequant compare (match_bf16=False).
 """
 from std.math import align_up, ceildiv
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import alloc
 from std.random import random_ui64, seed, rand

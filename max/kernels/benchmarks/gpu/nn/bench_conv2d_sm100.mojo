@@ -28,7 +28,7 @@ The benchmark reports:
 - Comparison ratio (SM100 / cuDNN)
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.conv.gpu.nvidia.sm100.conv2d import (
     conv2d_fprop,

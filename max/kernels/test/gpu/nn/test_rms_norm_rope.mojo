@@ -13,7 +13,7 @@
 
 import std.math as math
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from nn.normalization import rms_norm_rope_gpu
 from std.testing import assert_almost_equal

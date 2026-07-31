@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host import ConstantMemoryMapping, DeviceContext
+from max.gpu.host import ConstantMemoryMapping, DeviceContext
 from std.gpu.host.compile import _compile_code
 from std.gpu import thread_idx
 from std.memory import unsafe_stack_allocation

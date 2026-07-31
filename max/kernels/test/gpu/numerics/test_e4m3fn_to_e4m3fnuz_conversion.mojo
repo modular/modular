@@ -13,7 +13,7 @@
 
 """Test FP8 E4M3FN to E4M3FNUZ conversion kernel."""
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
 from std.testing import assert_equal

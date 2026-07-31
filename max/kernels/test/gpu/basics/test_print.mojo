@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.reflection import source_location
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: == test_gpu_print_formattable

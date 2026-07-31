@@ -14,7 +14,7 @@
 from std.math import align_down
 
 from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.compile import _compile_code
 from std.gpu.host.info import MI355X
 from std.gpu.intrinsics import AMDBufferResource

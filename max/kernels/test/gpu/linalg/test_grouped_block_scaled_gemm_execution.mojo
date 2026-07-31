@@ -21,7 +21,7 @@ This test incrementally verifies:
 from std.math import ceildiv
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand, seed
 from layout import (

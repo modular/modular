@@ -39,6 +39,7 @@ _GPU_CONSTRAINTS = {
             "//conditions:default": [],
         }),
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
@@ -61,6 +62,7 @@ _GPU_CONSTRAINTS = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _GPU_CONSTRAINTS.get(src, []),
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],

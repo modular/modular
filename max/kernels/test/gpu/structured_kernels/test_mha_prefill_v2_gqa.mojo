@@ -33,7 +33,7 @@ If `head_idx` or `kv_head_idx` is wrong, output positions will hold
 the wrong kv value (or 0 from uninitialized output) and the test fails.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
 from layout import LayoutTensor, TileTensor

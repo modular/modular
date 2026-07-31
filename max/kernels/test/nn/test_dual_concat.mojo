@@ -19,7 +19,7 @@ from nn.concat import (
 )
 from std.sys.info import is_gpu
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from std.utils import IndexList, StaticTuple
 

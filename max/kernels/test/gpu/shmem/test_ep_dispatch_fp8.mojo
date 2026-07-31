@@ -21,7 +21,7 @@ from std.math import sqrt
 from std.random import randint, randn, seed
 from std.sys import argv
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx
 from layout.tile_layout import row_major
 from std.memory import UnsafePointer

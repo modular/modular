@@ -66,7 +66,7 @@ from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
 from std.sys import get_defined_int, get_defined_bool
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from kv_cache.types import (

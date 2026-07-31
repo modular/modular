@@ -23,7 +23,7 @@
 
 from std.math import ceildiv
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_dim, block_idx, thread_idx
 from layout import Idx, IntTuple, Layout, LayoutTensor, TileTensor, row_major
 from layout.int_tuple import product

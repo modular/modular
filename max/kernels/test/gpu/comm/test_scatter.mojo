@@ -34,7 +34,7 @@ from layout import Idx, TileTensor, row_major
 from std.collections import Array
 from std.math import ceildiv
 from std.sys import size_of
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_true
 
 from comm import Signal, MAX_GPUS

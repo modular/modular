@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.atomic import Atomic
 
 from std.gpu import barrier, global_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import AddressSpace, unsafe_stack_allocation
 from std.testing import assert_equal, TestSuite
 from std.sys import is_apple_gpu, has_apple_gpu_accelerator

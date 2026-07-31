@@ -82,7 +82,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import thread_idx, warp_id as get_warp_id
 from std.gpu.memory import AddressSpace, external_memory

@@ -16,7 +16,7 @@ from std.math.uutils import umod, ufloordiv
 from std.random import random_si64
 
 from std.gpu import WARP_SIZE, barrier, lane_id, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.compute.mma import ld_matrix, mma
 from max.gpu.compute.mma_util import store_matrix_d
 from layout import Coord, Idx, TileTensor, row_major

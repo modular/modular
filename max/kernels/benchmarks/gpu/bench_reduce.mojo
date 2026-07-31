@@ -24,7 +24,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.memory import dealloc
 from internal_utils import (
     CacheBustingBuffer,

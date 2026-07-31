@@ -16,7 +16,7 @@ from std.math import ceildiv, iota
 from std.gpu import global_idx
 from std.gpu.primitives import block, warp
 from std.gpu.globals import WARP_SIZE
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 comptime dtype = DType.uint64

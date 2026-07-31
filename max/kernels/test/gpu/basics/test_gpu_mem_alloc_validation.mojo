@@ -24,7 +24,7 @@ Usage::
 Expected: ~1.0 GB
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.time import sleep
 
 

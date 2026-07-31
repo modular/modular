@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,

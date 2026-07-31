@@ -20,7 +20,7 @@ from std.random import rand
 from std.testing import assert_false
 
 from layout import Idx, TileTensor, row_major
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from nn.conv.conv import Naive2dConvolution, conv_gpu
 from std.utils.index import Index, IndexList
 

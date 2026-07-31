@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from tensor_core_kernels import (
     test_load_and_mma_and_multiply_operands,
     test_load_operands_ldmatrix,

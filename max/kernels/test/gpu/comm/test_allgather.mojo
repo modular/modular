@@ -18,7 +18,7 @@ from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
 from comm.sync import enable_p2p, init_signal_buffer
 import comm.vendor.ccl as vendor_ccl
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import (
     Idx,
     TileTensor,

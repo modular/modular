@@ -49,7 +49,7 @@ After all tiles:
 """
 
 from std.gpu import lane_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import exp2 as math_exp2
 from std.testing import assert_almost_equal, assert_equal
 

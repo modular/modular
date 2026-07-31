@@ -18,7 +18,7 @@ from std.os import abort
 from shmem import *
 from std.ffi import c_int
 from std.sys.info import size_of
-from std.gpu.host import DeviceBuffer
+from max.gpu.host import DeviceBuffer
 
 comptime min_size = 1024 * 1024 * 32
 comptime max_size = min_size * 16

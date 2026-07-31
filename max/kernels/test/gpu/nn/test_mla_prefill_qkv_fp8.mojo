@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import randn
 from layout import (
     Idx,

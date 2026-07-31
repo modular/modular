@@ -16,7 +16,7 @@ from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import barrier, warp_id, lane_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor

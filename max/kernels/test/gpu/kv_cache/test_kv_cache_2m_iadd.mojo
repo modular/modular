@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache_test_utils import random_distinct
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (

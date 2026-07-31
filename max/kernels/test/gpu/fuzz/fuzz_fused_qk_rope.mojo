@@ -71,7 +71,7 @@ from std.math import align_up, ceildiv, cos, max, min, sin
 from std.random import randn, random_ui64, seed
 from std.sys.defines import get_defined_int
 
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,

@@ -30,7 +30,7 @@
 
 from std.sys import argv
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 
 def bad_func(ptr: UnsafePointer[Int32, MutAnyOrigin], i: Int):

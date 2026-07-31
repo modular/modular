@@ -16,7 +16,7 @@ can only mean the user registration shadowed the built-in.
 """
 
 import extensibility
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from extensibility import (
     ElementwiseBinaryOp,
     InputTensor,

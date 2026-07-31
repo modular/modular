@@ -29,7 +29,7 @@ Target hardware family: NVIDIA SM100 (B200).
 
 from std.math import sqrt
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     TileTensor,

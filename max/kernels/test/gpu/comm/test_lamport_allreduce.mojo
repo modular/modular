@@ -53,7 +53,7 @@ from comm.allreduce import (
 )
 from comm.device_query import get_sm_version
 from internal_utils import human_readable_size
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.memory import bitcast
 from std.testing import assert_equal, assert_true

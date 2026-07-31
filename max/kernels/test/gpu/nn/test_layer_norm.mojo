@@ -15,7 +15,7 @@ from std.math import ceildiv, rsqrt
 from std.sys import simd_width_of
 
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, TileTensor, row_major
 from layout.math import mean, variance
 from nn.normalization import *

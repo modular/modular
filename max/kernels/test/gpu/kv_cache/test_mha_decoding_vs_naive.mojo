@@ -25,7 +25,7 @@ from std.memory import bitcast
 from std.random import seed
 from std.collections import Set
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,

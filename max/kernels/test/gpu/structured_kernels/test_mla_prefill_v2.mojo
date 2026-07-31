@@ -45,7 +45,7 @@ compile.
 from std.math import ceildiv, exp, rsqrt
 from std.memory import alloc
 from std.random import randn, seed
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys import get_defined_bool, get_defined_int, get_defined_string
 
 from layout import LayoutTensor, TileTensor

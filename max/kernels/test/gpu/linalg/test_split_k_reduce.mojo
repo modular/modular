@@ -14,7 +14,7 @@
 from std.math import isclose
 from std.random import rand
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     TileTensor,
     Coord,

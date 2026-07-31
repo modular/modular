@@ -18,7 +18,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
     GEMMKind,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import unsafe_memset_zero
 from internal_utils import (

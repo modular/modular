@@ -35,7 +35,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils import StaticTuple
 from std.utils.numerics import min_or_neg_inf
 

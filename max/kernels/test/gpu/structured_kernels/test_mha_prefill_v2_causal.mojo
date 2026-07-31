@@ -28,7 +28,7 @@ Pattern: K=Q=1, V[k, m] = (k+1) / 512.
          = (q+2) / 1024.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
 from layout import LayoutTensor, TileTensor

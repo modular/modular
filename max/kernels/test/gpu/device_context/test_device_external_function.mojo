@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Test loading and executing an external cubin binary."""
 
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceContext,
 )
 from max.gpu.host import DeviceGraph, DeviceGraphBuilder

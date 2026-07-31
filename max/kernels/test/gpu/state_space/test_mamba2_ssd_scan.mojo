@@ -20,7 +20,7 @@ final-state output, and (crucially) varlen no-cross-sequence-bleed equivalence:
 a packed ragged batch must equal independent per-sequence runs.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from std.random import rand
 from state_space.mamba2_ssd_scan import (

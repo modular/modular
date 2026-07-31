@@ -14,7 +14,7 @@
 from std.sys.info import simd_width_of
 
 from max.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from layout._fillers import random
 from nn.normalization import rms_norm_cpu, rms_norm_fused_residual_add_cpu

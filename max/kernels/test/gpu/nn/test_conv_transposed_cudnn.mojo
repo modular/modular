@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys import Vendor
 from layout import Coord, TileTensor, row_major
 from layout._fillers import random

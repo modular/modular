@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.sys import size_of
 from std.itertools import product
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import (
     Idx,
     TileTensor,

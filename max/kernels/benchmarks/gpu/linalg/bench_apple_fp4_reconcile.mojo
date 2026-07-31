@@ -38,7 +38,7 @@ Run: `mojo max/kernels/benchmarks/gpu/linalg/bench_apple_fp4_reconcile.mojo`
 (Apple M5 only; builds on a stock toolchain.)
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import random_si64, seed
 from std.time import perf_counter
 

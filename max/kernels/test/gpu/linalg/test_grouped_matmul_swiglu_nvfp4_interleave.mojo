@@ -33,7 +33,7 @@ no FP-noise is expected.
 """
 from std.math import align_up, ceildiv, exp, recip
 from std.math.uutils import udivmod
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import alloc
 from std.memory.unsafe import bitcast
 from std.random import random_ui64, seed, rand

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.gather_scatter import gather_nd, gather_nd_shape
 

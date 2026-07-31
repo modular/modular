@@ -26,7 +26,7 @@
 
 from std.sys import align_of
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from layout import Coord, TileTensor, row_major
 

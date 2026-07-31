@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import IntTuple, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from std.testing import assert_equal

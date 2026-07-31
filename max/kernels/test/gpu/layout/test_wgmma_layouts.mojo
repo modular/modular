@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import barrier, thread_idx, warp_id, lane_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,

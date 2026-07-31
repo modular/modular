@@ -85,7 +85,7 @@ from std.math import ceildiv, isnan, rsqrt
 from std.random import rand, random_ui64, seed
 from std.sys import get_defined_int
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from kv_cache.types import (

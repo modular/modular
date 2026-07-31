@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.random import seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,

@@ -58,7 +58,7 @@ from std.math import exp, recip
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from std.random import rand

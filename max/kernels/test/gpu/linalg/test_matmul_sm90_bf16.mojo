@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from layout import Idx

@@ -34,7 +34,7 @@ GQA, NullMask/CausalMask/SlidingWindowCausalMask, fp16/bf16, and depth 64/128.
 """
 
 from std.collections import OptionalReg
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv, exp, sqrt
 from std.memory import unsafe_memset_zero
 from std.random import seed, shuffle

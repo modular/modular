@@ -25,7 +25,7 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from std.gpu import block_id_in_cluster, lane_id

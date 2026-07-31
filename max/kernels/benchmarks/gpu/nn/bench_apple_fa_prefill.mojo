@@ -35,7 +35,7 @@ from std.sys import get_defined_bool, get_defined_int
 from std.sys.info import _accelerator_arch
 from std.time import perf_counter
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import sqrt
 
 from layout import (

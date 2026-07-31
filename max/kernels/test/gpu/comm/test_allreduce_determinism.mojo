@@ -50,7 +50,7 @@ from comm.allreduce import allreduce, allreduce_tuning_table
 from comm.device_query import dispatch_select_comm_config
 from comm.sync import enable_p2p, init_signal_buffer
 from layout import TileTensor, row_major
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_equal, assert_true
 
 # DeepEP reruns 20x; reruns inside one process are cheap.

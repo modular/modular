@@ -16,7 +16,7 @@
 
 from std.sys import align_of
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_dim, global_idx, thread_idx
 from std.gpu.memory import external_memory
 from std.gpu.sync import barrier

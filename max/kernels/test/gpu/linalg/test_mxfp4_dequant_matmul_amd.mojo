@@ -25,7 +25,7 @@ from std.math import ceildiv
 from std.memory import bitcast
 from std.random import random_float64, random_ui64
 from std.sys.info import _accelerator_arch
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
 from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
 from linalg.fp4_utils import E2M1_TO_FLOAT32

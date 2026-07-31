@@ -13,7 +13,7 @@
 
 
 from max.algorithm import elementwise
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.slice import slice_as_copy, slice_as_view
 

@@ -21,7 +21,7 @@ reference, exercising all three backends: NVIDIA's `vote.ballot.sync`, AMD's
 
 from std.gpu import lane_id
 from std.gpu.globals import WARP_SIZE
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.info import GPUInfo
 from std.gpu.primitives.warp import vote
 from std.sys.info import Vendor, _accelerator_arch

@@ -34,7 +34,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout._fillers import random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection

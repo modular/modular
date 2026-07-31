@@ -23,7 +23,7 @@ num_splits > 1 epilogue drain) and _launch_mxfp4_split_k (a regression guard for
 that path).
 """
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.memory import bitcast
 from std.random import random_float64, random_ui64
 from std.testing import assert_equal

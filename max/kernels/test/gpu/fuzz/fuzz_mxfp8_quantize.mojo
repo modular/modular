@@ -45,7 +45,7 @@ from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
 from std.utils.numerics import isfinite
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.fp4_quantization import quantize_dynamic_scaled_fp4fp8
 from linalg.fp4_utils import (

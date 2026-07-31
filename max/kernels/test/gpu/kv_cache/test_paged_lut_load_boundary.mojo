@@ -26,7 +26,7 @@ memory via a poisoned-padding stress test.
 """
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import unsafe_memset_zero
 from std.sys.defines import get_defined_int
 from std.utils import IndexList

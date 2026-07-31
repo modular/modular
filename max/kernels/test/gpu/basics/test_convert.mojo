@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.compile import _compile_code
 from std.testing import *
 

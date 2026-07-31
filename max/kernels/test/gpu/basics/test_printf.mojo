@@ -13,7 +13,7 @@
 
 from std.io.io import _printf
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: == test_gpu_printf

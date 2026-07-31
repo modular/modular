@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from std.utils import IndexList

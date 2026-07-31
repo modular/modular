@@ -43,7 +43,7 @@ chunk-inner ordering observable. B200-only (SM100), single CTA.
 from std.sys import size_of, has_nvidia_gpu_accelerator
 
 from std.gpu import WARP_SIZE, barrier, thread_idx, warp_id as get_warp_id
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace, external_memory
 from std.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
 from max.gpu.compute.arch.mma_nvidia_sm100 import mma_arrive

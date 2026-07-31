@@ -20,7 +20,7 @@ from std.math import ceildiv
 from std.memory import bitcast
 from std.random import random_float64, seed
 from std.testing import assert_true
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from linalg.fp4_quantization import quantize_mxfp4_amd
 from linalg.fp4_utils import E2M1_TO_FLOAT32, MXFP4_SF_VECTOR_SIZE

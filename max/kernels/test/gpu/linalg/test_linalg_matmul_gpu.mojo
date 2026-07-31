@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from linalg.matmul import matmul
 from layout import TileTensor, CoordLike, Coord, Idx, row_major
 from linalg.matmul.gpu import _matmul_gpu

@@ -13,7 +13,7 @@
 
 import std.itertools
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.info import _is_sm10x_gpu
 from layout import (
     Coord,

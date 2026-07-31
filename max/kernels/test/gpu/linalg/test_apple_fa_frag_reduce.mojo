@@ -37,7 +37,7 @@ Apple shuffle intrinsic supports for non-half dtypes.
 """
 
 from std.gpu import WARP_SIZE, lane_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.warp import shuffle_xor
 from std.sys.info import _accelerator_arch
 

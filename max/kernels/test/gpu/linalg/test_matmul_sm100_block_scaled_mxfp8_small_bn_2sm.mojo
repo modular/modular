@@ -22,7 +22,7 @@ MMA_N=24 is excluded because BN=12 breaks TMA tile layout constraints.
 from std.math import align_up, ceildiv
 from std.sys import argv, size_of
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from std.random import rand

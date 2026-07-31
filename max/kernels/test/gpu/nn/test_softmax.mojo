@@ -17,7 +17,7 @@ from std.random import rand, random_float64, seed
 from std.sys import has_amd_gpu_accelerator, simd_width_of
 
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from layout import (
     Coord,
     Idx,
