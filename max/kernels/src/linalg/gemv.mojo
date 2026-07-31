@@ -724,9 +724,9 @@ def router_gate_mixed_gemv[
         c,
         a,
         b,
-        m,
-        n,
-        k,
+        Int32(m),
+        Int32(n),
+        Int32(k),
         grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
         block_dim=num_threads,
     )
