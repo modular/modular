@@ -15,6 +15,7 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S7 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S8 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S9 < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=S10 < %t.mlir
 # COM: Thin Closures With Concrete Captures Are Properly Lifted
 # S0-DAG: lit.fn @"compute_gpu
 
@@ -281,3 +282,20 @@ struct Builder[origin: Origin](Movable):
     def region(mut self, work: Some[def(mut Self) raises]) raises:
         work(self)
         pass
+
+# COM: A captured local's origin is promoted into a nested closure's storage
+# COM: struct and interned as a witness.
+# S10-DAG: lit.struct.decl @"{{.*}}capture_nested()::outer2::__storage"<["z`"]*"z`": origin<false>
+# S10-DAG: kgen.witness "z`" : origin<false> = *"z`"
+
+
+def capture_nested() -> Int:
+    var z = 1
+
+    def inner(x: Int) {imm z} -> Int:
+        return z
+
+    def outer2(y: Int) {imm z, imm inner} -> type_of(inner):
+        return inner
+
+    return outer2(1)(2)
