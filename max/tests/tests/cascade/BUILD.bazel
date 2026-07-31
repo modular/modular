@@ -189,6 +189,7 @@ modular_py_test(
     name = "test_all_pipelines",
     size = "medium",
     srcs = ["test_all_pipelines.py"],
+    tags = ["skip-external-ci"],
     # TODO(SERVSYS-1284): importing max.pipelines.lib alone blows the 300s
     # budget on the shared BuildBuddy macOS workers (times out in pytest
     # collection).
