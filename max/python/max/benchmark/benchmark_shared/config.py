@@ -24,6 +24,7 @@ from cyclopts import Parameter
 from max.config import ConfigFileModel
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
+from .backend_names import Backend
 from .datasets import DatasetMode, DistributionParameter
 from .utils import int_or_none, parse_comma_separated
 
@@ -32,31 +33,6 @@ from .utils import int_or_none, parse_comma_separated
 # under test rather than workload-draw variance. Pass ``--seed none`` (or
 # ``seed: null`` in YAML) to draw a fresh random seed instead.
 DEFAULT_BENCHMARK_SEED = 0x5EED  # spells "SEED" (= 24301)
-
-BaseBackend = Literal[
-    "atom",
-    "mach",
-    "mcloud",
-    "modular",
-    "sglang",
-    "trtllm",
-    "vllm",
-]
-
-Backend = Literal[
-    "atom",
-    "atom-chat",
-    "mach",
-    "mcloud",
-    "modular",
-    "modular-chat",
-    "sglang",
-    "sglang-chat",
-    "trtllm",
-    "trtllm-chat",
-    "vllm",
-    "vllm-chat",
-]
 
 Endpoint = Literal[
     "/v1/completions",

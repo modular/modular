@@ -14,10 +14,10 @@
 """Uploader protocol and percentile validation for serving sweep benchmarks.
 
 Used by :mod:`max.benchmark.sweep_benchmark_serving`. The sweep's ``results.csv``
-is produced by the shared schema-driven writer in
-:mod:`max.benchmark.benchmark_shared.model_csv`; this module carries only the
-upload protocol (so callers can plug in a concrete result sink) and the
-supported-percentile validation.
+is streamed from the per-iteration JSON blobs by the shared
+:class:`~max.benchmark.benchmark_shared.model_csv.CsvStreamWriter`; this module
+carries only the upload protocol (so callers can plug in a concrete result
+sink) and the supported-percentile validation.
 """
 
 from __future__ import annotations
