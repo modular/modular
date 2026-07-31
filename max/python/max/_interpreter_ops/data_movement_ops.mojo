@@ -17,7 +17,7 @@ Contains broadcast, transpose, memcpy, and mutable-store-slice operations.
 """
 
 from std.os import abort
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator, simd_width_of

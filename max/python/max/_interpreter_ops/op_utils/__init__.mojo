@@ -14,7 +14,7 @@
 """Shared utilities for MO interpreter Mojo kernel wrappers."""
 
 from max.algorithm.functional import IndexList
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import OpaquePointer
 from std.python import PythonObject
 from std.sys.info import has_apple_gpu_accelerator

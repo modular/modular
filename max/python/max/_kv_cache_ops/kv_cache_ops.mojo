@@ -13,7 +13,7 @@
 
 from std.os import abort
 from std.memory import OpaquePointer
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.python import Python, PythonObject
 from std.python.bindings import PythonModuleBuilder
 

@@ -31,7 +31,7 @@ is then released for the entire GPU-work region.
 from std.collections import Array
 from std.memory import OpaquePointer, UnsafePointer
 from std.os import abort
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
+from max.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from std.python import Python, PythonObject
 from std.python._cpython import GILReleased
 from std.python.bindings import PythonModuleBuilder
