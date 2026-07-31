@@ -304,7 +304,8 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
             )
             attn_kwargs["cache_offsets"] = mla_prefill_metadata.cache_offsets
             buffer_lengths = mla_prefill_metadata.buffer_lengths
-            attn_kwargs["buffer_length"] = buffer_lengths.to(CPU())
+            buffer_lengths = buffer_lengths.to(CPU())
+            attn_kwargs["buffer_length"] = buffer_lengths
             w_k, w_k_scale = self.w_k
             w_uv, w_uv_scale = self.w_uv
             attn_kwargs["w_k"] = w_k

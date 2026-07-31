@@ -36,7 +36,7 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import DimLike, TensorValue
-from max.nn.comm.ep import EPBatchManager
+from max.nn.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.quant_config import QuantConfig
 from typing_extensions import Self
 
@@ -117,7 +117,7 @@ def _local_expert_matmul(
     )
 
 
-class QuantizedMoE(Module[[Tensor], Tensor]):
+class QuantizedMoE(Module[..., Tensor]):
     """Mixture of Experts with quantize-aware expert weights."""
 
     gate: MoEGate
@@ -541,9 +541,17 @@ class ExpertParallelMoE(QuantizedMoE):
             per_device[idx].append(expert.down_proj.weight)
         return [quant_ops.stack(local, axis=0) for local in per_device]
 
-    def forward(self, x: Tensor) -> Tensor:
-        """Expert-parallel forward: gate -> dispatch -> local compute -> combine."""
+    def forward(self, x: Tensor, comm: EPCommBuffers | None = None) -> Tensor:
+        """Expert-parallel forward: gate -> dispatch -> local compute -> combine.
+
+        ``comm`` is optional only to keep the override compatible with the base
+        ``forward(self, x)``; the EP path always supplies it.
+        """
+        assert comm is not None, (
+            "ExpertParallelMoE.forward requires comm buffers"
+        )
         batch_mgr = self.ep_batch_manager
+        batch_mgr.bind_comm_buffers(comm)
         config = batch_mgr.config
 
         # Per-device gate computation (replicated router scores).

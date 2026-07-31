@@ -28,11 +28,11 @@ from max.experimental.sharding import (
     Replicated,
 )
 from max.experimental.tensor import Tensor, default_dtype
-from max.graph import BufferValue, TensorValue
 from max.nn.comm.ep import EPConfig
 from max.nn.comm.ep.ep_config import NUM_GROUPS
 from max.nn.comm.ep.ep_manager import (
     EPBatchManager,
+    EPCommBuffers,
     get_ep_local_sync_counters_size,
 )
 from max.nn.quant_config import QuantConfig
@@ -216,13 +216,14 @@ def test_tensor_parallel_moe_fp8_weights(
 
 def _build_ep_batch_manager(
     config: EPConfig, devices: list[Device]
-) -> EPBatchManager:
-    """Construct an EPBatchManager with placeholder buffer values.
+) -> tuple[EPBatchManager, EPCommBuffers]:
+    """Construct an EPBatchManager and placeholder comm buffers for it.
 
-    Bypasses :meth:`EPBatchManager.fetch_buffers` so the EP forward path can be
-    traced under :func:`F.lazy` without wiring up real graph inputs.
+    Bypasses :meth:`EPBatchManager.comm_buffers` so the EP forward path can be
+    traced under :func:`F.lazy` without wiring up real graph inputs. The
+    returned buffers are what the caller threads into
+    ``ExpertParallelMoE.forward``, which binds them onto the manager.
     """
-    mgr = EPBatchManager(config)
     n_devices = config.n_gpus_per_node
     n_experts_for_counters = (
         config.n_experts // n_devices
@@ -231,28 +232,27 @@ def _build_ep_batch_manager(
     )
     counter_size = get_ep_local_sync_counters_size(n_experts_for_counters)
 
-    mgr._atomic_counters = []
-    for _ in range(NUM_GROUPS):
-        group: list[BufferValue] = []
-        for i in range(n_devices):
-            buf = Tensor.zeros(
-                [counter_size], dtype=DType.int32, device=devices[i]
-            )
-            group.append(BufferValue(buf))
-        mgr._atomic_counters.append(group)
+    atomic_counters = [
+        [
+            Tensor.zeros([counter_size], dtype=DType.int32, device=devices[i])
+            for i in range(n_devices)
+        ]
+        for _ in range(NUM_GROUPS)
+    ]
 
-    def _make_ptrs() -> list[TensorValue]:
+    def _make_ptrs() -> list[Tensor]:
         return [
-            TensorValue(
-                Tensor.zeros([n_devices], dtype=DType.uint64, device=CPU())
-            )
+            Tensor.zeros([n_devices], dtype=DType.uint64, device=CPU())
             for _ in range(NUM_GROUPS)
         ]
 
-    mgr._send_buf_ptrs = _make_ptrs()
-    mgr._recv_buf_ptrs = _make_ptrs()
-    mgr._recv_count_ptrs = _make_ptrs()
-    return mgr
+    comm = EPCommBuffers(
+        atomic_counters=atomic_counters,
+        send_buf_ptrs=_make_ptrs(),
+        recv_buf_ptrs=_make_ptrs(),
+        recv_count_ptrs=_make_ptrs(),
+    )
+    return EPBatchManager(config), comm
 
 
 def _ep_config(dispatch_dtype: DType, num_devices: int, **kwargs) -> EPConfig:
@@ -278,7 +278,7 @@ def test_expert_parallel_moe_bf16(mock_accelerator: MagicMock) -> None:
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
         replicated = PlacementMapping(mesh, (Replicated(),))
 
-        ep_batch_manager = _build_ep_batch_manager(
+        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
             _ep_config(DType.bfloat16, num_devices), devices
         )
 
@@ -317,7 +317,7 @@ def test_expert_parallel_moe_bf16(mock_accelerator: MagicMock) -> None:
                 dtype=DType.bfloat16,
                 device=replicated,
             )
-            out = layer(x)
+            out = layer(x, comm_buffers)
 
         assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
         assert out.mapping.mesh == mesh
@@ -333,7 +333,7 @@ def test_expert_parallel_moe_fp8_weights(
         num_local_experts = _NUM_EXPERTS // num_devices
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
 
-        ep_batch_manager = _build_ep_batch_manager(
+        ep_batch_manager, _ = _build_ep_batch_manager(
             _ep_config(
                 DType.float8_e4m3fn,
                 num_devices,
