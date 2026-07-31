@@ -389,7 +389,7 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
         """
         self._alloc = allocation^
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Deallocates the owned storage.
 
         Releases the storage owned by the wrapped `Allocation` by passing it to

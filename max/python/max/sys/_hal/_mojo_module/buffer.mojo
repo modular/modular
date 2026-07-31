@@ -80,7 +80,7 @@ struct Buffer(ImplicitlyDeletable, Movable, Writable):
     var _ctx: ArcPointer[HALContext[Self.device_spec]]
     var _is_pinned: Bool
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # Mojo destructors must be non-raising; aborting on a free
         # failure is too aggressive (the resource is leaked but
         # nothing else has gone wrong).

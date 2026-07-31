@@ -291,7 +291,7 @@ struct _DeviceTimer:
     def __init__(out self, ptr: _DeviceTimerPtr[mut=True]):
         self._handle = ptr
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # void AsyncRT_DeviceTimer_release(const DviceTimer *timer)
         external_call["AsyncRT_DeviceTimer_release", NoneType](self._handle)
 
@@ -453,7 +453,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         self._host_ptr = copy._host_ptr
         self._handle = copy._handle
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Releases resources associated with this host buffer.
 
         This function schedules an owned buffer free using the stream in the
@@ -1537,7 +1537,7 @@ struct DeviceBuffer[dtype: DType](
         self._handle = copy._handle
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Releases resources associated with this device buffer.
 
         This function schedules an owned buffer free using the stream in the
@@ -2191,7 +2191,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
 
     @doc_hidden
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Releases resources associated with this stream."""
         # void AsyncRT_DeviceStream_release(const DeviceStream *stream)
         external_call["AsyncRT_DeviceStream_release", NoneType](
@@ -2621,7 +2621,7 @@ struct DeviceEvent(ImplicitlyCopyable):
         external_call["AsyncRT_DeviceEvent_retain", NoneType](copy._handle)
         self._handle = copy._handle
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Releases resources associated with this event."""
         # void AsyncRT_DeviceEvent_release(const DeviceEvent *event)
         external_call["AsyncRT_DeviceEvent_release", NoneType](
@@ -2730,7 +2730,7 @@ struct DeviceFunction[
         self._func_impl = copy._func_impl
         self._context = copy._context
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Releases resources associated with this DeviceFunction.
 
         This decrements the reference count of the underlying device function handle.
@@ -3498,7 +3498,7 @@ struct DeviceExternalFunction:
         ](copy._handle)
         self._handle = copy._handle
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Releases resources associated with this device function."""
         # Decrement the reference count held by this struct.
         #
@@ -3883,7 +3883,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         self._handle = copy._handle
         self._owning = copy._owning
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Releases resources associated with this device context.
 
         This destructor decrements the reference count of the native device context.
@@ -6689,7 +6689,7 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
             raise Error("Invalid number of GPU device contexts")
 
         # Build the result in an `UnsafeMaybeUninit` staging array. Its
-        # `__del__` is a no-op, so the staging array is safe to drop even
+        # `__deinit__` is a no-op, so the staging array is safe to drop even
         # with uninitialized slots in scope (e.g. on an early raise). The
         # `unsafe_assume_initialized=` constructor then moves every slot
         # into a fully-initialized `Array[DeviceContext]`.
@@ -6812,7 +6812,7 @@ struct _HostMappedBuffer[dtype: DType]:
         self._dev_buf = buf
         self._cpu_buf = cpu_buf
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     def __enter__(mut self) raises -> HostBuffer[Self.dtype]:
@@ -6834,7 +6834,7 @@ struct _DeviceContextScope:
         self._ctx = ctx
         self._handle = {}
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # Ensure that the C++ scope is removed in all cases.
         if self._handle:
             self._release()

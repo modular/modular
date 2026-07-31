@@ -148,7 +148,7 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
         self.host_ptr = alloc[Scalar[Self.dtype]](shape.flattened_length())
         self.device_buf = None
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self.host_ptr.free()
 
     def copy_to_device(mut self, ctx: DeviceContext) raises:

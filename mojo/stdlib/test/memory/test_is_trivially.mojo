@@ -22,13 +22,13 @@ from test_utils import ConfigureTrivial
 
 @fieldwise_init
 struct AllTrivial(Copyable):
-    """A struct whose move/copy/del are all trivial."""
+    """A struct whose move/copy/deinit are all trivial."""
 
     var value: Int
 
 
 struct NoneTrivial(Copyable):
-    """A struct whose move/copy/del are all non-trivial because of user-defined
+    """A struct whose move/copy/deinit are all non-trivial because of user-defined
     lifecycle methods."""
 
     var value: Int
@@ -42,7 +42,7 @@ struct NoneTrivial(Copyable):
     def __init__(out self, *, deinit move: Self):
         self.value = move.value
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 

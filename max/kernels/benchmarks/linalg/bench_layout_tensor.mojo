@@ -53,7 +53,7 @@ struct Matrix[rows: Int, cols: Int]:
         assert data.layout().count() == Self.rows * Self.cols
         self.data = data^.into_thin()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         dealloc(self.data^.unsafe_with_layout({count = Self.rows * Self.cols}))
 
     ## Initialize with random values

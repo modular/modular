@@ -479,7 +479,7 @@ struct IntervalTree[
         self._root = Self._IntervalNodePointer()
         self._len = 0
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destructor that frees the interval tree's memory."""
         if self._root:
             Self._del_helper(self._root.value())

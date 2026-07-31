@@ -19,7 +19,7 @@
 #        Unsound(Copyable) with SomeMoveOnlyType, default
 #        method conflicts (struct S(A & B) constructed to fail),
 #        missing self error, __init__ without out self error,
-#        recursive Node error, __del__ snippet (no standalone
+#        recursive Node error, __deinit__ snippet (no standalone
 #        example), @staticmethod snippet (error pair only),
 #        NotWritable example (constructed to fail), conditional
 #        conformance struct snippets (hypothetical trait names

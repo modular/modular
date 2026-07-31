@@ -413,7 +413,7 @@ struct NamedTemporaryFile(Movable):
         except:
             raise Error("Failed to create temporary file")
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Closes the file handle."""
         try:
             self.close()

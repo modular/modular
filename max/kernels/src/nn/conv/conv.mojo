@@ -3787,7 +3787,7 @@ struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
         self.ptr_conv_desc = ptr_conv_desc.value()
         self.ptr_output_desc = ptr_output_desc.value()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         try:
             check_cudnn_error(
                 cudnnDestroyTensorDescriptor(self.ptr_output_desc)

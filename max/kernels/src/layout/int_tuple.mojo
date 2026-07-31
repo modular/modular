@@ -168,7 +168,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             self._data = copy._data
 
     @always_inline("nodebug")
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroy the `IntArray` and free its memory if owned.
 
         Only frees memory for owned arrays (positive _size) to prevent

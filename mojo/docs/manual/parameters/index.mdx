@@ -210,7 +210,7 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
         for i in range(self.size):
             self.data.unsafe_offset(i).unsafe_write(elements[i].copy())
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         for i in range(self.size):
             self.data.unsafe_offset(i).unsafe_deinit_pointee()
         self.data.unsafe_free()
@@ -421,8 +421,8 @@ var n = m.slice[2]()
 print(n)  # prints [1, 3]
 ```
 
-A struct's lifecycle methods (`__init__()` and `__del__()`) are an exception to
-this rule—they can't take parameters.
+A struct's lifecycle methods (`__init__()` and `__deinit__()`) are an
+exception to this rule—they can't take parameters.
 
 ### Case study: the SIMD type
 

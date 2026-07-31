@@ -142,7 +142,7 @@ struct Pipe:
         self.fd_in = FileDescriptor(Int(pipe_fds[0]))
         self.fd_out = FileDescriptor(Int(pipe_fds[1]))
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Ensures pipes input and output file descriptors are closed, when the object is destroyed.
         """
         self.set_input_only()
@@ -241,13 +241,13 @@ struct Process:
         self.child_pid = child_pid
         self.status = None
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Waits for the process to exit when the `Process` object is destroyed.
         """
         try:
             _ = self.wait()
         except:
-            # Errors in __del__ should be suppressed.
+            # Errors in __deinit__ should be suppressed.
             pass
 
     def _kill(mut self, signal: Int) -> Bool:

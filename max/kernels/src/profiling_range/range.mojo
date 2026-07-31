@@ -17,7 +17,7 @@
 libkineto activity span: `__enter__` opens the span and `__exit__` closes it.
 
 `Range` mirrors `max.runtime.tracing.Trace`: the span is opened in `__enter__`
-and closed in `__exit__` rather than in `__init__`/`__del__`. This sidesteps
+and closed in `__exit__` rather than in `__init__`/`__deinit__`. This sidesteps
 Mojo's ASAP destruction: a `var span = Range(...)` whose handle is never read
 again would otherwise be destroyed immediately after construction, closing the
 span before any work inside it ran. The `with` statement keeps the object alive

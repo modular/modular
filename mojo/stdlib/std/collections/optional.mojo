@@ -802,7 +802,7 @@ struct Optional[T: AnyType](
         caller-provided deinitializer function.
 
         This method can be used to destroy `Optional` values whose element
-        type is not `ImplicitlyDeletable`. The `__del__` on `Optional`
+        type is not `ImplicitlyDeletable`. The `__deinit__` on `Optional`
         requires `T: ImplicitlyDeletable`, so explicit-deinit users must
         destroy an `Optional[T]` through this API instead.
 

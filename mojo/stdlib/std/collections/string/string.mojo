@@ -295,7 +295,7 @@ struct String(
     # ===------------------------------------------------------------------=== #
 
     @always_inline("nodebug")
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroy the string data."""
         self._drop_ref()
 

@@ -44,7 +44,7 @@ struct ConditionalTriviality[
         self.events = Pointer(to=events)
         self.add_event(EVENT_INIT)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         comptime if is_trivially_deletable[Self.T]():
             self.add_event(EVENT_DEL | EVENT_TRIVIAL)
         else:

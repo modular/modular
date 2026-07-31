@@ -38,7 +38,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
         unsafe_memcpy(dest=self.data, src=copy.data, count=self.num_cells)
         # The lifetime of `existing` continues unchanged
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self.data.unsafe_free()
 
     # ===-------------------------------------------------------------------===#

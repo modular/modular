@@ -315,7 +315,7 @@ struct OwnedDLHandle(Movable):
     def __init__(out self, *, unsafe_uninitialized: Bool):
         self._handle = _DLHandle({})
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Unload the associated dynamic library.
 
         This automatically calls `dlclose()` on the underlying library handle.

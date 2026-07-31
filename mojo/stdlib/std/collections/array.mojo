@@ -179,7 +179,7 @@ struct _ArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
         )
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # Move fields out of self so we can manage their lifetimes.
         var idx = self._index
         var array = self._array^
@@ -190,7 +190,7 @@ struct _ArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
             array.unsafe_ptr().unsafe_offset(idx), Self.length - idx
         )
 
-        # Mark the array as destroyed so Array.__del__ doesn't
+        # Mark the array as destroyed so Array.__deinit__ doesn't
         # double-destroy the elements we already handled.
         forget_deinit(array^)
 
@@ -582,7 +582,7 @@ struct Array[T: AnyType, length: Int](
                 )
 
     @stable(since="1.0")
-    def __del__(
+    def __deinit__(
         deinit self,
     ) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroys the array's elements."""

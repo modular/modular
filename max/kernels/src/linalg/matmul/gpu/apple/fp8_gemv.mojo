@@ -372,7 +372,7 @@ def _enqueue_apple_fp8_materialize_dense[
     cooperative-SMEM FP8 matmul (mirroring the FP4 fused path).
 
     Buffer lifetime: the dense GEMM reads `wdense` after this function returns
-    (`enqueue_*` is async). `DeviceBuffer.__del__` schedules a stream-ordered
+    (`enqueue_*` is async). `DeviceBuffer.__deinit__` schedules a stream-ordered
     free, so it cannot race the GEMM on one in-order stream; the `_ = wdense_dev^`
     pins the handle alive until AFTER both enqueues are issued. Same pattern as
     `_enqueue_apple_fp4_materialize_dense`.

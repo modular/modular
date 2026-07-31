@@ -138,7 +138,7 @@ struct OwnedPointer[T: AnyType](
         is called twice with the same pointer or a user manually deallocates the same data.
 
         After using this constructor, the `Pointer` is assumed to be owned by this `OwnedPointer`.
-        In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
+        In particular, the destructor method will call `T.__deinit__` and `UnsafePointer.free`.
         """
         self._inner = ThinAllocation(
             unsafe_assume_ownership=unsafe_from_raw_pointer
@@ -158,14 +158,14 @@ struct OwnedPointer[T: AnyType](
         is called twice with the same pointer or a user manually deallocates the same data.
 
         After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
-        In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
+        In particular, the destructor method will call `T.__deinit__` and `UnsafePointer.free`.
         """
         var ptr = unsafe_from_opaque_pointer.unsafe_bitcast[Self.T]()
         self = Self(
             unsafe_from_raw_pointer=ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         )
 
-    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroy the `OwnedPointer`, running the destructor of its value.
 
         Constraints:

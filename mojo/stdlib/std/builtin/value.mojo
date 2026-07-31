@@ -247,12 +247,12 @@ trait TrivialRegisterPassable(
 
      - The type implicitly conforms to Copyable and the compiler synthesizes
        copy ctor that does a memcpy.
-     - A trivial `__del__` member is synthesized by the compiler too,
+     - A trivial `__deinit__` member is synthesized by the compiler too,
        so the type can’t be a linear type.
      - All declared members are required to also conforms to this trait,
        since you can’t memcpy or trivially destroy a container if one
        of its stored members has a non-trivial copy constructor.
-     - You are not allowed to define a custom copy ctor or `__del__`.
+     - You are not allowed to define a custom copy ctor or `__deinit__`.
 
 
      ```mojo

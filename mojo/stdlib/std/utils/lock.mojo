@@ -39,7 +39,7 @@ struct SpinWaiter(Defaultable):
             OpaquePointer[MutUntrackedOrigin],
         ]()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroys the SpinWaiter instance."""
         external_call["KGEN_CompilerRT_AsyncRT_DestroySpinWaiter", NoneType](
             self.storage

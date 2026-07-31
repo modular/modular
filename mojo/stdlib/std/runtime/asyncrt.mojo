@@ -321,7 +321,7 @@ struct Task[type: ImplicitlyDeletable, origins: OriginSet]:
         """
         return self._result
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroy the memory associated with a task. This must be manually
         called when a task goes out of scope.
         """
@@ -572,7 +572,7 @@ struct _TaskGroupBox(Copyable, RegisterPassable):
     ](out self, var coro: Coroutine[type, ...]):
         self.handle = coro^._take_handle()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         __mlir_op.`co.destroy`(self.handle)
 
     # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
@@ -606,7 +606,7 @@ struct TaskGroup(Defaultable):
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Clean up resources associated with the TaskGroup."""
         _del_asyncrt_chain(Pointer(to=self.chain))
 

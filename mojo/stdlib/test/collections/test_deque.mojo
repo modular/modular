@@ -1291,7 +1291,7 @@ def test_deque_empty_deinit_with() raises:
 
 # We use `MutAnyOrigin` to bypass exclusivity checking
 # otherwise we cannot construct a deque of Observables where
-# all point to the same copy/move/del counter.
+# all point to the same copy/move/deinit counter.
 comptime ObservableElement = Observable[
     CopyOrigin=MutAnyOrigin,
     MoveOrigin=MutAnyOrigin,

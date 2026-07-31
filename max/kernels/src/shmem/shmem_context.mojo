@@ -321,7 +321,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         """
         return self^
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Context manager exit method.
 
         Automatically finalizes SHMEM when exiting the context.

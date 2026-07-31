@@ -89,7 +89,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         self._ctx_ptr = ctx._handle
         self._size = size
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         shmem_free(self._data)
 
     def __len__(self) -> Int:

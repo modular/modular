@@ -127,7 +127,7 @@ struct WaitAndAdvanceHandle[
 ]:
     """RAII handle for waiting on CLC barrier and advancing work iterator.
 
-    Uses the origin system (__init__/__del__) instead of context managers.
+    Uses the origin system (__init__/__deinit__) instead of context managers.
     The current work_info is captured on construction. On destruction, the
     prefetched next work is written back to the iterator's work_info.
 

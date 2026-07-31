@@ -329,6 +329,16 @@ This version is still a work in progress.
   `@explicit_destroy("custom error")` can still be used to give users
   additional instruction when an instance cannot be deleted implicitly.
 
+- The destructor dunder method should now be spelled `__deinit__`, for naming
+  parity with `__init__`. The old `__del__` spelling still works but now
+  emits a deprecation warning with a fix-it to rename it:
+
+  ```mojo
+  struct Example:
+      def __deinit__(deinit self):
+          pass
+  ```
+
 - `where` clauses inside a parameter list (for example,
   `[x: Int where x > 0]`) are no longer supported, following a period of
   deprecation. Use a trailing `where` clause after the signature instead:

@@ -22,15 +22,15 @@ struct TwoStrings(Copyable):
     var str1: String
     var str2: String
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # self value is whole at the beginning of the function
         self.dump()
-        # After dump(): str2 is never used again, so str2.__del__() runs now
+        # After dump(): str2 is never used again, so str2.__deinit__() runs now
 
         consume(self.str1^)
         # self.str1 has been transferred so str1 becomes uninitialized, and
         # no destructor is called for str1.
-        # self.__del__() is not called (avoiding an infinite loop).
+        # self.__deinit__() is not called (avoiding an infinite loop).
 
     def dump(mut self):
         print("str1:", self.str1)

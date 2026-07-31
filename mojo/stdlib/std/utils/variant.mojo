@@ -248,7 +248,7 @@ struct _NichedOptionalStorage[
             self = Self()
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         comptime assert conforms_to(Self.T, ImplicitlyDeletable)
         if self.isa[Self.T]():
             self._memory.as_uninit[Self.T]()[].unsafe_assume_init_destroy()
@@ -343,7 +343,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
                 return
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         comptime for i in range(Self.Ts.length):
             comptime T = Self.Ts[i]
             comptime assert conforms_to(T, ImplicitlyDeletable)
@@ -619,7 +619,7 @@ struct Variant[*Ts: AnyType](
             self._storage.unsafe_ptr[T]()._mlir_value
         ) = init_with()
 
-    def __del__(
+    def __deinit__(
         deinit self,
     ) where Self.Ts.all_conforms_to[ImplicitlyDeletable]():
         """Destroy the variant, running the destructor of the currently held value.
@@ -959,7 +959,7 @@ struct Variant[*Ts: AnyType](
         Self._check[T]()
         # Destroy-then-emplace is exception-safe only because `init_with` cannot
         # raise (closure types are not `raises`); a throw here would leave the
-        # discriminant set with no value written for `__del__` to destroy.
+        # discriminant set with no value written for `__deinit__` to destroy.
         self._storage^.__deinit__()
         self._storage = Self._Storage(unsafe_uninitialized=())
         self._storage.unsafe_set_active[T]()

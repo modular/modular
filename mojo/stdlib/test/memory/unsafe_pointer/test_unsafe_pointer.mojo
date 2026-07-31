@@ -118,7 +118,7 @@ def test_unsafepointer_of_move_only_type() raises:
 
     ptr.unsafe_free()
     assert_equal(len(actions_ptr[]), 4)
-    assert_equal(actions_ptr[][3], "__del__")
+    assert_equal(actions_ptr[][3], "__deinit__")
 
 
 def test_unsafepointer_move_pointee_move_count() raises:

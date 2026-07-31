@@ -43,7 +43,7 @@ struct _PythonGlobal(Defaultable, Movable):
     def __init__(out self):
         self.cpython = {}
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self.cpython.destroy()
 
 

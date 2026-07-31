@@ -33,8 +33,8 @@ struct Counter[stride: Int](Movable):
         self.b = b
         print("counter init", a, b)
 
-    def __del__(deinit self):
-        print("counter del")
+    def __deinit__(deinit self):
+        print("counter deinit")
 
     def bump(mut self):
         self.a += Self.stride

@@ -22,7 +22,7 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
         for i in range(self.size):
             self.data.unsafe_offset(i).unsafe_write(elements[i].copy())
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         for i in range(self.size):
             self.data.unsafe_offset(i).unsafe_deinit_pointee()
         self.data.unsafe_free()

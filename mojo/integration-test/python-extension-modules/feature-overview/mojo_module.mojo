@@ -168,7 +168,7 @@ struct FailToInitialize(Defaultable, Movable, Writable):
     def __init__(out self):
         pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         abort("FailToInitialize should never be deinitialized.")
 
 

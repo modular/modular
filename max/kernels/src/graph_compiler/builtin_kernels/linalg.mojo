@@ -1242,7 +1242,7 @@ def _apple_int8_w8a8_dispatch[
 
     # Kernel scratch: int8 quantized activation `[M, K]` + per-row fp32 scale
     # `[M]`, both dynamic-M/K. Freed at scope exit via the stream-ordered
-    # `DeviceBuffer.__del__`; the `_ = ...^` pins them past the async enqueues
+    # `DeviceBuffer.__deinit__`; the `_ = ...^` pins them past the async enqueues
     # (same lifetime idiom as the FP4 materialize path).
     var aq_buf = context.enqueue_create_buffer[DType.int8](M * K)
     var asc_buf = context.enqueue_create_buffer[DType.float32](M)

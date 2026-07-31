@@ -264,7 +264,7 @@ struct Deque[ElementType: Movable](
             ).unsafe_with_layout({count = self._capacity})
         )
 
-    def __del__(
+    def __deinit__(
         deinit self,
     ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
         """Destroys all elements in the deque and frees its memory."""
@@ -1231,14 +1231,14 @@ struct _DequeIterOwned[T: Movable & ImplicitlyDeletable](
     var _index: Int
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # Destroy remaining unconsumed elements at their physical positions.
         # Note: `_index` tracks how many elements __next__ has consumed;
         # _head/_tail are never modified, so len(self._deque) stays constant.
         for i in range(self._index, len(self._deque)):
             var phys = self._deque._physical_index(self._deque._head + i)
             (self._deque._data.unsafe_offset(phys)).unsafe_deinit_pointee()
-        # Zero out head/tail so Deque.__del__ only frees memory.
+        # Zero out head/tail so Deque.__deinit__ only frees memory.
         self._deque._head = 0
         self._deque._tail = 0
 

@@ -123,7 +123,7 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
     var _index: Int
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # Destroy the remaining elements that have not yet been
         # iterated over.
         unsafe_destroy_n(
@@ -537,7 +537,7 @@ struct List[T: Movable, /](
             )
 
     @stable(since="1.0")
-    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroy all elements in the list and free its memory."""
         unsafe_destroy_n(
             self._data,

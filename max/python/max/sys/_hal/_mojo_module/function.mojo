@@ -34,7 +34,7 @@ struct Function(ImplicitlyDeletable, Movable, Writable):
     var _bundle: ArcPointer[HALRuntimeBundle]
     var _ctx: ArcPointer[HALContext[Self.device_spec]]
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # Mojo destructors must be non-raising; aborting on an unload
         # failure is too aggressive (the resource is leaked but
         # nothing else has gone wrong).

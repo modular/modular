@@ -101,8 +101,8 @@ struct MyIntMemory(Movable):
     def __init__(out self, val: Int):
         self.val = val
 
-    def __del__(deinit self):
-        print("MyInt del")
+    def __deinit__(deinit self):
+        print("MyInt ")
 
 
 @extensibility.register("make_my_int_memory")

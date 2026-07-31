@@ -937,7 +937,7 @@ def test_uninit_copy_n_nontrivial() raises:
 
 
 def test_destroy_n_trivial() raises:
-    # Test with trivial destructor - should be no-op, not call __del__
+    # Test with trivial destructor - should be no-op, not call __deinit__
     var del_count = 0
     var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
@@ -1033,14 +1033,14 @@ def test_destroy_n_zero_count() raises:
 struct Parent:
     var child: Child
 
-    def __del__(deinit self):
-        abort("@ Parent.__del__ should not have run")
+    def __deinit__(deinit self):
+        abort("@ Parent.__deinit__ should not have run")
 
 
 @fieldwise_init
 struct Child(Movable):
-    def __del__(deinit self):
-        abort("@ Child.__del__ should not have run")
+    def __deinit__(deinit self):
+        abort("@ Child.__deinit__ should not have run")
 
 
 def test_forget_deinit() raises:
