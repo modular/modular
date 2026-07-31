@@ -1182,6 +1182,10 @@ def stdlib_plugin[target: _TargetType = _current_target()]() -> StaticString:
 def size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bytes) of the type.
 
+    The size includes any padding required by the type's alignment, so it is
+    always a multiple of `align_of[type]()` and always matches the stride
+    between adjacent elements of an array of the type.
+
     Parameters:
         type: The type in question.
         target: The target architecture.

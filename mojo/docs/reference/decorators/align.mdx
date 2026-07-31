@@ -127,9 +127,9 @@ aligned type.
 ## Alignment and arrays
 
 The `@align` decorator guarantees alignment of the base address of a value,
-including the base pointer of an array. It doesn't pad the size of the struct.
-Mojo lays out array elements using `size_of[T]()` as your stride, not
-`align_of[T]()`:
+including the base pointer of an array. It pads the size of the struct to be a
+multiple of the alignment. Mojo lays out array elements using `size_of[T]()`
+which rounds up to a multiple of `align_of[T]()`:
 
 ```mojo
 from std.memory import UnsafePointer
@@ -143,17 +143,12 @@ def demonstrate_array_stride():
     var arr = UnsafePointer[CacheAligned].alloc(4)
 
     print(align_of[CacheAligned]())  # 64
-    print(size_of[CacheAligned]())   # 8
+    print(size_of[CacheAligned]())   # 64
 
-    # Only arr[0] is guaranteed to be 64-byte aligned
-    # Subsequent elements follow at 8-byte intervals
+    # All elements of arr are guaranteed to be 64-byte aligned
 
     arr.unsafe_free()
 ```
-
-If every element in an array must be aligned, pad the struct until its size
-is a multiple of its alignment. (This matches the behavior of C and C++
-`alignas`.)
 
 ## Generic structs
 

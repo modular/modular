@@ -1297,6 +1297,22 @@ def test_extend_list_with_explicit_destroy_type() raises:
     assert_equal(destroyed, [0, 1, 2])
 
 
+@align(32)
+@fieldwise_init
+struct Overaligned(Copyable, Movable):
+    var x: Float32
+
+
+def test_overaligned_struct_realloc() raises:
+    # `@align` pads the struct's stride, and size_of must match it.
+    assert_equal(size_of[Overaligned](), 32)
+    var l = List[Overaligned]()
+    for i in range(17):
+        l.append(Overaligned(Float32(i)))
+    for i in range(17):
+        assert_equal(l[i].x, Float32(i))
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
