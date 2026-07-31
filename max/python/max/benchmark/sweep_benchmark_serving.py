@@ -42,7 +42,7 @@ from max.benchmark.benchmark_serving import (
 from max.benchmark.benchmark_shared.config import (
     ServingBenchmarkConfig,
 )
-from max.benchmark.results_to_csv import CsvStreamWriter
+from max.benchmark.benchmark_shared.model_csv import CsvStreamWriter
 from max.benchmark.sweep_benchmark_serving_result_utils import (
     SweepUploader,
     validate_sweep_serving_percentiles,
@@ -202,7 +202,7 @@ def run_sweep(
     # completed rows on disk. The per-concurrency JSON blobs remain the source
     # of truth; the authoritative all-columns superset can be regenerated from
     # them via results_to_csv if a later iteration surfaces new columns.
-    with CsvStreamWriter(results_csv_path, all_columns=True) as csv_writer:
+    with CsvStreamWriter(results_csv_path) as csv_writer:
         for result in benchmark_serving_main(
             config, server_liveness=server_liveness
         ):
