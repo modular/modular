@@ -33,6 +33,7 @@ no ``max`` package installed and therefore cannot import anything from here.
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Literal
 
 # Locally launched inference frameworks that the config generator fans
@@ -59,3 +60,28 @@ Backend = (
         "vllm-chat",
     ]
 )
+
+
+class BackendEnum(str, Enum):
+    """Enum form of the benchmark backend names.
+
+    The ``str``-enum counterpart to the :data:`Backend` / :data:`BaseBackend` /
+    :data:`FrameworkName` literals, for call sites that need a runtime value to
+    branch on or serialize rather than a ``Literal`` used only for validation. It
+    lives here (not in the engine) so the serving stack can share the same
+    vocabulary. The offline benchmark engine uses it for backend dispatch and
+    subprocess IPC.
+
+    Members mirror :data:`FrameworkName`; the ``mcloud`` server (externally
+    managed, nothing to launch) is omitted. The engine currently launches
+    ``modular`` in-process and ``vllm`` / ``sglang`` in subprocess venvs; the
+    remaining members round out the vocabulary and raise a clear error until a
+    runner is wired up.
+    """
+
+    MODULAR = "modular"
+    VLLM = "vllm"
+    SGLANG = "sglang"
+    ATOM = "atom"
+    MACH = "mach"
+    TRTLLM = "trtllm"
