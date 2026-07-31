@@ -37,7 +37,6 @@ from max.pipelines.kv_cache.kv_connector import (
     KVConnectorTransfer,
     TransferDirection,
 )
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import Tracer, traced
 
 from ..paged_kv_cache.block_copy_engine import (
@@ -121,9 +120,7 @@ class TieredConnector:
         self._block_disk_bytes = self._host_buffer.shape[1]
 
         self._host_block_pool = BlockPool(
-            MemoryTier.MEMORY_TIER_CPU,
             total_num_host_blocks,
-            enable_prefix_caching=True,
             enable_runtime_checks=False,
         )
 

@@ -27,7 +27,6 @@ from max.pipelines.kv_cache.kv_connector import (
     KVConnectorTransfer,
     TransferDirection,
 )
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 
 
@@ -130,7 +129,6 @@ def test_block_manager_reset_metrics_clears_connector_counters() -> None:
     connector._d2h_blocks_copied = 5
     connector._h2d_blocks_copied = 2
     bm = BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=64,
         block_size=16,
         enable_prefix_caching=True,
@@ -183,7 +181,6 @@ def test_scheduler_sampling_cycle_reports_per_batch_deltas() -> None:
     """
     connector = _CountingConnector()
     bm = BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=64,
         block_size=16,
         enable_prefix_caching=True,
@@ -297,7 +294,6 @@ def test_dkv_health_persists_across_sample_and_reset() -> None:
     connector._total_clients = 2
     connector._reconnect_attempts = 3
     bm = BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=64,
         block_size=16,
         enable_prefix_caching=True,
