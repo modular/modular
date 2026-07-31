@@ -33,6 +33,7 @@ from max._interpreter_ops import (
     cast_gc,
     conv_gc,
     elementwise_binary_gc,
+    gather_gc,
     gc_compile,
     group_norm_gc,
     layer_norm_gc,
@@ -46,6 +47,8 @@ from max._interpreter_ops import (
     resize_gc,
     rms_norm_gc,
     roi_align_gc,
+    scatter_gc,
+    scatter_nd_gc,
     select_gc,
     shape_rearrange_gc,
     topk_gc,
@@ -1703,55 +1706,43 @@ def _handle_concat(
 def _handle_gather(
     op: mo.GatherOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.gather by dispatching to Mojo gather kernel.
+    """Dispatches eager gather to its GC model.
 
-    Operands: input (tensor), indices (tensor). ``axis`` is a compile-time
-    ``index`` attribute. Output shape: input[:axis] + indices.shape + input[axis+1:]
+    ``axis`` is a compile-time attribute; the operands are view-shimmed to the
+    canonical rank-3 data / rank-1 indices form (zero-copy) and the result back
+    to the op's true output shape, read from its MLIR result type.
 
     Args:
         op: The gather operation.
-        inputs: Input buffers - input tensor, indices tensor.
+        inputs: The realized input buffers - data tensor, indices tensor.
 
     Returns:
-        List containing the gathered tensor buffer.
+        A single-element list holding the gathered buffer.
     """
-    target_device = _get_target_device(op)
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
 
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # indices
-
-    input_buffer = inputs[0]
-    indices_buffer = inputs[1]
+    x, indices = inputs
+    assert isinstance(x, Buffer)
+    assert isinstance(indices, Buffer)
+    _check_buffers_on_device(inputs, target_device)
 
     axis = op.axis
     if axis < 0:
-        axis += len(input_buffer.shape)
+        axis += len(x.shape)
 
-    in_shape = list(input_buffer.shape)
-    idx_shape = list(indices_buffer.shape)
-
-    outer_size = prod(in_shape[:axis]) if axis > 0 else 1
-    axis_size = in_shape[axis]
-    inner_size = prod(in_shape[axis + 1 :]) if axis < len(in_shape) - 1 else 1
-    num_indices = prod(idx_shape) if idx_shape else 1
-
-    output_shape = in_shape[:axis] + idx_shape + in_shape[axis + 1 :]
-
-    output = Buffer(
-        shape=output_shape,
-        dtype=input_buffer.dtype,
-        device=target_device,
+    # Pure copy: run it on the same-width uint so one graph serves every dtype.
+    udtype = gather_gc.uint_view_dtype(x.dtype)
+    model = gather_gc.gather_model(type(op), x.device, udtype, indices.dtype)
+    data_view, idx_view = gather_gc.gather_operand_views(
+        x.shape, indices.shape, axis
     )
-
-    ops.gather_scatter_ops.Gather(
-        output,
-        input_buffer,
-        indices_buffer,
-        (outer_size, axis_size, inner_size, num_indices),
-        target_device._device_context_ptr(),
+    (out,) = model(
+        x.view(udtype, data_view), indices.view(indices.dtype, idx_view)
     )
-
-    return [output]
+    out_shape = tuple(int(dim) for dim in result_type.shape)
+    return [out.view(result_type.dtype, out_shape)]
 
 
 @register_op_handler(mo.GatherSumOp)
@@ -1770,11 +1761,12 @@ def _handle_gather_sum(
     target_device = _get_target_device(op)
     _check_cpu_only(op, target_device)
 
-    assert isinstance(inputs[0], Buffer)
-    assert isinstance(inputs[1], Buffer)
+    x, indices = inputs
+    assert isinstance(x, Buffer)
+    assert isinstance(indices, Buffer)
 
-    input_np = inputs[0].to_numpy()
-    indices_np = inputs[1].to_numpy().astype(np.intp)
+    input_np = x.to_numpy()
+    indices_np = indices.to_numpy().astype(np.intp)
 
     gathered = np.take(input_np, indices_np, axis=0)
     result = gathered.sum(axis=1, keepdims=True)
@@ -1786,313 +1778,105 @@ def _handle_gather_sum(
 def _handle_gather_nd(
     op: mo.GatherNdOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.gather_nd by dispatching to Mojo gather_nd kernel.
+    """Dispatches eager gather_nd via gather_gc's single fused model.
 
-    Operands: input (tensor), indices (tensor).
-    Attribute: batch_dims (int).
-    Output shape: input[:batch_dims] + indices[batch_dims:-1]
-                  + input[batch_dims + index_depth:]
+    ``batch_dims`` is a compile-time attribute, but the fused graph itself
+    always calls the real ``ops.gather_nd`` with ``batch_dims=1`` (see
+    :func:`gather_gc.gather_nd_operand_views`/:func:`gather_gc.gather_nd_model`)
+    -- it natively handles per-batch-distinct indices, so no batch-folding is
+    needed in this handler.
 
     Args:
         op: The gather_nd operation.
-        inputs: Input buffers - input tensor, indices tensor.
+        inputs: The realized input buffers - data tensor, indices tensor.
 
     Returns:
-        List containing the gathered tensor buffer.
+        A single-element list holding the gathered buffer.
     """
-    target_device = _get_target_device(op)
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
 
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # indices
+    x, indices = inputs
+    assert isinstance(x, Buffer)
+    assert isinstance(indices, Buffer)
+    _check_buffers_on_device(inputs, target_device)
 
-    input_buffer = inputs[0]
-    indices_buffer = inputs[1]
-    batch_dims = op.batch_dims
-
-    in_shape = list(input_buffer.shape)
-    idx_shape = list(indices_buffer.shape)
-    index_depth = idx_shape[-1]
-
-    # Compute flattened parameters for the Mojo kernel
-    batch_size = prod(in_shape[:batch_dims]) if batch_dims > 0 else 1
-    indices_outer_size = (
-        prod(idx_shape[batch_dims:-1])
-        if len(idx_shape[batch_dims:-1]) > 0
-        else 1
+    data_view, idx_view, strides = gather_gc.gather_nd_operand_views(
+        x.shape, indices.shape, op.batch_dims
     )
-    suffix_size = (
-        prod(in_shape[batch_dims + index_depth :])
-        if batch_dims + index_depth < len(in_shape)
-        else 1
+    udtype = gather_gc.uint_view_dtype(x.dtype)
+    model = gather_gc.gather_nd_model(x.device, udtype, indices.dtype)
+    strides_buf = Buffer(
+        shape=[len(strides)], dtype=indices.dtype, device=CPU()
     )
-    input_inner_shape = in_shape[batch_dims:]
-    input_data_stride = prod(input_inner_shape) if input_inner_shape else 1
-
-    output_shape = (
-        in_shape[:batch_dims]
-        + idx_shape[batch_dims:-1]
-        + in_shape[batch_dims + index_depth :]
+    for i, s in enumerate(strides):
+        strides_buf[i] = s
+    (out,) = model(
+        x.view(udtype, data_view),
+        indices.view(indices.dtype, idx_view),
+        strides_buf,
     )
-
-    output = Buffer(
-        shape=output_shape,
-        dtype=input_buffer.dtype,
-        device=target_device,
-    )
-
-    ops.gather_scatter_ops.GatherNd(
-        output,
-        input_buffer,
-        indices_buffer,
-        (
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            input_inner_shape,
-        ),
-        target_device._device_context_ptr(),
-    )
-
-    return [output]
+    out_shape = tuple(int(dim) for dim in result_type.shape)
+    return [out.view(result_type.dtype, out_shape)]
 
 
-@register_op_handler(mo.ScatterNdOp)
-def _handle_scatter_nd(
-    op: mo.ScatterNdOp, inputs: Sequence[Buffer | None]
+# ScatterNd operations
+
+
+def _handle_scatter_nd_family(
+    op: _core.Operation, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.scatter_nd by copying input then scattering via Mojo (GPU-capable).
-
-    Operands: input, updates, indices, outputParamDecls.
-    Output: same shape/dtype as input; ``output[indices[i, :k]] = updates[i]``
-    with last write winning for duplicate index vectors.
-
-    Shape math (batch_dims == 0):
-    - ``batch_size = 1``
-    - ``indices_outer_size = prod(indices.shape[:-1])``
-    - ``index_depth = indices.shape[-1]``
-    - ``suffix_size = prod(input.shape[index_depth:])``
-    - ``input_inner_shape = input.shape``
+    """Dispatches an eager scatter-nd op via scatter_nd_gc's single fused
+    model.
 
     Args:
-        op: The scatter_nd operation.
-        inputs: Input buffers - input, updates, indices, outputParamDecls.
+        op: The scatter-nd / scatter-nd-reduce operation being handled.
+        inputs: The realized buffers - input, updates, indices.
 
     Returns:
-        List containing the scatter_nd result buffer.
+        A single-element list holding the scattered buffer.
     """
-    target_device = _get_target_device(op)
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
 
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # updates
-    assert isinstance(inputs[2], Buffer)  # indices
+    x, updates, indices = inputs
+    assert isinstance(x, Buffer)
+    assert isinstance(updates, Buffer)
+    assert isinstance(indices, Buffer)
+    _check_buffers_on_device([x, updates, indices], target_device)
 
-    input_buffer = inputs[0]
-    updates_buffer = inputs[1]
-    indices_buffer = inputs[2]
-
-    in_shape = list(input_buffer.shape)
-    idx_shape = list(indices_buffer.shape)
-    index_depth = idx_shape[-1]
-
-    batch_size = 1
-    indices_outer_size = prod(idx_shape[:-1]) if len(idx_shape) > 1 else 1
-    suffix_size = (
-        prod(in_shape[index_depth:]) if index_depth < len(in_shape) else 1
+    input_view, updates_view, indices_view, strides = (
+        scatter_nd_gc.scatter_nd_operand_views(x.shape, indices.shape)
     )
-    input_data_stride = prod(in_shape) if in_shape else 1
-    input_inner_shape = in_shape
-
-    output = Buffer(
-        shape=in_shape, dtype=input_buffer.dtype, device=target_device
+    vdtype = scatter_nd_gc.model_dtype(type(op), x.dtype)
+    model = scatter_nd_gc.scatter_nd_model(
+        type(op), x.device, vdtype, indices.dtype
     )
-    total_elements = prod(in_shape) if in_shape else 1
-    ctx_ptr = target_device._device_context_ptr()
-
-    ops.data_movement_ops.Memcpy(
-        output, input_buffer, 0, 0, total_elements, ctx_ptr
+    strides_buf = Buffer(
+        shape=[len(strides)], dtype=indices.dtype, device=CPU()
     )
-
-    if indices_outer_size > 0:
-        ops.gather_scatter_ops.ScatterNd(
-            output,
-            updates_buffer,
-            indices_buffer,
-            (
-                batch_size,
-                indices_outer_size,
-                index_depth,
-                suffix_size,
-                input_data_stride,
-                input_inner_shape,
-            ),
-            ctx_ptr,
-        )
-
-    return [output]
-
-
-@register_op_handler(mo.ScatterNdAddOp)
-def _handle_scatter_nd_add(
-    op: mo.ScatterNdAddOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.scatter_nd.add by copying input then accumulating via Mojo (CPU-only).
-
-    Operands: input, updates, indices, outputParamDecls.
-    Output: same shape/dtype as input; ``output[indices[i, :k]] += updates[i]``
-    with duplicate index vectors summed.
-
-    Args:
-        op: The scatter_nd.add operation.
-        inputs: Input buffers - input, updates, indices, outputParamDecls.
-
-    Returns:
-        List containing the scatter_nd_add result buffer.
-    """
-    target_device = _get_target_device(op)
-
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # updates
-    assert isinstance(inputs[2], Buffer)  # indices
-
-    input_buffer = inputs[0]
-    updates_buffer = inputs[1]
-    indices_buffer = inputs[2]
-
-    in_shape = list(input_buffer.shape)
-    idx_shape = list(indices_buffer.shape)
-    index_depth = idx_shape[-1]
-
-    batch_size = 1
-    indices_outer_size = prod(idx_shape[:-1]) if len(idx_shape) > 1 else 1
-    suffix_size = (
-        prod(in_shape[index_depth:]) if index_depth < len(in_shape) else 1
+    for i, s in enumerate(strides):
+        strides_buf[i] = s
+    (out,) = model(
+        x.view(vdtype, input_view),
+        updates.view(vdtype, updates_view),
+        indices.view(indices.dtype, indices_view),
+        strides_buf,
     )
-    input_data_stride = prod(in_shape) if in_shape else 1
-    input_inner_shape = in_shape
-
-    output = Buffer(
-        shape=in_shape, dtype=input_buffer.dtype, device=target_device
-    )
-    total_elements = prod(in_shape) if in_shape else 1
-    ctx_ptr = target_device._device_context_ptr()
-
-    ops.data_movement_ops.Memcpy(
-        output, input_buffer, 0, 0, total_elements, ctx_ptr
-    )
-
-    if indices_outer_size > 0:
-        ops.gather_scatter_ops.ScatterNdAdd(
-            output,
-            updates_buffer,
-            indices_buffer,
-            (
-                batch_size,
-                indices_outer_size,
-                index_depth,
-                suffix_size,
-                input_data_stride,
-                input_inner_shape,
-            ),
-            ctx_ptr,
-        )
-
-    return [output]
+    out_shape = tuple(int(dim) for dim in result_type.shape)
+    return [out.view(result_type.dtype, out_shape)]
 
 
-def _scatter_nd_reduction_common(
-    op: mo.ScatterNdMaxOp | mo.ScatterNdMinOp | mo.ScatterNdMulOp,
-    inputs: Sequence[Buffer | None],
-    mojo_fn_name: str,
-) -> Sequence[Buffer]:
-    """Shared logic for scatter_nd_max/min/mul handlers.
-
-    Copies input to output, then applies the named Mojo scatter-nd kernel.
-
-    Args:
-        op: The scatter_nd reduction operation.
-        inputs: Input buffers - input, updates, indices, outputParamDecls.
-        mojo_fn_name: Name of the Mojo dispatcher function on
-            ``gather_scatter_ops`` (e.g. ``"ScatterNdMax"``).
-
-    Returns:
-        List containing the scatter_nd result buffer.
-    """
-    target_device = _get_target_device(op)
-
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # updates
-    assert isinstance(inputs[2], Buffer)  # indices
-
-    input_buffer = inputs[0]
-    updates_buffer = inputs[1]
-    indices_buffer = inputs[2]
-
-    in_shape = list(input_buffer.shape)
-    idx_shape = list(indices_buffer.shape)
-    index_depth = idx_shape[-1]
-
-    batch_size = 1
-    indices_outer_size = prod(idx_shape[:-1]) if len(idx_shape) > 1 else 1
-    suffix_size = (
-        prod(in_shape[index_depth:]) if index_depth < len(in_shape) else 1
-    )
-    input_data_stride = prod(in_shape) if in_shape else 1
-    input_inner_shape = in_shape
-
-    output = Buffer(
-        shape=in_shape, dtype=input_buffer.dtype, device=target_device
-    )
-    total_elements = prod(in_shape) if in_shape else 1
-    ctx_ptr = target_device._device_context_ptr()
-
-    ops.data_movement_ops.Memcpy(
-        output, input_buffer, 0, 0, total_elements, ctx_ptr
-    )
-
-    if indices_outer_size > 0:
-        mojo_fn = getattr(ops.gather_scatter_ops, mojo_fn_name)
-        mojo_fn(
-            output,
-            updates_buffer,
-            indices_buffer,
-            (
-                batch_size,
-                indices_outer_size,
-                index_depth,
-                suffix_size,
-                input_data_stride,
-                input_inner_shape,
-            ),
-            ctx_ptr,
-        )
-
-    return [output]
+# Wrapped in a function so the SCATTER_ND_GC_OPS access is deferred past the
+# import cycle between this module and scatter_nd_gc (via the package).
+def _register_scatter_nd_handlers() -> None:
+    for op_type in scatter_nd_gc.SCATTER_ND_GC_OPS:
+        register_op_handler(op_type)(_handle_scatter_nd_family)
 
 
-@register_op_handler(mo.ScatterNdMaxOp)
-def _handle_scatter_nd_max(
-    op: mo.ScatterNdMaxOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.scatter_nd.max via the shared scatter-nd reduction helper."""
-    return _scatter_nd_reduction_common(op, inputs, "ScatterNdMax")
-
-
-@register_op_handler(mo.ScatterNdMinOp)
-def _handle_scatter_nd_min(
-    op: mo.ScatterNdMinOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.scatter_nd.min via the shared scatter-nd reduction helper."""
-    return _scatter_nd_reduction_common(op, inputs, "ScatterNdMin")
-
-
-@register_op_handler(mo.ScatterNdMulOp)
-def _handle_scatter_nd_mul(
-    op: mo.ScatterNdMulOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.scatter_nd.mul via the shared scatter-nd reduction helper."""
-    return _scatter_nd_reduction_common(op, inputs, "ScatterNdMul")
+_register_scatter_nd_handlers()
 
 
 # Split operations
@@ -2141,224 +1925,66 @@ def _handle_split(
 # Scatter operations
 
 
-@register_op_handler(mo.ScatterOp)
-def _handle_scatter(
-    op: mo.ScatterOp, inputs: Sequence[Buffer | None]
+def _handle_scatter_family(
+    op: _core.Operation, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.scatter by copying input then scattering updates via Mojo.
+    """Dispatches an eager axis-scatter op to its GC model.
 
-    Operands: input, updates, indices. ``axis`` is a compile-time ``index``
-    attribute. Output: same shape/dtype as input with updates scattered along
-    axis.
+    ``ScatterOp`` overwrites (a pure copy, so its data is bit-cast to the
+    same-width uint); the reduce variants (add/max/min/mul) accumulate in the
+    real dtype. ``axis`` (an attribute on ``ScatterOp``, a scalar operand on
+    the reduce variants) is canonicalized out: operands are view-shimmed to
+    rank 3 (zero-copy) and the result back to the input's shape, read from the
+    op's MLIR result type. ``ops.scatter*`` builds the input copy, so there is no
+    explicit memcpy.
 
     Args:
-        op: The scatter operation.
-        inputs: Input buffers - input, updates, indices.
+        op: The scatter/scatter-reduce operation being handled.
+        inputs: The realized buffers - input, updates, indices (plus a scalar
+            axis operand for the reduce variants).
 
     Returns:
-        List containing the scattered tensor buffer.
+        A single-element list holding the scattered buffer.
     """
-    target_device = _get_target_device(op)
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
 
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # updates
-    assert isinstance(inputs[2], Buffer)  # indices
+    # Reduce variants carry axis as a 4th operand (scatter_axis reads inputs[3]).
+    x, updates, indices, *extra = inputs
+    assert len(extra) <= 1, f"scatter expects 3 or 4 inputs, got {len(inputs)}"
+    assert isinstance(x, Buffer)
+    assert isinstance(updates, Buffer)
+    assert isinstance(indices, Buffer)
+    # Only the data operands must sit on the target device.
+    _check_buffers_on_device([x, updates, indices], target_device)
 
-    input_buffer = inputs[0]
-    updates_buffer = inputs[1]
-    indices_buffer = inputs[2]
-
-    axis = op.axis
-    in_shape = list(input_buffer.shape)
-    ndim = len(in_shape)
+    axis = scatter_gc.scatter_axis(op, inputs)
     if axis < 0:
-        axis += ndim
+        axis += len(x.shape)
 
-    inner_size = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
-    outer_size = prod(in_shape[:axis]) if axis > 0 else 1
-    axis_size = in_shape[axis]
-    upd_shape = list(updates_buffer.shape)
-    num_updates_axis = upd_shape[axis]
-
-    output = Buffer(
-        shape=in_shape,
-        dtype=input_buffer.dtype,
-        device=target_device,
+    vdtype = scatter_gc.model_dtype(type(op), x.dtype)
+    input_view, updates_view = scatter_gc.scatter_operand_views(
+        x.shape, updates.shape, axis
     )
-
-    total_elements = prod(in_shape)
-    ctx_ptr = target_device._device_context_ptr()
-
-    ops.data_movement_ops.Memcpy(
-        output, input_buffer, 0, 0, total_elements, ctx_ptr
+    model = scatter_gc.scatter_model(type(op), x.device, vdtype, indices.dtype)
+    (out,) = model(
+        x.view(vdtype, input_view),
+        updates.view(vdtype, updates_view),
+        indices.view(indices.dtype, updates_view),
     )
-
-    ops.gather_scatter_ops.Scatter(
-        output,
-        updates_buffer,
-        indices_buffer,
-        (outer_size, axis_size, inner_size, num_updates_axis),
-        ctx_ptr,
-    )
-
-    return [output]
+    out_shape = tuple(int(dim) for dim in result_type.shape)
+    return [out.view(result_type.dtype, out_shape)]
 
 
-@register_op_handler(mo.ScatterAddOp)
-def _handle_scatter_add(
-    op: mo.ScatterAddOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.scatter.add by copying input then accumulating updates via Mojo.
-
-    Operands: input, updates, indices, axis (scalar int64 on CPU),
-    outputParamDecls.
-    Output: same shape/dtype as input; ``output[...][indices[...]] += updates[...]``
-    with duplicate indices summed.
-
-    Args:
-        op: The scatter-add operation.
-        inputs: Input buffers - input, updates, indices, axis.
-
-    Returns:
-        List containing the scatter-accumulated tensor buffer.
-    """
-    target_device = _get_target_device(op)
-
-    assert isinstance(inputs[0], Buffer)  # input
-    assert isinstance(inputs[1], Buffer)  # updates
-    assert isinstance(inputs[2], Buffer)  # indices
-    assert isinstance(inputs[3], Buffer)  # axis (scalar int64, always CPU)
-
-    input_buffer = inputs[0]
-    updates_buffer = inputs[1]
-    indices_buffer = inputs[2]
-
-    axis = int(inputs[3].to_numpy().item())
-    in_shape = list(input_buffer.shape)
-    ndim = len(in_shape)
-    if axis < 0:
-        axis += ndim
-
-    inner_size = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
-    outer_size = prod(in_shape[:axis]) if axis > 0 else 1
-    axis_size = in_shape[axis]
-    upd_shape = list(updates_buffer.shape)
-    num_updates_axis = upd_shape[axis]
-
-    output = Buffer(
-        shape=in_shape,
-        dtype=input_buffer.dtype,
-        device=target_device,
-    )
-
-    total_elements = prod(in_shape)
-    ctx_ptr = target_device._device_context_ptr()
-
-    ops.data_movement_ops.Memcpy(
-        output, input_buffer, 0, 0, total_elements, ctx_ptr
-    )
-
-    ops.gather_scatter_ops.ScatterAdd(
-        output,
-        updates_buffer,
-        indices_buffer,
-        (outer_size, axis_size, inner_size, num_updates_axis),
-        ctx_ptr,
-    )
-
-    return [output]
+# Wrapped in a function so the SCATTER_GC_OPS access is deferred past the import
+# cycle between this module and scatter_gc (via the package).
+def _register_scatter_handlers() -> None:
+    for op_type in scatter_gc.SCATTER_GC_OPS:
+        register_op_handler(op_type)(_handle_scatter_family)
 
 
-def _scatter_reduction_common(
-    op: mo.ScatterMaxOp | mo.ScatterMinOp | mo.ScatterMulOp,
-    inputs: Sequence[Buffer | None],
-    mojo_fn_name: str,
-) -> Sequence[Buffer]:
-    """Shared logic for scatter_max, scatter_min, scatter_mul handlers.
-
-    All three reductions share the same operand layout (input, updates,
-    indices, axis) and the same pre-/post-processing: copy input to output,
-    then apply the Mojo reduction kernel.
-
-    Args:
-        op: The scatter reduction MO operation.
-        inputs: Input buffers - input, updates, indices, axis.
-        mojo_fn_name: Name of the Mojo kernel function to call
-            (``"ScatterMax"``, ``"ScatterMin"``, or ``"ScatterMul"``).
-
-    Returns:
-        List containing the scatter-reduced tensor buffer.
-    """
-    target_device = _get_target_device(op)
-
-    assert isinstance(inputs[0], Buffer)
-    assert isinstance(inputs[1], Buffer)
-    assert isinstance(inputs[2], Buffer)
-    assert isinstance(inputs[3], Buffer)
-
-    input_buffer = inputs[0]
-    updates_buffer = inputs[1]
-    indices_buffer = inputs[2]
-
-    axis = int(inputs[3].to_numpy().item())
-    in_shape = list(input_buffer.shape)
-    ndim = len(in_shape)
-    if axis < 0:
-        axis += ndim
-
-    inner_size = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
-    outer_size = prod(in_shape[:axis]) if axis > 0 else 1
-    axis_size = in_shape[axis]
-    upd_shape = list(updates_buffer.shape)
-    num_updates_axis = upd_shape[axis]
-
-    output = Buffer(
-        shape=in_shape,
-        dtype=input_buffer.dtype,
-        device=target_device,
-    )
-
-    total_elements = prod(in_shape)
-    ctx_ptr = target_device._device_context_ptr()
-
-    ops.data_movement_ops.Memcpy(
-        output, input_buffer, 0, 0, total_elements, ctx_ptr
-    )
-
-    mojo_fn = getattr(ops.gather_scatter_ops, mojo_fn_name)
-    mojo_fn(
-        output,
-        updates_buffer,
-        indices_buffer,
-        (outer_size, axis_size, inner_size, num_updates_axis),
-        ctx_ptr,
-    )
-
-    return [output]
-
-
-@register_op_handler(mo.ScatterMaxOp)
-def _handle_scatter_max(
-    op: mo.ScatterMaxOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.scatter.max by copying input then applying max reduction."""
-    return _scatter_reduction_common(op, inputs, "ScatterMax")
-
-
-@register_op_handler(mo.ScatterMinOp)
-def _handle_scatter_min(
-    op: mo.ScatterMinOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.scatter.min by copying input then applying min reduction."""
-    return _scatter_reduction_common(op, inputs, "ScatterMin")
-
-
-@register_op_handler(mo.ScatterMulOp)
-def _handle_scatter_mul(
-    op: mo.ScatterMulOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.scatter.mul by copying input then applying mul reduction."""
-    return _scatter_reduction_common(op, inputs, "ScatterMul")
+_register_scatter_handlers()
 
 
 @register_op_handler(mo.ConvOp)
