@@ -723,7 +723,7 @@ def test_split() raises:
     # Multiple character delimiter
     assert_equal(S("hello").split("ll"), [StaticString("he"), "o"])
 
-    res = [StaticString(""), "bb", "", "", "", "bbb", ""]
+    res: List = [StaticString(""), "bb", "", "", "", "bbb", ""]
     assert_equal(S("abbaaaabbba").split("a"), res)
     assert_equal(S("abbaaaabbba").split("a", 8), res)
     s1 = S("abbaaaabbba").split("a", 5)
@@ -770,7 +770,7 @@ def test_splitlines() raises:
 
     # Test with multiple different line breaks
     s1 = S("hello\nworld\r\nmojo\rlanguage\r\n")
-    hello_mojo = [StaticString("hello"), "world", "mojo", "language"]
+    hello_mojo: List = [StaticString("hello"), "world", "mojo", "language"]
     assert_equal(s1.splitlines(), hello_mojo)
     assert_equal(
         s1.splitlines(keepends=True),
@@ -1630,7 +1630,7 @@ def test_from_utf8_lossy() raises:
     assert_equal(invalid_end, "mojo�")
     assert_true(
         invalid_end.as_bytes()
-        == Span([Byte(0x6D), 0x6F, 0x6A, 0x6F] + replacement_bytes())
+        == Span(List([Byte(0x6D), 0x6F, 0x6A, 0x6F]) + replacement_bytes())
     )
 
     # Test invalid sequence in the middle
@@ -1641,7 +1641,7 @@ def test_from_utf8_lossy() raises:
     assert_true(
         invalid_middle.as_bytes()
         == Span(
-            [Byte(0x61), 0x62]
+            List([Byte(0x61), 0x62])
             + replacement_bytes()
             + replacement_bytes()
             + [Byte(0x63), 0x64]
@@ -1665,7 +1665,9 @@ def test_from_utf8_lossy() raises:
     assert_equal(valid_then_invalid, "Hello�")
     assert_true(
         valid_then_invalid.as_bytes()
-        == Span([Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F] + replacement_bytes())
+        == Span(
+            List([Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F]) + replacement_bytes()
+        )
     )
 
     # Test invalid sequence followed by valid text
@@ -1693,21 +1695,23 @@ def test_from_utf8_lossy() raises:
     assert_equal(orphan_continuation, "a�b")
     assert_true(
         orphan_continuation.as_bytes()
-        == Span([Byte(0x61)] + replacement_bytes() + [Byte(0x62)])
+        == Span(List([Byte(0x61)]) + replacement_bytes() + [Byte(0x62)])
     )
 
     # Test truncated 2-byte sequence
     var truncated_2byte = String(from_utf8_lossy=Span([Byte(0x61), 0xC2]))
     assert_equal(truncated_2byte, "a�")
     assert_true(
-        truncated_2byte.as_bytes() == Span([Byte(0x61)] + replacement_bytes())
+        truncated_2byte.as_bytes()
+        == Span(List([Byte(0x61)]) + replacement_bytes())
     )
 
     # Test truncated 3-byte sequence
     var truncated_3byte = String(from_utf8_lossy=Span([Byte(0x61), 0xE2, 0x82]))
     assert_equal(truncated_3byte, "a�")
     assert_true(
-        truncated_3byte.as_bytes() == Span([Byte(0x61)] + replacement_bytes())
+        truncated_3byte.as_bytes()
+        == Span(List([Byte(0x61)]) + replacement_bytes())
     )
 
     # Test mixed valid and invalid with multi-byte characters
@@ -1736,7 +1740,7 @@ def test_from_utf8_lossy() raises:
     assert_true(
         mixed.as_bytes()
         == Span(
-            [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F]  # "Hello"
+            List([Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F])  # "Hello"
             + [Byte(0x20)]  # space
             + [Byte(0xF0), 0x9F, 0x94, 0xA5]  # 🔥
             + replacement_bytes()  # replacement character
@@ -1761,7 +1765,7 @@ def test_from_utf8() raises:
     var four_byte = String(from_utf8=Span([Byte(0xF0), 0x9F, 0x94, 0xA5]))
     assert_equal(four_byte, "🔥")
 
-    var invalid_sequences = [
+    var invalid_sequences: List[List[Byte]] = [
         [Byte(0xFF), 0x61, 0x62, 0x63],  # Invalid byte at the beginning
         [Byte(0x6D), 0x6F, 0x6A, 0x6F, 0xFF],  # Invalid byte at the end
         [Byte(0x61), 0x62, 0xFF, 0x63, 0x64],  # Invalid byte in the middle

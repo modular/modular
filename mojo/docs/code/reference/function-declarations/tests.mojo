@@ -276,7 +276,7 @@ def get_first[T: Copyable](ref data: List[T]) -> ref[data[0]] T:
 
 
 def test_ref() raises:
-    var data = ["one", "two", "three"]
+    var data: List = ["one", "two", "three"]
     ref first = get_first(data)
     assert_equal(first, "one")
     first = "Первый"

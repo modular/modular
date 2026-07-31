@@ -116,7 +116,7 @@ def _host_attention_ragged[
         for h in range(num_heads):
             var kvh = h // group
             for qi in range(seq_len):
-                var scores = [Float32(0)] * num_keys
+                var scores = List[Float32](length=num_keys, fill=0)
                 var m = Float32(-3.0e38)
                 for ki in range(num_keys):
                     var dot = Float32(0)
@@ -206,10 +206,10 @@ def _run[
 
     # ---- ragged Q + row offsets ---------------------------------------- #
     var q_n = total_length * num_q_heads * depth
-    var q_f = [Float32(0)] * q_n
+    var q_f = List[Float32](length=q_n, fill=0)
     var k_n = total_length * kv_heads * depth  # per-token keys (ragged)
-    var k_f = [Float32(0)] * k_n
-    var v_f = [Float32(0)] * k_n
+    var k_f = List[Float32](length=k_n, fill=0)
+    var v_f = List[Float32](length=k_n, fill=0)
 
     # Deterministic host master data.
     for i in range(q_n):
@@ -230,7 +230,7 @@ def _run[
         k_f,
         v_f,
         row_offsets,
-        [Float32(0)] * q_n,
+        List[Float32](length=q_n, fill=0),
         num_q_heads,
         kv_heads,
         depth,

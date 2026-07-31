@@ -513,8 +513,8 @@ def test_volatile_load_and_store_simd() raises:
 
 # Test pointer merging with ternary operation.
 def test_merge() raises:
-    var a = [1, 2, 3]
-    var b = [4, 5, 6]
+    var a: List = [1, 2, 3]
+    var b: List = [4, 5, 6]
 
     def inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
         var either = UnsafePointer(to=a) if cond else UnsafePointer(to=b)

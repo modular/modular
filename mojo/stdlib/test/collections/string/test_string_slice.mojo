@@ -653,7 +653,7 @@ def test_split() raises:
     # Multiple character delimiter
     assert_equal(S("hello").split("ll"), [StaticString("he"), "o"])
 
-    res = [StaticString(""), "bb", "", "", "", "bbb", ""]
+    res: List = [StaticString(""), "bb", "", "", "", "bbb", ""]
     assert_equal(S("abbaaaabbba").split("a"), res)
     assert_equal(S("abbaaaabbba").split("a", 8), res)
     s1 = S("abbaaaabbba").split("a", 5)
@@ -699,7 +699,7 @@ def test_splitlines() raises:
 
     # Test with multiple different line breaks
     s1 = S("hello\nworld\r\nmojo\rlanguage\r\n")
-    hello_mojo = [StaticString("hello"), "world", "mojo", "language"]
+    hello_mojo: List = [StaticString("hello"), "world", "mojo", "language"]
     assert_equal(s1.splitlines(), hello_mojo)
     assert_equal(
         s1.splitlines(keepends=True),

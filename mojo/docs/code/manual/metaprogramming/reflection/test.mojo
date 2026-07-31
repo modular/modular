@@ -212,7 +212,7 @@ def first_ref[T: Copyable](ref list: List[T]) -> ref[list[0]] T:
 
 def test_origin_of_first_ref() raises:
     """Check `first_ref` returns a reference tied to the list's origin."""
-    var l = [1, 2, 3]
+    var l: List = [1, 2, 3]
     ref x = first_ref(l)
     assert_equal(x, 1)
     x += 10

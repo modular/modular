@@ -359,7 +359,7 @@ def first_ref[T: Copyable](ref list: List[T]) -> ref[list[0]] T:
 
 def test_origin_of_first_ref() raises:
     """Ties the returned reference to the input's lifetime."""
-    var l = [1, 2, 3]
+    var l: List = [1, 2, 3]
     var x = first_ref(l)
     assert_equal(x, 1)
 

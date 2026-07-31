@@ -104,7 +104,7 @@ def test_call_sites() raises:
 
 # Origins: a ref return writes through to its source.
 def test_ref_return_origin() raises:
-    var lst = [10, 20, 30]
+    var lst: List = [10, 20, 30]
     ref x = first(lst)
     x = 99
     assert_equal(lst[0], 99)
@@ -135,7 +135,7 @@ def test_returns() raises:
 # Non-owning views: a contiguous slice is a Span view that writes through to the
 # source (no copy); a codepoint slice is a StringSlice view.
 def test_views() raises:
-    var data = ["a", "b", "c", "d", "e"]
+    var data: List = ["a", "b", "c", "d", "e"]
     var s = data[1:3]  # contiguous slice returns a Span view, no copy
     s[0] = "X"  # writes through to the source
     assert_equal(data[1], "X")

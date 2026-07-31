@@ -21,7 +21,7 @@ def process(i: Int):
 
 
 def lookup_fn(count: Int):
-    comptime list_of_values = [1, 3, 5, 7]
+    comptime list_of_values: List[Int] = [1, 3, 5, 7]
 
     for i in range(count):
         # Some computation, doesn't matter what it is.

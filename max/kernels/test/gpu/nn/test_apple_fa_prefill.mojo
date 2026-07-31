@@ -80,7 +80,7 @@ def _host_attention[
             var kvh = h // group
             for qi in range(seq):
                 # Score row (no prior cache here: cache_len == seq).
-                var scores = [Float32(0)] * num_keys
+                var scores = List[Float32](length=num_keys, fill=0)
                 var m = Float32(-3.0e38)
                 for ki in range(num_keys):
                     var dot = Float32(0)
@@ -185,7 +185,7 @@ def _run[
 
     # Per-head raw sink weights (only used when use_sink). Large values so a
     # dropped sink seed clearly fails (the shared sink test uses 5.0 / 3.0).
-    var sink_w = [Float32(0)] * num_heads
+    var sink_w = List([Float32(0)]) * num_heads
     for h in range(num_heads):
         sink_w[h] = Float32(5.0) - Float32(h) * 0.7
 
@@ -194,10 +194,10 @@ def _run[
     var o_n = q_n
 
     # Host fp32 master data (so the reference and the device input agree).
-    var q_f = [Float32(0)] * q_n
-    var k_f = [Float32(0)] * k_n
-    var v_f = [Float32(0)] * k_n
-    var o_zero = [Float32(0)] * o_n
+    var q_f = List([Float32(0)]) * q_n
+    var k_f = List([Float32(0)]) * k_n
+    var v_f = List([Float32(0)]) * k_n
+    var o_zero = List([Float32(0)]) * o_n
     seed(123)
     for i in range(q_n):
         q_f[i] = Float32(((i * 53 + 17) % 197) - 98) * 0.01

@@ -264,7 +264,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         # SIMD width has not been observed to improve performance and causes
         # code size to unnecessarily increase.
         comptime transpose_width = 4
-        comptime tile_sizes = [transpose_width, 1]
+        comptime tile_sizes: List[Int] = [transpose_width, 1]
 
         var transpose_buffer = tt_stack_allocation[dtype=Self.dtype,](
             row_major[transpose_width, transpose_width]()

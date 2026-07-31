@@ -440,7 +440,7 @@ struct TiledMatmul[
         # if b is packed, the packing was performed offline using a single inner
         # size and tile_n.
         comptime if not Self.b_packed:
-            comptime secondary_tiles = [
+            comptime secondary_tiles: List[Int] = [
                 Self.config.kernel_cols,
                 2 * Self.config.simd_size,
                 Self.config.simd_size,
@@ -454,7 +454,9 @@ struct TiledMatmul[
                 primary_cleanup_tile=Self.config.simd_size,
             )
         else:
-            comptime secondary_tiles_packed_b = [Self.config.kernel_cols]
+            comptime secondary_tiles_packed_b: List[Int] = [
+                Self.config.kernel_cols
+            ]
             tile[secondary_tiles_packed_b, Self.config.kernel_cols, m_loop](
                 0, valid_col_count, tile_n, primary_cleanup_tile=tile_n
             )

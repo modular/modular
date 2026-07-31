@@ -16,7 +16,7 @@ from gridv1_step8 import Grid
 
 
 def main():
-    glider = [
+    glider: List[List[Int]] = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0],

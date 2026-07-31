@@ -35,7 +35,7 @@ def grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
 def main():
     num_rows = 8
     num_cols = 8
-    glider = [
+    glider: List[List[Int]] = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0],

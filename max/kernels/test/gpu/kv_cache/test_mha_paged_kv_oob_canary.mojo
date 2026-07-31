@@ -260,8 +260,8 @@ def run_canary_suite[
     """
     # Local prefill (small CE).
     print("OOB canary local CE bs=1")
-    var ce_lens = [11]
-    var ce_caches = [0]
+    var ce_lens: List = [11]
+    var ce_caches: List = [0]
     execute_oob_canary[
         32,
         DType.bfloat16,
@@ -270,8 +270,8 @@ def run_canary_suite[
 
     # Local prefill (bs=4) — exercises multi-batch LUT randomization.
     print("OOB canary local CE bs=4")
-    var ce_lens_bs4 = [11, 11, 11, 11]
-    var ce_caches_bs4 = [0, 0, 0, 0]
+    var ce_lens_bs4: List = [11, 11, 11, 11]
+    var ce_caches_bs4: List = [0, 0, 0, 0]
     execute_oob_canary[
         32,
         DType.bfloat16,
@@ -282,8 +282,8 @@ def run_canary_suite[
     # cache, so unassigned canary blocks are scarce — but this is exactly the
     # gemma4 production decode shape and the failure mode under KERN-2861.
     print("OOB canary local TG bs=1 cache_len=512")
-    var tg_lens = [1]
-    var tg_caches = [512]
+    var tg_lens: List = [1]
+    var tg_caches: List = [512]
     execute_oob_canary[
         32,
         DType.bfloat16,

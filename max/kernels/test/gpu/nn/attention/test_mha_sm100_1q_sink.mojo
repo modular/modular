@@ -474,11 +474,11 @@ def main() raises:
         #     fa4_config_1q, BM=128; the `> 32` keeps it OFF the WS BM=32 route
         #     that now accepts sink after Phase B), long cache (512 >> 2*BN=256)
         #     so T>=2 and both WGs run the peer-WG LSE combine this cell guards.
-        var valid_1q = [96]
-        var cache_1q = [512]
+        var valid_1q: List = [96]
+        var cache_1q: List = [512]
         # 2Q: valid >= 256 (max_prompt_len>128 -> fa4_config_2q, BM=256).
-        var valid_2q = [320]
-        var cache_2q = [0]
+        var valid_2q: List = [320]
+        var cache_2q: List = [0]
 
         # Run all four cells before asserting so the bisection table is always
         # complete (one failing cell does not hide the other three).

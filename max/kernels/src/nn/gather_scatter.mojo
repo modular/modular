@@ -247,7 +247,7 @@ def gather_reduce[
         )
 
         # For multi-hot embeddings reduction, k is the embedding dim and j is the multi-hot dim
-        comptime k_tile_sizes = [
+        comptime k_tile_sizes: List[Int] = [
             2 * simd_width,
             1,
         ] if CompilationTarget.has_neon() else [

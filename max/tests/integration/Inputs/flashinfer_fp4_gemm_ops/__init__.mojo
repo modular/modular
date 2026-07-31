@@ -118,7 +118,7 @@ struct FlashInferFP4Gemm[lib_path: StaticString]:
         ctx: DeviceContext,
     ) raises:
         """Execute the FP4 GEMM operation by calling FlashInfer."""
-        comptime assert [target == "gpu"]
+        comptime assert target == "gpu"
 
         mod = Module(OwnedDLHandle(path=Self.lib_path))
 

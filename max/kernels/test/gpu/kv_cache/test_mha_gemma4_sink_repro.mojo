@@ -256,8 +256,8 @@ def main() raises:
         # seq_len=11 prefill, CausalMask, bf16, paged, ragged — this is the
         # exact specialization that crashes during AMDGPURewriteAGPRCopyMFMA.
         print("Gemma4 global sink=True prefill repro")
-        var seq_lens = [11]
-        var cache_sizes = [0]
+        var seq_lens: List = [11]
+        var cache_sizes: List = [0]
         execute_sink_prefill_repro[
             32,
             DType.bfloat16,

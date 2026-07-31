@@ -82,7 +82,7 @@ struct DLDataType(ImplicitlyCopyable, Movable):
 
     @staticmethod
     def from_dtype[dtype: DType](lanes: UInt16 = 1) -> Self:
-        comptime assert [dtype in Self.CODE_MAP]
+        comptime assert dtype in Self.CODE_MAP
         comptime code: UInt8 = Self.CODE_MAP.get(dtype, 0)
         return Self(code, UInt8(bit_width_of[dtype]()), lanes)
 

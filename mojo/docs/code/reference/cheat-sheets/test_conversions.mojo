@@ -88,7 +88,7 @@ def test_pointers() raises:
 
 
 def test_list() raises:
-    var lst = [1, 2, 3]
+    var lst: List = [1, 2, 3]
     assert_equal(len(lst), 3)
     assert_equal(lst[0], 1)  # one element, by reference
     assert_equal(len(lst[0:2]), 2)  # a Span view, no copy

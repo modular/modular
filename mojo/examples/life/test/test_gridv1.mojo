@@ -14,7 +14,7 @@
 from gridv1 import Grid
 from std.testing import assert_equal, TestSuite
 
-comptime data4x4 = [
+comptime data4x4: List[List[Int]] = [
     [0, 1, 1, 0],
     [1, 1, 0, 0],
     [0, 0, 1, 1],
