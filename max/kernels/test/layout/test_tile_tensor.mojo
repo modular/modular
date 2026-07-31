@@ -85,7 +85,6 @@ def test_distribute() raises:
     comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var array = Array[UInt32, 16](fill=-1)
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var ptr: UnsafePointer[UInt32, origin_of(array)] = array.unsafe_ptr()
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
@@ -132,7 +131,6 @@ def test_distribute_with_swizzle() raises:
     comptime swizzle = Swizzle(1, 0, 2)
 
     var array = Array[UInt32, 16](fill=-1)
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var ptr: UnsafePointer[UInt32, origin_of(array)] = array.unsafe_ptr()
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
@@ -186,14 +184,12 @@ def test_distribute_swizzle_vs_no_swizzle() raises:
 
     # Array without swizzle
     var array_no_swizzle = Array[UInt32, 16](fill=0)
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var ptr_no_swizzle: UnsafePointer[
         UInt32, origin_of(array_no_swizzle)
     ] = array_no_swizzle.unsafe_ptr()
 
     # Array with swizzle
     var array_with_swizzle = Array[UInt32, 16](fill=0)
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var ptr_with_swizzle: UnsafePointer[
         UInt32, origin_of(array_with_swizzle)
     ] = array_with_swizzle.unsafe_ptr()
@@ -656,7 +652,6 @@ def test_distribute_runtime_dims() raises:
     comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var array = Array[UInt32, 16](fill=-1)
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var ptr: UnsafePointer[UInt32, origin_of(array)] = array.unsafe_ptr()
 
     # Create 4x4 tensor with runtime first dim.
@@ -688,7 +683,6 @@ def test_distribute_with_offset_runtime_dims() raises:
     comptime thread_layout = row_major(Idx[2], Idx[2])
 
     var array = Array[UInt32, 16](fill=-1)
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var ptr: UnsafePointer[UInt32, origin_of(array)] = array.unsafe_ptr()
 
     # Create 4x4 tensor with runtime dims.
@@ -900,7 +894,6 @@ def test_load_store_linear_non_trivial_stride() raises:
     # Column-major layout: stride[0]=1, stride[1]=2
     comptime col_major_shape = Coord[ComptimeInt[2], ComptimeInt[3]]
     comptime col_major_stride = Coord[ComptimeInt[1], ComptimeInt[2]]
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var data_ptr: UnsafePointer[Int32, origin_of(data)] = data.unsafe_ptr()
     var tensor = TileTensor(
         ptr=data_ptr,
@@ -1324,7 +1317,6 @@ def test_copy_from_respects_non_contiguous_layout() raises:
 
     comptime padded_shape = Coord[ComptimeInt[2], ComptimeInt[3]]
     comptime padded_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var dst_data_ptr: UnsafePointer[
         Int32, origin_of(dst_data)
     ] = dst_data.unsafe_ptr()
