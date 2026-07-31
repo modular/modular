@@ -199,6 +199,7 @@ _EXTRA_DEPS = {
 #
 # head_size:
 #   64, 128: all GPUs (subject to page_size).
+#   80:      MI355 only.
 #   256:     depth512 kernel, H100 and B200 only.
 #   512:     depth512 kernel, B200 only.
 #
@@ -214,6 +215,12 @@ _PAGED_FA_GPU_MEMORY = {
 _PAGED_FA_CONFIGS = [
     # (page_size, head_size, pair_cta, extra_constraints)
     ("256", "64", False, _APPLE_GPU_INCOMPATIBLE),
+    (
+        "256",
+        "80",
+        False,
+        ["//:mi355_gpu"],
+    ),
     ("256", "128", False, _APPLE_GPU_INCOMPATIBLE),
     (
         "256",

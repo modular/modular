@@ -526,6 +526,10 @@ def depth_supported_by_gpu[
         depth == 64
         and (is_sm90or100 or info == A100 or has_amd_gpu_accelerator())
     ) or (
+        depth == 80
+        and config.dtype == DType.bfloat16
+        and has_amd_gpu_accelerator()
+    ) or (
         depth == 256
         and (
             has_amd_gpu_accelerator()
