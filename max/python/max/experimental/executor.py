@@ -33,14 +33,15 @@ import os
 import threading
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
+from concurrent.futures import Future
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from max import _core, driver, engine
 from max._core.dialects import rmo
-from max._core.mlrt import AsyncValue
 from max.graph import Graph
 
+from .compile_pool import ProcessCompilePool, _map_future
 from .support import SetterContext, _session
 
 
@@ -293,11 +294,15 @@ class CompositeExecutor:
 class JitExecutor:
     """Executes via the interpreter while compiling in the background.
 
-    The first call for a given graph (keyed by structure) starts an
-    asynchronous compile on the runtime's worker pool and caches the
-    handle for the life of this executor; while the compile is pending,
-    calls execute via the interpreter.  When the interpreter refuses a
-    graph, the call waits for that graph's compile.
+    The first call for a given graph (keyed by structure) submits the
+    graph to a background compile *process*
+    (:class:`~max.experimental.compile_pool.ProcessCompilePool`) and
+    caches the resulting future for the life of this executor. The future
+    resolves to an initialized model: ``session.init`` runs as soon as the
+    compile lands, off the calling thread, so a call that finds a done
+    future executes immediately. While the compile is pending, calls
+    execute via the interpreter. When the interpreter refuses a graph,
+    the call waits for that graph's compile.
 
     ``MAX_INTERPRETER_MAX_OPS`` caps the graph size the interpreter serves
     (default 1024 dispatchable ops).
@@ -306,19 +311,14 @@ class JitExecutor:
     path for that graph; it is not retried.
     """
 
-    cache: dict[EagerCacheKey, AsyncValue[engine.Model]]
+    cache: dict[EagerCacheKey, Future[engine.Model]]
     lock: threading.Lock
 
     def __init__(self) -> None:
         self.cache = {}
         self.lock = threading.Lock()
-        self.interpreter = InterpreterExecutor(
-            max_ops=int(
-                os.environ.get(
-                    _INTERPRETER_MAX_OPS_ENV_VAR, _DEFAULT_INTERPRETER_MAX_OPS
-                )
-            )
-        )
+        self.pool = ProcessCompilePool()
+        self.interpreter = InterpreterExecutor(max_ops=_interpreter_max_ops())
 
     def execute(
         self, graph: Graph, inputs: Sequence[driver.Buffer]
@@ -332,16 +332,9 @@ class JitExecutor:
         key = _eager_model_cache_key(graph)
 
         with self.lock:
-            future = self.cache.get(key)
-            if future is None:
-                session = _session()
-                # Compilation mutates the graph; compile a copy so the
-                # interpreter path still sees the original module.
-                compiled = session.compile_async(graph.copy())
-                handle = compiled._compiled
-                assert isinstance(handle, AsyncValue)
-                future = self.cache[key] = handle.and_then(
-                    lambda _: session.init(compiled)
+            if (future := self.cache.get(key)) is None:
+                future = self.cache[key] = _map_future(
+                    self.pool.compile(graph), _session().init
                 )
 
         if not future.done():
@@ -349,10 +342,8 @@ class JitExecutor:
                 return self.interpreter.execute(graph, inputs)
             except UnsupportedGraphError:
                 pass
-            future.wait()
 
-        model = future.result()
-        return model(*inputs)
+        return future.result()(*inputs)
 
 
 _MAX_EAGER_EXECUTOR_ENV_VAR = "MAX_EAGER_EXECUTOR"
@@ -404,9 +395,7 @@ def default_executor() -> Executor:
     return _DEFAULT_EXECUTOR
 
 
-def set_default_executor(
-    executor: Executor,
-) -> SetterContext[Executor]:
+def set_default_executor(executor: Executor) -> SetterContext[Executor]:
     """Sets the ambient default executor.
 
     The set takes effect immediately. The returned
