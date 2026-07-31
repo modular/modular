@@ -43,14 +43,23 @@ struct CDNA4F8F6F4MatrixFormat(Equatable, TrivialRegisterPassable):
         return self._value == other._value
 
     def simd_width(self) -> SIMDLength:
+        """Returns the operand fragment width, in bytes, this format expects.
+
+        FP6 holds only 24 payload bytes, but 24 is not a power of two, so
+        it asks for 32. InstCombine narrows the operand back down, so the
+        padding costs nothing. Stage FP6 loads as 24 bytes, not 32.
+
+        Returns:
+            The fragment width in bytes.
+        """
         if self == CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3:
             return 32
         if self == CDNA4F8F6F4MatrixFormat.FLOAT8_E5M2:
             return 32
         if self == CDNA4F8F6F4MatrixFormat.FLOAT6_E2M3:
-            return 24
+            return 32
         if self == CDNA4F8F6F4MatrixFormat.FLOAT6_E3M2:
-            return 24
+            return 32
         if self == CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1:
             return 16
         abort("invalid matrix format")
