@@ -248,7 +248,7 @@ def withComptimeBound() -> Int:
 
 def withElidedReturn():
     var f = lambda (x: Int) {}: None
-    var lst = [1]
+    var lst: List = [1]
     var g = lambda {mut}: lst.append(2)
 
 

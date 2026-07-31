@@ -726,7 +726,35 @@ struct List[T: Copyable](Copyable, Iterable):
         return 0
 
 
-struct Array[T: AnyType, length: Int](Copyable):
+@fieldwise_init
+struct _ArrayIter[
+    mut: Bool,
+    //,
+    T: Copyable,
+    length: Int,
+    origin: Origin[mut=mut],
+    forward: Bool = True,
+](ImplicitlyCopyable, Iterable, Iterator):
+    comptime Element = Self.T  # FIXME(MOCO-2068): shouldn't be needed.
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    var index: Int
+    var src: Pointer[Array[Self.Element, Self.length], Self.origin]
+
+    @always_inline
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    def __next__(
+        mut self,
+    ) raises StopIteration -> ref[Self.origin] Self.Element:
+        abort()
+
+
+struct Array[T: AnyType, length: Int](Copyable, Iterable):
     def __init__[
         *, __literal_size__: Int
     ](
@@ -735,6 +763,18 @@ struct Array[T: AnyType, length: Int](Copyable):
         __list_literal__: NoneType,
     ):
         pass
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = _ArrayIter[
+        downcast[Self.T, Copyable], Self.length, iterable_origin, True
+    ]
+
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        abort()
+
+    def __len__(self) -> Int:
+        return 0
 
 
 struct Set[T: AnyType]:
