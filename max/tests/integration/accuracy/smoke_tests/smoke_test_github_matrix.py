@@ -132,6 +132,8 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/Kimi-K2.5-NVFP4__dflash_dp": DISABLE,  # MXSERV-84
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | {"4xMI355"},
+    # DSpark arch is not in a released MAX yet, so max-ci only.
+    "google/gemma-4-12B-it__dspark": MULTI | {"max"},
     # Tuned recipes use an FP8 KV cache that does not support MI355.
     "google/gemma-4-26B-A4B-it__tuned": MULTI | {"MI355"},
     "google/gemma-4-31B-it__tuned": MULTI | {"MI355"},

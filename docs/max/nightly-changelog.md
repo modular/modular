@@ -17,6 +17,16 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added DSpark speculative decoding for Gemma4 12B
+  (`UnifiedDSparkGemma4ForCausalLM`), DeepSeek's block-drafting method
+  (arXiv 2607.05147). A small non-causal draft transformer conditioned on
+  selected target-layer hidden states drafts a 7-token block per step, and
+  a sequential Markov head biases each draft position's logits from the
+  previously drafted token. Enabled by serving `google/gemma-4-12B-it` with
+  `--draft-model-path deepseek-ai/dspark_gemma4_12b_block7
+  --speculative-method dflash --num-speculative-tokens 7`. Verified on a
+  single B200 at ~4.6 accepted draft tokens per step (greedy, code-style
+  prompts; ~5.6 including the bonus token), in the paper's reported band.
 - Added GLM-5.2 (`GlmMoeDsaForCausalLM`) support, extending the existing
   GLM-5.1 sparse-attention architecture with cross-layer index sharing.
 - Added multi-token prediction (MTP) speculative decoding for GLM-5.2
