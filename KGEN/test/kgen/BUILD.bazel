@@ -8,10 +8,6 @@ lit_tests(
         "**/*.mlir",
         "**/*.ll",
     ]),
-    target_compatible_with = select({
-        "//:tsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     tools = [
         "//KGEN/tools/hash-mlir",
         "//KGEN/tools/kgen",
