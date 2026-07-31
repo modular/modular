@@ -29,11 +29,6 @@ _EXTRA_CONSTRAINTS = {
         "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    "test_transpose.mojo": select({
-        # TODO: causes leak in elaborator
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
 }
 
 [
