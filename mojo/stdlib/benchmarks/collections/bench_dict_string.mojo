@@ -117,7 +117,10 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
 
     @always_inline
     def add(mut self, key: StringSlice):
-        var prev_end = 0 if self.count == 0 else self.keys_end[self.count - 1]
+        var prev_end = (
+            0 if self.count
+            == 0 else self.keys_end[unsafe_offset=self.count - 1]
+        )
         var key_length = key.byte_length()
         var new_end = prev_end + Scalar[Self.KeyEndType](key_length)
 
@@ -133,7 +136,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
             self.keys = keys
 
         unsafe_memcpy(
-            dest=self.keys + prev_end,
+            dest=self.keys.unsafe_offset(prev_end),
             src=UnsafePointer(key.unsafe_ptr()),
             count=key_length,
         )
@@ -146,7 +149,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
             self.keys_end = keys_end
             self.capacity = new_capacity
 
-        self.keys_end.store(self.count, new_end)
+        self.keys_end.unsafe_store(self.count, new_end)
         self.count = count
 
     @always_inline
@@ -156,10 +159,14 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
             return StringSlice(
                 unsafe_from_utf8=Span(unsafe_ptr=keys_ptr, length=0)
             )
-        var start = 0 if index == 0 else Int(self.keys_end[index - 1])
-        var length = Int(self.keys_end[index]) - start
+        var start = 0 if index == 0 else Int(
+            self.keys_end[unsafe_offset=index - 1]
+        )
+        var length = Int(self.keys_end[unsafe_offset=index]) - start
         return StringSlice(
-            unsafe_from_utf8=Span(unsafe_ptr=keys_ptr + start, length=length)
+            unsafe_from_utf8=Span(
+                unsafe_ptr=keys_ptr.unsafe_offset(start), length=length
+            )
         )
 
     @always_inline
@@ -290,21 +297,21 @@ struct StringDict[
         var modulo_mask = self.capacity - 1
         var slot = Int(key_hash & Scalar[Self.KeyCountType](modulo_mask))
         while True:
-            var key_index = Int(self.slot_to_index.load(slot))
+            var key_index = Int(self.slot_to_index.unsafe_load(slot))
             if key_index == 0:
                 self.keys.add(key)
 
                 comptime if Self.caching_hashes:
-                    self.key_hashes.store(slot, key_hash)
+                    self.key_hashes.unsafe_store(slot, key_hash)
                 self.values.append(value.copy())
                 self.count += 1
-                self.slot_to_index.store(
+                self.slot_to_index.unsafe_store(
                     slot, Scalar[Self.KeyCountType](self.keys.count)
                 )
                 return
 
             comptime if Self.caching_hashes:
-                var other_key_hash = self.key_hashes[slot]
+                var other_key_hash = self.key_hashes[unsafe_offset=slot]
                 if other_key_hash == key_hash:
                     var other_key = self.keys[key_index - 1]
                     if other_key == key:
@@ -334,23 +341,27 @@ struct StringDict[
     def _is_deleted(self, index: Int) -> Bool:
         var offset = index >> 3
         var bit_index = index & 7
-        return (self.deleted_mask + offset).load() & UInt8(1 << bit_index) != 0
+        return (
+            self.deleted_mask.unsafe_offset(offset).unsafe_load()
+            & UInt8(1 << bit_index)
+            != 0
+        )
 
     @always_inline
     def _deleted(self, index: Int):
         var offset = index >> 3
         var bit_index = index & 7
-        var p = self.deleted_mask + offset
-        var mask = p.load()
-        p.store(mask | UInt8((1 << bit_index)))
+        var p = self.deleted_mask.unsafe_offset(offset)
+        var mask = p.unsafe_load()
+        p.unsafe_store(mask | UInt8((1 << bit_index)))
 
     @always_inline
     def _not_deleted(self, index: Int):
         var offset = index >> 3
         var bit_index = index & 7
-        var p = self.deleted_mask + offset
-        var mask = p.load()
-        p.store(mask & UInt8(~(1 << bit_index)))
+        var p = self.deleted_mask.unsafe_offset(offset)
+        var mask = p.unsafe_load()
+        p.unsafe_store(mask & UInt8(~(1 << bit_index)))
 
     @always_inline
     def _rehash(mut self):
@@ -379,25 +390,27 @@ struct StringDict[
 
         var modulo_mask = self.capacity - 1
         for i in range(old_capacity):
-            if old_slot_to_index[i] == 0:
+            if old_slot_to_index[unsafe_offset=i] == 0:
                 continue
             var key_hash: Scalar[Self.KeyCountType]
 
             comptime if Self.caching_hashes:
-                key_hash = self.key_hashes[i]
+                key_hash = self.key_hashes[unsafe_offset=i]
             else:
-                key_hash = hash(self.keys[Int(old_slot_to_index[i] - 1)]).cast[
-                    Self.KeyCountType
-                ]()
+                key_hash = hash(
+                    self.keys[Int(old_slot_to_index[unsafe_offset=i] - 1)]
+                ).cast[Self.KeyCountType]()
 
             var slot = Int(key_hash & Scalar[Self.KeyCountType](modulo_mask))
 
             # var searching = True
             while True:
-                var key_index = Int(self.slot_to_index.load(slot))
+                var key_index = Int(self.slot_to_index.unsafe_load(slot))
 
                 if key_index == 0:
-                    self.slot_to_index.store(slot, old_slot_to_index[i])
+                    self.slot_to_index.unsafe_store(
+                        slot, old_slot_to_index[unsafe_offset=i]
+                    )
                     break
                     # searching = False
 
@@ -405,7 +418,7 @@ struct StringDict[
                     slot = (slot + 1) & modulo_mask
 
             comptime if Self.caching_hashes:
-                key_hashes[slot] = key_hash
+                key_hashes[unsafe_offset=slot] = key_hash
 
         comptime if Self.caching_hashes:
             self.key_hashes.unsafe_free()
@@ -470,12 +483,12 @@ struct StringDict[
 
         var slot = Int(key_hash & Scalar[Self.KeyCountType](modulo_mask))
         while True:
-            var key_index = Int(self.slot_to_index.load(slot))
+            var key_index = Int(self.slot_to_index.unsafe_load(slot))
             if key_index == 0:
                 return key_index
 
             comptime if Self.caching_hashes:
-                var other_key_hash = self.key_hashes[slot]
+                var other_key_hash = self.key_hashes[unsafe_offset=slot]
                 if key_hash == other_key_hash:
                     var other_key = self.keys[key_index - 1]
                     if other_key == key:

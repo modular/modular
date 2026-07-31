@@ -29,10 +29,10 @@ def simd_add_kernel[
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
-    var vector_a = a_span.load[width=width](idx)
-    var vector_b = b_span.load[width=width](idx)
+    var vector_a = a_span.unsafe_load[width=width](idx)
+    var vector_b = b_span.unsafe_load[width=width](idx)
     var vector_c = vector_a + vector_b
-    c_span.store[width=width](idx, vector_c)
+    c_span.unsafe_store[width=width](idx, vector_c)
 
 
 def simd_mult_kernel[
@@ -45,10 +45,10 @@ def simd_mult_kernel[
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
-    var vector_a = a_span.load[width=width](idx)
-    var vector_b = b_span.load[width=width](idx)
+    var vector_a = a_span.unsafe_load[width=width](idx)
+    var vector_b = b_span.unsafe_load[width=width](idx)
     var vector_c = vector_a * vector_b
-    c_span.store[width=width](idx, vector_c)
+    c_span.unsafe_store[width=width](idx, vector_c)
 
 
 def simd_fma_kernel[
@@ -61,12 +61,12 @@ def simd_fma_kernel[
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
-    var vector_a = a_span.load[width=width](idx)
-    var vector_b = b_span.load[width=width](idx)
-    var vector_c = c_span.load[width=width](idx)
+    var vector_a = a_span.unsafe_load[width=width](idx)
+    var vector_b = b_span.unsafe_load[width=width](idx)
+    var vector_c = c_span.unsafe_load[width=width](idx)
     vector_c = vector_a.fma(vector_b, vector_c)
 
-    c_span.store[width=width](idx, vector_c)
+    c_span.unsafe_store[width=width](idx, vector_c)
 
 
 def host_elementwise_add(

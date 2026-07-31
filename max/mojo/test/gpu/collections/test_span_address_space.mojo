@@ -50,11 +50,11 @@ def _kernel(out_ptr: UnsafePointer[Float32, MutAnyOrigin]):
     barrier()
 
     if thread_idx.x == 0:
-        out_ptr[0] = _tile_sum(tile)
+        out_ptr[unsafe_offset=0] = _tile_sum(tile)
         # Slicing preserves the address space.
-        out_ptr[1] = _tile_sum(tile[0 : TILE_SIZE // 2])
+        out_ptr[unsafe_offset=1] = _tile_sum(tile[0 : TILE_SIZE // 2])
         # `as_imm` preserves the address space.
-        out_ptr[2] = tile.as_imm()[5]
+        out_ptr[unsafe_offset=2] = tile.as_imm()[5]
 
 
 def main() raises:

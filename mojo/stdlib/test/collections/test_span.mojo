@@ -633,10 +633,10 @@ struct HashableOnly(Hashable, ImplicitlyDeletable, Movable):
 def test_span_hashable_non_copyable() raises:
     var ptr = alloc[HashableOnly](2)
     ptr.unsafe_write(HashableOnly(1))
-    (ptr + 1).unsafe_write(HashableOnly(2))
+    ptr.unsafe_offset(1).unsafe_write(HashableOnly(2))
     var span = Span(unsafe_ptr=ptr, length=2)
     _ = hash(span)
-    (ptr + 1).unsafe_deinit_pointee()
+    ptr.unsafe_offset(1).unsafe_deinit_pointee()
     ptr.unsafe_deinit_pointee()
     ptr.unsafe_free()
 

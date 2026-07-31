@@ -30,7 +30,7 @@ def _run_badbuf(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # Free the pointer now to avoid leaking. This does not change the test.
-    host_ptr.free()
+    host_ptr.unsafe_free()
 
     try:
         # Release the bad buffer, which should raise an exception in Mojo instead of crashing.

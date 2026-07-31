@@ -34,7 +34,7 @@ def run_func[
         out_dev: UnsafePointer[Scalar[dtype], MutAnyOrigin], lhs: Scalar[dtype]
     ):
         var result = kernel_fn(lhs)
-        out_dev[0] = result
+        out_dev[unsafe_offset=0] = result
 
     ctx.enqueue_function[kernel](out, val, grid_dim=1, block_dim=1)
     with out.map_to_host() as out_host:

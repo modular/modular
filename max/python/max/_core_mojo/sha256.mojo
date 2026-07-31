@@ -223,7 +223,9 @@ def sha256(data: Span[Byte, _]) -> Array[UInt8, 32]:
     var pad_ptr: UnsafePointer[UInt8, origin_of(pad)] = pad.unsafe_ptr()
     _compress(h, Span[Byte, _](unsafe_ptr=pad_ptr, length=64))
     if pad_len == 128:
-        _compress(h, Span[Byte, _](unsafe_ptr=pad_ptr + 64, length=64))
+        _compress(
+            h, Span[Byte, _](unsafe_ptr=pad_ptr.unsafe_offset(64), length=64)
+        )
 
     # Serialize the hash to 32 bytes
     var out = Array[UInt8, 32](fill=UInt8(0))
