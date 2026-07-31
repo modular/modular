@@ -1,5 +1,6 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 load("//bazel:config.bzl", "DEFAULT_GPU_MEMORY")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -397,6 +398,7 @@ _GPU_MEMORY = {
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },
@@ -417,6 +419,7 @@ _GPU_MEMORY = {
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },
@@ -446,6 +449,7 @@ _GPU_MEMORY = {
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },
@@ -474,6 +478,7 @@ _GPU_MEMORY = {
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },
@@ -502,6 +507,7 @@ mojo_test(
     name = "test_grouped_matmul_swiglu_nvfp4_interleave.mojo.test",
     size = "large",
     srcs = ["test_grouped_matmul_swiglu_nvfp4_interleave.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8.5",
     },
@@ -528,6 +534,7 @@ mojo_test(
     name = "test_grouped_matmul_swiglu_nvfp4_dispatch.mojo.test",
     size = "large",
     srcs = ["test_grouped_matmul_swiglu_nvfp4_dispatch.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8.5",
     },
@@ -556,6 +563,7 @@ mojo_test(
     name = "test_grouped_matmul_swiglu_mxfp8_dispatch.mojo.test",
     size = "large",
     srcs = ["test_grouped_matmul_swiglu_mxfp8_dispatch.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -581,6 +589,7 @@ mojo_test(
     name = "test_fused_silu_mxfp8_interleave.mojo.test",
     size = "large",
     srcs = ["test_fused_silu_mxfp8_interleave.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -605,6 +614,7 @@ mojo_test(
     name = "test_matmul_pdl_race.mojo.test",
     size = "large",
     srcs = ["test_matmul_pdl_race.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     env = {
         "MODULAR_DISABLE_VENDOR_FALLBACK": "1",
     },
@@ -623,6 +633,7 @@ mojo_test(
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },

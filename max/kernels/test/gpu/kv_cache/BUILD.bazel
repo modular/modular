@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -90,6 +91,7 @@ _EXTRA_DEPS = {
             src,
             "kv_cache_test_utils.mojo",
         ],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         # KERN-2339: Several tests disabled due to bounds check failures
         enable_assertions = select({
             "//:b200_gpu": src not in [
@@ -152,7 +154,7 @@ _EXTRA_DEPS = {
             "kv_cache_test_utils.mojo",
             "test_kv_cache_ragged_matmul.mojo",
         ],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "test_dtype={}".format(test_dtype),
             "-D",
@@ -434,7 +436,7 @@ _PAGED_FA_ALL_CONFIGS = [
             "kv_cache_test_utils.mojo",
             "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",
         ],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "page_size={}".format(page_size),
             "-D",
@@ -471,7 +473,7 @@ _PAGED_FA_ALL_CONFIGS = [
             "kv_cache_test_utils.mojo",
             "test_mha_inflight_batching_gemma3_hang.mojo",
         ],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "page_size={}".format(page_size),
         ],
@@ -546,7 +548,7 @@ _GEMMA4_SHAPES_CONFIGS = [
             "kv_cache_test_utils.mojo",
             "test_mha_gemma4_shapes.mojo",
         ],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "page_size={}".format(page_size),
             "-D",
@@ -587,7 +589,7 @@ _PAGED_LUT_GPU_MEMORY = {
             "kv_cache_test_utils.mojo",
             "test_paged_lut_load_boundary.mojo",
         ],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "page_size={}".format(page_size),
         ],
@@ -625,6 +627,7 @@ mojo_test(
         "kv_cache_test_utils.mojo",
         "test_paged_kv_null_block_sentinel.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     enable_assertions = True,
     exec_properties = {
         "test.resources:gpu-memory": "2",
@@ -674,7 +677,7 @@ _OOB_CANARY_CONFIGS = [
             "kv_cache_test_utils.mojo",
             "test_mha_paged_kv_oob_canary.mojo",
         ],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "page_size={}".format(page_size),
             "-D",

@@ -34,6 +34,7 @@ def mojo_library(
         additional_compiler_inputs = [],
         use_production_compiler_for_asan = False,
         copts = [],
+        ignore_deprecated = [],
         import_path = ".",
         tags = []):
     """
@@ -56,11 +57,20 @@ def mojo_library(
             Use a production build of Mojo to build this target when in asan mode.
             This is a speed optimization if the coverage is not worth the slowdown.
         copts: Forwarded to `mojo_library`
+        ignore_deprecated:
+            Qualified names (e.g. `Variant.take`) of `@deprecated` declarations
+            whose deprecation warning should be suppressed for this target,
+            applied to both the library compile and doc generation. All other
+            deprecation warnings still surface. `max/kernels` and `Kernels`
+            targets that call deprecated Pointer APIs pass
+            `IGNORED_POINTER_DEPRECATIONS` (see
+            `//max/kernels/src:deprecations.bzl`) here explicitly.
         import_path: Forwarded to `mojo_library`
         tags: Forwarded to all subtargets
     """
     library_rule = _transitioned_mojo_library if use_production_compiler_for_asan else _upstream_mojo_library
     library_kwargs = {"new_config": asan_to_production_config_select} if use_production_compiler_for_asan else {}
+    ignore_deprecated_copts = ["--ignore-deprecated=" + decl_name for decl_name in ignore_deprecated]
     library_rule(
         name = name,
         srcs = srcs,
@@ -70,7 +80,7 @@ def mojo_library(
         testonly = testonly,
         tags = ["mojo-fixits"] + tags,
         additional_compiler_inputs = additional_compiler_inputs,
-        copts = copts,
+        copts = copts + ignore_deprecated_copts,
         import_path = import_path,
         **library_kwargs
     )
@@ -85,6 +95,7 @@ def mojo_library(
             docs_title = docs_title,
             docs_hosted_on_mojolang = docs_hosted_on_mojolang,
             show_stability_markers = show_stability_markers,
+            copts = ignore_deprecated_copts,
             visibility = visibility,
             tags = [ALLOW_UNUSED_TAG] + tags,
             testonly = testonly,

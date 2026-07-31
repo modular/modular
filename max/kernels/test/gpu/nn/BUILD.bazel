@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -397,6 +398,7 @@ _FILECHECK_TESTS = [
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         expect_crash = src == "test_gather_nd_oob.mojo",
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
@@ -416,7 +418,7 @@ _FILECHECK_TESTS = [
         name = src + ".test",
         size = "large",
         srcs = [src],
-        copts = [],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         # KERN-2339: Several tests disabled due to bounds check failures
         enable_assertions = select({
             "//:amd_gpu": src not in [
@@ -498,6 +500,7 @@ mojo_test(
     name = "attention/test_mha_sm100_materialized_mask.mojo.test",
     size = "large",
     srcs = ["attention/test_mha_sm100_materialized_mask.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "3",
     },
@@ -528,7 +531,7 @@ mojo_test(
     name = "attention/test_mha_sm100_ws_bm32_multitile.mojo.test",
     size = "large",
     srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
-    copts = [
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
         "-D",
         "FA4_FORCE_CONFIG=1",
     ],
@@ -562,7 +565,7 @@ mojo_test(
     name = "attention/test_mha_sm100_ws_bm32_splitk.mojo.test",
     size = "large",
     srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
-    copts = [
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
         "-D",
         "FA4_WS_SPLITK_FORCE=2",
     ],
@@ -594,7 +597,7 @@ mojo_test(
     name = "attention/test_mha_sm100_ws_bm32_splitk_p4.mojo.test",
     size = "large",
     srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
-    copts = [
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
         "-D",
         "FA4_WS_SPLITK_FORCE=4",
     ],
@@ -627,7 +630,7 @@ mojo_test(
     name = "attention/test_mha_sm100_ws_bm32_splitk_p8.mojo.test",
     size = "large",
     srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
-    copts = [
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
         "-D",
         "FA4_WS_SPLITK_FORCE=8",
     ],
@@ -653,7 +656,7 @@ mojo_test(
     name = "attention/test_mha_sm100_ws_bm32_splitk_p16.mojo.test",
     size = "large",
     srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
-    copts = [
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
         "-D",
         "FA4_WS_SPLITK_FORCE=16",
     ],
@@ -709,7 +712,7 @@ mojo_test(
         srcs = ["attention/test_mha_sm100_1q_splitk_lse.mojo"],
         # Shape-driven P: the dispatch auto-selects the partition count; we steer
         # it via the cache length (cache = 512 * P => floor_pow2(cache//512) == P).
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "FA4_1Q_SPLITK_CACHE={}".format(512 * cfg[3]),
             "-D",
@@ -807,7 +810,7 @@ mojo_test(
         # Shape-driven P (cache = 512 * P => floor_pow2(cache//512) == P). At P=8
         # the windowed mask still leaves trailing partitions empty (active tiles
         # < P), so the M6 empty-partition + windowed-d128 combine path is covered.
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "FA4_1Q_SPLITK_CACHE={}".format(512 * cfg[1]),
             "-D",
@@ -869,7 +872,7 @@ mojo_test(
         ),
         size = "large",
         srcs = ["attention/test_mha_sm100_1q_splitk_lse.mojo"],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "FA4_1Q_SPLITK_CACHE=8192",
             "-D",
@@ -937,7 +940,7 @@ mojo_test(
     name = "attention/test_mha_sm100_1q_splitk_combine_chunked_sink_d64_p8.mojo.test",
     size = "large",
     srcs = ["attention/test_mha_sm100_1q_splitk_lse.mojo"],
-    copts = [
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
         "-D",
         "FA4_1Q_SPLITK_CACHE=4096",
         "-D",
@@ -977,7 +980,7 @@ mojo_test(
         name = "attention/test_mha_sm100_1q_splitk_combine_null_d{}_p1.mojo.test".format(depth),
         size = "large",
         srcs = ["attention/test_mha_sm100_1q_splitk_lse.mojo"],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "FA4_1Q_SPLITK_CACHE=512",
             "-D",
@@ -1013,6 +1016,7 @@ mojo_test(
 mojo_test(
     name = "attention/test_naive_fa_decode_apple.mojo.test",
     srcs = ["attention/test_naive_fa_decode_apple.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     tags = ["gpu"],
     target_compatible_with = [
         "//:has_gpu",
@@ -1033,6 +1037,7 @@ mojo_test(
 mojo_test(
     name = "attention/test_naive_fa_decode_apple_sink.mojo.test",
     srcs = ["attention/test_naive_fa_decode_apple_sink.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     tags = ["gpu"],
     target_compatible_with = [
         "//:has_gpu",
@@ -1056,6 +1061,7 @@ mojo_test(
 mojo_test(
     name = "test_apple_fa_prefill_paged.mojo.test",
     srcs = ["test_apple_fa_prefill_paged.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     tags = ["gpu"],
     target_compatible_with = [
         "//:has_gpu",
@@ -1082,7 +1088,7 @@ mojo_test(
         name = "test_amd_4wave_conv_dtypes_" + dtype + ".mojo.test",
         size = "large",
         srcs = ["test_amd_4wave_conv_dtypes.mojo"],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "DTYPE=" + dtype,
         ],
@@ -1227,7 +1233,7 @@ _MHA_CAUSAL_MASK_CONFIGS = [
         ),
         size = "large",
         srcs = ["test_mha_causal_mask.mojo"],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "depth={}".format(depth),
         ] + ([
@@ -1265,7 +1271,7 @@ _MHA_CAUSAL_MASK_AMD_DTYPES = {
         name = "test_mha_causal_mask_amd_{}.mojo.test".format(dtype),
         size = "large",
         srcs = ["test_mha_causal_mask_amd.mojo"],
-        copts = copts,
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + copts,
         exec_properties = {
             "test.resources:gpu-memory": "3",
         },
@@ -1310,7 +1316,7 @@ _MLA_DECODE_PAGED_CONFIGS = [
         name = "test_mla_decode_paged_variable_ps{}.mojo.test".format(page_size),
         size = "large",
         srcs = ["test_mla_decode_paged_variable.mojo"],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "page_size={}".format(page_size),
         ],
@@ -1348,7 +1354,7 @@ mojo_test(
     name = "test_mla_decode_paged_variable_ps128.mojo.test",
     size = "large",
     srcs = ["test_mla_decode_paged_variable.mojo"],
-    copts = [
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
         "-D",
         "page_size=128",
     ],
@@ -1460,7 +1466,7 @@ _MLA_PREFILL_PAGED_VARIANTS = [
             src,
             "_paged_prefill_test_utils.mojo",
         ],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "-D",
             "page_size={}".format(page_size),
         ],
