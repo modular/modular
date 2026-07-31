@@ -16,14 +16,13 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Sequence
+from concurrent.futures import Future
 from typing import Any
 
 import pytest
-from max import _interpreter
-from max._core.mlrt import AsyncValue
+from max import _interpreter, engine
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.engine import CompiledModel
 from max.experimental.executor import (
     CompilingExecutor,
     CompositeExecutor,
@@ -36,7 +35,6 @@ from max.experimental.executor import (
     default_executor,
     set_default_executor,
 )
-from max.experimental.support import _session
 from max.graph import Graph, TensorType, ops
 
 # ---------------------------------------------------------------------------
@@ -302,8 +300,7 @@ class TestJitExecutor:
         executor = JitExecutor()
         # Pin the compile as forever-pending so the interpreter path is
         # deterministically chosen (a real compile may win the race).
-        _session()  # AsyncValue construction needs an initialized runtime.
-        pending: AsyncValue[Any] = AsyncValue()
+        pending: Future[engine.Model] = Future()
         with executor.lock:
             executor.cache[_eager_model_cache_key(graph)] = pending
         with pytest.raises(RuntimeError, match="simulated kernel failure"):
@@ -322,25 +319,15 @@ class TestJitExecutor:
 
     def test_failed_compile_propagates(self, monkeypatch: Any) -> None:
         """A failed compile re-raises on every call; it is not retried."""
-        import max.experimental.executor as executor_module
-
-        session = executor_module._session()
-
-        class _FailingInitSession:
-            def compile_async(self, graph: Graph) -> CompiledModel:
-                return session.compile_async(graph)
-
-            def init(self, compiled: CompiledModel) -> Any:
-                raise RuntimeError("compile exploded")
-
-        monkeypatch.setattr(
-            executor_module, "_session", lambda: _FailingInitSession()
-        )
-
         graph, buf = _add_graph()
         executor = JitExecutor()
         # Force the demand path: the interpreter must refuse the graph.
         executor.interpreter = InterpreterExecutor(max_ops=0)
+
+        # A remote compile failure resolves the pool future with the error.
+        failed: Future[engine.CompiledModel] = Future()
+        failed.set_exception(RuntimeError("compile exploded"))
+        monkeypatch.setattr(executor.pool, "compile", lambda graph: failed)
 
         with pytest.raises(RuntimeError, match="compile exploded"):
             executor.execute(graph, [buf])
@@ -366,8 +353,9 @@ class TestJitExecutorSnapshot:
         graph, inp = _add_graph()
         executor = JitExecutor()
         (first,) = executor.execute(graph, [inp])
-        (future,) = executor.cache.values()
-        future.wait()  # Waits for the background compile and init.
+        (entry,) = executor.cache.values()
+        assert isinstance(entry, Future)
+        entry.result()  # Waits for the background compile.
         (second,) = executor.execute(graph, [inp])
         assert _values(first) == pytest.approx(_values(second))
 
@@ -474,20 +462,23 @@ class TestJitExecutorConcurrency:
         compile_count = [0]
         init_count = [0]
 
-        class _CountingSession:
-            def compile_async(self, graph: Graph) -> CompiledModel:
-                compile_count[0] += 1
-                return session.compile_async(graph)
+        executor = JitExecutor()
+        pool_compile = executor.pool.compile
 
-            def init(self, compiled: CompiledModel) -> Any:
+        def _counting_compile(graph: Graph) -> Future[engine.CompiledModel]:
+            compile_count[0] += 1
+            return pool_compile(graph)
+
+        monkeypatch.setattr(executor.pool, "compile", _counting_compile)
+
+        class _CountingSession:
+            def init(self, compiled: Any) -> Any:
                 init_count[0] += 1
                 return session.init(compiled)
 
         monkeypatch.setattr(
             executor_module, "_session", lambda: _CountingSession()
         )
-
-        executor = JitExecutor()
         # Force the demand path: the interpreter must refuse the graph.
         executor.interpreter = InterpreterExecutor(max_ops=0)
 
