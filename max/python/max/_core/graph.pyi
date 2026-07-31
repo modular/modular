@@ -141,3 +141,6 @@ class Analysis:
         """
         Returns the info ``max.experimental.torch`` needs to register the named kernel as a PyTorch custom op. Raises ``ValueError`` if the kernel is unknown or has an unsupported argument type.
         """
+
+    def has_shape_function(self, name: str) -> bool:
+        """Returns true if a shape function is registered for the named kernel."""

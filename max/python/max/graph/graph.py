@@ -278,6 +278,26 @@ class KernelLibrary:
         else:
             self._analysis.verify_custom_op(custom_op)
 
+    def has_shape_function(self, kernel: str) -> bool:
+        """Returns whether *kernel* registers a shape function.
+
+        A kernel that registers no shape function has no way to compute its
+        output shape at run time, so the graph compiler rejects a
+        data-dependent output dimension declared for it.
+
+        Args:
+            kernel: The registered name of the kernel to check.
+
+        Returns:
+            ``True`` if a shape function is registered for *kernel*.
+
+        Raises:
+            KeyError: If no kernel named *kernel* is in the library.
+        """
+        if kernel not in self:
+            raise KeyError(f"no kernel named {kernel!r} in the kernel library")
+        return self._analysis.has_shape_function(kernel)
+
 
 _default_custom_extensions: tuple[Path, ...] = ()
 
