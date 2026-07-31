@@ -15,6 +15,16 @@
     "status": 301
   },
   {
+    "source": "/docs/layout",
+    "dest": "https://docs.modular.com/api/mojo/layout/",
+    "status": 302
+  },
+  {
+    "source": "/docs/layout/(.*)",
+    "dest": "https://docs.modular.com/api/mojo/layout/{0}",
+    "status": 302
+  },
+  {
     "source": "/nightly/releases/(.*)",
     "dest": "/releases/{0}",
     "status": 301

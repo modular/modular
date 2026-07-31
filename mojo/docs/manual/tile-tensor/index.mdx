@@ -4,20 +4,22 @@ sidebar_position: 1
 description: Efficient abstractions for multidimensional data.
 ---
 
-Mojo's [`layout` package](/docs/layout/) provides a number of APIs for
-working with dense multidimensional arrays, which simplify writing algorithms
-for handling linear algebra.
+Mojo's [`layout` package](https://docs.modular.com/api/mojo/layout/) provides a
+number of APIs for working with dense multidimensional arrays, which simplify
+writing algorithms for handling linear algebra.
 
 This section discusses the `TileTensor` abstraction and its related types:
 
-- [`TileTensor`](/docs/layout/tile_tensor/TileTensor/) is a flexible
-  tensor type that combines a `tile_layout.Layout` and a pointer to data.
-- The [`tile_layout.Layout`](/docs/layout/tile_layout/Layout/) struct
-  describes an arrangement of data in memory. A *layout* is a function that maps
-  a set of logical coordinates (like (*x*, *y*) in a two-dimensional array) to a
-  linear index value (such as an offset into a memory buffer). Layouts can
-  describe simple row-major or column-major matrices, but also
-  more complex organizations, like a matrix subdivided into tiles.
+- [`TileTensor`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/)
+  is a flexible tensor type that combines a `tile_layout.Layout` and a pointer
+  to data.
+- The
+  [`tile_layout.Layout`](https://docs.modular.com/api/mojo/layout/tile_layout/Layout/)
+  struct describes an arrangement of data in memory. A *layout* is a function
+  that maps a set of logical coordinates (like (*x*, *y*) in a two-dimensional
+  array) to a linear index value (such as an offset into a memory buffer).
+  Layouts can describe simple row-major or column-major matrices, but also more
+  complex organizations, like a matrix subdivided into tiles.
 - [`Coord`](/docs/std/utils/coord/Coord/) is a tuple-like container for
   storing integer coordinates that supports both compile-time and run-time
   values. It's used for defining logical coordinates and layout shapes, among

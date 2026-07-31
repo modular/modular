@@ -22,7 +22,6 @@ _KERNEL_LIBS = [
 # exclusions (e.g. graph_compiler/builtin_primitives) live in the BUILD file
 # for that container package; see //max/kernels/src/graph_compiler/BUILD.bazel.
 _EXCLUDED_KERNEL_LIBS = (
-    "layout",  # this package ships with Mojo and the docs are built for mojolang.org
     "graph_compiler",  # this is a container, not a real package; see //max/kernels/src/graph_compiler:docs
     "internal_utils",  # internal helpers
     "weights_registry",  # internal weight registration helpers
