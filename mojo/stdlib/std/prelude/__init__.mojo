@@ -35,6 +35,8 @@ from std.collections import (
 )
 from std.collections.string import (
     Codepoint,
+    ImmStringSlice,
+    MutStringSlice,
     StaticString,
     String,
     StringSlice,

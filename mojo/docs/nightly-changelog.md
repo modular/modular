@@ -400,6 +400,11 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `StringSlice` now has `MutStringSlice` and `ImmStringSlice` aliases, matching
+  the `Mut`/`Imm` aliases already provided for `Span` and `Pointer`. A function
+  can use them to state the mutability it requires of a string argument without
+  spelling out the `origin` parameter.
+
 - `Span` now has a keyword-only `address_space` parameter (defaulting to
   `AddressSpace.GENERIC`), so a span can view memory in a non-default address
   space, such as GPU shared memory:

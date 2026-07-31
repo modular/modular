@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections.string import ImmStringSlice, MutStringSlice
 from std.collections.string.string_slice import (
     _to_string_list,
     get_static_string,
@@ -1134,6 +1135,31 @@ def test_grapheme_indexing() raises:
     assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=0], "👨‍🚀")
     assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=1], "🧑‍🌾")
     assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=2], "क्षि")
+
+
+def test_mut_string_slice_alias() raises:
+    var data = String("hello")
+
+    def capitalize(s: MutStringSlice[_]):
+        s.as_bytes()[0] -= Byte(ord("a") - ord("A"))
+
+    capitalize(data)
+    assert_equal(data, "Hello")
+
+
+def test_imm_string_slice_alias() raises:
+    def byte_sum(s: ImmStringSlice[_]) -> Int:
+        var total = 0
+        for b in s.as_bytes():
+            total += Int(b)
+        return total
+
+    var mutable_data = String("abc")
+    var immutable_data = StaticString("abc")
+
+    # `ImmStringSlice` works with both mutable and immutable data.
+    assert_equal(byte_sum(mutable_data), 294)
+    assert_equal(byte_sum(immutable_data), 294)
 
 
 def main() raises:
