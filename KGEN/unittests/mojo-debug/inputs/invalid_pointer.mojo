@@ -20,6 +20,6 @@ def main():
     var base: UnsafePointer[
         Float32, origin_of(base_alloc._alloc)
     ] = base_alloc.unsafe_ptr()
-    var ptr = base.bitcast[Scalar[_invalid_dtype]]()
+    var ptr = base.unsafe_bitcast[Scalar[_invalid_dtype]]()
     keep_alive(ptr)  # breakpoint
     dealloc(base_alloc^)

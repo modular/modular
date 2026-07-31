@@ -19,7 +19,7 @@ struct A(ImplicitlyCopyable):
 
     def __init__(out self):
         var y = UnsafePointer(alloc[Int8]({count = 1}).unsafe_leak())
-        self.x = y.bitcast[Scalar[_invalid_dtype]]()
+        self.x = y.unsafe_bitcast[Scalar[_invalid_dtype]]()
 
 
 def test_key_element() raises:
