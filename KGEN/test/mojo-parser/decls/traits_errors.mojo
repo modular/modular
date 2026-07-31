@@ -207,7 +207,7 @@ struct ConflictStruct[a: Int](ConflictTraitName, Movable where False):
 
 
 # ===----------------------------------------------------------------------=== #
-# Synthesized __del__
+# Synthesized __deinit__
 # ===----------------------------------------------------------------------=== #
 
 

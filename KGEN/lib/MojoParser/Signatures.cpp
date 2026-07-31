@@ -2644,8 +2644,12 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
   // '__deinit__' here so every downstream consumer of the function's name
   // (the AST and the MLIR it lowers to) only ever sees the canonical form.
   if (fnInfo.kind == SpecialFunctionKind::kDeinit &&
-      name.getValue() == "__del__")
+      name.getValue() == "__del__") {
+    shared.emitWarning(decl.getLoc(),
+                       "'__del__' is deprecated; use '__deinit__'")
+        << FixIt::replaceToken(decl.getLoc(), "__deinit__");
     name = StringAttr::get(shared.getContext(), "__deinit__");
+  }
 
   // On any semantic error we mark the declaration erroneous - so references to
   // it don't type check, and we clear our special function information.  This

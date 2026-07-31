@@ -743,7 +743,7 @@ struct SpecialFunctions(Movable where False):
 struct TestOwnedDeinitErrors(Movable where False):
   # 'owned' is no longer a keyword; it is parsed as parameter name, then 'self' is unexpected
   # expected-error @+1 {{expected ')' in argument list}}
-  def __del__(owned self): pass
+  def __deinit__(owned self): pass
 
   # expected-error @+1 {{expected ')' in argument list}}
   def __moveinit__(out self, owned x: TestOwnedDeinitErrors): pass

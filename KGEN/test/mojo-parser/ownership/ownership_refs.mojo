@@ -20,7 +20,7 @@ struct MemExample(ImplicitlyCopyable):
   def __init__(out self): pass
   def __init__(out self, *, deinit move: Self): pass
   def __init__(out self, *, copy: Self): pass
-  def __del__(deinit self): pass
+  def __deinit__(deinit self): pass
   def noop(self): pass
   def mutate(mut self): pass
 
@@ -206,7 +206,7 @@ def testUseConditionalReference(cond: __mlir_type.`!kgen.scalar<bool>`, immArg: 
 
 struct SelfRefTest(ImplicitlyCopyable):
   def __init__(out self): pass
-  def __del__(deinit self): pass
+  def __deinit__(deinit self): pass
   # CHECK-LABEL: lit.fn @"method
   # CHECK-SAME: (%self: !lit.ref<!SelfRefTest
   def method(ref self) -> Pointer[Self, origin_of(self)]:
@@ -539,8 +539,8 @@ struct MyListInterior[T: Movable](Movable where False):
     def __init__(out self):
         self.data = UnsafePointer[Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
 
-    def __del__(deinit self):
-        pass # Explicit del so it isn't considered trivial and elided.
+    def __deinit__(deinit self):
+        pass # Explicit deinit so it isn't considered trivial and elided.
 
     def mutate(mut self):
         pass

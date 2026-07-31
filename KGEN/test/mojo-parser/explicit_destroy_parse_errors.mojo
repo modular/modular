@@ -12,7 +12,7 @@
 # expected-error @+2 {{@explicit_destroy cannot be used on a trait that conforms to ImplicitlyDeletable}}
 @explicit_destroy("Hmm, what am I?")
 trait ExplicitDestroyOnImplicitlyDeletable(ImplicitlyDeletable):
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         ...
 
 
@@ -21,7 +21,7 @@ trait ExplicitDestroyOnImplicitlyDeletable(ImplicitlyDeletable):
 # expected-error @+2 {{@explicit_destroy cannot be used on a trait that conforms to ImplicitlyDeletable}}
 @explicit_destroy("")
 trait ExplicitDestroyEmptyMsgOnImplicitlyDeletable(ImplicitlyDeletable):
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         ...
 
 
@@ -91,7 +91,7 @@ struct UnconditionalCustom(Movable where False):
 
 
 # ===----------------------------------------------------------------------=== #
-# Synthesized __del__ field checks
+# Synthesized __deinit__ field checks
 # ===----------------------------------------------------------------------=== #
 
 

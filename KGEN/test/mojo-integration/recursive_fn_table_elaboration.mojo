@@ -50,7 +50,7 @@ struct Value(ImplicitlyDeletable, Movable):
         self.kind = move.kind
         self.payload = move.payload^
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     def to_string(imm self) raises -> String:

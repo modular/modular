@@ -67,7 +67,7 @@ struct MTuple[T: ImplicitlyCopyable & ImplicitlyDeletable](
                 Self.Element, MutUntrackedOrigin
             ].unsafe_dangling()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         for i in range(self._len):
             self._data.unsafe_offset(i).unsafe_deinit_pointee()
         if self._cap > 0:

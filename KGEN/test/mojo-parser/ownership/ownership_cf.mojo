@@ -50,7 +50,7 @@ struct MemExample(ImplicitlyCopyable):
     def unsafe_ptr(self) -> UnsafePointer[Int, AnyOrigin[mut=True]]:
         return UnsafePointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
@@ -681,7 +681,7 @@ struct PyObjLike(RegisterPassable):
     def __bool__(self) raises -> Bool:
         return True
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 

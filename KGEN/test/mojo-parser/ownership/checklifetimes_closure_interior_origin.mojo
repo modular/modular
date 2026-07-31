@@ -23,7 +23,7 @@ struct MyList[T: AnyType](Movable where False):
             Self.T, UntrackedOrigin[mut=True]
         ].unsafe_dangling()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     @__unsafe_nested_origins_read_only

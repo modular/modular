@@ -16,12 +16,12 @@ struct Y_T(ImplicitlyCopyable):
 
 
 struct X_N(ImplicitlyCopyable):
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
 struct X_T_U(ImplicitlyCopyable):
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     # User marked __del__as trivial
@@ -73,7 +73,7 @@ struct NotTrivial(Copyable):
     def __init__(out self, *, deinit move: Self):
         pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     # CHECK-DAG: lit.alias.decl __del__is_trivial: !Bool = <{:scalar<bool> false}>

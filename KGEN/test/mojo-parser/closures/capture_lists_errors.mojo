@@ -14,7 +14,7 @@ struct MoveMe(Movable):
     var x:Int
     def __init__(out self, *, deinit move: Self):
         self.x = move.x
-    def __del__(deinit self:Self):
+    def __deinit__(deinit self:Self):
         pass
 
 def use(d:MoveMe):

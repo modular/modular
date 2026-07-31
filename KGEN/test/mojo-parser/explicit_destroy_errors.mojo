@@ -46,7 +46,7 @@ struct ImplicitlyDeletableContainerOfExplicitWithIncompleteDel(Movable where Fal
         self.m = EmptyExplicit()
 
     # expected-error @below {{Must use consume!}}
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
@@ -86,7 +86,7 @@ def test_any_type_error[T: AnyType](var x: T):
 def callsWith():
     # expected-error @below {{type 'Coroutine' is not implicitly deletable and must be explicitly destroy}}
     _ = testAsyncVoid()
-    # CHECK-NOT: lit.call {{.*}}__del__
+    # CHECK-NOT: lit.call {{.*}}__deinit__
 
 
 # CHECK-LABEL: lit.fn @"testAsyncVoid
@@ -94,30 +94,30 @@ async def testAsyncVoid():
     pass
 
 
-# CHECK-LABEL: lit.struct.decl @ExplicitWithDel
+# CHECK-LABEL: lit.struct.decl @ExplicitWithDeinit
 
 
-# MOCO-2787 - Linear types do not error if they contain an explicit del
-@explicit_destroy("must use __del__() explicitly")
-struct ExplicitWithDel(ImplicitlyDeletable where False, Movable where False):
+# MOCO-2787 - Linear types do not error if they contain an explicit deinit
+@explicit_destroy("must use __deinit__() explicitly")
+struct ExplicitWithDeinit(ImplicitlyDeletable where False, Movable where False):
     def __init__(out self):
         pass
 
-    # Presence of a del shouldn't override @explicit_destroy.
-    def __del__(deinit self):
+    # Presence of a deinit shouldn't override @explicit_destroy.
+    def __deinit__(deinit self):
         pass
 
     def method(self):
         pass
 
 
-def testExplicitWithDel():
-    a = ExplicitWithDel()
+def testExplicitWithDeinit():
+    a = ExplicitWithDeinit()
     a.method()
     a^.__deinit__()  # ok
 
-    b = ExplicitWithDel()
-    b.method()  # expected-error {{'b' abandoned without being explicitly destroyed: must use __del__() explicitly}}
+    b = ExplicitWithDeinit()
+    b.method()  # expected-error {{'b' abandoned without being explicitly destroyed: must use __deinit__() explicitly}}
 
 
 # This comes from stubs library.

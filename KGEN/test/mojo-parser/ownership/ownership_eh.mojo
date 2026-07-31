@@ -43,7 +43,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
     def noop(self):
         pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     def mutate(mut self):
@@ -69,7 +69,7 @@ struct MemExample(ImplicitlyCopyable):
     def __bool__(self) -> Bool:
         return True
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
@@ -165,7 +165,7 @@ struct ThrowingExit(Movable where False):
     def __enter__(self):
         pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     def __exit__(self) raises:
@@ -292,7 +292,7 @@ struct Field(ImplicitlyCopyable):
     def __init__(out self, *, copy: Self):
         pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
@@ -385,7 +385,7 @@ def raising_use(var value: MemExample):
 struct ThrowingSelfInit(Movable where False):
     var x: Int
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     # CHECK-LABEL: lit.fn @"__init__

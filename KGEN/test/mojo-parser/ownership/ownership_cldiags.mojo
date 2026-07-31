@@ -34,7 +34,7 @@ struct MemExample(ImplicitlyCopyable):
     def consume(var self):
         pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
@@ -47,7 +47,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
     def __init__(out self, *, copy: Self):
         self.regstate = 12
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     def consume(var self):
@@ -287,7 +287,7 @@ struct MoreComplexExample(ImplicitlyCopyable):
         result.reg.reg2 = RegExample()
         self = result  # expected-error {{use of uninitialized value 'result.reg.reg1'}}
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
@@ -389,7 +389,7 @@ trait RPTTrait(TrivialRegisterPassable):
 ##===----------------------------------------------------------------------===##
 
 
-# Consumption of struct works only on definition of __del__
+# Consumption of struct works only on definition of __deinit__
 # https://github.com/modular/mojo/issues/734
 struct StructWithNoDel(Movable where False):
     var x: Int
@@ -476,7 +476,7 @@ def testConditionalMut(cond: __mlir_type.`!kgen.scalar<bool>`):
     cptr[] = MemExample()
 
 
-# CheckLifetimes cannot call MemExample.__del__ because 'self' is in the default
+# CheckLifetimes cannot call MemExample.__deinit__ because 'self' is in the default
 # address space.
 def bad_addr_space[
     addr_space: AddressSpace
@@ -663,8 +663,8 @@ struct ConditionallyLinearType[T: AnyType](
     def use(self):
         pass
 
-    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
-        pass  # self.data^.__del__()
+    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+        pass  # self.data^.__deinit__()
 
 
 def testConditionallyLinearType():

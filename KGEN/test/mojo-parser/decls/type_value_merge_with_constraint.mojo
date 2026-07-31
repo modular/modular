@@ -27,7 +27,7 @@ struct StorageA[T: AnyType](
     def __init__(out self):
         pass
 
-    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         pass
 
 
@@ -39,7 +39,7 @@ struct StorageB[T: AnyType](
     def __init__(out self):
         pass
 
-    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         pass
 
 
@@ -58,5 +58,5 @@ struct Container[T: AnyType](
     def __init__(out self):
         self._storage = Self._Storage()
 
-    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         self._storage^.__deinit__()
