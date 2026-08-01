@@ -4349,6 +4349,17 @@ def _write_scalar[
         else:
             writer.write("False")
 
+    elif dtype.is_half_float():
+        # `_write_float` widens everything but `float64` and the `float8`
+        # variants to `Float32` before running dragonbox, so a half float and
+        # its `Float32` widening already format to identical text. Widening here
+        # instead lets `float16` and `bfloat16` share one `_write_float`
+        # instantiation with `float32` rather than each getting their own copy of
+        # the formatter, which dominates the compile cost of printing SIMD
+        # values. `test_simd.test_write_half_float_matches_float32` pins the
+        # equivalence.
+        _write_float(writer, value.cast[DType.float32]())
+
     elif dtype.is_floating_point():
         _write_float(writer, value)
 
