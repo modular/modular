@@ -15,18 +15,18 @@ def keep_alive[*Ts: AnyType](*args: *Ts):
 
 
 def main():
-    var p_int = UnsafePointer(alloc[Int]({count = 1}).unsafe_leak())
+    var p_int = alloc[Int]({count = 1}).unsafe_leak()
     p_int[0] = 42
     keep_alive(p_int)  # breakpoint
 
-    var p_neg = UnsafePointer(alloc[Int]({count = 1}).unsafe_leak())
+    var p_neg = alloc[Int]({count = 1}).unsafe_leak()
     p_neg[0] = -5
     keep_alive(p_neg)  # breakpoint
 
-    var p_bool = UnsafePointer(alloc[Bool]({count = 1}).unsafe_leak())
+    var p_bool = alloc[Bool]({count = 1}).unsafe_leak()
     p_bool[0] = True
     keep_alive(p_bool)  # breakpoint
 
-    var p_float = UnsafePointer(alloc[Float64]({count = 1}).unsafe_leak())
+    var p_float = alloc[Float64]({count = 1}).unsafe_leak()
     p_float[0] = Float64(3.125)
     keep_alive(p_float)  # breakpoint

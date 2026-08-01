@@ -80,9 +80,7 @@ struct MTuple[T: ImplicitlyCopyable & ImplicitlyDeletable](
     def _grow_if_needed(mut self):
         if self._len >= self._cap:
             var new_cap = self._cap * 2 if self._cap > 0 else 4
-            var new_data = UnsafePointer(
-                alloc[Self.Element]({count = new_cap}).unsafe_leak()
-            )
+            var new_data = alloc[Self.Element]({count = new_cap}).unsafe_leak()
             for i in range(self._len):
                 new_data.unsafe_offset(i).unsafe_write(
                     self._data.unsafe_offset(i).unsafe_take_pointee()
