@@ -95,13 +95,11 @@ def topk_wrapper[
     var _in_buffer = in_buffer + batch_id * _num_elements
 
     # # Allocate shared memory for the values and indices
-    var topk_sram = UnsafePointer(
-        unsafe_stack_allocation[
-            block_size,
-            TopK_2[input_type, largest],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var topk_sram = unsafe_stack_allocation[
+        block_size,
+        TopK_2[input_type, largest],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Pack the topk_vals and topk_idxs into shared memory
     var block_offset = block_lane * block_size
@@ -327,41 +325,31 @@ def radix_sort_pairs_kernel[
         return
 
     # Shared mem declarations
-    var s_counts = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_SIZE * NUM_BUCKETS,
-            Int32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var total_counts = UnsafePointer(
-        unsafe_stack_allocation[
-            NUM_BUCKETS,
-            Int32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var total_offsets = UnsafePointer(
-        unsafe_stack_allocation[
-            (NUM_BUCKETS + 1),  # +1 extended size for descending
-            Int32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var total_offsets_descending = UnsafePointer(
-        unsafe_stack_allocation[
-            NUM_BUCKETS,
-            Int32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var s_thread_offsets = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_SIZE * NUM_BUCKETS,
-            Int32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var s_counts = unsafe_stack_allocation[
+        BLOCK_SIZE * NUM_BUCKETS,
+        Int32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var total_counts = unsafe_stack_allocation[
+        NUM_BUCKETS,
+        Int32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var total_offsets = unsafe_stack_allocation[
+        (NUM_BUCKETS + 1),  # +1 extended size for descending
+        Int32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var total_offsets_descending = unsafe_stack_allocation[
+        NUM_BUCKETS,
+        Int32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var s_thread_offsets = unsafe_stack_allocation[
+        BLOCK_SIZE * NUM_BUCKETS,
+        Int32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Initialize counts[NUM_BUCKETS]
     var counts_stack = Array[Int32, NUM_BUCKETS](uninitialized=True)

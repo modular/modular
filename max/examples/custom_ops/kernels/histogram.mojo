@@ -68,11 +68,9 @@ def _histogram_gpu(
             return
 
         # Allocate shared memory for the histogram
-        var shared_mem = UnsafePointer(
-            unsafe_stack_allocation[
-                bin_width, Int64, address_space=AddressSpace.SHARED
-            ]()
-        )
+        var shared_mem = unsafe_stack_allocation[
+            bin_width, Int64, address_space=AddressSpace.SHARED
+        ]()
 
         # Initialize the shared memory to 0
         shared_mem[unsafe_offset=thread_idx.x] = 0

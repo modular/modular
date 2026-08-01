@@ -551,13 +551,11 @@ def kernel_7[
             UntrackedOrigin[mut=True],
         ]
     ](
-        UnsafePointer(
-            external_memory[
-                Scalar[a_type],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ]()
-        )
+        external_memory[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+        ]()
     )  # pointer to first byte of scratchpad
 
     comptime a_smem_size = a_smem_layout.size()

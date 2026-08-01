@@ -61,13 +61,11 @@ def block_scan(val: Float32) -> Float32:
     var result = warp_scan(val)
 
     # Allocate shared memory for warp sums
-    var warp_sums_s = UnsafePointer(
-        unsafe_stack_allocation[
-            NUM_WARPS,
-            Float32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var warp_sums_s = unsafe_stack_allocation[
+        NUM_WARPS,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Step 2: Collect warp sums
     if lane_id() == WARP_SIZE - 1:

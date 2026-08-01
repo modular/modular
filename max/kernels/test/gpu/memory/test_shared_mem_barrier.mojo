@@ -21,14 +21,12 @@ from std.memory import unsafe_stack_allocation
 # CHECK-NOT: ld.local
 # CHECK-NOT: st.local
 def test_shared_mem_barrier():
-    mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            10,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
+    mbar = unsafe_stack_allocation[
+        10,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     comptime for i in range(10):
         mbar[i].init()

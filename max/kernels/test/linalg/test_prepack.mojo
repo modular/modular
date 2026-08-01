@@ -34,13 +34,11 @@ def test_prepack():
     comptime k_padded = ceildiv(k, tile_k) * tile_k
     comptime n_padded = ceildiv(n, tile_n) * tile_n
 
-    var src_ptr = UnsafePointer(
-        unsafe_stack_allocation[n * k, type, alignment=64]()
-    )
+    var src_ptr = unsafe_stack_allocation[n * k, type, alignment=64]()
     unsafe_memset_zero(src_ptr, n * k)
-    var dst_ptr = UnsafePointer(
-        unsafe_stack_allocation[n_padded * k_padded, type, alignment=64]()
-    )
+    var dst_ptr = unsafe_stack_allocation[
+        n_padded * k_padded, type, alignment=64
+    ]()
     unsafe_memset_zero(dst_ptr, n_padded * k_padded)
 
     for i in range(n * k):

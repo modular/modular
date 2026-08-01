@@ -133,20 +133,16 @@ def _bitonic_local_sort_kernel[
     var vals = input_arg.ptr
     var idxs = indices_arg.ptr
 
-    var shared_vals = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_SIZE,
-            Scalar[input_dtype],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var shared_idxs = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_SIZE,
-            Scalar[indices_dtype],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var shared_vals = unsafe_stack_allocation[
+        BLOCK_SIZE,
+        Scalar[input_dtype],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var shared_idxs = unsafe_stack_allocation[
+        BLOCK_SIZE,
+        Scalar[indices_dtype],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     if gid < _n_arg:
         shared_vals[tid] = vals[gid]
@@ -218,20 +214,16 @@ def _bitonic_merge_local_kernel[
     var vals = input_arg.ptr
     var idxs = indices_arg.ptr
 
-    var shared_vals = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_SIZE,
-            Scalar[input_dtype],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var shared_idxs = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_SIZE,
-            Scalar[indices_dtype],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var shared_vals = unsafe_stack_allocation[
+        BLOCK_SIZE,
+        Scalar[input_dtype],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var shared_idxs = unsafe_stack_allocation[
+        BLOCK_SIZE,
+        Scalar[indices_dtype],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     shared_vals[tid] = vals[gid]
     shared_idxs[tid] = idxs[gid]

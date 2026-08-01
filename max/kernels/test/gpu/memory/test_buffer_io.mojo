@@ -42,11 +42,9 @@ def kernel[
 def kernel_lds[
     dtype: DType, width: Int
 ](a: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
-    var a_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            size, dtype, address_space=AddressSpace.SHARED
-        ]()
-    )
+    var a_shared = unsafe_stack_allocation[
+        size, dtype, address_space=AddressSpace.SHARED
+    ]()
 
     var aligned_size = align_down(size, width)
     var buffer = AMDBufferResource(a, size_clip)

@@ -17,7 +17,6 @@ TS tests exercise build_mma_ts -> bulk_mma (TS overload) with A in TMEM
 via tcgen05_cp and B in SMEM, validating the TMEM layout for pair-CTA.
 """
 
-from std.memory import UnsafePointer
 from std.math import align_up
 from std.math.uutils import umod, ufloordiv
 from std.sys import size_of
@@ -130,9 +129,9 @@ def bulk_mma_pair_cta_kernel[
         ab_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    var smem = UnsafePointer(
-        external_memory[UInt8, address_space=AddressSpace.SHARED, alignment=8]()
-    )
+    var smem = external_memory[
+        UInt8, address_space=AddressSpace.SHARED, alignment=8
+    ]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[ab_type]()
     comptime b_smem_bytes = b_smem_layout.size() * size_of[ab_type]()
@@ -428,9 +427,9 @@ def bulk_mma_pair_cta_ts_kernel[
         ab_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    var smem = UnsafePointer(
-        external_memory[UInt8, address_space=AddressSpace.SHARED, alignment=8]()
-    )
+    var smem = external_memory[
+        UInt8, address_space=AddressSpace.SHARED, alignment=8
+    ]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[ab_type]()
     comptime b_smem_bytes = b_smem_layout.size() * size_of[ab_type]()

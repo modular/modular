@@ -903,18 +903,14 @@ def group_limited_router_kernel[
 
     var num_tokens = expert_scores.dim(0)
 
-    var shared_mem = UnsafePointer(
-        unsafe_stack_allocation[
-            topk_group * n_experts_per_tok,
-            TopK_2[scores_type],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var selected_group = UnsafePointer(
-        unsafe_stack_allocation[
-            topk_group, DType.int32, address_space=AddressSpace.SHARED
-        ]()
-    )
+    var shared_mem = unsafe_stack_allocation[
+        topk_group * n_experts_per_tok,
+        TopK_2[scores_type],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var selected_group = unsafe_stack_allocation[
+        topk_group, DType.int32, address_space=AddressSpace.SHARED
+    ]()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
 
     var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
@@ -1215,13 +1211,11 @@ def single_group_router_kernel[
     var warp_id = warp_id()
     var lane_id = lane_id()
 
-    var shared_mem = UnsafePointer(
-        unsafe_stack_allocation[
-            total_smem,
-            TopK_2[scores_type],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var shared_mem = unsafe_stack_allocation[
+        total_smem,
+        TopK_2[scores_type],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var shared_mem_phase1 = shared_mem
     var shared_mem_phase2 = shared_mem + phase1_candidates
@@ -1434,13 +1428,11 @@ def single_group_router_eplb_kernel[
     var l_id = lane_id()
 
     # ---- existing TopK_2 SMEM ----
-    var shared_mem = UnsafePointer(
-        unsafe_stack_allocation[
-            total_smem,
-            TopK_2[scores_type],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var shared_mem = unsafe_stack_allocation[
+        total_smem,
+        TopK_2[scores_type],
+        address_space=AddressSpace.SHARED,
+    ]()
     var shared_mem_phase1 = shared_mem
     var shared_mem_phase2 = shared_mem + phase1_candidates
 
@@ -1888,21 +1880,17 @@ def eplb_remap_kernel[
 
     var tid = Int(thread_idx.x)
 
-    var smem_cnt = UnsafePointer(
-        unsafe_stack_allocation[
-            num_log,
-            DType.int32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var smem_cnt = unsafe_stack_allocation[
+        num_log,
+        DType.int32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
-    var smem_phy = UnsafePointer(
-        unsafe_stack_allocation[
-            num_log * max_replicas,
-            DType.int32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var smem_phy = unsafe_stack_allocation[
+        num_log * max_replicas,
+        DType.int32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     with PDL():
         # Broadcast scalar layer index. Every thread reads the same address →

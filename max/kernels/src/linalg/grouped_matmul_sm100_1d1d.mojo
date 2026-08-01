@@ -2094,13 +2094,11 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         config=config,
     ]
 
-    ref smem_storage = UnsafePointer(
-        external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]()
-    ).bitcast[SmemType]()[]
+    ref smem_storage = external_memory[
+        Scalar[DType.uint8],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+    ]().bitcast[SmemType]()[]
 
     ref a_smem_storage = smem_storage.a_smem
     ref b_smem_storage = smem_storage.b_smem

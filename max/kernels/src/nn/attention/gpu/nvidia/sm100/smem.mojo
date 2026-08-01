@@ -60,7 +60,6 @@ q-aliased o_smem region, then TMA-store it to gmem. Output partials remain
 in TMEM throughout the combine.
 """
 
-from std.memory import UnsafePointer
 from std.sys import size_of, get_defined_bool
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.memory import AddressSpace, external_memory
@@ -301,14 +300,12 @@ struct SM100AttentionSMem[
         """Obtain the base pointer from the kernel's dynamic shared memory."""
 
         comptime assert Self.rope_dtype_ or Self.rope_depth == 0
-        self.base = UnsafePointer(
-            external_memory[
-                Scalar[DType.uint8],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-                name="mha_dynamic_shared_memory",
-            ]()
-        ).as_unsafe_any_origin()
+        self.base = external_memory[
+            Scalar[DType.uint8],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+            name="mha_dynamic_shared_memory",
+        ]().as_unsafe_any_origin()
 
     # ---- accessors -----------------------------------------------------------
 

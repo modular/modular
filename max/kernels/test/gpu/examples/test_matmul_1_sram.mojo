@@ -53,20 +53,16 @@ def matmul_sram(
     var c = TileTensor(c_ptr, row_major(Coord(M, N)))
 
     # Allocate A, B tile in shared memory.
-    var a_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            tile_size * tile_size,
-            DType.float32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var b_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            tile_size * tile_size,
-            DType.float32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var a_shared = unsafe_stack_allocation[
+        tile_size * tile_size,
+        DType.float32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var b_shared = unsafe_stack_allocation[
+        tile_size * tile_size,
+        DType.float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Global index in C.
     # These are the same indices in A and B when loading to SRAM.

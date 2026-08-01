@@ -77,14 +77,12 @@ def test_tma_5d_load_kernel[
         tile_rank, cta_tile_shape
     ]() * size_of[dtype]()
 
-    mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
+    mbar = unsafe_stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
     idx0, rem = divmod(block_idx.z, grid_dim1 * grid_dim2)
     idx1, idx2 = divmod(rem, grid_dim2)
     idx3 = block_idx.y

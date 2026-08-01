@@ -199,14 +199,12 @@ def pv_mma_kernel[
             UntrackedOrigin[mut=True],
         ]
     ](
-        UnsafePointer(
-            external_memory[
-                Scalar[ab_type],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-                name="pv_spike_dynamic_smem",
-            ]()
-        )
+        external_memory[
+            Scalar[ab_type],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+            name="pv_spike_dynamic_smem",
+        ]()
     )
     comptime p_smem_tile_t = LayoutTensor[
         ab_type,

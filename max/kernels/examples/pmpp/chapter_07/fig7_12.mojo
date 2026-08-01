@@ -54,13 +54,11 @@ def convolution_tiled_2D_const_mem_kernel(
     var row = block_idx.y * OUT_TILE_DIM + thread_idx.y - FILTER_RADIUS
 
     # Allocate shared memory for input tile
-    var N_s = UnsafePointer(
-        unsafe_stack_allocation[
-            IN_TILE_DIM * IN_TILE_DIM,
-            Float32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var N_s = unsafe_stack_allocation[
+        IN_TILE_DIM * IN_TILE_DIM,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Load input tile into shared memory
     var tx = thread_idx.x

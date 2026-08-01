@@ -350,11 +350,9 @@ struct MLAPrefillSparse[
             k_tma_op.prefetch_descriptor()
             v_tma_op.prefetch_descriptor()
 
-        ref smem = UnsafePointer(
-            external_memory[
-                UInt8, address_space=AddressSpace.SHARED, alignment=128
-            ]()
-        ).bitcast[Self.SMemType]()[]
+        ref smem = external_memory[
+            UInt8, address_space=AddressSpace.SHARED, alignment=128
+        ]().bitcast[Self.SMemType]()[]
         ref qkvo_union = smem.qkvo_union
 
         var full_q_ptr = qkvo_union.unsafe_get[Self.FULL_Q_TYPE]().unsafe_ptr()

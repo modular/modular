@@ -133,14 +133,12 @@ def kernel_4[
             UntrackedOrigin[mut=True],
         ]
     ](
-        UnsafePointer(
-            external_memory[
-                Scalar[a_type],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-                name="tmem_test_dynamic_shared_memory",
-            ]()
-        )
+        external_memory[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+            name="tmem_test_dynamic_shared_memory",
+        ]()
     )
     comptime a_smem_tile_t = LayoutTensor[
         a_type,

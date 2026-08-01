@@ -1202,14 +1202,12 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 return
 
         # SMEM allocation: Q FP8, KV stages, P stages, max/li, barriers.
-        q_smem = UnsafePointer(
-            external_memory[
-                Scalar[Self.fp8_type],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-                name="mha_dynamic_shared_memory",
-            ]()
-        )
+        q_smem = external_memory[
+            Scalar[Self.fp8_type],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+            name="mha_dynamic_shared_memory",
+        ]()
         var kv_smem = q_smem + Self.BlockElems * Self.NumQKBlocks
         comptime kv_total_stages = Self.config.num_kv_stages
         var p_smem = kv_smem + Self.KVStageElems * kv_total_stages

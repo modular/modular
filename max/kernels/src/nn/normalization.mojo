@@ -83,14 +83,12 @@ static shared memory which is 32k."""
 def block_reduce[
     dtype: DType, max_warps_per_block: Int
 ](val: Scalar[dtype]) -> Scalar[dtype]:
-    var m2_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            max_warps_per_block, dtype, address_space=AddressSpace.SHARED
-        ]()
-    )
-    var m2_broadcast = UnsafePointer(
-        unsafe_stack_allocation[1, dtype, address_space=AddressSpace.SHARED]()
-    )
+    var m2_shared = unsafe_stack_allocation[
+        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var m2_broadcast = unsafe_stack_allocation[
+        1, dtype, address_space=AddressSpace.SHARED
+    ]()
 
     var warp_m2 = warp.sum(val)
 
@@ -126,22 +124,18 @@ def block_reduce_dual_sum[
     Scalar[dtype], Scalar[dtype]
 ]:
     """Combined block reduction for two sums using only 2 barriers."""
-    var shared0 = UnsafePointer(
-        unsafe_stack_allocation[
-            max_warps_per_block, dtype, address_space=AddressSpace.SHARED
-        ]()
-    )
-    var shared1 = UnsafePointer(
-        unsafe_stack_allocation[
-            max_warps_per_block, dtype, address_space=AddressSpace.SHARED
-        ]()
-    )
-    var broadcast0 = UnsafePointer(
-        unsafe_stack_allocation[1, dtype, address_space=AddressSpace.SHARED]()
-    )
-    var broadcast1 = UnsafePointer(
-        unsafe_stack_allocation[1, dtype, address_space=AddressSpace.SHARED]()
-    )
+    var shared0 = unsafe_stack_allocation[
+        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var shared1 = unsafe_stack_allocation[
+        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var broadcast0 = unsafe_stack_allocation[
+        1, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var broadcast1 = unsafe_stack_allocation[
+        1, dtype, address_space=AddressSpace.SHARED
+    ]()
 
     var warp_sum0 = warp.sum(val0)
     var warp_sum1 = warp.sum(val1)
@@ -245,30 +239,24 @@ def welford_block_all_reduce[
     mut res_m2: Scalar[dtype],
     mut res_count: Scalar[dtype],
 ):
-    var mean_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            WARP_SIZE, dtype, address_space=AddressSpace.SHARED
-        ]()
-    )
-    var m2_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            WARP_SIZE, dtype, address_space=AddressSpace.SHARED
-        ]()
-    )
-    var count_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            WARP_SIZE, dtype, address_space=AddressSpace.SHARED
-        ]()
-    )
-    var mean_broadcast = UnsafePointer(
-        unsafe_stack_allocation[1, dtype, address_space=AddressSpace.SHARED]()
-    )
-    var m2_broadcast = UnsafePointer(
-        unsafe_stack_allocation[1, dtype, address_space=AddressSpace.SHARED]()
-    )
-    var count_broadcast = UnsafePointer(
-        unsafe_stack_allocation[1, dtype, address_space=AddressSpace.SHARED]()
-    )
+    var mean_shared = unsafe_stack_allocation[
+        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var m2_shared = unsafe_stack_allocation[
+        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var count_shared = unsafe_stack_allocation[
+        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var mean_broadcast = unsafe_stack_allocation[
+        1, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var m2_broadcast = unsafe_stack_allocation[
+        1, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var count_broadcast = unsafe_stack_allocation[
+        1, dtype, address_space=AddressSpace.SHARED
+    ]()
 
     var warp_idx = warp_id()
     var lane_idx = lane_id()
@@ -2476,20 +2464,16 @@ def rms_norm_fused_residual_add_gpu_block[
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
-    var shared_mem = UnsafePointer(
-        unsafe_stack_allocation[
-            _APPLE_STATIC_SHMEM_MAX_COUNT[Scalar[dtype]],
-            Scalar[dtype],
-            address_space=AddressSpace.SHARED,
-        ]()
-    ) if comptime (is_apple_gpu()) else UnsafePointer(
-        external_memory[
-            Scalar[dtype],
-            address_space=AddressSpace.SHARED,
-            alignment=align_of[SIMD[dtype, simd_width]](),
-            name="intermediate_shared_memory",
-        ]()
-    )
+    var shared_mem = unsafe_stack_allocation[
+        _APPLE_STATIC_SHMEM_MAX_COUNT[Scalar[dtype]],
+        Scalar[dtype],
+        address_space=AddressSpace.SHARED,
+    ]() if comptime (is_apple_gpu()) else external_memory[
+        Scalar[dtype],
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[SIMD[dtype, simd_width]](),
+        name="intermediate_shared_memory",
+    ]()
 
     with PDL():
         var tid = thread_idx.x
@@ -2926,14 +2910,12 @@ def _rms_norm_rope_gpu_warp_tiling[
     # it on-the-fly.  Storing raw input avoids the risk of exceeding the
     # shared-memory budget that could arise from storing normalized values in
     # a different precision.
-    var shared_input = UnsafePointer(
-        external_memory[
-            Scalar[input_dtype],
-            address_space=AddressSpace.SHARED,
-            alignment=align_of[SIMD[input_dtype, simd_width]](),
-            name="rms_norm_rope_normed",
-        ]()
-    )
+    var shared_input = external_memory[
+        Scalar[input_dtype],
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[SIMD[input_dtype, simd_width]](),
+        name="rms_norm_rope_normed",
+    ]()
 
     var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
@@ -3121,14 +3103,12 @@ def _rms_norm_rope_gpu_warp_tiling_128[
 
     # Raw input is stored here so each half-warp can read the paired column
     # (col ± half_cols) during the RoPE step without a second global load.
-    var shared_input = UnsafePointer(
-        external_memory[
-            Scalar[input_dtype],
-            address_space=AddressSpace.SHARED,
-            alignment=align_of[SIMD[input_dtype, simd_width]](),
-            name="rms_norm_rope_normed_128",
-        ]()
-    )
+    var shared_input = external_memory[
+        Scalar[input_dtype],
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[SIMD[input_dtype, simd_width]](),
+        name="rms_norm_rope_normed_128",
+    ]()
 
     var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()

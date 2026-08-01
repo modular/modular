@@ -399,14 +399,12 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                     _pdl_early_exit_all_q()
                 return
 
-        q_smem = UnsafePointer(
-            external_memory[
-                Scalar[Self.fp8_type],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-                name="mha_dynamic_shared_memory",
-            ]()
-        )
+        q_smem = external_memory[
+            Scalar[Self.fp8_type],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+            name="mha_dynamic_shared_memory",
+        ]()
 
         comptime kv_total_stages = Self.config.num_kv_stages
 

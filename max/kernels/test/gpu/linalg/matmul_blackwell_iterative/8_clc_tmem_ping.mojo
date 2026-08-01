@@ -590,13 +590,11 @@ def kernel_8[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    base_ptr_smem = UnsafePointer(
-        external_memory[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]()
-    )
+    base_ptr_smem = external_memory[
+        Scalar[a_type],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+    ]()
 
     comptime a_smem_size = a_smem_layout.size() * num_pipeline_stages
     comptime b_smem_size = b_smem_layout.size() * num_pipeline_stages

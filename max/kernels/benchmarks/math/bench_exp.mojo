@@ -403,9 +403,7 @@ def accuracy_test() raises:
     comptime delta_max = 15
     comptime delta_range = delta_max - delta_min + 1
 
-    var deltas_ptr = UnsafePointer(
-        unsafe_stack_allocation[delta_range, DType.int32]()
-    )
+    var deltas_ptr = unsafe_stack_allocation[delta_range, DType.int32]()
     var deltas = TileTensor(deltas_ptr, row_major[delta_range]())
     _ = deltas.fill(Scalar[DType.int32](0))
 

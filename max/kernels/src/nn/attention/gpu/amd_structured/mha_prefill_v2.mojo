@@ -1661,8 +1661,8 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         #
         # CORRECTNESS NOTE: construct via `OnlineSoftmax()` directly
         # (the canonical Mojo idiom that runs the constructor on the
-        # new value). The previous `UnsafePointer(stack_allocation[1, OnlineSoftmax,
-        # LOCAL]())[]` + `softmax.__init__()` pattern — which was
+        # new value). The previous `stack_allocation[1, OnlineSoftmax,
+        # LOCAL]()[]` + `softmax.__init__()` pattern — which was
         # adopted to coax LLVM into slotting the 4 scalars next to the
         # other LOCAL-address-space allocas for tighter live-range
         # sharing — silently produced a uniform `+185` (≈ log2e ×

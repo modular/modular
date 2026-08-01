@@ -2677,14 +2677,12 @@ struct LayoutTensor[
         )
 
         return Self.StackTensorType(
-            UnsafePointer(
-                unsafe_stack_allocation[
-                    Self.layout.cosize() * Self.element_layout.size(),
-                    Self.dtype,
-                    alignment=stack_alignment,
-                    address_space=Self.address_space,
-                ]()
-            ).as_unsafe_any_origin()
+            unsafe_stack_allocation[
+                Self.layout.cosize() * Self.element_layout.size(),
+                Self.dtype,
+                alignment=stack_alignment,
+                address_space=Self.address_space,
+            ]().as_unsafe_any_origin()
         )
 
     @staticmethod

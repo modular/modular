@@ -596,15 +596,15 @@ def dot_at_b(
     comptime num_elements = c.static_shape[0] * c.static_shape[1]
 
     # TODO: We can elide the copy if the data is already aligned.
-    var a_buffer = UnsafePointer(
-        unsafe_stack_allocation[num_elements, Scalar[c.dtype], alignment=128]()
-    )
-    var b_buffer = UnsafePointer(
-        unsafe_stack_allocation[num_elements, Scalar[c.dtype], alignment=128]()
-    )
-    var c_buffer = UnsafePointer(
-        unsafe_stack_allocation[num_elements, Scalar[c.dtype], alignment=128]()
-    )
+    var a_buffer = unsafe_stack_allocation[
+        num_elements, Scalar[c.dtype], alignment=128
+    ]()
+    var b_buffer = unsafe_stack_allocation[
+        num_elements, Scalar[c.dtype], alignment=128
+    ]()
+    var c_buffer = unsafe_stack_allocation[
+        num_elements, Scalar[c.dtype], alignment=128
+    ]()
 
     unsafe_memcpy(dest=a_buffer, src=a_pointer, count=num_elements)
     unsafe_memcpy(dest=b_buffer, src=b_pointer, count=num_elements)

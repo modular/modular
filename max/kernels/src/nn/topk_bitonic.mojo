@@ -449,18 +449,14 @@ def _persistent_topk_2048_kernel(
     var tid = thread_idx.x
     var token = block_idx.x
 
-    var smem_v = UnsafePointer(
-        unsafe_stack_allocation[
-            _PTOPK_TOTAL,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var smem_i = UnsafePointer(
-        unsafe_stack_allocation[
-            _PTOPK_TOTAL, Scalar[DType.int32], address_space=AddressSpace.SHARED
-        ]()
-    )
+    var smem_v = unsafe_stack_allocation[
+        _PTOPK_TOTAL,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var smem_i = unsafe_stack_allocation[
+        _PTOPK_TOTAL, Scalar[DType.int32], address_space=AddressSpace.SHARED
+    ]()
 
     var _N = Int(N)
     var _K = Int(K)
@@ -520,38 +516,30 @@ def _streaming_topk_kernel(
 
     # 16B-aligned so the canonical `e0..e3` accesses below are single 128-bit
     # LDS/STS (the swizzled sort/merge accesses stay scalar).
-    var champ_v = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.float32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var champ_i = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.int32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var scratch_v = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.float32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var scratch_i = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.int32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var champ_v = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.float32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var champ_i = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.int32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var scratch_v = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.float32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var scratch_i = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.int32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var _N = Int(N)
     var _K = Int(K)
@@ -679,38 +667,30 @@ def _split_partial_kernel(
 
     # 16B-aligned so the canonical `e0..e3` accesses below are single 128-bit
     # LDS/STS (the swizzled sort/merge accesses stay scalar).
-    var champ_v = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.float32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var champ_i = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.int32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var scratch_v = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.float32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var scratch_i = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.int32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var champ_v = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.float32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var champ_i = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.int32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var scratch_v = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.float32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var scratch_i = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.int32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var e0 = tid * 4
     var e1 = tid * 4 + 1
@@ -837,38 +817,30 @@ def _reduce_partials_kernel(
 
     # 16B-aligned so the canonical `e0..e3` accesses below are single 128-bit
     # LDS/STS (the swizzled sort/merge accesses stay scalar).
-    var champ_v = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.float32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var champ_i = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.int32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var scratch_v = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.float32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var scratch_i = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.int32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var champ_v = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.float32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var champ_i = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.int32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var scratch_v = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.float32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var scratch_i = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.int32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var e0 = tid * 4
     var e1 = tid * 4 + 1
@@ -970,38 +942,30 @@ def _merge_partials_kernel(
 
     # 16B-aligned so the canonical `e0..e3` accesses below are single 128-bit
     # LDS/STS (the swizzled sort/merge accesses stay scalar).
-    var champ_v = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.float32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var champ_i = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.int32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var scratch_v = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.float32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var scratch_i = UnsafePointer(
-        unsafe_stack_allocation[
-            _TILE,
-            Scalar[DType.int32],
-            alignment=_V4_ALIGN,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var champ_v = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.float32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var champ_i = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.int32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var scratch_v = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.float32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var scratch_i = unsafe_stack_allocation[
+        _TILE,
+        Scalar[DType.int32],
+        alignment=_V4_ALIGN,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var e0 = tid * 4
     var e1 = tid * 4 + 1

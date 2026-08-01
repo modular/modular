@@ -13,7 +13,6 @@
 
 """Implements a warp-specialized blockwise FP8 matrix multiplication kernel for NVIDIA SM100 (Blackwell) GPUs."""
 
-from std.memory import UnsafePointer
 from std.math import align_up, ceildiv, gcd
 from std.math.uutils import umod, ufloordiv
 from std.sys import size_of
@@ -1034,15 +1033,11 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     comptime a_scales_smem_layout = Layout.row_major(1, BM)
 
-    base_ptr_smem = UnsafePointer[
-        Scalar[a_type], MutUntrackedOrigin, address_space=AddressSpace.SHARED
-    ](
-        external_memory[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]()
-    )
+    base_ptr_smem = external_memory[
+        Scalar[a_type],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+    ]()
 
     comptime a_smem_size = tile_layout_k_major_typed[
         a_type, BM, BK, swizzle_mode=config.a_swizzle

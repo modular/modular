@@ -555,16 +555,12 @@ def _wmma_matmul_kernel[
         # Single LDS tile fed by a register-staged prefetch: the next K-tile's
         # global loads stay in registers during the current tile's WMMA. One
         # buffer lets a larger BLOCK_K fit than double-buffering would.
-        var a_smem = UnsafePointer(
-            unsafe_stack_allocation[
-                BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
-            ]()
-        )
-        var b_smem = UnsafePointer(
-            unsafe_stack_allocation[
-                BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
-            ]()
-        )
+        var a_smem = unsafe_stack_allocation[
+            BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
+        ]()
+        var b_smem = unsafe_stack_allocation[
+            BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
+        ]()
 
         # Per-thread 128-bit vector counts for the register-staged loads.
         comptime VW = min(BLOCK_K, 8)
@@ -639,26 +635,18 @@ def _wmma_matmul_kernel[
             "double-buffer tiles exceed LDS; this config needs transpose_b=True"
             " to use the register-staged pipeline"
         )
-        var a_smem_0 = UnsafePointer(
-            unsafe_stack_allocation[
-                BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
-            ]()
-        )
-        var a_smem_1 = UnsafePointer(
-            unsafe_stack_allocation[
-                BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
-            ]()
-        )
-        var b_smem_0 = UnsafePointer(
-            unsafe_stack_allocation[
-                BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
-            ]()
-        )
-        var b_smem_1 = UnsafePointer(
-            unsafe_stack_allocation[
-                BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
-            ]()
-        )
+        var a_smem_0 = unsafe_stack_allocation[
+            BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
+        ]()
+        var a_smem_1 = unsafe_stack_allocation[
+            BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
+        ]()
+        var b_smem_0 = unsafe_stack_allocation[
+            BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
+        ]()
+        var b_smem_1 = unsafe_stack_allocation[
+            BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
+        ]()
 
         # Load first K-tile into buffer 0.
         _load_tile_to_smem[

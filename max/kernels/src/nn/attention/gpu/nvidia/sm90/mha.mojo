@@ -1049,14 +1049,12 @@ def _mha_sm90[
     # The entire query block (BM x depth) is tiled in shared memory.
     comptime q_size = q_smem_layout_consumer.size()
     comptime q_smem_size = 2 * q_size if persistent else q_size
-    q_smem = UnsafePointer(
-        external_memory[
-            Scalar[kv_type],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-            name="mha_dynamic_shared_memory",
-        ]()
-    )
+    q_smem = external_memory[
+        Scalar[kv_type],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+        name="mha_dynamic_shared_memory",
+    ]()
     # We have `num_pipeline_stages` instances of each
     comptime kv_smem_size = config.kv_smem_size(True)
     kv_smem = q_smem + q_smem_size

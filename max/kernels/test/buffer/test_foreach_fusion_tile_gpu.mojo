@@ -79,13 +79,11 @@ struct AddFusionTile(ElementwiseFusionTile):
         # and wrap them with `dst.layout`. Load the first input straight into
         # `dst`, the second into the matching staging fragment, both in the
         # copier's dst space.
-        var rhs_buf = UnsafePointer(
-            raw_stack_allocation[
-                LayoutType.static_product,
-                dtype,
-                address_space=Copier.dst_address_space,
-            ]()
-        )
+        var rhs_buf = raw_stack_allocation[
+            LayoutType.static_product,
+            dtype,
+            address_space=Copier.dst_address_space,
+        ]()
         var rhs = TileTensor(rhs_buf, dst.layout)
         copier.copy(
             dst.address_space_cast[Copier.dst_address_space](),

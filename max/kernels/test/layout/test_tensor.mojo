@@ -791,9 +791,7 @@ def test_distribute_vectorized():
 
     # Fill the buffer first because we can't fill a vectorized tensor.
     # This will become easier when we can vectorize nested layout.
-    ptr = UnsafePointer(
-        unsafe_stack_allocation[64 * 32, DType.float32, alignment=16]()
-    )
+    ptr = unsafe_stack_allocation[64 * 32, DType.float32, alignment=16]()
     for i in range(64 * 32):
         ptr[i] = Float32(i)
 

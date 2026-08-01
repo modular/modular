@@ -1448,13 +1448,11 @@ def blackwell_tma_umma_warp_specialized_kernel[
     comptime a_tma_rows = a_desc_shape[0]
     comptime b_tma_rows = b_desc_shape[0]
 
-    base_ptr_smem = UnsafePointer(
-        external_memory[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]()
-    )
+    base_ptr_smem = external_memory[
+        Scalar[a_type],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+    ]()
 
     comptime a_smem_size = tile_layout_k_major_typed[
         a_type, BM, BK, swizzle_mode=a_swizzle

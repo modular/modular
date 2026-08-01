@@ -99,11 +99,9 @@ def bulk_memcpy_kernel[
     comptime NUM_WARPS = NUM_THREADS // 32
     comptime DATA_BYTES = NUM_WARPS * S * BYTES_PER_COPY
 
-    var smem_base = UnsafePointer(
-        external_memory[
-            UInt8, address_space=AddressSpace.SHARED, alignment=128
-        ]()
-    )
+    var smem_base = external_memory[
+        UInt8, address_space=AddressSpace.SHARED, alignment=128
+    ]()
     var mbar_base = (smem_base + DATA_BYTES).bitcast[SharedMemBarrier]()
 
     var w = Int(warp_id())

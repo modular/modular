@@ -587,44 +587,36 @@ struct AttentionRDNA[
         self.out_reg_buffer.zero()
 
         # SMEM allocations.
-        self.k_smem_ptr = UnsafePointer(
-            unsafe_stack_allocation[
-                Self._k_smem_size,
-                Self.k_t.dtype,
-                address_space=AddressSpace.SHARED,
-                alignment=Self._smem_alignment,
-            ]()
-        )
-        self.v_smem_ptr = UnsafePointer(
-            unsafe_stack_allocation[
-                Self._v_smem_size,
-                Self.v_t.dtype,
-                address_space=AddressSpace.SHARED,
-                alignment=Self._smem_alignment,
-            ]()
-        )
+        self.k_smem_ptr = unsafe_stack_allocation[
+            Self._k_smem_size,
+            Self.k_t.dtype,
+            address_space=AddressSpace.SHARED,
+            alignment=Self._smem_alignment,
+        ]()
+        self.v_smem_ptr = unsafe_stack_allocation[
+            Self._v_smem_size,
+            Self.v_t.dtype,
+            address_space=AddressSpace.SHARED,
+            alignment=Self._smem_alignment,
+        ]()
 
         # P buffer: dedicated SMEM for prefill (BM*BK), borrows decode-mode
         # P SMEM region (BM*BN) otherwise.
         comptime if not Self.token_gen:
-            var p_ptr = UnsafePointer(
-                unsafe_stack_allocation[
-                    Self.BM * Self.BK,
-                    Self.q_type,
-                    address_space=AddressSpace.SHARED,
-                ]()
-            )
+            var p_ptr = unsafe_stack_allocation[
+                Self.BM * Self.BK,
+                Self.q_type,
+                address_space=AddressSpace.SHARED,
+            ]()
             self.p_reg_buffer = Self.PRegisterBufferType(
                 p_ptr.as_unsafe_any_origin()
             )
         else:
-            var p_ptr = UnsafePointer(
-                unsafe_stack_allocation[
-                    Self._p_smem_size,
-                    Self.q_type,
-                    address_space=AddressSpace.SHARED,
-                ]()
-            )
+            var p_ptr = unsafe_stack_allocation[
+                Self._p_smem_size,
+                Self.q_type,
+                address_space=AddressSpace.SHARED,
+            ]()
             self.p_reg_buffer = Self.PRegisterBufferType(
                 p_ptr.as_unsafe_any_origin()
             )

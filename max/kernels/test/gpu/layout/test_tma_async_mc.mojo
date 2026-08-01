@@ -75,14 +75,12 @@ def test_tma_mcast_load_kernel[
 
     barrier()
 
-    mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
+    mbar = unsafe_stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
     if thread_idx.x == 0:
         mbar[0].init()
 
@@ -216,14 +214,12 @@ def test_tma_sliced_multicast_load_kernel[
 
     barrier()
 
-    mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
+    mbar = unsafe_stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
     if thread_idx.x == 0:
         mbar[0].init()
 

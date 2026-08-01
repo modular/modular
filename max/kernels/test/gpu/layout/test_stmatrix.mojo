@@ -49,31 +49,25 @@ def test_stmatrix(
 
     var d_reg = SIMD[DType.float32, 4](0)
     var tid = thread_idx.x
-    var a_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            mma_m * mma_k,
-            DType.float32,
-            alignment=32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var b_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            mma_n * mma_k,
-            DType.float32,
-            alignment=32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var a_shared = unsafe_stack_allocation[
+        mma_m * mma_k,
+        DType.float32,
+        alignment=32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var b_shared = unsafe_stack_allocation[
+        mma_n * mma_k,
+        DType.float32,
+        alignment=32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
-    var c_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            mma_m * mma_n,
-            DType.float32,
-            alignment=32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var c_shared = unsafe_stack_allocation[
+        mma_m * mma_n,
+        DType.float32,
+        alignment=32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     for i in range(tid, mma_m * mma_k, WARP_SIZE):
         a_shared[i] = a_ptr[i]
@@ -126,25 +120,19 @@ def test_stmatrix_gen[
     var lane = lane_id()
     var d_reg = SIMD[accum_type, c_frag_size](0)
 
-    var a_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            M * K, input_type, alignment=32, address_space=AddressSpace.SHARED
-        ]()
-    )
-    var b_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            N * K, input_type, alignment=32, address_space=AddressSpace.SHARED
-        ]()
-    )
+    var a_shared = unsafe_stack_allocation[
+        M * K, input_type, alignment=32, address_space=AddressSpace.SHARED
+    ]()
+    var b_shared = unsafe_stack_allocation[
+        N * K, input_type, alignment=32, address_space=AddressSpace.SHARED
+    ]()
 
-    var c_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            M * N,
-            accum_type,
-            alignment=32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var c_shared = unsafe_stack_allocation[
+        M * N,
+        accum_type,
+        alignment=32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     for i in range(lane, M * K, WARP_SIZE):
         a_shared[i] = a_ptr[i]

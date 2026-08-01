@@ -44,13 +44,11 @@ def floyd_warshall_kernel(
     var num_vertices = Int(num_vertices_dev)
     var curr_k = Int(curr_k_dev)
     # Allocate shared memory for row value - all threads in block share same i
-    var k_row_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var k_row_shared = unsafe_stack_allocation[
+        1,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # blockIdx.y gives row i, blockIdx.x and threadIdx.x give column j
     var i = block_idx.y

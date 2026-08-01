@@ -2422,14 +2422,12 @@ def _mha_sm100[
     )
     comptime q_or_out_kv_elems = size_of[output_type]() // size_of[kv_type]()
     comptime q_smem_size = BM * padded_depth * q_or_out_kv_elems
-    q_smem = UnsafePointer(
-        external_memory[
-            Scalar[kv_type],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-            name="mha_dynamic_shared_memory",
-        ]()
-    )
+    q_smem = external_memory[
+        Scalar[kv_type],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+        name="mha_dynamic_shared_memory",
+    ]()
 
     # P buffer in SMEM for depth=512 decoding (softmax writes P here for SS MMA)
     comptime p_smem_elems = BM * MMA_N0 if use_p_smem else 0

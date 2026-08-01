@@ -72,7 +72,6 @@ NVIDIA SM100 only (SS-UMMA / TMA / tcgen05). Verified against
 match via `test_mla_index_fp8`.
 """
 
-from std.memory import UnsafePointer
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -243,14 +242,12 @@ def _fp8_index_score_prefill_kernel_sm100[
 
     comptime k_elems = BM_key * depth
     comptime q_elems = MMA_N * depth
-    var smem = UnsafePointer(
-        external_memory[
-            Scalar[dtype],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-            name="fp8_index_sm100_prefill_smem",
-        ]()
-    )
+    var smem = external_memory[
+        Scalar[dtype],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+        name="fp8_index_sm100_prefill_smem",
+    ]()
     # Q resident (B operand, one token block) | K ring (A operand) | q_scale
     # resident | mbars: q(1) + k_full(NSTAGE) + k_empty(NSTAGE) +
     # accumulator(2*N_S) | tcgen05 TMEM base slot.

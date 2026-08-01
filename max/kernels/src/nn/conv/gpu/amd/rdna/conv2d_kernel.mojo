@@ -326,34 +326,26 @@ def conv2d_kernel_rdna[
     var SC = _S * _C_in
 
     # Double-buffered shared memory
-    var a_smem_0 = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_M * SMEM_STRIDE,
-            in_type,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var a_smem_1 = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_M * SMEM_STRIDE,
-            in_type,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var b_smem_0 = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_N * SMEM_STRIDE,
-            filter_type,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var b_smem_1 = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_N * SMEM_STRIDE,
-            filter_type,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var a_smem_0 = unsafe_stack_allocation[
+        BLOCK_M * SMEM_STRIDE,
+        in_type,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var a_smem_1 = unsafe_stack_allocation[
+        BLOCK_M * SMEM_STRIDE,
+        in_type,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var b_smem_0 = unsafe_stack_allocation[
+        BLOCK_N * SMEM_STRIDE,
+        filter_type,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var b_smem_1 = unsafe_stack_allocation[
+        BLOCK_N * SMEM_STRIDE,
+        filter_type,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Initialize C accumulators
     var c_accum = Array[SIMD[s_type, CD_FRAG_SIZE], NUM_C_TILES](

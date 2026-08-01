@@ -105,20 +105,16 @@ def mm_tiled_kernel(
     var Cr = SIMD[DType.float32, tM * tN](0.0)
 
     # Allocate shared memory
-    var A_s = UnsafePointer(
-        unsafe_stack_allocation[
-            bM * bK,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var B_s = UnsafePointer(
-        unsafe_stack_allocation[
-            bK * bN,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var A_s = unsafe_stack_allocation[
+        bM * bK,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var B_s = unsafe_stack_allocation[
+        bK * bN,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Iterate over tiles
     for i in range(ceildiv(Int(K), bK)):

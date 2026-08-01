@@ -39,13 +39,11 @@ def histogram_kernel(
         height: Image height.
     """
     # Allocate shared memory for private bins
-    var bins_s = UnsafePointer(
-        unsafe_stack_allocation[
-            NUM_BINS,
-            UInt32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var bins_s = unsafe_stack_allocation[
+        NUM_BINS,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Initialize shared memory bins to zero
     var b = UInt32(thread_idx.x)

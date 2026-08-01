@@ -1139,33 +1139,27 @@ def _matmul_qint4_m_any[
 
                 comptime k_batch_groups = K_BATCH_SIZE // group_size
 
-                var b_s8_buf = UnsafePointer(
-                    unsafe_stack_allocation[
-                        K_BATCH_SIZE * tile_n * simd_width,
-                        DType.int8,
-                        alignment=alignment,
-                    ]()
-                )
-                var b_scale_buf = UnsafePointer(
-                    unsafe_stack_allocation[
-                        k_batch_groups * tile_n * simd_width,
-                        DType.float32,
-                        alignment=alignment,
-                    ]()
-                )
+                var b_s8_buf = unsafe_stack_allocation[
+                    K_BATCH_SIZE * tile_n * simd_width,
+                    DType.int8,
+                    alignment=alignment,
+                ]()
+                var b_scale_buf = unsafe_stack_allocation[
+                    k_batch_groups * tile_n * simd_width,
+                    DType.float32,
+                    alignment=alignment,
+                ]()
 
                 # If the A matrix is quantized using an unsigned data type,
                 # then a zero point correction is required to the block int32
                 # accumulator.
                 comptime needs_correction = aq_type.is_unsigned()
 
-                var b_correction_buf = UnsafePointer(
-                    unsafe_stack_allocation[
-                        k_batch_groups * tile_n * simd_width,
-                        DType.int32,
-                        alignment=alignment,
-                    ]()
-                ) if needs_correction else UnsafePointer[
+                var b_correction_buf = unsafe_stack_allocation[
+                    k_batch_groups * tile_n * simd_width,
+                    DType.int32,
+                    alignment=alignment,
+                ]() if needs_correction else UnsafePointer[
                     Int32, MutUntrackedOrigin
                 ].unsafe_dangling()
 

@@ -13,7 +13,6 @@
 
 import extensibility
 
-from std.memory import UnsafePointer
 from max.gpu.host import DeviceContext
 from std.math import iota
 from std.sys import align_of, size_of
@@ -97,13 +96,11 @@ struct TopK:
             var tid = thread_idx.x
 
             # Get a pointer to shared memory for the indices and values
-            var top_k_sram = UnsafePointer(
-                external_memory[
-                    TopKElement[dtype],
-                    address_space=AddressSpace.SHARED,
-                    alignment=align_of[TopKElement[dtype]](),
-                ]()
-            )
+            var top_k_sram = external_memory[
+                TopKElement[dtype],
+                address_space=AddressSpace.SHARED,
+                alignment=align_of[TopKElement[dtype]](),
+            ]()
 
             # Threads put their corresponding index and value into shared memory
             top_k_sram[unsafe_offset=tid] = TopKElement(

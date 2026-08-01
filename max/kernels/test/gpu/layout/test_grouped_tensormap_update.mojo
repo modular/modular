@@ -139,23 +139,17 @@ def test_grouped_tensormap_update_kernel[
     ].stack_allocation()
 
     # Allocate SMEM for tensormap descriptors
-    var smem_desc_a = UnsafePointer(
-        unsafe_stack_allocation[
-            1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
-        ]()
-    )
-    var smem_desc_b = UnsafePointer(
-        unsafe_stack_allocation[
-            1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
-        ]()
-    )
+    var smem_desc_a = unsafe_stack_allocation[
+        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
+    ]()
+    var smem_desc_b = unsafe_stack_allocation[
+        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
+    ]()
 
     # Allocate barriers
-    var mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            2, SharedMemBarrier, address_space=AddressSpace.SHARED, alignment=8
-        ]()
-    )
+    var mbar = unsafe_stack_allocation[
+        2, SharedMemBarrier, address_space=AddressSpace.SHARED, alignment=8
+    ]()
 
     barrier()  # Initial sync before entering loop
 

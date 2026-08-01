@@ -296,11 +296,9 @@ def _allgather_tma_kernel[
     var _my_rank = Int(my_rank)
     var my_sig = rank_sigs[_my_rank]
 
-    var smem_base = UnsafePointer(
-        external_memory[
-            UInt8, address_space=AddressSpace.SHARED, alignment=128
-        ]()
-    )
+    var smem_base = external_memory[
+        UInt8, address_space=AddressSpace.SHARED, alignment=128
+    ]()
     var mbar_base = (smem_base + NUM_WARPS * BYTES_PER_COPY).bitcast[
         SharedMemBarrier
     ]()

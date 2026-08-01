@@ -77,20 +77,16 @@ def softmax_kernel(
     var D_ptr = D
     var P_ptr = P
 
-    var temp_store = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_SIZE,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var broadcast_slot = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var temp_store = unsafe_stack_allocation[
+        BLOCK_SIZE,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var broadcast_slot = unsafe_stack_allocation[
+        1,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var row = block_idx.x
     var tid = thread_idx.x

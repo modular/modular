@@ -57,13 +57,11 @@ def warp_level_sum_reduction_kernel(
         output: Output scalar for the sum result.
     """
     # Allocate shared memory
-    var input_s = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_DIM,
-            Float32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var input_s = unsafe_stack_allocation[
+        BLOCK_DIM,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var t = UInt32(thread_idx.x)
     # Load data into shared memory with initial reduction

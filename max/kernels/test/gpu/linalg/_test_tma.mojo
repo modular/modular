@@ -197,14 +197,12 @@ def test_tma_load_kernel[
         alignment=128,
     ].stack_allocation()
 
-    var mbar_ptr = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
+    var mbar_ptr = unsafe_stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     var linear_index = Int(block_idx.x)
 

@@ -36,13 +36,11 @@ def scan_kernel(
         N: Number of elements.
     """
     # Allocate shared memory
-    var buffer_s = UnsafePointer(
-        unsafe_stack_allocation[
-            SEG_SIZE,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var buffer_s = unsafe_stack_allocation[
+        SEG_SIZE,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var tx = thread_idx.x
     var idx = block_idx.x * SEG_SIZE + tx

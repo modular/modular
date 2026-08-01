@@ -2917,13 +2917,11 @@ def mha_single_batch[
     # The entire query block (BM x depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
     comptime q_smem_size = config.q_smem_size()
-    var q_smem = UnsafePointer(
-        external_memory[
-            Scalar[q_type],
-            address_space=AddressSpace.SHARED,
-            alignment=alignment,
-        ]()
-    )
+    var q_smem = external_memory[
+        Scalar[q_type],
+        address_space=AddressSpace.SHARED,
+        alignment=alignment,
+    ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
@@ -3043,12 +3041,12 @@ def mha_single_batch[
     comptime row_alignment = align_of[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
-    var rowmax = UnsafePointer(
-        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
-    )
-    var rowsum = UnsafePointer(
-        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
-    )
+    var rowmax = unsafe_stack_allocation[
+        WM, accum_type, alignment=row_alignment
+    ]()
+    var rowsum = unsafe_stack_allocation[
+        WM, accum_type, alignment=row_alignment
+    ]()
 
     comptime for i in range(0, WM, 2):
         comptime if sink:
@@ -3673,13 +3671,11 @@ def mha_single_batch_pipelined[
     # The entire query block (BM x depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
     comptime q_smem_size = config.q_smem_size()
-    var q_smem = UnsafePointer(
-        external_memory[
-            Scalar[q_type],
-            address_space=AddressSpace.SHARED,
-            alignment=alignment,
-        ]()
-    )
+    var q_smem = external_memory[
+        Scalar[q_type],
+        address_space=AddressSpace.SHARED,
+        alignment=alignment,
+    ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
@@ -3786,12 +3782,12 @@ def mha_single_batch_pipelined[
     comptime row_alignment = align_of[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
-    var rowmax = UnsafePointer(
-        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
-    )
-    var rowsum = UnsafePointer(
-        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
-    )
+    var rowmax = unsafe_stack_allocation[
+        WM, accum_type, alignment=row_alignment
+    ]()
+    var rowsum = unsafe_stack_allocation[
+        WM, accum_type, alignment=row_alignment
+    ]()
 
     comptime for i in range(0, WM, p_frag_simdwidth):
         comptime if sink:
@@ -4849,13 +4845,11 @@ def mha_decoding_single_batch[
     # The entire query block (BM x depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
     comptime q_smem_size = BM * depth
-    var q_smem = UnsafePointer(
-        external_memory[
-            Scalar[q_type],
-            address_space=AddressSpace.SHARED,
-            alignment=alignment,
-        ]()
-    )
+    var q_smem = external_memory[
+        Scalar[q_type],
+        address_space=AddressSpace.SHARED,
+        alignment=alignment,
+    ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
@@ -4948,12 +4942,8 @@ def mha_decoding_single_batch[
     comptime row_align = align_of[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
-    var rowmax = UnsafePointer(
-        unsafe_stack_allocation[WM, accum_type, alignment=row_align]()
-    )
-    var rowsum = UnsafePointer(
-        unsafe_stack_allocation[WM, accum_type, alignment=row_align]()
-    )
+    var rowmax = unsafe_stack_allocation[WM, accum_type, alignment=row_align]()
+    var rowsum = unsafe_stack_allocation[WM, accum_type, alignment=row_align]()
 
     comptime for i in range(WM):
         comptime if sink:
@@ -5576,13 +5566,11 @@ def mha_decoding_single_batch_pipelined[
     # The entire query block (BM x depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
     comptime q_smem_size = BM * depth
-    var q_smem = UnsafePointer(
-        external_memory[
-            Scalar[q_type],
-            address_space=AddressSpace.SHARED,
-            alignment=alignment,
-        ]()
-    )
+    var q_smem = external_memory[
+        Scalar[q_type],
+        address_space=AddressSpace.SHARED,
+        alignment=alignment,
+    ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
@@ -5661,12 +5649,8 @@ def mha_decoding_single_batch_pipelined[
     comptime row_align = align_of[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
-    var rowmax = UnsafePointer(
-        unsafe_stack_allocation[WM, accum_type, alignment=row_align]()
-    )
-    var rowsum = UnsafePointer(
-        unsafe_stack_allocation[WM, accum_type, alignment=row_align]()
-    )
+    var rowmax = unsafe_stack_allocation[WM, accum_type, alignment=row_align]()
+    var rowsum = unsafe_stack_allocation[WM, accum_type, alignment=row_align]()
 
     var partition_idx = block_idx.x
 
@@ -6074,13 +6058,11 @@ def mha_splitk_reduce[
 
     # since _num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
     var exp_sums = TileTensor(
-        UnsafePointer(
-            unsafe_stack_allocation[
-                WARP_SIZE,
-                Scalar[accum_type],
-                address_space=AddressSpace.SHARED,
-            ]()
-        ),
+        unsafe_stack_allocation[
+            WARP_SIZE,
+            Scalar[accum_type],
+            address_space=AddressSpace.SHARED,
+        ](),
         row_major[WARP_SIZE](),
     )
 

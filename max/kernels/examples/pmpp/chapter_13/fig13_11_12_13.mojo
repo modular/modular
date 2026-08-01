@@ -210,20 +210,16 @@ def merge_tiled_kernel(
     var n = Int(n_dev)
     var tile_size = Int(tile_size_dev)
     # Allocate shared memory
-    var A_S = UnsafePointer(
-        unsafe_stack_allocation[
-            1024,
-            Scalar[DType.int32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var B_S = UnsafePointer(
-        unsafe_stack_allocation[
-            1024,
-            Scalar[DType.int32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var A_S = unsafe_stack_allocation[
+        1024,
+        Scalar[DType.int32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var B_S = unsafe_stack_allocation[
+        1024,
+        Scalar[DType.int32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Figure 13.11: Part 1 - Block-level co-rank
     var C_curr = block_idx.x * ceildiv(

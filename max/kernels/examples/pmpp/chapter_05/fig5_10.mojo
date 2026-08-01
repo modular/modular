@@ -42,20 +42,16 @@ def matrix_mul_tiled_kernel(
     comptime TILE_WIDTH = 16
 
     # Allocate shared memory tiles
-    var sA = UnsafePointer(
-        unsafe_stack_allocation[
-            TILE_WIDTH * TILE_WIDTH,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var sB = UnsafePointer(
-        unsafe_stack_allocation[
-            TILE_WIDTH * TILE_WIDTH,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var sA = unsafe_stack_allocation[
+        TILE_WIDTH * TILE_WIDTH,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var sB = unsafe_stack_allocation[
+        TILE_WIDTH * TILE_WIDTH,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Get global and shared indices
     var g_row = block_idx.y * TILE_WIDTH + thread_idx.y

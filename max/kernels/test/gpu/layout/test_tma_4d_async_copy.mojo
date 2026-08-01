@@ -74,14 +74,12 @@ def test_tma_4d_load_kernel[
     comptime cta_tile_size = _idx_product[tile_rank, cta_tile_shape]()
     comptime expected_bytes = cta_tile_size * size_of[dtype]()
 
-    mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
+    mbar = unsafe_stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
     idx0, idx1 = divmod(block_idx.z, grid_dim1)
     idx2 = block_idx.y
     idx3 = block_idx.x

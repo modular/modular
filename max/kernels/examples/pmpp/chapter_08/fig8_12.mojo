@@ -49,13 +49,11 @@ def stencil_kernel(
     # `Int` is not device-passable; widen the fixed-width arg.
     var N = Int(n_dev)
     # Allocate shared memory for ONE 2D plane (x-y neighbors)
-    var curr_in_s = UnsafePointer(
-        unsafe_stack_allocation[
-            IN_TILE_DIM * IN_TILE_DIM,
-            Float32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var curr_in_s = unsafe_stack_allocation[
+        IN_TILE_DIM * IN_TILE_DIM,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Z-neighbors stored in REGISTERS (not shared memory)
     var prev: Float32 = 0.0
