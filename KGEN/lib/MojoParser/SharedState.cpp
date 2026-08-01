@@ -1371,6 +1371,17 @@ SharedState::lookupModuleCache(StringRef name, ASTDecl *parentDecl,
   return state;
 }
 
+/// Stdlib subpackages relocated to the `max` package. Entries are added or
+/// removed as the stdlib restructuring for the compiler OSS release shapes up
+/// in MSTDL-2788.
+static constexpr StringLiteral kMovedStdlibSubpackages[] = {"runtime", "gpu",
+                                                            "algorithm"};
+
+/// Attached to import failures under those subpackages.
+static constexpr StringLiteral kMovedStdlibNote =
+    "many stdlib items recently moved to the `max` package, try `from "
+    "max.<module>`";
+
 SharedState::ModuleState *SharedState::importSubModuleStateImpl(
     StringRef name, ASTDecl *parentDecl, llvm::SMLoc loc,
     llvm::SMLoc identifierLoc, bool emitErrors) {
@@ -1399,6 +1410,21 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
                                    *parentState->decl, message);
   };
 
+  // As `notFound`, for a module missing under `std`: a subpackage that moved to
+  // the `max` package also gets a migration note.
+  auto notFoundModule = [&]() -> ModuleState * {
+    if (!emitErrors)
+      return nullptr;
+    bool movedToMax =
+        parentState->decl->getParentDecl() == impl->topLevelDecl &&
+        parentState->spec && parentState->spec->name == "std" &&
+        llvm::is_contained(kMovedStdlibSubpackages, name);
+    return &createErrorModuleState(
+        identifierLoc, declNameAttr, *parentState->decl,
+        "unable to locate module '" + name + "'", /*unlisted=*/false,
+        movedToMax ? Twine(kMovedStdlibNote) : Twine());
+  };
+
   // Resolve the parent's body so that any lazily-materialized children (e.g.
   // from binary packages, or deferred source siblings) are registered in
   // nestedModules before we fall through to filesystem resolution.
@@ -1415,7 +1441,7 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
   std::optional<ModuleSpec> modulePath;
   if (parentState->decl != impl->topLevelDecl) {
     if (!parentState->sourcePath())
-      return notFound("unable to locate module '" + name + "'");
+      return notFoundModule();
     modulePath = resolveModulePath(
         name, *parentState->sourcePath(), disablePrebuiltPackages,
         /*isInsideSourcePackage=*/parentState->spec->isSourcePackage());
@@ -1425,7 +1451,7 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
   }
 
   if (!modulePath)
-    return notFound("unable to locate module '" + name + "'");
+    return notFoundModule();
 
   // A name that previously failed to resolve through this scope now resolves
   // successfully: drop the stale failure record and disable its decl so neither
@@ -2118,10 +2144,9 @@ SharedState::createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
   return moduleState;
 }
 
-SharedState::ModuleState &
-SharedState::createErrorModuleState(SMLoc loc, StringAttr name,
-                                    ASTDecl &errorContext,
-                                    const Twine &errorMsg, bool unlisted) {
+SharedState::ModuleState &SharedState::createErrorModuleState(
+    SMLoc loc, StringAttr name, ASTDecl &errorContext, const Twine &errorMsg,
+    bool unlisted, const Twine &note) {
   // Track the failure in the scope whose lookup failed.
   ModuleState *contextState = impl->moduleStates.lookup(&errorContext);
   if (!contextState)
@@ -2144,7 +2169,9 @@ SharedState::createErrorModuleState(SMLoc loc, StringAttr name,
     state->reportedFailureLocs.reset(new SmallVector<SMLoc>());
   if (!llvm::is_contained(*state->reportedFailureLocs, loc)) {
     state->reportedFailureLocs->push_back(loc);
-    emitError(loc, errorMsg);
+    MojoInflightDiag diag = emitError(loc, errorMsg);
+    if (!note.isTriviallyEmpty())
+      diag.attachNote(loc) << note;
   }
   return *state;
 }
