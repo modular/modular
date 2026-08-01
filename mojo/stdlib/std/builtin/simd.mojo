@@ -2299,21 +2299,24 @@ struct SIMD[dtype: DType, size: SIMDLength](
             writer: The object to write to.
         """
 
-        # Write an opening `[`.
+        # `write_string` rather than `write`: `write` promotes each literal to a
+        # `String`, so every literal costs a stack slot, the small-string branch
+        # and a refcount decrement, all of which are re-elaborated for every
+        # `SIMD[dtype, size]` that gets printed.
         comptime if Self.size > 1:
-            writer.write("[")
+            writer.write_string("[")
 
         # Write each element.
         for i in range(Self.size):
             var element = self[i]
             # Write separators between each element.
             if i != 0:
-                writer.write(", ")
+                writer.write_string(", ")
             _write_scalar(writer, element)
 
         # Write a closing `]`.
         comptime if Self.size > 1:
-            writer.write("]")
+            writer.write_string("]")
 
     @no_inline
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -2331,7 +2334,9 @@ struct SIMD[dtype: DType, size: SIMDLength](
         else:
             writer.write_string("SIMD[")
             Self.dtype.write_repr_to(writer)
-            writer.write(", ", Int(Self.size), "](")
+            writer.write_string(", ")
+            writer.write(Int(Self.size))
+            writer.write_string("](")
         # Write each element.
         for i in range(Self.size):
             var element = self[i]
@@ -2357,7 +2362,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
 
         # Write an opening `[`.
         comptime if Self.size > 1:
-            writer.write("[")
+            writer.write_string("[")
 
         # Write each element.
         for i in range(Self.size):
@@ -2371,18 +2376,18 @@ struct SIMD[dtype: DType, size: SIMDLength](
 
             # Write separators between each element.
             if i != 0:
-                writer.write(",")
+                writer.write_string(",")
 
             # TODO: Assumes user wants right-aligned content.
             if int_width < width:
                 for _ in range(width - int_width):
-                    writer.write(" ")
+                    writer.write_string(" ")
 
             _write_scalar(writer, element)
 
         # Write a closing `]`.
         comptime if Self.size > 1:
-            writer.write("]")
+            writer.write_string("]")
 
     @always_inline
     def to_bits[
