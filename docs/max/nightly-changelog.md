@@ -863,6 +863,9 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed a per-kernel-launch memory leak on macOS: the Metal driver now drains
+  autoreleased Objective-C objects (command buffers, encoders) per call
+  instead of accumulating them for the lifetime of the thread.
 - Fixed a custom op with a data-dependent output dimension killing the process
   when its kernel registers no shape function. It now reports a compile error.
 - Fixed KV-cache CLI flags replacing the entire `kv_cache` section of a
