@@ -20,7 +20,10 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
     mma_arrive_multicast,
 )
-from nn.attention.gpu.nvidia.sm100.attention import FA4Config
+from nn.attention.gpu.nvidia.sm100.attention import (
+    FA4Config,
+    ExplicitTMEMCrossP,
+)
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     blasst_vote_unanimous,
@@ -46,6 +49,11 @@ def fa4_mma[
     config: FA4Config,
     *,
     page_size: Int,
+    # Effective cross-stage-P switch, computed once at the kernel level where
+    # config, MaskType and the store shape are all visible. Defaults True so
+    # the config-level gate alone decides for callers that do not thread it;
+    # the MHA kernel passes its own narrower predicate.
+    crossp_effective: Bool = True,
 ](
     smem: SM100AttentionSMem[config],
     tmem_addr: UInt32,
@@ -248,6 +256,21 @@ def fa4_mma[
         "ENABLE_BLASST", False
     ]() and not config.use_ws
     var blasst_vote = smem.blasst_vote_smem()
+
+    # Cross-stage P (BLASST enabler, 2Q + non-WS only): the MMA runs the
+    # QK0-first schedule (see the gated block below) and reads each stage's P
+    # from the OTHER stage's S columns (TMEM_P{wg}). Shared-KV path only (the
+    # headline config); split-KV is rejected at compile time.
+    comptime CrossP = crossp_effective and type_of(mbars).CrossP_enabled
+    # Fires only for an explicit `-D FA4_TMEM_CROSS_P=true` on a config outside
+    # the support matrix. The ON-by-default path resolves `crossp_on()` to
+    # False on those configs instead, so it never reaches here.
+    comptime assert not (ExplicitTMEMCrossP and not config.crossp_on()), (
+        "FA4_TMEM_CROSS_P=true was requested on a config that does not"
+        " support cross-stage P. Supported: 2Q, non-warp-specialized,"
+        " single-CTA, shared-KV, MHA (no rope split), full pages. See"
+        " FA4Config.crossp_supported"
+    )
 
     # Called after consumer_s[*].wait(phase), which orders the vote write
     # (softmax) before this read. Peel writes no vote -> reads 0 -> never skips.
@@ -543,6 +566,127 @@ def fa4_mma[
             kv_pipeline.state.step()
             kv_pipeline.consumer_wait()
             return kv_pipeline.state.index()
+
+        # ===== Cross-stage P QK0-first JIT schedule + K-ahead KV ring =====
+        # Two cursors over the shared K0,K1,V0,K2,V1,... ring: ACQUIRE walks
+        # position order every step; RELEASE (`rel_slot`) lags by <=2 but fires
+        # in the SAME producer-fill order, so per-slot mbar parity never skips.
+        # Per-iter MMA order QK0(n)->PV0(n-1)->QK1(n)->PV1(n-1): QK0(n)
+        # overwrites S0 (incl. P1's window S0[32:96]) before PV1(n-1) reads
+        # P1(n-1) from there -- a WAR hazard made safe by the softmax JIT-P1
+        # seed, which delays P1(n-1)'s store to land after QK0(n). 2Q + non-WS
+        # only; aliased path below is byte-identical when off.
+        comptime if CrossP:
+            var p0_tmem = tmem_addr + UInt32(config.TMEM_P0)  # P0 in S1 window
+            var p1_tmem = tmem_addr + UInt32(config.TMEM_P1)  # P1 in S0 window
+            # MMA-side sfree consumers: QK{wg}(n) waits until softmax finished
+            # reading S{wg}(n-1) before overwriting it. Peel QKs skip this (no
+            # prior S). Persistent phase.
+            var sfree0 = mbars.sfree_consumer(0)
+            var sfree1 = mbars.sfree_consumer(1)
+
+            # Private in-order release cursor (slot = pos % num_kv_stages). No
+            # jump-back: releases fire in strict producer-fill order.
+            var rel_slot: UInt32 = 0
+            comptime last_stage = config.num_kv_stages - 1
+
+            # ---- Peel: acquire K0 (pos0); QK0(0); QK1(0); release K0. ----
+            kv_pipeline.consumer_wait()  # pos0 = K0
+            var kc = (
+                kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
+            )
+            kv_pipeline.state.step()
+            UMMA0Type.mma[stage_idx=0](q0, kc, s0_tmem, elect=e, c_scale=0)
+            _commit(pipeline_s0.producer_mbar())
+            var q1m = mbars.q1_wait_mbar()
+            q1m[0].wait()
+            UMMA0Type.mma[stage_idx=0](q1, kc, s1_tmem, elect=e, c_scale=0)
+            _commit(pipeline_s1.producer_mbar())
+            # release K0 (pos0)
+            _commit(kv_pipeline.consumer_mbar(rel_slot))
+            rel_slot = 0 if rel_slot == UInt32(last_stage) else rel_slot + 1
+
+            var xphase: UInt32 = 0
+            var xcscale: UInt32 = 0
+
+            # ---- Main loop: iter n (n=1..NT-1) makes S(n), drains P(n-1). ----
+            while iter_count != 0:
+                iter_count -= 1
+
+                # Acquire K_n (pos 2n-1).
+                kv_pipeline.consumer_wait()
+                var kn_idx = kv_pipeline.state.index()
+                kv_pipeline.state.step()
+                kc = kv_desc_k + UInt32(kv_stage_bytes) * kn_idx
+
+                # QK0(n): acquire sfree0 (softmax read S0(n-1)); q0*K_n -> S0.
+                sfree0.wait()
+                sfree0.step()
+                UMMA0Type.mma[stage_idx=0](q0, kc, s0_tmem, elect=e, c_scale=0)
+                _commit(pipeline_s0.producer_mbar())
+
+                # Acquire V_{n-1} (pos 2n).
+                kv_pipeline.consumer_wait()
+                var vn1_idx = kv_pipeline.state.index()
+                kv_pipeline.state.step()
+                var vn1 = kv_desc_v + UInt32(kv_stage_bytes) * vn1_idx
+
+                # PV0(n-1): P0(n-1) * V_{n-1} -> O0 (cross p0_tmem in S1 window).
+                _pv_full(p0_tmem, vn1, o0_tmem, consumer_s0, xphase, xcscale, 0)
+                _commit(pipeline_o0.producer_mbar())
+
+                # QK1(n): acquire sfree1; q1*K_n -> S1.
+                sfree1.wait()
+                sfree1.step()
+                UMMA0Type.mma[stage_idx=0](q1, kc, s1_tmem, elect=e, c_scale=0)
+                _commit(pipeline_s1.producer_mbar())
+
+                # Release K_n (pos 2n-1) -- BEFORE the deferred PV1 (FI 1317).
+                _commit(kv_pipeline.consumer_mbar(rel_slot))
+                rel_slot = 0 if rel_slot == UInt32(last_stage) else rel_slot + 1
+
+                # PV1(n-1): P1(n-1) * V_{n-1} -> O1 (cross p1_tmem in S0 window;
+                # JIT-protected -- softmax stored P1(n-1) after QK0(n)).
+                _pv_full(p1_tmem, vn1, o1_tmem, consumer_s1, xphase, xcscale, 1)
+                _commit(pipeline_o1.producer_mbar())
+
+                # Release V_{n-1} (pos 2n) -- after PV1 (FI 1333).
+                _commit(kv_pipeline.consumer_mbar(rel_slot))
+                rel_slot = 0 if rel_slot == UInt32(last_stage) else rel_slot + 1
+
+                xcscale = 1
+                xphase ^= 1
+
+            # ---- Epilogue: acquire V_{NT-1} (pos 2NT-1); drain P0/P1. ----
+            kv_pipeline.consumer_wait()
+            var vl_idx = kv_pipeline.state.index()
+            kv_pipeline.state.step()
+            var vl = kv_desc_v + UInt32(kv_stage_bytes) * vl_idx
+            comptime if PARTIAL_K:
+                var vkm = ceildiv(
+                    min(
+                        v_eff_keys
+                        - (total_iters_runtime - UInt32(1)) * UInt32(BN),
+                        UInt32(BN),
+                    ),
+                    UInt32(UMMA1Type.MMA_K),
+                )
+                _pv_partial(
+                    p0_tmem, vl, o0_tmem, consumer_s0, xphase, xcscale, vkm, 0
+                )
+                _commit(pipeline_o0.producer_mbar())
+                _pv_partial(
+                    p1_tmem, vl, o1_tmem, consumer_s1, xphase, xcscale, vkm, 1
+                )
+                _commit(pipeline_o1.producer_mbar())
+            else:
+                _pv_full(p0_tmem, vl, o0_tmem, consumer_s0, xphase, xcscale, 0)
+                _commit(pipeline_o0.producer_mbar())
+                _pv_full(p1_tmem, vl, o1_tmem, consumer_s1, xphase, xcscale, 1)
+                _commit(pipeline_o1.producer_mbar())
+            # release V_{NT-1} (pos 2NT-1)
+            _commit(kv_pipeline.consumer_mbar(rel_slot))
+            return
 
         # ---- WS sub-tile ring helpers (all fold to no-ops for non-WS) ----
         # `_qk_extra`: after the d=0 Q@K' mma at the first K sub-slot, do the
