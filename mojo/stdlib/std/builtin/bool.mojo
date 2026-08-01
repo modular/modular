@@ -212,7 +212,13 @@ struct Bool(
             writer: The object to write to.
         """
 
-        writer.write("True" if self else "False")
+        # `write_string` rather than `write` so the literal reaches the writer
+        # without becoming a `String`. The arms name `StaticString` because the
+        # two literals have distinct types, and a conditional over the bare
+        # literals unifies them through `String`.
+        writer.write_string(
+            StaticString("True") if self else StaticString("False")
+        )
 
     @no_inline
     def write_repr_to(self, mut writer: Some[Writer]):
