@@ -52,6 +52,7 @@ Example:
     assert np.allclose(result.to_numpy(), np.zeros((3, 10)))
 """
 
+from .common_layers.lora_wrapper import LoRA, lora_layers, lora_parameters
 from .conv import Conv2d
 from .embedding import Embedding
 from .linear import Linear
@@ -75,6 +76,7 @@ __all__ = [
     "GroupNorm",
     "LayerNorm",
     "Linear",
+    "LoRA",
     "Module",
     "ModuleList",
     "PinnedDeviceTensor",
@@ -83,6 +85,8 @@ __all__ = [
     "Sequential",
     "TransparentModule",
     "TransposedRotaryEmbedding",
+    "lora_layers",
+    "lora_parameters",
     "module_dataclass",
     "subgraphable",
 ]

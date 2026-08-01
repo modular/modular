@@ -128,3 +128,25 @@ modular_eager_py_test(
         requirement("torch"),
     ],
 )
+
+modular_py_test(
+    name = "lora_wrapper_tests",
+    size = "large",
+    srcs = ["test_lora_wrapper_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    # The SGMV kernels are validated on B200 only.
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
