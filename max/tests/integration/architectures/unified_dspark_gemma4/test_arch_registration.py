@@ -36,7 +36,7 @@ def test_unified_dspark_arch_registered() -> None:
     assert arch is not None
     assert arch.pipeline_model is UnifiedDSparkGemma4Model
     assert arch.config is UnifiedDSparkGemma4Config
-    assert arch.supports_device_graph_capture is False
+    assert arch.supports_device_graph_capture is True
     assert arch.multi_gpu_supported is False
     assert "bfloat16" in arch.supported_encodings
     # Generic consumers (PipelineModel._resolved_encoding,

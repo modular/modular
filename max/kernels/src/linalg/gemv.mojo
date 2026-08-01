@@ -310,6 +310,126 @@ def gemv_kernel_vector[
         launch_dependent_grids()
 
 
+# Same per-row dot product as `gemv_kernel_vector` (identical lane/vector
+# layout and reduction order, so results are bit-identical), but each warp
+# reduces `rows_per_warp` consecutive rows. One row per warp streams only
+# `k * size_of[a_type]()` bytes before the warp retires, so a wide-N shallow-K
+# GEMV becomes bound by the CTA launch/retire pipeline (measured ~1 CTA/ns
+# chip-wide on B200, invariant to SM clock) instead of by HBM. Widening the
+# tile restores the memory-bound regime: at (n=262144, k=256) bf16 on B200,
+# 257 us / 0.52 TB/s -> 41.6 us / 3.2 TB/s.
+@__name(
+    t"gemv_kernel_vector_multirow_{c_type}_{a_type}_{b_type}_{transpose_b}_{simd_width}_{rows_per_warp}",
+)
+def gemv_kernel_vector_multirow[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    c_storage: TensorStorage,
+    a_storage: TensorStorage,
+    b_storage: TensorStorage,
+    *,
+    simd_width: Int,
+    rows_per_warp: Int,
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    accum_type: DType = get_accum_type[c_type](),
+    check_bounds: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Storage=c_storage],  # m
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Storage=a_storage],  # m * k
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],  # 1 * k
+    m: Int32,
+    n: Int32,
+    k: Int32,
+):
+    var _m = Int(m)
+    var _k = Int(k)
+    comptime assert c.flat_rank == 2, "c must be of rank 2"
+    comptime assert a.flat_rank == 2, "a must be of rank 2"
+    comptime assert b.flat_rank == 2, "b must be of rank 2"
+
+    var tid = global_idx.x
+    var global_warp_id: Int = warp.broadcast(ufloordiv(tid, WARP_SIZE))
+    var lane_id = lane_id()
+    var row_base = global_warp_id * rows_per_warp
+    if row_base >= _m:
+        return
+
+    # Rows are contiguous per warp, so only the last live warp can run past
+    # `_m`. Clamping the row index keeps those loads in bounds; the stores
+    # below drop the out-of-range results.
+    var last_row = _m - 1
+    var local_accum = InlineArray[SIMD[accum_type, simd_width], rows_per_warp](
+        fill=0
+    )
+
+    comptime if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
+
+    var num_iters = (
+        ceildiv(_k // simd_width, WARP_SIZE) if comptime (
+            check_bounds
+        ) else ufloordiv(_k, WARP_SIZE * simd_width)
+        + 1
+    )
+
+    # Main loop: all lanes are in bounds, no check needed.
+    for i in range(num_iters - 1):
+        var b_tile = b.tile[1, WARP_SIZE * simd_width](0, i)
+        var b_vec = b_tile.vectorize[1, simd_width]()[0, lane_id]
+
+        comptime for r in range(rows_per_warp):
+            var a_tile = a.tile[1, WARP_SIZE * simd_width](
+                min(row_base + r, last_row), i
+            )
+            var a_vec = a_tile.vectorize[1, simd_width]()[0, lane_id]
+            local_accum[r] += (
+                a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
+            )
+
+    # Last iteration: only lanes with valid K indices participate and
+    # only if check_bounds is True.
+    comptime if check_bounds:
+        if num_iters > 0:
+            var last = num_iters - 1
+            var b_tile = b.tile[1, WARP_SIZE * simd_width](0, last)
+            if (lane_id + last * WARP_SIZE) * simd_width < _k:
+                var b_vec = b_tile.vectorize[1, simd_width]()[0, lane_id]
+
+                comptime for r in range(rows_per_warp):
+                    var a_tile = a.tile[1, WARP_SIZE * simd_width](
+                        min(row_base + r, last_row), last
+                    )
+                    var a_vec = a_tile.vectorize[1, simd_width]()[0, lane_id]
+                    local_accum[r] += (
+                        a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
+                    )
+
+    comptime for r in range(rows_per_warp):
+        var accum = warp.sum(local_accum[r])
+        var row = row_base + r
+        if lane_id == 0 and row < _m:
+            comptime if elementwise_lambda_fn:
+                comptime elementwise_lambda = elementwise_lambda_fn.value()
+                elementwise_lambda(
+                    reverse_idx[transpose_b](row, 0),
+                    accum.cast[c_type](),
+                )
+            else:
+                comptime if transpose_b:
+                    c[0, row] = accum.cast[c_type]()
+                else:
+                    c[row, 0] = accum.cast[c_type]()
+
+    comptime if pdl_level > PDLLevel.OFF:
+        launch_dependent_grids()
+
+
 @always_inline
 def _dot_accum[
     a_type: DType,
@@ -956,6 +1076,27 @@ def _nvidia_gemv_config[
     return IndexList[3](num_threads, tile_n, unroll)
 
 
+# Row tile of `gemv_kernel_vector_multirow`, and the K depth up to which it
+# pays. The one-row launch gives a CTA `k_iters = ceildiv(K, WARP_SIZE *
+# simd_width)` warps and `k_iters * K * size_of[dtype]()` bytes of work; the
+# CTA launch/retire pipeline runs at roughly 1 CTA/ns chip-wide, so a CTA must
+# carry several KB for the grid to keep HBM busy. At `k_iters <= 2` it carries
+# at most 2 KB and the kernel runs far below peak no matter how wide N is,
+# and four rows per warp is the measured optimum there (B200, N=262144 bf16,
+# met us):
+#
+# | k_iters   | one row | 2 rows | 4 rows | 8 rows | 16 rows | 32 rows |
+# |-----------|---------|--------|--------|--------|---------|---------|
+# | 1 (K=256) | 257.1   | 34.7   | 25.8   | 48.5   | 36.5    | 117.1   |
+# | 2 (K=512) | 130.2   | 56.1   | 42.7   |        |         |         |
+#
+# Deeper K already fills the pipe from the K loop alone (a K=3840 CTA carries
+# 115 KB and measures 5.4 TB/s in the serve today), so it keeps one row per
+# warp and its launch is unchanged.
+comptime _GEMV_MULTIROW_ROWS = 4
+comptime _GEMV_MULTIROW_MAX_K_ITERS = 2
+
+
 @always_inline
 def is_minimax_router_gemm[
     c_type: DType,
@@ -1179,33 +1320,105 @@ def gemv_gpu_dispatch[
                     attributes=pdl_launch_attributes(pdl_level),
                 )
         elif m == 1:
-            comptime kernel = gemv_kernel_vector[
-                c_type,
-                b_type,
-                a_type,
-                type_of(c).LayoutType,
-                type_of(b).LayoutType,
-                type_of(a).LayoutType,
-                type_of(c).Storage,
-                type_of(b).Storage,
-                type_of(a).Storage,
-                simd_width=simd_width,
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                check_bounds=check_bounds_k,
-                pdl_level=pdl_level,
-            ]
-            ctx.enqueue_function[kernel](
-                c,
-                b,
-                a,
-                Int32(n),
-                Int32(m),
-                Int32(k),
-                grid_dim=ceildiv(n, block_dim // WARP_SIZE),
-                block_dim=block_dim,
-                attributes=pdl_launch_attributes(pdl_level),
+
+            @parameter
+            def _one_row_per_warp() raises:
+                comptime kernel = gemv_kernel_vector[
+                    c_type,
+                    b_type,
+                    a_type,
+                    type_of(c).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(c).Storage,
+                    type_of(b).Storage,
+                    type_of(a).Storage,
+                    simd_width=simd_width,
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    check_bounds=check_bounds_k,
+                    pdl_level=pdl_level,
+                ]
+                ctx.enqueue_function[kernel](
+                    c,
+                    b,
+                    a,
+                    Int32(n),
+                    Int32(m),
+                    Int32(k),
+                    grid_dim=ceildiv(n, block_dim // WARP_SIZE),
+                    block_dim=block_dim,
+                    attributes=pdl_launch_attributes(pdl_level),
+                )
+
+            @parameter
+            def _rows_per_warp[rows: Int]() raises:
+                logger.info("Rows per warp: ", rows)
+                # 128-thread blocks measured slightly ahead of 256 and stay
+                # clear of the 64K-register-per-block ceiling that a wide row
+                # tile runs into.
+                comptime warps_per_block = 4
+                comptime kernel = gemv_kernel_vector_multirow[
+                    c_type,
+                    b_type,
+                    a_type,
+                    type_of(c).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(c).Storage,
+                    type_of(b).Storage,
+                    type_of(a).Storage,
+                    simd_width=simd_width,
+                    rows_per_warp=rows,
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    check_bounds=check_bounds_k,
+                    pdl_level=pdl_level,
+                ]
+                ctx.enqueue_function[kernel](
+                    c,
+                    b,
+                    a,
+                    Int32(n),
+                    Int32(m),
+                    Int32(k),
+                    grid_dim=ceildiv(n, rows * warps_per_block),
+                    block_dim=WARP_SIZE * warps_per_block,
+                    attributes=pdl_launch_attributes(pdl_level),
+                )
+
+            @parameter
+            def _grid_outruns_chip() -> Bool:
+                # One warp per output row needs `n` resident warps. Once that
+                # is several times what the chip can hold, the grid drains at
+                # the CTA launch/retire rate and never reaches HBM bandwidth,
+                # so the tile is worth widening. The 4x margin also keeps the
+                # widened grid above one block per SM.
+                var resident_warps = (
+                    ctx.default_device_info.sm_count
+                    * ctx.default_device_info.threads_per_multiprocessor
+                    // WARP_SIZE
+                )
+                return n > 4 * resident_warps
+
+            comptime multirow_max_k = (
+                _GEMV_MULTIROW_MAX_K_ITERS * WARP_SIZE * simd_width
             )
+
+            comptime if static_K <= 0:
+                # A graph that leaves K symbolic still gets the fix; testing
+                # `k` here costs one extra instantiation, missing it costs 10x.
+                if k <= multirow_max_k and _grid_outruns_chip():
+                    _rows_per_warp[_GEMV_MULTIROW_ROWS]()
+                else:
+                    _one_row_per_warp()
+            elif static_K <= multirow_max_k:
+                if _grid_outruns_chip():
+                    _rows_per_warp[_GEMV_MULTIROW_ROWS]()
+                else:
+                    _one_row_per_warp()
+            else:
+                _one_row_per_warp()
 
     elif kernel_func is GEMVAlgorithm.GEMV_KERNEL and transpose_b == False:
         logger.info("Executing: GEMV_KERNEL (no transpose)")

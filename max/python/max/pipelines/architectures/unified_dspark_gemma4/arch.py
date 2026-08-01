@@ -43,7 +43,7 @@ unified_dspark_gemma4_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     config=UnifiedDSparkGemma4Config,
     memory_planner=Gemma4MemoryPlanner,
-    supports_device_graph_capture=False,
+    supports_device_graph_capture=True,
     batching=UnifiedDSparkGemma4BatchProcessor,
 )
 
