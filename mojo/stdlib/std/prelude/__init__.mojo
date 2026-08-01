@@ -31,6 +31,8 @@ from std.collections import (
     KeyElement,
     List,
     Optional,
+    ImmSpan,
+    MutSpan,
     Span,
 )
 from std.collections.string import (

@@ -400,6 +400,10 @@ This version is still a work in progress.
 
 ## Library changes
 
+- The `MutSpan` and `ImmSpan` aliases are now exported from the prelude, so
+  they no longer need an explicit import from `std.collections`. This matches
+  the `Mut`/`Imm` aliases for `Pointer`, which the prelude already exported.
+
 - `StringSlice` now has `MutStringSlice` and `ImmStringSlice` aliases, matching
   the `Mut`/`Imm` aliases already provided for `Span` and `Pointer`. A function
   can use them to state the mutability it requires of a string argument without
