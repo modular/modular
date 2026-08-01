@@ -47,6 +47,7 @@ from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
     EnableForcedOrdering,
     EnableEarlyAdd,
+    ExplicitTMEMCrossP,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     add_ftz,
@@ -2156,6 +2157,11 @@ def fa4_softmax[
     # WGs even for their single-O configs) and every non-single-O path
     # byte-identical.
     single_softmax_wg: Bool = False,
+    # Effective cross-stage-P switch, computed once at the kernel level where
+    # config, MaskType and the store shape are all visible. Defaults True so
+    # the config-level gate alone decides for callers that do not thread it;
+    # the MHA kernel passes its own narrower predicate.
+    crossp_effective: Bool = True,
 ](
     smem: SM100AttentionSMem[config],
     tmem_addr: UInt32,
@@ -2298,12 +2304,31 @@ def fa4_softmax[
     # so there is NO per-warp column offset here (see sm100/CLAUDE.md).
     s_tmem += UInt32(config.TMEM_S1 - config.TMEM_S0) * warp_group_idx
 
-    p_tmem = s_tmem
+    # Cross-stage P (2Q + non-WS only): write this WG's P into the OTHER
+    # stage's free S columns instead of self-aliased s_tmem, so exp2 no
+    # longer overwrites the S it just read -- letting S release right after
+    # LDTM, before exp2. Default OFF => p_tmem == s_tmem, byte-identical.
+    comptime CrossP = crossp_effective and MiscMBarsType.CrossP_enabled
+    var p_tmem: UInt32
+    comptime if CrossP:
+        p_tmem = tmem_addr + (
+            UInt32(config.TMEM_P0) if warp_group_idx
+            == UInt32(0) else UInt32(config.TMEM_P1)
+        )
+    else:
+        p_tmem = s_tmem
     s_tile = UMMA0Type.CType(s_tmem)
     p_tile = UMMA1Type.AType(p_tmem)
 
     var pipeline_s = mbars.consumer_s(warp_group_idx)
     pipeline_c = mbars.producer_c(warp_group_idx)
+    # Cross-stage P inplace handshake (2Q + non-WS only): `inplace_cons` waits
+    # the peer's "S{1-wg} window free" signal before storing P{wg} there;
+    # `inplace_prod` commits it after each LDTM (fire-and-forget, no acquire).
+    # Depth-4 so the producer's bounded lead over the consumer never laps a
+    # single-stage mbar.
+    var inplace_cons = mbars.inplace_consumer(UInt32(1) - warp_group_idx)
+    var inplace_prod = mbars.inplace_producer(warp_group_idx)
     var order_phase: UInt32 = 1 - warp_group_idx
 
     var order_s_wait: Optional[MBarType] = None
@@ -2556,6 +2581,16 @@ def fa4_softmax[
                 k_scale_off = (k_scale_off + UInt32(config.BN)) if (
                     k_scale_off != UInt32(k_scale_wrap - config.BN)
                 ) else 0
+        comptime if CrossP:
+            # Cross-stage P early release: S{wg} is now fully read into `s`,
+            # so signal both the MMA (may overwrite S{wg}) and the peer WG
+            # (S{wg}'s columns are free for P{1-wg}). `load_wait`+`fence_before`
+            # order this ahead of the mbar arrives so the MMA can't race the read.
+            tcgen05_load_wait()
+            tcgen05_fence_before()
+            var sfree_p = mbars.sfree_producer(warp_group_idx)
+            sfree_p.commit()
+            inplace_prod.commit()
         return vrow_max
 
     @parameter
@@ -2733,6 +2768,109 @@ def fa4_softmax[
                 x = exp2(x)
             s_store[idx](x)
 
+        # Cross-stage P store: per-tile asymmetric static schedule (`ahead`
+        # batches of exp2 buffered before the inplace wait, tuned per-tile
+        # since each WG's consume signal arrives at a different phase) with
+        # the row-sum interleaved per-batch. Same 4-acc every-4th reduction
+        # tree/pairings as the aliased path below => bit-exact, no reassociation.
+        comptime if CrossP:
+            comptime assert not EnableForcedOrdering, (
+                "FA4_TMEM_CROSS_P per-tile store is untested with"
+                " FA4ForcedSoftmaxOrdering"
+            )
+            comptime assert not (
+                ExplicitTMEMCrossP
+                and not (remainder == 0 and num_batch_iters == 4)
+            ), (
+                "FA4_TMEM_CROSS_P=true was requested but the per-tile store"
+                " assumes 4 full batches (headline shape)"
+            )
+
+            @parameter
+            @always_inline
+            def _asym[ahead: Int]() -> f32x2:
+                # buffer `ahead` batches (exp2 only, no store)
+                comptime for bb in range(ahead):
+                    comptime for idx in range(
+                        bb * batch_size, (bb + 1) * batch_size
+                    ):
+                        exp_iter[idx]()
+                # single inplace consume (instant at this static position)
+                inplace_cons.wait()
+                inplace_cons.step()
+                # init 0 only to satisfy definite-init across the comptime-if
+                # branches; batch 0 ASSIGNS (overwrites) below, so the 4-acc
+                # every-4th tree/pairings are unchanged => bit-exact.
+                var r0 = f32x2(0)
+                var r1 = f32x2(0)
+                var r2 = f32x2(0)
+                var r3 = f32x2(0)
+                comptime for b in range(num_batch_iters):
+                    # 3-then-1: release consumer_s[0] (P[0:96)) at the b==3
+                    # boundary, after batches 0,1,2 are stored.
+                    comptime if 4 * b == 3 * num_batch_iters:
+                        tcgen05_store_wait()
+                        tcgen05_fence_before()
+                        comptime if config.pair_cta:
+                            umma_arrive_leader_cta(
+                                pipeline_s.consumer_mbar[0]()
+                            )
+                        else:
+                            pipeline_s.release_no_step[0]()
+                    comptime if b >= ahead:
+                        comptime for idx in range(
+                            b * batch_size, (b + 1) * batch_size
+                        ):
+                            exp_iter[idx]()
+                    comptime if b == 0:
+                        BatchTileType(p_tmem).store_async(s)
+                    else:
+                        comptime el = batch_size * b * exp_simd
+                        comptime to = (el * size_of[qkv_type]()) // size_of[
+                            accum_dtype
+                        ]()
+                        BatchTileType(p_tmem + UInt32(to)).store_async[
+                            src_offset=el
+                        ](s)
+                    # interleave the row-sum for batch b (same 4-acc every-4th
+                    # tree as the aliased path => bit-exact)
+                    comptime if b == 0:
+                        r0 = s_load[0]()
+                        r1 = s_load[1]()
+                        r2 = s_load[2]()
+                        r3 = s_load[3]()
+                        comptime for k in range(4, batch_size, 4):
+                            r0 = add_ftz(r0, s_load[k]())
+                            r1 = add_ftz(r1, s_load[k + 1]())
+                            r2 = add_ftz(r2, s_load[k + 2]())
+                            r3 = add_ftz(r3, s_load[k + 3]())
+                    else:
+                        comptime for k in range(
+                            b * batch_size, (b + 1) * batch_size, 4
+                        ):
+                            r0 = add_ftz(r0, s_load[k]())
+                            r1 = add_ftz(r1, s_load[k + 1]())
+                            r2 = add_ftz(r2, s_load[k + 2]())
+                            r3 = add_ftz(r3, s_load[k + 3]())
+                tcgen05_store_wait()
+                tcgen05_fence_before()
+                comptime if config.pair_cta:
+                    umma_arrive_leader_cta(
+                        pipeline_s.consumer_mbar[config.num_pv_stages - 1]()
+                    )
+                    pipeline_s.step()
+                else:
+                    pipeline_s.release[config.num_pv_stages - 1]()
+                pipeline_c.acquire()
+                return add_ftz(add_ftz(r0, r1), add_ftz(r2, r3))
+
+            # Per-tile ahead value (see `_asym` above). Warp-uniform branch --
+            # no divergence cost.
+            if warp_group_idx == UInt32(0):
+                return _asym[1]()
+            else:
+                return _asym[0]()
+
         # --- Batch 0 ---
         comptime for idx in range(batch_size):
             exp_iter[idx]()
@@ -2847,6 +2985,12 @@ def fa4_softmax[
         # same tcgen05 wait/fence discipline before releasing S-consumer).
         tcgen05_store_wait()
         tcgen05_fence_before()
+        # Cross-stage P: the peer's inplace producer commits every block
+        # regardless of skip, so this consumer phase must advance here too
+        # (BLASST skip) or it drifts out of lockstep with the peer.
+        comptime if CrossP:
+            inplace_cons.wait()
+            inplace_cons.step()
         comptime if config.pair_cta:
             comptime for pv_stage in range(config.num_pv_stages):
                 umma_arrive_leader_cta(pipeline_s.consumer_mbar[pv_stage]())
@@ -3282,6 +3426,16 @@ def fa4_softmax[
         named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
         return blasst_vote_unanimous(blasst_vote, warp_group_idx, vote_phase)
 
+    # Cross-stage P JIT-P1 seed: WG1 consumes one extra s0_p1 token, giving
+    # WG0 a one-block lead so WG1's P1(m) store waits on WG0's block-(m+1) S0
+    # release -- the WAR that makes the QK0-first MMA order legal (see
+    # mma_warp cross-P block). WG0 needs no seed (covered by MMA program
+    # order). Balanced by the WG0 drain after the main loop below.
+    comptime if CrossP:
+        if warp_group_idx == UInt32(1):
+            inplace_cons.wait()
+            inplace_cons.step()
+
     var row_sum: f32x2
     comptime if use_fma:
         neg_max_scaled = neg_scaled_max(row_max)
@@ -3511,6 +3665,12 @@ def fa4_softmax[
                 pipeline_c.commit()
                 store_exp_skip()
             o_phase ^= 1
+
+    # Cross-stage P JIT-P1 drain: WG0-only extra s0_p1 commit that balances
+    # the WG1 seed above, consumed by WG1's final P store.
+    comptime if CrossP:
+        if warp_group_idx == UInt32(0):
+            inplace_prod.commit()
 
     # Do the final correction and write.
     comptime assert size_of[output_type]() >= size_of[qkv_type]()

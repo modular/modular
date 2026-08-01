@@ -28,6 +28,18 @@ comptime EnableForcedOrdering = get_defined_bool[
 ]()
 comptime EnableEarlyAdd = get_defined_bool["FA4AddEarly", False]()
 
+# Cross-stage P TMEM placement (2Q, non-WS only): each softmax stage's P is
+# written into the OTHER stage's free S columns instead of self-aliasing its
+# own S, enabling early S-release. Default OFF => byte-identical.
+comptime EnableTMEMCrossP = get_defined_bool["FA4_TMEM_CROSS_P", True]()
+
+# Reading the same define with the opposite default recovers whether the user
+# passed it at all: only an explicit `=true` makes a False-defaulted read come
+# back True. The cross-stage-P guards key off this, so the ON-by-default path
+# can never trip a guard -- they fire only when someone explicitly asks for
+# cross-stage P on a config that does not support it.
+comptime ExplicitTMEMCrossP = get_defined_bool["FA4_TMEM_CROSS_P", False]()
+
 # Programmatic Dependent Launch level for the SM100 MHA prefill kernel.  On by
 # default so back-to-back attention grids in a stream overlap launch/prologue
 # latency; disable with `-D MHA_PDL=false`.  When > OFF the kernel emits
@@ -423,6 +435,75 @@ struct FA4Config[
         """
         return self.padded_qk_depth - self.padded_nope_depth
 
+    @staticmethod
+    @always_inline
+    def crossp_supported(
+        num_q: Int,
+        use_ws: Bool,
+        pair_cta: Bool,
+        use_shared_kv: Bool,
+        rope_depth: Int,
+        page_size: Int,
+        BN: Int,
+    ) -> Bool:
+        """The cross-stage-P support matrix, in one place.
+
+        Every `comptime assert` that guards a cross-stage-P code path derives
+        its condition from here, so turning the feature on BY DEFAULT can never
+        trip one of those guards. They stay hard errors, but only an explicit
+        `-D FA4_TMEM_CROSS_P=true` on an unsupported config can reach them.
+
+        Deriving the default from the guards is the point. An earlier version
+        of this predicate listed the consumers it knew about instead, and CI
+        found a consumer it did not know about within the hour.
+
+        The conjuncts, each traceable to the site that requires it:
+        - `num_q == 2`, `not use_ws`: the P windows only exist on the 2Q
+          non-warp-specialized layout (`TMEM_P0`/`TMEM_P1` above).
+        - `use_shared_kv`, `not pair_cta`: `mma_warp` asserts the shared-KV
+          path; the split-KV both-lazy and pair-CTA schedules have no cross-P
+          implementation.
+        - `rope_depth == 0`: MHA only. MLA shares this config type but splits
+          Q/K into nope + rope and has no cross-P path.
+        - full pages: `load_warp`'s K-ahead producer asserts no partial pages.
+
+        Taking the fields loose because `__init__` needs this before `self` is
+        fully initialized, and Mojo forbids calling a method on a partly-built
+        `self`.
+        """
+        return (
+            num_q == 2
+            and not use_ws
+            and not pair_cta
+            and use_shared_kv
+            and rope_depth == 0
+            and not (page_size > 0 and page_size < BN)
+            and not EnableForcedOrdering
+        )
+
+    @always_inline
+    def crossp_on(self) -> Bool:
+        """Whether cross-stage P applies to THIS config.
+
+        The single source of truth for the cross-stage-P decision. Both the
+        `smem_used` mbar accounting below and `FA4MiscMBars.CrossP_enabled`
+        derive from this, so the two can never disagree — a mismatch shows up
+        as an `smem_used != smem_size` constraint failure, or worse, an
+        ILLEGAL_ADDRESS at runtime.
+
+        `FA4_TMEM_CROSS_P` now defaults ON, so `crossp_supported` is what keeps
+        every other consumer byte-identical to cross-P-off.
+        """
+        return EnableTMEMCrossP and Self.crossp_supported(
+            self.num_q,
+            self.use_ws,
+            self.pair_cta,
+            self.use_shared_kv,
+            self.rope_depth(),
+            self.page_size,
+            self.BN,
+        )
+
     @always_inline
     def num_rope_buffers(self) -> Int:
         """Number of separate rope smem buffers (shared mode only).
@@ -588,8 +669,22 @@ struct FA4Config[
         # term is unchanged: the packed P@V O still spans `padded_ov` columns.
         var s_cols = self.BN // m_pack
         self.TMEM_S1 = Self.TMEM_S0 + s_cols
-        self.TMEM_P0 = Self.TMEM_S0
-        self.TMEM_P1 = self.TMEM_S1
+        # Cross-stage: P0 in S1's window, P1 in S0's window, at the region
+        # base. bf16 P needs 64 of the 128 f32 columns; any 32-col-aligned
+        # in-region offset satisfies the tcgen05 A-operand (FlashInfer uses
+        # +32 only to clear row stats it keeps inplaced in TMEM — MAX keeps
+        # stats in SMEM, so the base is free). 2Q + non-WS only: the 1Q
+        # odd-T tail aliases s1->s0, which would collide the two P windows.
+        comptime if EnableTMEMCrossP:
+            if self.num_q == 2 and not self.use_ws:
+                self.TMEM_P0 = self.TMEM_S1
+                self.TMEM_P1 = Self.TMEM_S0
+            else:
+                self.TMEM_P0 = Self.TMEM_S0
+                self.TMEM_P1 = self.TMEM_S1
+        else:
+            self.TMEM_P0 = Self.TMEM_S0
+            self.TMEM_P1 = self.TMEM_S1
         self.TMEM_O0 = self.TMEM_S1 + s_cols
         # single-O: alias O1 onto O0 (the 1Q body reuses one O accumulator) and
         # reserve a single O region -> tmem_used = 2*BN + padded_ov. Default
@@ -671,6 +766,9 @@ struct FA4Config[
         #             + (num_qk_stages if num_q == 2 else 0)
         #             + (1 if num_q == 1 and splitk_partitions > 1 else 0)
         comptime order_barrier_count: Int = 2 if EnableForcedOrdering else 0
+        # Cross-stage P appends 10 mbars (2 sfree + 2x4 depth-4 inplace).
+        # Cross-stage P's 10 mbars are added further down, once
+        # `use_shared_kv` is decided -- `crossp_supported` needs it.
         misc_mbars_fixed_size = (
             8
             + order_barrier_count
@@ -842,6 +940,22 @@ struct FA4Config[
         # BK1: Full BN since V loading is not staged (V must be complete
         # for P@V)
         self.BK1 = self.BN
+
+        # Cross-stage P appends 10 mbars (2 sfree + 2x4 depth-4 inplace). Added
+        # here rather than with the other misc mbars because `crossp_supported`
+        # needs `use_shared_kv`, which is only decided above. Same predicate
+        # FA4MiscMBars.CrossP_count is threaded from, so the accounting and the
+        # layout cannot drift.
+        if EnableTMEMCrossP and Self.crossp_supported(
+            self.num_q,
+            self.use_ws,
+            self.pair_cta,
+            self.use_shared_kv,
+            self.padded_qk_depth - self.padded_nope_depth,
+            self.page_size,
+            self.BN,
+        ):
+            smem_use += 10 * Self.mbar_size
 
         # BLASST skip-vote region: must match SM100AttentionSMem.blasst_vote_bytes
         # or the launch smem_used undershoots -> CUDA_ERROR_ILLEGAL_ADDRESS.
