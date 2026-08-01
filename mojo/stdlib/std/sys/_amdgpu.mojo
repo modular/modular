@@ -23,7 +23,7 @@ from std.sys.intrinsics import (
 
 from std.gpu.primitives.id import lane_id
 from std.collections import Span
-from std.memory.unsafe_pointer import _Null
+from std.memory.pointer import _Null
 from std.os import abort
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
