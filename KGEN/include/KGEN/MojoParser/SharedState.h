@@ -792,11 +792,12 @@ private:
 
   /// Create an error module state and emit the given error message. If
   /// `unlisted` is set, the erroneous decl is not registered in
-  /// `errorContext`'s name table.
+  /// `errorContext`'s name table. A non-empty `note` is attached to the error.
   ModuleState &createErrorModuleState(SMLoc loc, StringAttr name,
                                       ASTDecl &errorContext,
                                       const Twine &errorMsg,
-                                      bool unlisted = false);
+                                      bool unlisted = false,
+                                      const Twine &note = {});
 
   /// Implicitly import the builtin modules into the given module decl.
   void importBuiltinModules(ASTDecl &moduleDecl);
