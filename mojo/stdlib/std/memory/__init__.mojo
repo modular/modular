@@ -58,6 +58,7 @@ from .pointer import (
     ImmPointer,
     ImmutPointer,
     MutPointer,
+    OptionalPointer,
     Pointer,
 )
 from .unsafe import bitcast, pack_bits
@@ -66,7 +67,6 @@ from .unsafe_pointer import (
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
-    OptionalPointer,
     OptionalUnsafePointer,
     ImmUnsafePointer,
     ImmutUnsafePointer,
