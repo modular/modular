@@ -11,9 +11,7 @@ def takeIt[F: def[width: Int](idx: Int) -> Scalar[DType.int]](impl: F):
 
 
 def emitLoad(x: SIMD[DType.int, 1]):
-    var ptr = UnsafePointer(
-        alloc[SIMD[DType.int, 1]]({count = 1}).unsafe_leak()
-    )
+    var ptr = alloc[SIMD[DType.int, 1]]({count = 1}).unsafe_leak()
     ptr.store(x)
     var count = Scalar[DType.int](0)
 
