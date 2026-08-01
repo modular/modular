@@ -22,8 +22,8 @@ This page covers:
   — Use enumerated error types or the `Variant` type for pattern matching.
 - [**The `Never` type**](#the-never-type) — Mark functions that always raise
   or never raise.
-- [**Parametric raises**](#parametric-raises) — Write generic functions that
-  propagate error types from their arguments.
+- [**Parametric raises**](#parametric-raises) — Write parameterized functions
+  that propagate error types from their arguments.
 - [**Typed and `Error` interaction**](#typed-errors-and-error-interaction) —
   Work with code that uses both error styles.
 - [**Stack traces**](#enable-stack-trace-generation-for-errors) — Enable stack
@@ -541,7 +541,7 @@ This equivalency is especially useful in combination with
 ## Parametric raises
 
 You can write
-[generic functions](/docs/manual/parameters/#parameters-and-generics) that
+[parameterized functions](/docs/manual/parameters/#parameters-and-generics) that
 propagate the error type from a function argument to the caller. This uses a
 compile-time parameter for the error type:
 
@@ -1168,7 +1168,7 @@ Unhandled exception caught during execution: really bad
 ### Handle typed errors in `__exit__()`
 
 The `__exit__(self, error: Error)` overload handles only `Error` values.
-To handle typed errors, implement a generic `__exit__()` method with a
+To handle typed errors, implement a parameterized `__exit__()` method with a
 compile-time error type parameter:
 
 ```mojo

@@ -4,6 +4,8 @@ sidebar_position: 1
 description: Standard Mojo data types.
 ---
 
+<!-- markdownlint-disable MD033 -->
+
 All values in Mojo have an associated data type. Most of the types are
 *nominal* types, defined by a [`struct`](/docs/manual/structs/). These types are
 nominal (or "named") because type equality is determined by the type's *name*,
@@ -229,6 +231,8 @@ Tensor Processing Units (TPUs) to accelerate machine learning workloads.
 Therefore the B is a project identifier and not a technical format indicator.
 :::
 
+<!-- markdownlint-disable MD013 -->
+
 <figure id="table-4">
 <figcaption><b>Table 4.</b> Mojo floating-point types</figcaption>
 
@@ -245,6 +249,8 @@ Therefore the B is a project identifier and not a technical format indicator.
 | `Float8_e4m3fnuz` | 8-bit floating-point<br />(AMD-only e4m3fnuz format — finite values and NaN only, no infinities)                       | GPU             |
 
 </figure>
+
+<!-- markdownlint-enable MD013 -->
 
 :::note
 GPU-only floating-point types are supported on specific accelerator hardware and
@@ -288,6 +294,8 @@ yourself.
 
 Table 5 summarizes the literal formats you can use to represent numbers.
 
+<!-- markdownlint-disable MD013 -->
+
 <figure>
 <figcaption><b>Table 5.</b> Numeric literal formats</figcaption>
 
@@ -300,6 +308,8 @@ Table 5 summarizes the literal formats you can use to represent numbers.
 | Floating-point literal | `3.14`, `1.2e9` | Floating-point literal.<br />Must include the decimal point to be interpreted as floating-point. |
 
 </figure>
+
+<!-- markdownlint-enable MD013 -->
 
 At compile-time, Mojo treats numeric literals as arbitrary-precision values, so
 the compiler can perform compile-time calculations without overflow or rounding
@@ -775,10 +785,10 @@ can be used to build more complex data structures:
 - [`Optional`](/docs/std/collections/optional/Optional/)
   represents a value that may or may not be present.
 
-The collection types are *generic types*: while a given collection can only
-hold a specific type of value (such as `Int` or `Float64`), you specify the
-type at compile time using a [parameter](/docs/manual/parameters/). For
-example, you can create a `List` of `Int` values like this:
+The collection types are *parameterized types*: while a given collection can
+only hold a specific type of value (such as `Int` or `Float64`), you specify the
+type at compile time using a [parameter](/docs/manual/parameters/). For example,
+you can create a `List` of `Int` values like this:
 
 ```mojo
 var l: List[Int] = [1, 2, 3, 4]
@@ -958,7 +968,7 @@ values. You can add and remove elements from the set, test whether a value
 exists in the set, and perform set algebra operations, like unions and
 intersections between two sets.
 
-Sets are generic and the element type must conform to the
+Sets are parameterized and the element type must conform to the
 [`KeyElement`](/docs/std/collections/dict/#keyelement) trait. Like lists and
 dictionaries, sets support standard literal syntax, as well as generator
 comprehensions:
@@ -983,7 +993,7 @@ We both like:
 
 An [`Optional`](/docs/std/collections/optional/Optional/) represents a
 value that may or may not be present. Like the other collection types, it is
-generic, and can hold any type that conforms to the
+parameterized, and can hold any type that conforms to the
 [`Copyable`](/docs/std/builtin/value/Copyable/) trait.
 
 ```mojo
@@ -1017,13 +1027,10 @@ value if there is one, or a user-specified default value otherwise:
 
 ```mojo
 var custom_greeting: Optional[String] = None
-print(custom_greeting.or_else("Hello"))
+print(custom_greeting.or_else("Hello"))  # Hello
 
 custom_greeting = "Hi"
-print(custom_greeting.or_else("Hello"))
+print(custom_greeting.or_else("Hello"))  # Hi
 ```
 
-```output
-Hello
-Hi
-```
+<!-- markdownlint-enable MD033 -->

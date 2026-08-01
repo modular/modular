@@ -93,9 +93,9 @@ but when Mojo destroys a string, it calls the destructor for the
 `List` field, which de-allocates the memory.
 
 Since `String` doesn't require any custom destructor logic, it has a no-op
-destructor: literally, a `__deinit__()` method that doesn't do anything.
-This may seem pointless, but it means that Mojo can call the destructor on any
-value when its lifetime ends. This makes it easier to write generic containers
+destructor: literally, a `__deinit__()` method that doesn't do anything. This
+may seem pointless, but it means that Mojo can call the destructor on any value
+when its lifetime ends. This makes it easier to write type-generic containers
 and algorithms.
 
 ### Benefits of ASAP destruction
@@ -368,30 +368,30 @@ struct BatchProcessor:
         ...
 ```
 
-### Explicit destruction in generic code
+### Explicit destruction in parameterized code
 
-Generic code parameterized over `AnyType` can accept both implicitly deletable
+Code parameterized over `AnyType` can accept both implicitly deletable
 and explicitly destructible values. However, it cannot automatically destroy
 values that require explicit destruction.
 
-Because explicit destructors are type-specific, generic code has no way
-to name or invoke them unless the type is constrained:
+Because explicit destructors are specific to their types, type-generic code
+has no way to name or invoke them unless the type is constrained:
 
 ```mojo
-def generic_function_1[T: AnyType](var value: T):
+def parameterized_function_1[T: AnyType](var value: T):
     # ERROR: 'value' abandoned without being explicitly destroyed:
     #        Unhandled explicitly destroyed type AnyType
     pass  # value abandoned here
 
-def generic_function_2[T: ImplicitlyDeletable](var value: T):
+def parameterized_function_2[T: ImplicitlyDeletable](var value: T):
     # OK: T can be implicitly destroyed
     pass  # value.__deinit__() called automatically
 ```
 
-If a generic function may consume its argument, it must ensure that the value
-can be safely destroyed at the end of its lifetime. Generic code has no way to
-invoke type-specific explicit destructors unless that behavior is constrained.
-Choose one of the following approaches:
+If a parameterized function may consume its argument, it must ensure that the
+value can be safely destroyed at the end of its lifetime. Parameterized code has
+no way to invoke type-specific explicit destructors unless that behavior is
+constrained. Choose one of the following approaches:
 
 - Accept the value by mutable or immutable reference instead of by ownership,
   so the function does not consume it.
@@ -401,7 +401,7 @@ Choose one of the following approaches:
   automatically:
 
   ```mojo
-  def generic_function_3[T: ImplicitlyDeletable](var value: T):
+  def parameterized_function_3[T: ImplicitlyDeletable](var value: T):
       pass  # value.__deinit__() called automatically
   ```
 

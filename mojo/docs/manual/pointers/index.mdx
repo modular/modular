@@ -4,16 +4,18 @@ sidebar_position: 1
 description: An overview of accessing memory using Mojo's pointer types.
 ---
 
+<!-- markdownlint-disable MD033 -->
+
 A pointer is an indirect reference to one or more values stored in memory. The
 pointer is a value that holds an address to memory, and provides APIs to store
 and retrieve values to that memory. The value pointed to by a pointer is also
 known as a _pointee_.
 
 The Mojo standard library includes several types of pointers, which provide
-different sets of features. All of these pointer types are _generic_—they can
-point to any type of value, and the value type is specified as a parameter. For
-example, the following code creates an `OwnedPointer` that points to an `Int`
-value:
+different sets of features. All of these pointer types are _parameterized_—they
+can point to any type of value, and the value type is specified as a parameter.
+For example, the following code creates an `OwnedPointer` that points to an
+`Int` value:
 
 ```mojo no-test
 from std.memory import OwnedPointer
@@ -117,7 +119,8 @@ characteristics:
 
 Table 1 summarizes the different types of pointers:
 
-<!-- rumdl-disable MD033 -->
+<!-- markdownlint-disable MD013 MD033 -->
+
 <figure>
 
 |                                                  | `Pointer` | `OwnedPointer`          | `ArcPointer`            | `UnsafePointer` |
@@ -139,7 +142,8 @@ initialize the pointer with a value.
 <sup>2</sup> `UnsafePointer` provides unsafe methods for initializing and
 destroying instances of the stored type. The user is responsible for managing
 the lifecycle of stored values.
-<!-- rumdl-enable MD033 -->
+
+<!-- markdownlint-enable MD013 MD033 -->
 
 The following sections provide more details on each pointer type.
 
@@ -283,3 +287,5 @@ types will do the job. Here are some use cases where you might want to use an
 
 For more information, see [Unsafe
 pointers](/docs/manual/pointers/unsafe-pointers).
+
+<!-- markdownlint-enable MD033 -->

@@ -3,6 +3,9 @@ title: Unsafe pointers
 description: Using unsafe pointers to access dynamically-allocated memory.
 ---
 
+<!-- markdownlint-disable MD033 MD045 -->
+<!-- FIXME: Add alt text to images -->
+
 The [`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/) type
 is one of several pointer types available in the standard library to indirectly
 reference locations in memory.
@@ -22,10 +25,10 @@ pointers](/docs/manual/pointers/).
 
 ## Unsafe pointer basics
 
-An `UnsafePointer` is a type that holds an address to memory. You can store
-and retrieve values in that memory. The `UnsafePointer` type is *generic*—it can
-point to any type of value, and the value type is specified as a parameter. The
-value pointed to by a pointer is sometimes called a *pointee*.
+An `UnsafePointer` is a type that holds an address to memory. You can store and
+retrieve values in that memory. The `UnsafePointer` type is *parameterized*—it
+can point to any type of value, and the value type is specified as a parameter.
+The value pointed to by a pointer is sometimes called a *pointee*.
 
 ```mojo
 # Allocate memory to hold a value
@@ -674,3 +677,5 @@ Unsafe pointers are unsafe for several reasons:
 - `UnsafePointer` does have an `origin` parameter so Mojo can track the origin
   of the data it points to, but it also provides unsafe APIs. For example, when
   you do pointer arithmetic, the compiler doesn't do any bounds checking.
+
+<!-- markdownlint-enable MD033 MD045 -->

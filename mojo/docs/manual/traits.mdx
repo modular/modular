@@ -3,6 +3,8 @@ title: Traits
 description: Define shared behavior for types.
 ---
 
+<!-- markdownlint-disable MD033 -->
+
 A *trait* is a set of requirements that a type must implement. You can think of
 it as a contract: a type that *conforms* to a trait guarantees that it
 implements all of the features of the trait.
@@ -137,17 +139,17 @@ accordingly.
 
 Associated types are a common use for required `comptime`
 members. An associated type is a subordinate type used by the trait,
-most often in collections and generic data structures.
+most often in collections and parameterized data structures.
 
 Provided values can include constants, trait compositions, or types.
 You define them once in the trait, and every conforming type has
 access to them.
 
-Use required and provided `comptime` members to describe generic
+Use required and provided `comptime` members to describe parameterized
 families of types.
 
 For more information, see [`comptime` members for
-generics](#comptime-members-for-generics).
+parameterized types](#comptime-members-for-generics).
 
 ### Adding traits to structs
 
@@ -481,9 +483,9 @@ and restrictions:
 - Every field must be trivially register passable.
 - The type must be
   [`Copyable`](/docs/manual/lifecycle/life/#copy-constructor).
-- They use a special trivial (no-op) destructor. They are _trivially
-  movable_ (via `Copyable`, which refines `Movable`), _trivially
-  copyable_, and *trivially destructible*.
+- They use a special trivial (no-op) destructor. They are *trivially
+  movable* (via `Copyable`, which refines `Movable`), *trivially
+  copyable*, and *trivially destructible*.
 
 ## Built-in traits
 
@@ -637,17 +639,18 @@ For detailed information about value destruction, explicit destruction with the
 `@explicit_destroy` decorator, and when to use each approach, see [Death of a
 value](/docs/manual/lifecycle/death).
 
-## Generic structs with traits
+## Parameterized structs with traits {#generic-structs-with-traits}
 
-You can also use traits when defining a generic container. A generic container
-is a container (for example, an array or hashmap) that can hold different data
-types. In a dynamic language like Python it's easy to add different types of
-items to a container. But in a statically-typed environment, the compiler needs
-to be able to identify the types at compile time. For example, if the container
-needs to copy a value, the compiler needs to verify that the type can be copied.
+You can also use traits when defining a parameterized container. A parameterized
+container is a container (for example, an array or hashmap) that can hold
+different data types. In a dynamic language like Python it's easy to add
+different types of items to a container. But in a statically-typed environment,
+the compiler needs to be able to identify the types at compile time. For
+example, if the container needs to copy a value, the compiler needs to verify
+that the type can be copied.
 
 The [`List`](/docs/std/collections/list/) type is an example of a
-generic container. A single `List` can only hold a single type of data.
+parameterized container. A single `List` can only hold a single type of data.
 The list elements must conform to the `Copyable` trait:
 
 ```mojo
@@ -674,11 +677,11 @@ the `Copyable` trait, which requires a
 [copy constructor](/docs/manual/lifecycle/life/#copy-constructor) and a
 [move constructor](/docs/manual/lifecycle/life/#move-constructor).
 
-Building generic containers is an advanced topic. For an introduction, see the
-section on
+Building parameterized containers is an advanced topic. For an introduction, see
+the section on
 [parameterized structs](/docs/manual/parameters/#parameterized-structs).
 
-### `comptime` members for generics {#comptime-members-for-generics}
+### `comptime` members for parameterized types {#comptime-members-for-generics}
 
 In addition to methods, a trait can include `comptime` members, which must be
 defined by any conforming struct. For example:
@@ -712,13 +715,13 @@ Note that the field is named `count`, and the `Multispeak` parameter is named
 `verbosity`. Parameters and `comptime` members are in the same namespace, so the
 parameter can't have the same name as the `comptime` member.
 
-`comptime` members are most useful for writing traits for generic types. For
-example, imagine that you want to write a trait that describes a generic stack
-data structure that stores elements that conform to the `Copyable`
-trait.
+`comptime` members are most useful for writing traits for parameterized types.
+For example, imagine that you want to write a trait that describes a
+parameterized stack data structure that stores elements that conform to the
+`Copyable` trait.
 
 By adding the element type as a `comptime` member on the trait, you can specify
-generic methods on the trait:
+parameterized methods on the trait:
 
 ```mojo
 trait Stacklike:
@@ -760,14 +763,12 @@ struct MyStack[type: Copyable & ImplicitlyDeletable](Stacklike):
         print("]")
 ```
 
-{/*  TODO:
-
-- Maybe move this discussion to the generics chapter, the trait docs only
-     need to mention that you can define a `comptime` member.
-- If we retain the example, update it to use real conditional conformance.
-- Update the text below to point to the real conditional conformance doc,
-     if appropriate.
-*/}
+<!--
+  FIXME: Move discussion to parameterized types. Trait docs only need
+  to mention `comptime` members can be defined. If retaining the example,
+    update it to use real conditional conformance. Update text below to point
+    to real conditional conformance doc, if appropriate.  
+-->
 
 The `MyStack` type adds a `dump()` method that prints the contents of the stack.
 Because a struct that conforms to `Copyable` is not necessarily
@@ -776,7 +777,7 @@ conditional conformance to
 define a `dump()` method that works as long as the element type is
 [writable](/docs/std/format/Writable/).
 
-The following code exercises this new trait by defining a generic method,
+The following code exercises this new trait by defining a parameterized method,
 `add_to_stack()` that adds an item to any `Stacklike` type.
 
 ```mojo
@@ -790,3 +791,5 @@ def main():
     s.dump()             # [12, 33, ]
     print(s.pop())       # 33
 ```
+
+<!-- markdownlint-enable MD033 -->

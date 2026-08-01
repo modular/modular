@@ -338,8 +338,8 @@ var yours = mine.copy()
 
 Technically, you *could* make a struct with a copy constructor and *not* add the
 `Copyable` trait, but this is not recommended. Mojo would be able to copy the
-value, but you couldn't use the struct with any generic containers or functions
-that require the `Copyable` trait.
+value, but you couldn't use the struct with any parameterized containers or
+functions that require the `Copyable` trait.
 
 :::
 

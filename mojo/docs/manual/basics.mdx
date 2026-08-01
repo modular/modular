@@ -245,8 +245,8 @@ each characteristic (such as each method). Each characteristic in a trait is a
 "requirement" for the struct, and when your struct implements all of the
 requirements, it's said to "conform" to the trait.
 
-Using traits allows you to write generic functions that can accept any type
-that conforms to a trait, rather than accept only specific types.
+Using traits allows you to write parameterized functions that can accept any
+type that conforms to a trait, rather than accept only specific types.
 
 For example, here's how you can create a trait:
 
@@ -297,11 +297,11 @@ _parameters_, which we'll explain next.
 :::
 
 Without traits, the `x` argument in `fun_with_traits()` would have to declare a
-specific type that implements `required_method()`, such as `SomeStruct`
-(but then the function would accept only that type). With traits, the function
-can accept any type for `x` as long as it conforms to (it "implements")
-`SomeTrait`. Thus, `fun_with_traits()` is known as a "generic function" because
-it accepts a _generalized_ type instead of a specific type.
+specific type that implements `required_method()`, such as `SomeStruct` (but
+then the function would accept only that type). With traits, the function can
+accept any type for `x` as long as it conforms to (it "implements") `SomeTrait`.
+Thus, `fun_with_traits()` is known as a "parameterized function" because it
+accepts a _generalized_ type instead of a specific type.
 
 For more details, see the page about [traits](/docs/manual/traits/).
 

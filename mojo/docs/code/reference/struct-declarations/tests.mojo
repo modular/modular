@@ -109,7 +109,7 @@ def test_color_fieldwise() raises:
     assert_equal(color.b, 0)
 
 
-# --- Generic Pair ---
+# --- Parameterized Pair ---
 
 
 @fieldwise_init
@@ -118,7 +118,7 @@ struct Pair_1[T: Copyable & ImplicitlyDeletable]:
     var second: Self.T
 
 
-def test_generic_pair() raises:
+def test_parameterized_pair() raises:
     var p = Pair_1[Int](first=1, second=2)
     assert_equal(p.first, 1)
     assert_equal(p.second, 2)
@@ -273,7 +273,7 @@ def main() raises:
     test_color_manual()
     test_field_type_parameter()
     test_color_fieldwise()
-    test_generic_pair()
+    test_parameterized_pair()
     test_defaulted_parameters()
     test_trait_conformance()
     test_conformance_where()

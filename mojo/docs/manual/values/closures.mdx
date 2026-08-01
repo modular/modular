@@ -322,7 +322,7 @@ decided wherever `name` was bound. This is often the function's own `ref`
 parameter, ultimately resolved at the call site.
 
 :::note
-`ref` captures are an advanced feature for writing generic code
+`ref` captures are an advanced feature for writing parameterized code
 that works across mutability contexts. For most closures, `imm`
 or `mut` is the right choice.
 :::
@@ -422,7 +422,7 @@ def main():
 ### Configurable behavior
 
 Closures let you build specialized behavior from general-purpose parts.
-The following generic function accepts any callable with the expected
+The following parameterized function accepts any callable with the expected
 signature. The closure carries the configuration:
 
 ```mojo

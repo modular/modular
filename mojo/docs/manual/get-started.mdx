@@ -5,6 +5,8 @@ github_url: https://github.com/modular/modular/tree/main/mojo/examples/life
 image: /images/artwork/mojo-get-started.jpg
 ---
 
+<!-- markdownlint-disable MD033 -->
+
 Get ready to learn Mojo! This tutorial gives you a tour of Mojo by building a
 complete program that does much more than simply printing "Hello, world!"
 
@@ -284,7 +286,7 @@ dynamically-sized sequence of values.
 All values in a Mojo `List` must be the same type so the Mojo compiler can
 ensure type safety. (For example, when we retrieve a value from a `List[Int]`,
 the compiler knows the value is an `Int` and can verify that we use it
-correctly.) Mojo collections are implemented as [generic
+correctly.) Mojo collections are implemented as [parameterized
 types](https://en.wikipedia.org/wiki/Generic_programming), so we can indicate
 the type of values the specific collection will hold by specifying a
 [type parameter](/docs/manual/parameters/#parameterized-structs) in square
@@ -834,15 +836,16 @@ case, it only accepts types that can generate a `String` representation.
 To enforce this, the `String()` constructors require a type to conform to the
 [`Writable`](/docs/std/format/Writable/) trait. (This type of function is
 sometimes referred to as a
-[*generic* function](/docs/manual/parameters/#parameters-and-generics).) Each
-trait requires a conforming type to implement a `write_to()` method that writes
-its `String` representation. (To learn more, read
+[*parameterized* function](/docs/manual/parameters/#parameters-and-generics).)
+Each trait requires a conforming type to implement a `write_to()` method that
+writes its `String` representation. (To learn more, read
 [The `Writable` trait](/docs/manual/traits/#the-writable-trait).)
 
 Notice that `write_to()` takes a `mut writer: Some[Writer]` argument. The
 `Writer` trait represents anything that can be written to—`String` buffers,
-files, network streams, and so on. By writing to a generic `Writer` instead of
-building and returning a `String`, your type works with any output destination.
+files, network streams, and so on. By writing to a parameterized `Writer`
+instead of building and returning a `String`, your type works with any
+output destination.
 
 Our `grid_str()` method already writes our `String` representation, so it looks
 like we'll have to rename it to `write_to()` and add the `Writer` argument to
@@ -1475,3 +1478,5 @@ To use AI coding assistants with Mojo, see our guide on
 [using Mojo AI skills](/docs/tools/skills/).
 
 :::
+
+<!-- markdownlint-enable MD033 -->
