@@ -2647,6 +2647,20 @@ struct TileTensor[
         Returns:
             A TileTensor covering the same elements in the new address space.
         """
+        return self.unsafe_address_space_cast[target_address_space]()
+
+    @always_inline
+    def unsafe_address_space_cast[
+        target_address_space: AddressSpace
+    ](self) -> Self.AddressSpaceCastType[target_address_space]:
+        """Return a version of this tensor cast to a new address space.
+
+        Parameters:
+            target_address_space: The target address space to cast to.
+
+        Returns:
+            A TileTensor covering the same elements in the new address space.
+        """
         return {
             self._unsafe_storage_cast[
                 to_origin=Self.origin, to_address_space=target_address_space
