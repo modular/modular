@@ -56,6 +56,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "test_gemv_bf16.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_gemv_multirow.mojo": ["//:nvidia_gpu"],
     "test_gemv_tma.mojo": select({
         "//:h100_gpu": ["//:h100_gpu"],
         "//:b200_gpu": ["//:b200_gpu"],
@@ -295,6 +296,7 @@ _GPU_MEMORY = {
     "test_gemm_mma_cpasync.mojo": "2",
     "test_gemv.mojo": "1.5",
     "test_gemv2.mojo": "2.5",
+    "test_gemv_multirow.mojo": "1.5",
     "test_gemv_tma.mojo": "1.5",
     "test_grouped_block_scaled_gemm_epilogue.mojo": "2",
     "test_grouped_block_scaled_gemm_execution.mojo": "1.5",

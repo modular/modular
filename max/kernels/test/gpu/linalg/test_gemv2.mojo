@@ -239,6 +239,17 @@ def main() raises:
 
         # BF16-only tests for other GEMV paths (FP8 not supported here)
 
+        # GEMV_KERNEL_VECTOR: M = 1, N wider than the split-K grid limit and
+        # K shallow enough that the kernel packs several rows per warp.
+        test[
+            in_type=DType.bfloat16,
+            out_type=DType.bfloat16,
+            transpose_b=True,
+            M=None,
+            N=Int(262144),
+            K=Int(256),
+        ](ctx, 1, 262144, 256)
+
         # GEMV_KERNEL_VECTOR: N = 1, K % simd_width == 0, transpose_b = False
         test[
             in_type=DType.bfloat16,

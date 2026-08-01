@@ -27,3 +27,6 @@ draft_model:
 speculative:
   speculative_method: dflash
   num_speculative_tokens: 7
+
+runtime:
+  device_graph_capture: true
