@@ -17,13 +17,13 @@ from std.testing import *
 
 @fieldwise_init
 @align(128)
-struct AlignedGeneric[T: Copyable & ImplicitlyDeletable]:
+struct Aligned[T: Copyable & ImplicitlyDeletable]:
     var value: Self.T
 
 
 def main() raises:
-    # print(align_of[AlignedGeneric[Int8]]())  # 128
-    # print(align_of[AlignedGeneric[Int64]]())  # 128
+    # print(align_of[Aligned[Int8]]())  # 128
+    # print(align_of[Aligned[Int64]]())  # 128
 
-    assert_equal(128, align_of[AlignedGeneric[Int8]](), "align should be 128")
-    assert_equal(128, align_of[AlignedGeneric[Int64]](), "align should be 128")
+    assert_equal(128, align_of[Aligned[Int8]](), "align should be 128")
+    assert_equal(128, align_of[Aligned[Int64]](), "align should be 128")

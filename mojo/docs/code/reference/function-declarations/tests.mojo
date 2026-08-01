@@ -75,7 +75,7 @@ def test_backtick_name():
     `import`()  # In `import`
 
 
-# --- Generic function with parameters ---
+# --- Parameterized function ---
 
 
 def clamp[

@@ -150,23 +150,23 @@ def demonstrate_array_stride():
     arr.unsafe_free()
 ```
 
-## Generic structs
+## Parameterized structs
 
-Alignment also works with generic structs. All instances of a generic type
-share the same alignment requirement. Because of this, under certain
-circumstances, you may find that the alignment isn't tuned by its types:
+Alignment also works with parameterized structs. All instances of a
+parameterized type share the same alignment requirement. Because of this, under
+certain circumstances, you may find that the alignment isn't tuned by its types:
 
 ```mojo
 from std.sys import align_of
 
 @fieldwise_init
 @align(128)
-struct AlignedGeneric[T: Copyable & ImplicitlyDeletable]:
+struct AlignedType[T: Copyable & ImplicitlyDeletable]:
     var value: Self.T
 
 def main():
-    print(align_of[AlignedGeneric[Int8]]())   # 128
-    print(align_of[AlignedGeneric[Int64]]())  # 128
+    print(align_of[AlignedType[Int8]]())   # 128
+    print(align_of[AlignedType[Int64]]())  # 128
 ```
 
 Compare this with an alignment of 4, where the maximum
@@ -178,12 +178,12 @@ from std.sys import align_of
 
 @fieldwise_init
 @align(4)
-struct AlignedGeneric[T: Copyable & ImplicitlyDeletable]:
+struct AlignedType[T: Copyable & ImplicitlyDeletable]:
     var value: Self.T
 
 def main():
-    print(align_of[AlignedGeneric[Int8]]())   # 4
-    print(align_of[AlignedGeneric[Int64]]())  # 8
+    print(align_of[AlignedType[Int8]]())   # 4
+    print(align_of[AlignedType[Int64]]())  # 8
 ```
 
 ## Interaction with RegisterPassable
@@ -292,8 +292,8 @@ Both stack and heap allocations respect `@align`.
 
 ## Parametric alignment
 
-The alignment value can also be a struct parameter, enabling generic aligned
-types:
+The alignment value can also be a struct parameter, enabling parameterized
+aligned types:
 
 ```mojo
 from std.sys import align_of

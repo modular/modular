@@ -7,6 +7,8 @@ description: >
   data structures.
 ---
 
+<!-- markdownlint-disable MD033 -->
+
 Some data structures don't fit well with value semantics. Lists, trees,
 and graphs all need nodes that point to each other. You can't build these by
 nesting one value inside another, because the type would keep growing forever.
@@ -315,5 +317,7 @@ one one two three five eight
 - Learn more about how to **manage cleanup** in the Mojo
   [destructor](/docs/manual/lifecycle/death/) documentation.
 - Learn more about
-  [generic structures with traits](/docs/manual/traits/#generic-structs-with-traits)
+  [parameterized structures with traits](/docs/manual/traits/#generic-structs-with-traits)
   and how they let you build **reusable node and list types**.
+
+<!-- markdownlint-disable MD033 -->

@@ -4,6 +4,8 @@ sidebar_position: 2
 description: Introduction to Mojo functions.
 ---
 
+<!-- markdownlint-disable MD033 -->
+
 Mojo uses the `def` keyword to define functions.
 Functions declared inside a [`struct`](/docs/manual/structs/) are called
 "methods," but they have all the same qualities as "functions" described here.
@@ -293,7 +295,7 @@ def make_worldly(mut *strs: String):
 Implementing heterogeneous variadic arguments (each argument type may be
 different) is somewhat more complicated than homogeneous variadic arguments. To
 handle multiple argument types, the function must be
-[generic](/docs/manual/generics/), which requires using
+[parameterized](/docs/manual/generics/), which requires using
 [traits](/docs/manual/traits/) and [parameters](/docs/manual/parameters/). So
 the syntax may look a little unfamiliar if you haven't worked with those
 features.
@@ -323,10 +325,10 @@ so <code>args[<var>n</var>]</code> is of type
 
 Inside the function, `args` becomes a
 [`VariadicPack`](/docs/std/builtin/variadics/VariadicPack/) because the
-syntax `*args: *ArgTypes` creates a heterogeneous variadic argument. That means
-each element in `args` can be a different type that requires a different amount
-of memory. To iterate through the `VariadicPack`, the compiler must know each
-element's type, so you must use a [`comptime for`
+syntax `*args: *ArgTypes` creates a heterogeneous variadic argument. That
+means each element in `args` can be a different type that requires a
+different amount of memory. To iterate through the `VariadicPack`, the
+compiler must know each element's type, so you must use a [`comptime for`
 loop](/docs/manual/metaprogramming/comptime-evaluation/#comptime-for):
 
 ```mojo
@@ -339,11 +341,7 @@ def count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
     return total
 
 def main():
-    print(count_many_things(5, 11.7, 12))
-```
-
-```output
-28
+    print(count_many_things(5, 11.7, 12))  # 28
 ```
 
 Notice that when calling `count_many_things()`, you don't actually pass in
@@ -580,12 +578,14 @@ def foo(name: YourString):
     print("YourString")
 
 def call_foo():
-    # foo("Hello") # error: ambiguous call to 'foo' ... This call is ambiguous because two `foo` functions match it
+    # Both `foo` overloads can accept `"Hello"`, so Mojo doesn't know
+    # which one to call.
     foo(MyString("Hello"))
 ```
 
 For the full overload-resolution rules and edge cases, see the
-[function declarations reference](/docs/reference/function-declarations/#function-overloads).
+[function declarations
+reference](/docs/reference/function-declarations/#function-overloads).
 
 ## Return values
 
@@ -739,3 +739,5 @@ def validate(value: Int) raises ValidationError -> Int:
 
 For more information, see
 [Errors, error handling, and context managers](/docs/manual/errors/).
+
+<!-- markdownlint-enable MD033 -->

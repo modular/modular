@@ -76,6 +76,8 @@ def main():
 
 A struct body can contain these elements:
 
+<!-- markdownlint-disable MD013 -->
+
 | Element               | Syntax                        | Role                       |
 |-----------------------|-------------------------------|----------------------------|
 | Field                 | `var name: Type`              | Instance data              |
@@ -84,6 +86,8 @@ A struct body can contain these elements:
 | Compile-time constant | `comptime name = value`       | Evaluated at compile time  |
 | Initializer           | `def __init__(out self, ...)` | Constructs an instance     |
 | Destructor            | `def __deinit__(deinit self)` | Cleanup at end of lifetime |
+
+<!-- markdownlint-enable MD013 -->
 
 The most minimal struct uses `pass` for an empty body:
 
@@ -248,8 +252,8 @@ struct Pair[T: Copyable & ImplicitlyDeletable](
 ### Implicit conformances
 
 The compiler automatically conforms every struct to `AnyType` and
-`ImplicitlyDeletable` when all members are also implicitly deletable.
-With generics, the parameter's traits must include `ImplicitlyDeletable`
+`ImplicitlyDeletable` when all members are also implicitly deletable. With
+parameterized types, the parameter's traits must include `ImplicitlyDeletable`
 for this to apply:
 
 ```mojo
@@ -389,7 +393,7 @@ struct Point(Writable):
     var y: Float64
 ```
 
-Consider a generic version of this `Pair` type:
+Consider a parameterized version of this `Pair` type:
 
 ```mojo
 @fieldwise_init

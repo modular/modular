@@ -14,7 +14,7 @@
 # Tests for generics.mdx code examples.
 #
 # Compile-only (no runtime assertions, exercised by main()):
-#   - my_generic_fn, the `Some` function-type and variadic before/after
+#   - my_parameterized_fn, the `Some` function-type and variadic before/after
 #     pairs, the Foo composition struct, and the fixed/dynamic
 #     value-vs-argument examples are signature-only on the page; main()
 #     calls them to confirm they build.
@@ -23,10 +23,11 @@
 #   - The erroring `function` that prints an `AnyType` directly, the
 #     `Some` struct field that can't infer a concrete type, and the
 #     zero-capacity SizedListWrapper are negative examples on the page.
-#   - The prose-only section ("Generics and explicit destruction") has no code.
+#   - The prose-only section ("Parameterized declarations and
+#     explicit destruction") has no code.
 #
 # Renamed to coexist in one file (the page names both `Pair`):
-#   - Generic types -> `Pair`; parts conformance -> `HashablePair`.
+#   - Parameterized types -> `Pair`; parts conformance -> `HashablePair`.
 from std.testing import assert_equal, assert_false, assert_true
 from std.sys.info import is_64bit
 
@@ -49,7 +50,7 @@ def test_count_above() raises:
     assert_equal(count_above[Int, 3]([1, 2, 3, 4, 5]), 2)
 
 
-# --- Basic generics: compare two lists ---
+# --- Basic parameterized declarations: compare two lists ---
 
 
 def all_equal_int(ref lhs: List[Int], ref rhs: List[Int]) -> Bool:
@@ -85,14 +86,14 @@ def test_all_equal() raises:
     assert_false(all_equal(["hello", "world"], ["goodbye", "world"]))
 
 
-# --- Generic parameter types: AnyType (compile-only) ---
+# --- Parameterized types: AnyType (compile-only) ---
 
 
-def my_generic_fn[T: AnyType](value: T):
+def my_parameterized_fn[T: AnyType](value: T):
     pass
 
 
-# --- Printing under-specified generic values ---
+# --- Printing under-specified parameterized values ---
 
 
 @fieldwise_init
@@ -200,7 +201,7 @@ def test_where_some_wont_work() raises:
     assert_true("1" in String(s))  # FixedStruct[Int](x=1)
 
 
-# --- Generic types ---
+# --- Parameterized types ---
 
 comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDeletable
 
@@ -214,7 +215,7 @@ struct Pair[T: ComparableValue](ComparableValue):
         return self.left == other.left and self.right == other.right
 
 
-def test_generic_types() raises:
+def test_parameterized_types() raises:
     assert_true(Pair(1, 2) == Pair(1, 2))
     assert_false(Pair(1, 2) == Pair(1, 3))
 
@@ -265,7 +266,7 @@ def test_type_refinement() raises:
     assert_equal(process({"key": "value"}), "<not writable>")
 
 
-# --- Value generics: basic example ---
+# --- Value parameters: basic example ---
 
 comptime MyCollectionElement = ImplicitlyCopyable & ImplicitlyDeletable
 
@@ -340,8 +341,8 @@ def test_conditional_conformance() raises:
 
 
 # --- Conditional trait conformance: parts conformance ---
-# The page names this `Pair`; renamed here to coexist with the generic
-# `Pair` from the "Generic types" section.
+# The page names this `Pair`; renamed here to coexist with the parameterized
+# `Pair` from the "Parameterized types" section.
 
 
 @fieldwise_init
@@ -459,7 +460,7 @@ def main() raises:
     test_some_arguments()
     test_some_operator_overloads()
     test_where_some_wont_work()
-    test_generic_types()
+    test_parameterized_types()
     test_mixing_type_and_value()
     test_type_refinement()
     test_make_filled()
@@ -470,7 +471,7 @@ def main() raises:
     test_comptime_if_machine()
 
     # Compile-only examples: confirm the signature-only snippets build.
-    my_generic_fn(42)
+    my_parameterized_fn(42)
     sync_parallelize_param(int_to_none)
     sync_parallelize_some(int_to_none)
     show_param(1, 2, 3)
