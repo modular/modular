@@ -80,13 +80,11 @@ def sw_kernel_square(
     var d = Int(d_dev)
     var tile_width = Int(tile_width_dev)
     # Allocate shared memory for tile
-    var swTile = UnsafePointer(
-        unsafe_stack_allocation[
-            MAX_TILE_WIDTH * MAX_TILE_WIDTH,
-            Scalar[DType.int32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var swTile = unsafe_stack_allocation[
+        MAX_TILE_WIDTH * MAX_TILE_WIDTH,
+        Scalar[DType.int32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var numTiles_x = ceildiv(L - 1, tile_width)
 

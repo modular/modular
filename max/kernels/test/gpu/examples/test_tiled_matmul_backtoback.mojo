@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import UnsafePointer
 from std.collections import Optional
 from std.math import ceildiv
 from std.math.uutils import ufloordiv, udivmod, uceildiv
@@ -229,13 +228,11 @@ def b2b_gemm[
     # Prepare shared memory buffers for A, B, and C.
     # We load our entire local `A` block into shared
     # memory and reuse it on each iteration.
-    var a_smem = UnsafePointer(
-        external_memory[
-            Scalar[in_type],
-            address_space=AddressSpace.SHARED,
-            alignment=align_of[SIMD[in_type, simd_size]](),
-        ]()
-    )
+    var a_smem = external_memory[
+        Scalar[in_type],
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[SIMD[in_type, simd_size]](),
+    ]()
     comptime a_smem_size = BM * K  # single block
     var a_smem_iter = LayoutTensorIter[
         in_type,

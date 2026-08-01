@@ -128,11 +128,9 @@ def test_async_copy(
         Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
     ]
 ):
-    var shared_mem = UnsafePointer(
-        unsafe_stack_allocation[
-            4, DType.float32, address_space=AddressSpace.SHARED
-        ]()
-    )
+    var shared_mem = unsafe_stack_allocation[
+        4, DType.float32, address_space=AddressSpace.SHARED
+    ]()
     async_copy[4](src, shared_mem)
     async_copy[16](src, shared_mem)
 
@@ -161,11 +159,9 @@ def test_async_copy_l2_prefetch(
         Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
     ]
 ):
-    var shared_mem = UnsafePointer(
-        unsafe_stack_allocation[
-            4, DType.float32, address_space=AddressSpace.SHARED
-        ]()
-    )
+    var shared_mem = unsafe_stack_allocation[
+        4, DType.float32, address_space=AddressSpace.SHARED
+    ]()
     async_copy[4, bypass_L1_16B=False, l2_prefetch=128](src, shared_mem)
     async_copy[16, bypass_L1_16B=False, l2_prefetch=64](src, shared_mem)
 
@@ -196,11 +192,9 @@ def test_async_copy_with_zero_fill_kernel(
         Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
     ]
 ):
-    var shared_mem = UnsafePointer(
-        unsafe_stack_allocation[
-            4, DType.float32, address_space=AddressSpace.SHARED
-        ]()
-    )
+    var shared_mem = unsafe_stack_allocation[
+        4, DType.float32, address_space=AddressSpace.SHARED
+    ]()
     async_copy[4, bypass_L1_16B=False, l2_prefetch=128, fill=Float32(0)](
         src, shared_mem
     )
@@ -269,11 +263,9 @@ def test_async_copy_with_eviction(
     ]
 ):
     print("test_async_copy_with_eviction")
-    var shared_mem = UnsafePointer(
-        unsafe_stack_allocation[
-            4, DType.float32, address_space=AddressSpace.SHARED
-        ]()
-    )
+    var shared_mem = unsafe_stack_allocation[
+        4, DType.float32, address_space=AddressSpace.SHARED
+    ]()
     async_copy[4, eviction_policy=CacheEviction.EVICT_FIRST](src, shared_mem)
     async_copy[16, eviction_policy=CacheEviction.EVICT_FIRST](src, shared_mem)
     async_copy[16, eviction_policy=CacheEviction.EVICT_LAST](src, shared_mem)
@@ -282,11 +274,9 @@ def test_async_copy_with_eviction(
 def async_copy_with_non_zero_fill_kernel(
     src: UnsafePointer[Int32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL]
 ):
-    var shared_mem = UnsafePointer(
-        unsafe_stack_allocation[
-            4, DType.int32, address_space=AddressSpace.SHARED
-        ]()
-    )
+    var shared_mem = unsafe_stack_allocation[
+        4, DType.int32, address_space=AddressSpace.SHARED
+    ]()
     async_copy[16, bypass_L1_16B=False, l2_prefetch=128, fill=Int32(32)](
         src, shared_mem, predicate=True
     )

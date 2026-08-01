@@ -450,14 +450,12 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # We use byte-level pointer arithmetic via UInt8 bitcasts.
 
         # Q_nope FP8: 64 × 512 × 1 = 32768 bytes (SWIZZLE_64B)
-        q_nope_smem = UnsafePointer(
-            external_memory[
-                Scalar[Self.fp8_type],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-                name="mha_dynamic_shared_memory",
-            ]()
-        )
+        q_nope_smem = external_memory[
+            Scalar[Self.fp8_type],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+            name="mha_dynamic_shared_memory",
+        ]()
 
         # Q_rope BF16: starts right after Q_nope
         # 64 × 64 × 2 = 8192 bytes (SWIZZLE_128B)

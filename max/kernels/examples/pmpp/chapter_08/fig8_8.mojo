@@ -44,13 +44,11 @@ def stencil_kernel(
     # `Int` is not device-passable; widen the fixed-width arg.
     var N = Int(n_dev)
     # Allocate shared memory tile (includes halo cells)
-    var in_s = UnsafePointer(
-        unsafe_stack_allocation[
-            IN_TILE_DIM * IN_TILE_DIM * IN_TILE_DIM,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var in_s = unsafe_stack_allocation[
+        IN_TILE_DIM * IN_TILE_DIM * IN_TILE_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Get thread and block indices
     var tx = thread_idx.x

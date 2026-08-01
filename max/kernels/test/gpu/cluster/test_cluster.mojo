@@ -44,23 +44,19 @@ def cluster_launch_control(
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
     var n = Int(n_dev)
-    result = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            UInt128,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-        ]()
-    )
+    result = unsafe_stack_allocation[
+        1,
+        UInt128,
+        address_space=AddressSpace.SHARED,
+        alignment=16,
+    ]()
 
-    mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
+    mbar = unsafe_stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     bx = UInt32(block_idx.x)
     tidx = bx * UInt32(block_dim.x) + UInt32(thread_idx.x)
@@ -113,32 +109,26 @@ def cluster_launch_control(
 def pipeline_test_kernel[
     num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
 ]():
-    var clc_response = UnsafePointer(
-        unsafe_stack_allocation[
-            num_stages,
-            UInt128,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-        ]()
-    )
+    var clc_response = unsafe_stack_allocation[
+        num_stages,
+        UInt128,
+        address_space=AddressSpace.SHARED,
+        alignment=16,
+    ]()
 
-    var full_mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            num_stages,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-        ]()
-    )
+    var full_mbar = unsafe_stack_allocation[
+        num_stages,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=16,
+    ]()
 
-    var empty_mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            num_stages,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-        ]()
-    )
+    var empty_mbar = unsafe_stack_allocation[
+        num_stages,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=16,
+    ]()
 
     comptime CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
 

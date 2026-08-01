@@ -148,20 +148,16 @@ def filter_kernel(
         N: Number of elements.
     """
     # Allocate shared memory for scan operations
-    var warp_sums = UnsafePointer(
-        unsafe_stack_allocation[
-            NUM_WARPS,
-            UInt32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var temp = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_DIM,
-            UInt32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var warp_sums = unsafe_stack_allocation[
+        NUM_WARPS,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var temp = unsafe_stack_allocation[
+        BLOCK_DIM,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var i = block_idx.x * BLOCK_DIM + thread_idx.x
     var val: UInt32 = 0

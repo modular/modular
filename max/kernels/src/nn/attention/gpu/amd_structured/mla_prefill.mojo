@@ -140,14 +140,12 @@ __extension Attention:
             SIMD[k_rope_t.dtype, simd_width_of[k_rope_t.dtype]()]
         ]()
         comptime k_rope_smem_elems = 2 * Self.BN * rope_depth
-        var k_rope_smem_ptr = UnsafePointer(
-            unsafe_stack_allocation[
-                k_rope_smem_elems,
-                k_rope_t.dtype,
-                address_space=AddressSpace.SHARED,
-                alignment=alignment,
-            ]()
-        )
+        var k_rope_smem_ptr = unsafe_stack_allocation[
+            k_rope_smem_elems,
+            k_rope_t.dtype,
+            address_space=AddressSpace.SHARED,
+            alignment=alignment,
+        ]()
         comptime KRopeBufT = KVBuffer[
             kv_t=k_rope_t,
             mma_shape=Self.mma_shape,

@@ -25,7 +25,6 @@ software-pipelined tensor-core GEMM.
   activation-order permutation).
 """
 
-from std.memory import UnsafePointer
 from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv, udivmod, uceildiv
 
@@ -757,13 +756,11 @@ def multistage_qgemm_kernel[
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
     comptime alignment = align_of[SIMD[a_type, simd_size]]()
-    var a_smem = UnsafePointer(
-        external_memory[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            alignment=alignment,
-        ]()
-    )
+    var a_smem = external_memory[
+        Scalar[a_type],
+        address_space=AddressSpace.SHARED,
+        alignment=alignment,
+    ]()
     comptime a_smem_size = num_pipeline_stages * BM * BK
 
     comptime IteratorTypeA = LayoutTensorIter[
@@ -1250,13 +1247,11 @@ def repack_Q4_0_for_sm8x[
     )
 
     # We keep 128x2 Q4_0 GGUF blocks in smem
-    var smem = UnsafePointer(
-        external_memory[
-            UInt8,
-            address_space=AddressSpace.SHARED,
-            alignment=align_of[UInt8](),
-        ]()
-    )
+    var smem = external_memory[
+        UInt8,
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[UInt8](),
+    ]()
     var qb_smem = LayoutTensor[
         DType.uint8,
         Layout.row_major(BN, 2 * group_bytes),
@@ -1470,13 +1465,11 @@ def repack_GPTQ_for_sm8x[
     )
 
     # We keep 128x2 GPTQ blocks in smem
-    var smem = UnsafePointer(
-        external_memory[
-            UInt8,
-            address_space=AddressSpace.SHARED,
-            alignment=align_of[UInt8](),
-        ]()
-    )
+    var smem = external_memory[
+        UInt8,
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[UInt8](),
+    ]()
     var weights_smem = LayoutTensor[
         DType.uint8,
         Layout.row_major(BN, 2 * weights_bytes_per_group),

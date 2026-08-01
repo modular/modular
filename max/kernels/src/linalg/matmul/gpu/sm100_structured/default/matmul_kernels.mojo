@@ -1727,19 +1727,11 @@ struct BlackwellMatmulSM100Kernel[
         Self.validate_constraints()
 
         # Access shared memory via bitcast
-        ref smem = UnsafePointer[
+        ref smem = external_memory[
             Scalar[DType.uint8],
-            MutUntrackedOrigin,
             address_space=AddressSpace.SHARED,
-        ](
-            external_memory[
-                Scalar[DType.uint8],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ]()
-        ).bitcast[
-            Self.SmemType
-        ]()[]
+            alignment=128,
+        ]().bitcast[Self.SmemType]()[]
 
         # Create input pipeline for TMA→MMA synchronization (with payload)
         var tile_payload = Self.TilePayload(smem.a_tiles(), smem.b_tiles())
@@ -2229,19 +2221,11 @@ struct BlackwellMatmulSM100Kernel[
         Self.validate_constraints()
 
         # Access shared memory via bitcast
-        ref smem = UnsafePointer[
+        ref smem = external_memory[
             Scalar[DType.uint8],
-            MutUntrackedOrigin,
             address_space=AddressSpace.SHARED,
-        ](
-            external_memory[
-                Scalar[DType.uint8],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ]()
-        ).bitcast[
-            Self.SmemType
-        ]()[]
+            alignment=128,
+        ]().bitcast[Self.SmemType]()[]
 
         # Create input pipeline for TMA→MMA synchronization (with payload)
         var tile_payload = Self.TilePayload(smem.a_tiles(), smem.b_tiles())
@@ -2586,18 +2570,12 @@ struct BlackwellMatmulSM100FallbackKernel[
 
         # Setup shared memory for A and B tiles
         var a_smem = rebind[SMemPtr[Scalar[Self.a_type]]](
-            UnsafePointer[
+            external_memory[
                 Scalar[Self.a_type],
-                MutUntrackedOrigin,
                 address_space=AddressSpace.SHARED,
-            ](
-                external_memory[
-                    Scalar[Self.a_type],
-                    address_space=AddressSpace.SHARED,
-                    alignment=128,
-                    name="tmem_test_dynamic_shared_memory",
-                ]()
-            )
+                alignment=128,
+                name="tmem_test_dynamic_shared_memory",
+            ]()
         )
 
         var b_smem = (a_smem + Self.a_size).bitcast[Scalar[Self.b_type]]()

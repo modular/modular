@@ -67,24 +67,20 @@ def im2col_load_kernel[
     # Barrier needs to come after tile data (aligned to 128B)
     comptime barrier_offset = (tile_bytes + 127) // 128 * 128
 
-    var smem_ptr = UnsafePointer(
+    var smem_ptr = external_memory[
+        Scalar[dtype],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+        name="im2col_smem",
+    ]()
+
+    var barrier_ptr = (
         external_memory[
-            Scalar[dtype],
+            Scalar[DType.uint8],
             address_space=AddressSpace.SHARED,
             alignment=128,
             name="im2col_smem",
         ]()
-    )
-
-    var barrier_ptr = (
-        UnsafePointer(
-            external_memory[
-                Scalar[DType.uint8],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-                name="im2col_smem",
-            ]()
-        )
         + barrier_offset
     ).bitcast[SharedMemBarrier]()
 

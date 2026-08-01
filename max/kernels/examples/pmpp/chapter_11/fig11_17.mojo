@@ -70,20 +70,16 @@ def test_interblock_scan(
     var val = Float32(0.0) if i >= Int(N) else input[i]
 
     # Allocate shared memory
-    var warp_sums = UnsafePointer(
-        unsafe_stack_allocation[
-            NUM_WARPS,
-            Float32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var prev_block_sum_ptr = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            Float32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var warp_sums = unsafe_stack_allocation[
+        NUM_WARPS,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var prev_block_sum_ptr = unsafe_stack_allocation[
+        1,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Block-level scan using warp primitives
     var result = warp_scan(val)

@@ -48,27 +48,21 @@ def stencil_kernel(
     # `Int` is not device-passable; widen the fixed-width arg.
     var N = Int(n_dev)
     # Allocate shared memory for three 2D planes
-    var prev_in_s = UnsafePointer(
-        unsafe_stack_allocation[
-            IN_TILE_DIM * IN_TILE_DIM,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var curr_in_s = UnsafePointer(
-        unsafe_stack_allocation[
-            IN_TILE_DIM * IN_TILE_DIM,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var next_in_s = UnsafePointer(
-        unsafe_stack_allocation[
-            IN_TILE_DIM * IN_TILE_DIM,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var prev_in_s = unsafe_stack_allocation[
+        IN_TILE_DIM * IN_TILE_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var curr_in_s = unsafe_stack_allocation[
+        IN_TILE_DIM * IN_TILE_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var next_in_s = unsafe_stack_allocation[
+        IN_TILE_DIM * IN_TILE_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Get thread and block indices (only x and y, no z)
     var tx = thread_idx.x

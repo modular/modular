@@ -194,20 +194,16 @@ def merge_circular_buffer_kernel(
     var n = Int(n_dev)
     var tile_size = Int(tile_size_dev)
     # Allocate shared memory
-    var A_S = UnsafePointer(
-        unsafe_stack_allocation[
-            1024,
-            Scalar[DType.int32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var B_S = UnsafePointer(
-        unsafe_stack_allocation[
-            1024,
-            Scalar[DType.int32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var A_S = unsafe_stack_allocation[
+        1024,
+        Scalar[DType.int32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var B_S = unsafe_stack_allocation[
+        1024,
+        Scalar[DType.int32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Block-level co-rank (same as tiled version)
     # Dynamic grid size based on launch configuration

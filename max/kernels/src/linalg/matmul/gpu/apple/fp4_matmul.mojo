@@ -269,13 +269,11 @@ struct AppleM5Fp4MatMul[
         # Double-buffered (2, BN, BK) bf16 SMEM weight sub-tile. Wrapped in a
         # TileTensor view so both buffers are addressed by `(buf, nrow, col)`
         # indexing (in-bounds by construction) -- no raw SMEM pointer arithmetic.
-        var b_smem = UnsafePointer(
-            unsafe_stack_allocation[
-                2 * BN * BK,
-                Scalar[Self.in_type],
-                address_space=AddressSpace.SHARED,
-            ]()
-        )
+        var b_smem = unsafe_stack_allocation[
+            2 * BN * BK,
+            Scalar[Self.in_type],
+            address_space=AddressSpace.SHARED,
+        ]()
         var b_smem_view = TileTensor(
             b_smem,
             Layout(Coord(2, BN, BK), Coord(BN * BK, BK, Idx[1])),
@@ -290,13 +288,11 @@ struct AppleM5Fp4MatMul[
         # read on the `coalesce_scales` path.
         comptime NBLK = Self.NBLK_PER_STRIP
         comptime SCALE_SMEM = (2 * BN * NBLK) if Self.coalesce_scales else 1
-        var s_smem = UnsafePointer(
-            unsafe_stack_allocation[
-                SCALE_SMEM,
-                Scalar[DType.float32],
-                address_space=AddressSpace.SHARED,
-            ]()
-        )
+        var s_smem = unsafe_stack_allocation[
+            SCALE_SMEM,
+            Scalar[DType.float32],
+            address_space=AddressSpace.SHARED,
+        ]()
         var s_smem_view = TileTensor(
             s_smem,
             Layout(Coord(2, BN, NBLK), Coord(BN * NBLK, NBLK, Idx[1])),

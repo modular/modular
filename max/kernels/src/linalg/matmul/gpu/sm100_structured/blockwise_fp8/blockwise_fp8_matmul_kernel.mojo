@@ -28,7 +28,6 @@ Key differences from standard/block-scaled kernels:
 - BlockwiseFP8TileWriter for final register → SMEM → GMEM flow
 """
 
-from std.memory import UnsafePointer
 from std.sys import size_of
 
 from std.gpu import WARP_SIZE
@@ -719,19 +718,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.validate_config()
 
         # ===== Shared Memory Setup =====
-        ref smem = UnsafePointer[
+        ref smem = external_memory[
             Scalar[DType.uint8],
-            MutUntrackedOrigin,
             address_space=AddressSpace.SHARED,
-        ](
-            external_memory[
-                Scalar[DType.uint8],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ]()
-        ).bitcast[
-            Self.SmemType
-        ]()[]
+            alignment=128,
+        ]().bitcast[Self.SmemType]()[]
 
         var a_tiles = smem.a_tiles()
         var b_tiles = smem.b_tiles()

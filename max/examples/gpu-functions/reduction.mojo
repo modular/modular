@@ -51,13 +51,11 @@ def sum_kernel[
 ):
     """Efficient reduction of the vector a."""
     comptime KERNEL_TPB: Int = 512
-    sums = UnsafePointer(
-        unsafe_stack_allocation[
-            KERNEL_TPB,
-            Scalar[dtype],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    sums = unsafe_stack_allocation[
+        KERNEL_TPB,
+        Scalar[dtype],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     global_tid = block_idx.x * block_dim.x + thread_idx.x
     tid = thread_idx.x

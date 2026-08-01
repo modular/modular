@@ -26,7 +26,6 @@ Architecture:
   with bounds checking
 """
 
-from std.memory import UnsafePointer
 from std.math import ceildiv
 from std.math.uutils import ufloordiv, umod
 from std.sys import size_of
@@ -510,19 +509,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.validate_config()
 
         # ===== Shared Memory Setup =====
-        ref smem = UnsafePointer[
+        ref smem = external_memory[
             Scalar[DType.uint8],
-            MutUntrackedOrigin,
             address_space=AddressSpace.SHARED,
-        ](
-            external_memory[
-                Scalar[DType.uint8],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ]()
-        ).bitcast[
-            Self.SmemType
-        ]()[]
+            alignment=128,
+        ]().bitcast[Self.SmemType]()[]
 
         # Get typed tile arrays from SMEM
         var a_tiles = smem.a_tiles()

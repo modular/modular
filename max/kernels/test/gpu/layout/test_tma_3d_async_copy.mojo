@@ -73,14 +73,12 @@ def test_tma_3d_load_kernel[
         tile_rank, cta_tile_shape
     ]() * size_of[dtype]()
 
-    mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
+    mbar = unsafe_stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     if thread_idx.x == 0:
         mbar[0].init()

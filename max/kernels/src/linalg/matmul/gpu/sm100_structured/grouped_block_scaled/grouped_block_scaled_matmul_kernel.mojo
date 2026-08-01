@@ -1448,19 +1448,11 @@ struct GroupedBlockScaledMatmulKernel[
         var problem_sizes = problem_sizes_lt
 
         # ===== Shared Memory Setup =====
-        ref smem = UnsafePointer[
+        ref smem = external_memory[
             Scalar[DType.uint8],
-            MutUntrackedOrigin,
             address_space=AddressSpace.SHARED,
-        ](
-            external_memory[
-                Scalar[DType.uint8],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ]()
-        ).bitcast[
-            Self.SmemType
-        ]()[]
+            alignment=128,
+        ]().bitcast[Self.SmemType]()[]
 
         # Get typed tile arrays from SMEM accessors
         var a_tiles = smem.a_tiles()
@@ -2063,19 +2055,11 @@ struct GroupedBlockScaledMatmulKernel[
         var problem_sizes = problem_sizes_lt
 
         # ===== Shared Memory Setup =====
-        ref smem = UnsafePointer[
+        ref smem = external_memory[
             Scalar[DType.uint8],
-            MutUntrackedOrigin,
             address_space=AddressSpace.SHARED,
-        ](
-            external_memory[
-                Scalar[DType.uint8],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ]()
-        ).bitcast[
-            Self.SmemType
-        ]()[]
+            alignment=128,
+        ]().bitcast[Self.SmemType]()[]
 
         # Get typed tile arrays from SMEM accessors
         var a_tiles = smem.a_tiles()

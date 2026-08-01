@@ -743,20 +743,16 @@ struct _FlashAttention[
         )
         @parameter
         def task_func(task_id: Int):
-            var qk_block_ptr = UnsafePointer(
-                unsafe_stack_allocation[
-                    Self._config.block_m * Self._config.qk_block_n,
-                    Self.dtype,
-                    alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
-                ]()
-            )
-            var o_block_ptr = UnsafePointer(
-                unsafe_stack_allocation[
-                    Self._config.block_m * Self._config.o_block_n,
-                    Self.dtype,
-                    alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
-                ]()
-            )
+            var qk_block_ptr = unsafe_stack_allocation[
+                Self._config.block_m * Self._config.qk_block_n,
+                Self.dtype,
+                alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
+            ]()
+            var o_block_ptr = unsafe_stack_allocation[
+                Self._config.block_m * Self._config.o_block_n,
+                Self.dtype,
+                alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
+            ]()
             var max_vals_storage = Array[
                 Scalar[Self.dtype], Self._config.block_m
             ](uninitialized=True)

@@ -270,20 +270,16 @@ def gated_delta_recurrence_fwd_gpu[
     var slot = Int(slot_idx._storage[batch_item_idx])
 
     # Shared memory: raw Q and K for the current token (one element per kd).
-    var q_raw_s = UnsafePointer(
-        unsafe_stack_allocation[
-            KEY_HEAD_DIM,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var k_raw_s = UnsafePointer(
-        unsafe_stack_allocation[
-            KEY_HEAD_DIM,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var q_raw_s = unsafe_stack_allocation[
+        KEY_HEAD_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var k_raw_s = unsafe_stack_allocation[
+        KEY_HEAD_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # ── Load this thread's KD-element state column from pool[slot, ...] ──────
     var state_col = SIMD[DType.float32, KEY_HEAD_DIM](0.0)

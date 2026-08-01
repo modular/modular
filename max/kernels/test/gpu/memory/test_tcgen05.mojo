@@ -29,11 +29,9 @@ def tcgen05_st_ld_roundtrip_kernel[
     var elect_one_warp = warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
 
-    var ptr_tmem_addr = UnsafePointer(
-        unsafe_stack_allocation[
-            1, UInt32, address_space=AddressSpace.SHARED, alignment=16
-        ]()
-    )
+    var ptr_tmem_addr = unsafe_stack_allocation[
+        1, UInt32, address_space=AddressSpace.SHARED, alignment=16
+    ]()
 
     comptime width = N
     comptime num_cols = 512
@@ -192,11 +190,9 @@ def tcgen05_cp_ld_roundtrip_kernel[
 
     var elect_one_warp = warp_id() == 0
 
-    var ptr_tmem_addr = UnsafePointer(
-        unsafe_stack_allocation[
-            1, UInt32, address_space=AddressSpace.SHARED, alignment=16
-        ]()
-    )
+    var ptr_tmem_addr = unsafe_stack_allocation[
+        1, UInt32, address_space=AddressSpace.SHARED, alignment=16
+    ]()
 
     comptime width = N
     comptime num_cols = 32

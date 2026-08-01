@@ -134,14 +134,12 @@ def multicast_tma_wgmma_kernel[
     var rank_m = block_rank / CLUSTER_N
     var rank_n = block_rank % CLUSTER_N
 
-    mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
+    mbar = unsafe_stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
     if thread_idx.x == 0:
         mbar[0].init()
 

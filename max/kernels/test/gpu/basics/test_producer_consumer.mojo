@@ -29,14 +29,12 @@ from std.utils import IndexList
 
 def producer_consumer_kernel[NUM_THREADS: Int]():
     var warp_id = get_warp_id()
-    var mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
+    var mbar = unsafe_stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     if thread_idx.x == 0:
         mbar[0].init(Int32(NUM_THREADS))
@@ -71,22 +69,18 @@ def test_producer_consumer_kernel(ctx: DeviceContext) raises:
 def producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
     var k_tile_iters = num_iters
 
-    var producer_mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            Q_SIZE,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
-    var consumer_mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            Q_SIZE,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
+    var producer_mbar = unsafe_stack_allocation[
+        Q_SIZE,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
+    var consumer_mbar = unsafe_stack_allocation[
+        Q_SIZE,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     comptime for i in range(Q_SIZE):
         if thread_idx.x == 0:
@@ -160,14 +154,12 @@ def cpaysnc_producer_consumer_pipeline_kernel[
 
     warpgroup_idx, warpgroup_tid = udivmod(thread_idx.x, 128)
 
-    smem = UnsafePointer(
-        unsafe_stack_allocation[
-            size_per_stage * num_stages,
-            DType.float32,
-            alignment=16,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    smem = unsafe_stack_allocation[
+        size_per_stage * num_stages,
+        DType.float32,
+        alignment=16,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Initialize smem buffer
     if warpgroup_idx == 0:
@@ -179,22 +171,18 @@ def cpaysnc_producer_consumer_pipeline_kernel[
 
     barrier()
 
-    var produced_mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            num_stages,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
-    var consumed_mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            num_stages,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
+    var produced_mbar = unsafe_stack_allocation[
+        num_stages,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
+    var consumed_mbar = unsafe_stack_allocation[
+        num_stages,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     comptime for i in range(num_stages):
         if thread_idx.x == 0:

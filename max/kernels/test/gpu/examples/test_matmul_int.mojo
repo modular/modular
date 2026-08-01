@@ -53,20 +53,18 @@ def matmul(
     # NOTE: A and C are column major, B is row major.
 
     # Allocate B array into shared memory for tiling.
-    var b_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            TILE_SZ_RATIO * TILE_SZ_B,
-            DType.int,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var b_shared = unsafe_stack_allocation[
+        TILE_SZ_RATIO * TILE_SZ_B,
+        DType.int,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Thread indexing offsets.
     var row = global_idx.x
     var col = block_idx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
-    var c_reg = UnsafePointer(unsafe_stack_allocation[TILE_SZ_B, DType.int]())
+    var c_reg = unsafe_stack_allocation[TILE_SZ_B, DType.int]()
 
     unsafe_memset_zero(c_reg, TILE_SZ_B)
 

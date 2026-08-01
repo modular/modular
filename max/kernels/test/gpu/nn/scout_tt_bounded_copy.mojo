@@ -124,11 +124,9 @@ def scout_bounded(
     # `Int` is not device-passable; widen the fixed-width arg.
     var valid_rows = Int(valid_rows_dev)
     # SMEM dst: [BM, depth] row-major.
-    var smem = UnsafePointer(
-        external_memory[
-            Scalar[dtype], address_space=AddressSpace.SHARED, alignment=16
-        ]()
-    )
+    var smem = external_memory[
+        Scalar[dtype], address_space=AddressSpace.SHARED, alignment=16
+    ]()
     var q_smem = TileTensor(smem, tt_row_major[BM, depth]())
 
     # Sub-tile + bounded masked copy over depth//BK column tiles (NO swizzle so

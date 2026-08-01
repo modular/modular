@@ -32,50 +32,40 @@ from std.utils.static_tuple import StaticTuple
 def test_kernel[
     num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
 ](cluster_dim: StaticTuple[Int32, 3]):
-    var clc_response = UnsafePointer(
-        unsafe_stack_allocation[
-            num_stages,
-            UInt128,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-        ]()
-    )
+    var clc_response = unsafe_stack_allocation[
+        num_stages,
+        UInt128,
+        address_space=AddressSpace.SHARED,
+        alignment=16,
+    ]()
 
-    var clc_full_mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            num_stages,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-        ]()
-    )
+    var clc_full_mbar = unsafe_stack_allocation[
+        num_stages,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=16,
+    ]()
 
-    var clc_empty_mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            num_stages,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-        ]()
-    )
+    var clc_empty_mbar = unsafe_stack_allocation[
+        num_stages,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=16,
+    ]()
 
-    var clc_throttle_full_mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            num_stages,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-        ]()
-    )
+    var clc_throttle_full_mbar = unsafe_stack_allocation[
+        num_stages,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=16,
+    ]()
 
-    var clc_throttle_empty_mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            num_stages,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-        ]()
-    )
+    var clc_throttle_empty_mbar = unsafe_stack_allocation[
+        num_stages,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=16,
+    ]()
 
     comptime SCHEDULER_THREADS = 32
     comptime TMA_LOAD_THREADS = 32

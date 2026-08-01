@@ -47,20 +47,16 @@ def bfs_kernel(
     """BFS kernel with private frontier and grid-strided loop."""
     # `Int` is not device-passable; widen the fixed-width arg.
     var num_prev_frontier = Int(num_prev_frontier_dev)
-    var curr_frontier_s = UnsafePointer(
-        unsafe_stack_allocation[
-            PRIVATE_FRONTIER_CAPACITY,
-            UInt32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var num_curr_frontier_s = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            UInt32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var curr_frontier_s = unsafe_stack_allocation[
+        PRIVATE_FRONTIER_CAPACITY,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var num_curr_frontier_s = unsafe_stack_allocation[
+        1,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     if thread_idx.x == 0:
         num_curr_frontier_s[0] = 0
@@ -104,13 +100,11 @@ def bfs_kernel(
 
     barrier()
 
-    var start_idx_ptr = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            UInt32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var start_idx_ptr = unsafe_stack_allocation[
+        1,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
     if thread_idx.x == 0:
         var local_count = Int(num_curr_frontier_s[0])
         start_idx_ptr[0] = Atomic.fetch_add(

@@ -2040,13 +2040,11 @@ def mla_decoding_single_batch[
     # The entire query block (BM x depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
     comptime q_smem_size = BM * depth
-    var q_smem = UnsafePointer(
-        external_memory[
-            Scalar[q_type],
-            address_space=AddressSpace.SHARED,
-            alignment=alignment,
-        ]()
-    )
+    var q_smem = external_memory[
+        Scalar[q_type],
+        address_space=AddressSpace.SHARED,
+        alignment=alignment,
+    ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
@@ -2153,12 +2151,12 @@ def mla_decoding_single_batch[
     comptime row_alignment = align_of[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
-    var rowmax = UnsafePointer(
-        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
-    )
-    var rowsum = UnsafePointer(
-        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
-    )
+    var rowmax = unsafe_stack_allocation[
+        WM, accum_type, alignment=row_alignment
+    ]()
+    var rowsum = unsafe_stack_allocation[
+        WM, accum_type, alignment=row_alignment
+    ]()
 
     comptime for i in range(WM):
         rowmax[i] = min_or_neg_inf[accum_type]()
@@ -3820,13 +3818,11 @@ def mla_prefill_single_batch[
     # The entire query block (BM x q_depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
     comptime q_smem_size = BM * q_depth
-    var q_smem = UnsafePointer(
-        external_memory[
-            Scalar[q_type],
-            address_space=AddressSpace.SHARED,
-            alignment=alignment,
-        ]()
-    )
+    var q_smem = external_memory[
+        Scalar[q_type],
+        address_space=AddressSpace.SHARED,
+        alignment=alignment,
+    ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
@@ -3950,12 +3946,12 @@ def mla_prefill_single_batch[
     comptime row_alignment = align_of[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
-    var rowmax = UnsafePointer(
-        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
-    )
-    var rowsum = UnsafePointer(
-        unsafe_stack_allocation[WM, accum_type, alignment=row_alignment]()
-    )
+    var rowmax = unsafe_stack_allocation[
+        WM, accum_type, alignment=row_alignment
+    ]()
+    var rowsum = unsafe_stack_allocation[
+        WM, accum_type, alignment=row_alignment
+    ]()
 
     comptime for i in range(0, WM, 2):
         rowmax.store(i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]()))

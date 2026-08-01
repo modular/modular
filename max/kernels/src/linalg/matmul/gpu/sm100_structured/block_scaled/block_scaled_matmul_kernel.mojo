@@ -38,7 +38,6 @@ Key structured patterns:
 - Automatic wait/step in context manager __enter__/__exit__
 """
 
-from std.memory import UnsafePointer
 from std.collections import Optional
 from std.math import ceildiv
 from std.memory import Pointer
@@ -931,19 +930,11 @@ struct BlackwellBlockScaledMatmulKernel[
         Self.validate_config()
 
         # ===== Shared Memory Setup (structured pattern with typed accessors) =====
-        ref smem = UnsafePointer[
+        ref smem = external_memory[
             Scalar[DType.uint8],
-            MutUntrackedOrigin,
             address_space=AddressSpace.SHARED,
-        ](
-            external_memory[
-                Scalar[DType.uint8],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ]()
-        ).bitcast[
-            Self.SmemType
-        ]()[]
+            alignment=128,
+        ]().bitcast[Self.SmemType]()[]
 
         # Get typed tile arrays from SMEM accessors
         var a_tiles = smem.a_tiles()

@@ -30,22 +30,12 @@ from std.testing import assert_equal
 
 
 def test_i8_to_i32() raises:
-    var a = UnsafePointer(
-        unsafe_stack_allocation[16 * 64, DType.uint8, alignment=64]()
-    )
-    var asat = UnsafePointer(
-        unsafe_stack_allocation[16 * 64, DType.uint8, alignment=64]()
-    )
-    var b = UnsafePointer(
-        unsafe_stack_allocation[64 * 16, DType.int8, alignment=64]()
-    )
+    var a = unsafe_stack_allocation[16 * 64, DType.uint8, alignment=64]()
+    var asat = unsafe_stack_allocation[16 * 64, DType.uint8, alignment=64]()
+    var b = unsafe_stack_allocation[64 * 16, DType.int8, alignment=64]()
 
-    var c = UnsafePointer(
-        unsafe_stack_allocation[16 * 16, DType.int32, alignment=64]()
-    )
-    var csat = UnsafePointer(
-        unsafe_stack_allocation[16 * 16, DType.int32, alignment=64]()
-    )
+    var c = unsafe_stack_allocation[16 * 16, DType.int32, alignment=64]()
+    var csat = unsafe_stack_allocation[16 * 16, DType.int32, alignment=64]()
 
     for i in range(16 * 64):
         a[unsafe_offset=i] = UInt8(i & 255)

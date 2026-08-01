@@ -44,20 +44,16 @@ def matrix_mul_tiled_boundary_kernel(
     comptime TILE_WIDTH = 16
 
     # Allocate shared memory tiles
-    var Mds = UnsafePointer(
-        unsafe_stack_allocation[
-            TILE_WIDTH * TILE_WIDTH,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var Nds = UnsafePointer(
-        unsafe_stack_allocation[
-            TILE_WIDTH * TILE_WIDTH,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var Mds = unsafe_stack_allocation[
+        TILE_WIDTH * TILE_WIDTH,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var Nds = unsafe_stack_allocation[
+        TILE_WIDTH * TILE_WIDTH,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var tx = thread_idx.x
     var ty = thread_idx.y

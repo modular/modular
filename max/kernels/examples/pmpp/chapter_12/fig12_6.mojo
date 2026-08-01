@@ -52,20 +52,16 @@ def filter_kernel(
         N: Number of elements.
     """
     # Allocate shared memory for block-private output list
-    var output_s = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_DIM,
-            UInt32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var output_size_s = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            UInt32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var output_s = unsafe_stack_allocation[
+        BLOCK_DIM,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var output_size_s = unsafe_stack_allocation[
+        1,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     if thread_idx.x == 0:
         output_size_s[0] = UInt32(0)
@@ -84,13 +80,11 @@ def filter_kernel(
     barrier()
 
     # Update the public counter (one thread per block)
-    var j_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            UInt32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var j_shared = unsafe_stack_allocation[
+        1,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
     if thread_idx.x == 0:
         var local_size = output_size_s[0]
         var j = Atomic.fetch_add(output_size, local_size)

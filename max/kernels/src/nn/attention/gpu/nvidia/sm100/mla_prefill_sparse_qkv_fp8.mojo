@@ -755,15 +755,9 @@ struct MLAPrefillSparseQKVFP8[
             q_tma_op.prefetch_descriptor()
             kv_tma_op.prefetch_descriptor()
 
-        ref smem = UnsafePointer[
-            UInt8, MutUntrackedOrigin, address_space=AddressSpace.SHARED
-        ](
-            external_memory[
-                UInt8, address_space=AddressSpace.SHARED, alignment=128
-            ]()
-        ).bitcast[
-            Self.SMemType
-        ]()[]
+        ref smem = external_memory[
+            UInt8, address_space=AddressSpace.SHARED, alignment=128
+        ]().bitcast[Self.SMemType]()[]
 
         var q_ptr = smem.q.unsafe_ptr()
         var kv_ptr: UnsafePointer[

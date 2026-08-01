@@ -37,14 +37,12 @@ def _callee_fill_and_reduce(
 ):
     """Each thread writes its index into shared memory; thread 0 reduces to sum.
     """
-    var smem = UnsafePointer(
-        external_memory[
-            Float32,
-            address_space=AddressSpace.SHARED,
-            alignment=4,
-            name="callee_ext",
-        ]()
-    )
+    var smem = external_memory[
+        Float32,
+        address_space=AddressSpace.SHARED,
+        alignment=4,
+        name="callee_ext",
+    ]()
     smem[local_idx] = Float32(local_idx)
     barrier()
     if local_idx == 0:
@@ -99,14 +97,12 @@ def _deep_baz(
     data: UnsafePointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
 ):
     """Innermost callee — owns the external_memory reference."""
-    var smem = UnsafePointer(
-        external_memory[
-            Float32,
-            address_space=AddressSpace.SHARED,
-            alignment=4,
-            name="deep_ext",
-        ]()
-    )
+    var smem = external_memory[
+        Float32,
+        address_space=AddressSpace.SHARED,
+        alignment=4,
+        name="deep_ext",
+    ]()
     smem[local_idx] = Float32(local_idx)
     barrier()
     if local_idx == 0:

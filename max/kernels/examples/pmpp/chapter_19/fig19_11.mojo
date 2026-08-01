@@ -76,20 +76,16 @@ def conv_layer_mm_kernel(
 
     # Allocate shared memory for tiles
     # Fds[TILE_WIDTH][TILE_WIDTH] + Bds[TILE_WIDTH][TILE_WIDTH]
-    var Fds = UnsafePointer(
-        unsafe_stack_allocation[
-            TILE_WIDTH * TILE_WIDTH,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var Bds = UnsafePointer(
-        unsafe_stack_allocation[
-            TILE_WIDTH * TILE_WIDTH,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var Fds = unsafe_stack_allocation[
+        TILE_WIDTH * TILE_WIDTH,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var Bds = unsafe_stack_allocation[
+        TILE_WIDTH * TILE_WIDTH,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var bx = block_idx.x
     var by = block_idx.y

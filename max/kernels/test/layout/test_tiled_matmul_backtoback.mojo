@@ -628,9 +628,7 @@ def matmulb2b[
     var pa = A.ptr
     var pd = D.ptr
     # Should we support heap-allocating and passing it in?
-    var AB = UnsafePointer(
-        unsafe_stack_allocation[Mc * Nc, elt, alignment=64]()
-    )
+    var AB = unsafe_stack_allocation[Mc * Nc, elt, alignment=64]()
     # TODO: prefetches, as described in nest
     # NOTE: Read comments within the loop from the inside out.
     #       I.e., read following a post-order depth first traversal of the

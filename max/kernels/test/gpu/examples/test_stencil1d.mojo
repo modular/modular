@@ -67,11 +67,9 @@ def stencil1d_smem(
     var a = TileTensor(a_ptr, row_major(Coord(Int(arr_size))))
     var b = TileTensor(b_ptr, row_major(Coord(Int(arr_size))))
 
-    var a_shared = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_DIM + 2, DType.float32, address_space=AddressSpace.SHARED
-        ]()
-    )
+    var a_shared = unsafe_stack_allocation[
+        BLOCK_DIM + 2, DType.float32, address_space=AddressSpace.SHARED
+    ]()
 
     a_shared[lindex] = a.load[width=1](Coord(tid))
     if thread_idx.x == 0:

@@ -66,27 +66,21 @@ def scan_kernel(
     var block_segment = block_idx.x * COARSE_FACTOR * BLOCK_DIM
 
     # Allocate shared memory
-    var buffer_s = UnsafePointer(
-        unsafe_stack_allocation[
-            COARSE_FACTOR * BLOCK_DIM,
-            Float32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var warp_sums = UnsafePointer(
-        unsafe_stack_allocation[
-            NUM_WARPS,
-            Float32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var thread_sums = UnsafePointer(
-        unsafe_stack_allocation[
-            BLOCK_DIM,
-            Float32,
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var buffer_s = unsafe_stack_allocation[
+        COARSE_FACTOR * BLOCK_DIM,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var warp_sums = unsafe_stack_allocation[
+        NUM_WARPS,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var thread_sums = unsafe_stack_allocation[
+        BLOCK_DIM,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Load data to shared memory
     for c in range(COARSE_FACTOR):

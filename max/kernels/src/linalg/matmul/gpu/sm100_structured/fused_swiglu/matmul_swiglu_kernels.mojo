@@ -1599,17 +1599,11 @@ def blackwell_swiglu_warp_specialized_kernel[
     comptime c_out_smem_offset = (size_of[SmemType]() + 127) & ~127
 
     # ===== Shared memory =====
-    var smem_bytes = UnsafePointer[
+    var smem_bytes = external_memory[
         Scalar[DType.uint8],
-        MutUntrackedOrigin,
         address_space=AddressSpace.SHARED,
-    ](
-        external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]()
-    )
+        alignment=128,
+    ]()
     ref smem = smem_bytes.bitcast[SmemType]()[]
     var ptr_tmem_addr: UnsafePointer[
         UInt32,

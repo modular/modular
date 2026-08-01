@@ -242,14 +242,12 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
             address_space=AddressSpace.SHARED,
         ]
     ](
-        UnsafePointer(
-            external_memory[
-                Scalar[a_type],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-                name="tmem_test_dynamic_shared_memory",
-            ]()
-        )
+        external_memory[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+            name="tmem_test_dynamic_shared_memory",
+        ]()
     )
 
     comptime a_smem_tile_t = LayoutTensor[
@@ -2110,13 +2108,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     comptime a_scales_smem_layout = Layout.row_major(1, BM)
 
-    base_ptr_smem = UnsafePointer(
-        external_memory[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]()
-    )
+    base_ptr_smem = external_memory[
+        Scalar[a_type],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+    ]()
 
     comptime a_smem_size = a_smem_layout.size() * num_pipeline_stages
     comptime b_smem_size = b_smem_layout.size() * num_pipeline_stages

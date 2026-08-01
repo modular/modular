@@ -147,14 +147,12 @@ def qk_consumer_kernel[
             UntrackedOrigin[mut=True],
         ]
     ](
-        UnsafePointer(
-            external_memory[
-                Scalar[ab_type],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-                name="qk_consumer_dynamic_smem",
-            ]()
-        )
+        external_memory[
+            Scalar[ab_type],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+            name="qk_consumer_dynamic_smem",
+        ]()
     )
     comptime q_smem_tile_t = LayoutTensor[
         ab_type,

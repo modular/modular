@@ -117,14 +117,12 @@ def kernel_3[
             UntrackedOrigin[mut=True],
         ]
     ](
-        UnsafePointer(
-            external_memory[
-                Scalar[a_type],
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-                name="tmem_test_dynamic_shared_memory",
-            ]()
-        )
+        external_memory[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+            name="tmem_test_dynamic_shared_memory",
+        ]()
     )
 
     # a_smem_layout is a description of how tile is arranged in memory, and LayoutTensor is a pointer to memory + a layout, taking in a_smem as its pointer

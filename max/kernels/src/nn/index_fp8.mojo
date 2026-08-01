@@ -148,13 +148,11 @@ def fp8_index_kernel[
     if seq_offset >= Int(seq_len) or key_offset >= num_keys:
         return
 
-    ref smem_ptr = UnsafePointer(
-        external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]()
-    ).bitcast[IndexSmemStorage[dtype, num_heads, depth, BN]]()[]
+    ref smem_ptr = external_memory[
+        Scalar[DType.uint8],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+    ]().bitcast[IndexSmemStorage[dtype, num_heads, depth, BN]]()[]
 
     ref q_smem = smem_ptr.q_smem
     ref k_smem = smem_ptr.k_smem

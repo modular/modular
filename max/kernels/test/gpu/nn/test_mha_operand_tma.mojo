@@ -93,14 +93,12 @@ def mha_operand_tma_copy_kernel[
     ].stack_allocation()
 
     # Initialize barrier
-    ref mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )[0]
+    ref mbar = unsafe_stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()[0]
 
     if thread_idx.x == 0:
         mbar.init()

@@ -108,20 +108,16 @@ def mm_tiled_kernel_double_buffer(
     var Cr = SIMD[DType.float32, tM * tN](0.0)
 
     # Allocate double-buffered shared memory (2 sets of tiles)
-    var A_s = UnsafePointer(
-        unsafe_stack_allocation[
-            2 * bM * bK,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
-    var B_s = UnsafePointer(
-        unsafe_stack_allocation[
-            2 * bK * bN,
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-        ]()
-    )
+    var A_s = unsafe_stack_allocation[
+        2 * bM * bK,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var B_s = unsafe_stack_allocation[
+        2 * bK * bN,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Pointers to current and next buffers (using offsets)
     var A_curr_offset = 0

@@ -97,17 +97,15 @@ def gather4_raw_smoke_kernel[
     row3: Int32,
 ):
     """Minimal kernel: single gather4 via raw intrinsic, 4 rows."""
-    var shmem = UnsafePointer(
-        external_memory[
-            Scalar[dtype],
-            address_space=AddressSpace.SHARED,
-            alignment=128,
-        ]()
-    )
+    var shmem = external_memory[
+        Scalar[dtype],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+    ]()
 
-    var mbar = UnsafePointer(
-        unsafe_stack_allocation[1, Int64, address_space=AddressSpace.SHARED]()
-    )
+    var mbar = unsafe_stack_allocation[
+        1, Int64, address_space=AddressSpace.SHARED
+    ]()
     var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
@@ -722,14 +720,12 @@ def gather4_kernel[
         alignment=128,
     ].stack_allocation()
 
-    var mbar = UnsafePointer(
-        unsafe_stack_allocation[
-            1,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-    )
+    var mbar = unsafe_stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space=AddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     if thread_idx.x == 0:
         mbar[0].init(1)
@@ -1467,11 +1463,9 @@ def gather4_tile_api_kernel[
     """Loads bn rows via async_copy_gather4_tile, then copies SMEM to
     global output for verification."""
     comptime smem_bytes = bn * cols * size_of[dtype]()
-    var smem_base = UnsafePointer(
-        external_memory[
-            UInt8, address_space=AddressSpace.SHARED, alignment=128
-        ]()
-    )
+    var smem_base = external_memory[
+        UInt8, address_space=AddressSpace.SHARED, alignment=128
+    ]()
     var smem_ptr = smem_base.bitcast[Scalar[dtype]]()
     var mbar = (smem_base + smem_bytes).bitcast[SharedMemBarrier]()
 
