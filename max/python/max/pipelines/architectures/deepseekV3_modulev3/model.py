@@ -133,17 +133,16 @@ class DeepseekV3Model(DeepseekV2Model):
         # Only enable shared expert fusion if the shared expert is of
         # the same shape as routed experts.
         fused_shared_expert = model_config.n_shared_experts == 1
-        # For a block-FP8 checkpoint, dispatch tokens FP8-on-the-wire: the
-        # dispatch kernel quantizes the activations once (halving all-to-all
-        # bytes) and the local grouped matmuls consume them without
-        # re-quantizing. ``dispatch_quant_config`` must be set whenever the
-        # dispatch dtype is not bf16 (validated by ``EPConfig``). Non-FP8
-        # weights keep the bf16 dispatch (quant_config ``None``).
+
+        # Set correct dispatch dtype, depending on the quant config.
         dispatch_dtype = DType.bfloat16
         dispatch_quant_config = None
-        if model_config.quant_config is not None and self.dtype.is_float8():
+        quant_config = model_config.quant_config
+        if quant_config is not None and (
+            self.dtype.is_float8() or quant_config.is_nvfp4
+        ):
             dispatch_dtype = self.dtype
-            dispatch_quant_config = model_config.quant_config
+            dispatch_quant_config = quant_config
         return EPConfig(
             dispatch_dtype=dispatch_dtype,
             dispatch_quant_config=dispatch_quant_config,
@@ -185,20 +184,22 @@ class DeepseekV3Model(DeepseekV2Model):
 
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
-        # Detect block-scaled FP8 quant config from the HF state dict
-        # (uses the `weight_scale` substring match in the parser).
-        dtype = self.dtype
-        quant_config = None
-        if dtype == DType.float8_e4m3fn:
-            quant_config = parse_quant_config(
-                self.huggingface_config, state_dict, dtype
-            )
-
         model_config = DeepseekV3Config.initialize(self.pipeline_config)
         model_config.max_batch_context_length = (
             self.pipeline_config.runtime.max_batch_total_tokens
             or model_config.max_batch_context_length
         )
+
+        dtype = self.dtype
+        quant_config = None
+        if dtype in (
+            DType.float8_e4m3fn,
+            DType.uint8,
+            DType.float4_e2m1fn,
+        ):
+            quant_config = parse_quant_config(
+                self.huggingface_config, state_dict, dtype
+            )
         model_config.quant_config = quant_config
 
         if model_config.topk_method == "noaux_tc":
@@ -213,13 +214,10 @@ class DeepseekV3Model(DeepseekV2Model):
                 correction_bias_key
             ].dtype
 
-        # 1-D pure-TP or pure-DP mesh; the sharding solver derives every
-        # activation collective (single-device mesh for single-GPU runs).
+        # Only 1-D TP/DP mesh configurations are supported.
         n_devices = len(self.devices)
         dp_degree = self.pipeline_config.model.data_parallel_degree
         if dp_degree > 1 and dp_degree != n_devices:
-            # A dp x tp (2-D) mesh is untested; refuse rather than run
-            # unvalidated code.
             raise NotImplementedError(
                 f"data_parallel_degree={dp_degree} must equal the device "
                 f"count ({n_devices}); dp x tp meshes are not supported yet."

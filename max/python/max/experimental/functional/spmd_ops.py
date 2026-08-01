@@ -208,6 +208,7 @@ def per_shard_dispatch(
     graph_op: Callable[..., Any],
     args: tuple[Any, ...],
     output_mappings: tuple[DeviceMapping, ...],
+    filtered_kwargs: Mapping[str, Any] | None = None,
 ) -> Any:
     """Runs ``graph_op`` once per shard and reassembles distributed outputs.
 
@@ -215,11 +216,14 @@ def per_shard_dispatch(
         graph_op: The per-rank graph op to run.
         args: Already-redistributed args.
         output_mappings: One :class:`DeviceMapping` per output.
+        filtered_kwargs: Non-tensor or non-distributed tensor keyword arguments.
     """
     mesh = output_mappings[0].mesh
 
     with ensure_context():
-        per_shard = _run_per_shard(graph_op, args, mesh.num_devices)
+        per_shard = _run_per_shard(
+            graph_op, args, mesh.num_devices, filtered_kwargs
+        )
         first = per_shard[0]
         if first is None:
             return None
@@ -242,9 +246,13 @@ def _run_per_shard(
     graph_op: Callable[..., Any],
     args: tuple[Any, ...],
     num_devices: int,
+    filtered_kwargs: Mapping[str, Any] | None = None,
 ) -> list[Any]:
     """Calls ``graph_op`` once per shard with per-rank arg unwrapping."""
     per_shard: list[Any] = []
+    if filtered_kwargs is None:
+        filtered_kwargs = {}
+
     for i in builtins.range(num_devices):
 
         def _per_rank(t: Tensor, _i: int = i) -> TensorValue:
@@ -258,7 +266,7 @@ def _run_per_shard(
         shard_args = tuple(
             a[i] if isinstance(a, PerShard) else a for a in shard_args
         )
-        per_shard.append(graph_op(*shard_args))
+        per_shard.append(graph_op(*shard_args, **filtered_kwargs))
     return per_shard
 
 
@@ -321,7 +329,8 @@ def _local_dispatch(
     from max.experimental.sharding._diagnostics import report_reshard
     from max.experimental.sharding.mode import current_solver
 
-    flat_args = _canonicalize_call(graph_op, args, kwargs)
+    # TODO: keyword-only distributed tensor arguments are not supported.
+    flat_args, filtered_kwargs = _canonicalize_call(graph_op, args, kwargs)
     layout_args = map_tensors(tensor_to_layout, flat_args)
     in_layouts = _walk_tensor_layouts(layout_args)
 
@@ -345,6 +354,7 @@ def _local_dispatch(
         graph_op,
         redistributed,
         out_mappings,
+        filtered_kwargs,
     )
 
 
@@ -352,7 +362,7 @@ def _canonicalize_call(
     graph_op: Callable[..., Any],
     args: tuple[Any, ...],
     kwargs: Mapping[str, Any],
-) -> tuple[Any, ...]:
+) -> tuple[tuple[Any, ...], Mapping[str, Any]]:
     """Normalizes ``args`` + ``kwargs`` into a positional tuple.
 
     Binds against ``graph_op``'s signature so kwargs become positional.
@@ -364,9 +374,9 @@ def _canonicalize_call(
     try:
         bound = inspect.signature(sig_source).bind(*args, **kwargs)
         bound.apply_defaults()
-        return tuple(bound.args)
+        return tuple(bound.args), bound.kwargs
     except (TypeError, NotImplementedError, ValueError):
-        return args + tuple(kwargs.values())
+        return args + tuple(kwargs.values()), {}
 
 
 def _walk_tensors(value: Any) -> Iterable[Tensor]:

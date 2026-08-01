@@ -13,8 +13,20 @@
 
 from __future__ import annotations
 
+from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from transformers.configuration_utils import PretrainedConfig
+
+# Packed NVFP4 weight data dtypes (``float4_e2m1fnx2`` is stored as uint8).
+_FP4_WEIGHT_DTYPES = frozenset({DType.uint8, DType.float4_e2m1fn})
+
+# Per-projection NVFP4 scale tensors, mapped onto the ``NVFP4Tensor`` leaves
+# of the backing ``QuantizedLinear.weight``.
+_NVFP4_SCALE_SUFFIXES: tuple[str, ...] = (
+    ".weight_scale_2",
+    ".weight_scale",
+    ".input_scale",
+)
 
 # MLA projections that are stored as raw ``FP8BlockTensor`` parameters
 # (not wrapped in a ``QuantizedLinear``). Used to decide whether the FP8
@@ -157,6 +169,43 @@ def _convert_fp8_state_dict(
     return out
 
 
+def _convert_nvfp4_state_dict(
+    state_dict: dict[str, Weights],
+) -> dict[str, WeightData]:
+    """Adapt a modelopt NVFP4 DeepseekV3 checkpoint.
+
+        <proj>.weight         (uint8)   -> <proj>.weight.data
+        <proj>.weight_scale    (fp8e4m3) -> <proj>.weight.weight_scale
+        <proj>.weight_scale_2  (fp32)    -> <proj>.weight.weight_scale_2
+        <proj>.input_scale     (fp32)    -> <proj>.weight.input_scale
+
+    Everything else (norms, MLA ``q``/``kv`` projections, router gate,
+    embeddings, ``lm_head``) is ``bfloat16``.
+    """
+    out: dict[str, WeightData] = {}
+    for name, value in state_dict.items():
+        data = value.data()
+
+        scale_suffix = next(
+            (s for s in _NVFP4_SCALE_SUFFIXES if name.endswith(s)), None
+        )
+        if scale_suffix is not None:
+            base = _remap_bf16_prefix(name[: -len(scale_suffix)])
+            max_name = f"{base}.weight.{scale_suffix[1:]}"
+        elif name.endswith(".weight") and data.dtype in _FP4_WEIGHT_DTYPES:
+            base = _remap_bf16_prefix(name[: -len(".weight")])
+            max_name = f"{base}.weight.data"
+        else:
+            max_name = _remap_bf16_prefix(name)
+            max_name = _strip_weight_suffix_for_raw_mla(max_name)
+
+        # Drop FP8 KV-cache static scales (see ``_convert_bf16_state_dict``).
+        if max_name.endswith(".k_scale") or max_name.endswith(".v_scale"):
+            continue
+        out[max_name] = data
+    return out
+
+
 def convert_safetensor_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: PretrainedConfig,
@@ -164,15 +213,19 @@ def convert_safetensor_state_dict(
 ) -> dict[str, WeightData]:
     """Remap an HF safetensors state dict to DeepseekV3 ModuleV3 names.
 
-    Dispatches to the FP8 block-scaled path when the input contains any
-    ``*.weight_scale_inv`` entry; otherwise falls back to the bf16-only
-    remap (raw-tensor MLA projections, language_model prefix, lm_head).
+    Dispatches to the NVFP4 path when the input contains any
+    ``*.weight_scale_2`` entry, the FP8 block-scaled path on any
+    ``*.weight_scale_inv`` entry; otherwise falls back to the bf16-only remap
+    (raw-tensor MLA projections, language_model prefix, lm_head).
     """
+    is_nvfp4 = any(name.endswith(".weight_scale_2") for name in state_dict)
     is_fp8_blockscaled = any(
         name.endswith(".weight_scale_inv") for name in state_dict
     )
 
-    if is_fp8_blockscaled:
+    if is_nvfp4:
+        new_state_dict = _convert_nvfp4_state_dict(state_dict)
+    elif is_fp8_blockscaled:
         new_state_dict = _convert_fp8_state_dict(state_dict)
     else:
         new_state_dict = _convert_bf16_state_dict(state_dict)

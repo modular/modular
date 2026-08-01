@@ -45,6 +45,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
         "bfloat16",
         "float8_e4m3fn",
+        "float4_e2m1fnx2",
     }
 
     # MAX specific fields

@@ -5440,17 +5440,17 @@ def grouped_dynamic_scaled_mxfp4_matmul(
 
 
 def grouped_matmul_block_scaled(
-    hidden_states: TensorValue,
-    weight: TensorValue,
-    a_scales: TensorValue,
-    b_scales: TensorValue,
-    expert_start_indices: TensorValue,
-    a_scale_offsets: TensorValue,
-    expert_ids: TensorValue,
-    expert_scales: TensorValue,
-    expert_usage_stats_host: TensorValue,
+    hidden_states: TensorValueLike,
+    weight: TensorValueLike,
+    a_scales: TensorValueLike,
+    b_scales: TensorValueLike,
+    expert_start_indices: TensorValueLike,
+    a_scale_offsets: TensorValueLike,
+    expert_ids: TensorValueLike,
+    expert_scales: TensorValueLike,
+    expert_usage_stats_host: TensorValueLike,
     out_type: DType = DType.bfloat16,
-    estimated_total_m: TensorValue | None = None,
+    estimated_total_m: TensorValueLike | None = None,
 ) -> TensorValue:
     """Performs grouped NVFP4 matmul for MoE layers.
 
@@ -5488,6 +5488,17 @@ def grouped_matmul_block_scaled(
     Returns:
         The matmul result with shape ``[total_tokens, N]`` and dtype ``out_type``.
     """
+    hidden_states = TensorValue(hidden_states)
+    weight = TensorValue(weight)
+    a_scales = TensorValue(a_scales)
+    b_scales = TensorValue(b_scales)
+    expert_start_indices = TensorValue(expert_start_indices)
+    a_scale_offsets = TensorValue(a_scale_offsets)
+    expert_ids = TensorValue(expert_ids)
+    expert_scales = TensorValue(expert_scales)
+    expert_usage_stats_host = TensorValue(expert_usage_stats_host)
+    if estimated_total_m:
+        estimated_total_m = TensorValue(estimated_total_m)
 
     _check_rank(2, hidden_states=hidden_states)
     _check_rank(3, weight=weight)
