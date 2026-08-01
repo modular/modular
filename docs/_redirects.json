@@ -85,6 +85,11 @@
     "status": 302
   },
   {
+    "source": "/llms-kernels.txt",
+    "dest": "/llms-accelerator-api.txt",
+    "status": 302
+  },
+  {
     "source": "/max/(.*)",
     "dest": "/{0}",
     "status": 302
