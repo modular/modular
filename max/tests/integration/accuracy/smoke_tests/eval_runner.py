@@ -185,6 +185,7 @@ def call_eval(
             "kimi-k2",
             "minimax-m2",
             "minimax-m3",
+            "nemotron",
             "step-3.5",
             "glm-5",
         )
