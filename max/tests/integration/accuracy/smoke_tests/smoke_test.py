@@ -445,6 +445,9 @@ def get_server_cmd(
         "--limit-mm-per-prompt.video",
         "0",
     ]
+    # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
+    if "inkling" in model.casefold():
+        VLLM += ["--gpu-memory-utilization", "0.8"]
     MAX = ["max._entrypoints.pipelines", "serve", "--pretty-print-config"]
 
     if gpu_count > 1:
