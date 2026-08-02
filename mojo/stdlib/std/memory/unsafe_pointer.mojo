@@ -92,7 +92,7 @@ comptime MutUnsafePointer[
     origin: MutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = UnsafePointer[mut=True, T, origin, address_space=address_space]
+] = Pointer[mut=True, T, origin, address_space=address_space]
 """A mutable unsafe pointer.
 
 Parameters:
@@ -106,7 +106,7 @@ comptime ImmUnsafePointer[
     origin: ImmOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = UnsafePointer[T, origin, address_space=address_space]
+] = Pointer[T, origin, address_space=address_space]
 """An immutable unsafe pointer.
 
 Parameters:
@@ -171,7 +171,7 @@ comptime OptionalUnsafePointer[
     origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = Optional[UnsafePointer[T, origin, address_space=address_space]]
+] = Optional[Pointer[T, origin, address_space=address_space]]
 """An optional (nullable) `UnsafePointer`.
 
 Parameters:
@@ -201,4 +201,4 @@ Parameters:
 
 
 comptime _UnsafeDanglingPluginHookFnType = def[alignment: Int]() thin -> Int
-"""Plugin-hook signature for `PluginHooks.unsafe_dangling_fn`; keep in sync with `UnsafePointer.unsafe_dangling`."""
+"""Plugin-hook signature for `PluginHooks.unsafe_dangling_fn`; keep in sync with `Pointer.unsafe_dangling`."""

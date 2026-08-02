@@ -350,7 +350,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
     """
 
     # Backing pointer for the host allocation; mirrors `DeviceBuffer._DevicePtr`.
-    comptime _HostPtr = UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
+    comptime _HostPtr = Pointer[Scalar[Self.dtype], MutUntrackedOrigin]
 
     # We cache the pointer of the buffer here to provide access to elements.
     var _host_ptr: Self._HostPtr
@@ -1258,7 +1258,7 @@ struct DevicePointer[
     # DevicePassable
     # ===------------------------------------------------------------------=== #
 
-    # Kernel-entry ABI type. `Pointer` and `UnsafePointer` are one
+    # Kernel-entry ABI type. `Pointer` and its `UnsafePointer` alias are one
     # representation, and device-argument matching accepts either spelling
     # (see `Pointer._is_convertible_to_device_type`), so kernels may still
     # declare their parameters as `UnsafePointer`.
@@ -1330,7 +1330,7 @@ struct DeviceBuffer[dtype: DType](
     """
 
     # Implementation of `DevicePassable`
-    # Kernel-entry ABI type. `Pointer` and `UnsafePointer` are one
+    # Kernel-entry ABI type. `Pointer` and its `UnsafePointer` alias are one
     # representation, and device-argument matching accepts either spelling
     # (see `Pointer._is_convertible_to_device_type`), so kernels may still
     # declare their parameters as `UnsafePointer`.
@@ -1362,7 +1362,7 @@ struct DeviceBuffer[dtype: DType](
         return String(t"DeviceBuffer[{Self.dtype}]")
 
     # ABI first word passed to kernels (see below), coherent with `device_type`.
-    comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
+    comptime _DevicePtr = Pointer[Scalar[Self.dtype], MutUntrackedOrigin]
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
     # it needs to contain the value registered with the driver.
@@ -1857,7 +1857,7 @@ struct DeviceBuffer[dtype: DType](
         mut: Bool,
         //,
         origin: Origin[mut=mut],
-    ](ref[origin] self) -> UnsafePointer[Scalar[Self.dtype], origin]:
+    ](ref[origin] self) -> Pointer[Scalar[Self.dtype], origin]:
         """Returns the raw device pointer without transferring ownership.
 
         This method provides direct access to the underlying device pointer

@@ -1217,7 +1217,7 @@ struct VariadicList[
 
         for i in range(len(self)):
             var ptr = Pointer(to=self[i])
-            # TODO: Cannot use UnsafePointer.take_pointee because it requires
+            # TODO: Cannot use Pointer.unsafe_take_pointee because it requires
             # the element to be Movable, which is not required here.
             elt_handler(
                 i, __get_address_as_owned_value(ptr._get_kgen_pointer())
@@ -1485,7 +1485,7 @@ struct VariadicPack[
 
         comptime for i in range(Self.__len__()):
             var ptr = Pointer(to=self[i])
-            # TODO: Cannot use UnsafePointer.take_pointee because it requires
+            # TODO: Cannot use Pointer.unsafe_take_pointee because it requires
             # the element to be Movable, which is not required here.
             elt_handler[i](
                 __get_address_as_owned_value(ptr._get_kgen_pointer())

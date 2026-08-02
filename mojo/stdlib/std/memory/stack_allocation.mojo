@@ -157,11 +157,7 @@ def stack_allocation[
     /,
     alignment: Int = align_of[dtype](),
     address_space: AddressSpace = AddressSpace.GENERIC,
-]() -> UnsafePointer[
-    Scalar[dtype],
-    MutUntrackedOrigin,
-    address_space=address_space,
-]:
+]() -> Pointer[Scalar[dtype], MutUntrackedOrigin, address_space=address_space,]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
 
@@ -191,7 +187,7 @@ def stack_allocation[
     name: Optional[StaticString] = None,
     alignment: Int = align_of[type](),
     address_space: AddressSpace = AddressSpace.GENERIC,
-]() -> UnsafePointer[type, MutUntrackedOrigin, address_space=address_space]:
+]() -> Pointer[type, MutUntrackedOrigin, address_space=address_space]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
 

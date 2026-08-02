@@ -460,7 +460,7 @@ struct WeakPointer[T: Movable & ImplicitlyDeletable](
     """
 
     comptime _inner_type = _ArcPointerInner[Self.T]
-    # FIXME MOCO-3525: use UnsafePointer[Self._inner_type, MutUntrackedOrigin]
+    # FIXME MOCO-3525: use Pointer[Self._inner_type, MutUntrackedOrigin]
     comptime _inner_ptr_type = Pointer[NoneType, MutUntrackedOrigin]
     var _inner: Optional[Self._inner_ptr_type]
 

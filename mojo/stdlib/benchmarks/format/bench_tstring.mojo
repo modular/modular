@@ -33,7 +33,7 @@ struct NullWriter(Writer):
     @always_inline
     def write_string(mut self, string: StringSlice):
         var bytes = string.as_bytes()
-        var array_ptr: UnsafePointer[
+        var array_ptr: Pointer[
             Byte, origin_of(self.array)
         ] = self.array.unsafe_ptr()
         for i in range(len(bytes)):

@@ -138,14 +138,14 @@ struct OwnedPointer[T: AnyType](
         is called twice with the same pointer or a user manually deallocates the same data.
 
         After using this constructor, the `Pointer` is assumed to be owned by this `OwnedPointer`.
-        In particular, the destructor method will call `T.__deinit__` and `UnsafePointer.free`.
+        In particular, the destructor method will call `T.__deinit__` and `dealloc`.
         """
         self._inner = ThinAllocation(
             unsafe_assume_ownership=unsafe_from_raw_pointer
         )
 
     def __init__(out self, *, unsafe_from_opaque_pointer: MutOpaquePointer[_]):
-        """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
+        """Construct a new `OwnedPointer` by taking ownership of the provided `Pointer`.
 
         Args:
             unsafe_from_opaque_pointer: The `OpaquePointer` to take ownership of.
@@ -157,8 +157,8 @@ struct OwnedPointer[T: AnyType](
         This function is unsafe as other memory problems can arise such as a double-free if this function
         is called twice with the same pointer or a user manually deallocates the same data.
 
-        After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
-        In particular, the destructor method will call `T.__deinit__` and `UnsafePointer.free`.
+        After using this constructor, the `Pointer` is assumed to be owned by this `OwnedPointer`.
+        In particular, the destructor method will call `T.__deinit__` and `dealloc`.
         """
         var ptr = unsafe_from_opaque_pointer.unsafe_bitcast[Self.T]()
         self = Self(
@@ -271,7 +271,7 @@ struct OwnedPointer[T: AnyType](
         return self._inner^.unsafe_with_layout(Layout[Self.T].single())
 
     @deprecated(use=unsafe_take_allocation)
-    def steal_data(deinit self) -> UnsafePointer[Self.T, MutUntrackedOrigin]:
+    def steal_data(deinit self) -> Pointer[Self.T, MutUntrackedOrigin]:
         """Take ownership over the heap allocated pointer backing this
         `OwnedPointer`.
 

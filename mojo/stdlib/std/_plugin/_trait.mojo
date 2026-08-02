@@ -126,7 +126,7 @@ trait PluginHooks(Plugin):
     comptime unsafe_dangling_fn: OptionalReg[
         _UnsafeDanglingPluginHookFnType
     ] = None
-    """`UnsafePointer.unsafe_dangling()` address override.
+    """`Pointer.unsafe_dangling()` address override.
 
     Parameters:
         alignment: The natural alignment of the pointee type, which the

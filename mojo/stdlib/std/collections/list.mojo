@@ -1413,7 +1413,7 @@ struct List[T: Movable, /](
         )
 
     @deprecated(use=unsafe_take_allocation)
-    def steal_data(mut self) -> UnsafePointer[Self.T, MutUntrackedOrigin]:
+    def steal_data(mut self) -> Pointer[Self.T, MutUntrackedOrigin]:
         """Take ownership of the underlying pointer from the list.
 
         Returns:

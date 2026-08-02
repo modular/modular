@@ -554,7 +554,7 @@ struct String(
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
         Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
+            unsafe_from_utf8_ptr: A `Pointer[Byte]` of null-terminated bytes encoded in UTF-8.
 
         Safety:
             - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
@@ -575,7 +575,7 @@ struct String(
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
         Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
+            unsafe_from_utf8_ptr: A `Pointer[Byte]` of null-terminated bytes encoded in UTF-8.
 
         Safety:
             - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
