@@ -123,13 +123,16 @@ SomeStruct()
       .signatureHelp(doc.getCells()[1],
                      doc.getCells()[1].findLastRange("SomeStruct(")->end,
                      [](const lsp::SignatureHelp2 &signatureHelp) {
-                       ASSERT_EQ((int)signatureHelp.signatures.size(), 2);
+                       ASSERT_EQ((int)signatureHelp.signatures.size(), 3);
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
                                  "def __init__(out self)");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
                                  "def __init__(out self, a_field: Int)");
+                       EXPECT_EQ(
+                           signatureHelp.signatures[2].label,
+                           "def __init__(out self, *, deinit move: Self)");
                      })
       .execute();
 }

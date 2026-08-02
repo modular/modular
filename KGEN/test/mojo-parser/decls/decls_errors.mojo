@@ -884,20 +884,20 @@ def test_deinit_fn_types():
 # shape, but only the keyword-only name 'move' defines one. Anything else is
 # silently shadowed by the synthesized default move constructor, most commonly
 # code predating the rename of the 'take' argument to 'move'.
-struct MoveCtorShapedInit:
+struct MoveCtorShapedInit(Movable where False):
   def __init__(out self): pass
   # expected-warning @+1 {{'deinit' argument 'take' does not define a move constructor; declare it as '__init__(*, deinit move)'}}
   def __init__(out self, *, deinit take: Self): pass
 
-struct MoveCtorShapedPositionalInit:
+struct MoveCtorShapedPositionalInit(Movable where False):
   # expected-warning @+1 {{'deinit' argument 'move' does not define a move constructor; declare it as '__init__(*, deinit move)'}}
   def __init__(out self, deinit move: Self): pass
 
-struct MoveCtorWrongConvention:
+struct MoveCtorWrongConvention(Movable where False):
   # expected-error @+1 {{'move' argument must be passed as 'deinit'}}
   def __init__(out self, *, move: Self): pass
 
-struct MoveCtorShapeNegatives:
+struct MoveCtorShapeNegatives(Movable where False):
   # A properly-spelled move constructor: no warning.
   def __init__(out self, *, deinit move: Self): pass
   # 'deinit' on a non-init consuming method: no warning.
