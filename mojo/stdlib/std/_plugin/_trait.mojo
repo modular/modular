@@ -14,8 +14,6 @@
 from std.collections import OptionalReg
 from std.reflection.location import SourceLocation
 from std.sys.info import _TargetType, _current_target
-from std.gpu import PDLLevel
-from std.gpu.host import DeviceContext
 
 from std.utils.index import IndexList
 from std.math.math import _ExpPluginHookFnType, _TanhPluginHookFnType
@@ -178,42 +176,6 @@ trait PluginHooks(Plugin):
     fallback's transitive `OptionalReg.value()` → `debug_assert` recurses
     back through `_debug_assert_msg` and deadlocks instantiation when
     assertions are enabled."""
-
-    @staticmethod
-    def elementwise_fn[
-        rank: Int,
-        simd_width: Int,
-        *,
-        pdl_level: PDLLevel = PDLLevel.ON,
-    ](
-        func: Some[
-            def[
-                width: Int, rank: Int, alignment: Int = 1
-            ](IndexList[rank]) -> None
-        ],
-        shape: IndexList[rank, element_type=_],
-        ctx: DeviceContext,
-    ) raises:
-        """Per-target plugin hook for `elementwise[...]`.
-
-        Parameters:
-            rank: The rank of the work domain.
-            simd_width: The SIMD lane count for bulk invocations.
-            pdl_level: PDL level for overlap control.
-
-        Args:
-            func: The body closure to invoke per index.
-            shape: The shape of the work domain.
-            ctx: The device context to dispatch on.
-
-        Only invoked when `_handles_elementwise` is `True`; the default
-        is never called and is a no-op.
-        """
-        pass
-
-    comptime _handles_elementwise: Bool = False
-    """If `True` for this backend, `_elementwise_impl` dispatches to
-    `elementwise_fn[...]`."""
 
 
 # ===-----------------------------------------------------------------------===#
