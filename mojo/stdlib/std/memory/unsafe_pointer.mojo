@@ -10,14 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements unsafe pointer types for manual memory management.
+"""Defines `UnsafePointer` and related aliases as backward-compatible names
+for `Pointer`.
 
-This module provides `UnsafePointer` and related type aliases for direct memory
-manipulation with explicit control over mutability, origins, and address spaces.
-It includes the `alloc()` function for heap allocation and comprehensive methods
-for loading, storing, and managing pointer lifetimes. These types enable
-low-level memory operations, interfacing with C code, and building custom data
-structures.
+`UnsafePointer` is a `comptime` alias for `Pointer`, kept for code written
+before the two pointer types were unified. Prefer `Pointer` directly in new
+code; see `std.memory.pointer` for the type's docstring and its `unsafe_`
+method surface.
 """
 
 from std.collections import OptionalReg

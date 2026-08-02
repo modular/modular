@@ -10,7 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the Pointer type.
+"""Implements `Pointer`, Mojo's primary pointer type for indirect memory
+access.
+
+`Pointer` is safe when constructed from and used to access an existing
+value. It also provides `unsafe_`-prefixed methods for working with
+dynamically-allocated or uninitialized memory; the caller is responsible
+for tracking initialization state and memory ownership.
 
 You can import these APIs from the `memory` package. For example:
 
@@ -340,47 +346,52 @@ struct Pointer[
     """`Pointer` represents an indirect reference to one or more values
     of type `T` consecutively in memory, and can refer to uninitialized memory.
 
-    Because it supports referring to uninitialized memory, it provides unsafe
-    methods for initializing and destroying instances of `T`, as well as methods
-    for accessing the values once they are initialized. You should instead use
-    safer pointers when possible.
+    Constructing a `Pointer` to an existing value (`Pointer(to=value)`) and
+    dereferencing it (`ptr[]`) are safe operations: the pointer keeps the
+    ownership linkage to the original value, so Mojo can track its lifetime.
+    Working with dynamically-allocated or uninitialized memory is unsafe.
+    Those operations are named with an `unsafe_` prefix, or take an
+    `unsafe_`-prefixed keyword argument, and require the caller to track
+    initialization state and memory ownership manually.
 
     Important things to know:
 
-    - This pointer is unsafe and non-nullable by design. To model a nullable pointer,
+    - This pointer is non-nullable by design. To model a nullable pointer,
       use `Optional[Pointer[...]]`, which shares the same layout (the null
       address is the `None` niche) so it remains zero-overhead.
-    - It does not own existing memory. When memory is heap-allocated with
-      `alloc()`, you must call `.unsafe_free()`.
-    - For simple read/write access, use `(ptr + i)[]` or `ptr[i]` where `i`
-      is the offset size.
+    - It does not own existing memory. `alloc()` returns an `Allocation`
+      that owns heap-allocated memory; get a `Pointer` to it with
+      `.unsafe_ptr()`, and release the memory by passing the `Allocation`
+      to `dealloc()`.
+    - For simple read/write access, use `ptr.unsafe_offset(i)[]` or
+      `ptr[unsafe_offset=i]` where `i` is the offset size.
     - For SIMD operations on numeric data, use `Pointer[Scalar[DType.xxx]]`
-      with `load[dtype=DType.xxx]()` and `store[dtype=DType.xxx]()`.
+      with `unsafe_load[dtype=DType.xxx]()` and
+      `unsafe_store[dtype=DType.xxx]()`.
 
     Key APIs:
 
-    - `free()`: Frees memory previously allocated by `alloc()`. Do not call on
-      pointers that were not allocated by `alloc()`.
-    - `+ i` / `- i`: Pointer arithmetic. Returns a new pointer shifted by `i`
-      elements. No bounds checking.
-    - `[]` or `[i]`: Dereference to a reference of the pointee (or at
-      offset `i`). Only valid if the memory at that location is initialized.
-    - `load()`: Loads `width` elements starting at `offset` (default 0) as
-      `SIMD[dtype, width]` from `Pointer[Scalar[dtype]]`. Pass
+    - `unsafe_offset(i)`: Pointer arithmetic. Returns a new pointer shifted by
+      `i` elements. No bounds checking.
+    - `[]` or `[unsafe_offset=i]`: Dereference to a reference of the pointee
+      (or at offset `i`). Only valid if the memory at that location is
+      initialized.
+    - `unsafe_load()`: Loads `width` elements starting at `offset` (default 0)
+      as `SIMD[dtype, width]` from `Pointer[Scalar[dtype]]`. Pass
       `alignment` when data is not naturally aligned.
-    - `store()`: Stores `val: SIMD[dtype, width]` at `offset` into
+    - `unsafe_store()`: Stores `val: SIMD[dtype, width]` at `offset` into
       `Pointer[Scalar[dtype]]`. Requires a mutable pointer.
-    - `unsafe_deinit_pointee()` / `take_pointee()`:
-      Explicitly end the lifetime of the current pointee, or move it out, taking
-      ownership.
+    - `unsafe_deinit_pointee()` / `unsafe_take_pointee()`:
+      Explicitly end the lifetime of the current pointee, or move it out,
+      taking ownership.
     - `unsafe_write()` / `unsafe_write_move_from()`:
       Initialize a pointee that is currently uninitialized, by moving an
       existing value into it (pass the argument as `copy=` to copy instead),
       or by moving from another pointee.
       Use these to manage lifecycles when working with uninitialized memory.
 
-    For more information see [Unsafe
-    pointers](/docs/manual/pointers/unsafe-pointers) in the Mojo Manual. For a
+    For more information see [Using
+    pointers](/docs/manual/pointers/using-pointers) in the Mojo Manual. For a
     comparison with other pointer types, see [Intro to
     pointers](/docs/manual/pointers/).
 
@@ -389,35 +400,44 @@ struct Pointer[
     Element-wise store and load (width = 1):
 
     ```mojo
-    var ptr = alloc[Float32](4)
+    from std.memory.alloc import alloc, dealloc, Layout
+
+    var allocation = alloc(Layout[Float32](count=4))
+    var ptr = allocation.unsafe_ptr()
     for i in range(4):
-        ptr.store(i, Float32(i))
-    var v = ptr.load(2)
+        ptr.unsafe_store(i, Float32(i))
+    var v = ptr.unsafe_load(2)
     print(v[0])  # => 2.0
-    ptr.unsafe_free()
+    dealloc(allocation^)
     ```
 
     Vectorized store and load (width = 4):
 
     ```mojo
-    var ptr = alloc[Int32](8)
+    from std.memory.alloc import alloc, dealloc, Layout
+
+    var allocation = alloc(Layout[Int32](count=8))
+    var ptr = allocation.unsafe_ptr()
     var vec = SIMD[DType.int32, 4](1, 2, 3, 4)
-    ptr.store(0, vec)
-    var out = ptr.load[width=4](0)
+    ptr.unsafe_store(0, vec)
+    var out = ptr.unsafe_load[width=4](0)
     print(out)  # => [1, 2, 3, 4]
-    ptr.unsafe_free()
+    dealloc(allocation^)
     ```
 
     Pointer arithmetic and dereference:
 
     ```mojo
-    var ptr = alloc[Int32](3)
-    (ptr + 0)[] = 10  # offset by 0 elements, then dereference to write
-    (ptr + 1)[] = 20  # offset +1 element, then dereference to write
-    ptr[2] = 30  # equivalent offset/dereference with brackets (via __getitem__)
-    var second = ptr[1]  # reads the element at index 1
-    print(second, ptr[2])  # => 20 30
-    ptr.unsafe_free()
+    from std.memory.alloc import alloc, dealloc, Layout
+
+    var allocation = alloc(Layout[Int32](count=3))
+    var ptr = allocation.unsafe_ptr()
+    ptr.unsafe_offset(0)[] = 10  # offset by 0, then dereference to write
+    ptr.unsafe_offset(1)[] = 20  # offset by 1, then dereference to write
+    ptr[unsafe_offset=2] = 30  # equivalent offset/dereference via brackets
+    var second = ptr[unsafe_offset=1]  # reads the element at index 1
+    print(second, ptr[unsafe_offset=2])  # => 20 30
+    dealloc(allocation^)
     ```
 
     Point to a value on the stack:
@@ -426,7 +446,7 @@ struct Pointer[
     var foo: Int = 123
     var ptr = Pointer(to=foo)
     print(ptr[])  # => 123
-    # Don't call `free()` because the value was not heap-allocated
+    # Don't call `unsafe_free()` because the value was not heap-allocated
     # Mojo will destroy it when the `foo` lifetime ends
     ```
 
@@ -438,21 +458,29 @@ struct Pointer[
     is no overhead compared to a raw pointer.
 
     ```mojo
+    from std.memory.alloc import alloc, dealloc, Layout, ThinAllocation
     from std.random import random_float64
+
+    comptime layout = Layout[Int].single()
 
     # A field that may or may not point to a heap-allocated Int.
     var maybe_ptr: Optional[Pointer[Int, MutUntrackedOrigin]] = None
 
-    # Maybe populate it later.
+    # Maybe populate it later. `Optional` stores a raw pointer, so leak
+    # the allocation and later pair it back with its layout to free it.
     if random_float64() > 0.5:
-        maybe_ptr = alloc[Int](1)
+        maybe_ptr = alloc(layout).unsafe_leak()
 
     # Check for absence, then unwrap to use the pointer.
     if maybe_ptr:
         var ptr = maybe_ptr.value()
         ptr.unsafe_write(42)
         print(ptr[])  # => 42
-        ptr.unsafe_free()
+        dealloc(
+            ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(
+                layout
+            )
+        )
     ```
 
     If you instead need a non-null placeholder for a field that will be
@@ -919,11 +947,14 @@ struct Pointer[
         Examples:
 
         ```mojo
-        var ptr = alloc[Int32](4)
-        var end = ptr + 3
+        from std.memory.alloc import alloc, dealloc, Layout
+
+        var allocation = alloc(Layout[Int32](count=4))
+        var ptr = allocation.unsafe_ptr()
+        var end = ptr.unsafe_offset(3)
         print(end - ptr)  # => 3
         print(ptr - end)  # => -3
-        ptr.unsafe_free()
+        dealloc(allocation^)
         ```
         """
         return self.offset_from(rhs)
@@ -1300,11 +1331,14 @@ struct Pointer[
         Examples:
 
         ```mojo
-        var ptr = alloc[Int32](4)
-        var end = ptr + 3
+        from std.memory.alloc import alloc, dealloc, Layout
+
+        var allocation = alloc(Layout[Int32](count=4))
+        var ptr = allocation.unsafe_ptr()
+        var end = ptr.unsafe_offset(3)
         print(end.offset_from(ptr))  # => 3
         print(ptr - end)  # => -3
-        ptr.unsafe_free()
+        dealloc(allocation^)
         ```
         """
         comptime assert (
@@ -1472,11 +1506,14 @@ struct Pointer[
         Example:
 
         ```mojo
-        var p = alloc[Int32](8)
+        from std.memory.alloc import alloc, dealloc, Layout
+
+        var allocation = alloc(Layout[Int32](count=8))
+        var p = allocation.unsafe_ptr()
         p.unsafe_store(0, SIMD[DType.int32, 4](1, 2, 3, 4))
         var v = p.unsafe_load[width=4]()
         print(v)  # => [1, 2, 3, 4]
-        p.unsafe_free()
+        dealloc(allocation^)
         ```
 
         Constraints:
@@ -1836,12 +1873,15 @@ struct Pointer[
         Example:
 
         ```mojo
-        var p = alloc[Float32](4)
+        from std.memory.alloc import alloc, dealloc, Layout
+
+        var allocation = alloc(Layout[Float32](count=4))
+        var p = allocation.unsafe_ptr()
         var vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
         p.unsafe_store(vec)
         var out = p.unsafe_load[width=4]()
         print(out)  # => [1.0, 2.0, 3.0, 4.0]
-        p.unsafe_free()
+        dealloc(allocation^)
         ```
 
         Constraints:
@@ -2637,11 +2677,14 @@ struct Pointer[
         Example:
 
         ```mojo
-        var ptr = alloc[String](1)
+        from std.memory.alloc import alloc, dealloc, Layout
+
+        var allocation = alloc(Layout[String].single())
+        var ptr = allocation.unsafe_ptr()
         ptr.unsafe_write("foo")
         print(ptr[])  # => foo
         ptr.unsafe_deinit_pointee()
-        ptr.unsafe_free()
+        dealloc(allocation^)
         ```
 
         Parameters:
@@ -2731,8 +2774,12 @@ struct Pointer[
         Example:
 
         ```mojo
-        var a_ptr = alloc[String](1)
-        var b_ptr = alloc[String](1)
+        from std.memory.alloc import alloc, dealloc, Layout
+
+        var a_allocation = alloc(Layout[String].single())
+        var b_allocation = alloc(Layout[String].single())
+        var a_ptr = a_allocation.unsafe_ptr()
+        var b_ptr = b_allocation.unsafe_ptr()
 
         # Initialize A pointee
         a_ptr.unsafe_write("foo")
@@ -2742,8 +2789,8 @@ struct Pointer[
 
         # Clean up
         b_ptr.unsafe_deinit_pointee()
-        a_ptr.unsafe_free()
-        b_ptr.unsafe_free()
+        dealloc(a_allocation^)
+        dealloc(b_allocation^)
         ```
 
         Safety:
