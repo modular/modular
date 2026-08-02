@@ -179,6 +179,7 @@ def call_eval(
             "deepseek-v3",
             "gemma-4",
             "gpt-oss",
+            "inkling",
             "internvl3_5",
             "qwen3",
             "kimi-k2",
