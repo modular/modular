@@ -241,7 +241,7 @@ struct _DLCallable[
         #
         # The bitcast goes via `Pointer(to=self._opaque)` — taking the address
         # of the field, reinterpreting it as pointing to a function-pointer
-        # type, then loading — because an `UnsafePointer[NoneType]` value
+        # type, then loading — because a `Pointer[NoneType]` value
         # cannot be directly reinterpreted as a function-pointer value
         # (`.unsafe_bitcast` only changes the pointee type).
         var typed_fn = Pointer(to=self._opaque).unsafe_bitcast[

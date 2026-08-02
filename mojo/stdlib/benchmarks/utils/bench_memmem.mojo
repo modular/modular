@@ -151,7 +151,7 @@ def _memmem_baseline[
 ](
     haystack: Span[mut=False, Scalar[dtype], _],
     needle: Span[mut=False, Scalar[dtype], _],
-) -> Optional[UnsafePointer[Scalar[dtype], haystack.origin]]:
+) -> Optional[Pointer[Scalar[dtype], haystack.origin]]:
     if not needle:
         return haystack.unsafe_ptr()
     if len(needle) > len(haystack):

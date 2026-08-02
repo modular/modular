@@ -194,8 +194,8 @@ If you need an owned optional value rather than a reference, use
 ```
 
 ```text
-For safe pointer access with bounds checking, see `Pointer`.
-`UnsafePointer` skips those checks and is intended for
+For bounds-checked access to a contiguous range, see `Span`.
+`Pointer` skips those checks and is intended for
 performance-critical code where safety is guaranteed by the caller.
 ```
 
@@ -569,7 +569,7 @@ to docstrings:
 ```mojo
 # Get the libc `strlen` function from the process handle
 var c_strlen = proc.get_function[
-    def(UnsafePointer[c_char, line_origin])
+    def(Pointer[c_char, line_origin])
     thin abi("C") -> c_size_t
 ]("strlen")
 ```
@@ -655,9 +655,9 @@ not in the package's `__init__.mojo`.
 ```mojo
 """Provides safe and unsafe memory access primitives.
 
-The pointer types in this package cover the range from fully bounds-checked
-access to raw address manipulation. Reach for `Pointer` when safety matters
-and `UnsafePointer` when you need direct control and can guarantee
+The pointer types in this package cover the range from reference-counted
+ownership to raw address manipulation. Reach for `OwnedPointer` when safety
+matters and `Pointer` when you need direct control and can guarantee
 correctness at the call site.
 """
 ```
@@ -667,7 +667,7 @@ correctness at the call site.
 ```mojo
 """The memory package.
 
-This package contains Pointer, UnsafePointer, AddressSpace, and other
+This package contains Pointer, AddressSpace, and other
 memory-related types. It also includes OwnedPointer and Arc for
 reference-counted ownership.
 """

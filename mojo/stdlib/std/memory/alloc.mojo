@@ -606,7 +606,7 @@ def _alloc_bytes(
 @always_inline
 def alloc[
     type: AnyType, /
-](count: Int, *, alignment: Int = align_of[type]()) -> UnsafePointer[
+](count: Int, *, alignment: Int = align_of[type]()) -> Pointer[
     type, MutUntrackedOrigin
 ]:
     """Allocates contiguous storage for `count` elements of `type` with

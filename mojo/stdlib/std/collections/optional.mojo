@@ -1325,7 +1325,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
         result = Pointer(to=self).unsafe_bitcast[type_of(result)]()[]
 
     @deprecated(
-        "Cannot directly dereference an `OptionalReg[UnsafePointer]`."
+        "Cannot directly dereference an `OptionalReg[Pointer]`."
         " Unwrap the optional first with `.value()` (aborts if NULL) or"
         " `.unsafe_value()` (unchecked), then index the pointer, e.g."
         " `p.unsafe_value()[]` instead of `p[]`."
@@ -1337,17 +1337,13 @@ struct OptionalReg[T: TrivialRegisterPassable](
         origin: Origin,
         address_space: AddressSpace,
         //,
-    ](
-        self: OptionalReg[
-            UnsafePointer[type, origin, address_space=address_space]
-        ],
-    ):
+    ](self: OptionalReg[Pointer[type, origin, address_space=address_space]],):
         comptime assert (
             False
-        ), "Cannot directly dereference an `OptionalReg[UnsafePointer]`"
+        ), "Cannot directly dereference an `OptionalReg[Pointer]`"
 
     @deprecated(
-        "Cannot index directly into an `OptionalReg[UnsafePointer]`. Unwrap the"
+        "Cannot index directly into an `OptionalReg[Pointer]`. Unwrap the"
         " optional first with `.value()` (aborts if NULL) or `.unsafe_value()`"
         " (unchecked), then index the pointer, e.g. `p.unsafe_value()[i]`"
         " instead of `p[i]`."
@@ -1360,11 +1356,9 @@ struct OptionalReg[T: TrivialRegisterPassable](
         address_space: AddressSpace,
         //,
     ](
-        self: OptionalReg[
-            UnsafePointer[type, origin, address_space=address_space]
-        ],
+        self: OptionalReg[Pointer[type, origin, address_space=address_space]],
         offset: Some[Indexer],
     ):
         comptime assert (
             False
-        ), "Cannot index directly into an `OptionalReg[UnsafePointer]`"
+        ), "Cannot index directly into an `OptionalReg[Pointer]`"

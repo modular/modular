@@ -313,8 +313,8 @@ def memcpy[
     T: AnyType
 ](
     *,
-    dest: OptionalUnsafePointer[mut=True, T, _],
-    src: OptionalUnsafePointer[T, _],
+    dest: OptionalPointer[mut=True, T, _],
+    src: OptionalPointer[T, _],
     count: Int,
 ):
     """Copy `count * size_of[T]()` bytes from src to dest.

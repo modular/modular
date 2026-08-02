@@ -192,7 +192,7 @@ def _delegate_small_sort[
 
 # FIXME (MSTDL-808): Using _Pair over Span results in 1-3% improvement
 # struct _Pair[T: AnyType]:
-#     var ptr: UnsafePointer[T]
+#     var ptr: Pointer[T]
 #     var len: Int
 
 

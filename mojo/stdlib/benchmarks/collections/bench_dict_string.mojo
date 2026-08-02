@@ -81,9 +81,9 @@ from std.bit import bit_width, pop_count
 struct KeysContainer[KeyEndType: DType = DType.uint32](
     ImplicitlyCopyable, Sized
 ):
-    var keys: UnsafePointer[UInt8, MutUntrackedOrigin]
+    var keys: Pointer[UInt8, MutUntrackedOrigin]
     var allocated_bytes: Int
-    var keys_end: UnsafePointer[Scalar[Self.KeyEndType], MutUntrackedOrigin]
+    var keys_end: Pointer[Scalar[Self.KeyEndType], MutUntrackedOrigin]
     var count: Int
     var capacity: Int
 
@@ -137,7 +137,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
 
         unsafe_memcpy(
             dest=self.keys.unsafe_offset(prev_end),
-            src=UnsafePointer(key.unsafe_ptr()),
+            src=Pointer(key.unsafe_ptr()),
             count=key_length,
         )
         var count = self.count + 1
@@ -205,12 +205,10 @@ struct StringDict[
     caching_hashes: Bool = True,
 ](Sized):
     var keys: KeysContainer[Self.KeyOffsetType]
-    var key_hashes: UnsafePointer[Scalar[Self.KeyCountType], MutUntrackedOrigin]
+    var key_hashes: Pointer[Scalar[Self.KeyCountType], MutUntrackedOrigin]
     var values: List[Self.V]
-    var slot_to_index: UnsafePointer[
-        Scalar[Self.KeyCountType], MutUntrackedOrigin
-    ]
-    var deleted_mask: UnsafePointer[UInt8, MutUntrackedOrigin]
+    var slot_to_index: Pointer[Scalar[Self.KeyCountType], MutUntrackedOrigin]
+    var deleted_mask: Pointer[UInt8, MutUntrackedOrigin]
     var count: Int
     var capacity: Int
 
