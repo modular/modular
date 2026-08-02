@@ -18,7 +18,7 @@ from std.testing import TestSuite
 from test_utils import ExplicitDelOnly
 
 
-struct NoConformances:
+struct NoConformances(Movable where False):
     pass
 
 

@@ -280,7 +280,7 @@ def _run(var handle: Coroutine[...], out result: handle.type):
 # ===-----------------------------------------------------------------------===#
 
 
-struct Task[type: ImplicitlyDeletable, origins: OriginSet]:
+struct Task[type: ImplicitlyDeletable, origins: OriginSet](Movable where False):
     """Represents an asynchronous task that will produce a value of the specified type.
 
     A Task encapsulates a coroutine that is executing asynchronously and will eventually
