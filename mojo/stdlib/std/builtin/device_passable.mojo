@@ -15,8 +15,7 @@
 from std.sys import size_of
 from std.sys.info import _TargetType
 from std.builtin.rebind import downcast
-from std.gpu.host.device_context import DeviceBuffer, DevicePointer
-from std.collections.inline_array import InlineArray
+from std.collections.array import Array
 from std.reflection import reflect
 from std.utils.static_tuple import StaticTuple, _StaticTupleTraits
 
@@ -62,6 +61,29 @@ trait DevicePassable:
             The host type's name.
         """
         ...
+
+
+trait DevicePointerLike:
+    """Describes the device-pointer information used during device encoding."""
+
+    comptime PointeeType: AnyType
+    """The type of the values referenced by this pointer."""
+
+    def unsafe_ptr(
+        ref self,
+    ) -> Pointer[Self.PointeeType, MutAnyOrigin]:
+        """Returns the offset-adjusted raw device pointer.
+
+        Returns:
+            Device pointer as raw pointer.
+        """
+        ...
+
+    def _buffer_handle(
+        ref self,
+    ) -> Optional[OpaquePointer[MutUntrackedOrigin]]:
+        """Returns the owning driver buffer's handle, if available."""
+        return None
 
 
 def _contains_device_passable_field[T: AnyType]() -> Bool:
@@ -352,18 +374,14 @@ trait DeviceTypeEncoder:
             else:
                 self.encode(elem, sub)
 
-    def encode_inline_array[
+    def encode_array[
         ElementType: Movable,
         size: Int,
         //,
-    ](
-        mut self,
-        value: InlineArray[ElementType, size],
-        dst: MutOpaquePointer[_],
-    ):
-        """Encodes each element of an `InlineArray` into `dst` element-wise.
+    ](mut self, value: Array[ElementType, size], dst: MutOpaquePointer[_],):
+        """Encodes each element of an `Array` into `dst` element-wise.
 
-        Like `encode_static_tuple`, but for `InlineArray`. The array's
+        Like `encode_static_tuple`, but for `Array`. The array's
         `!pop.array` storage is opaque to field reflection (see MOCO-4018), so
         this encodes by element, applying the same dispatch `encode_fields`
         uses per field:
@@ -376,22 +394,22 @@ trait DeviceTypeEncoder:
 
         Elements are placed at `i * size_of[device-element-type]` in the
         encoder's target data layout (`Self.target()`), matching the device
-        layout of `InlineArray.device_type`.
+        layout of `Array.device_type`.
 
         Parameters:
             ElementType: The array's element type (inferred).
             size: The number of elements (inferred).
 
         Args:
-            value: The `InlineArray` to encode.
+            value: The `Array` to encode.
             dst: The opaque destination pointer that receives the encoded
                 elements.
         """
         # Stride in the device layout. `_DeviceElementType` is the element's
         # `device_type` when `DevicePassable`, else the element type itself, so
-        # this matches `InlineArray.device_type`'s `!pop.array` element stride.
+        # this matches `Array.device_type`'s `!pop.array` element stride.
         comptime stride = size_of[
-            InlineArray[ElementType, size]._DeviceElementType,
+            Array[ElementType, size]._DeviceElementType,
             target=Self.target(),
         ]()
 
@@ -410,13 +428,16 @@ trait DeviceTypeEncoder:
             else:
                 self.encode(elem, sub)
 
-    def encode_device_ptr(
-        mut self, value: DevicePointer, dst: MutOpaquePointer[_]
-    ):
-        """Encodes a `DevicePointer` into `dst`.
+    def encode_device_ptr[
+        DevicePointerType: DevicePointerLike
+    ](mut self, value: DevicePointerType, dst: MutOpaquePointer[_],):
+        """Encodes a device pointer into `dst`.
+
+        Parameters:
+            DevicePointerType: The type of the device pointer.
 
         Args:
-            value: The `DevicePointer` instance to encode into `dst`.
+            value: The device pointer to encode.
             dst: The opaque destination pointer to encode into.
         """
         ...

@@ -28,7 +28,7 @@ from std.benchmark import (
 )
 from std.compile import compile_info
 from std.gpu import block_dim, global_idx, grid_dim
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
+from max.gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
 from std.random import Random
 from std.utils import IndexList
 
@@ -139,9 +139,11 @@ def parse_shape[name: StaticString]() -> List[Int]:
     Returns:
         A List[Int] parameter value.
     """
-    comptime zero = "0".unsafe_ptr()[0]
-    comptime x_ptr = "x".unsafe_ptr()[0]
-    comptime name_unsafe_ptr = name.unsafe_ptr()
+    comptime zero = "0".unsafe_ptr()[unsafe_offset=0]
+    comptime x_ptr = "x".unsafe_ptr()[unsafe_offset=0]
+    comptime name_unsafe_ptr: UnsafePointer[
+        Byte, ImmStaticOrigin
+    ] = name.unsafe_ptr()
 
     var vals: List[Int] = List[Int]()
     var sum: Int = 0
@@ -352,10 +354,11 @@ def init_vector_gpu[
     dtype: DType
 ](
     x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    len: Int,
+    len: Int32,
     mode: InitializationType,
     value: Scalar[dtype],
 ):
+    var _len = Int(len)
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
@@ -363,7 +366,7 @@ def init_vector_gpu[
     def apply(values: SIMD[dtype, 4]):
         comptime for i in range(4):
             comptime if i == 3:
-                if tid >= len:
+                if tid >= _len:
                     return
             x[tid] = values[i]
             tid += stride
@@ -408,14 +411,14 @@ def init_vector_launch[
     init_type: InitializationType,
     context: DeviceContext,
     value: Optional[Scalar[dtype]] = None,
-) raises:
+) raises where conforms_to(Scalar[dtype], DevicePassable):
     var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
     # using num-threads = 1/4th of length to initialize the array
 
     comptime kernel = init_vector_gpu[dtype]
     context.enqueue_function[kernel](
         out_device,
-        length,
+        Int32(length),
         init_type,
         value.or_else(0),
         grid_dim=(num_blocks),
@@ -429,7 +432,8 @@ def init_vector_launch[
 # Each thread processes 4 elements for better memory throughput.
 def _init_block_scaled_scales_gpu[
     dtype: DType
-](x: UnsafePointer[Scalar[dtype], MutAnyOrigin], len: Int):
+](x: UnsafePointer[Scalar[dtype], MutAnyOrigin], len: Int32):
+    var _len = Int(len)
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
@@ -437,7 +441,7 @@ def _init_block_scaled_scales_gpu[
     def apply(values: SIMD[dtype, 4]):
         comptime for i in range(4):
             comptime if i == 3:
-                if tid >= len:
+                if tid >= _len:
                     return
             x[tid] = Scalar[dtype](values[i])
             tid += stride
@@ -467,7 +471,7 @@ def _init_block_scaled_scales_launch[
     comptime kernel = _init_block_scaled_scales_gpu[dtype]
     context.enqueue_function[kernel](
         out_device,
-        length,
+        Int32(length),
         grid_dim=(num_blocks),
         block_dim=(block_dim),
     )

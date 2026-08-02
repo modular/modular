@@ -24,9 +24,9 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200, _is_sm10x_gpu
 from std.gpu import (
     block_id_in_cluster,
     lane_id,
@@ -45,9 +45,9 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
     wait_on_dependent_grids,
 )
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     mma_arrive,
     mma_arrive_multicast,
 )
@@ -56,7 +56,7 @@ from std.gpu.sync import (
     named_barrier_arrive,
     syncwarp,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     IntTuple,
     Layout,
@@ -116,7 +116,7 @@ from linalg.matmul.gpu.sm100.matmul import (
     register_epilogue,
     accum_arrive,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 from std.math.uutils import ufloordiv
 
@@ -220,14 +220,14 @@ def copy_accum_to_gmem[
     # every element in tmem is 4 bytes, so bits being 256 means 8 elements stored across N
     # repeated 4 times is 8*4 = 32, enough to move elements into the width of our 128x32 tile
     comptime rep_frag_size = repeat * fragment_size
-    var upper_frag_partial: InlineArray[Scalar[accum_type], rep_frag_size]
-    var lower_frag_partial = InlineArray[Scalar[accum_type], rep_frag_size](
+    var upper_frag_partial: Array[Scalar[accum_type], rep_frag_size]
+    var lower_frag_partial = Array[Scalar[accum_type], rep_frag_size](
         uninitialized=True
     )
-    var upper_frag_casted = InlineArray[Scalar[epilogue_dtype], rep_frag_size](
+    var upper_frag_casted = Array[Scalar[epilogue_dtype], rep_frag_size](
         uninitialized=True
     )
-    var lower_frag_casted = InlineArray[Scalar[epilogue_dtype], rep_frag_size](
+    var lower_frag_casted = Array[Scalar[epilogue_dtype], rep_frag_size](
         uninitialized=True
     )
     var scale = expert_scale.cast[accum_type]()
@@ -868,23 +868,23 @@ struct B200BlockScaledMatmulSmem[
     comptime num_group_pipeline_stages = Self.config.num_pipeline_stages // Self.config.k_group_size
 
     # AB pipelines
-    var a_smem: InlineArray[Self.AType, Self.a_smem_size]
-    var b_smem: InlineArray[Self.BType, Self.b_smem_size]
-    var c_smem: InlineArray[Self.CType, Self.c_smem_size]
-    var sfa_smem: InlineArray[Self.AScalesType, Self.sfa_smem_size]
-    var sfb_smem: InlineArray[Self.BScalesType, Self.sfb_smem_size]
+    var a_smem: Array[Self.AType, Self.a_smem_size]
+    var b_smem: Array[Self.BType, Self.b_smem_size]
+    var c_smem: Array[Self.CType, Self.c_smem_size]
+    var sfa_smem: Array[Self.AScalesType, Self.sfa_smem_size]
+    var sfb_smem: Array[Self.BScalesType, Self.sfb_smem_size]
 
-    var tma_mma_mbars: InlineArray[
+    var tma_mma_mbars: Array[
         SharedMemBarrier, Self.num_group_pipeline_stages * 2
     ]
     # ACCUM
-    var accum_mbars: InlineArray[
+    var accum_mbars: Array[
         SharedMemBarrier, Self.config.num_accum_pipeline_stages * 2
     ]
 
     # TMEM
-    var tmem_dealloc_mbar: InlineArray[SharedMemBarrier, 1]
-    var tmem_addr: InlineArray[UInt32, 1]
+    var tmem_dealloc_mbar: Array[SharedMemBarrier, 1]
+    var tmem_addr: Array[UInt32, 1]
 
 
 @always_inline
@@ -1904,7 +1904,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         workspace = {}
 
     ctx.enqueue_function[kernel](
-        num_active_experts,
+        Int32(num_active_experts),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -1987,7 +1987,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: UInt32 = 0,
 ](
-    num_active_experts: Int,
+    num_active_experts: Int32,
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c_tma_op: TMATensorTile[
@@ -2014,69 +2014,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
 ):
-    """Runs the warp-specialized block-scaled grouped matmul kernel on SM100.
-
-    Splits work across three warp roles (load, MMA, and epilogue) that
-    communicate through producer/consumer pipelines. The load warp issues
-    multicast TMA loads of A, B, and their scale factors into shared memory;
-    the MMA warp issues block-scaled UMMA instructions accumulating into
-    TMEM; and the epilogue warps drain the accumulator from TMEM, apply the
-    per-expert scale and optional fused elementwise epilogue, and store the
-    result to global memory via TMA. A tile scheduler distributes expert
-    group work tiles across the grid.
-
-    Parameters:
-        a_type: The data type of input tensor A.
-        b_type: The data type of input tensor B.
-        c_type: The data type of the output tensor C.
-        sfa_dtype: The data type of the A scale factors.
-        sfb_dtype: The data type of the B scale factors.
-        a_tile_rank: The rank of the A TMA tile.
-        a_tile_shape: The shape of the A TMA tile.
-        a_desc_shape: The descriptor shape of the A TMA tile.
-        b_tile_rank: The rank of the B TMA tile.
-        b_tile_shape: The shape of the B TMA tile.
-        b_desc_shape: The descriptor shape of the B TMA tile.
-        c_tile_rank: The rank of the C TMA tile.
-        c_tile_shape_param: The shape of the C TMA tile.
-        c_tensor_layout: The layout of the output LayoutTensor.
-        c_desc_shape: The descriptor shape of the C TMA tile.
-        sfa_tile_rank: The rank of the A scale factor TMA tile.
-        sfa_tile_shape: The shape of the A scale factor TMA tile.
-        sfa_desc_shape: The descriptor shape of the A scale factor TMA tile.
-        sfb_tile_rank: The rank of the B scale factor TMA tile.
-        sfb_tile_shape: The shape of the B scale factor TMA tile.
-        sfb_desc_shape: The descriptor shape of the B scale factor TMA tile.
-        group_offsets_layout: The layout of the group offsets tensor.
-        group_scale_offsets_layout: The layout of the group scale offsets
-            tensor.
-        expert_ids_layout: The layout of the expert IDs tensor.
-        expert_scales_layout: The layout of the expert scales tensor.
-        transpose_b: Whether B is stored transposed (K-major).
-        config: The block-scaled matmul configuration.
-        expert_n: The N (column) dimension of the output tensor.
-        cluster_shape: The cluster dimensions for the kernel launch grid.
-        elementwise_compute_lambda_fn: Optional fused elementwise epilogue.
-        pdl_level: The program-dependent launch level for the kernel grid.
-        max_profiled_tiles_per_SM: The maximum number of tiles profiled per
-            SM (0 disables profiling).
-
-    Args:
-        num_active_experts: The number of active experts in this batch.
-        a_tma_op: The TMA tensor tile descriptor for A.
-        b_tma_op: The TMA tensor tile descriptor for B.
-        c_tma_op: The TMA tensor tile descriptor for C.
-        c: The output LayoutTensor in global memory.
-        sfa_tma_op: The TMA tensor tile descriptor for A scale factors.
-        sfb_tma_op: The TMA tensor tile descriptor for B scale factors.
-        group_offsets: The starting token index for each expert group.
-        group_scale_offsets: The starting scale index for each expert group.
-        expert_ids: The expert ID for each group.
-        expert_scales: The per-expert scaling factors applied in the epilogue.
-        cluster_dim: The cluster dimensions for the launch grid.
-        mnk: The (M, N, K) problem dimensions.
-        workspace: The profiling workspace span (empty when profiling is off).
-    """
+    var _num_active_experts = Int(num_active_experts)
     comptime register_based_epilogue = config.register_based_epilogue
     comptime assert c_type != DType.float32, "c_type cannot be float32"
     comptime assert transpose_b, "only support k-major B"
@@ -2172,15 +2110,36 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ref tmem_addr_storage = smem_storage.tmem_addr
     ref tmem_dealloc_mbar_storage = smem_storage.tmem_dealloc_mbar
 
-    var a_smem_base = a_smem_storage.unsafe_ptr().bitcast[Scalar[a_type]]()
-    var b_smem_base = b_smem_storage.unsafe_ptr().bitcast[Scalar[b_type]]()
-    var c_smem_base = c_smem_storage.unsafe_ptr().bitcast[Scalar[c_type]]()
-    var sfa_smem_base = sfa_smem_storage.unsafe_ptr().bitcast[
-        Scalar[sfa_dtype]
-    ]()
-    var sfb_smem_base = sfb_smem_storage.unsafe_ptr().bitcast[
-        Scalar[sfb_dtype]
-    ]()
+    var a_smem_ptr: UnsafePointer[
+        Scalar[a_type],
+        origin_of(a_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = a_smem_storage.unsafe_ptr()
+    var a_smem_base = a_smem_ptr.bitcast[Scalar[a_type]]()
+    var b_smem_ptr: UnsafePointer[
+        Scalar[b_type],
+        origin_of(b_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = b_smem_storage.unsafe_ptr()
+    var b_smem_base = b_smem_ptr.bitcast[Scalar[b_type]]()
+    var c_smem_ptr: UnsafePointer[
+        Scalar[c_type],
+        origin_of(c_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = c_smem_storage.unsafe_ptr()
+    var c_smem_base = c_smem_ptr.bitcast[Scalar[c_type]]()
+    var sfa_smem_ptr: UnsafePointer[
+        Scalar[sfa_dtype],
+        origin_of(sfa_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = sfa_smem_storage.unsafe_ptr()
+    var sfa_smem_base = sfa_smem_ptr.bitcast[Scalar[sfa_dtype]]()
+    var sfb_smem_ptr: UnsafePointer[
+        Scalar[sfb_dtype],
+        origin_of(sfb_smem_storage),
+        address_space=AddressSpace.SHARED,
+    ] = sfb_smem_storage.unsafe_ptr()
+    var sfb_smem_base = sfb_smem_ptr.bitcast[Scalar[sfb_dtype]]()
 
     # Load warp as producer and mma warp as consumer
     # Dependence on MMA input in SMEM.
@@ -2204,7 +2163,11 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         ](),
     )
 
-    var ptr_tmem_addr = tmem_addr_storage.unsafe_ptr()
+    var ptr_tmem_addr: UnsafePointer[
+        UInt32,
+        origin_of(tmem_addr_storage),
+        address_space=AddressSpace.SHARED,
+    ] = tmem_addr_storage.unsafe_ptr()
 
     tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
 
@@ -2276,7 +2239,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             config.block_tile_shape[2],
         ),
         swapAB=config.AB_swapped,
-    ](num_active_experts, group_offsets)
+    ](_num_active_experts, group_offsets)
 
     var work_info = scheduler.fetch_next_work()
 

@@ -20,9 +20,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from max.driver import Buffer
+from max.nn.kv_cache.metrics import dkv_tier_degraded
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderMetrics
+from max.pipelines.lib.vision_encoder_cache import (
+    VideoEncoderMetrics,
+    VisionEncoderMetrics,
+)
 from max.pipelines.modeling.types import (
     BatchType,
     CompletedBatchStats,
@@ -89,6 +93,7 @@ class BatchMetrics:
     cache_hit_rate: float
     cache_hit_tokens: int
     cache_miss_tokens: int
+    device_blocks_served: int
 
     used_host_kv_pct: float
     total_host_kv_blocks: int
@@ -113,6 +118,16 @@ class BatchMetrics:
     rpc_read_latency_avg_ms: float
     nixl_read_gib_per_s: float = 0.0
     nixl_write_gib_per_s: float = 0.0
+
+    # dKV external-tier health, summed across the per-replica connector
+    # clients. The connected and total counts support a degraded alert when
+    # connected is below total and a dead-tier alert when connected is zero,
+    # and reconnect_attempts is a lifetime cumulative counter. All three are
+    # levels or cumulative rather than per-batch deltas, so they publish as
+    # gauges. Zero when no dKV tier is attached.
+    dkv_connected_clients: int = 0
+    dkv_total_clients: int = 0
+    dkv_reconnect_attempts: int = 0
 
     # When True, ``batch_execution_time_s`` is the execution time of the
     # previous batch (i.e. the overlap scheduler is active).
@@ -140,6 +155,12 @@ class BatchMetrics:
     dp_active_tokens: int = 0
     dp_step_capacity_tokens: int = 0
 
+    # Device-to-device KV block copies across DP replicas (a prefix-cache hit
+    # resident on another replica, materialized locally). Both 0 when
+    # data_parallel_degree == 1 or no such copy happened this batch.
+    cross_replica_blocks_copied: int = 0
+    cross_replica_bytes_copied: int = 0
+
     # Per-request prefix cache coverage for requests admitted in this batch
     # (cached_prefix_length / prompt_length). Empty for non-CE batches and
     # for CE batches that admit no new requests (e.g. follow-up prefill
@@ -158,6 +179,11 @@ class BatchMetrics:
     # are gated on this being non-None.
     vision_metrics: VisionEncoderMetrics | None = None
 
+    # Per-iteration video encoder statistics for multimodal models. None
+    # when the batch did no video encoding. The video log clause and video
+    # metrics are gated on this being non-None.
+    video_metrics: VideoEncoderMetrics | None = None
+
     @classmethod
     def create(
         cls,
@@ -171,6 +197,7 @@ class BatchMetrics:
         total_preemption_count: int,
         batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
         batch_vision_metrics: VisionEncoderMetrics | None = None,
+        batch_video_metrics: VideoEncoderMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
@@ -188,10 +215,13 @@ class BatchMetrics:
 
         total_kv_blocks = 0
         used_kv_pct = 0.0
+        device_blocks_served = 0
         used_host_kv_pct = 0.0
         total_host_kv_blocks = 0
         h2d_blocks_copied = 0
         d2h_blocks_copied = 0
+        cross_replica_blocks_copied = 0
+        cross_replica_bytes_copied = 0
         disk_blocks_read = 0
         disk_blocks_written = 0
         inflight_disk_ops = 0
@@ -203,6 +233,9 @@ class BatchMetrics:
         rpc_read_latency_avg_ms = 0.0
         nixl_read_gib_per_s = 0.0
         nixl_write_gib_per_s = 0.0
+        dkv_connected_clients = 0
+        dkv_total_clients = 0
+        dkv_reconnect_attempts = 0
         num_replicas = sch_config.data_parallel_degree
 
         # Data-parallel balance, along two axes: active tokens (compute load
@@ -257,8 +290,13 @@ class BatchMetrics:
                 )
                 used_host_kv_pct = used_host_kv_blocks / total_host_kv_blocks
 
+            device_blocks_served = metrics_agg.device_blocks_served
             h2d_blocks_copied = metrics_agg.h2d_blocks_copied
             d2h_blocks_copied = metrics_agg.d2h_blocks_copied
+            cross_replica_blocks_copied = (
+                metrics_agg.cross_replica_blocks_copied
+            )
+            cross_replica_bytes_copied = metrics_agg.cross_replica_bytes_copied
             disk_blocks_written = metrics_agg.disk_blocks_written
             disk_blocks_read = metrics_agg.disk_blocks_read
             inflight_disk_ops = metrics_agg.inflight_disk_ops
@@ -281,6 +319,13 @@ class BatchMetrics:
             rpc_read_latency_avg_ms = metrics_agg.rpc_read_latency_avg_ms
             nixl_read_gib_per_s = metrics_agg.nixl_read_gib_per_s
             nixl_write_gib_per_s = metrics_agg.nixl_write_gib_per_s
+
+            # dKV external-tier health. Read before reset_metrics like the
+            # metrics above, though the connector reports these live and does
+            # not clear them on reset.
+            dkv_connected_clients = metrics_agg.dkv_connected_clients
+            dkv_total_clients = metrics_agg.dkv_total_clients
+            dkv_reconnect_attempts = metrics_agg.dkv_reconnect_attempts
 
             kv_cache.reset_metrics()
 
@@ -366,10 +411,13 @@ class BatchMetrics:
             cache_hit_rate=cache_hit_rate,
             cache_hit_tokens=cache_hit_tokens,
             cache_miss_tokens=cache_miss_tokens,
+            device_blocks_served=device_blocks_served,
             used_host_kv_pct=used_host_kv_pct,
             total_host_kv_blocks=total_host_kv_blocks,
             h2d_blocks_copied=h2d_blocks_copied,
             d2h_blocks_copied=d2h_blocks_copied,
+            cross_replica_blocks_copied=cross_replica_blocks_copied,
+            cross_replica_bytes_copied=cross_replica_bytes_copied,
             disk_blocks_read=disk_blocks_read,
             disk_blocks_written=disk_blocks_written,
             used_disk_kv_pct=used_disk_kv_pct,
@@ -386,6 +434,9 @@ class BatchMetrics:
             rpc_read_latency_avg_ms=rpc_read_latency_avg_ms,
             nixl_read_gib_per_s=nixl_read_gib_per_s,
             nixl_write_gib_per_s=nixl_write_gib_per_s,
+            dkv_connected_clients=dkv_connected_clients,
+            dkv_total_clients=dkv_total_clients,
+            dkv_reconnect_attempts=dkv_reconnect_attempts,
             batch_execution_time_is_previous=batch_execution_time_is_previous,
             dp_active_token_occupancy_pct=dp_active_token_occupancy_pct,
             dp_context_token_occupancy_pct=dp_context_token_occupancy_pct,
@@ -394,6 +445,7 @@ class BatchMetrics:
             per_request_prefix_coverage=per_request_prefix_coverage,
             num_new_admissions=len(per_request_prefix_coverage),
             vision_metrics=batch_vision_metrics,
+            video_metrics=batch_video_metrics,
         )
 
     def pretty_format(self) -> str:
@@ -472,6 +524,19 @@ class BatchMetrics:
                 f"pin {self.rpc_read_latency_avg_ms:.1f}ms | "
             )
 
+        # A separate clause from dkv_str above, because a degraded tier does no
+        # transfers and so would show nothing there. Emitted only while
+        # degraded to keep the healthy log line quiet.
+        dkv_health_str = ""
+        if dkv_tier_degraded(
+            self.dkv_connected_clients, self.dkv_total_clients
+        ):
+            dkv_health_str = (
+                f"dKV degraded: {self.dkv_connected_clients}/"
+                f"{self.dkv_total_clients} connected, "
+                f"{self.dkv_reconnect_attempts} reconnect attempts | "
+            )
+
         vision_str = ""
         vm = self.vision_metrics
         if vm is not None and vm.num_images_total > 0:
@@ -481,6 +546,18 @@ class BatchMetrics:
                 f"{vm.num_tokens_encoded} toks encoded, "
                 f"cache hit rate {vm.cache_hit_rate:.1%} "
                 f"({vm.num_images_cached} hit, {vm.num_images_encoded} miss) | "
+            )
+
+        video_str = ""
+        vid = self.video_metrics
+        if vid is not None and vid.num_clips_total > 0:
+            video_str = (
+                f"Video Encoder: {vid.num_clips_encoded} clips, "
+                f"{sum(vid.frame_counts)} frames, "
+                f"{vid.num_tokens_encoded} toks encoded, "
+                f"{vid.encoding_time_ms:.1f}ms, "
+                f"cache hit rate {vid.cache_hit_rate:.1%} "
+                f"({vid.num_clips_cached} hit, {vid.num_clips_encoded} miss) | "
             )
 
         exec_label = (
@@ -516,8 +593,10 @@ class BatchMetrics:
             f"{host_kv_str}"
             f"{disk_kv_str}"
             f"{dkv_str}"
+            f"{dkv_health_str}"
             f"{spec_decode_str}"
             f"{vision_str}"
+            f"{video_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
 
@@ -592,6 +671,16 @@ class BatchMetrics:
             extra["vision_tokens_encoded"] = vm.num_tokens_encoded
             extra["vision_cache_hit_rate"] = vm.cache_hit_rate
 
+        vid = self.video_metrics
+        if vid is not None and vid.num_clips_total > 0:
+            extra["video_clips_total"] = vid.num_clips_total
+            extra["video_clips_encoded"] = vid.num_clips_encoded
+            extra["video_clips_cached"] = vid.num_clips_cached
+            extra["video_frames_encoded"] = sum(vid.frame_counts)
+            extra["video_tokens_encoded"] = vid.num_tokens_encoded
+            extra["video_encoding_time_ms"] = vid.encoding_time_ms
+            extra["video_cache_hit_rate"] = vid.cache_hit_rate
+
         if (
             self.nixl_read_latency_avg_ms > 0
             or self.nixl_write_latency_avg_ms > 0
@@ -606,6 +695,13 @@ class BatchMetrics:
                 self.rpc_acquire_latency_avg_ms
             )
             extra["rpc_read_latency_avg_ms"] = self.rpc_read_latency_avg_ms
+
+        # Emitted whenever a dKV tier is attached, not only while transferring,
+        # so a dead tier that does no transfers still records its health.
+        if self.dkv_total_clients > 0:
+            extra["dkv_connected_clients"] = self.dkv_connected_clients
+            extra["dkv_total_clients"] = self.dkv_total_clients
+            extra["dkv_reconnect_attempts"] = self.dkv_reconnect_attempts
 
         return extra
 
@@ -670,6 +766,12 @@ class BatchMetrics:
             METRICS.dp_step_capacity_tokens(
                 self.dp_step_capacity_tokens, batch_type=bt
             )
+            METRICS.cache_cross_replica_blocks_copied(
+                self.cross_replica_blocks_copied
+            )
+            METRICS.cache_cross_replica_bytes_copied(
+                self.cross_replica_bytes_copied
+            )
 
         METRICS.cache_num_used_blocks(
             int(self.total_kv_blocks * self.used_kv_pct)
@@ -681,6 +783,7 @@ class BatchMetrics:
         if self.batch_type == BatchType.CE and self.num_new_admissions > 0:
             METRICS.cache_hits(self.cache_hit_tokens)
             METRICS.cache_misses(self.cache_miss_tokens)
+            METRICS.cache_device_blocks_served(self.device_blocks_served)
             for coverage in self.per_request_prefix_coverage:
                 METRICS.cache_request_prefix_coverage(coverage * 100)
 
@@ -705,6 +808,14 @@ class BatchMetrics:
         if self.rpc_read_latency_avg_ms > 0:
             METRICS.dkv_rpc_read_latency(self.rpc_read_latency_avg_ms)
 
+        # Publish dKV health whenever a dKV tier is attached, independent of
+        # transfer activity, because a dead tier does no transfers and yet is
+        # exactly the state an operator needs to alert on.
+        if self.dkv_total_clients > 0:
+            METRICS.dkv_connected_clients(self.dkv_connected_clients)
+            METRICS.dkv_total_clients(self.dkv_total_clients)
+            METRICS.dkv_reconnect_attempts(self.dkv_reconnect_attempts)
+
         if self.draft_tokens_generated > 0:
             METRICS.spec_decode_avg_acceptance_length(
                 self.avg_acceptance_length
@@ -724,6 +835,14 @@ class BatchMetrics:
             METRICS.vision_patches_encoded(vm.num_patches_encoded)
             METRICS.vision_tokens_encoded(vm.num_tokens_encoded)
             METRICS.vision_cache_hit_rate(vm.cache_hit_rate * 100)
+
+        vid = self.video_metrics
+        if vid is not None and vid.num_clips_total > 0:
+            METRICS.video_clips_encoded(vid.num_clips_encoded)
+            METRICS.video_tokens_encoded(vid.num_tokens_encoded)
+            METRICS.video_encoding_time_milliseconds(vid.encoding_time_ms)
+            for frame_count in vid.frame_counts:
+                METRICS.video_frames_per_clip(frame_count)
 
 
 def publish_completed_batch_metrics(stats: CompletedBatchStats) -> None:
@@ -784,6 +903,7 @@ class SchedulerLogger:
         total_preemption_count: int,
         batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
         batch_vision_metrics: VisionEncoderMetrics | None = None,
+        batch_video_metrics: VideoEncoderMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
         completed_batch_stats: CompletedBatchStats | None = None,
     ) -> None:
@@ -801,6 +921,8 @@ class SchedulerLogger:
                 for the most recent batch.
             batch_vision_metrics: Per-batch vision encoder metrics for the
                 most recent batch, or None when no vision encoding ran.
+            batch_video_metrics: Per-batch video encoder metrics for the
+                most recent batch, or None when no video encoding ran.
             batch_execution_time_is_previous: When True, ``batch_execution_time_s``
                 is the execution time of the previous batch (the overlap
                 scheduler is active); the log line will read
@@ -828,6 +950,7 @@ class SchedulerLogger:
             total_preemption_count=total_preemption_count,
             batch_spec_decode_metrics=batch_spec_decode_metrics,
             batch_vision_metrics=batch_vision_metrics,
+            batch_video_metrics=batch_video_metrics,
             batch_execution_time_is_previous=batch_execution_time_is_previous,
         )
 

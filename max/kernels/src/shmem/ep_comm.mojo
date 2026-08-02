@@ -53,8 +53,8 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import (
     external_memory,
     fence_async_view_proxy,
@@ -68,7 +68,14 @@ from std.gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    PointerStorage,
+    TensorLayout,
+    TileTensor,
+    row_major,
+)
 from layout.tile_tensor import _get_index_type
 from layout.tile_layout import Layout
 from layout.tma_async import (
@@ -78,7 +85,7 @@ from layout.tma_async import (
     _default_desc_shape,
 )
 from std.math import exp, recip
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.memory.unsafe import bitcast
 from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
 
@@ -188,7 +195,7 @@ def block_prefix_sum[
         n_warps <= WARP_SIZE
     ), "Number of warps must be less than or equal to warp size"
 
-    var warp_prefix_sum = stack_allocation[
+    var warp_prefix_sum = unsafe_stack_allocation[
         n_warps,
         Scalar[dtype],
         address_space=AddressSpace.SHARED,
@@ -231,7 +238,7 @@ def ep_signal_completion[
 ](
     my_rank: Int32,
     dst_rank: Int32,
-    recv_count_ptrs: InlineArray[
+    recv_count_ptrs: Array[
         UnsafePointer[UInt64, MutUntrackedOrigin], p2p_world_size
     ],
     signal_offset: Int32,
@@ -532,11 +539,16 @@ struct BF16TokenFormat[
     @always_inline
     def __init__(
         out self,
-        output_tokens: TileTensor[DType.bfloat16, Self.output_layout, ...],
+        output_tokens: TileTensor[
+            DType.bfloat16,
+            Self.output_layout,
+            Storage=PointerStorage[],
+            ...,
+        ],
     ):
         self.output_tokens = {
             UnsafePointer[BFloat16, MutUntrackedOrigin](
-                unsafe_from_address=Int(output_tokens.ptr)
+                unsafe_from_address=Int(output_tokens._storage)
             ),
             output_tokens.layout,
         }
@@ -675,18 +687,28 @@ struct BlockwiseFP8TokenFormat[
     @always_inline
     def __init__(
         out self,
-        output_tokens: TileTensor[Self.fp8_dtype, Self.output_layout, ...],
-        output_scales: TileTensor[Self.scales_dtype, Self.scales_layout, ...],
+        output_tokens: TileTensor[
+            Self.fp8_dtype,
+            Self.output_layout,
+            Storage=PointerStorage[],
+            ...,
+        ],
+        output_scales: TileTensor[
+            Self.scales_dtype,
+            Self.scales_layout,
+            Storage=PointerStorage[],
+            ...,
+        ],
     ):
         self.output_tokens = {
             UnsafePointer[Scalar[Self.fp8_dtype], MutUntrackedOrigin](
-                unsafe_from_address=Int(output_tokens.ptr)
+                unsafe_from_address=Int(output_tokens._storage)
             ),
             output_tokens.layout,
         }
         self.output_scales = {
             UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin](
-                unsafe_from_address=Int(output_scales.ptr)
+                unsafe_from_address=Int(output_scales._storage)
             ),
             output_scales.layout,
         }
@@ -984,22 +1006,34 @@ struct NVBlockScaledTokenFormat[
     @always_inline
     def __init__(
         out self,
-        output_tokens: TileTensor[Self.quant_dtype, Self.output_layout, ...],
-        output_scales: TileTensor[Self.scales_dtype, ...],
+        output_tokens: TileTensor[
+            Self.quant_dtype,
+            Self.output_layout,
+            Storage=PointerStorage[],
+            ...,
+        ],
+        output_scales: TileTensor[
+            Self.scales_dtype,
+            Storage=PointerStorage[],
+            ...,
+        ],
         output_scales_offset: TileTensor[
-            DType.uint32, Self.scales_offset_layout, ...
+            DType.uint32,
+            Self.scales_offset_layout,
+            Storage=PointerStorage[],
+            ...,
         ],
         ctx: DeviceContext,
     ):
         self.output_tokens = {
             UnsafePointer[Scalar[Self.quant_dtype], MutUntrackedOrigin](
-                unsafe_from_address=Int(output_tokens.ptr)
+                unsafe_from_address=Int(output_tokens._storage)
             ),
             output_tokens.layout,
         }
         self.output_scales_offset = {
             UnsafePointer[Scalar[DType.uint32], MutUntrackedOrigin](
-                unsafe_from_address=Int(output_scales_offset.ptr)
+                unsafe_from_address=Int(output_scales_offset._storage)
             ),
             output_scales_offset.layout,
         }
@@ -1008,7 +1042,7 @@ struct NVBlockScaledTokenFormat[
         # dimension. This is required by the TMA instructions that the leading
         # dimensions must be multiples of 16-byte strides
         var scales_tensor_view = TileTensor(
-            output_scales.ptr,
+            output_scales._storage,
             row_major(
                 (
                     Int(output_scales.dim(0)),
@@ -1336,7 +1370,7 @@ struct NVBlockScaledTokenFormat[
         var mbar_base = (smem_base + Self._mbar_smem_offset).bitcast[
             SharedMemBarrier
         ]()
-        var output_tokens_base = self.output_tokens.ptr.bitcast[UInt8]()
+        var output_tokens_base = self.output_tokens._storage.bitcast[UInt8]()
         var phase = UInt32(0)
 
         # Process the tokens in reverse order. This reduce latency when there
@@ -1473,19 +1507,29 @@ struct MXFP4TokenFormat[
     @always_inline
     def __init__(
         out self,
-        output_tokens: TileTensor[Self.fp4_dtype, Self.output_layout, ...],
-        output_scales: TileTensor[Self.scales_dtype, Self.scales_layout, ...],
+        output_tokens: TileTensor[
+            Self.fp4_dtype,
+            Self.output_layout,
+            Storage=PointerStorage[],
+            ...,
+        ],
+        output_scales: TileTensor[
+            Self.scales_dtype,
+            Self.scales_layout,
+            Storage=PointerStorage[],
+            ...,
+        ],
         max_padded_M: Int = 0,
     ):
         self.output_tokens = {
             UnsafePointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin](
-                unsafe_from_address=Int(output_tokens.ptr)
+                unsafe_from_address=Int(output_tokens._storage)
             ),
             output_tokens.layout,
         }
         self.output_scales = {
             UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin](
-                unsafe_from_address=Int(output_scales.ptr)
+                unsafe_from_address=Int(output_scales._storage)
             ),
             output_scales.layout,
         }
@@ -1660,9 +1704,9 @@ struct MXFP4TokenFormat[
                 var dst_off = Shuffler[1].scale_4d_slot_byte_off[
                     K_SCALES=K_SCALES
                 ](expert_slot, local_row, i, self.max_padded_M)
-                self.output_scales.ptr[dst_off] = bitcast[Self.scales_dtype, 1](
-                    byte
-                )
+                self.output_scales._storage[dst_off] = bitcast[
+                    Self.scales_dtype, 1
+                ](byte)
         else:
             for i in range(
                 lane_id(), Self.hid_dim // Self.group_size, WARP_SIZE
@@ -1953,8 +1997,13 @@ struct EPDispatchKernel[
     @staticmethod
     @always_inline
     def monitor_and_signal_completion(
-        topk_ids: TileTensor[mut=False, DType.int32, ...],
-        recv_count_ptrs: InlineArray[
+        topk_ids: TileTensor[
+            mut=False,
+            DType.int32,
+            Storage=PointerStorage[],
+            ...,
+        ],
+        recv_count_ptrs: Array[
             UnsafePointer[UInt64, MutUntrackedOrigin], Self.p2p_world_size
         ],
         expert_reserved_counter: UnsafePointer[Int32, MutUntrackedOrigin],
@@ -2049,10 +2098,20 @@ struct EPDispatchKernel[
         //,
         input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
     ](
-        input_tokens: TileTensor[mut=False, input_type, ...],
-        topk_ids: TileTensor[mut=False, DType.int32, ...],
+        input_tokens: TileTensor[
+            mut=False,
+            input_type,
+            Storage=PointerStorage[],
+            ...,
+        ],
+        topk_ids: TileTensor[
+            mut=False,
+            DType.int32,
+            Storage=PointerStorage[],
+            ...,
+        ],
         send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
-        recv_buf_ptrs: InlineArray[
+        recv_buf_ptrs: Array[
             UnsafePointer[UInt8, MutUntrackedOrigin], Self.p2p_world_size
         ],
         expert_reserved_counter: UnsafePointer[Int32, MutUntrackedOrigin],
@@ -2251,8 +2310,18 @@ struct EPDispatchKernel[
     @always_inline
     def wait_for_arrivals_and_compute_offsets(
         format_handler: Self.token_fmt_type,
-        row_offsets: TileTensor[mut=True, DType.uint32, ...],
-        expert_ids: TileTensor[mut=True, DType.int32, ...],
+        row_offsets: TileTensor[
+            mut=True,
+            DType.uint32,
+            Storage=PointerStorage[],
+            ...,
+        ],
+        expert_ids: TileTensor[
+            mut=True,
+            DType.int32,
+            Storage=PointerStorage[],
+            ...,
+        ],
         recv_count_p: UnsafePointer[UInt64, MutUntrackedOrigin],
         atomic_counter: UnsafePointer[Int32, MutUntrackedOrigin],
         my_rank: Int32,
@@ -2283,7 +2352,7 @@ struct EPDispatchKernel[
         comptime shared_expert_offset = 1 if Self.fused_shared_expert else 0
         var tid = thread_idx.x
 
-        var prefix_sum_arr = stack_allocation[
+        var prefix_sum_arr = unsafe_stack_allocation[
             Self.n_experts, DType.uint32, address_space=AddressSpace.SHARED
         ]()
 
@@ -2325,7 +2394,7 @@ struct EPDispatchKernel[
         # Some token format handlers may require padding the expert offsets to
         # satisfy the grouped matmul alignment requirement.
         comptime n_groups = Self.n_local_experts + shared_expert_offset
-        format_handler.pad_expert_offsets[n_groups](row_offsets.ptr)
+        format_handler.pad_expert_offsets[n_groups](row_offsets._storage)
 
         # Write out data needed for other SMs to copy the tokens to the output
         # tensor.
@@ -2413,8 +2482,18 @@ struct EPDispatchKernel[
     @always_inline
     def copy_received_tokens_to_output(
         format_handler: Self.token_fmt_type,
-        row_offsets: TileTensor[mut=True, DType.uint32, ...],
-        src_info: TileTensor[mut=True, DType.int32, ...],
+        row_offsets: TileTensor[
+            mut=True,
+            DType.uint32,
+            Storage=PointerStorage[],
+            ...,
+        ],
+        src_info: TileTensor[
+            mut=True,
+            DType.int32,
+            Storage=PointerStorage[],
+            ...,
+        ],
         recv_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
         atomic_counter: UnsafePointer[Int32, MutUntrackedOrigin],
         my_rank: Int32,
@@ -2454,13 +2533,13 @@ struct EPDispatchKernel[
 
         # Shared memory: rank prefix sums, per-tile token-to-rank map,
         # expert start, and chunk_start broadcast slot.
-        var rank_prefix = stack_allocation[
+        var rank_prefix = unsafe_stack_allocation[
             Self.n_ranks, DType.int32, address_space=AddressSpace.SHARED
         ]()
-        var tok_rank_map = stack_allocation[
+        var tok_rank_map = unsafe_stack_allocation[
             tile_size, DType.int32, address_space=AddressSpace.SHARED
         ]()
-        var smem_vals = stack_allocation[
+        var smem_vals = unsafe_stack_allocation[
             2, DType.int32, address_space=AddressSpace.SHARED
         ]()
 
@@ -2726,10 +2805,10 @@ def dispatch_async_kernel[
     ],
     topk_ids: TileTensor[DType.int32, topk_ids_layout, ImmUntrackedOrigin],
     send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
-    recv_buf_ptrs: InlineArray[
+    recv_buf_ptrs: Array[
         UnsafePointer[UInt8, MutUntrackedOrigin], p2p_world_size
     ],
-    recv_count_ptrs: InlineArray[
+    recv_count_ptrs: Array[
         UnsafePointer[UInt64, MutUntrackedOrigin], p2p_world_size
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
@@ -3054,8 +3133,13 @@ struct EPCombineKernel[
         input_type: DType,
         //,
     ](
-        input_tokens: TileTensor[input_type, ...],
-        output_tokens: TileTensor[mut=True, input_type, ...],
+        input_tokens: TileTensor[input_type, Storage=PointerStorage[], ...],
+        output_tokens: TileTensor[
+            mut=True,
+            input_type,
+            Storage=PointerStorage[],
+            ...,
+        ],
     ) -> None:
         """Copies shared expert outputs to the output tensor.
 
@@ -3080,8 +3164,8 @@ struct EPCombineKernel[
         for token_idx in range(
             sm_id, Int(shared_expert_token_count), Self.n_sms
         ):
-            var output_tokens_p = output_tokens.ptr + token_idx * hid_dim
-            var input_tokens_p = input_tokens.ptr + token_idx * hid_dim
+            var output_tokens_p = output_tokens._storage + token_idx * hid_dim
+            var input_tokens_p = input_tokens._storage + token_idx * hid_dim
             block_memcpy[hid_dim * size_of[input_type](), Self.num_threads](
                 output_tokens_p.bitcast[UInt8](),
                 input_tokens_p.bitcast[UInt8](),
@@ -3094,13 +3178,21 @@ struct EPCombineKernel[
         input_type: DType,
         //,
     ](
-        input_tokens: TileTensor[input_type, ...],
-        src_info: TileTensor[DType.int32, ...],
+        input_tokens: TileTensor[
+            input_type,
+            Storage=PointerStorage[],
+            ...,
+        ],
+        src_info: TileTensor[
+            DType.int32,
+            Storage=PointerStorage[],
+            ...,
+        ],
         send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
-        recv_buf_ptrs: InlineArray[
+        recv_buf_ptrs: Array[
             UnsafePointer[UInt8, MutUntrackedOrigin], Self.p2p_world_size
         ],
-        recv_count_ptrs: InlineArray[
+        recv_count_ptrs: Array[
             UnsafePointer[UInt64, MutUntrackedOrigin], Self.p2p_world_size
         ],
         atomic_counter: UnsafePointer[Int32, MutUntrackedOrigin],
@@ -3356,7 +3448,12 @@ struct EPCombineKernel[
         router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
         elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     ](
-        output_tokens: TileTensor[mut=True, output_type, ...],
+        output_tokens: TileTensor[
+            mut=True,
+            output_type,
+            Storage=PointerStorage[],
+            ...,
+        ],
         recv_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
         atomic_counter: UnsafePointer[Int32, MutUntrackedOrigin],
         my_rank: Int32,
@@ -3552,10 +3649,10 @@ def combine_async_kernel[
     ],
     src_info: TileTensor[DType.int32, src_info_layout, ImmUntrackedOrigin],
     send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
-    recv_buf_ptrs: InlineArray[
+    recv_buf_ptrs: Array[
         UnsafePointer[UInt8, MutUntrackedOrigin], p2p_world_size
     ],
-    recv_count_ptrs: InlineArray[
+    recv_count_ptrs: Array[
         UnsafePointer[UInt64, MutUntrackedOrigin], p2p_world_size
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
@@ -3766,10 +3863,10 @@ def dispatch_kernel[
     expert_ids: TileTensor[DType.int32, expert_ids_layout, MutUntrackedOrigin],
     src_info: TileTensor[DType.int32, src_info_layout, MutUntrackedOrigin],
     send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
-    recv_buf_ptrs: InlineArray[
+    recv_buf_ptrs: Array[
         UnsafePointer[UInt8, MutUntrackedOrigin], p2p_world_size
     ],
-    recv_count_ptrs: InlineArray[
+    recv_count_ptrs: Array[
         UnsafePointer[UInt64, MutUntrackedOrigin], p2p_world_size
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
@@ -3976,10 +4073,10 @@ def combine_kernel[
         input_type, output_tokens_layout, MutUntrackedOrigin
     ],
     send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
-    recv_buf_ptrs: InlineArray[
+    recv_buf_ptrs: Array[
         UnsafePointer[UInt8, MutUntrackedOrigin], p2p_world_size
     ],
-    recv_count_ptrs: InlineArray[
+    recv_count_ptrs: Array[
         UnsafePointer[UInt64, MutUntrackedOrigin], p2p_world_size
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
@@ -4829,8 +4926,7 @@ def fused_silu_mxfp4_kernel[
     scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
     input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
     row_offsets: TileTensor[DType.uint32, offsets_layout, ImmUntrackedOrigin],
-    max_padded_M: Int = 0,
-    # Clamped-variant alpha/L; unused when clamp_activation=False.
+    max_padded_M: Int32 = 0,  # Clamped-variant alpha/L; unused when clamp_activation=False.
     alpha: Float32 = 0.0,
     limit: Float32 = 0.0,
 ):
@@ -4852,6 +4948,7 @@ def fused_silu_mxfp4_kernel[
         scales_offsets: The offsets to determine the position of the scales tiles.
         input_scales: Per-expert input scale factors.
     """
+    var _max_padded_M = Int(max_padded_M)
     comptime accum_dtype = DType.float32
     comptime assert (
         output_tensor.flat_rank >= 2
@@ -4911,7 +5008,7 @@ def fused_silu_mxfp4_kernel[
             comptime if clamp_activation:
                 var g_c = min(gate_proj, limit)
                 var u_c = up_proj.clamp(-limit, limit)
-                output_val = (u_c + 1.0) * g_c * _sigmoid(g_c * alpha)
+                output_val = (g_c * _sigmoid(g_c * alpha)) * (u_c + 1.0)
             else:
                 gate_proj = gate_proj / (1.0 + exp(-gate_proj))
                 output_val = gate_proj * up_proj
@@ -4962,20 +5059,20 @@ def fused_silu_mxfp4_kernel[
                     var token_start = Int(row_offsets[Coord(expert_slot)])
                     var local_row = Int(m) - token_start
                     debug_assert(
-                        max_padded_M > 0,
-                        "KS64 fused scale store requires max_padded_M > 0",
+                        _max_padded_M > 0,
+                        "KS64 fused scale store requires _max_padded_M > 0",
                     )
                     debug_assert(
-                        local_row < max_padded_M,
+                        local_row < _max_padded_M,
                         (
                             "KS64 fused scale store: local_row exceeds the"
-                            " per-expert slot capacity (max_padded_M)"
+                            " per-expert slot capacity (_max_padded_M)"
                         ),
                     )
                     var dst_off = Shuffler[1].scale_4d_slot_byte_off[
                         K_SCALES=K_SCALES
-                    ](expert_slot, local_row, k_scale, max_padded_M)
-                    scales_tensor.ptr[dst_off] = fp8_scale_factor
+                    ](expert_slot, local_row, k_scale, _max_padded_M)
+                    scales_tensor._storage[dst_off] = fp8_scale_factor
                 else:
                     scales_tensor.store((m, k_scale), fp8_scale_factor)
 

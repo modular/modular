@@ -43,12 +43,12 @@ tiles take the bounded path. See KB `kernels/apple-m5-int8-matmul`.
 """
 
 from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
-from std.gpu.compute.arch.mma_apple import _mma_apple_transposable
-from std.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace, build_edge_mask, gmem_edge_masked_load
 from std.collections import Optional
 from std.math import round
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils import IndexList
 
 from layout import TileTensor
@@ -303,7 +303,7 @@ struct AppleM5Int8MatMul[
         base_row: Int32,
         rb: Int32,
         four_cb: Int32,
-    ) -> InlineArray[SIMD[DType.int8, 8], 4]:
+    ) -> Array[SIMD[DType.int8, 8], 4]:
         """Width-16 load of one 16-block's four K-block fragments from a 64-wide
         K strip. `row_stride`/`four_cb` (= `4*cb`) are hoisted by the caller so
         the per-block offset is one mul-add; the offset math is Int32 (offset from
@@ -318,7 +318,7 @@ struct AppleM5Int8MatMul[
         comptime align = 16
         var lo16 = (strip.ptr + Int(lo_off)).load[width=16, alignment=align]()
         var hi16 = (strip.ptr + Int(hi_off)).load[width=16, alignment=align]()
-        var out = InlineArray[SIMD[DType.int8, 8], 4](uninitialized=True)
+        var out = Array[SIMD[DType.int8, 8], 4](uninitialized=True)
         comptime for j in range(4):
             out[j] = lo16.slice[4, offset=4 * j]().join(
                 hi16.slice[4, offset=4 * j]()
@@ -346,10 +346,10 @@ struct AppleM5Int8MatMul[
         var rb32 = Int32(rb)
         var four_cb = Int32(4 * cb)
 
-        var a_all = InlineArray[SIMD[DType.int8, 8], Self.NUM_MMA_M * 4](
+        var a_all = Array[SIMD[DType.int8, 8], Self.NUM_MMA_M * 4](
             uninitialized=True
         )
-        var b_all = InlineArray[SIMD[DType.int8, 8], Self.NUM_MMA_N * 4](
+        var b_all = Array[SIMD[DType.int8, 8], Self.NUM_MMA_N * 4](
             uninitialized=True
         )
         comptime for mi in range(Self.NUM_MMA_M):
@@ -386,7 +386,7 @@ struct AppleM5Int8MatMul[
         t32: TileTensor[DType.int8, ...],
         abs_row: Int,
         abs_k: Int,
-    ) -> InlineArray[SIMD[DType.int8, 8], 4]:
+    ) -> Array[SIMD[DType.int8, 8], 4]:
         """Int32-indexed `_load_frag_x4_int8`: `<16 x i8>` load via absolute
         `load_linear`. `align=16` keeps the vector load (needs `abs_k % 16 == 0`).
         """
@@ -397,7 +397,7 @@ struct AppleM5Int8MatMul[
         var hi16 = t32.load_linear[width=16, alignment=align](
             IndexList[2](abs_row + 8, abs_k)
         )
-        var out = InlineArray[SIMD[DType.int8, 8], 4](uninitialized=True)
+        var out = Array[SIMD[DType.int8, 8], 4](uninitialized=True)
         comptime for j in range(4):
             out[j] = lo16.slice[4, offset=4 * j]().join(
                 hi16.slice[4, offset=4 * j]()
@@ -421,10 +421,10 @@ struct AppleM5Int8MatMul[
         var abs_k = ks * Self.BK + 4 * cb
         var a_base = sg_row * Self.SG_M + rb
         var b_base = sg_col * Self.SG_N + rb
-        var a_all = InlineArray[SIMD[DType.int8, 8], Self.NUM_MMA_M * 4](
+        var a_all = Array[SIMD[DType.int8, 8], Self.NUM_MMA_M * 4](
             uninitialized=True
         )
-        var b_all = InlineArray[SIMD[DType.int8, 8], Self.NUM_MMA_N * 4](
+        var b_all = Array[SIMD[DType.int8, 8], Self.NUM_MMA_N * 4](
             uninitialized=True
         )
         comptime for mi in range(Self.NUM_MMA_M):
@@ -508,7 +508,7 @@ struct AppleM5Int8MatMul[
             var kb_valid = max(
                 0, min(Int(Self.MMA_K), k_valid - ki * Self.MMA_K)
             )
-            var b_frags = InlineArray[SIMD[DType.int8, 8], Self.NUM_MMA_N](
+            var b_frags = Array[SIMD[DType.int8, 8], Self.NUM_MMA_N](
                 uninitialized=True
             )
             comptime for ni in range(Self.NUM_MMA_N):
@@ -976,8 +976,9 @@ struct AppleInt8ActQuant[in_type: DType = DType.bfloat16, *, THREADS: Int = 64]:
         q: TileTensor[DType.int8, q_layout, MutAnyOrigin],
         a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
         a_scale: TileTensor[DType.float32, s_layout, MutAnyOrigin],
-        K: Int,
+        K_arg: Int32,
     ):
+        var K = Int(K_arg)
         var row = Int(block_idx.x)
         var tid = Int(thread_idx.x)
 
@@ -1014,7 +1015,7 @@ def _threadgroup_max[nthreads: Int](val: Float32) -> Float32:
     broadcasts the max back through SMEM. `nthreads` is small (64) so the linear
     reduction is cheap and needs no tree.
     """
-    var s = stack_allocation[
+    var s = unsafe_stack_allocation[
         nthreads, Float32, address_space=AddressSpace.SHARED
     ]()
     var tid = Int(thread_idx.x)
@@ -1068,7 +1069,7 @@ def enqueue_apple_int8_quantize_activation[
         q,
         a.as_immut(),
         a_scale,
-        k,
+        Int32(k),
         grid_dim=(m),
         block_dim=(QK.THREADS),
     )

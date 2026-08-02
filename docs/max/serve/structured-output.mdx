@@ -7,10 +7,10 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 MAX supports the generation of structured output using
-[llguidance](https://github.com/guidance-ai/llguidance) as a backend.
-Structured output, also sometimes referred to as constrained decoding, allows
-users to enforce specific output formats, ensuring structured and predictable
-responses from a model.
+[llguidance](https://github.com/guidance-ai/llguidance) as a backend. Structured
+output, also sometimes referred to as constrained decoding, allows users to
+enforce specific output formats, ensuring structured and predictable responses
+from a model.
 
 ## When to use structured output
 
@@ -18,13 +18,17 @@ If you want to structure a model's output when it responds to a user, then you
 should use a structured output `response_format`.
 
 If you are connecting a model to tools, functions, data, or other systems, then
-you should use [function calling](/max/serve/function-calling) instead of
+you should use [function calling](/serve/function-calling) instead of
 structured outputs.
+
+Learn more about
+[structured output](https://handbook.modular.com/model-interaction/structured-outputs/)
+in the LLM Inference Handbook.
 
 ## How structured output works
 
 To use structured output, include the `--enable-structured-output` flag when
-serving your model with the [`max` CLI](/max/cli).
+serving your model with the [`max` CLI](/cli).
 
 ```bash
 max serve \
@@ -36,13 +40,13 @@ max serve \
 
 The examples on this page use image input with a multimodal model. For
 environment setup and additional image and video input options (including local
-files), see [Image and video to text](/max/inference/image-to-text).
+files), see [Image and video to text](/serve/image-to-text).
 
 :::
 
 Both the
-[`/chat/completions`](/max/rest-api/#POST/v1/chat/completions) and
-[`/completions`](/max/rest-api/#POST/v1/completions) API endpoints are
+[`/chat/completions`](/rest-api/#POST/v1/chat/completions) and
+[`/completions`](/rest-api/#POST/v1/completions) API endpoints are
 compatible with structured output.
 
 You can define your structured output response format in two ways:
@@ -286,8 +290,8 @@ deployments.
 
 Next, try processing local image files or deploying to the cloud.
 
-- [Image and video to text](/max/inference/image-to-text): Use the MAX chat
+- [Image and video to text](/serve/image-to-text): Use the MAX chat
   completions endpoint with image or video input to generate descriptions and
   answer questions about visual content.
-- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+- [Deploy MAX on GPU with self-hosted endpoints](/serve/local-to-cloud):
   Learn how to deploy MAX pipelines to cloud.

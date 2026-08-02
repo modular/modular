@@ -17,7 +17,7 @@ from std.testing import TestSuite
 
 
 def test_map() raises:
-    var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
+    var vector_stack: Array[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
     var vector = Span(vector_stack)
 
     @parameter

@@ -65,10 +65,6 @@ modular_py_test(
     tags = [
         "external-exclusive",  # Times out if run with too many other tests
         "gpu",
-        # TODO(GEX-3817): times out at the 610s test cap on b200 remote
-        # execution (10/10, 20/20, 2026-07-17); un-gating needs a bare-metal
-        # ci-local-gpu stability run, which remote exec cannot provide.
-        "manual",
     ],
     target_compatible_with = [
         "@platforms//cpu:x86_64",

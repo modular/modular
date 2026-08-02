@@ -3,9 +3,12 @@ title: "Parameterization"
 description: Creating and using parameterized structs and functions.
 ---
 
-Many programming languages offer systems for writing generic or polymorphic
-code, which let you write code once, and generate efficient, specialized
-code at compile time.
+<!-- markdownlint-disable MD033 MD045 -->
+<!-- FIXME: Add alt text to images -->
+
+Many programming languages offer systems for writing parameterized or
+polymorphic code, which let you write code once, and generate efficient,
+specialized code at compile time.
 
 Mojo's compile-time parameter system lets you define reusable code. A parameter
 is a compile-time input to a struct or function. Parameters appear in square
@@ -23,15 +26,15 @@ def main():
 ```
 
 Parameters accept both types and values at compile time. When a
-parameter accepts a type, the result is type-generic code. When it
-accepts a value, the result is value-generic code.
+parameter accepts a type, the result is type-parameterized code. When it
+accepts a value, the result is value-parameterized code.
 
 ```mojo no-test
 struct MyList[T: AnyType]:
-    # ... type-generic
+    # ... type-parameterized
 
 struct FixedBuffer[size: Int]:
-    # ... value-generic
+    # ... value-parameterized
 ```
 
 Mojo's parameters are similar to C++ template parameters or Rust generic
@@ -50,7 +53,7 @@ parameters and `()` for arguments.
 In addition to parameterizing structs and functions, you can also define
 parameterized `comptime` values.
 
-## Parameterized functions
+## Parameterized functions {#parameters-and-generics}
 
 To define a *parameterized function*, add parameters in square brackets ahead
 of the argument list. Each parameter is formatted just like an argument: a
@@ -156,16 +159,16 @@ Here's a quick overview of the special characters in the parameter list:
 - An equals sign (`=`) introduces a default value for an
   [optional parameter](#optional-parameters-and-keyword-parameters).
 
-## Parameters and generics
+## Parameterized declarations
 
-Generics let functions work across multiple types, and let containers
+Parameterization let functions work across multiple types, and let containers
 store values of many types. For example,
 [`List`](/docs/std/collections/list/List/) takes a type parameter, so
 `List[Int]` holds integers and `List[String]` holds strings.
 
-In Mojo, generics use compile-time parameters. A function parameterized
-on a type is type-generic. A function parameterized on a value is
-value-generic. Both use `[]`.
+In Mojo, parameterizations use compile-time elements. A function parameterized
+on a type is type-parameterized. A function parameterized on a value is
+value-parameterized. Both use `[]`.
 
 This function uses both a type parameter and a value parameter:
 
@@ -181,8 +184,8 @@ def main():
     repeat[2](42)  # prints 42 on two lines
 ```
 
-`MsgType` is type-generic. It accepts any `Writable` type. `count` is
-value-generic. It accepts a compile-time integer. Together, they let
+`MsgType` is type-parameterized. It accepts any `Writable` type. `count` is
+value-parameterized. It accepts a compile-time integer. Together, they let
 you write one function that works across types and specializes for
 different repeat counts.
 
@@ -190,17 +193,18 @@ different repeat counts.
 [infer-only parameter](#infer-only-parameters). The compiler infers
 the type from `msg`, so you only pass `count` explicitly.
 
-For more on generics, including trait conformance, conditional conformance,
-and value generics, see [generics](/docs/manual/generics/).
+For more on parameterized declarations, including trait conformance, conditional
+conformance, and value parameterizations, see
+[parameterized declarations](/docs/manual/generics/).
 
 ## Parameterized structs
 
 You can also add parameters to structs. You can use parameterized structs to
-build generic collections. For example, a generic array type might include code
-like this:
+build parameterized collections. For example, a parameterized array type might
+include code like this:
 
 ```mojo
-struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
+struct ParameterizedArray[ElementType: Copyable & ImplicitlyDeletable]:
     var data: UnsafePointer[Self.ElementType, MutUntrackedOrigin]
     var size: Int
 
@@ -208,16 +212,16 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
         self.size = len(elements)
         self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
-            (self.data + i).unsafe_write(elements[i].copy())
+            self.data.unsafe_offset(i).unsafe_write(elements[i].copy())
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         for i in range(self.size):
-            (self.data + i).unsafe_deinit_pointee()
-        self.data.free()
+            self.data.unsafe_offset(i).unsafe_deinit_pointee()
+        self.data.unsafe_free()
 
     def __getitem__(self, i: Int) raises -> ref[self] Self.ElementType:
         if i < self.size:
-            return self.data[i]
+            return self.data[unsafe_offset=i]
         else:
             raise Error("Out of bounds")
 ```
@@ -230,19 +234,19 @@ parameter*. `ElementType` conforms to the
 
 As with parameterized functions, you need to pass in parameter values when you
 use a parameterized struct. In this case, when you create an instance of
-`GenericArray`, you need to specify the type you want to store, like `Int`, or
-`Float64`. (This is a little confusing, because the *parameter value* you're
-passing in this case is a *type*. That's OK: a Mojo type is a valid compile-time
-value.)
+`ParameterizedArray`, you need to specify the type you want to store, like
+`Int`, or `Float64`. (This is a little confusing, because the *parameter value*
+you're passing in this case is a *type*. That's OK: a Mojo type is a valid
+compile-time value.)
 
 You'll see that `Self.ElementType` is used throughout the struct where you'd
 usually see a type name. For example, as the formal type for the `elements` in
 the constructor, and the return type of the `__getitem__()` method.
 
-Here's an example of using `GenericArray`:
+Here's an example of using `ParameterizedArray`:
 
 ```mojo
-var array = GenericArray(1, 2, 3)
+var array = ParameterizedArray(1, 2, 3)
 for i in range(array.size):
     end = ", " if i < array.size - 1 else "\n"
     print(array[i], end=end)
@@ -254,11 +258,11 @@ for i in range(array.size):
 
 A parameterized struct can use the `Self` type to represent a concrete instance
 of the struct (that is, with all its parameters specified). For example, you
-could add a static factory method to `GenericArray` with the following
+could add a static factory method to `ParameterizedArray` with the following
 signature:
 
 ```mojo no-test
-struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
+struct ParameterizedArray[ElementType: Copyable & ImplicitlyDeletable]:
     ...
 
     @staticmethod
@@ -266,14 +270,14 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
         # Create a new array with count instances of the given value
 ```
 
-Here, `Self` is equivalent to writing `GenericArray[Self.ElementType]`. That is,
-you can call the `splat()` method like this:
+Here, `Self` is equivalent to writing `ParameterizedArray[Self.ElementType]`.
+That is, you can call the `splat()` method like this:
 
 ```mojo
-var array = GenericArray[Float64].splat(8, 0)
+var array = ParameterizedArray[Float64].splat(8, 0)
 ```
 
-The method returns an instance of `GenericArray[Float64]`.
+The method returns an instance of `ParameterizedArray[Float64]`.
 
 ### Referencing struct parameters
 
@@ -421,8 +425,8 @@ var n = m.slice[2]()
 print(n)  # prints [1, 3]
 ```
 
-A struct's lifecycle methods (`__init__()` and `__del__()`) are an exception to
-this rule—they can't take parameters.
+A struct's lifecycle methods (`__init__()` and `__deinit__()`) are an
+exception to this rule—they can't take parameters.
 
 ### Case study: the SIMD type
 
@@ -514,10 +518,10 @@ var bigger_vec = (big_vec + big_vec).cast[DType.float32]()
 
 Note that the `cast()` method also needs a parameter to specify the type you
 want from the cast (the method definition above expects a `target` parameter
-value). Thus, just as the `SIMD` struct is a generic type definition, the
-`cast()` method is a generic method definition. At compile time, the compiler
-creates a concrete version of the `cast()` method with the target parameter
-bound to `DType.float32`.
+value). Thus, just as the `SIMD` struct is a parameterized type definition, the
+`cast()` method is a parameterized method definition. At compile time, the
+compiler creates a concrete version of the `cast()` method with the target
+parameter bound to `DType.float32`.
 
 The code above shows the use of concrete types (that is, the parameters are all
 bound to known values). But the major power of parameters comes from the ability
@@ -630,7 +634,8 @@ struct Two[Type: Writable & Copyable & ImplicitlyDeletable]:
 def use_two() raises:
     s3 = Two(One("infer"), One("me"))  # prints: infer me
     Two.fire(One(1), One(2))  # prints: 🔥 1 2
-    # Two.fire(One("mixed"), One(0))  # Error: parameter inferred to two different values
+    # Two.fire(One("mixed"), One(0)) 
+    # Error: parameter inferred to two different values
 ```
 
 `Two` takes a `Type` parameter, and its constructor takes values of type
@@ -825,7 +830,7 @@ create an instance of `Span`. Binding the `mut` parameter by keyword lets you
 define a `Span` that requires a mutable origin.
 
 ```mojo
-def mutate_span(span: Span[mut=True, Byte, ...]):
+def mutate_span(span: Span[mut=True, Byte, _]):
     for i in range(0, len(span), 2):
         if i + 1 < len(span):
             span.swap_elements(i, i + 1)
@@ -1264,13 +1269,8 @@ In both cases, you can call the function by passing in an instance with the
 `cream` and `chocolate` parameters bound:
 
 ```mojo
-eat(Fudge[5, 5, 7]())
-eat(Fudge[5, 8, 9]())
-```
-
-```output
-Ate Fudge (5,5,7)
-Ate Fudge (5,8,9)
+eat(Fudge[5, 5, 7]())  # Ate Fudge (5,5,7)
+eat(Fudge[5, 8, 9]())  # Ate Fudge (5,8,9)
 ```
 
 If you try to pass in an argument with a `sugar` value other than 5,
@@ -1278,7 +1278,8 @@ compilation fails, because it doesn't match the argument type:
 
 ```mojo no-test
 eat(Fudge[12, 5, 7]())
-# ERROR: invalid call to 'eat': argument #0 cannot be converted from 'Fudge[12, 5, 7]' to 'Fudge[5, 5, 7]'
+# This fails because `eat()` expects `Fudge[5, 5, 7]`, but this value is
+# `Fudge[12, 5, 7]`.
 ```
 
 You can also explicitly unbind individual parameters. This gives you
@@ -1331,7 +1332,7 @@ def take_simd8(x: SIMD[DType.float32, 8]):
     pass
 
 
-def generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
+def parameterized_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
     comptime if nelts == 8:
         take_simd8(x)
 ```
@@ -1357,7 +1358,7 @@ def take_simd8(x: SIMD[DType.float32, 8]):
     pass
 
 
-def generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
+def parameterized_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
     comptime if nelts == 8:
         take_simd8(rebind[SIMD[DType.float32, 8]](x))
 ```
@@ -1373,3 +1374,5 @@ simple rules for when to use `rebind()`:
 `rebind()` returns a reference to the rebound value. If you need to transfer the
 rebound value or assign it to a variable, use the
 [`rebind_var()`](/docs/std/builtin/rebind/rebind_var/) function.
+
+<!-- markdownlint-enable MD033 MD045 -->

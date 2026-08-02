@@ -32,14 +32,14 @@ from std.math.constants import log2e
 
 import std.gpu.primitives.warp as warp
 from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, warp_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
     pdl_launch_attributes,
 )
 from layout import TileTensor
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils.numerics import min_or_neg_inf
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
@@ -312,10 +312,10 @@ def mla_combine_kernel[
     )
     var oaccum_base = (
         params.out_accum_split_ptr + out_row * params.out_accum_stride_head
-    ).as_immutable()
+    ).as_imm()
 
     # Prefetch first split's data into registers
-    var datas = InlineArray[SIMD[output_type, vec_size], elems_per_thread](
+    var datas = Array[SIMD[output_type, vec_size], elems_per_thread](
         uninitialized=True
     )
 
@@ -340,7 +340,7 @@ def mla_combine_kernel[
     # Load LSE values into registers (multiple per lane for >32 splits)
     # and track whether any split is empty (LSE=-inf) for the fast-path
     # check.
-    var local_lse = InlineArray[Float32, num_lse_per_thread](
+    var local_lse = Array[Float32, num_lse_per_thread](
         fill=min_or_neg_inf[DType.float32]()
     )
 
@@ -416,7 +416,7 @@ def mla_combine_kernel[
     # =========================================================================
     # Step 3: Weighted accumulation with prefetching (compile-time unrolled)
     # =========================================================================
-    var result = InlineArray[SIMD[DType.float32, vec_size], elems_per_thread](
+    var result = Array[SIMD[DType.float32, vec_size], elems_per_thread](
         fill=SIMD[DType.float32, vec_size](0.0)
     )
 
@@ -705,17 +705,17 @@ def mla_combine_kernel_split_parallel[
     # Shared memory for tree reduction.
     # Layout: smem_result[warp][elem], smem_m[warp], smem_l[warp]
     # =========================================================================
-    var smem_result = stack_allocation[
+    var smem_result = unsafe_stack_allocation[
         NUM_WARPS * head_dim,
         DType.float32,
         address_space=AddressSpace.SHARED,
     ]()
-    var smem_m = stack_allocation[
+    var smem_m = unsafe_stack_allocation[
         NUM_WARPS,
         DType.float32,
         address_space=AddressSpace.SHARED,
     ]()
-    var smem_l = stack_allocation[
+    var smem_l = unsafe_stack_allocation[
         NUM_WARPS,
         DType.float32,
         address_space=AddressSpace.SHARED,
@@ -738,7 +738,7 @@ def mla_combine_kernel_split_parallel[
     )
     var oaccum_base = (
         params.out_accum_split_ptr + out_row * params.out_accum_stride_head
-    ).as_immutable()
+    ).as_imm()
 
     var lse_base = (
         batch_idx * params.lse_stride_batch
@@ -757,7 +757,7 @@ def mla_combine_kernel_split_parallel[
     #   warp_l = sum_over_seen_splits(exp2(lse_i - warp_m))
     # Final output = result / warp_l
     # =========================================================================
-    var result = InlineArray[SIMD[DType.float32, vec_size], elems_per_thread](
+    var result = Array[SIMD[DType.float32, vec_size], elems_per_thread](
         fill=SIMD[DType.float32, vec_size](0.0)
     )
     var warp_m = Float32(NEG_INF)

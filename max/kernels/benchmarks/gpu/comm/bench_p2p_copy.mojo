@@ -45,14 +45,19 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from max.benchmark import (
+    bench_multicontext,
+    bencher_iter_custom,
+)
 from comm.sync import enable_p2p
 from std.gpu import (
     global_idx,
     grid_dim,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import arg_parse, human_readable_size
+from std.memory import dealloc
 from std.utils import StaticTuple
 
 comptime BLOCK_SIZE = 256
@@ -84,11 +89,11 @@ def p2p_copy_kernel[
 ](
     dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    num_elements: Int,
+    num_elements: Int32,
 ):
     var global_tid = global_idx.x
     var stride = grid_dim.x * BLOCK_SIZE
-    var num_vectors = num_elements // width
+    var num_vectors = Int(num_elements) // width
 
     comptime vec_align = width * size_of[dtype]()
 
@@ -201,14 +206,15 @@ def bench_p2p[
             ctx_inner.enqueue_function[copy_kernel](
                 dst,
                 src,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
 
-        bencher.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bencher, ctx)
 
-    b.bench_multicontext[bench_iter](
+    bench_multicontext[bench_iter](
+        b,
         ctxs,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
@@ -229,14 +235,14 @@ def bench_p2p[
             ctx0.enqueue_function[copy_kernel](
                 buf1_write,
                 buf0_read,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
             ctx1.enqueue_function[copy_kernel](
                 buf0_write,
                 buf1_read,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
@@ -245,14 +251,14 @@ def bench_p2p[
             ctx0.enqueue_function[copy_kernel](
                 buf0_write,
                 buf1_read,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
             ctx1.enqueue_function[copy_kernel](
                 buf1_write,
                 buf0_read,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
@@ -261,20 +267,24 @@ def bench_p2p[
         ctx1.synchronize()
 
         # Verify: copy back to host and check
-        var host0 = alloc[Scalar[dtype]](num_elements)
-        var host1 = alloc[Scalar[dtype]](num_elements)
-        ctx0.enqueue_copy(host0, buf0_write)
-        ctx1.enqueue_copy(host1, buf1_write)
+        var host0_alloc = alloc[Scalar[dtype]](
+            {count = num_elements}
+        ).into_managed()
+        var host1_alloc = alloc[Scalar[dtype]](
+            {count = num_elements}
+        ).into_managed()
+        ctx0.enqueue_copy(host0_alloc.unsafe_span(), buf0_write)
+        ctx1.enqueue_copy(host1_alloc.unsafe_span(), buf1_write)
         ctx0.synchronize()
         ctx1.synchronize()
 
         # buf0_write should have buf1_read's value (20)
         # buf1_write should have buf0_read's value (10)
-        _verify(host0, Scalar[dtype](20), num_elements, 0)
-        _verify(host1, Scalar[dtype](10), num_elements, 1)
+        _verify(host0_alloc.unsafe_span(), Scalar[dtype](20), 0)
+        _verify(host1_alloc.unsafe_span(), Scalar[dtype](10), 1)
 
-        host0.free()
-        host1.free()
+        dealloc(host0_alloc^)
+        dealloc(host1_alloc^)
     else:
         # Unidir: reset dst, run one copy, verify.
         comptime if is_push:
@@ -284,16 +294,18 @@ def bench_p2p[
             ctx0.enqueue_function[copy_kernel](
                 buf1_write,
                 buf0_write,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
             ctx0.synchronize()
-            var host = alloc[Scalar[dtype]](num_elements)
-            ctx1.enqueue_copy(host, buf1_write)
+            var host_alloc = alloc[Scalar[dtype]](
+                {count = num_elements}
+            ).into_managed()
+            ctx1.enqueue_copy(host_alloc.unsafe_span(), buf1_write)
             ctx1.synchronize()
-            _verify(host, Scalar[dtype](1), num_elements, 1)
-            host.free()
+            _verify(host_alloc.unsafe_span(), Scalar[dtype](1), 1)
+            dealloc(host_alloc^)
         else:
             # src=buf1_write(2) -> dst=buf0_write
             ctx0.enqueue_memset(buf0_write, Scalar[dtype](0))
@@ -301,16 +313,18 @@ def bench_p2p[
             ctx0.enqueue_function[copy_kernel](
                 buf0_write,
                 buf1_write,
-                num_elements,
+                Int32(num_elements),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
             )
             ctx0.synchronize()
-            var host = alloc[Scalar[dtype]](num_elements)
-            ctx0.enqueue_copy(host, buf0_write)
+            var host_alloc = alloc[Scalar[dtype]](
+                {count = num_elements}
+            ).into_managed()
+            ctx0.enqueue_copy(host_alloc.unsafe_span(), buf0_write)
             ctx0.synchronize()
-            _verify(host, Scalar[dtype](2), num_elements, 0)
-            host.free()
+            _verify(host_alloc.unsafe_span(), Scalar[dtype](2), 0)
+            dealloc(host_alloc^)
 
     _ = buf0_write^
     _ = buf1_write^
@@ -323,14 +337,9 @@ def bench_p2p[
 
 def _verify[
     dtype: DType
-](
-    host: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
-    expected: Scalar[dtype],
-    num_elements: Int,
-    gpu: Int,
-) raises:
-    for i in range(num_elements):
-        if host[i] != expected:
+](host: Span[Scalar[dtype], _], expected: Scalar[dtype], gpu: Int,) raises:
+    for i, value in enumerate(host):
+        if value != expected:
             raise Error(
                 String(
                     "Verification failed at GPU ",
@@ -338,7 +347,7 @@ def _verify[
                     " index ",
                     i,
                     ": got ",
-                    host[i],
+                    value,
                     " expected ",
                     expected,
                 )

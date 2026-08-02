@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
-from std.gpu.compute.mma import mma
+from max.gpu.host import DeviceContext
+from max.gpu.compute.mma import mma
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core import TensorCore

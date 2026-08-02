@@ -23,7 +23,7 @@ This file tests various code paths in nn/concat.mojo:
 6. Edge cases: empty outer dims, single element inputs, etc.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TensorLayout, TileTensor, row_major
 from nn.concat import (
     _concat_inner,
@@ -70,9 +70,9 @@ def test_concat_inner_all_outer_dims_singleton() raises:
     comptime l2 = row_major[1, 1, 5, 4]()
     comptime out_layout = row_major[1, 1, 8, 4]()
 
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
 
@@ -124,10 +124,10 @@ def test_concat_serial_general_case() raises:
     comptime l3 = row_major[4, 4, 5]()
     comptime out_layout = row_major[4, 9, 5]()
 
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var x3_stack = InlineArray[Scalar[dtype], l3.product()](uninitialized=True)
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var x3_stack = Array[Scalar[dtype], l3.product()](uninitialized=True)
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
 
@@ -192,9 +192,9 @@ def test_concat_parallel_large() raises:
     comptime l2 = row_major[256, 512]()
     comptime out_layout = row_major[512, 512]()
 
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
 
@@ -244,7 +244,7 @@ def test_fused_concat_cpu() raises:
     comptime input_shape_1 = IndexList[rank](2, 5, 4)
     comptime output_shape = IndexList[rank](2, 8, 4)
 
-    var out_stack = InlineArray[Scalar[dtype], product(output_shape, rank)](
+    var out_stack = Array[Scalar[dtype], product(output_shape, rank)](
         uninitialized=True
     )
     var output = TileTensor(out_stack, row_major(Coord(output_shape))).fill(
@@ -326,8 +326,8 @@ def test_concat_shape() raises:
     comptime l1 = row_major[2, 3, 4]()
     comptime l2 = row_major[2, 5, 4]()
 
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
 
     var x1 = TileTensor(x1_stack, l1)
     var x2 = TileTensor(x2_stack, l2)
@@ -362,9 +362,9 @@ def test_concat_with_epilogue() raises:
     comptime l2 = row_major[5, 8]()
     comptime out_layout = row_major[8, 8]()
 
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
 
@@ -437,12 +437,12 @@ def test_concat_many_inputs() raises:
     comptime l5 = row_major[4, 5]()
     comptime out_layout = row_major[4, 15]()
 
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var x3_stack = InlineArray[Scalar[dtype], l3.product()](uninitialized=True)
-    var x4_stack = InlineArray[Scalar[dtype], l4.product()](uninitialized=True)
-    var x5_stack = InlineArray[Scalar[dtype], l5.product()](uninitialized=True)
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var x3_stack = Array[Scalar[dtype], l3.product()](uninitialized=True)
+    var x4_stack = Array[Scalar[dtype], l4.product()](uninitialized=True)
+    var x5_stack = Array[Scalar[dtype], l5.product()](uninitialized=True)
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
 

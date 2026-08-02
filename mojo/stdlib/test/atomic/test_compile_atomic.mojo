@@ -14,9 +14,10 @@
 from std.atomic import Atomic, Ordering, fence
 
 from std.compile import compile_info
-from std.gpu.host import get_gpu_target
-from std.gpu.host.info import A100
 from std.testing import TestSuite, assert_false, assert_true
+
+from max.gpu.host import get_gpu_target
+from max.gpu.host.info import A100
 
 comptime _MI300X_TARGET = get_gpu_target["mi300x"]()
 

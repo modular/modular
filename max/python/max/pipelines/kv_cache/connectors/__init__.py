@@ -22,7 +22,9 @@
 from __future__ import annotations
 
 import logging
+import tempfile
 from collections.abc import Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from max.driver import Device, accelerator_api
@@ -42,6 +44,65 @@ if TYPE_CHECKING:
     from max.pipelines.kv_cache.config import KVConnectorConfig
 
 logger = logging.getLogger("max.pipelines")
+
+# Prefix for auto-created tiered-connector disk offload directories. Owned by
+# the connectors package (which creates, warns about, and cleans up these
+# dirs); the pipeline config imports it only to name the mkdtemp it creates.
+KV_OFFLOAD_DIR_PREFIX = "max_kv_tiered_"
+
+
+def warn_stale_offload_dirs(offload_dir: str) -> None:
+    """Warns about leftover KV cache offload directories from previous runs.
+
+    The tiered connectors delete their own offload directory on graceful
+    shutdown, but a forceful shutdown (SIGKILL, OOM-kill, or a crash) skips
+    that cleanup and leaves the directory (and its cached blocks) on disk.
+    Scan the sibling directory for such leftovers and warn so operators can
+    reclaim the space.
+
+    Args:
+        offload_dir: The offload directory this run will use. Its siblings
+            matching ``{KV_OFFLOAD_DIR_PREFIX}*`` are treated as leftovers.
+    """
+    parent = Path(offload_dir).parent
+    try:
+        stale = sorted(
+            str(p)
+            for p in parent.glob(f"{KV_OFFLOAD_DIR_PREFIX}*")
+            if p.is_dir() and str(p) != offload_dir
+        )
+    except OSError:
+        return
+    if not stale:
+        return
+    logger.warning(
+        "Found %d leftover KV cache offload director%s from a previous run "
+        "in %s:\n  %s\n"
+        "MAX Serve deletes its offload directory on graceful shutdown, but a "
+        "forceful shutdown (SIGKILL / OOM-kill) leaves it behind. If no MAX "
+        "Serve process is currently using them, delete these directories to "
+        "reclaim disk space.",
+        len(stale),
+        "y" if len(stale) == 1 else "ies",
+        parent,
+        "\n  ".join(stale),
+    )
+
+
+def _resolve_disk_offload_dir(cfg: KVConnectorConfig) -> str:
+    """Returns the disk offload dir, auto-creating one if unset.
+
+    A single connector serves every DP replica, so the directory is created
+    once here (not per replica). Warns about leftovers from previous runs.
+    """
+    if cfg.disk_offload_dir is None:
+        cfg.disk_offload_dir = tempfile.mkdtemp(prefix=KV_OFFLOAD_DIR_PREFIX)
+        logger.info(
+            "Tiered connector: auto-created disk offload dir %s",
+            cfg.disk_offload_dir,
+        )
+    warn_stale_offload_dirs(cfg.disk_offload_dir)
+    return cfg.disk_offload_dir
 
 
 def create_connector(
@@ -101,55 +162,61 @@ def create_connector(
 
     if connector == KVConnectorType.tiered:
         cfg = kv_connector_config
-        if cfg is None or cfg.disk_offload_dir is None:
+        if cfg is None:
             raise ValueError(
-                "kv_connector_config must include 'disk_offload_dir' "
-                "when kv_connector is 'tiered'"
+                "kv_connector_config is required when kv_connector is 'tiered'"
             )
+        disk_dir = _resolve_disk_offload_dir(cfg)
         logger.debug(
             "Creating TieredConnector: "
             f"host_blocks={total_num_host_blocks}, "
-            f"disk_dir={cfg.disk_offload_dir}, "
-            f"disk_max_gb={cfg.disk_offload_max_gb}"
+            f"disk_dir={disk_dir}, "
+            f"disk_max_gb={cfg.disk_offload_max_gb}, "
+            f"num_disk_workers={cfg.num_disk_workers}"
         )
 
         return TieredConnector(
             devices=devices,
             replica_kv_memory=replica_kv_memory,
             total_num_host_blocks=total_num_host_blocks,
-            disk_cache_dir=cfg.disk_offload_dir,
+            disk_cache_dir=disk_dir,
             max_disk_size_gb=cfg.disk_offload_max_gb,
+            num_disk_workers=cfg.num_disk_workers,
         )
 
     if connector == KVConnectorType.rust_tiered:
         cfg = kv_connector_config
-        if cfg is None or cfg.disk_offload_dir is None:
+        if cfg is None:
             raise ValueError(
-                "kv_connector_config must include 'disk_offload_dir' "
-                "when kv_connector is 'rust_tiered'"
+                "kv_connector_config is required when kv_connector is "
+                "'rust_tiered'"
             )
-        # The Rust connector drives CUDA copy engines directly (cudarc); it has
-        # no HIP/Metal backend, so it is CUDA-only.
+        # The Rust connector drives the GPU copy engines directly via its own
+        # dlopen'd driver shim, supporting NVIDIA (CUDA) and AMD (HIP) but not
+        # Metal/CPU.
         api = accelerator_api()
-        if api != "cuda":
+        if api not in ("cuda", "hip"):
             raise ValueError(
-                f"kv_connector 'rust_tiered' requires a CUDA device, but the "
-                f"accelerator API is '{api}'. Use 'tiered' instead."
+                f"kv_connector 'rust_tiered' requires a CUDA or HIP GPU, found "
+                f"incompatible accelerator API: '{api}'."
             )
         from .rust_tier_connector import RustTierConnector
 
+        disk_dir = _resolve_disk_offload_dir(cfg)
         logger.debug(
             "Creating RustTierConnector: "
             f"host_blocks={total_num_host_blocks}, "
-            f"disk_dir={cfg.disk_offload_dir}, "
-            f"disk_max_gb={cfg.disk_offload_max_gb}"
+            f"disk_dir={disk_dir}, "
+            f"disk_max_gb={cfg.disk_offload_max_gb}, "
+            f"num_disk_workers={cfg.num_disk_workers}"
         )
         return RustTierConnector(
             replica_kv_memory=replica_kv_memory,
             total_num_host_blocks=total_num_host_blocks,
             kv_hash_algo=params.kv_hash_algo,
-            disk_cache_dir=cfg.disk_offload_dir,
+            disk_cache_dir=disk_dir,
             max_disk_size_gb=cfg.disk_offload_max_gb,
+            num_disk_workers=cfg.num_disk_workers,
         )
 
     if connector == KVConnectorType.local:

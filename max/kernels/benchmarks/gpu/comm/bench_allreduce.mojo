@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.sys import (
     get_defined_bool,
     get_defined_dtype,
@@ -28,12 +28,16 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from max.benchmark import (
+    bench_multicontext,
+    bencher_iter_custom,
+)
 from layout import Idx, TileTensor, row_major
 from comm.sync import enable_p2p, init_signal_buffer
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
@@ -92,7 +96,7 @@ def bench_reduce[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -163,8 +167,8 @@ def bench_reduce[
     comptime OutTensorType = TileTensor[
         dtype, type_of(row_major(length)), MutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, num_buffers](uninitialized=True)
-    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var in_tensors = Array[InTensorType, num_buffers](uninitialized=True)
+    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
 
     var multi_ptr = Optional[UnsafePointer[Scalar[dtype], MutAnyOrigin]]()
 
@@ -270,9 +274,10 @@ def bench_reduce[
                     max_num_blocks,
                 )
 
-        b.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](b, ctx)
 
-    b.bench_multicontext[bench_iter](
+    bench_multicontext[bench_iter](
+        b,
         list_of_ctx,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],

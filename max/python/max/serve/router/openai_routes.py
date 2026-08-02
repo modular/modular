@@ -738,11 +738,35 @@ class OpenAIChatResponseGenerator(
                         n_reasoning_tokens += chunk.reasoning_token_count or 0
                         n_tokens += chunk.token_count
                         continue
-                    reasoning_kwargs = {self._reasoning_field: reasoning}
-                    choices = [
-                        ChatCompletionStreamResponseChoice(
-                            index=0,
-                            delta=ChatCompletionStreamResponseDelta(
+                    # CENG-892: never emit reasoning and content in the same
+                    # delta, and emit content only after the reasoning
+                    # fragment. A boundary chunk can carry both a reasoning
+                    # tail and the first content tokens; some downstream
+                    # consumers can't parse a delta with both fields set, so
+                    # split it into an ordered reasoning-then-content pair.
+                    deltas: list[ChatCompletionStreamResponseDelta] = []
+                    if reasoning:
+                        # Pass the non-reasoning fields explicitly so the
+                        # dynamic reasoning-key unpacking type-checks: with
+                        # them fixed, mypy can only route the dict into
+                        # reasoning / reasoning_content (both str | None).
+                        deltas.append(
+                            ChatCompletionStreamResponseDelta(
+                                role="assistant",
+                                content=None,
+                                function_call=None,
+                                refusal=None,
+                                tool_calls=None,
+                                **{self._reasoning_field: reasoning},
+                            )
+                        )
+                    # Content (with any tool-call fragment) is emitted last so
+                    # a terminal finish_reason / logprobs ride the content
+                    # delta. Emit it even when empty if there was no reasoning
+                    # delta, so a bare finish_reason chunk is still produced.
+                    if content or tool_call_chunks or not deltas:
+                        deltas.append(
+                            ChatCompletionStreamResponseDelta(
                                 content=content,
                                 function_call=None,
                                 role="assistant",
@@ -750,11 +774,23 @@ class OpenAIChatResponseGenerator(
                                 tool_calls=tool_call_chunks
                                 if tool_call_chunks
                                 else None,
-                                **reasoning_kwargs,
-                            ),
-                            logprobs=logprobs_response,
-                            finish_reason=finish_reason,
+                            )
                         )
+                    # finish_reason and logprobs belong on the final delta
+                    # only; the earlier reasoning delta is non-terminal.
+                    last_idx = len(deltas) - 1
+                    choices = [
+                        ChatCompletionStreamResponseChoice(
+                            index=0,
+                            delta=delta,
+                            logprobs=logprobs_response
+                            if i == last_idx
+                            else None,
+                            finish_reason=finish_reason
+                            if i == last_idx
+                            else None,
+                        )
+                        for i, delta in enumerate(deltas)
                     ]
                 elif chunk.status.is_done:
                     # Terminal chunk with no visible delta — emit the final
@@ -787,29 +823,34 @@ class OpenAIChatResponseGenerator(
                     n_tokens += chunk.token_count
                     continue
 
-                # Each chunk is expected to have the same id
-                # https://platform.openai.com/docs/api-reference/chat/streaming
-                # Don't include usage in regular chunks when streaming
-                # https://platform.openai.com/docs/api-reference/chat/create#chat_create-stream_options
-                response = CreateChatCompletionStreamResponse(
-                    id=str(request.request_id),
-                    choices=choices,
-                    created=int(datetime.now().timestamp()),
-                    model=request.model_name,
-                    object="chat.completion.chunk",
-                    system_fingerprint=None,
-                    usage=None,
-                    service_tier=None,
-                )
                 n_reasoning_tokens += chunk.reasoning_token_count or 0
                 n_tokens += chunk.token_count
-                # Omit unset (None) fields so each delta carries only what
-                # changed, matching the OpenAI streaming spec. Without this a
-                # delta serializes tool_calls/function_call/refusal as null on
-                # every chunk, so a client reading the first tool_calls-bearing
-                # delta sees null instead of the real tool-call fragment.
-                payload = response.model_dump_json(exclude_none=True)
-                yield payload
+                # A boundary chunk yields an ordered reasoning-then-content
+                # pair (see CENG-892 above); every other case yields one
+                # choice. Emit each as its own SSE chunk so a single delta
+                # never carries both reasoning and content.
+                for choice in choices:
+                    # Each chunk is expected to have the same id
+                    # https://platform.openai.com/docs/api-reference/chat/streaming
+                    # Don't include usage in regular chunks when streaming
+                    # https://platform.openai.com/docs/api-reference/chat/create#chat_create-stream_options
+                    response = CreateChatCompletionStreamResponse(
+                        id=str(request.request_id),
+                        choices=[choice],
+                        created=int(datetime.now().timestamp()),
+                        model=request.model_name,
+                        object="chat.completion.chunk",
+                        system_fingerprint=None,
+                        usage=None,
+                        service_tier=None,
+                    )
+                    # Omit unset (None) fields so each delta carries only what
+                    # changed, matching the OpenAI streaming spec. Without this
+                    # a delta serializes tool_calls/function_call/refusal as
+                    # null on every chunk, so a client reading the first
+                    # tool_calls-bearing delta sees null instead of the real
+                    # tool-call fragment.
+                    yield response.model_dump_json(exclude_none=True)
 
             # TODO: (MODELS-1117) determine whether to break out reasoning tokens into a separate metric
             logger.debug(
@@ -1064,21 +1105,17 @@ class OpenAIChatResponseGenerator(
                             reasoning_message,
                         )
 
-            usage = None
-            if n_reasoning_tokens > 0 or n_tokens > 0:
-                usage = CompletionUsage(
-                    prompt_tokens=n_prompt_tokens,
-                    completion_tokens=n_reasoning_tokens + n_tokens,
-                    total_tokens=n_prompt_tokens
-                    + n_reasoning_tokens
-                    + n_tokens,
-                    prompt_tokens_details=PromptTokensDetails(
-                        cached_tokens=n_cached_prompt_tokens,
-                    ),
-                    completion_tokens_details=CompletionTokensDetails(
-                        reasoning_tokens=n_reasoning_tokens,
-                    ),
-                )
+            usage = CompletionUsage(
+                prompt_tokens=n_prompt_tokens,
+                completion_tokens=n_reasoning_tokens + n_tokens,
+                total_tokens=n_prompt_tokens + n_reasoning_tokens + n_tokens,
+                prompt_tokens_details=PromptTokensDetails(
+                    cached_tokens=n_cached_prompt_tokens,
+                ),
+                completion_tokens_details=CompletionTokensDetails(
+                    reasoning_tokens=n_reasoning_tokens,
+                ),
+            )
 
             response = CreateChatCompletionResponse(
                 id=str(request.request_id),

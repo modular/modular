@@ -32,13 +32,13 @@ import numpy as np
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
     BlockManager,
     PrefixCacheHits,
 )
 from max.pipelines.kv_cache.paged_kv_cache.block_pool import BlockPool
 from max.pipelines.modeling.types import RequestID
+from test_common.context_utils import create_text_context
 
 BLOCK_SIZE = 8
 
@@ -68,7 +68,6 @@ def _make_block_manager(
     enable_prefix_caching: bool = True,
 ) -> BlockManager:
     return BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=32,
         block_size=BLOCK_SIZE,
         connector=cast(object, connector or NullConnector()),  # type: ignore[arg-type]
@@ -243,6 +242,40 @@ def test_count_respects_prefix_caching_disabled() -> None:
     assert bm.count_cached_prefix_blocks(hashes) == PrefixCacheHits()
 
 
+# ---------------------------------------------------------------------------
+# reuse_blocks_from_prefix_cache: device_blocks_served metric (CENG-845)
+# ---------------------------------------------------------------------------
+
+
+def test_device_hit_increments_device_blocks_served() -> None:
+    """A local device prefix-cache hit is counted as ``device_blocks_served``.
+
+    Regression guard for the G0 tier-attribution counter: the increment must
+    fire on the true local-hit branch inside
+    ``_get_full_blocks_from_device_prefix_cache``, not on that method's full
+    return value (which also carries cross-replica-copied blocks) -- a
+    single-replica local hit must never also tick
+    ``cross_replica_blocks_copied``/``cross_replica_bytes_copied``.
+    """
+    bm = _make_block_manager()
+
+    num_prompt_tokens = 2 * BLOCK_SIZE + 1
+    ctx = create_text_context(np.arange(num_prompt_tokens))
+    bm.compute_hashes_for_request(ctx)
+    hashes = cast("list[bytes]", list(bm.req_to_hashes[ctx.request_id]))
+    assert len(hashes) == 2
+
+    _seed_device_prefix_cache(bm, hashes)
+
+    skip_amount, event = bm.reuse_blocks_from_prefix_cache(ctx, replica_idx=0)
+
+    assert skip_amount == 2 * BLOCK_SIZE
+    assert event.is_complete()
+    assert bm._metrics.device_blocks_served == 2
+    assert bm._metrics.cross_replica_blocks_copied == 0
+    assert bm._metrics.cross_replica_bytes_copied == 0
+
+
 def test_count_is_read_only() -> None:
     bm = _make_block_manager()
     ctx = _make_ctx(np.arange(33, dtype=np.int32))
@@ -324,9 +357,7 @@ def _make_tiered_connector_stub(
     """
     connector = TieredConnector.__new__(TieredConnector)
     host_pool = BlockPool(
-        MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=8,
-        enable_prefix_caching=True,
         enable_runtime_checks=False,
     )
     for h in host_hashes:

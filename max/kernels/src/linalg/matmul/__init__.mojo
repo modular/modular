@@ -18,8 +18,8 @@ from std.collections.string.string_slice import get_static_string
 from std.math import align_up, ceildiv
 from std.sys.info import align_of, simd_width_of
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_valid_target
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu, is_valid_target
 from layout import (
     Layout,
     LayoutTensor,
@@ -28,8 +28,7 @@ from layout import (
     UNKNOWN_VALUE,
     coord_to_index_list,
 )
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
 

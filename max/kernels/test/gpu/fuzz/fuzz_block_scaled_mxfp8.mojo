@@ -33,9 +33,9 @@ from std.sys import size_of
 from std.sys.defines import get_defined_int
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from layout import Coord, Idx, TileTensor, row_major
@@ -250,8 +250,8 @@ def run_one_case(
             c_ref_lt.as_unsafe_any_origin(),
             a_lt,
             b_lt,
-            a_scales=a_scales_lt.get_immutable().as_unsafe_any_origin(),
-            b_scales=b_scales_lt.get_immutable().as_unsafe_any_origin(),
+            a_scales=a_scales_lt.as_imm().as_unsafe_any_origin(),
+            b_scales=b_scales_lt.as_imm().as_unsafe_any_origin(),
             transpose_b=transpose_b,
             c_row_major=True,
         )

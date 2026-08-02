@@ -38,7 +38,7 @@ trait AnyType:
 
     All Mojo struct types always conform to `AnyType`. This trait imposes no
     requirements on the types that conform to it, not even that they provide
-    a `__del__()` implicit destructor.
+    a `__deinit__()` implicit destructor.
 
     A type that conforms to `AnyType` but not to `ImplicitlyDeletable` is
     called a linear type, also known as a non-implicitly-deletable type.
@@ -70,7 +70,7 @@ trait AnyType:
 
     Said another way, Mojo gives type authors a type to provide either:
 
-    * A `__del__()` destructor method that the compiler may call implicitly
+    * A `__deinit__()` destructor method that the compiler may call implicitly
       whenever an owned object instances has no further uses. Such types
       conform to `ImplicitlyDeletable`.
 
@@ -155,8 +155,8 @@ trait ImplicitlyDeletable:
 
     Key aspects:
 
-    - Any type with an implicit `__del__()` destructor must implement this trait
-    - The destructor (`__del__`) is called automatically when an instance's
+    - Any type with an implicit `__deinit__()` destructor must implement this trait
+    - The destructor (`__deinit__`) is called automatically when an instance's
       lifetime ends
     - Composition of types with implicit destructors automatically get an
       implicit destructor
@@ -172,7 +172,7 @@ trait ImplicitlyDeletable:
         def __init__(out self, size: Int):
             self.allocation = alloc(Layout[Int](count=size))
 
-        def __del__(deinit self):
+        def __deinit__(deinit self):
             # Clean up owned resources
             dealloc(self.allocation^)
     ```
@@ -187,7 +187,7 @@ trait ImplicitlyDeletable:
     """
 
     @stable(since="1.0")
-    def __del__(deinit self, /):
+    def __deinit__(deinit self, /):
         """Destroys the instance and cleans up any owned resources.
 
         This method is called automatically when an instance's lifetime ends. It receives
@@ -203,13 +203,13 @@ trait ImplicitlyDeletable:
         ...
 
     comptime __del__is_trivial: Bool
-    """A flag (often compiler generated) to indicate whether the implementation of `__del__` is trivial.
+    """A flag (often compiler generated) to indicate whether the implementation of `__deinit__` is trivial.
 
-    The implementation of `__del__` is considered to be trivial if:
+    The implementation of `__deinit__` is considered to be trivial if:
     - The struct has a compiler-generated trivial destructor and all its fields
-      have a trivial `__del__` method.
+      have a trivial `__deinit__` method.
 
-    In practice, it means that the `__del__` can be considered as no-op.
+    In practice, it means that the `__deinit__` can be considered as no-op.
     """
 
 

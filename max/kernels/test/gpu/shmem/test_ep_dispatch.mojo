@@ -21,7 +21,7 @@ from std.math import sqrt
 from std.random import randint, randn, seed
 from std.sys import argv
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx
 from layout.tile_layout import row_major
 from std.memory import UnsafePointer
@@ -225,12 +225,12 @@ def test_dispatch[
     @parameter
     def run_dispatch_async(ctx: DeviceContext) raises:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-        var recv_buf_ptrs: InlineArray[
-            UnsafePointer[UInt8, MutAnyOrigin], 1
-        ] = [recv_buf]
-        var recv_count_ptrs: InlineArray[
-            UnsafePointer[UInt64, MutAnyOrigin], 1
-        ] = [recv_count]
+        var recv_buf_ptrs: Array[UnsafePointer[UInt8, MutAnyOrigin], 1] = [
+            recv_buf
+        ]
+        var recv_count_ptrs: Array[UnsafePointer[UInt64, MutAnyOrigin], 1] = [
+            recv_count
+        ]
 
         ctx.enqueue_function(
             func,

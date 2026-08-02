@@ -22,8 +22,8 @@ Target: < 1 minute compile + run for debugging purposes.
 from std.math import ceildiv
 from std.sys import size_of
 from linalg.matmul.gpu.sm100.config import MatmulConfig, GEMMKind
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from internal_utils import (
     assert_almost_equal,

@@ -1,0 +1,111 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# AMD variant of the NIXL KV-transfer smoke sender (mirrors ../sender.yaml).
+# Differences from the NVIDIA/EFA pod: AMD GPUs and the UCX (rocm-verbs)
+# transport instead of libfabric/EFA. This UCX lane runs over the pod network
+# (no RDMA device requested, so it does not need the RoCE fabric); the
+# follow-up adds the RoCE IB fabric (modular.com/rdma_ib_device, the CI analog
+# of the Coder "Enable RoCE networking" flag) for the UCCL backend.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: kv-smoke-sender
+spec:
+  selector:
+    app: kv-smoke-sender
+  ports:
+    - name: zmq
+      port: 5555
+      targetPort: 5555
+  clusterIP: None  # Headless — direct pod DNS, no load-balancing needed
+
+---
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kv-smoke-sender
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 1800
+  template:
+    metadata:
+      labels:
+        app: kv-smoke-sender
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ecr-secret
+      # Force sender onto a different node than the receiver.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: kv-smoke-receiver
+              topologyKey: kubernetes.io/hostname
+      tolerations:
+        - key: amd.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: test-script
+          configMap:
+            name: kv-smoke-script
+      containers:
+        - name: sender
+          image: ENGINE_IMAGE_PLACEHOLDER
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+            - >-
+              python /smoke/test_transfer_engine_cross_node.py
+              --role sender
+              --sender-addr tcp://kv-smoke-sender:5555
+              --backend ucx
+              ${SMOKE_EXTRA_ARGS}
+          env:
+            - name: SMOKE_EXTRA_ARGS
+              value: EXTRA_ARGS_PLACEHOLDER
+            # UCX (rocm-verbs) is the AMD default backend today; set
+            # explicitly to match the NVIDIA pod's explicit libfabric selection
+            # and to be unambiguous in logs.
+            - name: MODULAR_NIXL_TRANSFER_BACKEND
+              value: ucx
+            - name: MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT
+              value: "90"
+          resources:
+            limits:
+              amd.com/gpu: "1"
+              memory: 243200Mi
+            requests:
+              amd.com/gpu: "1"
+              cpu: 22250m   # guarantee scheduling; no CPU limit so transfers can burst
+              memory: 243200Mi
+          securityContext:
+            # IPC_LOCK: RDMA memory pinning. NET_ADMIN: RDMA device access.
+            capabilities:
+              add:
+                - IPC_LOCK
+                - NET_ADMIN
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            - name: test-script
+              mountPath: /smoke

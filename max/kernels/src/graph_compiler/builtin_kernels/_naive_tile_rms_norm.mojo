@@ -28,8 +28,8 @@ ported to `TileTensor` and the tile path is productionized (see GEX-3919).
 import extensibility
 
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_gpu
 from std.gpu.memory import AddressSpace
 from std.math import sqrt
 from layout import (
@@ -199,7 +199,7 @@ struct _NaiveRMSNormTileAdapter[
             dtype=Self.dtype, address_space=AddressSpace.LOCAL
         ](row_major[1, 1]())
         var dst = TileTensor(
-            dst_local.ptr.address_space_cast[
+            dst_local._storage.address_space_cast[
                 AddressSpace.GENERIC
             ]().unsafe_origin_cast[MutAnyOrigin](),
             row_major[1, 1](),

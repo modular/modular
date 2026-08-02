@@ -15,7 +15,7 @@ from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
 from layout._utils import ManagedLayoutTensor
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -487,15 +487,15 @@ def execute_flash_attention_suite[
     # edge cases
     print("CE", 1, DType.bfloat16, "depth=", kv_params.head_size)
     for len in [2, 27]:
-        var short_ce_seq_len = [len]
-        var short_ce_cache_size = [0]
+        var short_ce_seq_len: List = [len]
+        var short_ce_cache_size: List = [0]
         execute_ragged_flash_attention[num_q_heads, DType.bfloat16, kv_params](
             short_ce_seq_len, short_ce_cache_size, 2, 1, mask, ctx
         )
 
     print("TG", 2, DType.bfloat16, "depth=", kv_params.head_size)
     tg_seq_lens = [1, 1]
-    tg_variable_cache_lens = [1024, 11]
+    var tg_variable_cache_lens: List = [1024, 11]
     execute_ragged_flash_attention[num_q_heads, DType.bfloat16, kv_params](
         tg_seq_lens, tg_variable_cache_lens, 2, 0, mask, ctx
     )

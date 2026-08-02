@@ -13,13 +13,14 @@
 
 """SHA-256 (FIPS 180-4) implementation for KV cache prefix hashing."""
 
-from std.collections import Span
+from std.collections import Array, Span
 from std.bit import rotate_bits_right
-from std.collections.inline_array import InlineArray
+from std.collections.array import Array
+from std.builtin.globals import global_constant
 
 # FIPS 180-4 initial hash values
 
-comptime _H0: InlineArray[UInt32, 8] = [
+comptime _H0: Array[UInt32, 8] = [
     0x6A09E667,
     0xBB67AE85,
     0x3C6EF372,
@@ -30,7 +31,7 @@ comptime _H0: InlineArray[UInt32, 8] = [
     0x5BE0CD19,
 ]
 
-comptime _K: InlineArray[UInt32, 64] = [
+comptime _K: Array[UInt32, 64] = [
     0x428A2F98,
     0x71374491,
     0xB5C0FBCF,
@@ -149,9 +150,9 @@ def _load_be_u32(data: Span[Byte, _], offset: Int) -> UInt32:
     )
 
 
-def _compress(mut h: InlineArray[UInt32, 8], block: Span[Byte, _]):
+def _compress(mut h: Array[UInt32, 8], block: Span[Byte, _]):
     """Process one 64-byte block of data into the hash state."""
-    var w = InlineArray[UInt32, 64](fill=UInt32(0))
+    var w = Array[UInt32, 64](fill=UInt32(0))
     # Load the first 16 words from the block
     for t in range(16):
         w[t] = _load_be_u32(block, t * 4)
@@ -174,7 +175,9 @@ def _compress(mut h: InlineArray[UInt32, 8], block: Span[Byte, _]):
     var hh = h[7]
     # Compression loop
     for t in range(64):
-        var t1 = hh + _big_sigma1(e) + _ch(e, f, g) + _K[t] + w[t]
+        var t1 = (
+            hh + _big_sigma1(e) + _ch(e, f, g) + global_constant[_K]()[t] + w[t]
+        )
         var t2 = _big_sigma0(a) + _maj(a, b, c)
         hh = g
         g = f
@@ -196,18 +199,9 @@ def _compress(mut h: InlineArray[UInt32, 8], block: Span[Byte, _]):
     h[7] = hh + h[7]
 
 
-def sha256(data: Span[Byte, _]) -> InlineArray[UInt8, 32]:
+def sha256(data: Span[Byte, _]) -> Array[UInt8, 32]:
     """Compute the SHA-256 hash of the given data. Returns a 32-byte hash."""
-    var h: InlineArray[UInt32, 8] = [
-        _H0[0],
-        _H0[1],
-        _H0[2],
-        _H0[3],
-        _H0[4],
-        _H0[5],
-        _H0[6],
-        _H0[7],
-    ]
+    var h: Array[UInt32, 8] = materialize[_H0]()
 
     # Process the data in 64-byte blocks
     var n = len(data)
@@ -217,7 +211,7 @@ def sha256(data: Span[Byte, _]) -> InlineArray[UInt8, 32]:
 
     # Build final padded block
     var rem = n - (num_full * 64)
-    var pad = InlineArray[UInt8, 128](fill=UInt8(0))
+    var pad = Array[UInt8, 128](fill=UInt8(0))
     for i in range(rem):
         pad[i] = data[num_full * 64 + i]
     pad[rem] = UInt8(0x80)
@@ -226,15 +220,18 @@ def sha256(data: Span[Byte, _]) -> InlineArray[UInt8, 32]:
     # Write 64-bit length into last 8 bytes
     for i in range(8):
         pad[pad_len - 1 - i] = UInt8((bit_len >> UInt64(i * 8)) & 0xFF)
-    _compress(h, Span[Byte, _](unsafe_ptr=pad.unsafe_ptr(), length=64))
+    var pad_ptr: UnsafePointer[UInt8, origin_of(pad)] = pad.unsafe_ptr()
+    _compress(h, Span[Byte, _](unsafe_ptr=pad_ptr, length=64))
     if pad_len == 128:
-        _compress(h, Span[Byte, _](unsafe_ptr=pad.unsafe_ptr() + 64, length=64))
+        _compress(
+            h, Span[Byte, _](unsafe_ptr=pad_ptr.unsafe_offset(64), length=64)
+        )
 
     # Serialize the hash to 32 bytes
-    var out = InlineArray[UInt8, 32](fill=UInt8(0))
+    var out = Array[UInt8, 32](fill=UInt8(0))
     for i in range(8):
         out[i * 4 + 0] = UInt8((h[i] >> 24) & 0xFF)
         out[i * 4 + 1] = UInt8((h[i] >> 16) & 0xFF)
         out[i * 4 + 2] = UInt8((h[i] >> 8) & 0xFF)
         out[i * 4 + 3] = UInt8(h[i] & 0xFF)
-    return out
+    return out^

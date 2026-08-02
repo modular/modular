@@ -184,16 +184,6 @@ pkg_files(
 )
 
 pkg_files(
-    name = "mojosite_docs_docs_layout",
-    srcs = ["//max/kernels/src/layout:layout.docs"],
-    prefix = "docs",
-    renames = {
-        "//max/kernels/src/layout:layout.docs": "layout",
-    },
-    tags = ["manual"],
-)
-
-pkg_files(
     name = "mojosite_docs_docs_std",
     srcs = ["//oss/modular/mojo/stdlib/std:docs"],
     prefix = "docs",
@@ -207,7 +197,6 @@ pkg_filegroup(
     name = "mojosite_docs_docs",
     srcs = [
         ":mojosite_docs_docs_cli",
-        ":mojosite_docs_docs_layout",
         ":mojosite_docs_docs_pages",
         ":mojosite_docs_docs_std",
     ],

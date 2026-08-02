@@ -36,9 +36,9 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
-from std.gpu.compute.mma import mma as _mma_intrinsic
+from max.gpu.compute.mma import mma as _mma_intrinsic
 from layout import TensorLayout, TileTensor
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -91,9 +91,9 @@ def gemm_kernel_rdna[
     c: TileTensor[c_type, c_layout, MutAnyOrigin],
     a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
     b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m: Int32,
+    n: Int32,
+    k: Int32,
 ):
     """GEMM kernel for AMD RDNA GPUs.
 
@@ -138,6 +138,9 @@ def gemm_kernel_rdna[
         n: Number of columns in the output and in `b`.
         k: Contraction dimension shared by `a` and `b`.
     """
+    var _m = Int(m)
+    var _n = Int(n)
+    var _k = Int(k)
     comptime assert c.flat_rank == 2, "c must have flat_rank == 2"
     comptime assert a.flat_rank == 2, "a must have flat_rank == 2"
     comptime assert b.flat_rank == 2, "b must have flat_rank == 2"
@@ -156,7 +159,7 @@ def gemm_kernel_rdna[
             transpose_b,
             elementwise_lambda_fn,
             s_type,
-        ](c, a, b, m, n, k)
+        ](c, a, b, _m, _n, _k)
     else:
         _wmma_matmul_kernel[
             c_type,
@@ -175,7 +178,7 @@ def gemm_kernel_rdna[
             WARPS_N,
             WARP_TILE_M,
             WARP_TILE_N,
-        ](c, a, b, m, n, k)
+        ](c, a, b, _m, _n, _k)
 
 
 def _naive_matmul_kernel[
@@ -347,14 +350,14 @@ def _load_tile_regs[
     k_offset: Int,
     max_rows: Int,
     tid: Int,
-) -> InlineArray[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD]:
+) -> Array[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD]:
     """Issue a tile's coalesced global loads into a register buffer.
 
     Load phase of the register-staged pipeline (drained by _store_tile_regs);
     lets the caller overlap the next K-tile's global loads with WMMA on the
     current tile. Coalesced (transpose_b=True) path only.
     """
-    var regs = InlineArray[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD](
+    var regs = Array[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD](
         fill=SIMD[dtype, VECTOR_WIDTH](0)
     )
     comptime total_vectors = BLOCK_ROWS * BLOCK_K // VECTOR_WIDTH
@@ -367,7 +370,7 @@ def _load_tile_regs[
                 regs[i] = tile.load_linear[width=VECTOR_WIDTH](
                     IndexList[2](global_row, k_offset + elem_idx % BLOCK_K)
                 )
-    return regs
+    return regs^
 
 
 @always_inline
@@ -383,7 +386,7 @@ def _store_tile_regs[
     smem: UnsafePointer[
         mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ],
-    regs: InlineArray[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD],
+    regs: Array[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD],
     tid: Int,
 ):
     """Drain a register-loaded tile into LDS."""
@@ -412,9 +415,7 @@ def _compute_ktile[
     b_smem: UnsafePointer[
         mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
     ],
-    mut c_accum: InlineArray[
-        SIMD[s_type, CD_FRAG_SIZE], WARP_TILE_M * WARP_TILE_N
-    ],
+    mut c_accum: Array[SIMD[s_type, CD_FRAG_SIZE], WARP_TILE_M * WARP_TILE_N],
     warp_m: Int,
     warp_n: Int,
     effective_lane: Int,
@@ -425,7 +426,7 @@ def _compute_ktile[
     ``b_smem`` are the current tile's A and B buffers.
     """
     comptime for k_inner in range(K_ITERS):
-        var a_frag = InlineArray[SIMD[a_type, AB_FRAG_SIZE], WARP_TILE_M](
+        var a_frag = Array[SIMD[a_type, AB_FRAG_SIZE], WARP_TILE_M](
             fill=SIMD[a_type, AB_FRAG_SIZE](0)
         )
         comptime for wm in range(WARP_TILE_M):
@@ -436,7 +437,7 @@ def _compute_ktile[
             a_frag[wm] = a_smem.load[width=AB_FRAG_SIZE](
                 a_row * SMEM_STRIDE + k_base
             )
-        var b_frag = InlineArray[SIMD[b_type, AB_FRAG_SIZE], WARP_TILE_N](
+        var b_frag = Array[SIMD[b_type, AB_FRAG_SIZE], WARP_TILE_N](
             fill=SIMD[b_type, AB_FRAG_SIZE](0)
         )
         comptime for wn in range(WARP_TILE_N):
@@ -543,7 +544,7 @@ def _wmma_matmul_kernel[
     var effective_lane = lid % 16
 
     # Initialize C accumulators (WARP_TILE_M * WARP_TILE_N tiles per warp)
-    var c_accum = InlineArray[SIMD[s_type, CD_FRAG_SIZE], NUM_C_TILES](
+    var c_accum = Array[SIMD[s_type, CD_FRAG_SIZE], NUM_C_TILES](
         fill=SIMD[s_type, CD_FRAG_SIZE](0)
     )
 
@@ -554,10 +555,10 @@ def _wmma_matmul_kernel[
         # Single LDS tile fed by a register-staged prefetch: the next K-tile's
         # global loads stay in registers during the current tile's WMMA. One
         # buffer lets a larger BLOCK_K fit than double-buffering would.
-        var a_smem = stack_allocation[
+        var a_smem = unsafe_stack_allocation[
             BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
         ]()
-        var b_smem = stack_allocation[
+        var b_smem = unsafe_stack_allocation[
             BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
         ]()
 
@@ -634,16 +635,16 @@ def _wmma_matmul_kernel[
             "double-buffer tiles exceed LDS; this config needs transpose_b=True"
             " to use the register-staged pipeline"
         )
-        var a_smem_0 = stack_allocation[
+        var a_smem_0 = unsafe_stack_allocation[
             BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
         ]()
-        var a_smem_1 = stack_allocation[
+        var a_smem_1 = unsafe_stack_allocation[
             BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
         ]()
-        var b_smem_0 = stack_allocation[
+        var b_smem_0 = unsafe_stack_allocation[
             BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
         ]()
-        var b_smem_1 = stack_allocation[
+        var b_smem_1 = unsafe_stack_allocation[
             BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
         ]()
 

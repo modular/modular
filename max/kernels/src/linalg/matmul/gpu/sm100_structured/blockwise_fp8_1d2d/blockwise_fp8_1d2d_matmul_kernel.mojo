@@ -477,7 +477,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # C tensor for bounds-checked stores
         c_device: Self.CDeviceTile,
         # Number of active experts
-        num_active_experts: Int,
+        num_active_experts: Int32,
         # K dimension for iteration
         K: UInt32,
     ):
@@ -505,6 +505,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             K: K contraction dimension; the inner reduction axis length used
                 to compute `ceildiv(K, BK)` K iterations.
         """
+        var _num_active_experts = Int(num_active_experts)
         Self.validate_config()
 
         # ===== Shared Memory Setup =====
@@ -573,7 +574,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # ===== TMA LOAD WARP =====
         if Self.WarpRole.is_load():
             var load_iter = Self.WorkIterator(
-                num_active_experts, a_offsets, expert_ids, expert_scales
+                _num_active_experts, a_offsets, expert_ids, expert_scales
             )
 
             with input_pipeline.producer() as producer:
@@ -607,7 +608,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # epilogue reads TMEM per-K to accumulate in registers).
         if Self.WarpRole.is_mma():
             var mma_iter = Self.WorkIterator(
-                num_active_experts, a_offsets, expert_ids, expert_scales
+                _num_active_experts, a_offsets, expert_ids, expert_scales
             )
 
             var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
@@ -638,7 +639,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # ===== EPILOGUE WARPS =====
         if Self.WarpRole.is_epilogue():
             var epi_iter = Self.WorkIterator(
-                num_active_experts, a_offsets, expert_ids, expert_scales
+                _num_active_experts, a_offsets, expert_ids, expert_scales
             )
             Self.MmaEpilogueSync.wait()
 
@@ -667,7 +668,8 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                         Int(ctx.expert_id()) * n_scale_blocks
                     )
                     var b_scales_expert = Self.BScalesTile(
-                        ptr=b_scales.ptr + expert_b_scale_offset * b_scales_k,
+                        ptr=b_scales._storage
+                        + expert_b_scale_offset * b_scales_k,
                         layout=b_scales.layout,
                     )
 
@@ -784,11 +786,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
             # Peer CTA slicing using TileTensor pattern (ptr + layout)
             var a_peer_tile = type_of(a_tile)(
-                a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                a_tile._storage + peer_m_rank * Self.a_tma_load_size,
                 a_tile.layout,
             )
             var b_peer_tile = type_of(b_tile)(
-                b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                b_tile._storage + peer_rank_m * Self.b_tma_load_size,
                 b_tile.layout,
             )
 

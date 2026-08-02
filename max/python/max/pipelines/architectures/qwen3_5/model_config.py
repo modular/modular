@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from max.driver import Device, load_devices
 from max.dtype import DType
@@ -24,6 +25,7 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
 
@@ -43,6 +45,12 @@ class Qwen3_5Config(Llama3Config):
     and linear attention (Gated DeltaNet) layers. Every full_attention_interval-th
     layer uses full attention, and the rest use linear attention.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float32",
+    }
 
     # Hybrid attention parameters
     layer_types: list[str] = field(default_factory=list)
@@ -288,11 +296,9 @@ class Qwen3_5Config(Llama3Config):
                 kv_cache_config.kv_cache_page_size, text_config.head_dim
             )
 
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
         cache_dtype = cache_dtype_for_encoding(
-            quantization_encoding, model_config.kv_cache.kv_cache_format
+            base_config.quantization_encoding,
+            model_config.kv_cache.kv_cache_format,
         )
         n_devices = len(model_config.device_specs)
         device_refs = [
@@ -418,6 +424,7 @@ class Qwen3_5Config(Llama3Config):
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
             tie_word_embeddings=tie_word_embeddings,
+            quantization_encoding=base_config.quantization_encoding,
             # Hybrid attention parameters
             layer_types=layer_types,
             full_attention_interval=getattr(

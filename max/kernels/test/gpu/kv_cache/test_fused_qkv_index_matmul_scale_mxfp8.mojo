@@ -34,7 +34,7 @@ via `bt-b200 //max/kernels/test/gpu/kv_cache:test_fused_qkv_index_matmul_scale_m
 from std.math import ceildiv
 from std.random import random_ui64, seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import unsafe_memset_zero
 from std.testing import assert_equal
 

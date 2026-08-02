@@ -21,18 +21,25 @@ from __future__ import annotations
 
 from collections import OrderedDict, defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Generic, Protocol, TypeVar, runtime_checkable
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device
+from max.driver import (
+    Buffer,
+    Device,
+    DevicePinnedBuffer,
+    copy_pinned_to_destinations,
+)
+from max.dtype import DType
 from max.pipelines.context import (
     ImageMetadata,
     TextAndVisionContext,
     TextContext,
     VLMContextType,
 )
+from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.pipelines.request import RequestID
 from max.profiler import traced
@@ -168,6 +175,27 @@ class SupportsVisionEncoding(Protocol[PackedVisionInputsT]):
         ...
 
 
+@runtime_checkable
+class SupportsPooledVisionMetrics(Protocol):
+    """A pipeline model that owns its vision/video encoder cache internally.
+
+    Most models encode images through :class:`SupportsVisionEncoding`, so the
+    pipeline owns the :class:`VisionEncoderCache` and drains its metrics
+    directly. A model that instead builds and drives its own cache (e.g. to
+    handle video, which :class:`SupportsVisionEncoding` doesn't cover)
+    implements this protocol so the pipeline's ``batch_vision_metrics``/
+    ``batch_video_metrics`` can still reach it.
+    """
+
+    def pop_vision_metrics(self) -> VisionEncoderMetrics | None:
+        """Returns and clears this model's per-batch image encoder metrics."""
+        ...
+
+    def pop_video_metrics(self) -> VideoEncoderMetrics | None:
+        """Returns and clears this model's per-batch video encoder metrics."""
+        ...
+
+
 def derive_counts_from_spans(
     selection: Sequence[tuple[VLMContextType, Sequence[ImageMetadata]]],
 ) -> list[int]:
@@ -269,6 +297,45 @@ class VisionEncoderMetrics:
         return self.num_images_cached / self.num_images_total
 
 
+@dataclass
+class VideoEncoderMetrics:
+    """Per-iteration video encoder statistics for one batch.
+
+    Populated by a pipeline model that caches video clips (by content hash,
+    same LRU semantics as :class:`VisionEncoderCache`) and surfaced via
+    :class:`SupportsPooledVisionMetrics` so video encoder cost is attributed
+    separately from the language model forward pass, mirroring
+    :class:`VisionEncoderMetrics`.
+    """
+
+    num_clips_total: int = 0
+    """Clips referenced by video requests in this batch (hits + misses)."""
+
+    num_clips_encoded: int = 0
+    """Clips the video encoder actually ran on this batch (cache misses)."""
+
+    num_clips_cached: int = 0
+    """Clips served from the video encoder cache this batch (cache hits)."""
+
+    frame_counts: list[int] = field(default_factory=list)
+    """Sampled frame count per newly-encoded clip this batch (cache misses
+    only), one entry per clip so callers can observe the distribution rather
+    than only a batch-level total."""
+
+    num_tokens_encoded: int = 0
+    """Merged video tokens produced by the encoder this batch."""
+
+    encoding_time_ms: float = 0.0
+    """Wall-clock time spent running the video encoder this batch."""
+
+    @property
+    def cache_hit_rate(self) -> float:
+        """Fraction of clips served from cache (0.0 when no clips)."""
+        if self.num_clips_total == 0:
+            return 0.0
+        return self.num_clips_cached / self.num_clips_total
+
+
 class VisionEncoderCache(Generic[VLMContextType]):
     """Reference-counted LRU cache for vision encoder outputs.
 
@@ -296,6 +363,9 @@ class VisionEncoderCache(Generic[VLMContextType]):
         self._max_entries = max_entries
         self._n_devices = n_devices
         self._request_refs: defaultdict[RequestID, set[int]] = defaultdict(set)
+
+        self._empty_indices_cache: list[Buffer] | None = None
+        self._scatter_buffers: dict[int, list[Buffer]] = {}
 
         # Per-batch vision encoder metrics, populated during batch
         # preparation and drained by the scheduler once per iteration via
@@ -363,11 +433,23 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
     @traced
     def release_request(self, request_id: RequestID) -> None:
-        """Release all cache refs held by a request."""
+        """Release all cache refs held by a request.
+
+        Also reconciles occupancy with capacity. ``insert`` never fails:
+        when every resident entry is ref-held (e.g. one request carrying
+        more images than ``max_entries``), it stores past capacity. Without
+        draining here, that excess would linger until the next cache miss
+        reaches ``insert`` -- indefinitely under cache-hit-only or text-only
+        traffic. Draining on release bounds the overshoot to the lifetime
+        of the requests that caused it.
+        """
         for h in self._request_refs.pop(request_id, set()):
             entry = self._cache.get(h)
             if entry is not None:
                 entry.ref_count = max(0, entry.ref_count - 1)
+        while len(self._cache) > self._max_entries:
+            if not self._evict_lru():
+                break
 
     def _evict_lru(self) -> bool:
         """Evict the least-recently-used entry with ref_count == 0."""
@@ -412,16 +494,12 @@ class VisionEncoderCache(Generic[VLMContextType]):
         """
         uncached_contexts: list[VLMContextType] = []
 
-        metrics = VisionEncoderMetrics()
-
         for ctx in context_batch:
             if not getattr(ctx, "needs_vision_encoding", False):
                 continue
 
             if not self.enabled:
                 uncached_contexts.append(ctx)
-                for img in ctx.images:
-                    self._record_encoded_image(metrics, img)
                 continue
 
             self._ensure_image_hashes(ctx)
@@ -431,47 +509,17 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
             for img in ctx.images:
                 assert img.image_hash is not None
-                metrics.num_images_total += 1
                 if self.lookup(img.image_hash) is not None:
                     cached_in_ctx.append(img.image_hash)
-                    metrics.num_images_cached += 1
                 else:
                     has_uncached = True
-                    self._record_encoded_image(metrics, img, count_total=False)
 
-            if not has_uncached:
-                for h in cached_in_ctx:
-                    self.acquire(ctx.request_id, h)
-            else:
-                for h in cached_in_ctx:
-                    self.acquire(ctx.request_id, h)
+            for h in cached_in_ctx:
+                self.acquire(ctx.request_id, h)
+            if has_uncached:
                 uncached_contexts.append(ctx)
 
-        self._batch_metrics = metrics if metrics.num_images_total > 0 else None
         return uncached_contexts
-
-    @staticmethod
-    def _record_encoded_image(
-        metrics: VisionEncoderMetrics,
-        img: object,
-        count_total: bool = True,
-    ) -> None:
-        """Tally one cache-miss image (encoder runs on it) into ``metrics``.
-
-        ``count_total`` is False when the caller already incremented
-        ``num_images_total`` (the enabled-cache path counts every image up
-        front to distinguish hits from misses).
-        """
-        if count_total:
-            metrics.num_images_total += 1
-        metrics.num_images_encoded += 1
-        pixel_values = getattr(img, "pixel_values", None)
-        if pixel_values is not None and getattr(pixel_values, "shape", None):
-            metrics.num_patches_encoded += int(pixel_values.shape[0])
-        start_idx = getattr(img, "start_idx", None)
-        end_idx = getattr(img, "end_idx", None)
-        if start_idx is not None and end_idx is not None:
-            metrics.num_tokens_encoded += int(end_idx) - int(start_idx)
 
     def pop_metrics(self) -> VisionEncoderMetrics | None:
         """Return the metrics for the most recent batch and reset them.
@@ -556,6 +604,30 @@ class VisionEncoderCache(Generic[VLMContextType]):
             ``(embeddings, indices)`` — per-device buffers and a 1-D
             int32 scatter-index array.
         """
+        metrics = VisionEncoderMetrics()
+        for ctx in context_batch:
+            if not getattr(ctx, "needs_vision_encoding", False):
+                continue
+            for img in ctx.images:
+                metrics.num_images_total += 1
+                if (
+                    self.enabled
+                    and img.image_hash is not None
+                    and self.lookup(img.image_hash) is not None
+                ):
+                    metrics.num_images_cached += 1
+        if metrics.num_images_total > 0:
+            for miss_images in uncached_images:
+                for img in miss_images:
+                    metrics.num_images_encoded += 1
+                    metrics.num_patches_encoded += int(
+                        img.pixel_values.shape[0]
+                    )
+                    metrics.num_tokens_encoded += img.end_idx - img.start_idx
+            self._batch_metrics = metrics
+        else:
+            self._batch_metrics = None
+
         if not self.enabled:
             embeddings = (
                 vision_embeds if uncached_contexts else empty_embeddings
@@ -637,9 +709,10 @@ class VisionEncoderCache(Generic[VLMContextType]):
                 assert img.image_hash is not None
                 entry = self.lookup(img.image_hash)
                 if entry is None:
-                    assert img.end_idx <= ctx.tokens.processed_length, (
-                        f"Active image {img.image_hash} not in cache"
-                    )
+                    assert (
+                        img.end_idx <= ctx.tokens.processed_length
+                        or img.start_idx >= ctx.tokens.current_position
+                    ), f"Active in-window image {img.image_hash} not in cache"
                     count = img.end_idx - img.start_idx
                     for d in range(n_devices):
                         base = empty_embeddings[d]
@@ -670,34 +743,40 @@ class VisionEncoderCache(Generic[VLMContextType]):
     ) -> list[tuple[VLMContextType, list[ImageMetadata]]]:
         """Select contexts to encode, each paired with its cache-miss images.
 
-        Computes the cache-miss set once (over ``ctx.next_images``), acquires
-        refs for already-cached images immediately (so a hit can't be evicted
-        between selection and assembly), and returns each selected context
-        paired with its miss images. Every downstream consumer reads that same
-        returned selection: the model's pack/encode steps, the counts
+        Computes the cache-miss set once (over ``ctx.next_images_in_window``),
+        acquires refs for already-cached images immediately (so a hit can't be
+        evicted between selection and assembly), and returns each selected
+        context paired with its miss images. Every downstream consumer reads
+        that same returned selection: the model's pack/encode steps, the counts
         (:func:`derive_counts_from_spans`), and the store/split
-        (``prepare_vision_outputs``).
+        (``prepare_vision_outputs``, which records the batch metrics).
+
+        Only misses overlapping the active window are selected, so each
+        encoder forward is bounded by the scheduler's chunked-prefill window:
+        an image fully ahead of the window is encoded by the iteration whose
+        chunk covers it; this iteration its rows are zero-filled and its
+        scatter positions OOB-masked.
 
         ``get_uncached_contexts`` scans ``ctx.images`` (all images) rather than
-        ``next_images`` to decide which contexts to return. That is consistent
-        because a fully-processed image (in ``ctx.images`` but not
-        ``next_images``) is always cache-resident: a request holds a ref on
-        every image it has encoded, so the entry can't be evicted while the
-        request is live, and the ``ctx.images`` scan sees it as a hit.
+        ``next_images`` to decide which contexts are candidates, so a context
+        can be a candidate solely because of an uncached image ahead of the
+        window (e.g. a later chunk's image) while every in-window image is a
+        cache hit. Such contexts have an empty miss set and are excluded from
+        the returned selection: there is nothing to encode for them this
+        iteration, and assembly reads their in-window hits from the cache and
+        zero-fills out-of-window images from ``context_batch`` directly.
         """
         uncached = self.get_uncached_contexts(context_batch)
-        return [
-            (
-                ctx,
-                [
-                    img
-                    for img in ctx.next_images
-                    if img.image_hash is None
-                    or self.lookup(img.image_hash) is None
-                ],
-            )
-            for ctx in uncached
-        ]
+        selection: list[tuple[VLMContextType, list[ImageMetadata]]] = []
+        for ctx in uncached:
+            misses = [
+                img
+                for img in ctx.next_images_in_window
+                if img.image_hash is None or self.lookup(img.image_hash) is None
+            ]
+            if misses:
+                selection.append((ctx, misses))
+        return selection
 
     @traced
     def cache_vision_embeddings(
@@ -759,6 +838,93 @@ class VisionEncoderCache(Generic[VLMContextType]):
         return self.cache_vision_embeddings(
             context_batch, selection, result, empty
         )
+
+    @traced
+    def finalize_vision_inputs(
+        self,
+        model: SupportsVisionEncoding[PackedVisionInputsT],
+        model_inputs: ModelInputs,
+        devices: list[Device],
+        vision_result: tuple[list[Buffer], npt.NDArray[np.int32]] | None,
+    ) -> None:
+        """Sets the ABI-facing vision-merge inputs on ``model_inputs``.
+
+        The single place empties-vs-real is decided: after this call the base
+        ``vision_embeddings`` / ``vision_scatter_indices`` fields hold the
+        per-device buffers the language graph declares, and
+        ``model_inputs.buffers`` is packable. Must run on every prepared batch
+        of a vision-capable model — including graph-capture warmup, which
+        packs ``.buffers`` without going through ``execute()``.
+
+        Args:
+            model: The vision-capable pipeline model (owns the empty
+                embeddings, whose hidden size and dtype are model-specific).
+            model_inputs: The prepared inputs, finalized in place.
+            devices: The pipeline's devices.
+            vision_result: What :meth:`run_vision_encode` returned for this
+                batch — an ``(embeddings, merge_indices)`` pair of assembled
+                per-device embedding buffers and the host merge-index array
+                to copy to each device. ``None`` means nothing was encoded
+                this step (a decode or text-only batch), so the fields fall
+                back to the model's cached zero-row empties.
+        """
+        if vision_result is None:
+            model_inputs.vision_embeddings = model.empty_vision_embeddings(
+                devices
+            )
+            model_inputs.vision_scatter_indices = self._empty_indices(devices)
+            return
+        embeddings, scatter_np = vision_result
+        model_inputs.vision_embeddings = embeddings
+        if len(scatter_np) == 0:
+            model_inputs.vision_scatter_indices = self._empty_indices(devices)
+        else:
+            model_inputs.vision_scatter_indices = self._scatter_to_devices(
+                scatter_np, devices
+            )
+
+    def _empty_indices(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device zero-length merge-index buffers.
+
+        Cached: hit on every decode / text-only step, so it must not allocate
+        per call.
+        """
+        if self._empty_indices_cache is None:
+            self._empty_indices_cache = [
+                Buffer.zeros(shape=[0], dtype=DType.int32).to(dev)
+                for dev in devices
+            ]
+        return self._empty_indices_cache
+
+    @traced
+    def _scatter_to_devices(
+        self, scatter_np: npt.NDArray[np.int32], devices: list[Device]
+    ) -> list[Buffer]:
+        """Copy merge indices to each device.
+
+        Allocates a fresh pinned host buffer every call and never reuses it
+        across calls: under the overlap scheduler a reused pinned buffer would
+        be clobbered by the next step's host write while the current step's
+        asynchronous H2D copy is still reading it. The per-device destination
+        buffers are cached by index count and reused (never pinned).
+        """
+        dev = devices[0]
+        n = len(scatter_np)
+        host_buffer_cls = DevicePinnedBuffer if not dev.is_host else Buffer
+        host: Buffer = host_buffer_cls(
+            dtype=DType.int32, shape=(n,), device=dev
+        )
+
+        device_bufs = self._scatter_buffers.get(n)
+        if device_bufs is None:
+            device_bufs = [
+                Buffer(shape=(n,), dtype=DType.int32, device=d) for d in devices
+            ]
+            self._scatter_buffers[n] = device_bufs
+
+        host.to_numpy()[:] = scatter_np.astype(np.int32)
+        copy_pinned_to_destinations(host, device_bufs)
+        return device_bufs
 
 
 def as_vision_context_batches(

@@ -21,7 +21,7 @@ from std.math import sqrt
 from std.random import randint, randn, seed
 from std.sys import argv, size_of
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx
 from layout.tile_layout import row_major
 from std.memory import UnsafePointer
@@ -264,12 +264,12 @@ def test_combine[
     @parameter
     def run_full_dispatch(ctx: DeviceContext) raises:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-        var recv_buf_ptrs: InlineArray[
-            UnsafePointer[UInt8, MutAnyOrigin], 1
-        ] = [recv_buf]
-        var recv_count_ptrs: InlineArray[
-            UnsafePointer[UInt64, MutAnyOrigin], 1
-        ] = [recv_count]
+        var recv_buf_ptrs: Array[UnsafePointer[UInt8, MutAnyOrigin], 1] = [
+            recv_buf
+        ]
+        var recv_count_ptrs: Array[UnsafePointer[UInt64, MutAnyOrigin], 1] = [
+            recv_count
+        ]
 
         ctx.enqueue_function(
             func,
@@ -302,10 +302,10 @@ def test_combine[
     @parameter
     def run_combine_async(ctx: DeviceContext) raises:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-        var combine_recv_buf_ptrs: InlineArray[
+        var combine_recv_buf_ptrs: Array[
             UnsafePointer[UInt8, MutAnyOrigin], 1
         ] = [send_buf]
-        var combine_recv_count_ptrs: InlineArray[
+        var combine_recv_count_ptrs: Array[
             UnsafePointer[UInt64, MutAnyOrigin], 1
         ] = [recv_count]
 

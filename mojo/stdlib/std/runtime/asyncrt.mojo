@@ -24,10 +24,6 @@ from std.builtin.coroutine import (
 )
 from std.builtin._startup import _ensure_runtime_init
 
-# RaisingCoroutine is a builtin type, available without explicit import.
-from std.gpu.host import DeviceContext
-
-
 # ===-----------------------------------------------------------------------===#
 # _AsyncContext
 # ===-----------------------------------------------------------------------===#
@@ -143,19 +139,19 @@ def initialize_runtime():
     Examples:
 
     ```mojo
-    from std.algorithm import parallelize
+    from max.algorithm import parallelize
     from std.runtime import initialize_runtime
 
 
     @export("fill_squares")
     def fill_squares(
-        data: UnsafePointer[Int64, MutUntrackedOrigin], len: Int
+        data: Pointer[Int64, MutUntrackedOrigin], len: Int
     ) abi("C"):
         initialize_runtime()
 
         @parameter
         def fill(i: Int):
-            data[i] = Int64(i * i)
+            data.unsafe_store(i, Int64(i * i))
 
         parallelize[fill](len)
     ```
@@ -176,29 +172,6 @@ def parallelism_level() -> Int:
             Int32,
         ]()
     )
-
-
-def parallelism_level(ctx: Optional[DeviceContext]) -> Int:
-    """Gets the parallelism level from a DeviceContext.
-
-    For CPU contexts this returns the number of worker threads in the
-    runtime associated with that context. Falls back to the global
-    parallelism level if the context is None or the query fails.
-
-    Args:
-        ctx: The device context to query.
-
-    Returns:
-        The parallelism level of the context.
-    """
-    from std.gpu.host import DeviceAttribute
-
-    if ctx:
-        try:
-            return ctx.value().get_attribute(DeviceAttribute.PARALLELISM_LEVEL)
-        except:
-            pass
-    return parallelism_level()
 
 
 def create_task(
@@ -307,7 +280,7 @@ def _run(var handle: Coroutine[...], out result: handle.type):
 # ===-----------------------------------------------------------------------===#
 
 
-struct Task[type: ImplicitlyDeletable, origins: OriginSet]:
+struct Task[type: ImplicitlyDeletable, origins: OriginSet](Movable where False):
     """Represents an asynchronous task that will produce a value of the specified type.
 
     A Task encapsulates a coroutine that is executing asynchronously and will eventually
@@ -348,7 +321,7 @@ struct Task[type: ImplicitlyDeletable, origins: OriginSet]:
         """
         return self._result
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroy the memory associated with a task. This must be manually
         called when a task goes out of scope.
         """
@@ -599,7 +572,7 @@ struct _TaskGroupBox(Copyable, RegisterPassable):
     ](out self, var coro: Coroutine[type, ...]):
         self.handle = coro^._take_handle()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         __mlir_op.`co.destroy`(self.handle)
 
     # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
@@ -633,7 +606,7 @@ struct TaskGroup(Defaultable):
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Clean up resources associated with the TaskGroup."""
         _del_asyncrt_chain(Pointer(to=self.chain))
 

@@ -28,10 +28,10 @@ is then released for the entire GPU-work region.
 ``copy_d2h`` handles all D2H copies in a single batched call.
 """
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.memory import OpaquePointer, UnsafePointer
 from std.os import abort
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
+from max.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from std.python import Python, PythonObject
 from std.python._cpython import GILReleased
 from std.python.bindings import PythonModuleBuilder
@@ -43,7 +43,7 @@ from layout import TileTensor, row_major
 
 # The number of KV-cache units (sharded MHA layers + replicated MLA units) is
 # NOT bounded by the GPU count, so per-unit data is pre-extracted into
-# heap-backed ``List``s rather than fixed-size ``InlineArray``s. Only arrays
+# heap-backed ``List``s rather than fixed-size ``Array``s. Only arrays
 # indexed purely by GPU rank are sized with ``MAX_GPUS``.
 
 
@@ -126,8 +126,8 @@ def copy_h2d(
     # sig_arr / main_ctx_addr_arr are indexed by GPU rank, so MAX_GPUS is a
     # correct bound. out_stride_arr / out_addr_arr are per-unit, so they use
     # heap-backed Lists; out_addr_arr is flat row-major as [num_units][ngpus].
-    var sig_arr = InlineArray[Int, MAX_GPUS](uninitialized=True)
-    var main_ctx_addr_arr = InlineArray[Int, MAX_GPUS](uninitialized=True)
+    var sig_arr = Array[Int, MAX_GPUS](uninitialized=True)
+    var main_ctx_addr_arr = Array[Int, MAX_GPUS](uninitialized=True)
     var out_stride_arr = List[Int]()
     var out_addr_arr = List[Int]()
     var num_bcast_v = 0
@@ -199,12 +199,13 @@ def copy_h2d(
                 ](unsafe_from_address=aux_buf_arr[j])
                 var dev_buf = DeviceBuffer[DType.uint8](
                     aux_ctxs[j],
-                    dev_base + dst_v * stride,
+                    dev_base.unsafe_offset(dst_v * stride),
                     stride,
                     owning=False,
                 )
                 aux_ctxs[j].enqueue_copy(
-                    dev_buf, host_base + src_v * host_stride_v + host_off
+                    dev_buf,
+                    host_base.unsafe_offset(src_v * host_stride_v + host_off),
                 )
                 host_off += stride
 
@@ -237,10 +238,10 @@ def _do_broadcast_units[
 ](
     dst: Int,
     num_units: Int,
-    sig_arr: InlineArray[Int, MAX_GPUS],
+    sig_arr: Array[Int, MAX_GPUS],
     out_addr_arr: List[Int],
     out_stride_arr: List[Int],
-    main_ctx_addr_arr: InlineArray[Int, MAX_GPUS],
+    main_ctx_addr_arr: Array[Int, MAX_GPUS],
 ) raises:
     """Broadcast block ``dst`` from root to all peers for each replicated unit.
 
@@ -248,7 +249,7 @@ def _do_broadcast_units[
     The ``DeviceContextArray`` is built once and shallow-copied for each unit's
     ``_launch_device_collective`` call.
     """
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     for i in range(ngpus):
@@ -257,9 +258,12 @@ def _do_broadcast_units[
         )
 
     # Build the DeviceContextArray once; copy it for each unit's launch.
-    var ctx_array = InlineArray[DeviceContext, ngpus](uninitialized=True)
+    var ctx_array = Array[DeviceContext, ngpus](uninitialized=True)
     for i in range(ngpus):
-        (ctx_array.unsafe_ptr() + i).unsafe_write(
+        var ctx_array_ptr: UnsafePointer[
+            DeviceContext, origin_of(ctx_array)
+        ] = ctx_array.unsafe_ptr()
+        ctx_array_ptr.unsafe_offset(i).unsafe_write(
             DeviceContext(
                 OpaquePointer[MutUntrackedOrigin](
                     unsafe_from_address=main_ctx_addr_arr[i]
@@ -270,7 +274,7 @@ def _do_broadcast_units[
 
     for u in range(num_units):
         var stride = out_stride_arr[u]
-        var unit_ptrs = InlineArray[
+        var unit_ptrs = Array[
             UnsafePointer[Scalar[DType.uint8], MutAnyOrigin], ngpus
         ](uninitialized=True)
         for i in range(ngpus):
@@ -370,12 +374,14 @@ def copy_d2h(
                 ](unsafe_from_address=buf_arr[j])
                 var dev_buf = DeviceBuffer[DType.uint8](
                     dev_ctxs[j],
-                    dev_base + src_arr[i] * stride,
+                    dev_base.unsafe_offset(src_arr[i] * stride),
                     stride,
                     owning=False,
                 )
                 dev_ctxs[j].enqueue_copy(
-                    host_base + dst_arr[i] * host_stride_v + host_off,
+                    host_base.unsafe_offset(
+                        dst_arr[i] * host_stride_v + host_off
+                    ),
                     dev_buf,
                 )
                 host_off += stride

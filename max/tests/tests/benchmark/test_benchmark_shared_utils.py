@@ -13,12 +13,14 @@
 
 from __future__ import annotations
 
+import logging
 import resource
 import time
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from max.benchmark.benchmark_shared import utils as benchmark_utils
 from max.benchmark.benchmark_shared.utils import (
     argmedian,
     exceeds_deadline,
@@ -83,6 +85,98 @@ def test_get_tokenizer_omits_model_max_length_when_unspecified(
         trust_remote_code=False,
         revision=None,
     )
+
+
+def test_get_tokenizer_stashes_resolved_architectures(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch("transformers.AutoTokenizer.from_pretrained")
+    mocker.patch(
+        "transformers.AutoConfig.from_pretrained",
+        return_value=MagicMock(architectures=["LlamaForCausalLM"]),
+    )
+
+    tokenizer = get_tokenizer("repo/model", revision=None)
+
+    assert tokenizer._resolved_architectures == ["LlamaForCausalLM"]
+
+
+def test_get_tokenizer_skips_autoconfig_when_architectures_provided(
+    mocker: MockerFixture,
+) -> None:
+    """A precomputed architecture list bypasses the AutoConfig Hub lookup."""
+    mocker.patch("transformers.AutoTokenizer.from_pretrained")
+    autoconfig = mocker.patch("transformers.AutoConfig.from_pretrained")
+
+    tokenizer = get_tokenizer(
+        "repo/model", revision=None, architectures=["LlamaForCausalLM"]
+    )
+
+    autoconfig.assert_not_called()
+    assert tokenizer._resolved_architectures == ["LlamaForCausalLM"]
+
+
+def test_get_tokenizer_applies_kimi_override_from_provided_architectures(
+    mocker: MockerFixture,
+) -> None:
+    """The Kimi encode override works from a forwarded architecture list."""
+    inner = MagicMock()
+    real_tokenizer = MagicMock()
+    real_tokenizer.encode = inner
+    mocker.patch(
+        "transformers.AutoTokenizer.from_pretrained",
+        return_value=real_tokenizer,
+    )
+    mocker.patch("transformers.AutoConfig.from_pretrained")
+
+    tokenizer = get_tokenizer(
+        "repo/model",
+        revision=None,
+        architectures=["KimiK25ForConditionalGeneration"],
+    )
+    tokenizer.encode("hello", add_special_tokens=True)
+
+    _, kwargs = inner.call_args
+    assert "add_special_tokens" not in kwargs
+    assert kwargs["allow_special_tokens"] is True
+
+
+def test_get_tokenizer_warns_once_on_autoconfig_failure(
+    mocker: MockerFixture,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failing AutoConfig probe warns once per model path, not per load."""
+    mocker.patch("transformers.AutoTokenizer.from_pretrained")
+    mocker.patch(
+        "transformers.AutoConfig.from_pretrained",
+        side_effect=OSError("cannot reach hub"),
+    )
+    benchmark_utils._reported_autoconfig_failures.discard("repo/unreachable")
+
+    with caplog.at_level(
+        logging.WARNING, logger="max.benchmark.benchmark_shared.utils"
+    ):
+        first = get_tokenizer("repo/unreachable", revision=None)
+        second = get_tokenizer("repo/unreachable", revision=None)
+
+    assert first._resolved_architectures == []
+    assert second._resolved_architectures == []
+    failures = [
+        r
+        for r in caplog.records
+        if "AutoConfig.from_pretrained failed" in r.getMessage()
+    ]
+    assert len(failures) == 1
+
+
+def test_quiet_hf_hub_retries_lowers_then_restores_level() -> None:
+    hub_logger = logging.getLogger("huggingface_hub")
+    hub_logger.setLevel(logging.WARNING)
+
+    with benchmark_utils._quiet_hf_hub_retries():
+        assert hub_logger.level == logging.ERROR
+
+    assert hub_logger.level == logging.WARNING
 
 
 def test_set_ulimit_updates_soft_limit_when_needed(

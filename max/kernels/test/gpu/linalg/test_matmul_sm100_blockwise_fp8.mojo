@@ -14,8 +14,8 @@
 from std.collections import Optional
 from std.sys import align_of, size_of
 from std.math import ceildiv
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 # Additional imports for testing
 from internal_utils import (

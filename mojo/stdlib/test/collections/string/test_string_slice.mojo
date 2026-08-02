@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections.string import ImmStringSlice, MutStringSlice
 from std.collections.string.string_slice import (
     _to_string_list,
     get_static_string,
@@ -62,9 +63,9 @@ def test_string_slice_layout() raises:
 
     var str_slice = StringSlice("")
 
-    var base_ptr = Int(UnsafePointer(to=str_slice))
-    var first_word_ptr = Int(UnsafePointer(to=str_slice._slice._data))
-    var second_word_ptr = Int(UnsafePointer(to=str_slice._slice._len))
+    var base_ptr = Int(Pointer(to=str_slice))
+    var first_word_ptr = Int(Pointer(to=str_slice._slice._data))
+    var second_word_ptr = Int(Pointer(to=str_slice._slice._len))
 
     # 1st field should be at 0-byte offset from base ptr
     assert_equal(first_word_ptr - base_ptr, 0)
@@ -652,7 +653,7 @@ def test_split() raises:
     # Multiple character delimiter
     assert_equal(S("hello").split("ll"), [StaticString("he"), "o"])
 
-    res = [StaticString(""), "bb", "", "", "", "bbb", ""]
+    res: List = [StaticString(""), "bb", "", "", "", "bbb", ""]
     assert_equal(S("abbaaaabbba").split("a"), res)
     assert_equal(S("abbaaaabbba").split("a", 8), res)
     s1 = S("abbaaaabbba").split("a", 5)
@@ -698,7 +699,7 @@ def test_splitlines() raises:
 
     # Test with multiple different line breaks
     s1 = S("hello\nworld\r\nmojo\rlanguage\r\n")
-    hello_mojo = [StaticString("hello"), "world", "mojo", "language"]
+    hello_mojo: List = [StaticString("hello"), "world", "mojo", "language"]
     assert_equal(s1.splitlines(), hello_mojo)
     assert_equal(
         s1.splitlines(keepends=True),
@@ -1134,6 +1135,31 @@ def test_grapheme_indexing() raises:
     assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=0], "👨‍🚀")
     assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=1], "🧑‍🌾")
     assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=2], "क्षि")
+
+
+def test_mut_string_slice_alias() raises:
+    var data = String("hello")
+
+    def capitalize(s: MutStringSlice[_]):
+        s.as_bytes()[0] -= Byte(ord("a") - ord("A"))
+
+    capitalize(data)
+    assert_equal(data, "Hello")
+
+
+def test_imm_string_slice_alias() raises:
+    def byte_sum(s: ImmStringSlice[_]) -> Int:
+        var total = 0
+        for b in s.as_bytes():
+            total += Int(b)
+        return total
+
+    var mutable_data = String("abc")
+    var immutable_data = StaticString("abc")
+
+    # `ImmStringSlice` works with both mutable and immutable data.
+    assert_equal(byte_sum(mutable_data), 294)
+    assert_equal(byte_sum(immutable_data), 294)
 
 
 def main() raises:

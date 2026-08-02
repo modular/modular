@@ -5,13 +5,14 @@ load(":interp_cache.bzl", "compose_warm_cache", "warm_interp_cache")
 # needs visibility here. This local directive extends the inherited //max/tests
 # default so gazelle (run by `//:format`) keeps the extra entry below instead of
 # regenerating it back to the parent directive's list.
-# gazelle:default_visibility //max/tests:__subpackages__,//:__pkg__,//oss/modular/max/tests:__subpackages__,//oss/max-llm-book:__subpackages__
+# gazelle:default_visibility //max/tests:__subpackages__,//:__pkg__,//oss/modular/max/tests:__subpackages__,//oss/max-llm-book:__subpackages__,//utils/benchmarking/kepler:__pkg__
 
 package(default_visibility = [
     "//:__pkg__",
     "//max/tests:__subpackages__",
     "//oss/max-llm-book:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
+    "//utils/benchmarking/kepler:__pkg__",
 ])
 
 # The eager-interpreter GC sweep tests share the sibling interpreter tests'
@@ -40,6 +41,7 @@ _CPU_TARGET = select({
 # warm_accelerators is gated (below) to these same constraints, so off-GPU
 # configs are skipped before this select resolves, no default needed.
 _GPU_TARGET = select({
+    "//:a10_gpu": "cuda:sm_86",
     "//:b200_gpu": "cuda:sm_100a",
     "//:h100_gpu": "cuda:sm_90a",
     "//:mi355_gpu": "hip:gfx950",
@@ -49,6 +51,7 @@ _GPU_TARGET = select({
 # CPU-only workers and macOS fall to the default and are incompatible, so the
 # test stays macOS-incompatible and the GPU select above never resolves off-lane.
 _GPU_LANE_ONLY = select({
+    "//:a10_gpu": [],
     "//:b200_gpu": [],
     "//:h100_gpu": [],
     "//:mi355_gpu": [],
@@ -171,10 +174,29 @@ _WARM_FAMILIES = [
     "binary",
     "reduce_axis",
     "shape_rearrange",
+    "gather",
+    "scatter",
+    "scatter_nd",
+    "scatter_nd_add",
+    "scatter_nd_max",
+    "scatter_nd_min",
+    "scatter_nd_mul",
     "resize",
     "pooling",
     "conv",
     "topk",
+    "select",
+    "layer_norm",
+    "rms_norm",
+    "group_norm",
+    "cast",
+    "band_part",
+    "nonzero",
+    "nms",
+    "random",
+    "range",
+    "roi_align",
+    "data_movement",
 ]
 
 # CPU fragment per family: no --target -> lane-independent (cfg=exec), shared.

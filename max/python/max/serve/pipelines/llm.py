@@ -269,6 +269,11 @@ class TokenGeneratorPipeline(
         - Callers can amortize Pydantic/SSE overhead across the chunk
         """
         itl = StopWatch()
+        # TTFT runs from the arrival timestamp stamped by the HTTP middleware,
+        # so it covers body parse, validation and media resolution rather than
+        # starting here at pipeline entry. Offline callers leave timestamp_ns
+        # at its 0 default; those fall back to pipeline entry.
+        ttft_sw = StopWatch(start_ns=request.timestamp_ns or None)
         total_sw = StopWatch()
         decode_sw = StopWatch()
         decode_elapsed_ms = 0.0
@@ -537,7 +542,7 @@ class TokenGeneratorPipeline(
                         # Record metrics - one TTFT/ITL per chunk
                         is_first_chunk = not first_chunk_yielded
                         if is_first_chunk:
-                            METRICS.ttft(itl.elapsed_ms)
+                            METRICS.ttft(ttft_sw.elapsed_ms)
                             decode_sw.reset()
                             first_chunk_yielded = True
                         else:

@@ -24,7 +24,7 @@ from std.ffi import (
 )
 from std.sys.info import CompilationTarget, is_nvidia_gpu
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUmodule, CUstream
 
 from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
@@ -168,7 +168,7 @@ struct NVSHMEMXInitAttr[origin: MutOrigin]:
 struct NVSHMEMXInitArgs:
     var version: c_int
     var uid_args: NVSHMEMXUniqueIDArgs
-    var content: InlineArray[Byte, 96]
+    var content: Array[Byte, 96]
 
     def __init__(out self):
         comptime assert (
@@ -176,7 +176,7 @@ struct NVSHMEMXInitArgs:
         ), "NVSHMEMXInitArgs must be 128 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXInitArgs]())
         self.uid_args = NVSHMEMXUniqueIDArgs()
-        self.content = InlineArray[Byte, 96](fill=0)
+        self.content = Array[Byte, 96](fill=0)
 
 
 struct NVSHMEMXUniqueIDArgs:
@@ -198,14 +198,14 @@ struct NVSHMEMXUniqueIDArgs:
 
 struct NVSHMEMXUniqueID:
     var version: c_int
-    var internal: InlineArray[Byte, 124]
+    var internal: Array[Byte, 124]
 
     def __init__(out self):
         comptime assert (
             size_of[Self]() == 128
         ), "nvshmemx_uniqueid_t must be 128 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXUniqueID]())
-        self.internal = InlineArray[Byte, 124](fill=0)
+        self.internal = Array[Byte, 124](fill=0)
 
 
 def _get_prefix[scope: SHMEMScope]() -> StaticString:

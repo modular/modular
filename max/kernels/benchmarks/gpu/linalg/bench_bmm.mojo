@@ -21,7 +21,8 @@ from std.sys.info import has_amd_gpu_accelerator
 
 from layout import Coord, TileTensor, row_major, CoordLike, Idx
 import linalg.matmul.vendor.blas as vendor_blas
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -29,7 +30,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import arg_parse
 from internal_utils._utils import (
     InitializationType,
@@ -287,7 +288,7 @@ def bench_bmm[
                         ctx,
                     )
 
-        bench.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](bench, ctx)
 
     bench.bench_function[bench_func](
         BenchId(

@@ -43,7 +43,7 @@ struct _PythonGlobal(Defaultable, Movable):
     def __init__(out self):
         self.cpython = {}
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self.cpython.destroy()
 
 
@@ -57,7 +57,7 @@ def _get_python_interface() raises -> Pointer[CPython, ImmStaticOrigin]:
     var python = _PYTHON_GLOBAL.get_or_create_indexed_ptr(_Global._python_idx)
     var cpython_instance = (
         Pointer(to=python[].cpython)
-        .as_immutable()
+        .as_imm()
         .unsafe_origin_cast[ImmStaticOrigin]()
     )
     return cpython_instance
@@ -287,7 +287,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         #   in a global variable (yet).
         return Self._unsafe_add_functions(
             module,
-            functions.steal_data().unsafe_origin_cast[MutUntrackedOrigin](),
+            functions.unsafe_take_allocation().unsafe_leak(),
         )
 
     @staticmethod
@@ -354,7 +354,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    def dict(**kwargs: PythonObject) raises -> PythonObject:
+    def dict(var **kwargs: PythonObject) raises -> PythonObject:
         """Construct an Python dictionary from keyword arguments.
 
         Args:

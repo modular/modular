@@ -18,6 +18,7 @@ from std.sys import (
     get_defined_bool,
 )
 from std.math import ceildiv
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     BenchConfig,
@@ -26,7 +27,7 @@ from std.benchmark import (
     ThroughputMeasure,
     BenchMetric,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,
@@ -35,7 +36,7 @@ from layout import (
     lt_to_tt,
 )
 from layout._fillers import random
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 
 from std.utils.index import IndexList
 from linalg.fp4_utils import (
@@ -148,7 +149,7 @@ def bench_1d1d_quantization[
                     num_cols_padded=cols,
                 )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     var bytes = ThroughputMeasure(
         BenchMetric.bytes,

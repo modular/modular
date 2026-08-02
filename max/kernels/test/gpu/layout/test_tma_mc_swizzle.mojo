@@ -15,8 +15,8 @@ from std.sys import size_of
 
 from std.gpu import barrier
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from std.gpu.host import DeviceContext, Dim
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, Dim
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import cluster_idx, thread_idx
 from std.gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
@@ -29,7 +29,7 @@ from layout.tma_async import (
     _idx_product,
     create_tensor_tile,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 from std.utils.index import Index, IndexList
@@ -75,7 +75,7 @@ def tma_swizzle_multicast_load_kernel[
 
     barrier()
 
-    mbar = stack_allocation[
+    mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,

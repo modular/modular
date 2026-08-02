@@ -21,7 +21,7 @@ and the Apple Silicon shuffle check.
 
 from std.gpu import lane_id
 from std.gpu.globals import WARP_SIZE
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.warp import match_all
 from std.testing import assert_equal, TestSuite
 
@@ -33,7 +33,9 @@ def _match_all_probe[
     out_masks: UnsafePointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())
-    out_masks[lane] = match_all(values[lane]).cast[DType.uint64]()
+    out_masks[unsafe_offset=lane] = match_all(values[unsafe_offset=lane]).cast[
+        DType.uint64
+    ]()
 
 
 def _check[

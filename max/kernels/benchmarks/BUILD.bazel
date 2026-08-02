@@ -7,6 +7,7 @@ load(
     "pkg_files",
     "strip_prefix",
 )
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -15,12 +16,21 @@ _RUN_BENCHMARKS = [
     "nn/bench_gather_reduce.mojo",
 ]
 
+_EXTRA_DEPS = {
+    "algorithm/parallelize_overhead.mojo": ["//max:max_mojo"],
+    "linalg/bench_layout_tensor.mojo": ["//max:max_mojo"],
+}
+
 _EXTRA_CONSTRAINTS = {
     "algorithm/parallelize_overhead.mojo": select({
         "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     "gpu/comm/bench_allgather.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # No multi-GPU Metal machines exist
+    "gpu/comm/bench_allgather_rmsnorm.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist
@@ -144,6 +154,7 @@ _CPU_TESTS = glob(
     mojo_binary(
         name = src.split(".")[0],
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         enable_assertions = False,
         target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
@@ -152,7 +163,7 @@ _CPU_TESTS = glob(
             "//max:layout",
             "//max:nn",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in _CPU_TESTS
 ]
@@ -171,6 +182,7 @@ _CPU_TESTS = glob(
         size = "enormous",
         srcs = [src],
         args = ["-t"],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         enable_assertions = False,
         target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
@@ -179,7 +191,7 @@ _CPU_TESTS = glob(
             "//max:layout",
             "//max:nn",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in _RUN_BENCHMARKS
 ]
@@ -188,6 +200,7 @@ _CPU_TESTS = glob(
     mojo_binary(
         name = src.split(".")[0],
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         data = select({
             "//:nvidia_gpu": ["@nvshmem_prebuilt//:host"],
             "//conditions:default": [],
@@ -202,6 +215,7 @@ _CPU_TESTS = glob(
             "//max:comm",
             "//max:internal_utils",
             "//max:layout",
+            "//max:max_mojo",
             "//max:nn",
             "//max:shmem",
             "//max:structured_kernels",
@@ -248,7 +262,7 @@ _CPU_TESTS = glob(
 mojo_binary(
     name = "gpu/nn/bench_mla_prefill_v2",
     srcs = ["gpu/nn/bench_mla_prefill_v2.mojo"],
-    copts = [
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
         "-D",
         "fp32_scores=true",
         "-D",
@@ -260,6 +274,7 @@ mojo_binary(
         "//max:comm",
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "//max:shmem",
         "//max:structured_kernels",
@@ -279,6 +294,7 @@ mojo_test(
     name = "gpu/nn/bench_conv3d.mojo.run",
     size = "enormous",
     srcs = ["gpu/nn/bench_conv3d.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     enable_assertions = False,
     exec_properties = {
         "test.resources:gpu-memory": "6",
@@ -296,6 +312,7 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "@mojo//:std",
     ],
@@ -305,6 +322,7 @@ mojo_test(
     name = "gpu/nn/bench_conv2d.mojo.run",
     size = "enormous",
     srcs = ["gpu/nn/bench_conv2d.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     enable_assertions = False,
     exec_properties = {
         "test.resources:gpu-memory": "6",
@@ -317,6 +335,7 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "@mojo//:std",
     ],
@@ -326,6 +345,7 @@ mojo_test(
     name = "gpu/layout/bench_tile_io_copy.mojo.run",
     size = "enormous",
     srcs = ["gpu/layout/bench_tile_io_copy.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     enable_assertions = False,
     exec_properties = {
         "test.resources:gpu-memory": "1",
@@ -337,6 +357,7 @@ mojo_test(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:layout",
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )
@@ -350,6 +371,36 @@ mojo_test(
 # Runtime shape (seq_len/num_keys/cache_len/batch_size) is forwarded per invocation via
 # `--test_arg=--name=value` (arg_parse matches "--<name>=", internal_utils/_utils.mojo:205);
 # always add `--nocache_test_results` for a benchmark. See plan crystalline-leaping-sunrise.md.
+#
+# The `run_wse*` / `*_g16` cells are the Layout-E (BM=64, m_pack=2) split-K
+# threshold campaign (Phase 4). All are group=16: `_G16` bakes `group=16`
+# (read by bench_mha; num_heads=32 default => kv=2) and `num_kv_heads=2` (read by
+# the ragged bench; num_q_heads=32 default => group=16). Each bench ignores the
+# other's unused define, so one cell drives both vehicles. Bench at seq=4 =>
+# group*seq=64 = one fully-packed BM=64 tile. `run_wse*` force Layout-E
+# (FA4_FORCE_CONFIG=3) at P in {1,2,4,6,8,10,16} to find the min-keys/partition
+# crossovers; the `*_g16` comparators force Layout-G / baseline / auto at the
+# same g16 shape for the ladder-boundary check.
+_G16 = [
+    "-D",
+    "group=16",
+    "-D",
+    "num_kv_heads=2",
+]
+
+# Also group=16 but with num_q_heads=16 / num_kv_heads=1 (16 q-heads fused onto
+# 1 kv-head), the absolute head counts matter: num_heads_sched = num_kv_heads
+# sets the split-K grid (= tiles * num_kv_heads * batch), so 1 kv-head gives a
+# smaller grid than `_G16`'s 2 and the wave-fit guard admits a larger cluster P.
+# Ragged bench only (num_q_heads/num_kv_heads are its defines; bench_mha ignores
+# them and keeps its own defaults, so its variant of this cell is unused).
+_G16_1KV = [
+    "-D",
+    "num_q_heads=16",
+    "-D",
+    "num_kv_heads=1",
+]
+
 _FA4_WS_CELLS = {
     "run_auto": [
         "-D",
@@ -375,6 +426,67 @@ _FA4_WS_CELLS = {
         "-D",
         "FA4_FORCE_CONFIG=2",
     ],
+    # Layout-E (BM=64) forced single-CTA, P in {1,2,4,6,8,10,16}.
+    "run_wse": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+    ] + _G16,
+    "run_wse_p2": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=2",
+    ] + _G16,
+    "run_wse_p4": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=4",
+    ] + _G16,
+    "run_wse_p6": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=6",
+    ] + _G16,
+    "run_wse_p8": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=8",
+    ] + _G16,
+    "run_wse_p10": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=10",
+    ] + _G16,
+    "run_wse_p16": [
+        "-D",
+        "FA4_FORCE_CONFIG=3",
+        "-D",
+        "FA4_WS_SPLITK_FORCE=16",
+    ] + _G16,
+    # g16 comparators for the ladder-boundary check (Layout-E vs these at seq=4).
+    "run_wsg_g16": [
+        "-D",
+        "FA4_FORCE_CONFIG=1",
+    ] + _G16,
+    "run_base_g16": [
+        "-D",
+        "FA4_FORCE_CONFIG=2",
+    ] + _G16,
+    "run_auto_g16": [
+        "-D",
+        "FA4_FORCE_CONFIG=0",
+    ] + _G16,
+    # Auto dispatch at num_q_heads=16 / num_kv_heads=1 for a "vs main" sweep:
+    # on this branch (seq=4 => single BM=64 tile) auto routes to Layout-E; on
+    # main (no Layout-E) it routes to 1Q (BM=128). Same cell, both behaviors.
+    "run_auto_g16_1kv": [
+        "-D",
+        "FA4_FORCE_CONFIG=0",
+    ] + _G16_1KV,
 }
 
 # Deps/data/env mirror the generic gpu/** glob (above) that already compiles these srcs.
@@ -394,7 +506,7 @@ _FA4_WS_DEPS = [
         name = "gpu/nn/bench_mha.mojo.%s_d%d" % (suffix, depth),
         size = "enormous",
         srcs = ["gpu/nn/bench_mha.mojo"],
-        copts = copts + [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + copts + [
             "-D",
             "depth=%d" % depth,
         ],
@@ -431,7 +543,7 @@ _FA4_WS_DEPS = [
         name = "gpu/nn/bench_kv_cache_ragged_flash_attention.mojo.%s_d%d" % (suffix, depth),
         size = "enormous",
         srcs = ["gpu/nn/bench_kv_cache_ragged_flash_attention.mojo"],
-        copts = copts + [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + copts + [
             "-D",
             "head_dim=%d" % depth,
         ],

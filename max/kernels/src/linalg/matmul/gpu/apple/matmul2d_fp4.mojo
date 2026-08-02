@@ -60,10 +60,10 @@ post-matmul multiply by the graph lowering), identically to the committed path.
 """
 
 from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
-from std.gpu.compute.arch.mma_apple import _mma_apple_transposable
-from std.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils import IndexList
 
 from layout import TileTensor, Idx
@@ -363,7 +363,7 @@ struct Fp4WeightLoader[
         self,
         arow0: Int,
         k0: Int,
-        a_rc: InlineArray[IndexList[2], 8],
+        a_rc: Array[IndexList[2], 8],
     ) -> SIMD[
         Self.in_type, 8
     ]:
@@ -591,9 +591,9 @@ struct Matmul2dFp4[
         a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
         packed: TileTensor[DType.uint8, packed_layout, ImmutAnyOrigin],
         scales: TileTensor[DType.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
-        M: Int,
-        N: Int,
-        K: Int,
+        M_arg: Int32,
+        N_arg: Int32,
+        K_arg: Int32,
     ):
         """W4A16 kernel entry. C `(M, N)`, A `(M, K)` bf16, packed `(N, K//2)`,
         scales `(N, ceil(K/16))`. Interior fast path (tile-aligned N, K%16==0).
@@ -611,10 +611,13 @@ struct Matmul2dFp4[
                 (uint8, lo-nibble first).
             scales: FP8-E4M3 block-scale `TileTensor` view with shape
                 `(N, ceil(K/16))`.
-            M: Number of rows in the activation and the output.
-            N: Number of columns in the output and rows of the weight.
-            K: Reduction dimension; inner size of `a` and the weight.
+            M_arg: Number of rows in the activation and the output.
+            N_arg: Number of columns in the output and rows of the weight.
+            K_arg: Reduction dimension; inner size of `a` and the weight.
         """
+        var M = Int(M_arg)
+        var N = Int(N_arg)
+        var K = Int(K_arg)
         var lane = Int(lane_id())
         var sg_id = Int(thread_idx.x) // WARP_SIZE
         var sg_m = sg_id // Self.num_sg_n
@@ -628,11 +631,11 @@ struct Matmul2dFp4[
         )
 
         # A frag: base map. B frag: transpose_right map (n, k) w/ k contiguous.
-        var a_rc = InlineArray[IndexList[2], 8](uninitialized=True)
+        var a_rc = Array[IndexList[2], 8](uninitialized=True)
         comptime for i in range(8):
             a_rc[i] = a_frag_coord(lane, i)
         # C store: UNCHANGED base bc map (transpose_right permutes only B).
-        var c_rc = InlineArray[IndexList[2], 16](uninitialized=True)
+        var c_rc = Array[IndexList[2], 16](uninitialized=True)
         comptime for i in range(16):
             c_rc[i] = bc_frag_coord(lane, i)
 
@@ -648,16 +651,14 @@ struct Matmul2dFp4[
             Self.in_type, a_layout, packed_layout, scale_layout
         ].from_kernel_args(a, packed, scales, M, N, K)
 
-        var accs = InlineArray[SIMD[DType.float32, 16], Self.tm * Self.tn](
+        var accs = Array[SIMD[DType.float32, 16], Self.tm * Self.tn](
             uninitialized=True
         )
         comptime for t in range(Self.tm * Self.tn):
             accs[t] = SIMD[DType.float32, 16](0)
 
-        var a_frag = InlineArray[SIMD[DType.bfloat16, 8], Self.tm](
-            uninitialized=True
-        )
-        var b_frag = InlineArray[SIMD[DType.bfloat16, 16], Self.tn](
+        var a_frag = Array[SIMD[DType.bfloat16, 8], Self.tm](uninitialized=True)
+        var b_frag = Array[SIMD[DType.bfloat16, 16], Self.tn](
             uninitialized=True
         )
 
@@ -711,9 +712,9 @@ struct Matmul2dFp4[
         a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
         packed: TileTensor[DType.uint8, packed_layout, ImmutAnyOrigin],
         scales: TileTensor[DType.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
-        M: Int,
-        N: Int,
-        K: Int,
+        M_arg: Int32,
+        N_arg: Int32,
+        K_arg: Int32,
     ):
         """Cooperative-decode W4A16: coalesced FP4 decode -> SMEM -> register B.
 
@@ -748,10 +749,13 @@ struct Matmul2dFp4[
                 (uint8, lo-nibble first).
             scales: FP8-E4M3 block-scale `TileTensor` view with shape
                 `(N, ceil(K/16))`.
-            M: Number of rows in the activation and the output.
-            N: Number of columns in the output and rows of the weight.
-            K: Reduction dimension; inner size of `a` and the weight.
+            M_arg: Number of rows in the activation and the output.
+            N_arg: Number of columns in the output and rows of the weight.
+            K_arg: Reduction dimension; inner size of `a` and the weight.
         """
+        var M = Int(M_arg)
+        var N = Int(N_arg)
+        var K = Int(K_arg)
         comptime BN = Self.BN
         comptime BK = Self.BK
         comptime SF = Self.SF
@@ -779,19 +783,19 @@ struct Matmul2dFp4[
         # TileTensor view so the cooperative decode store and the per-SG B read
         # are TileTensor indexed (`b_view[n, col]`), in-bounds by construction --
         # no raw SMEM pointer arithmetic.
-        var b_sm = stack_allocation[
+        var b_sm = unsafe_stack_allocation[
             BN * BK, Scalar[Self.in_type], address_space=AddressSpace.SHARED
         ]()
         var b_view = TileTensor(b_sm, Layout(Coord(BN, BK), Coord(BK, Idx[1])))
 
-        var a_rc = InlineArray[IndexList[2], 8](uninitialized=True)
+        var a_rc = Array[IndexList[2], 8](uninitialized=True)
         comptime for i in range(8):
             a_rc[i] = a_frag_coord(lane, i)
         # B fragment (n, k) local coords under transpose_right; k contiguous.
-        var b_nk = InlineArray[IndexList[2], 16](uninitialized=True)
+        var b_nk = Array[IndexList[2], 16](uninitialized=True)
         comptime for i in range(16):
             b_nk[i] = bt_frag_coord(lane, i)
-        var c_rc = InlineArray[IndexList[2], 16](uninitialized=True)
+        var c_rc = Array[IndexList[2], 16](uninitialized=True)
         comptime for i in range(16):
             c_rc[i] = bc_frag_coord(lane, i)
 
@@ -801,16 +805,14 @@ struct Matmul2dFp4[
             Self.in_type, a_layout, packed_layout, scale_layout
         ].from_kernel_args(a, packed, scales, M, N, K)
 
-        var accs = InlineArray[SIMD[DType.float32, 16], Self.tm * Self.tn](
+        var accs = Array[SIMD[DType.float32, 16], Self.tm * Self.tn](
             uninitialized=True
         )
         comptime for t in range(Self.tm * Self.tn):
             accs[t] = SIMD[DType.float32, 16](0)
 
-        var a_frag = InlineArray[SIMD[DType.bfloat16, 8], Self.tm](
-            uninitialized=True
-        )
-        var b_frag = InlineArray[SIMD[DType.bfloat16, 16], Self.tn](
+        var a_frag = Array[SIMD[DType.bfloat16, 8], Self.tm](uninitialized=True)
+        var b_frag = Array[SIMD[DType.bfloat16, 16], Self.tn](
             uninitialized=True
         )
 
@@ -987,9 +989,9 @@ def enqueue_matmul2d_fp4[
         a.as_immut(),
         packed.as_immut(),
         scales.as_immut(),
-        m,
-        n,
-        k,
+        Int32(m),
+        Int32(n),
+        Int32(k),
         grid_dim=(grid_n, grid_m),
         block_dim=(MM.THREADS_PER_BLOCK),
     )
@@ -1110,9 +1112,9 @@ def enqueue_matmul2d_fp4_smem[
         a.as_immut(),
         packed.as_immut(),
         scales.as_immut(),
-        m,
-        n,
-        k,
+        Int32(m),
+        Int32(n),
+        Int32(k),
         grid_dim=(grid_n, grid_m),
         block_dim=(MM.THREADS_PER_BLOCK),
     )

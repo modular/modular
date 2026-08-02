@@ -20,7 +20,7 @@
 # CHECK-LABEL: test_negative_index_list_insert
 def main():
     print("== test_negative_index_list_insert")
-    var l = [1, 2, 3]
+    var l: List = [1, 2, 3]
     # CHECK: test_negative_index_list_insert.mojo:25:13: Assert Error: index -1 is out of bounds, valid range is 0 to 3
     l.insert(-1, 99)
     # CHECK-NOT: is never reached

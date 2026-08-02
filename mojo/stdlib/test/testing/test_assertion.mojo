@@ -82,13 +82,13 @@ def test_assert_equal_with_simd() raises:
 
 def test_assert_equal_with_list() raises:
     assert_equal(
-        ["This", "is", "Mojo"],
+        List(["This", "is", "Mojo"]),
         List[String](["This", "is", "Mojo"]),
     )
 
     with assert_raises():
         assert_equal(
-            ["This", "is", "Mojo"],
+            List(["This", "is", "Mojo"]),
             List[String](["This", "is", "mojo"]),
         )
 
@@ -226,8 +226,8 @@ def test_assert_equal_stringslice() raises:
 
     def _build(value: StaticString, start: Int, end: Int) -> StaticString:
         return StaticString(
-            unsafe_from_utf8=Span(
-                unsafe_ptr=value.unsafe_ptr() + start,
+            unsafe_from_utf8=Span[Byte, ImmStaticOrigin](
+                unsafe_ptr=value.unsafe_ptr().unsafe_offset(start),
                 length=end - start,
             )
         )
@@ -236,15 +236,15 @@ def test_assert_equal_stringslice() raises:
         imm value: String, start: Int, end: Int
     ) -> StringSlice[origin_of(value)]:
         return StringSlice[origin_of(value)](
-            unsafe_from_utf8=Span(
-                unsafe_ptr=value.unsafe_ptr() + start,
+            unsafe_from_utf8=Span[Byte, origin_of(value)](
+                unsafe_ptr=value.unsafe_ptr().unsafe_offset(start),
                 length=end - start,
             )
         )
 
-    l1 = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]
-    l2 = [_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12)]
-    l3 = [_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12)]
+    l1: List = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]
+    l2: List = [_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12)]
+    l3: List = [_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12)]
     assert_equal(l1, l1)
     assert_equal(l2, l2)
     assert_equal(l1, l2)

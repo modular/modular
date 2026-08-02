@@ -19,20 +19,22 @@ from .constants import CONTAINER_SIZE, MAXIMUM_UINT64_AS_STRING
 
 def standardize_string_slice(
     x: StringSlice[mut=False, _],
-) -> InlineArray[Byte, CONTAINER_SIZE]:
+) -> Array[Byte, CONTAINER_SIZE]:
     """Put the input string in an inline array, aligned to the right and padded
     with "0" on the left.
     """
-    var standardized_x = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
+    var standardized_x = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
     var std_x_ptr = standardized_x.unsafe_ptr()
     var x_len = x.byte_length()
     unsafe_memcpy(
-        dest=std_x_ptr + CONTAINER_SIZE - x_len, src=x.unsafe_ptr(), count=x_len
+        dest=std_x_ptr.unsafe_offset(CONTAINER_SIZE - x_len),
+        src=x.unsafe_ptr(),
+        count=x_len,
     )
     return standardized_x^
 
 
-# The idea is to end up with a InlineArray of size
+# The idea is to end up with an Array of size
 # 24, which is enough to store the largest integer
 # that can be represented in unsigned 64 bits (size 20), and
 # is also SIMD friendly because divisible by 8, 4, 2, 1.
@@ -49,13 +51,11 @@ def to_integer(x: StringSlice[mut=False, _]) raises -> UInt64:
     return to_integer(standardize_string_slice(x))
 
 
-def to_integer(
-    standardized_x: InlineArray[Byte, CONTAINER_SIZE]
-) raises -> UInt64:
+def to_integer(standardized_x: Array[Byte, CONTAINER_SIZE]) raises -> UInt64:
     """Takes a inline array containing the ASCII representation of a number.
 
     Notes:
-        It must be padded with "0" on the left. Using an InlineArray makes
+        It must be padded with "0" on the left. Using an Array makes
         this SIMD friendly.
 
         We assume there are no leading or trailing whitespaces, no sign, no
@@ -68,7 +68,7 @@ def to_integer(
     var std_x_ptr = standardized_x.unsafe_ptr()
     # This could be done with simd if we see it's a bottleneck.
     for i in range(CONTAINER_SIZE):
-        if not (Byte(ord("0")) <= std_x_ptr[i] <= Byte(ord("9"))):
+        if not (Byte(ord("0")) <= std_x_ptr[unsafe_offset=i] <= Byte(ord("9"))):
             var num_str = StringSlice(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=std_x_ptr, length=len(standardized_x)
@@ -115,19 +115,23 @@ def to_integer(
     comptime vector_with_exponents = get_vector_with_exponents()
 
     comptime for i in range(CONTAINER_SIZE // simd_width):
-        var ascii_vector = (std_x_ptr + i * simd_width).load[width=simd_width]()
+        var ascii_vector = std_x_ptr.unsafe_offset(i * simd_width).unsafe_load[
+            width=simd_width
+        ]()
         var as_digits = ascii_vector - SIMD[DType.uint8, simd_width](ord("0"))
         var as_digits_index = as_digits.cast[DType.uint64]()
-        comptime vector_slice = (
-            vector_with_exponents.unsafe_ptr() + i * simd_width
-        ).load[width=simd_width]()
+        comptime vector_slice = vector_with_exponents.unsafe_ptr().unsafe_offset(
+            i * simd_width
+        ).unsafe_load[
+            width=simd_width
+        ]()
         accumulator += as_digits_index * vector_slice
     return UInt64(Int(accumulator.reduce_add()))
 
 
-def get_vector_with_exponents() -> InlineArray[UInt64, CONTAINER_SIZE]:
+def get_vector_with_exponents() -> Array[UInt64, CONTAINER_SIZE]:
     """Returns (0, 0, 0, 0, 10**19, 10**18, 10**17, ..., 10, 1)."""
-    var result = InlineArray[UInt64, CONTAINER_SIZE](uninitialized=True)
+    var result = Array[UInt64, CONTAINER_SIZE](uninitialized=True)
     for i in range(4, CONTAINER_SIZE):
         result[i] = UInt64(10) ** UInt64(CONTAINER_SIZE - i - 1)
     return result^

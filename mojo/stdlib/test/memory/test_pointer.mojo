@@ -67,7 +67,7 @@ def test_write_repr_to() raises:
         is_repr=True,
     )
     check_write_to(
-        Pointer(to=n).as_immutable(),
+        Pointer(to=n).as_imm(),
         contains=(
             "Pointer[mut=False, SIMD[DType.int, 1],"
             " address_space=AddressSpace.GENERIC](0x"
@@ -126,8 +126,8 @@ def test_pointer_to() raises:
 
 # Test pointer merging with ternary operation.
 def test_merge() raises:
-    var a = [1, 2, 3]
-    var b = [4, 5, 6]
+    var a: List = [1, 2, 3]
+    var b: List = [4, 5, 6]
 
     def inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
         var either = Pointer(to=a) if cond else Pointer(to=b)
@@ -157,7 +157,7 @@ def test_nicheable() raises:
 
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
-def _test_get_immutable() raises -> Int:
+def _test_get_imm() raises -> Int:
     def foo(
         x: Pointer[mut=False, Int, ...], y: Pointer[mut=False, Int, ...]
     ) -> Int:
@@ -165,22 +165,6 @@ def _test_get_immutable() raises -> Int:
 
     var x = Int(0)
     return foo(Pointer(to=x), Pointer(to=x))
-
-
-# TODO(MOCO-4334)
-# def origin_superset_conversion(
-#     a: String, b: String, c: Bool
-# ) -> Pointer[String, origin_of(a, b)]:
-#     # These pointers should implicitly convert.
-#     if c:
-#         return Pointer(to=a)
-#     else:
-#         return Pointer(to=b)
-
-
-# def test_implicit_conversion_to_super_origin() raises:
-#     # Parse-time only test, but call it anyway.
-#     _ = origin_superset_conversion("", "bar", True)
 
 
 def main() raises:

@@ -25,7 +25,7 @@ from comm.allreduce import (
 )
 import comm.vendor.ccl as vendor_ccl
 from internal_utils import human_readable_size
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
@@ -84,7 +84,7 @@ def allreduce_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -127,7 +127,7 @@ def allreduce_test[
     comptime InTensorType = TileTensor[
         dtype, type_of(row_major(length)), ImmutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, num_buffers](uninitialized=True)
+    var in_tensors = Array[InTensorType, num_buffers](uninitialized=True)
 
     if use_multimem:
         var multicast_buf = DeviceMulticastBuffer[dtype](
@@ -155,7 +155,7 @@ def allreduce_test[
     comptime OutTensorType = TileTensor[
         dtype, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         out_tensors[i] = TileTensor(out_dev[i], row_major(length))
 
@@ -220,7 +220,7 @@ def allreduce_test[
             comptime OutVendorTileType = TileTensor[
                 dtype, type_of(row_major(length)), MutAnyOrigin
             ]
-            var out_tensors_vendor = InlineArray[OutVendorTileType, ngpus](
+            var out_tensors_vendor = Array[OutVendorTileType, ngpus](
                 uninitialized=True
             )
             for i in range(ngpus):
@@ -331,7 +331,7 @@ def allreduce_naive_test() raises -> None:
     comptime InTensorType = TileTensor[
         DType.float32, type_of(row_major(length)), ImmutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
+    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tensors[i] = TileTensor(
             rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
@@ -343,7 +343,7 @@ def allreduce_naive_test() raises -> None:
     comptime OutTensorType = TileTensor[
         DType.float32, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         out_tensors[i] = TileTensor(out_dev[i], row_major(length))
 

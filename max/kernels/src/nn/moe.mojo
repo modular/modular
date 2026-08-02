@@ -16,7 +16,7 @@ from std.collections import OptionalReg
 
 from std.math import align_up, ceildiv
 from std.math.uutils import umod
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from std.atomic import Atomic
 from std.sys import has_apple_gpu_accelerator, is_apple_gpu
@@ -33,13 +33,13 @@ from std.gpu import (
     lane_id,
     thread_idx,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
 )
-from std.gpu.host.info import is_gpu
+from max.gpu.host.info import is_gpu
 from layout import (
     Coord,
     Idx,
@@ -48,7 +48,7 @@ from layout import (
     row_major,
     stack_allocation as tensor_alloc,
 )
-from std.runtime.tracing import Trace, TraceLevel
+from max.runtime.tracing import Trace, TraceLevel
 
 from std.utils.index import IndexList, StaticTuple
 from std.builtin.dtype import _uint_type_of_width
@@ -903,12 +903,12 @@ def group_limited_router_kernel[
 
     var num_tokens = expert_scores.dim(0)
 
-    var shared_mem = stack_allocation[
+    var shared_mem = unsafe_stack_allocation[
         topk_group * n_experts_per_tok,
         TopK_2[scores_type],
         address_space=AddressSpace.SHARED,
     ]()
-    var selected_group = stack_allocation[
+    var selected_group = unsafe_stack_allocation[
         topk_group, DType.int32, address_space=AddressSpace.SHARED
     ]()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
@@ -1211,7 +1211,7 @@ def single_group_router_kernel[
     var warp_id = warp_id()
     var lane_id = lane_id()
 
-    var shared_mem = stack_allocation[
+    var shared_mem = unsafe_stack_allocation[
         total_smem,
         TopK_2[scores_type],
         address_space=AddressSpace.SHARED,
@@ -1428,7 +1428,7 @@ def single_group_router_eplb_kernel[
     var l_id = lane_id()
 
     # ---- existing TopK_2 SMEM ----
-    var shared_mem = stack_allocation[
+    var shared_mem = unsafe_stack_allocation[
         total_smem,
         TopK_2[scores_type],
         address_space=AddressSpace.SHARED,
@@ -1880,13 +1880,13 @@ def eplb_remap_kernel[
 
     var tid = Int(thread_idx.x)
 
-    var smem_cnt = stack_allocation[
+    var smem_cnt = unsafe_stack_allocation[
         num_log,
         DType.int32,
         address_space=AddressSpace.SHARED,
     ]()
 
-    var smem_phy = stack_allocation[
+    var smem_phy = unsafe_stack_allocation[
         num_log * max_replicas,
         DType.int32,
         address_space=AddressSpace.SHARED,

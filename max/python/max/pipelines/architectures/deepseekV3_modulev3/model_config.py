@@ -15,20 +15,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.experimental.sharding import DeviceMesh
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, spec_decode_cache_slack
 from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -37,10 +41,18 @@ from typing_extensions import Self, override
 class DeepseekV3Config(ArchConfigWithKVCache):
     """Configuration for DeepseekV3 models (single-GPU, ModuleV3)."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+    }
+
     # MAX specific fields
     dtype: DType
     kv_params: KVCacheParams
     devices: list[DeviceRef]
+    quantization_encoding: SupportedEncoding | None = None
 
     mesh: DeviceMesh | None = None
     """Device mesh for sharding across multiple devices."""
@@ -171,9 +183,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
                 " config.json file."
             )
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding, model_config.kv_cache.kv_cache_format
@@ -231,7 +243,8 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             first_k_dense_replace=config.first_k_dense_replace,
             norm_topk_prob=config.norm_topk_prob,
             hidden_act=config.hidden_act,
-            max_position_embeddings=config.max_position_embeddings,
+            max_position_embeddings=config.max_position_embeddings
+            + spec_decode_cache_slack(kv_params),
             max_seq_len=max_seq_len,
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
@@ -243,4 +256,5 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             attention_dropout=config.attention_dropout,
             graph_mode=graph_mode,
             data_parallel_degree=model_config.data_parallel_degree,
+            quantization_encoding=quantization_encoding,
         )

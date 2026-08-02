@@ -38,6 +38,10 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from max.benchmark import (
+    bench_multicontext,
+    bencher_iter_custom,
+)
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.allreduce import allreduce, elementwise_epilogue_type
 from comm.allreduce_residual_rmsnorm import (
@@ -46,7 +50,7 @@ from comm.allreduce_residual_rmsnorm import (
 )
 from std.collections import Optional
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 
 from layout import Coord, TileTensor, coord_to_index_list, row_major
@@ -68,7 +72,7 @@ def _verify_results[
     signal_buffers: List[DeviceBuffer[DType.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -101,8 +105,8 @@ def _verify_results[
     comptime OutTensorType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
-    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
+    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     comptime for _i in range(ngpus):
         in_tensors[_i] = TileTensor(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -300,7 +304,7 @@ def _verify_add_results[
     signal_buffers: List[DeviceBuffer[DType.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -335,8 +339,8 @@ def _verify_add_results[
     comptime OutTensorType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
-    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
+    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     comptime for _i in range(ngpus):
         in_tensors[_i] = TileTensor(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -577,7 +581,7 @@ def bench_allreduce_rmsnorm_fp8[
 
     # Signal buffers.
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
@@ -621,8 +625,8 @@ def bench_allreduce_rmsnorm_fp8[
     comptime OutTensorType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
-    var ar_out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
+    var ar_out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tensors[i] = TileTensor(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -720,25 +724,25 @@ def bench_allreduce_rmsnorm_fp8[
 
     # Capture per-GPU pointers for closures.
     var residual_ptr_base = cb_residual.unsafe_ptr()
-    var fused_fp8_out_ptrs = InlineArray[
+    var fused_fp8_out_ptrs = Array[
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fused_scales_ptrs = InlineArray[
+    var fused_scales_ptrs = Array[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fully_fused_fp8_out_ptrs = InlineArray[
+    var fully_fused_fp8_out_ptrs = Array[
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fully_fused_scales_ptrs = InlineArray[
+    var fully_fused_scales_ptrs = Array[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fused_add_fp8_out_ptrs = InlineArray[
+    var fused_add_fp8_out_ptrs = Array[
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fused_add_scales_ptrs = InlineArray[
+    var fused_add_scales_ptrs = Array[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var residual_output_ptrs = InlineArray[
+    var residual_output_ptrs = Array[
         UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
     for i in range(ngpus):
@@ -788,9 +792,10 @@ def bench_allreduce_rmsnorm_fp8[
                 ctx_inner,
             )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
-    b.bench_multicontext[bench_allreduce_iter](
+    bench_multicontext[bench_allreduce_iter](
+        b,
         list_of_ctx,
         BenchId("allreduce_only", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -858,9 +863,10 @@ def bench_allreduce_rmsnorm_fp8[
                     ),
                 )
 
-            bench.iter_custom[call_fn](ctx)
+            bencher_iter_custom[call_fn](bench, ctx)
 
-        b.bench_multicontext[bench_ar_fused_iter](
+        bench_multicontext[bench_ar_fused_iter](
+            b,
             list_of_ctx,
             BenchId(
                 "allreduce_then_fused_rmsnorm_fp8",
@@ -905,9 +911,10 @@ def bench_allreduce_rmsnorm_fp8[
                 ctx_inner,
             )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
-    b.bench_multicontext[bench_fully_fused_iter](
+    bench_multicontext[bench_fully_fused_iter](
+        b,
         list_of_ctx,
         BenchId(
             "fused_allreduce_rmsnorm_fp8",
@@ -1004,9 +1011,10 @@ def bench_allreduce_rmsnorm_fp8[
                     ),
                 )
 
-            bench.iter_custom[call_fn](ctx)
+            bencher_iter_custom[call_fn](bench, ctx)
 
-        b.bench_multicontext[bench_ar_add_fused_iter](
+        bench_multicontext[bench_ar_add_fused_iter](
+            b,
             list_of_ctx,
             BenchId(
                 "allreduce_epilogue_add_then_fused_rmsnorm_fp8",
@@ -1059,9 +1067,10 @@ def bench_allreduce_rmsnorm_fp8[
                 ctx_inner,
             )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom[call_fn](bench, ctx)
 
-    b.bench_multicontext[bench_fused_add_iter](
+    bench_multicontext[bench_fused_add_iter](
+        b,
         list_of_ctx,
         BenchId(
             "fused_allreduce_residual_rmsnorm_fp8",

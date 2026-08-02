@@ -313,8 +313,8 @@ def memcpy[
     T: AnyType
 ](
     *,
-    dest: OptionalUnsafePointer[mut=True, T, _],
-    src: OptionalUnsafePointer[T, _],
+    dest: OptionalPointer[mut=True, T, _],
+    src: OptionalPointer[T, _],
     count: Int,
 ):
     """Copy `count * size_of[T]()` bytes from src to dest.
@@ -381,12 +381,7 @@ def unsafe_memmove[
 @deprecated(use=unsafe_memmove)
 def memmove[
     T: AnyType
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=False, T, _],
-    count: Int,
-):
+](*, dest: Pointer[mut=True, T, _], src: Pointer[mut=False, T, _], count: Int,):
     """Copy `count * size_of[T]()` bytes from src to dest.
 
     Unlike `memcpy`, the memory regions are allowed to overlap.
@@ -420,6 +415,11 @@ def _memset_impl(ptr: Pointer[mut=True, Byte, ...], value: Byte, count: Int):
 def unsafe_memset(ptr: Pointer[mut=True, ...], value: Byte, count: Int):
     """Fills memory with the given value.
 
+    For memory in the generic address space, prefer the safe, bounds-carrying
+    `Span.fill()` (for example, `my_span.fill(value)` on a `Span[Byte]`). This
+    raw entry point remains for pointers in non-generic address spaces (for
+    example, GPU shared or local memory), which `Span` cannot yet represent.
+
     Args:
         ptr: Pointer to the beginning of the memory block to fill.
         value: The value to fill with.
@@ -449,6 +449,11 @@ def memset(ptr: Pointer[mut=True, ...], value: Byte, count: Int):
 @always_inline
 def unsafe_memset_zero(ptr: Pointer[mut=True, ...], count: Int):
     """Fills memory with zeros.
+
+    For memory in the generic address space, prefer the safe, bounds-carrying
+    `Span.fill(0)`. This raw entry point remains for pointers in non-generic
+    address spaces (for example, GPU shared or local memory), which `Span`
+    cannot yet represent.
 
     Args:
         ptr: Pointer to the beginning of the memory block to fill.
@@ -569,7 +574,13 @@ def _free(ptr: Pointer[mut=True, ...]):
 @always_inline
 def _free(ptr: OptionalPointer[mut=True, ...]):
     comptime if is_gpu():
-        libc.free(unsafe_cast[Type=NoneType, origin=MutUntrackedOrigin](ptr))
+        # SAFETY: `Optional[Pointer]`'s niche layout is identical regardless of
+        # pointee type, so reinterpret to the erased type `libc.free` expects.
+        libc.free(
+            Pointer(to=ptr).unsafe_bitcast[
+                OptionalPointer[mut=True, NoneType, MutAnyOrigin]
+            ]()[]
+        )
     else:
         comptime KgenPointerType = type_of(ptr).T._mlir_type
         # SAFETY: Due to the niche optimization, `Optional[Pointer]` is
@@ -625,7 +636,7 @@ def is_trivially_deletable[T: AnyType]() -> Bool:
 
     A destructor is trivial when the compiler generates it and all of `T`'s
     fields are themselves trivially destructible. In practice this means
-    `__del__` is a no-op. A non-`ImplicitlyDeletable` (linear) type returns `False`
+    `__deinit__` is a no-op. A non-`ImplicitlyDeletable` (linear) type returns `False`
 
     Parameters:
         T: The type to check.
@@ -710,12 +721,7 @@ def uninit_move_n[
     //,
     *,
     overlapping: Bool,
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=True, T, _],
-    count: Int,
-):
+](*, dest: Pointer[mut=True, T, _], src: Pointer[mut=True, T, _], count: Int,):
     """Move `count` values from `src` into memory at `dest`.
 
     This function transfers ownership of `count` values from the source memory
@@ -827,12 +833,7 @@ def uninit_copy_n[
     //,
     *,
     overlapping: Bool,
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=False, T, _],
-    count: Int,
-):
+](*, dest: Pointer[mut=True, T, _], src: Pointer[mut=False, T, _], count: Int,):
     """Copy `count` values from `src` into memory at `dest`.
 
     This function creates copies of `count` values from the source memory in the
@@ -951,7 +952,7 @@ def destroy_n[
 
 @always_inline("nodebug")
 def forget_deinit[T: AnyType](var value: T):
-    """Takes ownership and skips running `__del__` deinitializers.
+    """Takes ownership and skips running `__deinit__` deinitializers.
 
     This is a low-level operation, and should not be used unless necessary.
     Consider if refactoring to avoid needing this function would be more
@@ -977,8 +978,8 @@ def forget_deinit[T: AnyType](var value: T):
 
     @fieldwise_init
     struct Noisy:
-        def __del__(deinit self):
-            print("@ Noisy.__del__: Noisy is being deleted!")
+        def __deinit__(deinit self):
+            print("@ Noisy.__deinit__: Noisy is being deleted!")
 
     def main():
         var noisy = Noisy()
@@ -997,18 +998,18 @@ def forget_deinit[T: AnyType](var value: T):
     struct Parent:
         var child: Child
 
-        def __del__(deinit self):
-            print("@ Parent.__del__")
+        def __deinit__(deinit self):
+            print("@ Parent.__deinit__")
 
     @fieldwise_init
     struct Child(Movable):
-        def __del__(deinit self):
-            print("@ Child.__del__")
+        def __deinit__(deinit self):
+            print("@ Child.__deinit__")
 
     def main():
         var parent = Parent(Child())
 
-        # Neither Parent.__del__ nor Child.__del__ is called.
+        # Neither Parent.__deinit__ nor Child.__deinit__ is called.
         forget_deinit(parent^)
     ```
     """

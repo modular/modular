@@ -15,6 +15,7 @@ from std.collections import Set
 from std.random import random_ui64, seed
 from std.sys import get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -22,7 +23,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -271,7 +272,7 @@ def execute_kv_cache_ragged_matmul[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     m.bench_function[bench_func](
         BenchId(

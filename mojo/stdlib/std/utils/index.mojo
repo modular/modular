@@ -755,7 +755,9 @@ def Index[
 
 
 @always_inline
-def product[size: Int](tuple: IndexList[size, ...], end_idx: Int = size) -> Int:
+def product[
+    size: Int
+](tuple: IndexList[size, element_type=_], end_idx: Int = size) -> Int:
     """Computes a product of values in the tuple up to the given index.
 
     Parameters:
@@ -774,7 +776,7 @@ def product[size: Int](tuple: IndexList[size, ...], end_idx: Int = size) -> Int:
 @always_inline
 def product[
     size: Int
-](tuple: IndexList[size, ...], start_idx: Int, end_idx: Int) -> Int:
+](tuple: IndexList[size, element_type=_], start_idx: Int, end_idx: Int) -> Int:
     """Computes a product of values in the tuple in the given index range.
 
     Parameters:

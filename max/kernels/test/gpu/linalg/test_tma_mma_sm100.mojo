@@ -19,12 +19,12 @@ from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import block_rank_in_cluster
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, lane_id, thread_idx, warp_id as get_warp_id
 from std.gpu.memory import external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
@@ -114,8 +114,9 @@ def tma_umma_kernel_ss[
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    var num_iters = Int(num_iters_dev)
     comptime assert num_threads == 128 or num_threads == 256
     comptime assert (
         a_type == b_type and a_type == DType.bfloat16
@@ -193,7 +194,7 @@ def tma_umma_kernel_ss[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime c_frag_size = MMA_M * MMA_N // num_threads
-    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
+    var c_frag: Array[Scalar[accum_type], c_frag_size]
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
@@ -383,8 +384,9 @@ def tma_umma_kernel_ts[
     a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    var num_iters = Int(num_iters_dev)
     comptime assert num_threads == 128 or num_threads == 256
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -441,7 +443,7 @@ def tma_umma_kernel_ts[
     var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 
     comptime c_frag_size = MMA_M * MMA_N // num_threads
-    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
+    var c_frag: Array[Scalar[accum_type], c_frag_size]
 
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = b_expected_bytes
@@ -505,9 +507,7 @@ def tma_umma_kernel_ts[
         warp_id = 2 * warp_id_r + warp_id_q
 
     comptime a_frag_size = BM * BK * size_of[a_type]() // 4 // num_threads
-    var a_frag = InlineArray[Scalar[DType.uint32], a_frag_size](
-        uninitialized=True
-    )
+    var a_frag = Array[Scalar[DType.uint32], a_frag_size](uninitialized=True)
 
     for i in range(num_iters):
         # Load A from global memory to registers.
@@ -762,7 +762,7 @@ def test_tma_umma[
             a_tma_op,
             b_tma_op,
             c.device_tensor(),
-            K // BK,
+            Int32(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
@@ -793,7 +793,7 @@ def test_tma_umma[
             a.device_tensor(),
             b_tma_op,
             c.device_tensor(),
-            K // BK,
+            Int32(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,

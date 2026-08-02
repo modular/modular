@@ -19,8 +19,9 @@ from std.sys import (
     simd_width_of,
 )
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, TileTensor, row_major
 from nn.softmax import softmax, softmax_with_temperature
@@ -73,7 +74,7 @@ def bench_softmax_gpu[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     b.bench_function[bench_fn](
         BenchId("softmax", input_id=String(fn_name, "/", dtype, "/", shape))
@@ -120,7 +121,7 @@ def bench_softmax_with_temperature_gpu[
         def kernel_launch(ctx: DeviceContext) raises:
             softmax_with_temperature(ctx, data_buf, out_buf, temp)
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     b.bench_function[bench_fn](
         BenchId(

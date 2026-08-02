@@ -25,8 +25,8 @@ ranges and alignment requirements differ between standard and scaled kernels.
 """
 
 from std.collections.set import Set
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 from std.itertools.itertools import product
 from layout.tensor_core import get_mma_shape
 from std.utils.index import Index, IndexList
@@ -42,7 +42,7 @@ from linalg.fp4_utils import (
     MXFP4_SF_VECTOR_SIZE,
     MXFP8_SF_VECTOR_SIZE,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 @fieldwise_init("implicit")

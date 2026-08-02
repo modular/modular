@@ -217,7 +217,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
     Returns `False` for any type that is not `ImplicitlyDeletable` (for example
     `@explicit_destroy` types) or that has a non-trivial destructor.
     """
-    comptime for i in range(Ts.size):
+    comptime for i in range(Ts.length):
         if not is_trivially_deletable[Ts[i]]():
             return False
     return True
@@ -251,7 +251,7 @@ struct SwissTableEntry[
 
     # TODO(MOCO-4228)
     comptime __del__is_trivial = _all_trivial_del[Self.K, Self.V]()
-    """The explicit `__del__` below would otherwise mark this type
+    """The explicit `__deinit__` below would otherwise mark this type
     non-trivially-destructible even when `K` and `V` are trivial."""
 
     var _hash: UInt64
@@ -292,7 +292,7 @@ struct SwissTableEntry[
         self.value = value^
 
     # TODO(MOCO-4228): Let the compiler synthesize this method
-    def __del__(
+    def __deinit__(
         deinit self,
     ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
         Self.V, ImplicitlyDeletable
@@ -479,7 +479,7 @@ struct SwissTable[
                     copy=(copy._slots.unsafe_offset(i))[]
                 )
 
-    def __del__(
+    def __deinit__(
         deinit self,
     ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
         Self.V, ImplicitlyDeletable
@@ -512,7 +512,7 @@ struct SwissTable[
         """Free the control and slot arrays without touching entry contents.
 
         The caller must have already destroyed or moved out every occupied
-        entry (see `__del__` and `deinit_with`).
+        entry (see `__deinit__` and `deinit_with`).
         """
         if self._capacity > 0:
             dealloc(
@@ -539,7 +539,7 @@ struct SwissTable[
         This leaves `_ctrl`, `_len`, and `_capacity` unchanged, so the table is
         in an invalid state afterward: the caller must either reset the control
         bytes (see `clear`) or be about to free the backing storage (see
-        `__del__`).
+        `__deinit__`).
 
         Constraints:
             Both `K` and `V` must be `ImplicitlyDeletable`, since entries are

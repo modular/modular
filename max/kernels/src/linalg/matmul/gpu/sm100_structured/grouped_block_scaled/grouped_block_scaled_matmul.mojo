@@ -51,8 +51,8 @@ from std.collections import Optional
 from std.math import align_up
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.info import B200
 from layout import TileTensor
 
 from structured_kernels.tile_types import create_tma_tile
@@ -436,7 +436,7 @@ def grouped_block_scaled_matmul[
             sfb_ptrs,
             # Problem sizes and group count
             problem_sizes,
-            num_groups,
+            Int32(num_groups),
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,
@@ -467,7 +467,7 @@ def grouped_block_scaled_matmul[
             sfb_ptrs,
             # Problem sizes and group count
             problem_sizes,
-            num_groups,
+            Int32(num_groups),
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,

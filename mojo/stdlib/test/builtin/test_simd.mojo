@@ -17,6 +17,7 @@ from std.sys.info import CompilationTarget, is_64bit
 from std.bit import count_leading_zeros
 from std.memory import alloc, dealloc, ThinAllocation, Layout
 from std.memory.unsafe import bitcast
+from std.builtin._format_float import _write_float
 from std.builtin.simd import _modf
 from std.itertools import product
 from std.random import randn, seed
@@ -159,6 +160,31 @@ def test_init_from_index() raises:
     assert_equal(a_str, String(Int128(a)))
     assert_equal(a_str, String(UInt256(a)))
     assert_equal(a_str, String(Int256(a)))
+
+
+@fieldwise_init
+struct MyIntable(Intable):
+    var value: Int
+
+    def __int__(self) -> Int:
+        return self.value
+
+
+def test_init_from_intable() raises:
+    var v = MyIntable(42)
+    assert_equal(Int(v), 42)
+    assert_equal(UInt(v), 42)
+    assert_equal(UInt8(v), 42)
+    assert_equal(Int64(v), 42)
+
+    # A pointer is `Intable`, so its address is available as any integer scalar.
+    var x = 1
+    var p = Pointer(to=x)
+    assert_equal(UInt(p), UInt(Int(p)))
+    assert_equal(UInt64(p), UInt64(Int(p)))
+
+    # `Floatable` conversions still win for types that are also `Intable`.
+    assert_equal(Float64(Int(3)), 3.0)
 
 
 def test_from_bits() raises:
@@ -435,7 +461,7 @@ def test_issue_30237() raises:
     comptime dtype = DType.float32
     comptime simd_width = 1
     comptime coefficients_len = 7
-    var coefficients: InlineArray[SIMD[dtype, simd_width], coefficients_len] = [
+    var coefficients: Array[SIMD[dtype, simd_width], coefficients_len] = [
         4.89352455891786e-03,
         6.37261928875436e-04,
         1.48572235717979e-05,
@@ -2649,6 +2675,32 @@ def test_bool_init() raises:
     assert_false(mixed_bool[1])
     assert_true(mixed_bool[2])
     assert_false(mixed_bool[3])
+
+
+def _assert_half_float_writes_like_float32[
+    dtype: DType
+]() raises where dtype.is_half_float() and dtype.is_floating_point():
+    """Exhaustive over all 65536 bit patterns of a 16-bit float."""
+    for bits in range(0, 1 << 16):
+        var value = bitcast[dtype](UInt16(bits))
+        # Calling `_write_float` on the un-widened value is what `_write_scalar`
+        # used to do, so it is the reference text. Comparing against
+        # `String(value.cast[DType.float32]())` instead would compare
+        # `_write_scalar`'s widening against itself and pass no matter what.
+        var reference = String()
+        _write_float(reference, value)
+        assert_equal(String(value), reference)
+
+
+def test_write_half_float_matches_float32() raises:
+    # `_write_scalar` routes half floats through `Float32` so `float16` and
+    # `bfloat16` share one `_write_float` instantiation instead of each getting a
+    # private copy of the formatter. That is only sound because `_write_float`
+    # already widens everything but `float64` and the `float8` variants to
+    # `Float32` before formatting. Pin the equivalence so a future
+    # precision-aware formatter cannot silently change what `print` emits.
+    _assert_half_float_writes_like_float32[DType.float16]()
+    _assert_half_float_writes_like_float32[DType.bfloat16]()
 
 
 def test_float8_e8m0fnu_type_alias() raises:

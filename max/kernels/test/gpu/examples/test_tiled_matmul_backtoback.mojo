@@ -27,7 +27,7 @@ from std.gpu import (
     lane_id,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.memory import external_memory
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
@@ -682,14 +682,10 @@ def test_b2b_matmul(ctx: DeviceContext) raises:
     var mat_b = ManagedLayoutTensor[src_type, layout_b](ctx)
     var mat_c = ManagedLayoutTensor[src_type, layout_c](ctx)
     var mat_d = ManagedLayoutTensor[dst_type, layout_d](ctx)
-    var stack_d = InlineArray[Scalar[dst_type], layout_d.size()](
-        uninitialized=True
-    )
+    var stack_d = Array[Scalar[dst_type], layout_d.size()](uninitialized=True)
     comptime layout_ab = Layout.row_major(M, L)
-    var stack_ab = InlineArray[Scalar[dst_type], layout_ab.size()](
-        uninitialized=True
-    )
-    var stack_ab_downcast = InlineArray[Scalar[src_type], layout_ab.size()](
+    var stack_ab = Array[Scalar[dst_type], layout_ab.size()](uninitialized=True)
+    var stack_ab_downcast = Array[Scalar[src_type], layout_ab.size()](
         uninitialized=True
     )
     var host_d_ref = LayoutTensor[dst_type, layout_d](stack_d)

@@ -144,6 +144,9 @@ class Context:
     def get_dialect_descriptor(self, dialect_name: str) -> DialectDescriptor:
         """Gets or loads a dialect by name, returning its descriptor object."""
 
+    def is_dialect_loaded(self, dialect_name: str) -> bool:
+        """Checks if a dialect is loaded in the context."""
+
     @property
     def allow_unregistered_dialects(self) -> bool:
         """Controls whether unregistered dialects are allowed in this context."""
@@ -1489,6 +1492,13 @@ class NoTerminatorTrait(DynamicOpTrait):
         cls, op_name: object, context: _mlir.ir.Context | None = None
     ) -> bool:
         """Attach NoTerminator trait to the given operation name."""
+
+class IsIsolatedFromAboveTrait(DynamicOpTrait):
+    @classmethod
+    def attach(
+        cls, op_name: object, context: _mlir.ir.Context | None = None
+    ) -> bool:
+        """Attach IsIsolatedFromAbove trait to the given operation name."""
 
 class MLIRError(Exception):
     @property
@@ -2841,8 +2851,47 @@ class Speculatability(enum.Enum):
 
     RecursivelySpeculatable = 2
 
+class MemoryEffect:
+    """A memory effect."""
+
+    Allocate: ClassVar[Final[MemoryEffect]] = ...
+    """(arg: object, /) -> max._mlir._mlir_libs._mlir.ir.MemoryEffect"""
+
+    Free: ClassVar[Final[MemoryEffect]] = ...
+    """(arg: object, /) -> max._mlir._mlir_libs._mlir.ir.MemoryEffect"""
+
+    Read: ClassVar[Final[MemoryEffect]] = ...
+    """(arg: object, /) -> max._mlir._mlir_libs._mlir.ir.MemoryEffect"""
+
+    Write: ClassVar[Final[MemoryEffect]] = ...
+    """(arg: object, /) -> max._mlir._mlir_libs._mlir.ir.MemoryEffect"""
+
+class SideEffectResource:
+    """A side effect resource."""
+
+    Default: ClassVar[Final[SideEffectResource]] = ...
+    """(arg: object, /) -> max._mlir._mlir_libs._mlir.ir.SideEffectResource"""
+
 class MemoryEffectInstancesList:
-    pass
+    """A memory effect list that is valid only during get_effects."""
+
+    def append(
+        self,
+        effect: MemoryEffect,
+        target: OpOperand
+        | OpResult
+        | BlockArgument
+        | SymbolRefAttr
+        | None = None,
+        *,
+        parameters: Attribute | None = None,
+        stage: int = 0,
+        effect_on_full_region: bool = False,
+        resource: SideEffectResource = ...,
+    ) -> None:
+        """
+        Append a memory effect instance. The target may be an OpOperand, OpResult, BlockArgument, SymbolRefAttr, or None.
+        """
 
 class ConditionallySpeculatable:
     def __init__(
@@ -3291,6 +3340,19 @@ class Float8E8M0FNUType(FloatType):
     @staticmethod
     def get(context: _mlir.ir.Context | None = None) -> Float8E8M0FNUType:
         """Create a float8_e8m0fnu type."""
+
+class Float8E5M3FNUType(FloatType):
+    def __init__(self, cast_from_type: Type) -> None: ...
+
+    static_typeid: ClassVar[Final[TypeID]] = ...
+    """(arg: object, /) -> max._mlir._mlir_libs._mlir.ir.TypeID"""
+
+    @property
+    def typeid(self) -> TypeID: ...
+    def __repr__(self) -> str: ...
+    @staticmethod
+    def get(context: _mlir.ir.Context | None = None) -> Float8E5M3FNUType:
+        """Create a float8_e5m3fnu type."""
 
 class BF16Type(FloatType):
     def __init__(self, cast_from_type: Type) -> None: ...

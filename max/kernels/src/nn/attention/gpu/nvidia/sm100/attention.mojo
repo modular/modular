@@ -17,16 +17,28 @@ from std.sys import size_of
 from std.sys import get_defined_bool
 from std.bit import prev_power_of_two
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 from std.gpu.primitives.grid_controls import PDLLevel
-from kv_cache.types import _kv_fold_base_ok
+from kv_cache.types import _kv_fold_base_ok, kv_sub_tile_rows
 
 
 comptime EnableForcedOrdering = get_defined_bool[
     "FA4ForcedSoftmaxOrdering", False
 ]()
 comptime EnableEarlyAdd = get_defined_bool["FA4AddEarly", False]()
+
+# Cross-stage P TMEM placement (2Q, non-WS only): each softmax stage's P is
+# written into the OTHER stage's free S columns instead of self-aliasing its
+# own S, enabling early S-release. Default OFF => byte-identical.
+comptime EnableTMEMCrossP = get_defined_bool["FA4_TMEM_CROSS_P", True]()
+
+# Reading the same define with the opposite default recovers whether the user
+# passed it at all: only an explicit `=true` makes a False-defaulted read come
+# back True. The cross-stage-P guards key off this, so the ON-by-default path
+# can never trip a guard -- they fire only when someone explicitly asks for
+# cross-stage P on a config that does not support it.
+comptime ExplicitTMEMCrossP = get_defined_bool["FA4_TMEM_CROSS_P", False]()
 
 # Programmatic Dependent Launch level for the SM100 MHA prefill kernel.  On by
 # default so back-to-back attention grids in a stream overlap launch/prologue
@@ -108,10 +120,11 @@ struct FA4Config[
     var dynamic_cluster_dim: Bool
     var row_major_v_atoms: Bool
     var row_major_k_atoms: Bool
-    # Warp-specialized packed-TMEM (1x4 / Layout-G) datapath flag and its pack
-    # factor, derived in __init__ from (pair_cta, MMA_M). Stored so `fa4_softmax`
-    # and other consumers read `config.use_ws` / `config.m_pack` instead of
-    # re-deriving the expression. m_pack == 1 (non-WS) => byte-identical layout.
+    # Warp-specialized packed-TMEM (1x4 Layout-G / 1x2 Layout-E) datapath flag
+    # and its pack factor, derived in __init__ from (pair_cta, MMA_M). Stored so
+    # `fa4_softmax` and other consumers read `config.use_ws` / `config.m_pack`
+    # instead of re-deriving the expression. m_pack == 1 (non-WS) =>
+    # byte-identical layout.
     var use_ws: Bool
     var m_pack: Int
 
@@ -194,6 +207,60 @@ struct FA4Config[
         if self.use_ws:
             return self.v_cols_per_cta() // self.num_qk_stages
         return self.v_cols_per_cta()
+
+    @always_inline
+    def v_e_box_rows(self) -> Int:
+        """Layout-E (`m_pack == 2`) V TMA box KEY-row count per issued sub-tile.
+
+        Layout-E KEY-splits V into `m_pack * num_qk_stages` per-partition
+        reduction-chunk sub-tiles instead of Layout-G's DEPTH-split
+        (`v_box_cols()`): each sub-tile covers `(BN // m_pack) //
+        num_qk_stages` keys (this partition's OWN reduction chunk) and the
+        FULL depth (`v_e_box_cols()`). Sibling of `v_box_cols()`, kept as a
+        SEPARATE method (not folded into `v_box_cols()`) so Layout-G's
+        `v_row_major()` / `kv_tma_fold_chunks` derivation -- which reads
+        `v_box_cols()` -- stays byte-identical; see
+        docs/plans/sm100-fa4-layout-e-mma64.md "the reduction-split
+        geometry". Meaningful only for `m_pack == 2`; a harmless (unused)
+        value otherwise.
+        """
+        return (self.BN // self.m_pack) // self.num_qk_stages
+
+    @always_inline
+    def v_e_box_cols(self) -> Int:
+        """Layout-E (`m_pack == 2`) V TMA box depth (columns) per issued
+        sub-tile: the FULL `padded_ov_depth`, since Layout-E splits V by KEY
+        (reduction), not by depth. Sibling of `v_e_box_rows()`.
+        """
+        return self.padded_ov_depth
+
+    @always_inline
+    def v_tma_box_rows(self, page_size: Int) -> Int:
+        """V TMA box KEY-row count for this config's layout.
+
+        The single selector every V TMA type-param site routes through
+        (dispatch `create_tma_tile`, kernel `VTMAOpType`, the `fa4_load`
+        signature), so the box shape stays syntactically identical across
+        sites -- the same single-source-of-truth rule `v_box_cols()`
+        documents. Layout-E (`m_pack == 2`) uses the KEY-split
+        `v_e_box_rows()`; Layout-G / non-WS use `kv_sub_tile_rows(BN,
+        page_size)` (byte-identical to the historical inline expression).
+        """
+        if self.m_pack == 2:
+            return self.v_e_box_rows()
+        return kv_sub_tile_rows(self.BN, page_size)
+
+    @always_inline
+    def v_tma_box_cols(self) -> Int:
+        """V TMA box depth (columns) for this config's layout.
+
+        Sibling of `v_tma_box_rows()`: Layout-E (`m_pack == 2`) uses the
+        full-depth `v_e_box_cols()`, Layout-G / non-WS the depth-split
+        `v_box_cols()`.
+        """
+        if self.m_pack == 2:
+            return self.v_e_box_cols()
+        return self.v_box_cols()
 
     @always_inline
     def nope_cols_per_cta(self) -> Int:
@@ -368,6 +435,75 @@ struct FA4Config[
         """
         return self.padded_qk_depth - self.padded_nope_depth
 
+    @staticmethod
+    @always_inline
+    def crossp_supported(
+        num_q: Int,
+        use_ws: Bool,
+        pair_cta: Bool,
+        use_shared_kv: Bool,
+        rope_depth: Int,
+        page_size: Int,
+        BN: Int,
+    ) -> Bool:
+        """The cross-stage-P support matrix, in one place.
+
+        Every `comptime assert` that guards a cross-stage-P code path derives
+        its condition from here, so turning the feature on BY DEFAULT can never
+        trip one of those guards. They stay hard errors, but only an explicit
+        `-D FA4_TMEM_CROSS_P=true` on an unsupported config can reach them.
+
+        Deriving the default from the guards is the point. An earlier version
+        of this predicate listed the consumers it knew about instead, and CI
+        found a consumer it did not know about within the hour.
+
+        The conjuncts, each traceable to the site that requires it:
+        - `num_q == 2`, `not use_ws`: the P windows only exist on the 2Q
+          non-warp-specialized layout (`TMEM_P0`/`TMEM_P1` above).
+        - `use_shared_kv`, `not pair_cta`: `mma_warp` asserts the shared-KV
+          path; the split-KV both-lazy and pair-CTA schedules have no cross-P
+          implementation.
+        - `rope_depth == 0`: MHA only. MLA shares this config type but splits
+          Q/K into nope + rope and has no cross-P path.
+        - full pages: `load_warp`'s K-ahead producer asserts no partial pages.
+
+        Taking the fields loose because `__init__` needs this before `self` is
+        fully initialized, and Mojo forbids calling a method on a partly-built
+        `self`.
+        """
+        return (
+            num_q == 2
+            and not use_ws
+            and not pair_cta
+            and use_shared_kv
+            and rope_depth == 0
+            and not (page_size > 0 and page_size < BN)
+            and not EnableForcedOrdering
+        )
+
+    @always_inline
+    def crossp_on(self) -> Bool:
+        """Whether cross-stage P applies to THIS config.
+
+        The single source of truth for the cross-stage-P decision. Both the
+        `smem_used` mbar accounting below and `FA4MiscMBars.CrossP_enabled`
+        derive from this, so the two can never disagree — a mismatch shows up
+        as an `smem_used != smem_size` constraint failure, or worse, an
+        ILLEGAL_ADDRESS at runtime.
+
+        `FA4_TMEM_CROSS_P` now defaults ON, so `crossp_supported` is what keeps
+        every other consumer byte-identical to cross-P-off.
+        """
+        return EnableTMEMCrossP and Self.crossp_supported(
+            self.num_q,
+            self.use_ws,
+            self.pair_cta,
+            self.use_shared_kv,
+            self.rope_depth(),
+            self.page_size,
+            self.BN,
+        )
+
     @always_inline
     def num_rope_buffers(self) -> Int:
         """Number of separate rope smem buffers (shared mode only).
@@ -432,6 +568,7 @@ struct FA4Config[
         # `MMA_M` are derived from it:
         #   BM=256 -> 2Q, MMA_M=128 (single-CTA) or 256 (pair-CTA)
         #   BM=128 -> 1Q, MMA_M=128 (single-CTA)
+        #   BM=64  -> 1Q, MMA_M=64  (warp-specialized packed-TMEM / Layout-E)
         #   BM=32  -> 1Q, MMA_M=32  (warp-specialized packed-TMEM / Layout-G)
         self.num_q = 2 if BM == 256 else 1
         # single_o implies num_q==1 (the body's 1Q path aliases O). Guard
@@ -445,6 +582,9 @@ struct FA4Config[
         if pair_cta:
             # Pair-CTA shares one MMA across 2 CTAs (BM must be 256).
             self.MMA_M = 256
+        elif BM == 64:
+            # Warp-specialized packed-TMEM (1x2 / Layout-E) datapath.
+            self.MMA_M = 64
         elif BM == 32:
             # Warp-specialized packed-TMEM (1x4 / Layout-G) datapath.
             self.MMA_M = 32
@@ -477,9 +617,10 @@ struct FA4Config[
         # stages). Byte-identical for MHA / DeepSeek (nope == ov). NB: inline
         # `max` (not `shared_kv_cols()`) — `self` is partially initialized here, so
         # a method call (which borrows all of `self`) is illegal before BN.
-        # Warp-specialized packed-TMEM (1x4 / Layout-G) fires for cta_group==1
-        # and MMA_M<=64 (mirrors SM100TensorAccumulator.use_ws). It packs
-        # `m_pack` score rows onto the same physical TMEM columns, so each S/P
+        # Warp-specialized packed-TMEM fires for cta_group==1 and MMA_M<=64
+        # (mirrors SM100TensorAccumulator.use_ws): Layout-G (1x4, MMA_M=32,
+        # m_pack=4) and Layout-E (1x2, MMA_M=64, m_pack=2). It packs `m_pack`
+        # score rows onto the same physical TMEM columns, so each S/P
         # accumulator occupies BN/m_pack physical columns (m_pack=1 => no
         # packing => byte-identical to the non-WS path).
         var use_ws = (not pair_cta) and self.MMA_M <= 64
@@ -528,8 +669,22 @@ struct FA4Config[
         # term is unchanged: the packed P@V O still spans `padded_ov` columns.
         var s_cols = self.BN // m_pack
         self.TMEM_S1 = Self.TMEM_S0 + s_cols
-        self.TMEM_P0 = Self.TMEM_S0
-        self.TMEM_P1 = self.TMEM_S1
+        # Cross-stage: P0 in S1's window, P1 in S0's window, at the region
+        # base. bf16 P needs 64 of the 128 f32 columns; any 32-col-aligned
+        # in-region offset satisfies the tcgen05 A-operand (FlashInfer uses
+        # +32 only to clear row stats it keeps inplaced in TMEM — MAX keeps
+        # stats in SMEM, so the base is free). 2Q + non-WS only: the 1Q
+        # odd-T tail aliases s1->s0, which would collide the two P windows.
+        comptime if EnableTMEMCrossP:
+            if self.num_q == 2 and not self.use_ws:
+                self.TMEM_P0 = self.TMEM_S1
+                self.TMEM_P1 = Self.TMEM_S0
+            else:
+                self.TMEM_P0 = Self.TMEM_S0
+                self.TMEM_P1 = self.TMEM_S1
+        else:
+            self.TMEM_P0 = Self.TMEM_S0
+            self.TMEM_P1 = self.TMEM_S1
         self.TMEM_O0 = self.TMEM_S1 + s_cols
         # single-O: alias O1 onto O0 (the 1Q body reuses one O accumulator) and
         # reserve a single O region -> tmem_used = 2*BN + padded_ov. Default
@@ -611,6 +766,9 @@ struct FA4Config[
         #             + (num_qk_stages if num_q == 2 else 0)
         #             + (1 if num_q == 1 and splitk_partitions > 1 else 0)
         comptime order_barrier_count: Int = 2 if EnableForcedOrdering else 0
+        # Cross-stage P appends 10 mbars (2 sfree + 2x4 depth-4 inplace).
+        # Cross-stage P's 10 mbars are added further down, once
+        # `use_shared_kv` is decided -- `crossp_supported` needs it.
         misc_mbars_fixed_size = (
             8
             + order_barrier_count
@@ -782,6 +940,28 @@ struct FA4Config[
         # BK1: Full BN since V loading is not staged (V must be complete
         # for P@V)
         self.BK1 = self.BN
+
+        # Cross-stage P appends 10 mbars (2 sfree + 2x4 depth-4 inplace). Added
+        # here rather than with the other misc mbars because `crossp_supported`
+        # needs `use_shared_kv`, which is only decided above. Same predicate
+        # FA4MiscMBars.CrossP_count is threaded from, so the accounting and the
+        # layout cannot drift.
+        if EnableTMEMCrossP and Self.crossp_supported(
+            self.num_q,
+            self.use_ws,
+            self.pair_cta,
+            self.use_shared_kv,
+            self.padded_qk_depth - self.padded_nope_depth,
+            self.page_size,
+            self.BN,
+        ):
+            smem_use += 10 * Self.mbar_size
+
+        # BLASST skip-vote region: must match SM100AttentionSMem.blasst_vote_bytes
+        # or the launch smem_used undershoots -> CUDA_ERROR_ILLEGAL_ADDRESS.
+        comptime if get_defined_bool["ENABLE_BLASST", False]():
+            smem_use += 2 * 2 * 4 * size_of[UInt8]()
+
         self.smem_used = smem_use
 
     def supported(self) -> Bool:
@@ -808,12 +988,18 @@ struct FA4Config[
             and self.num_kv_stages >= 2
             and self.tmem_used <= Self.sm100_tmem_cols
             and self.smem_used <= Self.sm100_smem_carveout
-            # BM is the primary knob; only 32 (WS), 128, 256 are valid tiles.
-            and (self.BM == 32 or self.BM == 128 or self.BM == 256)
-            # The warp-specialized BM=32 datapath is single-CTA, MHA-only, and
-            # its depth-split KV budget assumes no rope/scale sub-tile bytes.
+            # BM is the primary knob; only 32/64 (WS), 128, 256 are valid tiles.
             and (
-                self.BM != 32
+                self.BM == 32
+                or self.BM == 64
+                or self.BM == 128
+                or self.BM == 256
+            )
+            # The warp-specialized datapath (BM=32 Layout-G, BM=64 Layout-E) is
+            # single-CTA, MHA-only, and its KV budget assumes no rope/scale
+            # sub-tile bytes. `not use_ws` (BM in {128,256}) skips this block.
+            and (
+                not self.use_ws
                 or (
                     not self.pair_cta
                     and not self.is_mla
@@ -825,12 +1011,28 @@ struct FA4Config[
                     # deadlock the ring. `num_kv_stages >= 2` (base) is not
                     # enough for WS.
                     and self.num_kv_stages >= 4
-                    # One shared ring slot holds EITHER a K depth-half (width
-                    # BK0) OR a V depth-tile (width depth_tile = 256//m_pack)
-                    # only if the two widths are equal (64 == 64 at depth 128 and
-                    # depth 64). Reject any shape that breaks the uniform-sub-tile
-                    # premise the shared ring rests on.
-                    and (256 // self.m_pack) == self.BK0
+                    # Uniform shared-ring sub-tile premise: a ring slot holds
+                    # EITHER a K depth-half OR a V sub-tile, so the two must be
+                    # byte-equal. K is always a [BN x BK0] depth-half. V differs
+                    # by layout:
+                    #   Layout-G (m_pack=4): V is DEPTH-scattered into tiles of
+                    #     width depth_tile = 256//m_pack; byte-equal to K iff
+                    #     depth_tile == BK0 (both 64 at depth 64 and 128).
+                    #   Layout-E (m_pack=2): V is REDUCTION(key)-split into
+                    #     num_qk_stages tiles; each has (BN//m_pack)//num_qk_stages
+                    #     keys x (m_pack*ov) depth cols. Byte-equality with the
+                    #     [BN x BK0] K sub-tile is algebraic once the key axis
+                    #     divides evenly: (BN//m_pack//nqs)*(m_pack*D)
+                    #     == BN*(D//nqs) == the K sub-tile bytes.
+                    # Reject shapes that break this uniform-sub-tile premise.
+                    and (
+                        (self.m_pack == 4 and (256 // self.m_pack) == self.BK0)
+                        or (
+                            self.m_pack == 2
+                            and (self.BN // self.m_pack) % self.num_qk_stages
+                            == 0
+                        )
+                    )
                 )
             )
         )
@@ -955,13 +1157,14 @@ struct FA4Config[
     def with_bm(self, bm: Int) -> Self:
         """Reconstruct this config with an explicit `BM` (single-CTA).
 
-        Used by dispatch to force the warp-specialized packed-TMEM datapath
-        (`BM=32` -> `MMA_M=32`, `use_ws=True`, `m_pack=4`) for very short
-        prompts. `pair_cta` is forced False (BM=32 is single-CTA only, per
-        `supported()`). `num_qk_stages`/`splitk_partitions`/`single_o` are left
-        at their constructor defaults (derive staging, no split-K, 2-O) so the
+        Used by dispatch to force a warp-specialized packed-TMEM datapath
+        (`BM=32` -> `MMA_M=32`, `m_pack=4`, Layout-G; `BM=64` -> `MMA_M=64`,
+        `m_pack=2`, Layout-E), with `use_ws=True`, for short prompts. `pair_cta`
+        is forced False (BM=32/64 are single-CTA only, per `supported()`).
+        `num_qk_stages`/`splitk_partitions`/`single_o` are left at their
+        constructor defaults (derive staging, no split-K, 2-O) so the
         reconstruction is byte-identical to a direct `FA4Config(..., BM=bm)`
-        build (matching `test_fa4_config_ws_bm32_probe`); `use_ws`/`m_pack` are
+        build (see `test_fa4_config_ws_bm64_probe`); `use_ws`/`m_pack` are
         derived from the new `BM`. `nope_depth` is re-passed so a GLM-style shape
         survives (byte-identical for MHA where nope == ov).
         """

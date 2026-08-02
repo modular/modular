@@ -171,9 +171,8 @@ class TestBuildResponse:
         advance_to_processed(ctx)
         assert ctx.tokens.processed_length == 99
 
-        # current_length = 99 + 1 = 100
-        # With max_growth_per_step=1: 100 + 1 = 101 > 100 → MAXIMUM_LENGTH
-        build_response([ctx], max_seq_len=max_seq_len, max_growth_per_step=1)
+        # current_length = 99 + 1 = 100 >= 100 → MAXIMUM_LENGTH
+        build_response([ctx], max_seq_len=max_seq_len)
 
         assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
 
@@ -186,47 +185,33 @@ class TestBuildResponse:
         advance_to_processed(ctx)
         assert ctx.tokens.processed_length == 50
 
-        # current_length = 50 + 1 = 51
-        # With max_growth_per_step=1: 51 + 1 = 52 <= 100 → not done
-        build_response([ctx], max_seq_len=max_seq_len, max_growth_per_step=1)
+        # current_length = 50 + 1 = 51 < 100 → not done
+        build_response([ctx], max_seq_len=max_seq_len)
 
         assert ctx.status != GenerationStatus.MAXIMUM_LENGTH
 
-    def test_max_growth_per_step_for_speculative_decoding(self) -> None:
-        """Larger max_growth_per_step triggers earlier termination.
+    def test_does_not_reserve_speculative_slack(self) -> None:
+        """``build_response`` no longer early-stops for speculative growth.
 
-        This is the core logic for speculative decoding: with 3 spec tokens,
-        max_growth_per_step = 4, so we stop earlier to prevent KV cache overflow.
+        It marks ``MAXIMUM_LENGTH`` only when there is no room for even one
+        more token. Reserving ``num_speculative_tokens + 1`` worst-case slack
+        here truncated output up to ``num_speculative_tokens`` tokens short of
+        the cap; the commit loop in
+        ``update_spec_decode_context_and_prepare_responses`` is now what keeps
+        a step from overshooting, so a near-limit context stays live.
         """
         max_seq_len = 100
-        max_growth = 4  # e.g., 3 speculative tokens + 1 bonus
 
-        # At length 96, after advance: processed_length = 96
-        # current_length = 96 + 1 = 97
-        # With max_growth_per_step=4: 97 + 4 = 101 > 100 → MAXIMUM_LENGTH
-        ctx_near_limit = create_text_context(
-            prompt_len=96, max_length=max_seq_len
-        )
-        advance_to_processed(ctx_near_limit)
-        assert ctx_near_limit.tokens.processed_length == 96
+        # processed_length = 96, current_length = 97. Even with 3 spec tokens
+        # in flight (worst-case growth 4), build_response must not stop here:
+        # 97 < 100 → still live.
+        ctx = create_text_context(prompt_len=96, max_length=max_seq_len)
+        advance_to_processed(ctx)
+        assert ctx.tokens.processed_length == 96
 
-        build_response(
-            [ctx_near_limit],
-            max_seq_len=max_seq_len,
-            max_growth_per_step=max_growth,
-        )
-        assert ctx_near_limit.status == GenerationStatus.MAXIMUM_LENGTH
+        build_response([ctx], max_seq_len=max_seq_len)
 
-        # With default max_growth_per_step=1: 97 + 1 = 98 <= 100 → not done
-        ctx_with_default = create_text_context(
-            prompt_len=96, max_length=max_seq_len
-        )
-        advance_to_processed(ctx_with_default)
-
-        build_response(
-            [ctx_with_default], max_seq_len=max_seq_len, max_growth_per_step=1
-        )
-        assert ctx_with_default.status != GenerationStatus.MAXIMUM_LENGTH
+        assert ctx.status != GenerationStatus.MAXIMUM_LENGTH
 
     def test_respects_per_request_max_length(self) -> None:
         """Per-request max_length is respected when lower than global."""
@@ -238,11 +223,9 @@ class TestBuildResponse:
         advance_to_processed(ctx)
         assert ctx.tokens.processed_length == 49
 
-        # current_length = 49 + 1 = 50
-        # With max_growth_per_step=1: 50 + 1 = 51 > 50 → MAXIMUM_LENGTH
-        build_response(
-            [ctx], max_seq_len=global_max_seq_len, max_growth_per_step=1
-        )
+        # current_length = 49 + 1 = 50 >= 50 → MAXIMUM_LENGTH
+        build_response([ctx], max_seq_len=global_max_seq_len)
+
         assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
 
 
@@ -315,6 +298,60 @@ class TestSpecDecodeStopsExactlyAtPerRequestCap:
             f"expected exactly {max_gen_tokens} generated tokens, got "
             f"{ctx.tokens.generated_length}"
         )
+        assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
+
+    def test_stops_exactly_at_max_seq_len(self) -> None:
+        """The model/KV limit truncates a straddling accept chunk.
+
+        A request whose per-request cap coincides with ``max_seq_len`` (i.e. it
+        fills the whole model context) must have its commit capped exactly at
+        ``max_seq_len``. This is the KV-safety case Option 3 relies on: the step
+        may over-speculate past ``max_seq_len`` into the pool's
+        ``num_draft_tokens`` slack, but the committed length must land on
+        ``max_seq_len`` so the next step never exceeds the pool.
+
+        (``max_length`` can never exceed ``max_seq_len`` at runtime -- the
+        registry clamps it and ``upper_bounded_default`` enforces the invariant
+        -- so the binding case is exactly ``max_length == max_seq_len``.)
+        """
+        prompt_len = 10
+        num_speculative_tokens = 3
+        # Per-request cap coincides with the model/KV limit.
+        max_seq_len = 30
+        max_length = max_seq_len
+        expected_generated = max_seq_len - prompt_len  # 20
+
+        ctx = create_text_context(prompt_len=prompt_len, max_length=max_length)
+        ctx.update_with_future_token()
+
+        # Step sizes 4,4,4,4,2,2 sum to 20 and cross max_seq_len on a partial
+        # (2-token) chunk, exercising mid-chunk truncation.
+        accept_counts = [3, 3, 3, 3, 1, 1]
+        assert all(c <= num_speculative_tokens for c in accept_counts)
+        assert sum(c + 1 for c in accept_counts) == expected_generated
+
+        for num_accept in accept_counts:
+            if ctx.is_done:
+                break
+            update_spec_decode_context_and_prepare_responses(
+                draft_tokens=np.array([[101, 102, 103]], dtype=np.int32),
+                next_draft_tokens=np.array([[201, 202, 203]], dtype=np.int32),
+                num_accepted_draft_tokens=np.array(
+                    [num_accept], dtype=np.int32
+                ),
+                next_tokens=np.array([999], dtype=np.int32),
+                context_batch=[ctx],
+                max_seq_len=max_seq_len,
+            )
+            if ctx.is_done:
+                break
+            ctx.update_with_future_token()
+
+        assert ctx.tokens.generated_length == expected_generated, (
+            f"expected exactly {expected_generated} generated tokens, got "
+            f"{ctx.tokens.generated_length}"
+        )
+        assert len(ctx.tokens) == max_seq_len
         assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
 
 

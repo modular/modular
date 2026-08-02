@@ -13,7 +13,7 @@
 
 from std.math import ceildiv, exp
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,
@@ -280,9 +280,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            dim,
-            total_seqlen,
-            batch,
+            Int32(dim),
+            Int32(total_seqlen),
+            Int32(batch),
             x_device_tt,
             weight_device_tt,
             bias_device_tt,
@@ -336,9 +336,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            dim,
-            total_seqlen,
-            batch,
+            Int32(dim),
+            Int32(total_seqlen),
+            Int32(batch),
             x_device_tt,
             weight_device_tt,
             bias_device_tt,
@@ -392,9 +392,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            dim,
-            total_seqlen,
-            batch,
+            Int32(dim),
+            Int32(total_seqlen),
+            Int32(batch),
             x_device_tt,
             weight_device_tt,
             bias_device_tt,
@@ -448,9 +448,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            dim,
-            total_seqlen,
-            batch,
+            Int32(dim),
+            Int32(total_seqlen),
+            Int32(batch),
             x_device_tt,
             weight_device_tt,
             bias_device_tt,
@@ -553,9 +553,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
         with ctx.push_context():
             ctx.enqueue_function(
                 compiled_func,
-                dim,
-                total_seqlen,
-                batch,
+                Int32(dim),
+                Int32(total_seqlen),
+                Int32(batch),
                 x_device_tt,
                 weight_device_tt,
                 bias_device_tt,
@@ -955,10 +955,10 @@ def run_varlen_causal_conv1d_update_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            batch,
-            dim,
-            seqlen,
-            state_len,
+            Int32(batch),
+            Int32(dim),
+            Int32(seqlen),
+            Int32(state_len),
             x_upd_device_tt,
             weight_upd_device_tt,
             bias_upd_device_tt,
@@ -1009,10 +1009,10 @@ def run_varlen_causal_conv1d_update_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            batch,
-            dim,
-            seqlen,
-            state_len,
+            Int32(batch),
+            Int32(dim),
+            Int32(seqlen),
+            Int32(state_len),
             x_upd_device_tt,
             weight_upd_device_tt,
             bias_upd_device_tt,
@@ -1063,10 +1063,10 @@ def run_varlen_causal_conv1d_update_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            batch,
-            dim,
-            seqlen,
-            state_len,
+            Int32(batch),
+            Int32(dim),
+            Int32(seqlen),
+            Int32(state_len),
             x_upd_device_tt,
             weight_upd_device_tt,
             bias_upd_device_tt,
@@ -1117,10 +1117,10 @@ def run_varlen_causal_conv1d_update_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            batch,
-            dim,
-            seqlen,
-            state_len,
+            Int32(batch),
+            Int32(dim),
+            Int32(seqlen),
+            Int32(state_len),
             x_upd_device_tt,
             weight_upd_device_tt,
             bias_upd_device_tt,

@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
@@ -443,6 +443,10 @@ def test_torch_tensor_conversion() -> None:
     assert torch.all(torch.eq(bool_tensor, reconverted_bool))
 
 
+# Whichever of these runs first pays torch's one-time lazy init inside its
+# first example -- ~1.5s against hypothesis' 200ms per-example deadline on a
+# contended CI worker. Neither asserts anything about speed.
+@settings(deadline=None)
 @given(st.floats())
 def test_setitem_bfloat16(value: float) -> None:
     tensor = Buffer(DType.bfloat16, (1,))
@@ -462,6 +466,7 @@ def test_setitem_bfloat16(value: float) -> None:
         torch.testing.assert_close(expected, result, equal_nan=True)
 
 
+@settings(deadline=None)
 @given(st.floats())
 def test_getitem_bfloat16(value: float) -> None:
     torch_value = torch.tensor([value]).type(torch.bfloat16)

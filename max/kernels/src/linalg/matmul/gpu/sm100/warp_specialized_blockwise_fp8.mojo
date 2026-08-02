@@ -24,9 +24,9 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 from std.gpu import block_id_in_cluster, lane_id, warp_id as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
@@ -34,7 +34,7 @@ from std.gpu.memory import (
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
@@ -42,7 +42,7 @@ from std.gpu.sync import (
     umma_arrive_leader_cta,
     mbarrier_arrive,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     Coord,
     Layout,
@@ -422,7 +422,7 @@ def multi_stage_reg_epilogue[
         var c_smem_warp_tile_upper = c_smem_warp_tile.tile[data_paths, stageN](
             0, 0
         )
-        var upper_st = InlineArray[Scalar[c_type], fragments_per_stage](
+        var upper_st = Array[Scalar[c_type], fragments_per_stage](
             uninitialized=True
         )
 
@@ -442,7 +442,7 @@ def multi_stage_reg_epilogue[
         )
 
         comptime if is_lower_frag_required:
-            var lower_st = InlineArray[Scalar[c_type], fragments_per_stage](
+            var lower_st = Array[Scalar[c_type], fragments_per_stage](
                 uninitialized=True
             )
 
@@ -787,8 +787,8 @@ def promote_accumulators[
     syncwarp()
 
     comptime rep_frag_size = repeats * fragment_size
-    var upper_frag: InlineArray[Scalar[accum_type], rep_frag_size]
-    var lower_frag = InlineArray[Scalar[accum_type], rep_frag_size](
+    var upper_frag: Array[Scalar[accum_type], rep_frag_size]
+    var lower_frag = Array[Scalar[accum_type], rep_frag_size](
         uninitialized=True
     )
 
@@ -925,7 +925,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_scales_type, a_scales_rank, a_scales_tile_shape, a_scales_desc_shape
     ],
     cluster_dim: StaticTuple[Int32, 3],
-    num_iters: Int,
+    num_iters: Int32,
     b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     problem_shape: StaticTuple[Int32, 3],
 ):
@@ -973,6 +973,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         b_scales: B blockwise scales used to rescale FP8 partial products.
         problem_shape: Full GEMM problem dimensions `(M, N, K)`.
     """
+    var _num_iters = Int(num_iters)
     comptime num_output_warps = 4
 
     comptime accum_type = get_accum_type[a_type]()
@@ -1262,7 +1263,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
             # DO TMA LOAD
 
-            for i in range(num_iters):
+            for i in range(_num_iters):
                 load_AB[
                     block_tile_shape=config.block_tile_shape,
                     mma_shape=config.mma_shape,
@@ -1343,7 +1344,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             clc_pipe_consumer_state.step()
             # DO MMA
             if elect_one_cta:
-                for _ in range(num_iters):
+                for _ in range(_num_iters):
                     var mma_output_mma_stage = (
                         mma_output_pipeline.producer_stage()
                     )
@@ -1426,7 +1427,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             comptime if is_lower_frag_required:
                 _ = c_lower_main_tile.fill(0.0)
 
-            for k_iter in range(num_iters):
+            for k_iter in range(_num_iters):
                 promote_accumulators[
                     block_tile_shape=config.block_tile_shape,
                     mma_shape=config.mma_shape,
@@ -1681,7 +1682,7 @@ def sm100_warp_specialized_blockwise_fp8[
         c_tma_op,
         a_scales_tma_op,
         cluster_dim,
-        ceildiv(K, BK),
+        Int32(ceildiv(K, BK)),
         b_scales,
         problem_shape,
         grid_dim=grid_dim,

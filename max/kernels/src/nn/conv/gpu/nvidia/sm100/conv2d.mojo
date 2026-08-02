@@ -44,8 +44,8 @@ from std.math import align_up, ceildiv
 
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.info import B200
 from layout.tma_async import create_tensor_tile_im2col
 
 from structured_kernels.tile_types import (

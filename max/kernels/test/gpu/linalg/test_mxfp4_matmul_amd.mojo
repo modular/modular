@@ -21,7 +21,7 @@ Usage:
 """
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.memory import bitcast
 from std.random import random_ui64
@@ -47,9 +47,9 @@ def block_scaled_matmul_ref(
     a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
     b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
     c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
+    M_dev: Int32,
+    N_dev: Int32,
+    K_dev: Int32,
 ):
     """Per-element GPU reference for MXFP4 block-scaled matmul.
 
@@ -57,6 +57,9 @@ def block_scaled_matmul_ref(
     packed FP4 data via the CDNA4 cvt.scalef32.pk.f32.fp4 intrinsic,
     multiplying with E8M0 scales, and accumulating in FP32.
     """
+    var M = Int(M_dev)
+    var N = Int(N_dev)
+    var K = Int(K_dev)
 
     @always_inline
     def cast_fp4x2_to_fp32x2[
@@ -268,9 +271,9 @@ def test_mxfp4_matmul[
         a_scales_dev,
         b_scales_dev,
         c_ref_dev,
-        M_static,
-        N_static,
-        K_static,
+        Int32(M_static),
+        Int32(N_static),
+        Int32(K_static),
         grid_dim=(ceildiv(M_static, BLOCK_DIM), ceildiv(N_static, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
@@ -402,9 +405,9 @@ def test_mxfp4_matmul_split_k[
         a_scales_dev,
         b_scales_dev,
         c_ref_dev,
-        M_static,
-        N_static,
-        K_static,
+        Int32(M_static),
+        Int32(N_static),
+        Int32(K_static),
         grid_dim=(ceildiv(M_static, BLOCK_DIM), ceildiv(N_static, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )

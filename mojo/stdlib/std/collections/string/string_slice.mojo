@@ -57,6 +57,20 @@ from std.python import Python, PythonObject
 from std.format._utils import _write_hex
 
 
+comptime MutStringSlice[origin: MutOrigin] = StringSlice[origin]
+"""A string slice providing mutable access to the string data it views.
+
+Parameters:
+    origin: The origin of the string data.
+"""
+
+comptime ImmStringSlice[origin: ImmOrigin] = StringSlice[origin]
+"""A string slice providing read-only access to the string data it views.
+
+Parameters:
+    origin: The origin of the string data.
+"""
+
 comptime StaticString = StringSlice[ImmStaticOrigin]
 """An immutable static string slice.
 
@@ -259,38 +273,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         self._slice = unsafe_from_utf8.as_bytes()
 
-    @deprecated("Use the `unsafe_from_utf8: CStringSlice` constructor instead")
-    def __init__(
-        out self,
-        *,
-        unsafe_from_utf8_ptr: UnsafePointer[
-            mut=Self.mut,
-            Byte,
-            origin=Self.origin,
-            address_space=AddressSpace.GENERIC,
-            ...,
-        ],
-    ):
-        """Construct a new StringSlice from a `UnsafePointer[Byte]` pointing to
-        null-terminated UTF-8 encoded bytes.
-
-        Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated
-                bytes encoded in UTF-8.
-
-        Safety:
-            - `unsafe_from_utf8_ptr` MUST point to data that is valid for
-                `origin`.
-            - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
-            - `unsafe_from_utf8_ptr` MUST be null terminated.
-        """
-
-        var byte_slice = Span(
-            unsafe_ptr=unsafe_from_utf8_ptr,
-            length=Int(_unsafe_strlen(unsafe_from_utf8_ptr)),
-        )
-        self = Self(unsafe_from_utf8=byte_slice)
-
     def __init__(out self, *, from_utf8: Span[Byte, Self.origin]) raises:
         """Construct a new `StringSlice` from a buffer containing UTF-8 encoded
         data.
@@ -302,69 +284,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             An exception is raised if the provided buffer byte values do not
             form valid UTF-8 encoded codepoints.
         """
-        if not _is_valid_utf8(from_utf8.get_immutable()):
+        if not _is_valid_utf8(from_utf8.as_imm()):
             raise Error("StringSlice: buffer is not valid UTF-8")
 
         self = Self(unsafe_from_utf8=from_utf8)
-
-    @deprecated("Use the `unsafe_from_utf8: CStringSlice` constructor instead")
-    def __init__(
-        out self,
-        *,
-        unsafe_from_utf8_ptr: UnsafePointer[
-            mut=Self.mut,
-            c_char,
-            origin=Self.origin,
-            address_space=AddressSpace.GENERIC,
-            ...,
-        ],
-    ):
-        """Construct a new StringSlice from a `UnsafePointer[c_char]` pointing
-        to null-terminated UTF-8 encoded bytes.
-
-        Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[c_char]` of null-terminated
-                bytes encoded in UTF-8.
-
-        Safety:
-            - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
-            - `unsafe_from_utf8_ptr` MUST be null terminated.
-        """
-        var ptr = unsafe_from_utf8_ptr.bitcast[Byte]()
-        var byte_slice = Span(
-            unsafe_ptr=ptr,
-            length=Int(_unsafe_strlen(ptr)),
-        )
-        self = Self(unsafe_from_utf8=byte_slice)
-
-    @always_inline("builtin")
-    @deprecated("Use the `unsafe_from_utf8: Span[Byte, _]` constructor instead")
-    def __init__(
-        out self,
-        *,
-        ptr: UnsafePointer[
-            mut=Self.mut,
-            Byte,
-            origin=Self.origin,
-            address_space=AddressSpace.GENERIC,
-            ...,
-        ],
-        length: Int,
-    ):
-        """Construct a `StringSlice` from a pointer to a sequence of UTF-8
-        encoded bytes and a length.
-
-        Args:
-            ptr: A pointer to a sequence of bytes encoded in UTF-8.
-            length: The number of bytes of encoded data.
-
-        Safety:
-            - `ptr` MUST point to at least `length` bytes of valid UTF-8 encoded
-                data.
-            - `ptr` must point to data that is live for the duration of
-                `origin`.
-        """
-        self = Self(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=length))
 
     @implicit
     def __init__(out self, ref[Self.origin] value: String):
@@ -427,7 +350,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         writer.write_string("'")
 
         for s in self.codepoint_slices():
-            var b0 = s.unsafe_ptr()[0]  # safe
+            var b0 = s.unsafe_ptr()[unsafe_offset=0]  # safe
             # Python escapes backslashes but they are ASCII printable
             if b0 == `\\`:
                 writer.write_string(r"\\")
@@ -526,24 +449,31 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var span = self._slice[: c_idx + 1 + i0_multi_case]
         var c_count = len(span) - _count_utf8_continuation_bytes(span)
         if likely(c_count == len(span)):  # ASCII
-            return Self(unsafe_from_utf8=Span(unsafe_ptr=ptr + c_idx, length=1))
+            return Self(
+                unsafe_from_utf8=Span[Byte, Self.origin](
+                    unsafe_ptr=ptr.unsafe_offset(c_idx), length=1
+                )
+            )
         elif c_count == c_idx + 1:  # clipped the multi-byte sequence
             var b_idx = c_idx
-            while _is_utf8_continuation_byte(ptr[b_idx]):
+            while _is_utf8_continuation_byte(ptr[unsafe_offset=b_idx]):
                 b_idx -= 1
-            var length = Int(_utf8_first_byte_sequence_length(ptr[b_idx]))
+            var length = Int(
+                _utf8_first_byte_sequence_length(ptr[unsafe_offset=b_idx])
+            )
             return self[byte = b_idx : b_idx + length]
         else:  # keep going forward
             var b_idx = c_idx + 1
-            while _is_utf8_continuation_byte(ptr[b_idx]):
+            while _is_utf8_continuation_byte(ptr[unsafe_offset=b_idx]):
                 b_idx += 1
             for s in self[byte=b_idx:].codepoint_slices():
                 if c_count == c_idx:
                     return s
                 c_count += 1
             return {
-                unsafe_from_utf8 = Span(
-                    unsafe_ptr=ptr + self.byte_length() - 1, length=0
+                unsafe_from_utf8 = Span[Byte, Self.origin](
+                    unsafe_ptr=ptr.unsafe_offset(self.byte_length() - 1),
+                    length=0,
                 )
             }
 
@@ -582,7 +512,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             var offset = Int(cp_ptr) - Int(self.unsafe_ptr())
             var length = self.byte_length() - offset
             res = {
-                unsafe_from_utf8 = Span(
+                unsafe_from_utf8 = Span[Byte, Self.origin](
                     unsafe_ptr=cp_ptr,
                     length=length - Int(cp.byte_length() == 0),
                 )
@@ -597,7 +527,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 var r_ptr = res.unsafe_ptr()
                 var offset = Int(cp.unsafe_ptr()) - Int(r_ptr)
                 res = {
-                    unsafe_from_utf8 = Span(
+                    unsafe_from_utf8 = Span[Byte, Self.origin](
                         unsafe_ptr=r_ptr, length=offset + cp.byte_length()
                     )
                 }
@@ -965,7 +895,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         if not grapheme.end:
             return Self(
                 unsafe_from_utf8=Span[Byte, Self.origin](
-                    unsafe_ptr=self._slice.unsafe_ptr() + start_bytes,
+                    unsafe_ptr=self._slice.unsafe_ptr().unsafe_offset(
+                        start_bytes
+                    ),
                     length=total_bytes - start_bytes,
                 )
             )
@@ -984,7 +916,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         return Self(
             unsafe_from_utf8=Span[Byte, Self.origin](
-                unsafe_ptr=self._slice.unsafe_ptr() + start_bytes,
+                unsafe_ptr=self._slice.unsafe_ptr().unsafe_offset(start_bytes),
                 length=end_bytes - start_bytes,
             )
         )
@@ -1008,8 +940,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     @always_inline
     def _unchecked_get_byte(self, idx: Int) -> Self:
         return StringSlice(
-            unsafe_from_utf8=Span(
-                unsafe_ptr=self.unsafe_ptr() + idx,
+            unsafe_from_utf8=Span[Byte, Self.origin](
+                unsafe_ptr=self.unsafe_ptr().unsafe_offset(idx),
                 length=_utf8_first_byte_sequence_length(
                     self._slice.unsafe_get(idx)
                 ),
@@ -1107,7 +1039,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             A StringSlice merged with the other origin.
         """
         return {
-            unsafe_from_utf8 = Span(
+            unsafe_from_utf8 = Span[Byte, result.origin](
                 unsafe_ptr=self.unsafe_ptr()
                 .unsafe_mut_cast[result.mut]()
                 .unsafe_origin_cast[result.origin](),
@@ -1119,6 +1051,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # Methods
     # ===------------------------------------------------------------------===#
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def as_c_string_slice(
         self: StaticString,
@@ -1128,16 +1061,22 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             A c-compatible CStringSlice.
         """
-        return {unsafe_from_ptr = self.unsafe_ptr().bitcast[Int8]()}
+        return {unsafe_from_ptr = self.unsafe_ptr().unsafe_bitcast[Int8]()}
 
     @always_inline
-    def get_immutable(self) -> Self.Immutable:
+    def as_imm(self) -> Self.Immutable:
         """Return an immutable version of this Span.
 
         Returns:
             An immutable version of the same Span.
         """
         return rebind[Self.Immutable](self)
+
+    @doc_hidden
+    @always_inline
+    @deprecated(use=as_imm)
+    def get_immutable(self) -> Self.Immutable:
+        return self.as_imm()
 
     def replace(self, old: StringSlice, new: StringSlice) -> String:
         """Return a copy of the string with all occurrences of substring `old`
@@ -1582,7 +1521,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         )
         var suffix = Self.Immutable(
             unsafe_from_utf8=Span[Byte, ImmOrigin(Self.origin)](
-                unsafe_ptr=self._slice.unsafe_ptr() + split_bytes,
+                unsafe_ptr=self._slice.unsafe_ptr().unsafe_offset(split_bytes),
                 length=total - split_bytes,
             )
         )
@@ -1617,7 +1556,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return self._slice
 
     @always_inline
-    def unsafe_ptr(self) -> UnsafePointer[Byte, Self.origin]:
+    def unsafe_ptr(self) -> Pointer[Byte, Self.origin]:
         """Gets a pointer to the first element of this string slice.
 
         Returns:
@@ -1808,8 +1747,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         if end == -1:
             return self.find(prefix, start) == start
         return StringSlice[Self.origin](
-            unsafe_from_utf8=Span(
-                unsafe_ptr=self.unsafe_ptr() + start, length=end - start
+            unsafe_from_utf8=Span[Byte, Self.origin](
+                unsafe_ptr=self.unsafe_ptr().unsafe_offset(start),
+                length=end - start,
             )
         ).startswith(prefix)
 
@@ -1839,8 +1779,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             )
         # FIXME: use normalize_index
         return StringSlice[Self.origin](
-            unsafe_from_utf8=Span(
-                unsafe_ptr=self.unsafe_ptr() + start, length=end - start
+            unsafe_from_utf8=Span[Byte, Self.origin](
+                unsafe_ptr=self.unsafe_ptr().unsafe_offset(start),
+                length=end - start,
             )
         ).endswith(suffix)
 
@@ -1944,8 +1885,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var haystack = self.as_bytes()[start:]
 
         var loc = _memmem(
-            haystack.get_immutable(),
-            substr.as_bytes().get_immutable(),
+            haystack.as_imm(),
+            substr.as_bytes().as_imm(),
         )
 
         if not loc:
@@ -2035,7 +1976,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             var no_null_len = s.byte_length()
             var ptr = s.unsafe_ptr()
             if likely(no_null_len == 1):
-                var c = ptr[0]
+                var c = ptr[unsafe_offset=0]
                 return (
                     c == ` `
                     or c == `\t`
@@ -2048,11 +1989,20 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                     or c == `\x1e`
                 )
             elif no_null_len == 2:
-                return ptr[0] == 0xC2 and ptr[1] == 0x85  # next_line: \x85
+                return (
+                    ptr[unsafe_offset=0] == 0xC2
+                    and ptr[unsafe_offset=1] == 0x85
+                )  # next_line: \x85
             elif no_null_len == 3:
                 # unicode line sep or paragraph sep: \u2028 , \u2029
-                var last_byte = ptr[2] == 0xA8 or ptr[2] == 0xA9
-                return ptr[0] == 0xE2 and ptr[1] == 0x80 and last_byte
+                var last_byte = (
+                    ptr[unsafe_offset=2] == 0xA8 or ptr[unsafe_offset=2] == 0xA9
+                )
+                return (
+                    ptr[unsafe_offset=0] == 0xE2
+                    and ptr[unsafe_offset=1] == 0x80
+                    and last_byte
+                )
             return False
 
         comptime if single_character:
@@ -2086,7 +2036,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         _ = StringSlice("123").split("") # ['', '1', '2', '3', '']
         ```
         """
-        return _split[has_maxsplit=False](self.get_immutable(), sep, -1)
+        return _split[has_maxsplit=False](self.as_imm(), sep, -1)
 
     @always_inline
     def split(self, sep: StringSlice, maxsplit: Int) -> List[Self.Immutable]:
@@ -2109,7 +2059,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         _ = StringSlice("123").split("", maxsplit=1) # ['', '123']
         ```
         """
-        return _split[has_maxsplit=True](self.get_immutable(), sep, maxsplit)
+        return _split[has_maxsplit=True](self.as_imm(), sep, maxsplit)
 
     @always_inline
     def split(self, sep: NoneType = None) -> List[Self.Immutable]:
@@ -2136,7 +2086,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ).split()  # ["hello", "world"]
         ```
         """
-        return _split[has_maxsplit=False](self.get_immutable(), sep, -1)
+        return _split[has_maxsplit=False](self.as_imm(), sep, -1)
 
     @always_inline
     def split(
@@ -2157,7 +2107,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         _ = StringSlice("1     2  3").split(maxsplit=1) # ['1', '2  3']
         ```
         """
-        return _split[has_maxsplit=True](self.get_immutable(), sep, maxsplit)
+        return _split[has_maxsplit=True](self.as_imm(), sep, maxsplit)
 
     def isnewline[single_character: Bool = False](self) -> Bool:
         """Determines whether every character in the given StringSlice is a
@@ -2180,13 +2130,15 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         comptime if single_character:
             return length != 0 and _is_newline_char_utf8[include_r_n=True](
-                ptr, 0, ptr[0], length
+                ptr, 0, ptr[unsafe_offset=0], length
             )
         else:
             var offset = 0
             for s in self.codepoint_slices():
                 var b_len = s.byte_length()
-                if not _is_newline_char_utf8(ptr, offset, ptr[offset], b_len):
+                if not _is_newline_char_utf8(
+                    ptr, offset, ptr[unsafe_offset=offset], b_len
+                ):
                     return False
                 offset += b_len
             return length != 0
@@ -2209,7 +2161,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         comptime `\n` = UInt8(ord("\n"))
 
         var output = List[Self.Immutable](capacity=128)  # guessing
-        var ptr = self.get_immutable().unsafe_ptr()
+        var ptr = self.as_imm().unsafe_ptr()
         var length = self.byte_length()
         var line_start = 0
         var prev_b0 = Byte(0)
@@ -2224,7 +2176,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 var char_len = 0
 
                 while not is_new_line and line_end < length:
-                    b0 = ptr[line_end]
+                    b0 = ptr[unsafe_offset=line_end]
                     char_len = _utf8_first_byte_sequence_length(b0)
                     assert (
                         line_end + char_len <= length
@@ -2247,7 +2199,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                     var is_r = unlikely(b0 == `\r`)
                     var may_be_r_n = is_r and likely(line_end < length)
                     var is_r_n = Int(
-                        unlikely(may_be_r_n and ptr[line_end] == `\n`)
+                        unlikely(
+                            may_be_r_n and ptr[unsafe_offset=line_end] == `\n`
+                        )
                     )
                     line_end += is_r_n
                     str_len += is_r_n
@@ -2260,7 +2214,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                         continue
                 var s = Self.Immutable(
                     unsafe_from_utf8=Span(
-                        unsafe_ptr=ptr + line_start, length=Int(str_len)
+                        unsafe_ptr=ptr.unsafe_offset(line_start),
+                        length=Int(str_len),
                     )
                 )
                 output.append(s)
@@ -2619,7 +2574,9 @@ def _to_string_list[
         out_list.append(
             String(
                 StringSlice(
-                    unsafe_from_utf8=Span(unsafe_ptr=og_ptr, length=og_len)
+                    unsafe_from_utf8=Span[Byte, O](
+                        unsafe_ptr=og_ptr, length=og_len
+                    )
                 )
             )
         )
@@ -2642,15 +2599,10 @@ def _to_string_list[
         The list of created strings.
     """
 
-    def unsafe_ptr_fn(
-        v: StringSlice[O],
-    ) -> Pointer[Byte, O]:
-        return v.unsafe_ptr()
-
-    def len_fn(v: StringSlice[O]) -> Int:
-        return v.byte_length()
-
-    return _to_string_list[len_fn, unsafe_ptr_fn](items)
+    return _to_string_list[
+        lambda (v: StringSlice[O]) -> Int: v.byte_length(),
+        lambda (v: StringSlice[O]) -> Pointer[Byte, O]: v.unsafe_ptr(),
+    ](items)
 
 
 @always_inline
@@ -2669,13 +2621,10 @@ def _to_string_list[
         The list of created strings.
     """
 
-    def unsafe_ptr_fn(v: Span[Byte, O]) -> Pointer[Byte, O]:
-        return v.unsafe_ptr()
-
-    def len_fn(v: Span[Byte, O]) -> Int:
-        return len(v)
-
-    return _to_string_list[len_fn, unsafe_ptr_fn](items)
+    return _to_string_list[
+        lambda (v: Span[Byte, O]) -> Int: len(v),
+        lambda (v: Span[Byte, O]) -> Pointer[Byte, O]: v.unsafe_ptr(),
+    ](items)
 
 
 @always_inline
@@ -2702,13 +2651,13 @@ def _unsafe_strlen(ptr: Pointer[mut=False, Byte, _], max: Int = Int.MAX) -> Int:
 def _memchr[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]
+    source: Span[mut=False, Scalar[dtype], _], char: Scalar[dtype]
 ) -> OptionalPointer[Scalar[dtype], source.origin]:
     if (
         __is_run_in_comptime_interpreter
         or len(source) < simd_width_of[Scalar[dtype]]()
     ):
-        var ptr: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
+        var ptr = source.unsafe_ptr()
 
         for i in range(len(source)):
             if ptr[unsafe_offset=i] == char:
@@ -2722,10 +2671,10 @@ def _memchr[
 def _memchr_impl[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], ...],
+    source: Span[mut=False, Scalar[dtype], _],
     char: Scalar[dtype],
 ) -> OptionalPointer[Scalar[dtype], source.origin]:
-    var haystack: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
+    var haystack = source.unsafe_ptr()
     var length = len(source)
     comptime bool_mask_width = simd_width_of[DType.bool]()
     var first_needle = SIMD[dtype, bool_mask_width](char)
@@ -2752,12 +2701,8 @@ def _memchr_impl[
 def _memmem[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], ...],
-    needle_span: Span[
-        mut=False,
-        Scalar[dtype],
-        ...,
-    ],
+    haystack_span: Span[mut=False, Scalar[dtype], _],
+    needle_span: Span[mut=False, Scalar[dtype], _],
 ) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
     if (
         __is_run_in_comptime_interpreter
@@ -2771,12 +2716,14 @@ def _memmem[
         var needle_len = len(needle_span)
 
         for i in range(haystack_len - needle_len + 1):
-            if haystack[unsafe_offset=i] != needle[0]:
+            if haystack[unsafe_offset=i] != needle[unsafe_offset=0]:
                 continue
 
             if (
                 unsafe_memcmp(
-                    haystack.unsafe_offset(i + 1), needle + 1, needle_len - 1
+                    haystack.unsafe_offset(i + 1),
+                    needle.unsafe_offset(1),
+                    needle_len - 1,
                 )
                 == 0
             ):
@@ -2791,12 +2738,8 @@ def _memmem[
 def _memmem_impl[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], ...],
-    needle_span: Span[
-        mut=False,
-        Scalar[dtype],
-        ...,
-    ],
+    haystack_span: Span[mut=False, Scalar[dtype], _],
+    needle_span: Span[mut=False, Scalar[dtype], _],
 ) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
     var haystack: Pointer[
         Scalar[dtype], haystack_span.origin
@@ -2806,7 +2749,7 @@ def _memmem_impl[
     var needle_len = len(needle_span)
     assert needle_len > 0, "needle_len must be > 0"
     if needle_len == 1:
-        return _memchr(haystack_span, needle[0])
+        return _memchr(haystack_span, needle[unsafe_offset=0])
     elif needle_len > haystack_len:
         return {}
 
@@ -2815,8 +2758,10 @@ def _memmem_impl[
         haystack_len - needle_len + 1, bool_mask_width
     )
 
-    var first_needle = SIMD[dtype, bool_mask_width](needle[0])
-    var last_needle = SIMD[dtype, bool_mask_width](needle[needle_len - 1])
+    var first_needle = SIMD[dtype, bool_mask_width](needle[unsafe_offset=0])
+    var last_needle = SIMD[dtype, bool_mask_width](
+        needle[unsafe_offset=needle_len - 1]
+    )
 
     for i in range(0, vectorized_end, bool_mask_width):
         var first_block = haystack.unsafe_load[width=bool_mask_width](i)
@@ -2834,7 +2779,7 @@ def _memmem_impl[
             if (
                 unsafe_memcmp(
                     haystack.unsafe_offset(offset + 1),
-                    needle + 1,
+                    needle.unsafe_offset(1),
                     needle_len - 1,
                 )
                 == 0
@@ -2843,12 +2788,14 @@ def _memmem_impl[
             mask = mask & (mask - 1)
 
     for i in range(vectorized_end, haystack_len - needle_len + 1):
-        if haystack[unsafe_offset=i] != needle[0]:
+        if haystack[unsafe_offset=i] != needle[unsafe_offset=0]:
             continue
 
         if (
             unsafe_memcmp(
-                haystack.unsafe_offset(i + 1), needle + 1, needle_len - 1
+                haystack.unsafe_offset(i + 1),
+                needle.unsafe_offset(1),
+                needle_len - 1,
             )
             == 0
         ):
@@ -2890,7 +2837,7 @@ def _memrmem[
         if (
             unsafe_memcmp(
                 hp.unsafe_offset(i + 1),
-                needle.unsafe_ptr() + 1,
+                needle.unsafe_ptr().unsafe_offset(1),
                 len(needle) - 1,
             )
             == 0
@@ -2908,7 +2855,7 @@ def _split[
     out output: List[type_of(src_str).Immutable],
 ):
     comptime S = type_of(src_str).Immutable
-    var ptr = src_str.unsafe_ptr().as_immutable()
+    var ptr = src_str.unsafe_ptr().as_imm()
     var sep_len = sep.byte_length()
     if sep_len == 0:
         var iterator = src_str.codepoint_slices()
@@ -2918,7 +2865,11 @@ def _split[
         for s in iterator:
             output.append(s)
         output.append(
-            S(unsafe_from_utf8=Span(unsafe_ptr=ptr + i_len - 1, length=0))
+            S(
+                unsafe_from_utf8=Span(
+                    unsafe_ptr=ptr.unsafe_offset(i_len - 1), length=0
+                )
+            )
         )
         return
 
@@ -2946,7 +2897,11 @@ def _split[
             items += 1
 
         output.append(
-            S(unsafe_from_utf8=Span(unsafe_ptr=ptr + lhs, length=rhs - lhs))
+            S(
+                unsafe_from_utf8=Span(
+                    unsafe_ptr=ptr.unsafe_offset(lhs), length=rhs - lhs
+                )
+            )
         )
         lhs = rhs + sep_len
 
@@ -2970,14 +2925,16 @@ def _split[
     var lhs = 0
     var rhs: Int
     var items = 0
-    var ptr = src_str.unsafe_ptr().as_immutable()
+    var ptr = src_str.unsafe_ptr().as_imm()
 
     comptime PointerType = type_of(ptr)
 
     @always_inline("nodebug")
     def _build_slice(p: PointerType, start: Int, end: Int) -> S:
         return S(
-            unsafe_from_utf8=Span(unsafe_ptr=p + start, length=end - start)
+            unsafe_from_utf8=Span(
+                unsafe_ptr=p.unsafe_offset(start), length=end - start
+            )
         )
 
     while lhs <= str_byte_len:
@@ -2991,7 +2948,7 @@ def _split[
         # until the start of the whitespace which was already appended
         if lhs == str_byte_len:
             break
-        rhs = lhs + _utf8_first_byte_sequence_length(ptr[lhs])
+        rhs = lhs + _utf8_first_byte_sequence_length(ptr[unsafe_offset=lhs])
         for s in _build_slice(ptr, rhs, str_byte_len).codepoint_slices():
             if s.isspace[single_character=True]():
                 break
@@ -3002,6 +2959,10 @@ def _split[
             items += 1
 
         output.append(
-            S(unsafe_from_utf8=Span(unsafe_ptr=ptr + lhs, length=rhs - lhs))
+            S(
+                unsafe_from_utf8=Span(
+                    unsafe_ptr=ptr.unsafe_offset(lhs), length=rhs - lhs
+                )
+            )
         )
         lhs = rhs

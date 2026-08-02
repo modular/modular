@@ -16,8 +16,8 @@ Verifies PTX instruction selection for global memory, shared memory, invariant,
 and vectorized load/store operations when compiled for NVIDIA GPUs.
 """
 
-from std.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host import get_gpu_target
+from max.gpu.host.compile import _compile_code
 from std.gpu.memory import AddressSpace
 from std.testing import assert_true, TestSuite
 

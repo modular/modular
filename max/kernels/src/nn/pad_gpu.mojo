@@ -14,7 +14,7 @@
 
 from std.algorithm.functional import vectorize
 from std.gpu import block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
+from max.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
 from layout import Coord, TensorLayout, TileTensor
 from layout.tile_layout import Layout
 from std.math import align_down, ceildiv
@@ -115,49 +115,25 @@ def padded_copy_kernel[
 ](
     input_tensor: TileTensor[dtype, InputLayoutType, input_origin],
     output_tensor: TileTensor[dtype, OutputLayoutType, output_origin],
-    rows_per_sm: Int,
-    total_rows: Int,
-    row_length: Int,
+    rows_per_sm: Int32,
+    total_rows: Int32,
+    row_length: Int32,
 ):
-    """Copies rows from `input_tensor` into the unpadded region of
-    `output_tensor` using a cooperatively vectorized, coalesced row copy.
-
-    Each block processes `rows_per_sm` rows (clamped to `total_rows`), and
-    threads along the x-dimension cooperate on a single row via
-    `_vectorized_copy_row`, advancing through rows in steps of `block_dim.y`.
-    The input is treated as a flat row-major buffer of `total_rows` rows each
-    of length `row_length`, while the output offset for each row is derived
-    from `output_tensor`'s layout so the copy lands in the correct position
-    within the padded output.
-
-    Parameters:
-        InputLayoutType: Layout type of the input `TileTensor`.
-        input_origin: Origin (mutability) of the input `TileTensor`.
-        OutputLayoutType: Layout type of the output `TileTensor`.
-        output_origin: Origin (mutability) of the output `TileTensor`.
-        dtype: Element type of the tensors.
-        simd_width: SIMD vector width used for the coalesced row copy.
-
-    Args:
-        input_tensor: Source `TileTensor` of contiguous row-major data.
-        output_tensor: Destination `TileTensor` whose layout maps each row
-            to its padded output position.
-        rows_per_sm: Maximum rows assigned to a single thread block.
-        total_rows: Total number of rows to copy.
-        row_length: Number of elements in each row.
-    """
-    var start_row = block_idx.x * rows_per_sm
+    var _rows_per_sm = Int(rows_per_sm)
+    var _total_rows = Int(total_rows)
+    var _row_length = Int(row_length)
+    var start_row = block_idx.x * _rows_per_sm
     var threads_per_row = block_dim.x
 
     var rows_per_iter = block_dim.y
-    var end_row = min(start_row + rows_per_sm, total_rows)
+    var end_row = min(start_row + _rows_per_sm, _total_rows)
 
     start_row += thread_idx.y
 
     for row in range(start_row, end_row, rows_per_iter):
-        var coord = input_tensor.layout.idx2crd(row * row_length)
+        var coord = input_tensor.layout.idx2crd(row * _row_length)
         var output_offset = Int(output_tensor.layout(coord))
-        var input_offset = row * row_length
+        var input_offset = row * _row_length
 
         var output_ptr = output_tensor.ptr + output_offset
         var input_ptr = input_tensor.ptr + input_offset
@@ -165,7 +141,7 @@ def padded_copy_kernel[
         _vectorized_copy_row[dtype, simd_width](
             input_ptr,
             output_ptr,
-            row_length,
+            _row_length,
             threads_per_row,
         )
 
@@ -227,9 +203,9 @@ def _pad_constant_impl[
     ctx.enqueue_function[kernel](
         input_tensor.as_immut(),
         output_tensor,
-        rows_per_block,
-        total_rows,
-        row_length,
+        Int32(rows_per_block),
+        Int32(total_rows),
+        Int32(row_length),
         grid_dim=(linear_block_count),
         block_dim=(threads_per_row, block_rows),
     )

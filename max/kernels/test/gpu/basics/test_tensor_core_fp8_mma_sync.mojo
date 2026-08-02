@@ -13,9 +13,9 @@
 
 from std.io.io import _printf
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import thread_idx
-from std.gpu.compute.mma import mma
+from max.gpu.compute.mma import mma
 
 
 def mma_sync_16x8x32_E4M3():

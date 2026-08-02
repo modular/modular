@@ -16,8 +16,10 @@ from std.collections import Optional
 from std.math import ceildiv
 from std.sys import CompilationTarget, align_of, simd_width_of, size_of
 
-from std.algorithm import sync_parallelize, tile
-from std.gpu.host import DeviceContext
+from std.algorithm import tile
+
+from max.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,
@@ -37,11 +39,11 @@ from std.memory import (
     alloc,
     bitcast,
     dealloc,
-    stack_allocation,
+    unsafe_stack_allocation,
 )
 from std.memory.alloc import Layout as AllocLayout
 
-from std.runtime.asyncrt import parallelism_level
+from max.runtime.asyncrt import parallelism_level
 
 from std.utils.index import Index
 
@@ -255,9 +257,7 @@ def _unpack_weights[
         b_scale_ptr += tile_n * simd_width
         b_packed_ptr += size_of[DType.float16]() * tile_n * simd_width
 
-        var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
-            fill=0
-        )
+        var b_column_sums = Array[SIMD[DType.int32, simd_width], tile_n](fill=0)
 
         for _ in range(0, group_size, 8):
             comptime for col in range(tile_n):
@@ -354,7 +354,7 @@ def _scale_and_accumulate[
     mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
     mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
-    var b_scale = InlineArray[SIMD[DType.float32, simd_width], tile_n](
+    var b_scale = Array[SIMD[DType.float32, simd_width], tile_n](
         uninitialized=True
     )
 
@@ -496,9 +496,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         # Skip over the float16 scales.
         var b_offset = size_of[DType.float16]() * tile_n * simd_width
 
-        var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
-            fill=0
-        )
+        var b_column_sums = Array[SIMD[DType.int32, simd_width], tile_n](fill=0)
 
         comptime for k in range(0, group_size, 8):
             var a_val_lo = bitcast[DType.int32, 1](a_ptr.load[width=4](k))
@@ -636,9 +634,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
         # Skip over the float16 scales.
         var b_offset = size_of[DType.float16]() * tile_n * simd_width
 
-        var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
-            fill=0
-        )
+        var b_column_sums = Array[SIMD[DType.int32, simd_width], tile_n](fill=0)
 
         comptime for k in range(0, group_size, 8):
             var a_lo = SIMD[DType.int32, simd_width](
@@ -850,9 +846,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
         var b_offset = 0
 
         comptime for k in range(0, group_size, 16):
-            var a_tile = InlineArray[SIMD[DType.int8, 16], tile_m](
-                uninitialized=True
-            )
+            var a_tile = Array[SIMD[DType.int8, 16], tile_m](uninitialized=True)
 
             comptime for row in range(tile_m):
                 a_tile[row] = a_ptr.load[width=16](row * group_size + k)
@@ -943,7 +937,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         var b_offset = 0
 
         comptime for k in range(0, group_size, 8):
-            var a_tile = InlineArray[
+            var a_tile = Array[
                 SIMD[DType.int8, SIMDLength(simd_width) * 4], block_m
             ](fill=0)
 
@@ -1145,12 +1139,12 @@ def _matmul_qint4_m_any[
 
                 comptime k_batch_groups = K_BATCH_SIZE // group_size
 
-                var b_s8_buf = stack_allocation[
+                var b_s8_buf = unsafe_stack_allocation[
                     K_BATCH_SIZE * tile_n * simd_width,
                     DType.int8,
                     alignment=alignment,
                 ]()
-                var b_scale_buf = stack_allocation[
+                var b_scale_buf = unsafe_stack_allocation[
                     k_batch_groups * tile_n * simd_width,
                     DType.float32,
                     alignment=alignment,
@@ -1161,7 +1155,7 @@ def _matmul_qint4_m_any[
                 # accumulator.
                 comptime needs_correction = aq_type.is_unsigned()
 
-                var b_correction_buf = stack_allocation[
+                var b_correction_buf = unsafe_stack_allocation[
                     k_batch_groups * tile_n * simd_width,
                     DType.int32,
                     alignment=alignment,
@@ -1293,12 +1287,18 @@ def _matmul_qint4[
     )
     var a_scale_base = alloc(AllocLayout[Float32](count=M * k_groups))
 
+    var a_quant_ptr: UnsafePointer[
+        Scalar[aq_type], origin_of(a_quant_base._alloc)
+    ] = a_quant_base.unsafe_ptr()
     var a_quant = LayoutTensor[aq_type, Layout.row_major[2]()](
-        a_quant_base.unsafe_ptr(),
+        a_quant_ptr,
         RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, K)),
     )
+    var a_scale_ptr: UnsafePointer[
+        Float32, origin_of(a_scale_base._alloc)
+    ] = a_scale_base.unsafe_ptr()
     var a_scale = LayoutTensor[DType.float32, Layout.row_major[2]()](
-        a_scale_base.unsafe_ptr(),
+        a_scale_ptr,
         RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, k_groups)),
     )
 

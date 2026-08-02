@@ -18,15 +18,15 @@ from std.math import align_down, align_up, ceildiv, divmod
 from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
 
-from std.algorithm.functional import (
+from max.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     dual_elementwise,
     elementwise,
     sync_parallelize,
 )
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu, is_valid_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host.info import is_cpu, is_valid_target
 from layout import (
     Coord,
     TensorLayout,
@@ -36,7 +36,7 @@ from layout import (
     row_major,
 )
 from std.memory import unsafe_memcpy
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils import IndexList, StaticTuple, product
 
@@ -705,9 +705,9 @@ def _concat_gpu_flat_kernel[
         TileTensor[dtype, InputLayoutType, input_origin, Storage=InputStorage],
         num_inputs,
     ],
-    inner_size: Int,
-    total_concat_dim: Int,
-    total_vec_items: Int,
+    inner_size: Int32,
+    total_concat_dim: Int32,
+    total_vec_items: Int32,
 ):
     """Flat-indexing GPU kernel for concat.
 
@@ -715,15 +715,18 @@ def _concat_gpu_flat_kernel[
     uses flat pointer arithmetic to avoid multi-dimensional index decomposition
     and TileTensor coordinate-to-offset conversion overhead.
     """
+    var _inner_size = Int(inner_size)
+    var _total_concat_dim = Int(total_concat_dim)
+    var _total_vec_items = Int(total_vec_items)
     var tid = block_idx.x * block_size + thread_idx.x
-    if tid >= total_vec_items:
+    if tid >= _total_vec_items:
         return
 
     var vec_idx = tid * vec_width
 
     # Decompose flat index into (outer, concat, inner) coordinates.
-    var remaining, inner_idx = divmod(vec_idx, inner_size)
-    var outer_idx, concat_idx = divmod(remaining, total_concat_dim)
+    var remaining, inner_idx = divmod(vec_idx, _inner_size)
+    var outer_idx, concat_idx = divmod(remaining, _total_concat_dim)
 
     # Find which input this concat_idx belongs to and compute source offset.
     # Alignment is guaranteed: vec_idx is a multiple of vec_width, and
@@ -736,7 +739,7 @@ def _concat_gpu_flat_kernel[
             var local_concat = concat_idx - acc
             var in_offset = (
                 outer_idx * input_concat_dim + local_concat
-            ) * inner_size + inner_idx
+            ) * _inner_size + inner_idx
             output.raw_store[alignment=vec_width](
                 vec_idx,
                 inputs[i].raw_load[
@@ -894,9 +897,9 @@ def _concat_gpu_elementwise[
             ctx.enqueue_function[kernel_fn](
                 output,
                 inputs,
-                inner_size,
-                total_concat_dim,
-                total_vec_items,
+                Int32(inner_size),
+                Int32(total_concat_dim),
+                Int32(total_vec_items),
                 grid_dim=(ceildiv(total_vec_items, _block_size),),
                 block_dim=(_block_size,),
             )

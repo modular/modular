@@ -14,8 +14,8 @@
 from std.sys.info import _accelerator_arch
 from std.sys.defines import get_defined_string, is_defined
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import GPUInfo
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import GPUInfo
 
 
 def api() -> String:

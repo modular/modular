@@ -36,7 +36,7 @@ from std.sys.info import _accelerator_arch
 
 from std.bit import prev_power_of_two
 from std.gpu import WARP_SIZE, lane_id
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout.layout_tensor import LayoutTensorIter
@@ -102,7 +102,7 @@ def as_dynamic_row_major_1d[
         by the same storage as `tensor`.
     """
     return {
-        tensor.ptr.as_immutable().as_unsafe_any_origin(),
+        tensor.ptr.as_imm().as_unsafe_any_origin(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             tensor.get_shape()
         ),

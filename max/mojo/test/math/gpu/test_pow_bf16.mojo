@@ -13,9 +13,9 @@
 
 from std.sys import simd_width_of
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.gpu import *
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.testing import assert_almost_equal, TestSuite
 
 from std.utils.coord import Coord
@@ -50,7 +50,7 @@ def run_elementwise[
 
         var val = (
             in_buffer.unsafe_ptr()
-            .load[width=simd_width](idx)
+            .unsafe_load[width=simd_width](idx)
             .cast[DType.bfloat16]()
         )
         var result: SIMD[DType.bfloat16, simd_width]
@@ -59,7 +59,7 @@ def run_elementwise[
             result = val ** SIMD[DType.bfloat16, simd_width](exponent)
         else:
             result = val**exponent
-        out_buffer.unsafe_ptr().store[width=simd_width](
+        out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx, result.cast[DType.float32]()
         )
 

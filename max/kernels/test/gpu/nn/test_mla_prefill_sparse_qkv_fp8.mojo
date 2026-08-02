@@ -37,8 +37,8 @@ from std.random import randn
 from std.sys import has_nvidia_gpu_accelerator, size_of
 
 from std.gpu import *
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,
@@ -496,16 +496,20 @@ def run_test_prefill_sparse_qkv_fp8[
     # 3: the kernel is KV-gather-latency bound -- NCU showed long_scoreboard the
     # dominant stall with DRAM at <1% -- so a deeper software-pipeline hides more
     # gather latency; measured 1.7-2.9% faster than depth-3 at production shapes,
-    # same-session A/B, 24/24 correctness unchanged).  head=128 runs the 2-CTA
-    # (cta_group=2) f8f6f4 tile at num_mbars=4 (deepened from 2 for the same
-    # reason; measured ~2.7-2.8% faster than depth-2).  Both depths fit the B200
-    # SMEM carveout with room to spare (cg1: 198.8 KiB / 227 KiB; cg2: 191.4 KiB
-    # / 227 KiB); depth-5 does not fit either tile.  b_topk stays 64 for both:
-    # the native PV reads V mn-major SW64 at BK=b_topk, a layout proven correct
-    # only at 64 (BK=128 mis-swizzles the key dimension).
+    # same-session A/B, 24/24 correctness unchanged).  b_topk stays 64 here: the
+    # native PV mn-major SW64 read only proves correct at a single SW64 atom
+    # (see `_mma`'s NUM_PV_KHALVES comment in mla_prefill_sparse_qkv_fp8.mojo).
+    #
+    # head=128 runs the 2-CTA (cta_group=2) f8f6f4 tile at b_topk=128 (halves
+    # the k-block count and cross-CTA handshakes vs b_topk=64) via the K-axis
+    # P@V split (NUM_PV_KHALVES=2 BK=64 sub-MMAs per atom, mirroring the
+    # proven SS_P0/SS_P1 key-half split in the dequant `SVMMAType`).
+    # num_mbars=2 here (cut from 4) keeps num_mbars*b_topk constant (256, same
+    # KV-staging footprint as the depth-4/b_topk=64 baseline), so the SMEM
+    # carveout is unaffected by the b_topk bump.
     comptime cta_group = 2 if num_heads == 128 else 1
-    comptime b_topk = 64
-    comptime num_mbars = 4
+    comptime b_topk = 128 if cta_group == 2 else 64
+    comptime num_mbars = 2 if cta_group == 2 else 4
     comptime config = MLASparseConfig[
         DType.bfloat16,
         b_topk_=b_topk,

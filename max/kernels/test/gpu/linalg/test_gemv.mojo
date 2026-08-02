@@ -16,7 +16,7 @@ from std.random import randn, seed, random_float64
 
 import std.gpu.primitives.warp as warp
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.sys import simd_width_of
 from linalg.gemv import gemv_kernel, gemv_split_k, gevm_kernel
 from linalg.matmul.gpu import matmul_kernel
@@ -82,9 +82,9 @@ def run_matvec[
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
@@ -103,9 +103,9 @@ def run_matvec[
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=ceildiv(N, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
@@ -245,9 +245,9 @@ def run_matvec_with_epilogue_fn(
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
@@ -268,9 +268,9 @@ def run_matvec_with_epilogue_fn(
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=ceildiv(N, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
@@ -322,9 +322,9 @@ def run_matvec_with_epilogue_fn(
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -448,9 +448,9 @@ def run_split_k_gemm[
             c_nd,
             a_nd,
             w_nd,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, tile_m), ceildiv(N, tile_n)),
             block_dim=num_threads,
         )
@@ -477,9 +477,9 @@ def run_split_k_gemm[
             c_nd,
             a_nd,
             w_nd,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, tile_m), ceildiv(N, tile_n)),
             block_dim=num_threads,
         )

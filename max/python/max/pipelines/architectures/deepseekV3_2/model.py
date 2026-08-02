@@ -101,6 +101,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_quant_config=None,
+                use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
             )
 
             if config.n_shared_experts == 1:

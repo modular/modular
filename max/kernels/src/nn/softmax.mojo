@@ -13,6 +13,7 @@
 """Provides numerically stable softmax kernels for CPU and GPU, including fused and online variants."""
 
 from std.math import align_down, ceildiv, exp, exp2, log
+from std.builtin.device_passable import DevicePassable
 from std.math.uutils import umod, ufloordiv, udivmod
 from std.collections import Optional, OptionalReg
 
@@ -20,10 +21,12 @@ from std.sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 from std.sys._assembly import inlined_assembly
 
 import std.gpu.primitives.warp as warp
-from std.algorithm import sync_parallelize, vectorize
+from std.algorithm import vectorize
+
+from max.algorithm import sync_parallelize
 from std.algorithm.backend.unswitch import unswitch
-from std.algorithm.backend.gpu.reduction import block_reduce, row_reduce
-from std.algorithm.reduction import (
+from max.algorithm.backend.gpu.reduction import block_reduce, row_reduce
+from max.algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
 )
@@ -42,8 +45,8 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
-from std.gpu.host import DeviceAttribute, DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host import DeviceAttribute, DeviceContext, get_gpu_target
+from max.gpu.host.info import is_cpu, is_gpu
 from std.gpu.primitives import block
 from layout._utils import idx2crd
 from layout import (
@@ -64,9 +67,9 @@ from layout import (
 )
 from layout.tile_layout import Layout as InternalLayout
 from layout.tensor_core import get_fragment_size
-from std.memory import stack_allocation
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from std.memory import unsafe_stack_allocation
+from max.runtime.asyncrt import parallelism_level
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils import IndexList, StaticTuple
 from std.utils.coord import Coord
@@ -1211,7 +1214,7 @@ def _softmax_gpu[
                             shape_il,
                             Float32(1),
                             null_temp_arr,
-                            num_splits,
+                            Int32(num_splits),
                             partial_max,
                             partial_sum,
                             grid_dim=num_pairs,
@@ -1234,7 +1237,7 @@ def _softmax_gpu[
                             output,
                             Float32(1),
                             null_temp_arr,
-                            num_splits,
+                            Int32(num_splits),
                             partial_max,
                             partial_sum,
                             grid_dim=num_pairs,
@@ -1400,7 +1403,7 @@ def _softmax_temperature_kernel[
     output: TileTensor[
         dtype, OutputLayoutType, output_origin, Storage=OutputStorage
     ],
-    temperature: Scalar[temp_dtype],
+    temperature: Float32,
     temperature_arr: Optional[
         UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin]
     ],
@@ -1416,6 +1419,7 @@ def _softmax_temperature_kernel[
     higher values require the input/output layout to support an aligned
     `simd_width`-wide load/store at every row offset.
     """
+    var _temperature = Scalar[temp_dtype](temperature)
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime assert (
         accum_type.is_floating_point()
@@ -1441,7 +1445,7 @@ def _softmax_temperature_kernel[
                 row_idx, shape, axis
             )
 
-            var temp = temperature.cast[accum_type]()
+            var temp = _temperature.cast[accum_type]()
             if temperature_arr:
                 temp = temperature_arr.unsafe_value()[row_idx].cast[
                     accum_type
@@ -1547,7 +1551,7 @@ def _softmax_split_partial_kernel[
     temperature_arr: Optional[
         UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin]
     ],
-    num_splits: Int,
+    num_splits_dev: Int32,
     partial_max: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
     partial_sum: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
 ):
@@ -1559,6 +1563,7 @@ def _softmax_split_partial_kernel[
     mirror step 1 of `_softmax_temperature_kernel`; a fully-masked chunk yields
     `(NEG_INF, 0)`, which stage 2 skips.
     """
+    var num_splits = Int(num_splits_dev)
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime assert (
         accum_type.is_floating_point()
@@ -1654,7 +1659,7 @@ def _softmax_split_combine_kernel[
     temperature_arr: Optional[
         UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin]
     ],
-    num_splits: Int,
+    num_splits_dev: Int32,
     partial_max: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
     partial_sum: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
 ):
@@ -1664,6 +1669,7 @@ def _softmax_split_combine_kernel[
     A fully-masked chunk contributes `0` (not NaN) via the `my_max > NEG_INF`
     guard; a fully-masked row keeps the single-block kernel's `1/0` NaN result.
     """
+    var num_splits = Int(num_splits_dev)
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime assert (
         accum_type.is_floating_point()
@@ -1807,7 +1813,7 @@ def softmax_with_temperature[
     ctx.enqueue_function[kernel](
         IndexList[2](batch_size, d),
         output,
-        temperature,
+        temperature.cast[DType.float32](),
         temp_ptr,
         grid_dim=num_blocks,
         block_dim=BLOCK_SIZE,
@@ -1928,10 +1934,10 @@ def _online_softmax_kernel[
         1 if fragment_transpose else 4
     )
     comptime row_alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
-    var rowmax = stack_allocation[
+    var rowmax = unsafe_stack_allocation[
         num_m_mmas * frag_num_rows, dtype, alignment=row_alignment
     ]()
-    var rowsum = stack_allocation[
+    var rowsum = unsafe_stack_allocation[
         num_m_mmas * frag_num_rows, dtype, alignment=row_alignment
     ]()
 

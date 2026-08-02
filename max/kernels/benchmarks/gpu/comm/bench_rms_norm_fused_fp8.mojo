@@ -14,8 +14,9 @@
 from std.random import random_float64
 from std.sys import get_defined_bool, get_defined_dtype
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import (
     get_defined_shape,
     int_list_to_tuple,
@@ -156,7 +157,7 @@ def bench_rms_norm_fused_fp8[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     b.bench_function[bench_rms_norm](
         BenchId(
@@ -204,7 +205,7 @@ def bench_rms_norm_fused_fp8[
                 num_cols=cols,
             ](fp8_input_fn, fp8_output_tt, scales_tt, Float32(448.0), ctx, rows)
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     b.bench_function[bench_fp8_quant](
         BenchId(
@@ -278,7 +279,7 @@ def bench_rms_norm_fused_fp8[
                 fused_scales_tt,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     b.bench_function[bench_fused](
         BenchId(

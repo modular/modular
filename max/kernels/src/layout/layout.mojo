@@ -1739,7 +1739,7 @@ def expand_strides(shape: IntTuple, stride: Int) -> IntTuple:
 
 def expand_modes_alike(
     shape_a: IntTuple, stride_a: IntTuple, shape_b: IntTuple, stride_b: IntTuple
-) -> InlineArray[IntTuple, 3]:
+) -> Array[IntTuple, 3]:
     """Aligns two shape-stride pairs to have the same hierarchical structure.
 
     This function is used to make two layouts compatible for operations by ensuring
@@ -1812,9 +1812,7 @@ def expand_modes_alike(
         ]
 
 
-def expand_modes_alike(
-    layout_a: Layout, layout_b: Layout
-) -> InlineArray[Layout, 2]:
+def expand_modes_alike(layout_a: Layout, layout_b: Layout) -> Array[Layout, 2]:
     """Aligns two layouts to have the same hierarchical structure.
 
     This function tiles both layouts so they mirror each other's structure,

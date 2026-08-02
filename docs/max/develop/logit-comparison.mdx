@@ -11,7 +11,7 @@ absolute error, cosine distance, and KL divergence.
 
 :::note
 
-The reference model is typically the Hugging Face Transformers implementation
+The reference model is typically the Transformers implementation
 on PyTorch.
 
 :::
@@ -31,6 +31,10 @@ introduce small, insignificant numerical differences in logits. Instead,
 measure against thresholds that account for the expected numerical variation.
 While we provide threshold suggestions, you should decide what counts as
 significant for your own use case.
+
+If the calculations do not meet your thresholds, compare the output tensors of
+*individual layers* between your MAX model and the reference model. For more
+information, see [Layer comparison](/develop/layer-comparison/).
 
 ### Mean absolute error
 
@@ -114,15 +118,15 @@ used to select each generated token across five generation steps. It then
 reports the metrics so you can compare them against your thresholds.
 
 The script uses
-[`PipelineArgs`](/max/api/python/generated/max.pipelines.PipelineArgs/) to load
-your architecture from
-[`PIPELINE_REGISTRY`](/max/api/python/generated/max.pipelines.lib.registry.PIPELINE_REGISTRY/),
+[`PipelineArgs`](/api/python/generated/max.pipelines.PipelineArgs/) to load your
+architecture from
+[`PIPELINE_REGISTRY`](/api/python/generated/max.pipelines.lib.registry.PIPELINE_REGISTRY/),
 then sends a
-[`TextGenerationRequest`](/max/api/python/generated/max.pipelines.modeling.types.TextGenerationRequest/)
+[`TextGenerationRequest`](/api/python/generated/max.pipelines.modeling.types.TextGenerationRequest/)
 per prompt. To capture each step's logits, the request's
-[`SamplingParams`](/max/api/python/generated/max.pipelines.context.SamplingParams/)
+[`SamplingParams`](/api/python/generated/max.pipelines.context.SamplingParams/)
 attaches a
-[`LogitsProcessor`](/max/api/python/generated/max.pipelines.context.LogitsProcessor/)
+[`LogitsProcessor`](/api/python/generated/max.pipelines.context.LogitsProcessor/)
 that the pipeline calls before sampling.
 
 :::note
@@ -309,7 +313,7 @@ model passes your validation criteria.
 Use these related resources next:
 
 - To investigate why a model doesn't meet your similarity thresholds, see
-  [Debug MAX model accuracy](https://github.com/modular/modular/blob/main/max/docs/accuracy-debugging.md).
+  [Layer comparison](/develop/layer-comparison/).
 - To learn about the stricter validation methods MAX requires for model
   contribution, see
   [Contributing new model architectures](https://github.com/modular/modular/blob/main/max/docs/contributing-models.md).

@@ -84,10 +84,10 @@ def _metrics_url(framework: str) -> str:
 #   max serve --config-file max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml
 # fmt: off
 MODEL_RECIPES = CaseInsensitiveDict({
-    "deepseek-ai/DeepSeek-R1-0528": "max/pipelines/architectures/deepseekV3/recipes/r1_0528_8x_b200.yaml",
-    "deepseek-ai/DeepSeek-R1-0528__modulev3": "max/pipelines/architectures/deepseekV3_modulev3/recipes/r1_0528_8x_b200.yaml",
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
     "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
+    "deepseek-ai/DeepSeek-V3.1-Terminus__modulev3": "max/pipelines/architectures/deepseekV3_modulev3/recipes/terminus_8x_b200.yaml",
+    "google/gemma-4-12B-it__dspark": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_dspark.yaml",
     "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
     "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
@@ -98,10 +98,8 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "lukealonso/MiniMax-M2.7-NVFP4": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_nvfp4_8x_b200.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__dflash": "max/pipelines/architectures/llama3/recipes/llama31_8b_dflash.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__eagle": "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle.yaml",
-    "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle_local_kvconnector.yaml",
-    "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_local_kvconnector.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": "max/pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml",
-    "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_tiered_kvconnector.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_rust_tiered_kvconnector.yaml",
     "microsoft/Phi-3.5-mini-instruct__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi35_mini.yaml",
     "microsoft/phi-4__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi4.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml",
@@ -119,13 +117,10 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/Kimi-K2.6-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tpep_8x_b200.yaml",
     "nvidia/Kimi-K2.5-NVFP4__dflash_tp": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_dflash_tp_8x_b200.yaml",
     "nvidia/Kimi-K2.5-NVFP4__dflash_dp": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_dflash_dp_8x_b200.yaml",
-    "Qwen/Qwen3-235B-A22B-Instruct-2507": "max/pipelines/architectures/qwen3/recipes/qwen3_235b_a22b_8x_b200.yaml",
-    "unsloth/gpt-oss-20b-BF16__modulev3": "max/pipelines/architectures/gpt_oss_modulev3/recipes/gpt_oss_20b.yaml",
-    "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_tiered_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
-    "nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_mha_eagle_tiered_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
+    "nvidia/Kimi-K2.5-NVFP4__eagle_rust_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_rust_tiered_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
+    "nvidia/Kimi-K2.5-NVFP4__mha_eagle_rust_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_mha_eagle_rust_tiered_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
     "nvidia/Kimi-K2.6-NVFP4__eagle_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tpep_8x_b200.yaml",
-    "nvidia/Kimi-K2.6-NVFP4__eagle_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tiered_kvconnector_tpep_ar_8x_b200.yaml",
-    "nvidia/Kimi-K2.5-NVFP4__local_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_local_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
+    "nvidia/Kimi-K2.6-NVFP4__eagle_rust_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_rust_tiered_kvconnector_tpep_ar_8x_b200.yaml",
 })
 # fmt: on
 
@@ -186,7 +181,8 @@ class ServerCommand(NamedTuple):
 def is_vision_model(model: str) -> bool:
     """Check if the model supports vision tasks."""
     model = model.casefold()
-    if any(kw in model for kw in ("gemma-3-1b",)):
+    # gemma-4-12B is served text-only in MAX (gemma4_unified arch).
+    if any(kw in model for kw in ("gemma-3-1b", "gemma-4-12b")):
         return False
     return any(
         kw in model
@@ -392,6 +388,26 @@ def _revision_args(
     return args
 
 
+def merge_serve_extra_args(args: list[str], extra: str) -> list[str]:
+    """Returns a copy of *args* with *extra* folded into ``--serve-extra-args``.
+
+    ``--serve-extra-args`` is a single-value option, so appending a second
+    occurrence would silently drop one of the two values. *extra* is instead
+    spliced in front of any caller-supplied value (later serve flags win, so
+    an explicit caller override of the same flag takes precedence); when the
+    caller passed no ``--serve-extra-args``, the flag is appended.
+    """
+    merged = list(args)
+    for i, arg in enumerate(merged):
+        if arg == "--serve-extra-args" and i + 1 < len(merged):
+            merged[i + 1] = f"{extra} {merged[i + 1]}"
+            return merged
+        if arg.startswith("--serve-extra-args="):
+            merged[i] = f"--serve-extra-args={extra} {arg.split('=', 1)[1]}"
+            return merged
+    return merged + ["--serve-extra-args", extra]
+
+
 def get_server_cmd(
     framework: str,
     model: str,
@@ -429,6 +445,9 @@ def get_server_cmd(
         "--limit-mm-per-prompt.video",
         "0",
     ]
+    # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
+    if "inkling" in model.casefold():
+        VLLM += ["--gpu-memory-utilization", "0.8"]
     MAX = ["max._entrypoints.pipelines", "serve", "--pretty-print-config"]
 
     if gpu_count > 1:

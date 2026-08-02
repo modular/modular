@@ -27,7 +27,7 @@ from std.sys import simd_width_of, size_of, align_of
 from std.gpu import WARP_SIZE, thread_idx
 from std.gpu import lane_id, warp_id as get_warp_id
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
     Idx,
@@ -44,7 +44,7 @@ from layout.layout_tensor import upcast
 from layout.runtime_tuple import crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
-from std.gpu.compute.mma import ld_matrix
+from max.gpu.compute.mma import ld_matrix
 from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
@@ -166,7 +166,7 @@ struct TileWriter[
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
     # Whole-array pointer accepted by the `TileWriterLike` ctor (one descriptor
     # for the standard store; the ctor uses element [0]).
-    comptime TmaOpArray = InlineArray[Self.TmaOp, Self.num_peers]
+    comptime TmaOpArray = Array[Self.TmaOp, Self.num_peers]
     comptime TmaOpArrayPtr = Pointer[Self.TmaOpArray, Self.tma_origin]
 
     # No cross-GPU synchronization for a local TMA store.
@@ -495,10 +495,10 @@ struct TileWriter[
                 and c_col + UInt32(Self.MMA_N) <= c_shape[1]
             )
 
-        var upper_frag_partial: InlineArray[
+        var upper_frag_partial: Array[
             Scalar[Self.accum_type], Self.rep_frag_size
         ]
-        var lower_frag_partial = InlineArray[
+        var lower_frag_partial = Array[
             Scalar[Self.accum_type], Self.rep_frag_size
         ](uninitialized=True)
 
@@ -509,7 +509,7 @@ struct TileWriter[
 
             # Extract fragments (rebind bridges symbolic size mismatch
             # between TmemTensor.frag_size*rep and Self.fragment_size*rep)
-            comptime PartialType = InlineArray[
+            comptime PartialType = Array[
                 Scalar[Self.accum_type], Self.rep_frag_size
             ]
             upper_frag_partial = rebind[PartialType](frags.upper).copy()
@@ -587,10 +587,10 @@ struct TileWriter[
         c_tile_layout: TensorLayout,
     ](
         self,
-        upper_frag_casted: InlineArray[
+        upper_frag_casted: Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ],
-        lower_frag_casted: InlineArray[
+        lower_frag_casted: Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ],
         c_smem_tile: TileTensor[
@@ -615,10 +615,10 @@ struct TileWriter[
         var smem_writer = SMEMWriter(warp_id, lane)
 
         comptime expected_size = Self.epc.fragment_size * Self.rep
-        var upper_c = InlineArray[Scalar[Self.c_type], expected_size](
+        var upper_c = Array[Scalar[Self.c_type], expected_size](
             uninitialized=True
         )
-        var lower_c = InlineArray[Scalar[Self.c_type], expected_size](
+        var lower_c = Array[Scalar[Self.c_type], expected_size](
             uninitialized=True
         )
 
@@ -636,8 +636,8 @@ struct TileWriter[
                 upper_c[offset + _j] = dst_u[_j]
                 lower_c[offset + _j] = dst_l[_j]
         smem_writer.write_fragments[Self.rep](
-            rebind[InlineArray[Scalar[Self.c_type], expected_size]](upper_c),
-            rebind[InlineArray[Scalar[Self.c_type], expected_size]](lower_c),
+            rebind[Array[Scalar[Self.c_type], expected_size]](upper_c),
+            rebind[Array[Scalar[Self.c_type], expected_size]](lower_c),
             c_smem_tile,
         )
         WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
@@ -777,16 +777,16 @@ struct TileWriter[
                 and c_col + UInt32(Self.MMA_N) <= c_shape[1]
             )
 
-        var upper_frag_partial: InlineArray[
+        var upper_frag_partial: Array[
             Scalar[Self.accum_type], Self.rep_frag_size
         ]
-        var lower_frag_partial = InlineArray[
+        var lower_frag_partial = Array[
             Scalar[Self.accum_type], Self.rep_frag_size
         ](uninitialized=True)
-        var upper_frag_casted = InlineArray[
+        var upper_frag_casted = Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ](uninitialized=True)
-        var lower_frag_casted = InlineArray[
+        var lower_frag_casted = Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ](uninitialized=True)
 
@@ -795,7 +795,7 @@ struct TileWriter[
 
             # Extract fragments (rebind bridges symbolic size mismatch
             # between TmemTensor.frag_size*rep and Self.fragment_size*rep)
-            comptime PartialType = InlineArray[
+            comptime PartialType = Array[
                 Scalar[Self.accum_type], Self.rep_frag_size
             ]
             upper_frag_partial = rebind[PartialType](frags.upper).copy()
@@ -962,16 +962,16 @@ struct TileWriter[
             batched=False,  # Always 2D for absolute coords
         ]
 
-        var upper_frag_partial: InlineArray[
+        var upper_frag_partial: Array[
             Scalar[Self.accum_type], Self.rep_frag_size
         ]
-        var lower_frag_partial = InlineArray[
+        var lower_frag_partial = Array[
             Scalar[Self.accum_type], Self.rep_frag_size
         ](uninitialized=True)
-        var upper_frag_casted = InlineArray[
+        var upper_frag_casted = Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ](uninitialized=True)
-        var lower_frag_casted = InlineArray[
+        var lower_frag_casted = Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ](uninitialized=True)
 
@@ -982,7 +982,7 @@ struct TileWriter[
 
             # rebind bridges symbolic size mismatch between
             # TmemTensor.frag_size*rep and Self.fragment_size*rep
-            comptime PartialType2 = InlineArray[
+            comptime PartialType2 = Array[
                 Scalar[Self.accum_type], Self.rep_frag_size
             ]
             upper_frag_partial = rebind[PartialType2](frags.upper).copy()
@@ -1029,10 +1029,10 @@ struct TileWriter[
             comptime expected_size = Self.epc.fragment_size * Self.rep
             # Cast from epilogue_dtype to c_type in SIMD chunks
             # of at least 4 bytes.
-            var upper_c2 = InlineArray[Scalar[Self.c_type], expected_size](
+            var upper_c2 = Array[Scalar[Self.c_type], expected_size](
                 uninitialized=True
             )
-            var lower_c2 = InlineArray[Scalar[Self.c_type], expected_size](
+            var lower_c2 = Array[Scalar[Self.c_type], expected_size](
                 uninitialized=True
             )
 
@@ -1050,12 +1050,8 @@ struct TileWriter[
                     upper_c2[offset + _j] = dst_u[_j]
                     lower_c2[offset + _j] = dst_l[_j]
             smem_writer.write_fragments[Self.rep](
-                rebind[InlineArray[Scalar[Self.c_type], expected_size]](
-                    upper_c2
-                ),
-                rebind[InlineArray[Scalar[Self.c_type], expected_size]](
-                    lower_c2
-                ),
+                rebind[Array[Scalar[Self.c_type], expected_size]](upper_c2),
+                rebind[Array[Scalar[Self.c_type], expected_size]](lower_c2),
                 c_smem_tile,
             )
 
@@ -1095,7 +1091,7 @@ struct TileWriter[
                 comptime if Self.transpose_c:
                     # CUDA core fallback for unaligned group boundaries
                     Self._store_with_bounds_check_transpose[c_tensor_layout](
-                        c_smem_tile.ptr,
+                        c_smem_tile._storage,
                         c_tensor,
                         m_abs + UInt32(loop_stage * Self.stageN),
                         n_abs,
@@ -1272,11 +1268,13 @@ struct TileWriter[
                     )
                 if in_bounds:
                     comptime if size_of[Self.c_type]() == 2:
-                        var src_ptr = c_smem_split.ptr + swizzle(linear_idx)
+                        var src_ptr = c_smem_split._storage + swizzle(
+                            linear_idx
+                        )
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        var dst_ptr = c_tensor.ptr + c_tensor.layout(
+                        var dst_ptr = c_tensor._storage + c_tensor.layout(
                             Coord(
                                 Int(global_i),
                                 Int(global_j),
@@ -1284,11 +1282,11 @@ struct TileWriter[
                         )
                         dst_ptr.store[width=simd_size, alignment=alignment](src)
                     else:
-                        var src_ptr = c_smem_split.ptr + linear_idx
+                        var src_ptr = c_smem_split._storage + linear_idx
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        var dst_ptr = c_tensor.ptr + c_tensor.layout(
+                        var dst_ptr = c_tensor._storage + c_tensor.layout(
                             Coord(
                                 Int(global_i),
                                 Int(global_j),
@@ -1366,7 +1364,9 @@ struct TileWriter[
             ) * UInt32(simd_size)
             if global_token < m_end and global_weight < UInt32(cN):
                 (
-                    c_tensor.ptr + global_token * UInt32(cN) + global_weight
+                    c_tensor._storage
+                    + global_token * UInt32(cN)
+                    + global_weight
                 ).store[alignment=smem_alignment](val_vec)
 
     # ========== Residual Add Support ==========
@@ -1531,10 +1531,10 @@ struct TileWriter[
                 and c_col + UInt32(Self.MMA_N) <= c_shape[1]
             )
 
-        var upper_frag_casted = InlineArray[
+        var upper_frag_casted = Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ](uninitialized=True)
-        var lower_frag_casted = InlineArray[
+        var lower_frag_casted = Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ](uninitialized=True)
 
@@ -1616,7 +1616,7 @@ struct TileWriter[
                     upper_frag_casted,
                     lower_frag_casted,
                     UInt32(0),
-                    src_smem_tile.ptr,
+                    src_smem_tile._storage,
                     beta.cast[Self.epilogue_dtype](),
                 )
             )
@@ -1774,16 +1774,16 @@ struct TileWriter[
         comptime sub_tile_elems = epi_rows * sub_tile_n
         var epi_load_sw = make_swizzle[Self.c_type, epi_load_swizzle]()
 
-        var upper_frag_partial: InlineArray[
+        var upper_frag_partial: Array[
             Scalar[Self.accum_type], Self.rep_frag_size
         ]
-        var lower_frag_partial = InlineArray[
+        var lower_frag_partial = Array[
             Scalar[Self.accum_type], Self.rep_frag_size
         ](uninitialized=True)
-        var upper_frag_casted = InlineArray[
+        var upper_frag_casted = Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ](uninitialized=True)
-        var lower_frag_casted = InlineArray[
+        var lower_frag_casted = Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ](uninitialized=True)
 
@@ -1792,7 +1792,7 @@ struct TileWriter[
             var frags = accum_tiles[stage].load_fragments[Self.rep]()
             Self.AccumTmemArray.Tile.wait_load()
 
-            comptime PartialType = InlineArray[
+            comptime PartialType = Array[
                 Scalar[Self.accum_type], Self.rep_frag_size
             ]
             upper_frag_partial = rebind[PartialType](frags.upper).copy()
@@ -1854,7 +1854,7 @@ struct TileWriter[
                         ldm_m_row * UInt32(sub_tile_n) + ldm_nloc
                     )
                     var epi_vals = ld_matrix[simd_width=4, transpose=True](
-                        epilogue_tile.ptr + Int(ldm_off)
+                        epilogue_tile._storage + Int(ldm_off)
                     )
 
                     upper_frag_casted[frag_offset] += epi_vals[0].cast[
@@ -1882,7 +1882,7 @@ struct TileWriter[
                         ldm_row * UInt32(sub_tile_n) + ldm_nloc
                     )
                     var epi_vals = ld_matrix[simd_width=4](
-                        epilogue_tile.ptr + Int(ldm_off)
+                        epilogue_tile._storage + Int(ldm_off)
                     )
 
                     upper_frag_casted[frag_offset] += epi_vals[0].cast[
@@ -1922,7 +1922,7 @@ struct TileWriter[
                         )
                         var epi_vals_l = ld_matrix[
                             simd_width=4, transpose=True
-                        ](epilogue_tile.ptr + Int(ldm_off_l))
+                        ](epilogue_tile._storage + Int(ldm_off_l))
 
                         lower_frag_casted[frag_offset] += epi_vals_l[0].cast[
                             Self.epilogue_dtype
@@ -1950,7 +1950,7 @@ struct TileWriter[
                             ldm_row_l * UInt32(sub_tile_n) + ldm_nloc_l
                         )
                         var epi_vals_l = ld_matrix[simd_width=4](
-                            epilogue_tile.ptr + Int(ldm_off_l)
+                            epilogue_tile._storage + Int(ldm_off_l)
                         )
 
                         lower_frag_casted[frag_offset] += epi_vals_l[0].cast[
@@ -2049,16 +2049,16 @@ struct TileWriter[
             c_shape,
         )
 
-        var upper_frag_partial: InlineArray[
+        var upper_frag_partial: Array[
             Scalar[Self.accum_type], Self.rep_frag_size
         ]
-        var lower_frag_partial = InlineArray[
+        var lower_frag_partial = Array[
             Scalar[Self.accum_type], Self.rep_frag_size
         ](uninitialized=True)
-        var upper_frag_casted = InlineArray[
+        var upper_frag_casted = Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ](uninitialized=True)
-        var lower_frag_casted = InlineArray[
+        var lower_frag_casted = Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ](uninitialized=True)
 
@@ -2067,7 +2067,7 @@ struct TileWriter[
             var frags = accum_tiles[stage].load_fragments[Self.rep]()
             Self.AccumTmemArray.Tile.wait_load()
 
-            comptime PartialType = InlineArray[
+            comptime PartialType = Array[
                 Scalar[Self.accum_type], Self.rep_frag_size
             ]
             upper_frag_partial = rebind[PartialType](frags.upper).copy()
@@ -2118,12 +2118,12 @@ struct TileWriter[
                 comptime if Self.transpose_c:
                     var n_top = local_row + top_u[0]
                     var n_bot = local_row + bot_u[0]
-                    var b_top = epilogue_tile.ptr[Int(n_top)].cast[
+                    var b_top = epilogue_tile._storage[Int(n_top)].cast[
                         Self.epilogue_dtype
                     ]()
                     upper_frag_casted[frag_offset] += b_top
                     upper_frag_casted[frag_offset + 1] += b_top
-                    var b_bot = epilogue_tile.ptr[Int(n_bot)].cast[
+                    var b_bot = epilogue_tile._storage[Int(n_bot)].cast[
                         Self.epilogue_dtype
                     ]()
                     upper_frag_casted[frag_offset + 2] += b_bot
@@ -2131,7 +2131,7 @@ struct TileWriter[
                 else:
                     var n_col = local_col + top_u[1] + UInt32(inc)
                     var bias = (
-                        (epilogue_tile.ptr + Int(n_col))
+                        (epilogue_tile._storage + Int(n_col))
                         .load[width=2]()
                         .cast[Self.epilogue_dtype]()
                     )
@@ -2151,12 +2151,12 @@ struct TileWriter[
                     comptime if Self.transpose_c:
                         var n_top_l = local_row + top_l[0]
                         var n_bot_l = local_row + bot_l[0]
-                        var b_top_l = epilogue_tile.ptr[Int(n_top_l)].cast[
+                        var b_top_l = epilogue_tile._storage[Int(n_top_l)].cast[
                             Self.epilogue_dtype
                         ]()
                         lower_frag_casted[frag_offset] += b_top_l
                         lower_frag_casted[frag_offset + 1] += b_top_l
-                        var b_bot_l = epilogue_tile.ptr[Int(n_bot_l)].cast[
+                        var b_bot_l = epilogue_tile._storage[Int(n_bot_l)].cast[
                             Self.epilogue_dtype
                         ]()
                         lower_frag_casted[frag_offset + 2] += b_bot_l
@@ -2164,7 +2164,7 @@ struct TileWriter[
                     else:
                         var n_col_l = local_col + top_l[1] + UInt32(inc)
                         var bias = (
-                            (epilogue_tile.ptr + Int(n_col_l))
+                            (epilogue_tile._storage + Int(n_col_l))
                             .load[width=2]()
                             .cast[Self.epilogue_dtype]()
                         )
@@ -2245,10 +2245,10 @@ struct TileWriter[
             Self.num_stages * Self.stageN
         )
 
-        var upper_frag_casted = InlineArray[
+        var upper_frag_casted = Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ](uninitialized=True)
-        var lower_frag_casted = InlineArray[
+        var lower_frag_casted = Array[
             Scalar[Self.epilogue_dtype], Self.rep_frag_size
         ](uninitialized=True)
 
@@ -2257,7 +2257,7 @@ struct TileWriter[
             var frags = accum_tiles[stage].load_fragments[Self.rep]()
             Self.AccumTmemArray.Tile.wait_load()
 
-            comptime PartialType = InlineArray[
+            comptime PartialType = Array[
                 Scalar[Self.accum_type], Self.rep_frag_size
             ]
             var upper_partial = rebind[PartialType](frags.upper).copy()
@@ -2426,7 +2426,7 @@ struct StandardOutputWriter(OutputWriter):
         register_based_epilogue: Bool,
     ](
         c_tma_ops: Pointer[
-            InlineArray[
+            Array[
                 TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
                 Self.num_peers,
             ],

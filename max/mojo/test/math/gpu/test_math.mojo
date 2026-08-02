@@ -13,7 +13,7 @@
 
 from std.math import *
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite
 
 
@@ -27,7 +27,7 @@ def run_func[
     def kernel(
         output: UnsafePointer[Scalar[dtype], MutAnyOrigin], input: Scalar[dtype]
     ):
-        output[0] = kernel_fn(input)
+        output[unsafe_offset=0] = kernel_fn(input)
 
     var out = ctx.enqueue_create_buffer[dtype](1)
     ctx.enqueue_function[kernel](out, val, grid_dim=1, block_dim=1)

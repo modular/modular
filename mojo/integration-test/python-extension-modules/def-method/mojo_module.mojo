@@ -218,7 +218,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
 
     @staticmethod
     def sum_kwargs_ints(
-        py_self: PythonObject, **kwargs: PythonObject
+        py_self: PythonObject, var **kwargs: PythonObject
     ) raises -> PythonObject:
         """Test method that takes kwargs, adds them to person's age and returns the new age.
         """
@@ -241,7 +241,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
 
     @staticmethod
     def add_kwargs_to_age_auto(
-        self_ptr: Pointer[Self, MutAnyOrigin], **kwargs: PythonObject
+        self_ptr: Pointer[Self, MutAnyOrigin], var **kwargs: PythonObject
     ) raises -> PythonObject:
         """Test method with auto-convert self + kwargs that adds kwargs to person's age.
         """

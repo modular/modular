@@ -144,6 +144,25 @@ class SupportedArchitecture:
     Example:
         .. code-block:: python
 
+            from max.graph.weights import WeightsFormat
+            from max.pipelines.context import TextContext
+            from max.pipelines.lib.interfaces.pipeline_model import (
+                ModelOutputs,
+                PipelineModel,
+            )
+            from max.pipelines.lib.registry import SupportedArchitecture
+            from max.pipelines.lib.tokenizer import TextTokenizer
+            from max.pipelines.modeling.types import PipelineTask
+
+            # A concrete PipelineModel subclass. Registration stores the class
+            # itself, so it is never instantiated here.
+            class MyModel(PipelineModel[TextContext]):
+                def execute(self, model_inputs) -> ModelOutputs:
+                    raise NotImplementedError
+
+            class MyModelConfig:
+                pass
+
             my_architecture = SupportedArchitecture(
                 name="MyModelForCausalLM",  # Must match your Hugging Face model class name
                 example_repo_ids=[
@@ -160,10 +179,6 @@ class SupportedArchitecture:
                 context_type=TextContext,
                 config=MyModelConfig,  # Architecture-specific config class
                 default_weights_format=WeightsFormat.safetensors,
-                weight_adapters={
-                    WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-                    # Add other weight formats if needed
-                },
                 multi_gpu_supported=True,  # Set based on your implementation capabilities
                 required_arguments={"some_arg": True},
                 task=PipelineTask.TEXT_GENERATION,
@@ -250,15 +265,17 @@ class SupportedArchitecture:
 
     .. code-block:: python
 
+        from max.pipelines.context import TextAndVisionContext, TextContext
+        from max.pipelines.context.exceptions import InputError
+
         def validate_single_image(context: TextContext | TextAndVisionContext) -> None:
             if isinstance(context, TextAndVisionContext):
                 if context.pixel_values and len(context.pixel_values) > 1:
                     raise InputError(f"Model supports only 1 image, got {len(context.pixel_values)}")
 
-        my_architecture = SupportedArchitecture(
-            # ... other fields ...
-            context_validators=[validate_single_image],
-        )
+        # Pass ``context_validators=[validate_single_image]`` to
+        # ``SupportedArchitecture`` when registering the architecture.
+        validators = [validate_single_image]
     """
 
     supports_empty_batches: bool = False
@@ -1386,7 +1403,6 @@ class PipelineRegistry:
         factory_kwargs: dict[str, Any] = {
             "pipeline_config": pipeline_config,
             "pipeline_model": arch.pipeline_model,
-            "eos_token_id": tokenizer.eos,
             "weight_adapters": arch.weight_adapters,
             "tokenizer": typed_tokenizer,
             "memory_plan": memory_plan,
@@ -1397,9 +1413,9 @@ class PipelineRegistry:
             functools.partial(pipeline_class, **factory_kwargs),
         )
 
-        if tokenizer.eos is None:
-            raise ValueError(
-                "tokenizer.eos value is None, tokenizer configuration is incomplete."
+        if not tokenizer.eos_token_ids:
+            logger.warning(
+                "tokenizer.eos_token_ids is empty, tokenizer configuration is incomplete."
             )
 
         return tokenizer, pipeline_factory

@@ -151,7 +151,7 @@ def _memmem_baseline[
 ](
     haystack: Span[mut=False, Scalar[dtype], _],
     needle: Span[mut=False, Scalar[dtype], _],
-) -> Optional[UnsafePointer[Scalar[dtype], haystack.origin]]:
+) -> Optional[Pointer[Scalar[dtype], haystack.origin]]:
     if not needle:
         return haystack.unsafe_ptr()
     if len(needle) > len(haystack):
@@ -167,7 +167,7 @@ def _memmem_baseline[
     for i in range(0, vectorized_end, bool_mask_width):
         var bool_mask = (
             haystack.unsafe_ptr()
-            .load[width=bool_mask_width](i)
+            .unsafe_load[width=bool_mask_width](i)
             .eq(first_needle)
         )
         var mask = pack_bits(bool_mask)
@@ -175,13 +175,13 @@ def _memmem_baseline[
             var offset = Int(type_of(mask)(i) + count_trailing_zeros(mask))
             if (
                 unsafe_memcmp(
-                    haystack.unsafe_ptr() + offset + 1,
-                    needle.unsafe_ptr() + 1,
+                    haystack.unsafe_ptr().unsafe_offset(offset + 1),
+                    needle.unsafe_ptr().unsafe_offset(1),
                     len(needle) - 1,
                 )
                 == 0
             ):
-                return haystack.unsafe_ptr() + offset
+                return haystack.unsafe_ptr().unsafe_offset(offset)
             mask = mask & (mask - 1)
 
     for i in range(vectorized_end, len(haystack) - len(needle) + 1):
@@ -190,13 +190,13 @@ def _memmem_baseline[
 
         if (
             unsafe_memcmp(
-                haystack.unsafe_ptr() + i + 1,
-                needle.unsafe_ptr() + 1,
+                haystack.unsafe_ptr().unsafe_offset(i + 1),
+                needle.unsafe_ptr().unsafe_offset(1),
                 len(needle) - 1,
             )
             == 0
         ):
-            return haystack.unsafe_ptr() + i
+            return haystack.unsafe_ptr().unsafe_offset(i)
     return {}
 
 

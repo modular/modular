@@ -19,7 +19,7 @@
 
 from std.sys.info import CompilationTarget
 
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from linalg.arch.cpu.vnni_intrinsics import (
     dot_i8_to_i32_AVX2,
     dot_i8_to_i32_saturated_AVX2,
@@ -30,47 +30,55 @@ from std.testing import assert_equal
 
 
 def test_i8_to_i32() raises:
-    var a = stack_allocation[16 * 64, DType.uint8, alignment=64]()
-    var asat = stack_allocation[16 * 64, DType.uint8, alignment=64]()
-    var b = stack_allocation[64 * 16, DType.int8, alignment=64]()
+    var a = unsafe_stack_allocation[16 * 64, DType.uint8, alignment=64]()
+    var asat = unsafe_stack_allocation[16 * 64, DType.uint8, alignment=64]()
+    var b = unsafe_stack_allocation[64 * 16, DType.int8, alignment=64]()
 
-    var c = stack_allocation[16 * 16, DType.int32, alignment=64]()
-    var csat = stack_allocation[16 * 16, DType.int32, alignment=64]()
+    var c = unsafe_stack_allocation[16 * 16, DType.int32, alignment=64]()
+    var csat = unsafe_stack_allocation[16 * 16, DType.int32, alignment=64]()
 
     for i in range(16 * 64):
-        a[i] = UInt8(i & 255)
-        asat[i] = UInt8(i & 127)
-        b[i] = Int8((i & 255) - 128)
+        a[unsafe_offset=i] = UInt8(i & 255)
+        asat[unsafe_offset=i] = UInt8(i & 127)
+        b[unsafe_offset=i] = Int8((i & 255) - 128)
 
     for i in range(16 * 16):
-        c[i] = Int32(i)
-        csat[i] = c[i]
+        c[unsafe_offset=i] = Int32(i)
+        csat[unsafe_offset=i] = c[unsafe_offset=i]
 
-    var av16u = (a + 128 + 64).bitcast[Int32]().load[width=16]()
-    var av16s = (asat + 128 + 64).bitcast[Int32]().load[width=16]()
-    var bv16 = b.bitcast[Int32]().load[width=16]()
+    var av16u = (
+        a.unsafe_offset(128 + 64)
+        .unsafe_bitcast[Int32]()
+        .unsafe_load[width=16]()
+    )
+    var av16s = (
+        asat.unsafe_offset(128 + 64)
+        .unsafe_bitcast[Int32]()
+        .unsafe_load[width=16]()
+    )
+    var bv16 = b.unsafe_bitcast[Int32]().unsafe_load[width=16]()
     var cv16u: SIMD[DType.int32, 16]
     var cv16s: SIMD[DType.int32, 16]
     if CompilationTarget.has_avx512f():
-        cv16u = dot_i8_to_i32_AVX2[16](c.load[width=16](), av16u, bv16)
+        cv16u = dot_i8_to_i32_AVX2[16](c.unsafe_load[width=16](), av16u, bv16)
         cv16s = dot_i8_to_i32_saturated_AVX2[16](
-            c.load[width=16](), av16s, bv16
+            c.unsafe_load[width=16](), av16s, bv16
         )
     else:
         # split the vectors into high and low
         var cv8ul = dot_i8_to_i32_AVX2[8](
-            c.load[width=8](), av16u.slice[8](), bv16.slice[8]()
+            c.unsafe_load[width=8](), av16u.slice[8](), bv16.slice[8]()
         )
         var cv8sl = dot_i8_to_i32_saturated_AVX2[8](
-            c.load[width=8](), av16s.slice[8](), bv16.slice[8]()
+            c.unsafe_load[width=8](), av16s.slice[8](), bv16.slice[8]()
         )
         var cv8uh = dot_i8_to_i32_AVX2[8](
-            (c + 8).load[width=8](),
+            c.unsafe_offset(8).unsafe_load[width=8](),
             av16u.slice[8, offset=8](),
             bv16.slice[8, offset=8](),
         )
         var cv8sh = dot_i8_to_i32_saturated_AVX2[8](
-            (c + 8).load[width=8](),
+            c.unsafe_offset(8).unsafe_load[width=8](),
             av16s.slice[8, offset=8](),
             bv16.slice[8, offset=8](),
         )
@@ -120,14 +128,20 @@ def test_i8_to_i32() raises:
         ),
     )
 
-    var av8u = (a + 128 + 64).bitcast[Int32]().load[width=8]()
-    var av8s = (asat + 128 + 64).bitcast[Int32]().load[width=8]()
-    var bv8 = b.bitcast[Int32]().load[width=8]()
+    var av8u = (
+        a.unsafe_offset(128 + 64).unsafe_bitcast[Int32]().unsafe_load[width=8]()
+    )
+    var av8s = (
+        asat.unsafe_offset(128 + 64)
+        .unsafe_bitcast[Int32]()
+        .unsafe_load[width=8]()
+    )
+    var bv8 = b.unsafe_bitcast[Int32]().unsafe_load[width=8]()
     var cv8u = dot_i8_to_i32_AVX2[8](
-        c.bitcast[Int32]().load[width=8](), av8u, bv8
+        c.unsafe_bitcast[Int32]().unsafe_load[width=8](), av8u, bv8
     )
     var cv8s = dot_i8_to_i32_saturated_AVX2[8](
-        c.bitcast[Int32]().load[width=8](), av8s, bv8
+        c.unsafe_bitcast[Int32]().unsafe_load[width=8](), av8s, bv8
     )
 
     assert_equal(
@@ -143,14 +157,20 @@ def test_i8_to_i32() raises:
         ),
     )
 
-    var av4u = (a + 128 + 64).bitcast[Int32]().load[width=4]()
-    var av4s = (asat + 128 + 64).bitcast[Int32]().load[width=4]()
-    var bv4 = b.bitcast[Int32]().load[width=4]()
+    var av4u = (
+        a.unsafe_offset(128 + 64).unsafe_bitcast[Int32]().unsafe_load[width=4]()
+    )
+    var av4s = (
+        asat.unsafe_offset(128 + 64)
+        .unsafe_bitcast[Int32]()
+        .unsafe_load[width=4]()
+    )
+    var bv4 = b.unsafe_bitcast[Int32]().unsafe_load[width=4]()
     var cv4u = dot_i8_to_i32_AVX2[4](
-        c.bitcast[Int32]().load[width=4](), av4u, bv4
+        c.unsafe_bitcast[Int32]().unsafe_load[width=4](), av4u, bv4
     )
     var cv4s = dot_i8_to_i32_saturated_AVX2[4](
-        c.bitcast[Int32]().load[width=4](), av4s, bv4
+        c.unsafe_bitcast[Int32]().unsafe_load[width=4](), av4s, bv4
     )
 
     assert_equal(cv4u, SIMD[DType.int32, 4](-97906, -96769, -95504, -94111))

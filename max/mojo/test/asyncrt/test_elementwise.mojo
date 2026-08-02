@@ -13,10 +13,10 @@
 
 from std.sys import simd_width_of
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from asyncrt_test_utils import create_test_device_context
 from std.gpu import *
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.testing import TestSuite, assert_equal
 
 from std.utils import IndexList
@@ -52,9 +52,9 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     @parameter
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
-        out_buffer.unsafe_ptr().store(
+        out_buffer.unsafe_ptr().unsafe_store(
             idx[0] * dim_y + idx[1],
-            in_buffer.unsafe_ptr().load[width=simd_width](
+            in_buffer.unsafe_ptr().unsafe_load[width=simd_width](
                 idx[0] * dim_y + idx[1]
             )
             + 42,

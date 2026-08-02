@@ -14,7 +14,7 @@
 from std.math import ceildiv
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from extensibility import InputTensor, OutputTensor, StaticTensorSpec
 from std.testing import TestSuite, assert_equal

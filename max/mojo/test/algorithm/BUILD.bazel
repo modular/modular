@@ -21,6 +21,7 @@ _DISABLED_ASSERTIONS = []
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         enable_assertions = src not in _DISABLED_ASSERTIONS,
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
@@ -39,6 +40,7 @@ mojo_test(
     ],
     enable_assertions = False,  # ASSERT cannot be passed more than once
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
         "@mojo//:test_utils",
     ],
@@ -54,6 +56,7 @@ mojo_test(
         ],
         enable_assertions = src not in _DISABLED_ASSERTIONS,
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],

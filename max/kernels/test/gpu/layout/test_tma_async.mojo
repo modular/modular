@@ -15,7 +15,7 @@ from std.math import align_up, ceildiv
 from std.sys import size_of
 
 from std.gpu import barrier
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
 from std.gpu.memory import ReduceOp, fence_async_view_proxy
 from std.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
@@ -31,11 +31,11 @@ from layout.tma_async import (
     create_tma_tile,
     RaggedTensorMap,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 from std.utils.index import Index, IndexList
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.swizzle import make_swizzle
 
 
@@ -130,7 +130,7 @@ def test_tma_load_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = stack_allocation[
+    mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
@@ -183,7 +183,7 @@ def test_tma_multiple_loads_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = stack_allocation[
+    mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
@@ -742,7 +742,7 @@ def test_tma_loads_two_buffers_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = stack_allocation[
+    mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
@@ -923,7 +923,7 @@ def test_tma_loads_and_store_two_buffers_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = stack_allocation[
+    mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,

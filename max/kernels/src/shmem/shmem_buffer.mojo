@@ -25,7 +25,7 @@ from std.sys import (
 )
 from std.ffi import external_call
 
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from std.gpu.host.device_context import _checked, _CString, _DeviceContextPtr
 
 from .shmem_api import shmem_free, shmem_malloc
@@ -89,7 +89,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         self._ctx_ptr = ctx._handle
         self._size = size
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         shmem_free(self._data)
 
     def __len__(self) -> Int:

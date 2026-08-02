@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from std.math import abs
 
@@ -36,7 +36,7 @@ def scan_kernel(
         N: Number of elements.
     """
     # Allocate shared memory
-    var buffer_s = stack_allocation[
+    var buffer_s = unsafe_stack_allocation[
         SEG_SIZE,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,

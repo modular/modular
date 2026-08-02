@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Helpers for dispatching collective operations across devices."""
 
-from std.collections import InlineArray, Optional
-from std.gpu.host import DeviceContext, DeviceContextArray
+from std.collections import Array, Optional
+from max.gpu.host import DeviceContext, DeviceContextArray
 from std.runtime.asyncrt import TaskGroup, task_id_for_device
 
 
@@ -21,14 +21,12 @@ from std.runtime.asyncrt import TaskGroup, task_id_for_device
 def _launch_device_collective[
     num_devices: Int,
     F: def[Int]() raises -> None,
-](func: F, var dev_ctxs: InlineArray[DeviceContext, num_devices]) raises:
+](func: F, var dev_ctxs: Array[DeviceContext, num_devices]) raises:
     """Dispatch async tasks to call func[i]() for each device in dev_ctxs."""
 
     # One Optional[Error] slot per device; None means no error.
     # Each task writes only to its own index, so there is no data race.
-    var errors = InlineArray[Optional[Error], num_devices](
-        fill=Optional[Error]()
-    )
+    var errors = Array[Optional[Error], num_devices](fill=Optional[Error]())
 
     # Wrap the launch function in a Mojo async function which does not raise.
     @always_inline
@@ -62,7 +60,7 @@ def _launch_device_collective[
 ](func: F, var dev_ctxs: DeviceContextArray) raises:
     """Dispatch async tasks to call func[i]() for each device in dev_ctxs.
 
-    `DeviceContextArray` overload. Forwards to the `InlineArray` overload
+    `DeviceContextArray` overload. Forwards to the `Array` overload
     by unpacking the array's underlying storage.
     """
 
@@ -72,7 +70,7 @@ def _launch_device_collective[
 
     _launch_device_collective[num_devices](
         func,
-        rebind[InlineArray[DeviceContext, num_devices]](
+        rebind[Array[DeviceContext, num_devices]](
             dev_ctxs.device_contexts^
-        ),
+        ).copy(),
     )

@@ -23,7 +23,7 @@ from kv_cache.types import KVCacheT
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_utils import MHAConfig, OptionallyStaticInt
 from nn.attention.mha_mask import MHAMask
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor
 from std.gpu.memory import AddressSpace
 from .mla_prefill_generic import mla_sm100_prefill_generic

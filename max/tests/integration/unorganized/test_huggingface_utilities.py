@@ -20,6 +20,7 @@ from huggingface_hub import errors as hf_hub_errors
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import HuggingFaceRepo
 from max.pipelines.weights.hf_utils import (
+    _hf_hub_download_with_retry,
     generate_local_model_path,
     validate_hf_repo_access,
 )
@@ -119,7 +120,7 @@ def test_huggingface_repo__encodings_supported_online_fp8_fallback() -> None:
 
 def test_huggingface_repo__get_files_for_encoding(
     tiny_llama_1_1b_chat_v1_0_local_path: str,
-    qwen_32b_preview_local_path: str,
+    qwq_32b_local_path: str,
     mistral_nemo_instruct_2407_local_path: str,
 ) -> None:
     # Test a Safetensors repo.
@@ -132,28 +133,25 @@ def test_huggingface_repo__get_files_for_encoding(
 
     # Test a Safetensors repo.
     # Safetensors repo, should not have a valid gguf_architecture.
-    hf_repo = HuggingFaceRepo(repo_id=qwen_32b_preview_local_path)
+    hf_repo = HuggingFaceRepo(repo_id=qwq_32b_local_path)
     files = hf_repo.files_for_encoding("bfloat16")
     assert WeightsFormat.safetensors in files
-    assert len(files[WeightsFormat.safetensors]) == 17
+    assert len(files[WeightsFormat.safetensors]) == 14
     assert sorted(files[WeightsFormat.safetensors]) == [
-        Path("model-00001-of-00017.safetensors"),
-        Path("model-00002-of-00017.safetensors"),
-        Path("model-00003-of-00017.safetensors"),
-        Path("model-00004-of-00017.safetensors"),
-        Path("model-00005-of-00017.safetensors"),
-        Path("model-00006-of-00017.safetensors"),
-        Path("model-00007-of-00017.safetensors"),
-        Path("model-00008-of-00017.safetensors"),
-        Path("model-00009-of-00017.safetensors"),
-        Path("model-00010-of-00017.safetensors"),
-        Path("model-00011-of-00017.safetensors"),
-        Path("model-00012-of-00017.safetensors"),
-        Path("model-00013-of-00017.safetensors"),
-        Path("model-00014-of-00017.safetensors"),
-        Path("model-00015-of-00017.safetensors"),
-        Path("model-00016-of-00017.safetensors"),
-        Path("model-00017-of-00017.safetensors"),
+        Path("model-00001-of-00014.safetensors"),
+        Path("model-00002-of-00014.safetensors"),
+        Path("model-00003-of-00014.safetensors"),
+        Path("model-00004-of-00014.safetensors"),
+        Path("model-00005-of-00014.safetensors"),
+        Path("model-00006-of-00014.safetensors"),
+        Path("model-00007-of-00014.safetensors"),
+        Path("model-00008-of-00014.safetensors"),
+        Path("model-00009-of-00014.safetensors"),
+        Path("model-00010-of-00014.safetensors"),
+        Path("model-00011-of-00014.safetensors"),
+        Path("model-00012-of-00014.safetensors"),
+        Path("model-00013-of-00014.safetensors"),
+        Path("model-00014-of-00014.safetensors"),
     ]
 
     # Test a Safetensors repo, with both shared files and consolidated safetensors
@@ -163,7 +161,7 @@ def test_huggingface_repo__get_files_for_encoding(
     assert Path("consolidated.safetensors") not in files
 
     # Test a Safetensors repo, with the wrong encoding requested.
-    hf_repo = HuggingFaceRepo(repo_id=qwen_32b_preview_local_path)
+    hf_repo = HuggingFaceRepo(repo_id=qwq_32b_local_path)
     files = hf_repo.files_for_encoding("float32")
     assert len(files) == 0
 
@@ -171,7 +169,7 @@ def test_huggingface_repo__get_files_for_encoding(
 def test_huggingface_repo__encoding_for_file(
     llama_3_1_8b_instruct_local_path: str,
     tiny_llama_1_1b_chat_v1_0_local_path: str,
-    qwen_32b_preview_local_path: str,
+    qwq_32b_local_path: str,
 ) -> None:
     # This repo, has one safetensors file, and its a bf16 file.
     hf_repo = HuggingFaceRepo(repo_id=tiny_llama_1_1b_chat_v1_0_local_path)
@@ -179,9 +177,9 @@ def test_huggingface_repo__encoding_for_file(
     assert model_encoding == "bfloat16"
 
     # This repo, has many safetensors file, and they are bf16.
-    hf_repo = HuggingFaceRepo(repo_id=qwen_32b_preview_local_path)
+    hf_repo = HuggingFaceRepo(repo_id=qwq_32b_local_path)
     model_encoding = hf_repo.encoding_for_file(
-        "model-00014-of-00017.safetensors"
+        "model-00014-of-00014.safetensors"
     )
     assert model_encoding == "bfloat16"
 
@@ -482,3 +480,28 @@ class TestConfigRepoId:
         assert repo._hub_repo_id == "org/model"
         assert repo.config_repo_id == "org/model"
         assert repo.config_repo_id != repo.repo_id
+
+
+def test_hf_hub_download_retries_on_racy_cache_entry() -> None:
+    """A racy `.incomplete` FileNotFoundError triggers one force_download retry."""
+    with patch(
+        "max.pipelines.weights.hf_utils.huggingface_hub.hf_hub_download",
+        side_effect=[FileNotFoundError("dangling .incomplete"), "/cache/w.st"],
+    ) as mock_download:
+        result = _hf_hub_download_with_retry(
+            repo_id="org/model", filename="w.st", force_download=False
+        )
+    assert result == "/cache/w.st"
+    assert mock_download.call_args_list[0].kwargs["force_download"] is False
+    assert mock_download.call_args_list[1].kwargs["force_download"] is True
+
+
+def test_hf_hub_download_does_not_retry_offline_miss() -> None:
+    """An offline/uncached miss (LocalEntryNotFoundError) is surfaced at once."""
+    with patch(
+        "max.pipelines.weights.hf_utils.huggingface_hub.hf_hub_download",
+        side_effect=hf_hub_errors.LocalEntryNotFoundError("offline"),
+    ) as mock_download:
+        with pytest.raises(hf_hub_errors.LocalEntryNotFoundError):
+            _hf_hub_download_with_retry(repo_id="org/model", filename="w.st")
+    assert mock_download.call_count == 1

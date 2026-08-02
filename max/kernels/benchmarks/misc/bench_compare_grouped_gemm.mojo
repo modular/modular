@@ -24,6 +24,7 @@ kernel processes all groups in a single persistent launch.
 
 from std.math import ceildiv
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -31,8 +32,8 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand, seed
 from std.utils import Index
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
@@ -176,7 +177,7 @@ def bench_cublas_per_group[
                     c_row_major=True,
                 )
 
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](bencher, ctx)
 
     var fmt = String("NVFP4") if is_fp4 else String("MXFP8")
 
@@ -443,7 +444,7 @@ def bench_structured_kernel[
                 ctx,
             )
 
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](bencher, ctx)
 
     var fmt = String("NVFP4") if is_fp4 else String("MXFP8")
 

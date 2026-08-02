@@ -33,6 +33,12 @@ written in Mojo.
 An example of how to define and register a custom architecture with MAX for
 text generation or serving.
 
+## [Mojo GPU functions](gpu-functions/)
+
+Introductory examples of how to program GPUs using Mojo, including: vector
+addition, grayscale conversion, matrix multiplication, reduction operations,
+and calculating a Mandelbrot set fractal.
+
 ---
 
 ## Example code tests

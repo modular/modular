@@ -16,6 +16,9 @@ from std.sys.info import num_physical_cores
 
 from std.algorithm import (
     map,
+)
+
+from max.algorithm import (
     parallelize,
     sync_parallelize,
     parallelize_over_rows,
@@ -27,7 +30,7 @@ from std.utils import IndexList
 def test_sync_parallelize() raises:
     var num_work_items = 4
 
-    var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
+    var vector_stack = Array[Scalar[DType.int], 20](uninitialized=True)
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
@@ -59,7 +62,7 @@ def test_sync_parallelize() raises:
 def test_parallelize() raises:
     var num_work_items = num_physical_cores()
 
-    var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
+    var vector_stack = Array[Scalar[DType.int], 20](uninitialized=True)
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
@@ -117,7 +120,7 @@ def test_parallelize_over_rows_zero_work() raises:
 def test_parallelize_unified() raises:
     var num_work_items = num_physical_cores()
 
-    var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
+    var vector_stack = Array[Scalar[DType.int], 20](uninitialized=True)
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
@@ -144,7 +147,7 @@ def test_parallelize_unified() raises:
 def test_sync_parallelize_unified() raises:
     var num_work_items = 4
 
-    var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
+    var vector_stack = Array[Scalar[DType.int], 20](uninitialized=True)
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
@@ -201,7 +204,7 @@ def test_parallelize_over_rows() raises:
     var num_rows = shape[0]
     var row_size = shape[1]
 
-    var data_stack = InlineArray[Scalar[DType.int], 32](uninitialized=True)
+    var data_stack = Array[Scalar[DType.int], 32](uninitialized=True)
     var data = Span(data_stack)
 
     for i in range(num_rows * row_size):

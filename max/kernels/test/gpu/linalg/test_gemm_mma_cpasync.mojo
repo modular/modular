@@ -15,7 +15,7 @@
 from std.math import ceildiv
 from std.random import random_float64
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import alloc
 
 from linalg.gemv import gemm_mma_cpasync

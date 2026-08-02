@@ -20,9 +20,9 @@ from block_idx.x >> 1.
 
 from std.collections import OptionalReg
 from std.math import ceildiv
-from std.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
+from max.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
 from layout.tma_async import RaggedTMA3DTile
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
 from nn.attention.gpu.nvidia.common import (
     ImmutTileTensor1D,
@@ -151,7 +151,10 @@ def mha_sm100_depth512_dispatch[
     comptime PairBM_eff = d512_config.BM_eff() * 2
     comptime num_threads = d512_config.num_threads  # 384
 
-    var q = rebind[UnsafePointer[Scalar[KVType.dtype], q_arg.origin]](q_arg)
+    var q = q_arg.bitcast[Scalar[KVType.dtype]]().unsafe_origin_cast[
+        q_arg.origin
+    ]()
+
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
 
@@ -344,7 +347,7 @@ def mha_sm100_depth512_dispatch[
         # --- ragged dispatch ---
         comptime if ragged:
             with_valid_length[NonNullPointer[DType.uint32]](
-                {valid_length.as_immutable().as_unsafe_any_origin()}
+                {valid_length.as_imm().as_unsafe_any_origin()}
             )
         else:
             with_valid_length[NullPointer[DType.uint32]]({})

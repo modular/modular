@@ -16,8 +16,8 @@ from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import barrier, warp_id, lane_id
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
@@ -35,7 +35,7 @@ from layout.tma_async import (
     TMATensorTile,
     create_tensor_tile,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -119,8 +119,9 @@ def tma_wgmma_kernel[
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    var num_iters = Int(num_iters_dev)
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -177,7 +178,7 @@ def tma_wgmma_kernel[
     comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    mbar = stack_allocation[
+    mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
@@ -343,7 +344,7 @@ def test_tma_wgmma[
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
-        K // BK,
+        Int32(K // BK),
         grid_dim=(N // BN, M // BM),
         block_dim=(128),
     )

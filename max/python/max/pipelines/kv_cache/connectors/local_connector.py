@@ -30,7 +30,6 @@ from max.pipelines.kv_cache.kv_connector import (
     KVConnectorTransfer,
     TransferDirection,
 )
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
 
 from ..paged_kv_cache.block_copy_engine import BlockOffloadEngine
@@ -79,9 +78,7 @@ class LocalConnector:
 
         # Host block pool for managing host memory
         self._host_block_pool = BlockPool(
-            MemoryTier.MEMORY_TIER_CPU,
             total_num_host_blocks,
-            enable_prefix_caching=True,
             enable_runtime_checks=False,
         )
 

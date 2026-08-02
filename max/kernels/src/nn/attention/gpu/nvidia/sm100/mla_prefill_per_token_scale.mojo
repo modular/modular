@@ -46,9 +46,9 @@ from layout.layout_tensor import LayoutTensor
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx, warp_id
 from std.gpu.primitives.warp import broadcast
 from std.gpu.memory import AddressSpace
-from std.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
-from std.gpu.compute.arch.tcgen05 import tcgen05_alloc
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
+from max.gpu.compute.arch.tcgen05 import tcgen05_alloc
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.utils.index import Index
 from nn.attention.gpu.mha import q_num_matrix_view_rows
@@ -135,13 +135,13 @@ struct MLASmemStorage[
 
     comptime correction_smem_size = Self.config.correction_smem_elements()
 
-    var q_smem: InlineArray[Scalar[DType.uint8], Self.q_bytes]
-    var kv_smem: InlineArray[Scalar[DType.uint8], Self.kv_bytes]
-    var q_scale_smem: InlineArray[Scalar[DType.uint8], Self.q_scale_bytes]
-    var k_scale_smem: InlineArray[Scalar[DType.uint8], Self.k_scale_bytes]
-    var correction_smem: InlineArray[Float32, Self.correction_smem_size]
-    var mbar_base: InlineArray[SharedMemBarrier, Self.num_mbars]
-    var tmem_addr: InlineArray[UInt32, 1]
+    var q_smem: Array[Scalar[DType.uint8], Self.q_bytes]
+    var kv_smem: Array[Scalar[DType.uint8], Self.kv_bytes]
+    var q_scale_smem: Array[Scalar[DType.uint8], Self.q_scale_bytes]
+    var k_scale_smem: Array[Scalar[DType.uint8], Self.k_scale_bytes]
+    var correction_smem: Array[Float32, Self.correction_smem_size]
+    var mbar_base: Array[SharedMemBarrier, Self.num_mbars]
+    var tmem_addr: Array[UInt32, 1]
 
 
 __extension SM100MLA:

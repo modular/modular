@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -19,7 +20,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from layout._fillers import random
 from std.math import exp
@@ -972,7 +973,7 @@ def time_kernel[
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             func(ctx)
 
-        m.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](m, ctx)
 
     m.bench_function[bench_func](
         BenchId(

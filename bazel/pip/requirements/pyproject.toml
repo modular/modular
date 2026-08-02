@@ -53,6 +53,7 @@ dependencies = [
   "opentelemetry-api",
   "opentelemetry-exporter-otlp-proto-http>=1.28.2",
   "opentelemetry-exporter-prometheus",
+  "opentelemetry-proto",
   "opentelemetry-sdk",
   "packaging",
   "prometheus-client",
@@ -88,7 +89,7 @@ dependencies = [
   "sphinx==8.1.3",
   "sybil>=10; python_version >= '3.11'", # Runs docstring code-block examples as pytest tests (//max/tests/docstring_examples); requires Python >=3.11
   "sse-starlette",
-  "starlette>=0.47.2", # transitively included by sse-starlette, >=0.47.2 is required for resolving CVE-2025-54121
+  "starlette>=1.3.0", # transitively included by sse-starlette, >=0.47.2 is required for resolving CVE-2025-54121
   "taskgroup",
   "termcolor",
   "threadpoolctl",
@@ -233,7 +234,7 @@ nvidia = [
 # Separate dependency groups for large dependencies used in a few places,
 # to avoid conflicts with the other groups (mainly torch versions).
 nvidia-vllm = [
-  "vllm==0.20.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
+  "vllm==0.22.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
   "torch; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
   "torchaudio; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
   "torchvision; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
@@ -242,13 +243,13 @@ nvidia-vllm = [
 ]
 
 nvidia-sglang = [
-  "sglang==0.5.10.post1; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "sglang==0.5.12.post1; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "torch",
   "torchaudio",
   "torchvision",
   "triton; sys_platform == 'linux' and platform_machine == 'x86_64'",
   # Need an explicit pin to avoid requiring `--prerelease=allow`
-  "flash-attn-4==4.0.0b4",
+  "flash-attn-4==4.0.0b9",
   # Need to override the URL below
   "outlines-core",
 ]
@@ -285,7 +286,7 @@ override-dependencies = [
   "flashinfer-cubin==0.6.8.post1",
   "flashinfer-python==0.6.8.post1",
   "mistral-common==1.11.1",
-  "nvidia-cutlass-dsl==4.4.1",
+  "nvidia-cutlass-dsl==4.4.2",
 
   # Various duplicates between groups
   "xgrammar==0.1.32",

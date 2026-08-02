@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import thread_idx, warp_id
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import barrier
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_almost_equal
 
 
@@ -29,7 +29,7 @@ def tcgen05_st_ld_roundtrip_kernel[
     var elect_one_warp = warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
 
-    var ptr_tmem_addr = stack_allocation[
+    var ptr_tmem_addr = unsafe_stack_allocation[
         1, UInt32, address_space=AddressSpace.SHARED, alignment=16
     ]()
 
@@ -43,7 +43,7 @@ def tcgen05_st_ld_roundtrip_kernel[
 
     tmem_addr = ptr_tmem_addr[0]
 
-    var data_st = InlineArray[Scalar[DType.float32], width](uninitialized=True)
+    var data_st = Array[Scalar[DType.float32], width](uninitialized=True)
     for n in range(N):
         data_st[n] = Float32(thread_idx.x * N + n)
 
@@ -190,7 +190,7 @@ def tcgen05_cp_ld_roundtrip_kernel[
 
     var elect_one_warp = warp_id() == 0
 
-    var ptr_tmem_addr = stack_allocation[
+    var ptr_tmem_addr = unsafe_stack_allocation[
         1, UInt32, address_space=AddressSpace.SHARED, alignment=16
     ]()
 

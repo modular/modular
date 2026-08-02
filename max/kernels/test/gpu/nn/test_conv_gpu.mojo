@@ -24,7 +24,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from nn.conv.conv import (
     Naive2dConvolution,
     conv3d_gpu_naive_ndhwc_qrscf,
@@ -158,7 +158,7 @@ def test_conv3d_gpu[
         stride,
         dilation,
         pad,
-        Int(1),  # num_groups
+        Int32(1),  # num_groups
         grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
         block_dim=(block_size, block_size, 1),
     )

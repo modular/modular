@@ -38,7 +38,7 @@ from std.os import PathLike, abort
 from std.atomic import Atomic, Ordering, fence
 from std.sys import size_of, bit_width_of
 from std.ffi import c_char, CStringSlice
-from std.sys.info import is_32bit
+from std.sys.info import is_32bit, is_apple_gpu
 
 from std.bit import count_leading_zeros
 from std.memory import (
@@ -295,7 +295,7 @@ struct String(
     # ===------------------------------------------------------------------=== #
 
     @always_inline("nodebug")
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroy the string data."""
         self._drop_ref()
 
@@ -499,39 +499,6 @@ struct String(
             args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
 
-    @staticmethod
-    def write[
-        *Ts: Writable,
-    ](*args: *Ts, sep: StaticString = "", end: StaticString = "") -> Self:
-        """Construct a string by concatenating a sequence of Writable arguments.
-
-        Args:
-            args: A sequence of Writable arguments.
-            sep: The separator used between elements.
-            end: The String to write after printing the elements.
-
-        Parameters:
-            Ts: Types of the provided argument sequence.
-
-        Returns:
-            A string formed by formatting the argument sequence.
-        """
-        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
-
-        var total_bytes = _TotalWritableBytes()
-        args._write_to(total_bytes, end=end, sep=sep)
-
-        if total_bytes.size <= Self.INLINE_CAPACITY:
-            var result = String()
-            args._write_to(result, end=end, sep=sep)
-            return result^
-        else:
-            var result = String(capacity=total_bytes.size)
-            var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](result)
-            args._write_to(buffer, end=end, sep=sep)
-            buffer.flush()
-            return result^
-
     def write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
 
@@ -566,23 +533,6 @@ struct String(
         """
         value.write_to(self)
 
-    @staticmethod
-    def write[T: Writable](value: T) -> Self:
-        """Write a single Writable argument to the provided Writer.
-
-        Parameters:
-            T: The type of the value to write, which must implement `Writable`.
-
-        Args:
-            value: The `Writable` argument to write.
-
-        Returns:
-            A new `String` containing the written value.
-        """
-        var result = String()
-        value.write_to(result)
-        return result^
-
     @always_inline("nodebug")
     def __init__(out self, *, unsafe_uninit_length: Int):
         """Construct a String with the specified length, with uninitialized
@@ -604,7 +554,7 @@ struct String(
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
         Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
+            unsafe_from_utf8_ptr: A `Pointer[Byte]` of null-terminated bytes encoded in UTF-8.
 
         Safety:
             - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
@@ -625,7 +575,7 @@ struct String(
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
         Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
+            unsafe_from_utf8_ptr: A `Pointer[Byte]` of null-terminated bytes encoded in UTF-8.
 
         Safety:
             - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
@@ -733,6 +683,10 @@ struct String(
     @always_inline("nodebug")
     def _add_ref(mut self):
         """Atomically increment the refcount."""
+        comptime if is_apple_gpu():
+            # No-op: heap-string refcounting is unsupported on Apple GPU.
+            # See MSTDL-2907.
+            return
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             # See `ArcPointer`'s refcount implementation for more details on the
             # use of memory orderings.
@@ -742,6 +696,10 @@ struct String(
     def _drop_ref(mut self):
         """Atomically decrement the refcount and deallocate self if the result
         hits zero."""
+        comptime if is_apple_gpu():
+            # No-op: heap-string refcounting is unsupported on Apple GPU.
+            # See MSTDL-2907.
+            return
         # If indirect or inline we don't need to do anything.
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             var ptr = self._ptr_or_data.unsafe_offset(-Self.REF_COUNT_SIZE)
@@ -1023,7 +981,9 @@ struct String(
         var result_ptr = result.unsafe_ptr_mut()
         unsafe_memcpy(dest=result_ptr, src=lhs.unsafe_ptr(), count=lhs_len)
         unsafe_memcpy(
-            dest=result_ptr + lhs_len, src=rhs.unsafe_ptr(), count=rhs_len
+            dest=result_ptr.unsafe_offset(lhs_len),
+            src=rhs.unsafe_ptr(),
+            count=rhs_len,
         )
         return result^
 
@@ -1048,7 +1008,7 @@ struct String(
             self.capacity() > self.byte_length()
         ), "String: capacity is not sufficient"
         var length = self.byte_length()
-        (self.unsafe_ptr_mut() + length).unsafe_write(byte)
+        self.unsafe_ptr_mut().unsafe_offset(length).unsafe_write(byte)
         self.set_byte_length(length + 1)
 
     def append(mut self, codepoint: Codepoint):
@@ -1061,7 +1021,9 @@ struct String(
         var length = self.byte_length()
         var new_length = length + codepoint.utf8_byte_length()
         self.reserve(new_length)
-        _ = codepoint.unsafe_write_utf8(self.unsafe_ptr_mut() + length)
+        _ = codepoint.unsafe_write_utf8(
+            self.unsafe_ptr_mut().unsafe_offset(length)
+        )
         self.set_byte_length(new_length)
 
     def __radd__(self, other: StringSlice[mut=False, _]) -> String:
@@ -1082,7 +1044,7 @@ struct String(
         var old_len = self.byte_length()
         var new_len = old_len + other_len
         unsafe_memcpy(
-            dest=self.unsafe_ptr_mut(new_len) + old_len,
+            dest=self.unsafe_ptr_mut(new_len).unsafe_offset(old_len),
             src=other.unsafe_ptr(),
             count=other_len,
         )
@@ -1407,7 +1369,7 @@ struct String(
     @always_inline("nodebug")
     def unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, origin_of(self)]:
+    ) -> Pointer[Byte, origin_of(self)]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
@@ -1419,17 +1381,17 @@ struct String(
             return (
                 Pointer(to=self)
                 .unsafe_bitcast[Byte]()
-                .as_immutable()
+                .as_imm()
                 .unsafe_origin_cast[origin_of(self)]()
             )
         else:
-            return self._ptr_or_data.as_immutable().unsafe_origin_cast[
+            return self._ptr_or_data.as_imm().unsafe_origin_cast[
                 origin_of(self)
             ]()
 
     def unsafe_ptr_mut(
         mut self, var capacity: Int = 0
-    ) -> UnsafePointer[Byte, origin_of(self)]:
+    ) -> Pointer[Byte, origin_of(self)]:
         """Retrieves a mutable pointer to the unique underlying memory. Passing
         a larger capacity will reallocate the string to the new capacity if
         larger than the existing capacity, allowing you to write more data.
@@ -1487,7 +1449,7 @@ struct String(
         """
 
         return Span(
-            unsafe_ptr=UnsafePointer(
+            unsafe_ptr=Pointer(
                 to=self.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
                     "bytes", origin_of(self)
                 ]()
@@ -1520,7 +1482,7 @@ struct String(
               overall string.
         """
         return Span(
-            unsafe_ptr=UnsafePointer(
+            unsafe_ptr=Pointer(
                 to=self.unsafe_ptr_mut()._get_ref_with_unsafe_interior_origin[
                     "bytes", origin_of(self)
                 ]()
@@ -2233,7 +2195,7 @@ struct String(
         var old_len = self.byte_length()
         if length > old_len:
             unsafe_memset(
-                self.unsafe_ptr_mut(length) + old_len,
+                self.unsafe_ptr_mut(length).unsafe_offset(old_len),
                 fill_byte,
                 length - old_len,
             )
@@ -2556,7 +2518,7 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     # underscores under the conditions they have a prefix
     var was_last_digit_underscore = not (real_base in (2, 8, 16) and has_prefix)
     for pos in range(start, str_len):
-        var ord_current = Int(buff[pos])
+        var ord_current = Int(buff[unsafe_offset=pos])
         if ord_current == ord_underscore:
             if was_last_digit_underscore:
                 raise Error(_str_to_base_error(base, str_slice))
@@ -2580,7 +2542,10 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
             break
         else:
             raise Error(_str_to_base_error(base, str_slice))
-        if pos + 1 < str_len and not Codepoint(buff[pos + 1]).is_posix_space():
+        if (
+            pos + 1 < str_len
+            and not Codepoint(buff[unsafe_offset=pos + 1]).is_posix_space()
+        ):
             var nextresult = result * real_base
             if nextresult < result:
                 raise Error(
@@ -2594,7 +2559,7 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
 
     if has_space_after_number:
         for pos in range(start, str_len):
-            if not Codepoint(buff[pos]).is_posix_space():
+            if not Codepoint(buff[unsafe_offset=pos]).is_posix_space():
                 raise Error(_str_to_base_error(base, str_slice))
     if is_negative:
         result = -result
@@ -2617,10 +2582,13 @@ def _trim_and_handle_sign(
     """
     var buff = str_slice.unsafe_ptr()
     var start: Int = 0
-    while start < str_len and Codepoint(buff[start]).is_posix_space():
+    while (
+        start < str_len
+        and Codepoint(buff[unsafe_offset=start]).is_posix_space()
+    ):
         start += 1
-    var p: Bool = buff[start] == UInt8(ord("+"))
-    var n: Bool = buff[start] == UInt8(ord("-"))
+    var p: Bool = buff[unsafe_offset=start] == UInt8(ord("+"))
+    var n: Bool = buff[unsafe_offset=start] == UInt8(ord("-"))
     return start + (Int(p) or Int(n)), n
 
 
@@ -2646,8 +2614,8 @@ def _handle_base_prefix(
     var start = pos
     var buff = str_slice.unsafe_ptr()
     if start + 1 < str_len:
-        var prefix_char = chr(Int(buff[start + 1]))
-        if buff[start] == UInt8(ord("0")) and (
+        var prefix_char = chr(Int(buff[unsafe_offset=start + 1]))
+        if buff[unsafe_offset=start] == UInt8(ord("0")) and (
             (base == 2 and (prefix_char == "b" or prefix_char == "B"))
             or (base == 8 and (prefix_char == "o" or prefix_char == "O"))
             or (base == 16 and (prefix_char == "x" or prefix_char == "X"))
@@ -2750,7 +2718,7 @@ def _calc_initial_buffer_size_int32(n0: Int) -> Int:
     # See https://commaok.xyz/post/lookup_tables/ and
     # https://lemire.me/blog/2021/06/03/computing-the-number-of-digits-of-an-integer-even-faster/
     # for a description.
-    comptime lookup_table: InlineArray[Int, 32] = [
+    comptime lookup_table: Array[Int, 32] = [
         4294967296,
         8589934582,
         8589934582,

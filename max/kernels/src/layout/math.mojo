@@ -15,7 +15,7 @@
 import std.math
 from std.sys.info import simd_width_of
 
-import std.algorithm.reduction as reduction
+import max.algorithm.reduction as reduction
 from std.algorithm import vectorize
 from std.math.math import max as b_max
 from layout import (
@@ -165,7 +165,7 @@ def sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     from layout import LayoutTensor, Layout
     from layout.math import sum
 
-    data: InlineArray[Int32, 6] = [0, 1, 2, 3, 4, 5]
+    data: Array[Int32, 6] = [0, 1, 2, 3, 4, 5]
     tensor = LayoutTensor[DType.int32, Layout.row_major(2, 3)](data)
     print(tensor)
     print("-----")

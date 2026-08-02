@@ -47,10 +47,10 @@ def free(ptr: Pointer[mut=True, NoneType, ...]):
 
 
 @always_inline
-def free(ptr: OptionalUnsafePointer[mut=True, NoneType, ...]):
+def free(ptr: OptionalPointer[mut=True, NoneType, MutAnyOrigin]):
     """Frees memory previously allocated by `malloc`, `calloc`, or `realloc`.
 
-    This overload accepts an `Optional[UnsafePointer]` because it is valid in
+    This overload accepts an `Optional[Pointer]` because it is valid in
     C to call `free` on a null pointer (it is a no-op).
 
     Args:
@@ -145,18 +145,18 @@ def posix_spawnp[
     — function creates a new process (child process) from the specified process image.
 
     Args:
-        pid: UnsafePointer[c_pid_t], dest. for process id if spawned successfully.
-        file: NULL terminated UnsafePointer[c_char] (C string), containing path to executable.
-        argv: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
-        envp: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
+        pid: `Pointer` destination for the process id if spawned successfully.
+        file: NUL-terminated C string (`CStringSlice`) with the path to the executable.
+        argv: The argument array; must be terminated with a NULL (`None`) entry.
+        envp: The environment array; must be terminated with a NULL (`None`) entry.
     """
     # TODO: Implement `const posix_spawn_file_actions_t`, `*file_actions, const posix_spawnattr_t *restrict attrp,`
     # to allow full control of how process is spawned
     return external_call["posix_spawnp", c_int](
         pid,
         file,
-        _CPointer[NoneType, UntrackedOrigin[mut=False]](),
-        _CPointer[NoneType, UntrackedOrigin[mut=False]](),
+        _CPointer[NoneType, ImmUntrackedOrigin](),
+        _CPointer[NoneType, ImmUntrackedOrigin](),
         argv,
         envp,
     )
@@ -180,7 +180,7 @@ def _get_environ() -> (
         # a pointer to the `environ` variable.
         return external_call[
             "_NSGetEnviron",
-            _CPointer[_EnvpType, UntrackedOrigin[mut=False]],
+            _CPointer[_EnvpType, ImmUntrackedOrigin],
         ]().value()[]
     elif CompilationTarget.is_linux():
         # On Linux, look up `environ` via dlsym(RTLD_DEFAULT, "environ").
@@ -215,8 +215,8 @@ def execvp[
     — execute a file.
 
     Args:
-        file: NULL terminated UnsafePointer[c_char] (C string), containing path to executable.
-        argv: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
+        file: NUL-terminated C string (`Pointer` to `c_char`) with the path to the executable.
+        argv: The argument array; must be terminated with a NULL pointer.
     """
     return external_call["execvp", c_int](file, argv)
 
@@ -328,7 +328,8 @@ def dlerror(out result: _CPointer[c_char, MutUntrackedOrigin]):
 
 @always_inline
 def dlopen(
-    filename: OptionalUnsafePointer[c_char, _], flags: c_int
+    filename: OptionalPointer[mut=False, c_char, ImmUntrackedOrigin],
+    flags: c_int,
 ) -> _CPointer[NoneType, MutUntrackedOrigin]:
     return external_call["dlopen", _CPointer[NoneType, MutUntrackedOrigin]](
         filename, flags
@@ -354,9 +355,7 @@ def dlsym[
 
 def realpath(
     path: Pointer[mut=False, c_char, _],
-    resolved_path: _CPointer[mut=True, c_char, _] = _CPointer[
-        c_char, MutUntrackedOrigin
-    ](),
+    resolved_path: Pointer[mut=True, c_char, _],
     out result: _CPointer[c_char, MutUntrackedOrigin],
 ):
     """Expands all symbolic links and resolves references to /./, /../ and extra
@@ -366,17 +365,14 @@ def realpath(
     pointed to by resolved_path.  The resulting path will have no symbolic link,
     /./ or /../ components.
 
-    If resolved_path is a NULL pointer, then realpath() uses malloc(3) to
-    allocate a buffer of up to PATH_MAX bytes to hold the resolved pathname, and
-    returns a pointer to this buffer. The caller is responsible for deallocating
-    the buffer in this scenario.
+    libc also accepts a NULL `resolved_path`, in which case it allocates the
+    result buffer itself. This binding does not expose that mode, so the caller
+    always owns the destination buffer.
 
     Args:
         path: The path to resolve.
-        resolved_path: The buffer to store the resolved path. If this is a NULL
-            pointer then libc will allocate a buffer of up to PATH_MAX bytes to
-            hold the resolved pathname. The caller is responsible for
-            deallocating the buffer in this scenario.
+        resolved_path: The buffer to store the resolved path. It must be at
+            least `PATH_MAX` bytes long.
 
     Returns:
         A pointer to the resolved path.

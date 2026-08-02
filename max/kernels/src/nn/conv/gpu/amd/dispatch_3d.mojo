@@ -49,7 +49,7 @@ Mirrors the structure of `nn.conv.gpu.amd.dispatch`.
 """
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys import simd_width_of
@@ -74,35 +74,41 @@ def _transpose_qrscf_to_fk_kpad[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    Q: Int,
-    R: Int,
-    S: Int,
-    C: Int,
-    F: Int,
-    K_padded: Int,
+    Q: Int32,
+    R: Int32,
+    S: Int32,
+    C: Int32,
+    F: Int32,
+    K_padded: Int32,
 ):
     """GPU kernel: filter QRSCF `[Q*R*S*C, F]` -> `[F, K_padded]`.
 
     `K_padded >= Q*R*S*C`; padded trailing columns are zero-filled.
     """
-    var K_real = Q * R * S * C
-    var total = F * K_padded
+    var _Q = Int(Q)
+    var _R = Int(R)
+    var _S = Int(S)
+    var _C = Int(C)
+    var _F = Int(F)
+    var _K_padded = Int(K_padded)
+    var K_real = _Q * _R * _S * _C
+    var total = _F * _K_padded
     var tid = global_idx.x
     if tid >= total:
         return
-    var f = tid // K_padded
-    var k = tid - f * K_padded
+    var f = tid // _K_padded
+    var k = tid - f * _K_padded
     if k >= K_real:
         dst_ptr.store(tid, Scalar[dtype](0))
         return
-    var q = k // (R * S * C)
-    var rsc = k - q * (R * S * C)
-    var r = rsc // (S * C)
-    var sc = rsc - r * (S * C)
-    var s = sc // C
-    var c = sc - s * C
-    # QRSCF source index: (((q*R + r)*S + s)*C + c)*F + f.
-    var qrscf_idx = (((q * R + r) * S + s) * C + c) * F + f
+    var q = k // (_R * _S * _C)
+    var rsc = k - q * (_R * _S * _C)
+    var r = rsc // (_S * _C)
+    var sc = rsc - r * (_S * _C)
+    var s = sc // _C
+    var c = sc - s * _C
+    # QRSCF source index: (((q*_R + r)*_S + s)*_C + c)*_F + f.
+    var qrscf_idx = (((q * _R + r) * _S + s) * _C + c) * _F + f
     dst_ptr.store(tid, src_ptr.load(qrscf_idx))
 
 
@@ -112,35 +118,43 @@ def _transpose_fcqrs_to_fk_kpad[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    F: Int,
-    C: Int,
-    Q: Int,
-    R: Int,
-    S: Int,
-    K_padded: Int,
+    F: Int32,
+    C: Int32,
+    Q: Int32,
+    R: Int32,
+    S: Int32,
+    K_padded: Int32,
 ):
     """GPU kernel: filter FCQRS `[F, C, Q, R, S]` -> `[F, K_padded]`.
 
     `K_padded >= Q*R*S*C`; padded trailing columns are zero-filled.
     """
-    var K_real = Q * R * S * C
-    var total = F * K_padded
+    var _F = Int(F)
+    var _C = Int(C)
+    var _Q = Int(Q)
+    var _R = Int(R)
+    var _S = Int(S)
+    var _K_padded = Int(K_padded)
+    var K_real = _Q * _R * _S * _C
+    var total = _F * _K_padded
     var tid = global_idx.x
     if tid >= total:
         return
-    var f = tid // K_padded
-    var k = tid - f * K_padded
+    var f = tid // _K_padded
+    var k = tid - f * _K_padded
     if k >= K_real:
         dst_ptr.store(tid, Scalar[dtype](0))
         return
-    var q = k // (R * S * C)
-    var rsc = k - q * (R * S * C)
-    var r = rsc // (S * C)
-    var sc = rsc - r * (S * C)
-    var s = sc // C
-    var c = sc - s * C
-    # FCQRS source index: f*C*Q*R*S + c*Q*R*S + q*R*S + r*S + s.
-    var fcqrs_idx = f * C * Q * R * S + c * Q * R * S + q * R * S + r * S + s
+    var q = k // (_R * _S * _C)
+    var rsc = k - q * (_R * _S * _C)
+    var r = rsc // (_S * _C)
+    var sc = rsc - r * (_S * _C)
+    var s = sc // _C
+    var c = sc - s * _C
+    # FCQRS source index: f*_C*_Q*_R*_S + c*_Q*_R*_S + q*_R*_S + r*_S + s.
+    var fcqrs_idx = (
+        f * _C * _Q * _R * _S + c * _Q * _R * _S + q * _R * _S + r * _S + s
+    )
     dst_ptr.store(tid, src_ptr.load(fcqrs_idx))
 
 
@@ -340,12 +354,12 @@ def dispatch_amd_4wave_conv3d[
             ctx.enqueue_function[_transpose_fcqrs_to_fk_kpad[filter_type]](
                 filter.ptr,
                 filter_fk_ptr,
-                _C_out,
-                _C_in,
-                _Q,
-                _R,
-                _S,
-                _K_padded,
+                Int32(_C_out),
+                Int32(_C_in),
+                Int32(_Q),
+                Int32(_R),
+                Int32(_S),
+                Int32(_K_padded),
                 grid_dim=transpose_grid,
                 block_dim=_transpose_block,
             )
@@ -353,12 +367,12 @@ def dispatch_amd_4wave_conv3d[
             ctx.enqueue_function[_transpose_qrscf_to_fk_kpad[filter_type]](
                 filter.ptr,
                 filter_fk_ptr,
-                _Q,
-                _R,
-                _S,
-                _C_in,
-                _C_out,
-                _K_padded,
+                Int32(_Q),
+                Int32(_R),
+                Int32(_S),
+                Int32(_C_in),
+                Int32(_C_out),
+                Int32(_K_padded),
                 grid_dim=transpose_grid,
                 block_dim=_transpose_block,
             )

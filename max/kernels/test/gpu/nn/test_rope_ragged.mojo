@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from layout import Coord, TileTensor, row_major
 from nn.rope import rope_ragged
@@ -165,7 +165,7 @@ def _test_rope_ragged_gpu_impl[
         type_of(position_ids_device_tensor_static).LayoutType,
         ImmutAnyOrigin,
     ](
-        position_ids_device_tensor_static._storage.as_immutable().unsafe_origin_cast[
+        position_ids_device_tensor_static._storage.as_imm().unsafe_origin_cast[
             ImmutAnyOrigin
         ](),
         position_ids_device_tensor_static.layout,

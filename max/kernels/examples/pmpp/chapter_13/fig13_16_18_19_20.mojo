@@ -14,9 +14,9 @@
 """Figures 13.16, 13.18, 13.19, 13.20: Circular buffer merge kernel implementation in Mojo."""
 
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.math import min, max
 
 
@@ -173,29 +173,33 @@ def merge_sequential_circular(
 
 def merge_circular_buffer_kernel(
     A: UnsafePointer[Int32, ImmutAnyOrigin],
-    m: Int,
+    m_dev: Int32,
     B: UnsafePointer[Int32, ImmutAnyOrigin],
-    n: Int,
+    n_dev: Int32,
     C: UnsafePointer[Int32, MutAnyOrigin],
-    tile_size: Int,
+    tile_size_dev: Int32,
 ):
     """Figures 13.16, 13.18, 13.19, 13.20: Circular buffer merge kernel.
 
     Args:
         A: First sorted array.
-        m: Length of A.
+        m_dev: Length of A.
         B: Second sorted array.
-        n: Length of B.
+        n_dev: Length of B.
         C: Output merged array.
-        tile_size: Size of each tile.
+        tile_size_dev: Size of each tile.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var tile_size = Int(tile_size_dev)
     # Allocate shared memory
-    var A_S = stack_allocation[
+    var A_S = unsafe_stack_allocation[
         1024,
         Scalar[DType.int32],
         address_space=AddressSpace.SHARED,
     ]()
-    var B_S = stack_allocation[
+    var B_S = unsafe_stack_allocation[
         1024,
         Scalar[DType.int32],
         address_space=AddressSpace.SHARED,
@@ -432,11 +436,11 @@ def main() raises:
 
     ctx.enqueue_function[merge_circular_buffer_kernel](
         d_A,
-        m,
+        Int32(m),
         d_B,
-        n,
+        Int32(n),
         d_C,
-        tile_size,
+        Int32(tile_size),
         grid_dim=(num_blocks, 1, 1),
         block_dim=(threads_per_block, 1, 1),
     )

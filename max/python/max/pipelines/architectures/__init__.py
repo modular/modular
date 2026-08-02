@@ -146,6 +146,11 @@ def register_all_models() -> None:
             ".gemma4_assistant",
             "gemma4_assistant_arch",
         ),
+        _LazyArch(
+            "Gemma4DSparkModel",
+            ".unified_dspark_gemma4",
+            "gemma4_dspark_draft_arch",
+        ),
         _LazyArch("GlmMoeDsaForCausalLM", ".glm5_1", "glm5_1_arch"),
         _LazyArch("GptOssForCausalLM", ".gpt_oss", "gpt_oss_arch"),
         _LazyArch(
@@ -276,6 +281,11 @@ def register_all_models() -> None:
             "UnifiedDflashLlama3ForCausalLM",
             ".unified_dflash_llama3",
             "unified_dflash_llama3_arch",
+        ),
+        _LazyArch(
+            "UnifiedDSparkGemma4ForCausalLM",
+            ".unified_dspark_gemma4",
+            "unified_dspark_gemma4_arch",
         ),
         _LazyArch(
             "UnifiedEagleLlama3ForCausalLM",

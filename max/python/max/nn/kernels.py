@@ -2795,6 +2795,12 @@ def msa_sparse_indexer(
         rank=3,
         device=index_q.device,
     )
+    scratch_heads = score_scratch.shape[0]
+    if int(scratch_heads) != num_index_heads:
+        raise ValueError(
+            "score_scratch must carry one plane per index head: expected "
+            f"shape[0] == {num_index_heads}, got {int(scratch_heads)}"
+        )
     if topk <= 0:
         raise ValueError(f"topk must be greater than 0, got {topk}")
 
@@ -5180,6 +5186,26 @@ def grouped_matmul_ragged(
             f" {hidden_states.shape[1]}] but got {weight.shape}"
         )
 
+    if expert_usage_stats.device != hidden_states.device:
+        # This is a graph DeviceRef (``is_cpu()`` method) when building a Graph
+        # and a driver Device (``is_host`` property) on the experimental-tensor
+        # path.
+        src_device = expert_usage_stats.device
+        src_is_cpu = (
+            src_device.is_cpu()
+            if isinstance(src_device, DeviceRef)
+            else src_device.is_host
+        )
+        if not src_is_cpu:
+            raise ValueError(
+                "grouped_matmul_ragged expected expert_usage_stats to be"
+                " host-resident (CPU) or already on the compute device, but got"
+                f" {src_device} with hidden_states on {hidden_states.device}; a"
+                " device-to-device transfer of the expert-usage metadata is not"
+                " supported."
+            )
+        expert_usage_stats = expert_usage_stats.to(hidden_states.device)
+
     output = ops.custom(
         "mo.grouped.matmul.ragged",
         device=hidden_states.device,
@@ -5414,17 +5440,17 @@ def grouped_dynamic_scaled_mxfp4_matmul(
 
 
 def grouped_matmul_block_scaled(
-    hidden_states: TensorValue,
-    weight: TensorValue,
-    a_scales: TensorValue,
-    b_scales: TensorValue,
-    expert_start_indices: TensorValue,
-    a_scale_offsets: TensorValue,
-    expert_ids: TensorValue,
-    expert_scales: TensorValue,
-    expert_usage_stats_host: TensorValue,
+    hidden_states: TensorValueLike,
+    weight: TensorValueLike,
+    a_scales: TensorValueLike,
+    b_scales: TensorValueLike,
+    expert_start_indices: TensorValueLike,
+    a_scale_offsets: TensorValueLike,
+    expert_ids: TensorValueLike,
+    expert_scales: TensorValueLike,
+    expert_usage_stats_host: TensorValueLike,
     out_type: DType = DType.bfloat16,
-    estimated_total_m: TensorValue | None = None,
+    estimated_total_m: TensorValueLike | None = None,
 ) -> TensorValue:
     """Performs grouped NVFP4 matmul for MoE layers.
 
@@ -5462,6 +5488,17 @@ def grouped_matmul_block_scaled(
     Returns:
         The matmul result with shape ``[total_tokens, N]`` and dtype ``out_type``.
     """
+    hidden_states = TensorValue(hidden_states)
+    weight = TensorValue(weight)
+    a_scales = TensorValue(a_scales)
+    b_scales = TensorValue(b_scales)
+    expert_start_indices = TensorValue(expert_start_indices)
+    a_scale_offsets = TensorValue(a_scale_offsets)
+    expert_ids = TensorValue(expert_ids)
+    expert_scales = TensorValue(expert_scales)
+    expert_usage_stats_host = TensorValue(expert_usage_stats_host)
+    if estimated_total_m:
+        estimated_total_m = TensorValue(estimated_total_m)
 
     _check_rank(2, hidden_states=hidden_states)
     _check_rank(3, weight=weight)
@@ -7667,18 +7704,35 @@ def merge_ragged_tensors(
                 [total_a_rows + total_b_rows, ...].
             - The merged row offsets with the same shape as input row offsets.
 
+    The following example interleaves two ragged tensors that share a batch
+    size of 2. Row ``a = [1, 2, 3, 4, 5, 6]`` with offsets ``[0, 2, 6]`` and
+    row ``b = [7, 8, 9, 10]`` with offsets ``[0, 3, 4]`` merge into
+    ``[1, 2, 7, 8, 9, 3, 4, 5, 6, 10]`` with offsets ``[0, 5, 10]``:
+
     .. code-block:: python
 
-        a = [1, 2, 3, 4, 5, 6]
-        a_row_offsets = [0, 2, 6]
-        b = [7, 8, 9, 10]
-        b_row_offsets = [0, 3, 4]
+        from max.driver import Accelerator, CPU, accelerator_count
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, TensorType
+        from max.nn.kernels import merge_ragged_tensors
 
-        merged_tensor, merged_row_offsets = merge_ragged_tensors(
-            a, a_row_offsets, b, b_row_offsets)
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
 
-        merged_tensor = [1, 2, 7, 8, 9, 3, 4, 5, 6, 10]
-        merged_row_offsets = [0, 5, 10]
+        with Graph(
+            "merge_ragged_tensors_example",
+            input_types=(
+                TensorType(DType.int32, ["a_seq_len"], device=device_ref),
+                TensorType(DType.uint32, ["offsets_len"], device=device_ref),
+                TensorType(DType.int32, ["b_seq_len"], device=device_ref),
+                TensorType(DType.uint32, ["offsets_len"], device=device_ref),
+            ),
+        ) as graph:
+            a, a_row_offsets, b, b_row_offsets = (v.tensor for v in graph.inputs)
+            merged_tensor, merged_row_offsets = merge_ragged_tensors(
+                a, a_row_offsets, b, b_row_offsets
+            )
+            graph.output(merged_tensor, merged_row_offsets)
     """
     if a.dtype != b.dtype:
         raise ValueError("a and b must have the same dtype")
@@ -8397,70 +8451,143 @@ def sgmv_lora_qkv_shrink(
     )[0].tensor
 
 
+def _sgmv_qkv_expand(
+    p: TensorValue,
+    lora_b: TensorValue,
+    lora_ids: TensorValue,
+    lora_grouped_offsets: TensorValue,
+    q_dim: int,
+    kv_dim: int,
+    max_lora_seq_len: int,
+) -> tuple[TensorValue, TensorValue]:
+    """Boundary-aware single-launch LoRA-B expand for fused Q/K/V projections.
+
+    Performs the LoRA 'expand' (up-projection) for routed tokens in ONE grouped
+    matmul over a single fused weight, and is correct under grouped-query
+    attention (``q_dim != kv_dim``). The kernel selects the Q/K/V boundary
+    natively, so no separate K/V offset/id arrays are needed.
+
+    Args:
+        p: Planar shrink output, shape (3, M, R) where plane 0/1/2 hold the
+            q/k/v low-rank projections.
+        lora_b: Fused LoRA-B weight, shape (G, q_dim + 2*kv_dim, R), with output
+            rows concatenated along the projection dimension as Q | K | V.
+        lora_ids: Adapter indices for each active group, shape (num_active,).
+            ``-1`` marks an inactive group.
+        lora_grouped_offsets: Inclusive prefix sums of tokens per active adapter,
+            shape (num_active + 1,). The same grouping used by the shrink.
+        q_dim: Output dimension of the Q projection.
+        kv_dim: Output dimension of the K (and V) projection.
+        max_lora_seq_len: Upper bound on tokens for any active adapter.
+
+    Returns:
+        A tuple ``(q_out, kv_out)`` where ``q_out`` has shape (M, q_dim) and
+        ``kv_out`` has shape (2*M, kv_dim) with K rows in [0, M) and V rows in
+        [M, 2M) -- the layout consumed by ``kv_cache_ragged_2m_iadd``.
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    _check_rank(3, p=p, lora_b=lora_b)
+
+    _check_same_dtype(p=p, lora_b=lora_b)
+
+    _check_dtype(DType.uint32, lora_grouped_offsets=lora_grouped_offsets)
+
+    m_dim = p.shape[1]
+
+    results = ops.custom(
+        "mo.lora_sgmv.qkv_expand.ragged",
+        device=p.device,
+        values=[
+            p,
+            lora_b,
+            lora_grouped_offsets,
+            lora_ids,
+            ops.constant(
+                max_lora_seq_len,
+                DType.uint32,
+                device=DeviceRef.CPU(),
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=p.dtype,
+                shape=[m_dim, q_dim],
+                device=p.device,
+            ),
+            TensorType(
+                dtype=p.dtype,
+                shape=[m_dim * 2, kv_dim],
+                device=p.device,
+            ),
+        ],
+    )
+
+    return results[0].tensor, results[1].tensor
+
+
 def sgmv_qkv_lora_kernel(
     input: TensorValue,
     lora_a: TensorValue,
-    lora_b_q: TensorValue,
-    lora_b_kv: TensorValue,
+    lora_b: TensorValue,
     lora_ids: TensorValue,
-    lora_ranks: TensorValue,
     input_row_offsets: TensorValue,
     lora_grouped_offsets: TensorValue,
     lora_end_idx: TensorValue,
     batch_seq_len: TensorValue,
-    lora_ids_kv: TensorValue,
-    lora_grouped_offsets_kv: TensorValue,
     kv_collection: PagedCacheValues,
     kv_params: KVCacheParams,
     layer_idx: TensorValue,
+    q_dim: int,
+    kv_dim: int,
     max_lora_seq_len: int,
     max_rank: int,
-    bias: TensorValue | None = None,
 ) -> TensorValue:
     """Computes the SGMV QKV LoRA kernel for Q, K, V projections with LoRA.
 
+    The LoRA 'expand' (up-projection) is a single boundary-aware grouped matmul
+    over one fused LoRA-B weight, correct under grouped-query attention
+    (``q_dim != kv_dim``). The K/V projections are written directly into the
+    paged KV cache; the Q projection is returned.
+
     Args:
         input: The input tensor.
-        lora_a: The LoRA A tensor.
-        lora_b_q: The LoRA B tensor for Q projection.
-        lora_b_kv: The LoRA B tensor for K and V projections (stacked).
+        lora_a: The fused LoRA A tensor, shape (G, 3*R, K) (q/k/v stacked on
+            the rank dim).
+        lora_b: The fused LoRA B tensor, shape (G, q_dim + 2*kv_dim, R), with
+            output rows concatenated along the projection dimension as Q | K | V.
         lora_ids: IDs of the LoRAs used for each sequence.
-        lora_ranks: The ranks of the LoRAs in the batch.
         input_row_offsets: The sequence offsets that use LoRA.
         lora_grouped_offsets: Grouped offsets for LoRA sequences.
         lora_end_idx: End index of LoRA tokens in the batch.
         batch_seq_len: Total sequence length of the batch.
-        lora_ids_kv: LoRA IDs for KV projections (with offset for V portion).
-        lora_grouped_offsets_kv: Grouped offsets for KV LoRA sequences.
         kv_collection: The KV cache.
         kv_params: The key-value cache configuration parameters.
         layer_idx: The layer index to retrieve the KV cache.
+        q_dim: Output dimension of the Q projection.
+        kv_dim: Output dimension of the K (and V) projection.
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch.
         max_rank: The maximum rank for the LoRAs.
-        bias: Optional LoRA bias.
 
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
     _check_rank(2, input=input)
 
-    _check_rank(3, lora_a=lora_a, lora_b_q=lora_b_q, lora_b_kv=lora_b_kv)
+    _check_rank(3, lora_a=lora_a, lora_b=lora_b)
 
-    _check_same_dtype(
-        input=input, lora_a=lora_a, lora_b_q=lora_b_q, lora_b_kv=lora_b_kv
-    )
+    _check_same_dtype(input=input, lora_a=lora_a, lora_b=lora_b)
 
     _check_dtype(
         DType.uint32,
         input_row_offsets=input_row_offsets,
         lora_grouped_offsets=lora_grouped_offsets,
-        lora_grouped_offsets_kv=lora_grouped_offsets_kv,
         layer_idx=layer_idx,
     )
 
-    # shrink GMM:      [M, K] @ [G, 3*N, K]     // unchanged
-    # transpose:       [M, 3, N] => [3, M, N]   // shall be fused into above
-    v_qkv = sgmv_lora_qkv_shrink(
+    # shrink GMM: [M, K] @ [G, 3*R, K] -> planar [3, M, R].
+    p = sgmv_lora_qkv_shrink(
         input=input,
         lora_a=lora_a,
         lora_ids=lora_ids,
@@ -8470,38 +8597,19 @@ def sgmv_qkv_lora_kernel(
         max_rank=max_rank,
     )
 
-    # slice for Q:     [0, M, N] (not materialized)
-    # slice for KV:    [1:,M, N] (not materialized)
-    # reshape and slices get fused into the input of the
-    # grouped-matmuls.
-    v_qkv = ops.reshape(v_qkv, [3 * lora_end_idx.shape[0], -1])
-
-    # expand GMM-Q:    [M, N]  @ [G, Qdim, N]
-    v_q = v_qkv[: lora_end_idx.shape[0], :]
-    q_out = sgmv_kernel(
-        v_q,
-        lora_b_q,
-        lora_ids,
-        lora_ranks,
-        lora_grouped_offsets,
-        max_lora_seq_len,
-        lora_end_idx=lora_end_idx,
-        bias=bias,
+    # expand GMM: single boundary-aware launch over the fused LoRA-B weight.
+    # q_out: [M, q_dim]; kv_out: [2M, kv_dim] (K rows [0, M), V rows [M, 2M)).
+    q_out, kv_out = _sgmv_qkv_expand(
+        p=p,
+        lora_b=lora_b,
+        lora_ids=lora_ids,
+        lora_grouped_offsets=lora_grouped_offsets,
+        q_dim=q_dim,
+        kv_dim=kv_dim,
+        max_lora_seq_len=max_lora_seq_len,
     )
 
-    v_kv = v_qkv[lora_end_idx.shape[0] :, :]
-    # expand GMM-KV:   [2M, N] @ [2G, KVdim, N] // KV stacked in dim 0
-    kv_out = sgmv_kernel(
-        v_kv,
-        lora_b_kv,
-        lora_ids_kv,
-        lora_ranks,
-        lora_grouped_offsets_kv,
-        max_lora_seq_len,
-        bias=bias,
-    )
-
-    # write to cache:  write [2M, KVdim] directly w/o transforming to [M, 2*KVdim]
+    # write [2M, KVdim] directly to the paged cache.
     kv_cache_ragged_2m_iadd(
         kv_params=kv_params,
         a=kv_out,
@@ -8518,57 +8626,51 @@ def sgmv_qkv_lora_kernel(
 def sgmv_qkv_lora_fused(
     input: TensorValue,
     lora_a: TensorValue,
-    lora_b_q: TensorValue,
-    lora_b_kv: TensorValue,
+    lora_b: TensorValue,
     lora_ids: TensorValue,
-    lora_ranks: TensorValue,
     lora_grouped_offsets: TensorValue,
     lora_end_idx: TensorValue,
-    lora_ids_kv: TensorValue,
-    lora_grouped_offsets_kv: TensorValue,
+    q_dim: int,
+    kv_dim: int,
     max_lora_seq_len: int,
     max_rank: int,
-    bias: TensorValue | None = None,
 ) -> TensorValue:
     """Returns the fused ``[q|k|v]`` LoRA contribution for a QKV projection.
 
-    Same shrink + Q/KV expands as :func:`sgmv_qkv_lora_kernel`, but returns
-    the full ``[q|k|v]`` output of shape ``[M, q_dim + 2*kv_dim]`` (for the
-    ``M`` LoRA tokens) instead of writing K/V into the cache. The caller adds
-    it to the ``qkv`` projection before the fused rope + KV store.
+    Same shrink + single boundary-aware expand as :func:`sgmv_qkv_lora_kernel`,
+    but returns the full ``[q|k|v]`` output of shape ``[M, q_dim + 2*kv_dim]``
+    (for the ``M`` LoRA tokens) instead of writing K/V into the cache. The
+    caller adds it to the ``qkv`` projection before the fused rope + KV store.
 
     Args:
         input: The input tensor.
-        lora_a: The LoRA A tensor (q/k/v stacked on the rank dim).
-        lora_b_q: The LoRA B tensor for the Q projection.
-        lora_b_kv: The LoRA B tensor for the K and V projections (stacked).
+        lora_a: The fused LoRA A tensor, shape (G, 3*R, K) (q/k/v stacked on
+            the rank dim).
+        lora_b: The fused LoRA B tensor, shape (G, q_dim + 2*kv_dim, R), with
+            output rows concatenated along the projection dimension as Q | K | V.
         lora_ids: IDs of the LoRAs used for each sequence.
-        lora_ranks: The ranks of the LoRAs in the batch.
         lora_grouped_offsets: Grouped offsets for LoRA sequences.
         lora_end_idx: End index of LoRA tokens in the batch.
-        lora_ids_kv: LoRA IDs for KV projections (with offset for V portion).
-        lora_grouped_offsets_kv: Grouped offsets for KV LoRA sequences.
+        q_dim: Output dimension of the Q projection.
+        kv_dim: Output dimension of the K (and V) projection.
         max_lora_seq_len: The maximum sequence length of any LoRA in the batch.
         max_rank: The maximum rank for the LoRAs.
-        bias: Optional LoRA bias.
 
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
     _check_rank(2, input=input)
-    _check_rank(3, lora_a=lora_a, lora_b_q=lora_b_q, lora_b_kv=lora_b_kv)
-    _check_same_dtype(
-        input=input, lora_a=lora_a, lora_b_q=lora_b_q, lora_b_kv=lora_b_kv
-    )
+    _check_rank(3, lora_a=lora_a, lora_b=lora_b)
+    _check_same_dtype(input=input, lora_a=lora_a, lora_b=lora_b)
     _check_dtype(
         DType.uint32,
         lora_grouped_offsets=lora_grouped_offsets,
-        lora_grouped_offsets_kv=lora_grouped_offsets_kv,
     )
 
     m = lora_end_idx.shape[0]
 
-    v_qkv = sgmv_lora_qkv_shrink(
+    # shrink GMM: [M, K] @ [G, 3*R, K] -> planar [3, M, R].
+    p = sgmv_lora_qkv_shrink(
         input=input,
         lora_a=lora_a,
         lora_ids=lora_ids,
@@ -8577,26 +8679,17 @@ def sgmv_qkv_lora_fused(
         max_lora_seq_len=max_lora_seq_len,
         max_rank=max_rank,
     )
-    v_qkv = ops.reshape(v_qkv, [3 * m, -1])
 
-    q_out = sgmv_kernel(
-        v_qkv[:m, :],
-        lora_b_q,
-        lora_ids,
-        lora_ranks,
-        lora_grouped_offsets,
-        max_lora_seq_len,
-        lora_end_idx=lora_end_idx,
-        bias=bias,
-    )
-    kv_out = sgmv_kernel(
-        v_qkv[m:, :],
-        lora_b_kv,
-        lora_ids_kv,
-        lora_ranks,
-        lora_grouped_offsets_kv,
-        max_lora_seq_len,
-        bias=bias,
+    # expand GMM: single boundary-aware launch over the fused LoRA-B weight.
+    # q_out: [M, q_dim]; kv_out: [2M, kv_dim] (K rows [0, M), V rows [M, 2M)).
+    q_out, kv_out = _sgmv_qkv_expand(
+        p=p,
+        lora_b=lora_b,
+        lora_ids=lora_ids,
+        lora_grouped_offsets=lora_grouped_offsets,
+        q_dim=q_dim,
+        kv_dim=kv_dim,
+        max_lora_seq_len=max_lora_seq_len,
     )
 
     # kv_out is [2M, kv_dim] (K then V on dim 0); fold into [M, q_dim+2*kv_dim].

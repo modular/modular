@@ -14,7 +14,7 @@
 from std.io.io import _printf
 
 from std.gpu import WARP_SIZE, barrier
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import arange

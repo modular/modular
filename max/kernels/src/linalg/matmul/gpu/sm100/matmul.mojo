@@ -28,15 +28,15 @@ from std.math.uutils import umod, ufloordiv, udivmod
 
 from std.gpu import WARP_SIZE, lane_id, warp_id
 from std.gpu.primitives.cluster import elect_one_sync
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.compute.mma import st_matrix
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.compute.mma import st_matrix
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import (
     named_barrier,
     umma_arrive_leader_cta,
     mbarrier_arrive,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     Coord,
     IntTuple,
@@ -215,7 +215,7 @@ def f32_frag_to_smem[
     vec_size: Int,
     DstLayout: TensorLayout,
 ](
-    vec: InlineArray[Scalar[vec_dtype], vec_size],
+    vec: Array[Scalar[vec_dtype], vec_size],
     dst: TileTensor[
         _, DstLayout, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
@@ -274,7 +274,7 @@ def stsm_helper[
     transpose_c: Bool = False,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    vec: InlineArray[Scalar[vec_dtype], vec_size],
+    vec: Array[Scalar[vec_dtype], vec_size],
     dst: TileTensor[
         _, DstLayout, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
@@ -577,7 +577,7 @@ def _compute_register_lambda_fn[
 ](
     top_coord: StaticTuple[UInt32, 2],
     bottom_coord: StaticTuple[UInt32, 2],
-    mut frag: InlineArray[Scalar[epilogue_dtype], frag_size],
+    mut frag: Array[Scalar[epilogue_dtype], frag_size],
     staged_c_row: UInt32,
     staged_c_col: UInt32,
 ):
@@ -644,8 +644,8 @@ def register_epilogue[
     cta_group: Int,
     is_lower_frag_required: Bool,
 ](
-    mut upper_frag_casted: InlineArray[Scalar[epilogue_dtype], frag_size],
-    mut lower_frag_casted: InlineArray[Scalar[epilogue_dtype], frag_size],
+    mut upper_frag_casted: Array[Scalar[epilogue_dtype], frag_size],
+    mut lower_frag_casted: Array[Scalar[epilogue_dtype], frag_size],
     c_row: UInt32,
     c_col: UInt32,
     N: UInt32,

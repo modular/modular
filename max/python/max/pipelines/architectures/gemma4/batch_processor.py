@@ -31,10 +31,6 @@ from max.pipelines.lib.interfaces.batch_processor import (
 from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
 from max.profiler import traced
 
-from .batch_vision_inputs import (
-    create_empty_embeddings,
-    create_empty_indices,
-)
 from .context import Gemma4Context
 from .model_config import Gemma4ForConditionalGenerationConfig
 
@@ -90,10 +86,6 @@ class Gemma4BatchProcessor(
             raise ValueError("Model does not support DP>1")
         context_batch = replica_batches[0]
 
-        assert self._config is not None, (
-            "config must be bound before prepare_initial_token_inputs(); "
-            "call bind_model_state() in load_model()"
-        )
         assert kv_cache_inputs is not None
 
         devices = self.runtime.devices
@@ -158,26 +150,7 @@ class Gemma4BatchProcessor(
             return_n_logits=return_n_logits_buf,
             signal_buffers=list(self.runtime.signal_buffers),
             kv_cache_inputs=kv_cache_inputs,
-            empty_vision_embeds=self._empty_embeddings(),
-            empty_vision_indices=self._empty_indices(),
         )
-
-    def _empty_embeddings(self) -> list[Buffer]:
-        assert self._config is not None
-        if not hasattr(self, "_cached_empty_embeddings"):
-            self._cached_empty_embeddings = create_empty_embeddings(
-                self.runtime.devices,
-                self._config.text_config.hidden_size,
-                self._config.unquantized_dtype,
-            )
-        return self._cached_empty_embeddings
-
-    def _empty_indices(self) -> list[Buffer]:
-        if not hasattr(self, "_cached_empty_indices"):
-            self._cached_empty_indices = create_empty_indices(
-                self.runtime.devices
-            )
-        return self._cached_empty_indices
 
     def process_outputs(
         self, outputs: Sequence[Buffer | object]

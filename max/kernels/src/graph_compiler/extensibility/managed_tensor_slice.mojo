@@ -24,21 +24,22 @@ A custom kernel's entry-point signature uses these:
 The decorators that register a kernel (`register`, `register_internal`,
 `view_kernel`) live next to this file in `register.mojo`.
 """
-import std.algorithm.functional
+from max.algorithm.functional import elementwise
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import Optional
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu
-from std.gpu.host.info import is_gpu as _is_gpu
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host.info import is_cpu
+from max.gpu.host.info import is_gpu as _is_gpu
 from std.math import ceil, fma
 from std.memory import AddressSpace
-from std.runtime.tracing import trace_arg
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, is_gpu
 from std.sys.intrinsics import strided_load, strided_store
 from std.utils import IndexList, StaticTuple, product
 from std.utils._serialize import _serialize
+
+from max.runtime.tracing import trace_arg
 
 from layout import (
     Coord,
@@ -1141,10 +1142,10 @@ def _index_list_to_static_coord[
     Returns:
         A `Coord` with the given element types.
     """
-    comptime assert values.size == element_types.size, "rank mismatch"
+    comptime assert values.size == element_types.length, "rank mismatch"
     var result = Coord[*element_types]()
 
-    comptime for i in range(element_types.size):
+    comptime for i in range(element_types.length):
         comptime if not result.element_types[i].is_static_value:
             result[i] = rebind[result.element_types[i]](
                 Scalar[result.element_types[i].DTYPE](values[i])
@@ -1818,6 +1819,7 @@ struct ManagedTensorSlice[
 
         return Int(crd2idx[out_type=DType.int](index, shape, strides))
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def store[
         width: SIMDLength,
@@ -1848,6 +1850,7 @@ struct ManagedTensorSlice[
             element_alignment=element_alignment,
         ](self, ridx, val)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def store[
         width: SIMDLength,
@@ -1872,6 +1875,7 @@ struct ManagedTensorSlice[
             rebind[IndexList[Self.rank]](coord_to_index_list(index)), val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _fused_store[
         width: SIMDLength,
@@ -1896,6 +1900,7 @@ struct ManagedTensorSlice[
                 element_alignment=element_alignment,
             ](self, ridx, val)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _fused_store[
         width: SIMDLength,
@@ -1910,6 +1915,7 @@ struct ManagedTensorSlice[
             rebind[IndexList[Self.rank]](coord_to_index_list(index)), val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def _lambda_store[
         width: SIMDLength,
@@ -1934,6 +1940,7 @@ struct ManagedTensorSlice[
             ridx, val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _lambda_store[
         width: SIMDLength,
@@ -1951,6 +1958,7 @@ struct ManagedTensorSlice[
             rebind[IndexList[Self.rank]](coord_to_index_list(index)), val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _fused_compute_output_lambda[
         width: SIMDLength,
@@ -1972,6 +1980,7 @@ struct ManagedTensorSlice[
         else:
             return val
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _fused_compute_output_lambda[
         width: SIMDLength,
@@ -1986,6 +1995,7 @@ struct ManagedTensorSlice[
             width, element_alignment=element_alignment
         ](rebind[IndexList[Self.rank]](coord_to_index_list(index)), val)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _fused_compute_output_tile_lambda[
         _rank: Int,
@@ -2007,6 +2017,7 @@ struct ManagedTensorSlice[
         else:
             return val
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def _fused_compute_output_tile_lambda[
         LayoutType: TensorLayout,
@@ -2291,9 +2302,14 @@ struct ManagedTensorSlice[
         for i in range(Self.rank):
             shape.append(self.shape()[i])
 
+        # Pin the argument to a concrete-origin optional pointer so this call
+        # stays origin-exact across the `_serialize` safe-Pointer flip.
+        var serialize_ptr = OptionalPointer[Scalar[Self.dtype], ImmutAnyOrigin](
+            self._ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin]()
+        )
         # TODO(1937): make this work with all valid strides
         _serialize[serialize_fn=serialize, serialize_end_line=False](
-            self._ptr, shape
+            serialize_ptr, shape
         )
 
         writer.write("){")
@@ -2745,7 +2761,7 @@ def foreach[
         var val = func[width](index)
         tensor._fused_store[element_alignment=alignment](index, val)
 
-    std.algorithm.functional.elementwise[
+    elementwise[
         simd_width,
         target=target,
         _trace_description=_trace_name,

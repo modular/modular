@@ -23,7 +23,7 @@ from std.memory import unsafe_memcpy
 from std.math import ceildiv
 from std.random import random_ui64, seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,

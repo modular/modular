@@ -80,3 +80,4 @@ Functions
    compute_num_device_blocks
    compute_num_host_blocks
    estimated_memory_size
+   spec_decode_cache_slack

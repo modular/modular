@@ -631,7 +631,7 @@ def test_tokenizer_stores_eos_token_ids(
         model_path=modular_ai_llama_3_1_local_path,
         pipeline_config=pipeline_config,
     )
-    assert tokenizer._default_eos_token_ids == {tokenizer.eos, 123456}
+    assert tokenizer.eos_token_ids == {tokenizer.delegate.eos_token_id, 123456}
 
     # Test list of eos token ids
     assert pipeline_config.model.huggingface_config is not None
@@ -640,7 +640,11 @@ def test_tokenizer_stores_eos_token_ids(
         model_path=modular_ai_llama_3_1_local_path,
         pipeline_config=pipeline_config,
     )
-    assert tokenizer._default_eos_token_ids == {tokenizer.eos, 123, 456}
+    assert tokenizer.eos_token_ids == {
+        tokenizer.delegate.eos_token_id,
+        123,
+        456,
+    }
 
 
 def test_text_and_vision_tokenizer_stores_eos_token_ids(
@@ -669,7 +673,7 @@ def test_text_and_vision_tokenizer_stores_eos_token_ids(
         model_path=model_path,
         pipeline_config=pipeline_config,
     )
-    assert tokenizer._default_eos_token_ids == gemma_3_eos_token_ids
+    assert tokenizer.eos_token_ids == gemma_3_eos_token_ids
 
 
 @pytest.mark.asyncio

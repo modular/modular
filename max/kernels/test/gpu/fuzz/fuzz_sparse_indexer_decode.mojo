@@ -51,7 +51,7 @@
 #   2 = write an out-of-range index -> trips the validity contract under diff.
 
 from std.collections import Set
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv, max, min, sqrt
 from std.random import randn, random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int

@@ -15,7 +15,8 @@ from std.math import iota
 from std.os import abort
 from std.sys import size_of
 
-from std.algorithm.functional import parallelize_over_rows
+from max.algorithm.functional import parallelize_over_rows
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -23,7 +24,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from internal_utils import arg_parse, human_readable_size
 from std.testing import assert_almost_equal, assert_true
 
@@ -139,7 +140,7 @@ def bench_memcpy(
             else:
                 raise Error("Unexpected transfer direction")
 
-        b.iter_custom[kernel_launch](context)
+        bencher_iter_custom[kernel_launch](b, context)
 
     # For D2D transfers, we're reading the entire buffer into gpu cache/sharedmem,
     # then writing it back to a new address in vram. This means we're really
@@ -197,10 +198,10 @@ def bench_p2p(
         def kernel_launch(ctx: DeviceContext) raises:
             ctx2.enqueue_copy(dst_buf, src_buf)
 
-        b.iter_custom[kernel_launch](ctx1)
+        bencher_iter_custom[kernel_launch](b, ctx1)
 
     # Create list of throughput measures
-    var measures = [
+    var measures: List = [
         # Raw bandwidth (considering only one transfer)
         ThroughputMeasure(BenchMetric.bytes, length_in_bytes),
     ]

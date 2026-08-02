@@ -59,6 +59,7 @@ from std.sys import (
 )
 from std.sys._assembly import inlined_assembly
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -67,22 +68,22 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import WARP_SIZE, barrier
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,
     UMMAInsDescriptor,
     UMMAKind,
     mma,
     mma_arrive,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import thread_idx, warp_id as get_warp_id
 from std.gpu.memory import AddressSpace, external_memory
 from layout import Layout, LayoutTensor
@@ -119,7 +120,7 @@ def mma_ws_cta1[
 ):
     """Issues a single `tcgen05.mma.ws.cta_group::1.<kind>` instruction.
 
-    Mirrors the structure of `mma()` from `std.gpu.compute.arch.mma_nvidia_sm100`
+    Mirrors the structure of `mma()` from `max.gpu.compute.arch.mma_nvidia_sm100`
     but emits the `.ws.` variant of the PTX instruction (which is the form used
     by `bulk_mma_ws` in `attention_utils.mojo`). The `.ws.` variant takes only
     `[c_tmem], a_desc, b_desc, idesc, predicate` — no mask operands.
@@ -599,7 +600,7 @@ def main() raises:
         @parameter
         @always_inline
         def bench_func(mut bencher: Bencher) raises:
-            bencher.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](bencher, ctx)
 
         var bench = Bench()
 

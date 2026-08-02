@@ -32,13 +32,14 @@ import extensibility
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
 
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from layout.tile_tensor import row_major
-from std.gpu.host.info import is_gpu, _is_sm10x_gpu
+from max.gpu.host.info import is_gpu, _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
     IntTuple,
+    PointerStorage,
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
@@ -105,7 +106,7 @@ from std.logger import Logger
 
 comptime logger = Logger()
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.utils import IndexList
 
 # ===-----------------------------------------------------------------------===#
@@ -1213,7 +1214,7 @@ def _apple_int8_w8a8_dispatch[
 ](
     c_tt: TileTensor[mut=True, c_type, ...],
     a_tt: TileTensor[DType.bfloat16, ...],
-    b_tt: TileTensor[DType.int8, ...],
+    b_tt: TileTensor[DType.int8, Storage=PointerStorage[], ...],
     bs_tt: TileTensor[DType.float32, ...],
     bias_tt: TileTensor[c_type, ...],
     context: DeviceContext,
@@ -1241,7 +1242,7 @@ def _apple_int8_w8a8_dispatch[
 
     # Kernel scratch: int8 quantized activation `[M, K]` + per-row fp32 scale
     # `[M]`, both dynamic-M/K. Freed at scope exit via the stream-ordered
-    # `DeviceBuffer.__del__`; the `_ = ...^` pins them past the async enqueues
+    # `DeviceBuffer.__deinit__`; the `_ = ...^` pins them past the async enqueues
     # (same lifetime idiom as the FP4 materialize path).
     var aq_buf = context.enqueue_create_buffer[DType.int8](M * K)
     var asc_buf = context.enqueue_create_buffer[DType.float32](M)
@@ -1300,7 +1301,7 @@ struct Struct_matmul_int8_w8a8_apple:
         # path ignores it). Reuse `b_scale` as the dummy source (same dtype is
         # not required -- it is never read -- but a valid 1-elem view is).
         var dummy_bias = TileTensor(
-            c_tt.ptr, row_major(Coord(Int64(1)))
+            c_tt._storage, row_major(Coord(Int64(1)))
         ).as_immut()
         _apple_int8_w8a8_dispatch[c_type, has_bias=False, target=target](
             c_tt,

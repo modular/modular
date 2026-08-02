@@ -112,7 +112,7 @@ zones that control how callers pass values:
 
 | Marker | Arguments       | Parameters      |
 |--------|-----------------|-----------------|
-| `//`   | No              | Inferred        |
+| `//`   | No              | Infer-only      |
 | `/`    | Positional-only | Positional-only |
 | `*`    | Keyword-only    | Keyword-only    |
 
@@ -127,8 +127,8 @@ PEP 3102.
 
 ### Infer-only marker (`//`, parameters only)
 
-`//` separates inferred parameters from named parameters. The
-compiler deduces inferred parameters from call-site arguments:
+`//` separates infer-only parameters from named parameters. The
+compiler deduces infer-only parameters from call-site arguments:
 
 ```mojo
 def inferred_type[T: Writable, //](value: T):
@@ -142,8 +142,8 @@ def main():
 Infer-only parameters can't be specified positionally:
 
 ```mojo
-# Error because 'inferred_type' expects 0 positional parameters,
-# but 1 was specified
+# Error because 'inferred_type' got 1 positional parameter
+# but expected none.
 inferred_type[Int](5)
 ```
 
@@ -187,7 +187,7 @@ div(a=10, b=3)   # Error
 ### Keyword-only marker (`*`)
 
 Everything after `*` is keyword-only. Callers must pass
-values by name:
+values by name, whether parameters or arguments:
 
 ```mojo
 def configure(*, verbose: Bool, retries: Int):
@@ -392,14 +392,13 @@ def wrong(out result: Int) -> Int:
 ### `deinit`
 
 The function takes ownership and destroys the value. Required
-for `self` in `__del__` and the `existing` argument in move
-constructors:
+for `self` in `__deinit__` and the argument in move constructors:
 
 ```mojo
 struct Resource:
     var handle: Int
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         _release(self.handle)
 ```
 
@@ -514,19 +513,20 @@ A function can specify at most one error type after `raises`.
 
 ### `thin` {#thin}
 
-Declares that a function type doesn't capture values from its defining
-scope. A thin function is a function pointer and not a closure.
+Used only in function types, `thin` indicates a function pointer type (not
+a closure) and ensures the function value doesn't capture values from its
+defining scope. Don't use `thin` in function declarations.
 
 ```mojo
 def map[
     T: Copyable, U: Copyable
-](f: def(T) thin -> U, input: List[T]) -> List[U]:
+](f: def(T) thin -> U, input: List[T]) -> List[U]:  # Used as type
     var result: List[U] = []
     for item in input:
         result.append(f(item))
     return result^
 
-# `square` doesn't capture any values, so it is `thin`
+# `square` doesn't capture values. It can be passed to a thin type
 def square(x: Int) -> Int:
     return x * x
 
@@ -539,7 +539,8 @@ def main():
 ### `abi("C")` {#abi-c}
 
 Declares that a function uses the C calling convention. Because C has no
-closure mechanism, `abi("C")` always appears together with `thin`:
+closure mechanism, `abi("C")` always appears together with `thin` in
+function types:
 
 ```mojo
 # `add` is compiled with the C calling convention, so it can be called
@@ -553,12 +554,16 @@ def main():
 ```
 
 :::caution
-You may not combine non-Mojo `abi()` effects with raising functions.
-Raising functions change calling conventions in a non-obvious ways.
+Don't combine non-Mojo `abi()` effects with raising functions.
+Raising functions change calling conventions in non-obvious ways.
+
 The Mojo compiler:
 
 - accepts `def (String) abi("Mojo") raises`
 - rejects `def (String) abi("C") raises`
+
+`abi("Mojo")` is already the default. You don't need to specify it.
+
 :::
 
 ## Return type
@@ -635,17 +640,16 @@ constructors can't raise.
 They're always movable by copying a register.
 :::
 
-### `__del__()`
+### `__deinit__()`
 
 The destructor takes `deinit self`:
 
 ```mojo
-def __del__(deinit self):
+def __deinit__(deinit self):
     _release(self.handle)
 ```
 
-Destructors can't raise. Trivial types can't define a
-destructor.
+Destructors can't raise. Trivial types can't define a destructor.
 
 ## Nested functions
 
@@ -654,7 +658,7 @@ functions capture values from the enclosing scope:
 
 ```mojo
 def outer(x: Int) -> Int:
-    def inner() {imm} -> Int:
+    def inner() {imm} -> Int:  # Read-only references (`imm`) to outer scope
         return x + 1
     return inner()
 ```
@@ -852,9 +856,9 @@ def main():
 
 :::caution Sharp edge
 For `TrivialRegisterPassable` types, the transfer operator `^` is a no-op.
-As a result, when using a trivial register type like `Int`, `Float64`, or
-similar, `(c^).which()` becomes `c.which()`, so `ref self` always wins. The
-compiler will warn you but won't reject your code.
+When using a trivial register type like `Int`, `Float64`, or similar,
+`(c^).which()` becomes `c.which()`. The compiler will warn you but won't
+reject your code.
 
 The compile-time conformance check in the `where` clause above makes a
 non-trivial constraint explicit. It filters the `var self` overload out for
@@ -960,10 +964,8 @@ def main():
     take_param[1, 2]()
 ```
 
-Resolve by binding one parameter to a literal type that only one
-overload accepts (for example, `take_param[1, "hi"]()` against a
-`b: String` overload), by adding a non-overlapping parameter, or
-by giving the overloads distinct names.
+To resolve, remove the ambiguity or remove the overload by renaming one
+version.
 
 ### Return types don't disambiguate
 

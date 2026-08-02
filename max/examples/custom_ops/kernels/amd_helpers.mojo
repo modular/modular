@@ -25,10 +25,17 @@ from std.gpu import (
     lane_id,
     thread_idx,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import AddressSpace
 from std.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
-from layout import Layout, TensorLayout, TileTensor, row_major, stack_allocation
+from layout import (
+    Layout,
+    PointerStorage,
+    TensorLayout,
+    TileTensor,
+    row_major,
+    stack_allocation,
+)
 from layout._utils import make_amd_buffer_resource
 from layout.int_tuple import coord_to_int_tuple
 from layout.element import Element
@@ -135,7 +142,11 @@ def amd_scheduling_hints[
 def copy_local_to_dram_32_32_8[
     dst_thread_layout: Layout,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-](dst: TileTensor, src: TileTensor, dst_base: TileTensor):
+](
+    dst: TileTensor[Storage=PointerStorage[], ...],
+    src: TileTensor[Storage=PointerStorage[], ...],
+    dst_base: TileTensor[Storage=PointerStorage[], ...],
+):
     # TODO: use copy_local_to_dram instead once fixed. This is a workaround for now.
 
     # `distribute` / `distance` / `runtime_layout` / `element_layout` and
@@ -151,7 +162,7 @@ def copy_local_to_dram_32_32_8[
     )
     var dst_fragments = dst_lt.distribute[dst_thread_layout](worker_idx)
 
-    var offset = (Int(dst_lt.ptr) - Int(dst_base.ptr)) // size_of[
+    var offset = (Int(dst_lt.ptr) - Int(dst_base._storage)) // size_of[
         dst_base.dtype
     ]()
     var buffer = make_amd_buffer_resource(dst_base)
@@ -177,7 +188,7 @@ def copy_local_to_dram_32_32_8[
                 dst_idx += dst_fragments.runtime_layout(i)
 
             var src_element = Element[index_type=src_lt.linear_idx_type].load(
-                src_lt.ptr + src_idx,
+                src_lt.ptr.unsafe_offset(src_idx),
                 src_lt.runtime_element_layout,
             )
 
@@ -582,9 +593,9 @@ def max_reduce_kernel[
     layout: TensorLayout,
 ](
     relative_error: TileTensor[dtype, layout, MutAnyOrigin],
-    elements: Int,
-    offset: Int,
-    max_idx: Int,
+    elements_dev: Int32,
+    offset_dev: Int32,
+    max_idx_dev: Int32,
 ):
     """
     GPU kernel that computes the maximum relative error in a subset of a tensor.
@@ -595,16 +606,22 @@ def max_reduce_kernel[
 
     Args:
         relative_error: The relative error tensor to reduce.
-        elements: The number of elements per block to reduce.
-        offset: The stride/offset for accessing elements.
-        max_idx: Maximum valid index to prevent out-of-bounds access.
+        elements_dev: The number of elements per block to reduce.
+        offset_dev: The stride/offset for accessing elements.
+        max_idx_dev: Maximum valid index to prevent out-of-bounds access.
     """
+
+    var elements = Int(elements_dev)
+    var offset = Int(offset_dev)
+    var max_idx = Int(max_idx_dev)
 
     # Get thread and block indices
     var tid = thread_idx.x
     var bid = block_idx.x
 
-    var local_relative_error = relative_error.ptr[offset * elements * bid]
+    var local_relative_error = relative_error._storage[
+        unsafe_offset=offset * elements * bid
+    ]
 
     # Parallel reduction loop: for(int i = elements >> 1; i > 0; i = i >> 1)
     var i = elements >> 1
@@ -663,7 +680,7 @@ def compare_equal[
     gpu_ctx.enqueue_memset(
         DeviceBuffer[max_relative_error.dtype](
             gpu_ctx,
-            max_relative_error.ptr,
+            max_relative_error._storage,
             m * n,
             owning=False,
         ),
@@ -692,9 +709,9 @@ def compare_equal[
         comptime reduce_kernel = max_reduce_kernel[dtype, layout]
         gpu_ctx.enqueue_function[reduce_kernel](
             max_relative_error,
-            num_elements,
-            offset,
-            m * n,
+            Int32(num_elements),
+            Int32(offset),
+            Int32(m * n),
             grid_dim=(num_threadblocks, 1),
             block_dim=(512, 1),
         )
@@ -731,11 +748,11 @@ def compare_equal[
 
         gpu_ctx.enqueue_copy(
             reference_host_buf,
-            reference.ptr,
+            reference._storage,
         )
         gpu_ctx.enqueue_copy(
             computed_host_buf,
-            computed.ptr,
+            computed._storage,
         )
 
         var diff_buf = gpu_ctx.enqueue_create_host_buffer[dtype](m * n)

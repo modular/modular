@@ -27,10 +27,8 @@ idefics3_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     example_repo_ids=["HuggingFaceM4/Idefics3-8B-Llama3"],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-    },
+    default_encoding=Idefics3Config.DEFAULT_ENCODING,
+    supported_encodings=Idefics3Config.SUPPORTED_ENCODINGS,
     pipeline_model=Idefics3Model,
     tokenizer=Idefics3Tokenizer,
     context_type=TextAndVisionContext,

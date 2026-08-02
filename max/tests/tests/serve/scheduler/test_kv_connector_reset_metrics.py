@@ -27,7 +27,6 @@ from max.pipelines.kv_cache.kv_connector import (
     KVConnectorTransfer,
     TransferDirection,
 )
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 
 
@@ -39,6 +38,12 @@ class _CountingConnector:
         self._d2h_blocks_copied = 0
         self._disk_blocks_written = 0
         self._disk_blocks_read = 0
+        # dKV health that mirrors the real connector, so connected and total
+        # are a live level and reconnect_attempts is a lifetime counter that
+        # reset_metrics deliberately does not clear.
+        self._connected_clients = 0
+        self._total_clients = 0
+        self._reconnect_attempts = 0
 
     @property
     def name(self) -> str:
@@ -104,9 +109,15 @@ class _CountingConnector:
             d2h_blocks_copied=self._d2h_blocks_copied,
             disk_blocks_written=self._disk_blocks_written,
             disk_blocks_read=self._disk_blocks_read,
+            dkv_connected_clients=self._connected_clients,
+            dkv_total_clients=self._total_clients,
+            dkv_reconnect_attempts=self._reconnect_attempts,
         )
 
     def reset_metrics(self) -> None:
+        # Only the per-batch transfer counters reset. The health fields are a
+        # live level and a lifetime counter, so they are intentionally left
+        # alone here, mirroring the real dKV connector.
         self._h2d_blocks_copied = 0
         self._d2h_blocks_copied = 0
         self._disk_blocks_written = 0
@@ -118,7 +129,6 @@ def test_block_manager_reset_metrics_clears_connector_counters() -> None:
     connector._d2h_blocks_copied = 5
     connector._h2d_blocks_copied = 2
     bm = BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=64,
         block_size=16,
         enable_prefix_caching=True,
@@ -171,7 +181,6 @@ def test_scheduler_sampling_cycle_reports_per_batch_deltas() -> None:
     """
     connector = _CountingConnector()
     bm = BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=64,
         block_size=16,
         enable_prefix_caching=True,
@@ -203,3 +212,106 @@ def test_scheduler_sampling_cycle_reports_per_batch_deltas() -> None:
 
 def test_null_connector_reset_metrics_is_noop() -> None:
     NullConnector().reset_metrics()
+
+
+def test_kv_cache_metrics_add_sums_dkv_health_fields() -> None:
+    """The dKV health fields sum across per-replica connector clients."""
+    connected = KVCacheMetrics(
+        dkv_connected_clients=1,
+        dkv_total_clients=1,
+        dkv_reconnect_attempts=2,
+    )
+    down = KVCacheMetrics(
+        dkv_connected_clients=0,
+        dkv_total_clients=1,
+        dkv_reconnect_attempts=5,
+    )
+
+    total = connected + down
+
+    assert total.dkv_connected_clients == 1
+    assert total.dkv_total_clients == 2
+    assert total.dkv_reconnect_attempts == 7
+    # one of two clients down, so the aggregate is degraded
+    assert total.dkv_degraded
+
+
+def test_kv_cache_metrics_add_sums_tier_attribution_fields() -> None:
+    """device_blocks_served and cross_replica_{blocks,bytes}_copied sum
+    across replicas (CENG-845 G0/G0-DP tier-attribution counters)."""
+    replica_0 = KVCacheMetrics(
+        device_blocks_served=5,
+        cross_replica_blocks_copied=2,
+        cross_replica_bytes_copied=1024,
+        h2d_blocks_copied=10,
+        disk_blocks_read=3,
+    )
+    replica_1 = KVCacheMetrics(
+        device_blocks_served=7,
+        cross_replica_blocks_copied=1,
+        cross_replica_bytes_copied=512,
+        h2d_blocks_copied=4,
+        disk_blocks_read=1,
+    )
+
+    total = replica_0 + replica_1
+
+    assert total.device_blocks_served == 12
+    assert total.cross_replica_blocks_copied == 3
+    assert total.cross_replica_bytes_copied == 1536
+    assert total.h2d_blocks_copied == 14
+    assert total.disk_blocks_read == 4
+    # defaults stay zero
+    assert KVCacheMetrics().device_blocks_served == 0
+    assert KVCacheMetrics().cross_replica_bytes_copied == 0
+
+
+def test_kv_cache_metrics_dkv_degraded_predicate() -> None:
+    """dkv_degraded is true only with a dKV tier and a client not connected."""
+    # no dKV tier attached
+    assert not KVCacheMetrics().dkv_degraded
+    # every client connected
+    assert not KVCacheMetrics(
+        dkv_connected_clients=2, dkv_total_clients=2
+    ).dkv_degraded
+    # a client down
+    assert KVCacheMetrics(
+        dkv_connected_clients=1, dkv_total_clients=2
+    ).dkv_degraded
+
+
+def test_dkv_health_persists_across_sample_and_reset() -> None:
+    """dKV health is a level and a cumulative value, not a per-batch delta.
+
+    The connector reports connected and reconnect_attempts live and does not
+    clear them on reset_metrics, so every batch reads the current level and the
+    running cumulative total. This is why they export as gauges rather than
+    counters, because a counter fed the cumulative value each batch would
+    double-count.
+    """
+    connector = _CountingConnector()
+    connector._connected_clients = 1
+    connector._total_clients = 2
+    connector._reconnect_attempts = 3
+    bm = BlockManager(
+        total_num_blocks=64,
+        block_size=16,
+        enable_prefix_caching=True,
+        connector=connector,
+    )
+
+    batch_one = bm.metrics
+    bm.reset_metrics()
+    batch_two = bm.metrics
+
+    # reset_metrics did not clear the health fields, so both samples agree
+    for batch in (batch_one, batch_two):
+        assert batch.dkv_connected_clients == 1
+        assert batch.dkv_total_clients == 2
+        assert batch.dkv_reconnect_attempts == 3
+        assert batch.dkv_degraded
+
+    # a later reconnect bumps the running total, and the next sample reflects
+    # the new cumulative value rather than a per-batch delta of 1
+    connector._reconnect_attempts = 4
+    assert bm.metrics.dkv_reconnect_attempts == 4

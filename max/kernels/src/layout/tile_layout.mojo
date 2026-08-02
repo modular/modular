@@ -18,19 +18,19 @@ definitions while maintaining performance through compile-time specialization.
 
 Key components:
 
-- [`TensorLayout`](/docs/layout/tile_layout/TensorLayout): Trait
+- [`TensorLayout`](/api/mojo/layout/tile_layout/TensorLayout): Trait
   defining the interface for all mixed layouts.
-- [`Layout`](/docs/layout/tile_layout/Layout): Primary struct
+- [`Layout`](/api/mojo/layout/tile_layout/Layout): Primary struct
   implementing a layout with mixed compile-time and runtime dimensions.
-- [`row_major`](/docs/layout/tile_layout/row_major): Create a
+- [`row_major`](/api/mojo/layout/tile_layout/row_major): Create a
   row-major layout from a shape.
-- [`col_major`](/docs/layout/tile_layout/col_major): Create a
+- [`col_major`](/api/mojo/layout/tile_layout/col_major): Create a
   column-major layout from a shape.
-- [`blocked_product`](/docs/layout/tile_layout/blocked_product):
+- [`blocked_product`](/api/mojo/layout/tile_layout/blocked_product):
   Create a hierarchical blocked layout from block and tiler layouts.
-- [`zipped_divide`](/docs/layout/tile_layout/zipped_divide): Divide
+- [`zipped_divide`](/api/mojo/layout/tile_layout/zipped_divide): Divide
   a layout into inner and outer components by a tile shape.
-- [`coalesce`](/docs/layout/tile_layout/coalesce): Simplify a
+- [`coalesce`](/api/mojo/layout/tile_layout/coalesce): Simplify a
   layout by merging dimensions with contiguous strides.
 
 You can import these APIs from the `layout` package:
@@ -321,9 +321,9 @@ struct Layout[
     var _stride: Coord[*Self.stride_types]
     """The stride of the layout as a Coord."""
 
-    comptime rank = Self.shape_types.size
+    comptime rank = Self.shape_types.length
     """The number of dimensions in the layout."""
-    comptime flat_rank = _Flattened[*Self.shape_types].size
+    comptime flat_rank = _Flattened[*Self.shape_types].length
     """The number of dimensions after flattening nested coordinates."""
     comptime shape_known = Coord[*Self.shape_types].all_dims_known
     """Whether all shape dimensions are known at compile time."""
@@ -741,7 +741,7 @@ def _types_to_int_tuple[Types: TypeList[Trait=CoordLike, ...]]() -> IntTuple:
     Uses direct IntTuple construction (no append) for rank 1-2.
     Falls back to append for rank > 2.
     """
-    comptime N = Types.size
+    comptime N = Types.length
     comptime if N == 1:
         return _type_to_int_tuple[Types[0]]()
     elif N == 2:
@@ -769,7 +769,7 @@ comptime _StaticCosize[
     Shapes: TypeList[Trait=CoordLike, ...],
     Strides: TypeList[Trait=CoordLike, ...],
 ] = ParameterList.tabulate[
-    Shapes.size, _StaticCosizeTabulator[Shapes, Strides, _]
+    Shapes.length, _StaticCosizeTabulator[Shapes, Strides, _]
 ]().reduce[
     1, _AddReducer
 ]
@@ -777,7 +777,7 @@ comptime _StaticCosize[
 
 
 comptime _UnwrapSingleTuple[*element_types: CoordLike] = TypeList[
-    element_types[0]._ParamListType if element_types.size == 1
+    element_types[0]._ParamListType if element_types.length == 1
     and element_types[0].is_tuple else element_types.values
 ]()
 
@@ -793,7 +793,7 @@ comptime _UnwrapSingleTuple[*element_types: CoordLike] = TypeList[
 
 
 comptime _ElementFlatRank[T: CoordLike] = (
-    _Flattened[*T.ParamListType].size if T.is_tuple else 1
+    _Flattened[*T.ParamListType].length if T.is_tuple else 1
 )
 """Number of leaf dims contributed by one (possibly nested) `CoordLike`."""
 
@@ -841,7 +841,7 @@ comptime _NestedStrideD1[
 ]: CoordLike = Coord[
     *TypeList.tabulate[
         Trait=CoordLike,
-        SubShape[sub_idx].ParamListType.size,
+        SubShape[sub_idx].ParamListType.length,
         _NestedStrideLeaf[
             SubShape[sub_idx].ParamListType,
             FlatStrides,
@@ -864,7 +864,7 @@ comptime _NestedStrideD2[
 ]: CoordLike = Coord[
     *TypeList.tabulate[
         Trait=CoordLike,
-        SubShape[sub_idx].ParamListType.size,
+        SubShape[sub_idx].ParamListType.length,
         _NestedStrideD1[
             SubShape[sub_idx].ParamListType,
             FlatStrides,
@@ -887,7 +887,7 @@ comptime _NestedStrideTabulator[
 ]: CoordLike = Coord[
     *TypeList.tabulate[
         Trait=CoordLike,
-        SubShape[sub_idx].ParamListType.size,
+        SubShape[sub_idx].ParamListType.length,
         _NestedStrideD2[
             SubShape[sub_idx].ParamListType,
             FlatStrides,
@@ -958,7 +958,7 @@ shapes use `_RowMajorNested`."""
 
 comptime _RowMajorNested[*element_types: CoordLike] = TypeList.tabulate[
     Trait=CoordLike,
-    element_types.size,
+    element_types.length,
     _NestedStrideTabulator[
         TypeList[element_types.values](),
         _RowMajor[*_Flattened[*element_types]],
@@ -988,7 +988,7 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
         A Layout with row-major strides.
     """
     comptime RowMajorTypes = _RowMajor[*shape.element_types]
-    comptime rank = shape.element_types.size
+    comptime rank = shape.element_types.length
 
     var strides = Tuple[*RowMajorTypes]()
 
@@ -1042,7 +1042,7 @@ def row_major[
     """
 
     comptime RowMajorTypes = _RowMajor[*element_types]
-    comptime rank = element_types.size
+    comptime rank = element_types.length
 
     var strides = Tuple[*RowMajorTypes]()
 
@@ -1119,7 +1119,7 @@ def row_major_nested(
         A `Layout` with the matching nested row-major strides.
     """
     comptime RowMajorTypes = _RowMajorNested[*shape.element_types]
-    comptime rank = shape.element_types.size
+    comptime rank = shape.element_types.length
 
     var strides = Tuple[*RowMajorTypes]()
 
@@ -1172,7 +1172,7 @@ nested shapes use `_ColMajorNested`."""
 
 comptime _ColMajorNested[*element_types: CoordLike] = TypeList.tabulate[
     Trait=CoordLike,
-    element_types.size,
+    element_types.length,
     _NestedStrideTabulator[
         TypeList[element_types.values](),
         _ColMajor[*_Flattened[*element_types]],
@@ -1256,7 +1256,7 @@ def col_major(var shape: Coord) -> ColMajorLayout[shape.element_types]:
         A Layout with column-major strides.
     """
     comptime ColMajorTypes = _ColMajor[*shape.element_types]
-    comptime rank = shape.element_types.size
+    comptime rank = shape.element_types.length
 
     var strides = Tuple[*ColMajorTypes]()
 
@@ -1334,7 +1334,7 @@ def col_major_nested(
         A `Layout` with the matching nested column-major strides.
     """
     comptime ColMajorTypes = _ColMajorNested[*shape.element_types]
-    comptime rank = shape.element_types.size
+    comptime rank = shape.element_types.length
 
     var strides = Tuple[*ColMajorTypes]()
 
@@ -1494,7 +1494,7 @@ comptime _BlockedProductShapeTypes[
     TilerLayoutType: TensorLayout,
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    BlockLayoutType._stride_types.size,
+    BlockLayoutType._stride_types.length,
     _BlockedProductShapeTabulator[
         BlockLayoutType,
         TilerLayoutType,
@@ -1517,7 +1517,7 @@ comptime _BlockedProductStrideTypes[
     TilerLayoutType: TensorLayout,
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    BlockLayoutType._stride_types.size,
+    BlockLayoutType._stride_types.length,
     _BlockedProductStrideTabulator[
         BlockLayoutType,
         TilerLayoutType,
@@ -1550,7 +1550,7 @@ comptime _CoalescedBlockedProductShapeTypes[
     TilerLayoutType: TensorLayout,
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    BlockLayoutType._shape_types.size,
+    BlockLayoutType._shape_types.length,
     _CoalescedBlockedShapeTabulator[
         BlockLayoutType,
         TilerLayoutType,
@@ -1581,7 +1581,7 @@ comptime _CoalescedBlockedProductStrideTypes[
     TilerLayoutType: TensorLayout,
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    BlockLayoutType._stride_types.size,
+    BlockLayoutType._stride_types.length,
     _CoalescedBlockedStrideTabulator[
         BlockLayoutType,
         TilerLayoutType,
@@ -1873,7 +1873,7 @@ comptime _UpcastShapeTypes[
     stride_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    shape_types.size,
+    shape_types.length,
     _UpcastShapeTabulator[factor, shape_types, stride_types, ...],
 ]()
 """The shape types after upcast by ``factor``."""
@@ -2018,7 +2018,7 @@ comptime _DropLast2[
     types: TypeList.of[Trait=CoordLike]._mlir_type,
 ] = TypeList[
     types
-]().slice[0, TypeList[types].size - 2]()
+]().slice[0, TypeList[types].length - 2]()
 """Remove the last two elements from a variadic."""
 
 
@@ -2037,7 +2037,7 @@ comptime _CoalesceReducerIdx[
             ComptimeInt[flat_stride_types[list_idx].static_value],
         ]().values,
     ]()
-    .values if TypeList[Prev]()[TypeList[Prev].size - 2]
+    .values if TypeList[Prev]()[TypeList[Prev].length - 2]
     .static_value
     == 1 else (
         # Contiguous: merge into previous (prev_shape * cur_shape, prev_stride)
@@ -2046,15 +2046,15 @@ comptime _CoalesceReducerIdx[
             TypeList.of[
                 Trait=CoordLike,
                 ComptimeInt[
-                    TypeList[Prev]()[TypeList[Prev].size - 2].static_value
+                    TypeList[Prev]()[TypeList[Prev].length - 2].static_value
                     * element.static_value
                 ],
-                TypeList[Prev]()[TypeList[Prev].size - 1],
+                TypeList[Prev]()[TypeList[Prev].length - 1],
             ]().values,
         ]()
-        .values if TypeList[Prev]()[TypeList[Prev].size - 2]
+        .values if TypeList[Prev]()[TypeList[Prev].length - 2]
         .static_value
-        * TypeList[Prev]()[TypeList[Prev].size - 1].static_value
+        * TypeList[Prev]()[TypeList[Prev].length - 1].static_value
         == flat_stride_types[list_idx].static_value else
         # Non-contiguous: append new (shape, stride) pair
         TypeList._concat[
@@ -2121,7 +2121,9 @@ comptime _CoalescedShapeTypes[
     stride_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    _HalfSizeDriver[_CoalescedInterleaved[shape_types, stride_types].size].size,
+    _HalfSizeDriver[
+        _CoalescedInterleaved[shape_types, stride_types].length
+    ].length,
     _ExtractEvenTabulator[_CoalescedInterleaved[shape_types, stride_types], _],
 ]()
 """Coalesced shape types extracted from the interleaved result."""
@@ -2132,7 +2134,9 @@ comptime _CoalescedStrideTypes[
     stride_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    _HalfSizeDriver[_CoalescedInterleaved[shape_types, stride_types].size].size,
+    _HalfSizeDriver[
+        _CoalescedInterleaved[shape_types, stride_types].length
+    ].length,
     _ExtractOddTabulator[_CoalescedInterleaved[shape_types, stride_types], _],
 ]()
 """Coalesced stride types extracted from the interleaved result."""
@@ -2218,7 +2222,7 @@ def coalesce[
 comptime _WCPair3[L: CoordLike, C: CoordLike]: Bool = (
     True if not C.is_tuple else (
         False if not L.is_tuple else (
-            L.ParamListType.size == C.ParamListType.size
+            L.ParamListType.length == C.ParamListType.length
         )
     )
 )
@@ -2245,29 +2249,20 @@ comptime _WCPair1[L: CoordLike, C: CoordLike]: Bool = (
 
 
 comptime _BoolIsTrue[a: Bool]: Bool = a
-comptime _TwoCoordLikePredicate = __mlir_type[
-    `!lit.generator<<"LHS": `,
-    +CoordLike,
-    `, "RHS": `,
-    +CoordLike,
-    `> `,
-    +Bool,
-    `>`,
-]
 
 comptime _tabulatePredicate[
     a: TypeList[Trait=CoordLike, ...],
     b: TypeList[Trait=CoordLike, ...],
-    pred: _TwoCoordLikePredicate,
+    pred: __generator_type[LHS: CoordLike, RHS: CoordLike] Bool,
     idx: Int,
 ]: Bool = pred[a[idx], b[idx]]
 
 comptime _AllEltsSatisfy[
     a: TypeList[Trait=CoordLike, ...],
     b: TypeList[Trait=CoordLike, ...],
-    pred: _TwoCoordLikePredicate,
-]: Bool = a.size == b.size and ParameterList.tabulate[
-    a.size, _tabulatePredicate[a, b, pred, _]
+    pred: __generator_type[LHS: CoordLike, RHS: CoordLike] Bool,
+]: Bool = a.length == b.length and ParameterList.tabulate[
+    a.length, _tabulatePredicate[a, b, pred, _]
 ]().all_satisfies[
     _BoolIsTrue,
 ]()

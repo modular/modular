@@ -17,7 +17,7 @@ from std.memory import UnsafePointer
 # start-print-bytes
 def print_bytes(bytes: UnsafePointer[mut=False, Byte, _], count: Int):
     for i in range(count):
-        print(hex(bytes[i]), end=" ")
+        print(hex(bytes[unsafe_offset=i]), end=" ")
     print()
     # end-print-bytes
 

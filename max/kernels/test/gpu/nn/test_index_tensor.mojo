@@ -23,7 +23,7 @@
 # Target: any GPU (single-aggregate TileTensor captures only; index rebuilt
 # in-kernel from the `IndexList` arg, so no bare-`Coord`-across-launch trap).
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import align_up
 from std.sys import simd_width_of
 from std.testing import assert_equal
@@ -158,7 +158,7 @@ def test_advanced_indexing_getitem_gpu(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # ===== Reference output (identical to CPU test) =====
-    var ref_stack = InlineArray[
+    var ref_stack = Array[
         Scalar[input_type],
         align_up(output_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -344,7 +344,7 @@ def test_advanced_indexing_setitem_inplace_gpu(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # ===== Reference output (identical to CPU test) =====
-    var ref_stack = InlineArray[
+    var ref_stack = Array[
         Scalar[input_type],
         align_up(input_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)

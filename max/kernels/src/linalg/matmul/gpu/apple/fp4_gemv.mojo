@@ -59,7 +59,7 @@ Two hard M5 constraints, both satisfied by the width-16 decode:
 
 from std.collections import Optional
 from std.gpu import WARP_SIZE, global_idx, lane_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 import std.gpu.primitives.warp as warp
 from std.utils import IndexList
@@ -86,8 +86,8 @@ def fp4_gemv_kernel[
     scales: TileTensor[
         DType.float8_e4m3fn, s_layout, ImmutAnyOrigin
     ],  # [N,K//16]
-    n: Int,
-    k: Int,
+    n_arg: Int32,
+    k_arg: Int32,
 ):
     """One warp per output column; 32 lanes stride down K decoding FP4 -> fp32.
 
@@ -109,10 +109,12 @@ def fp4_gemv_kernel[
         a: Bf16 activation tile tensor `[1, K]`, the single activation row.
         packed: FP4-packed weight tile tensor `[N, K//2]` (lo-nibble first).
         scales: FP8-E4M3 block scales tile tensor `[N, ceil(K/16)]`.
-        n: Number of output columns (rows of the transposed weight).
-        k: Inner dimension length; must be a multiple of
+        n_arg: Number of output columns (rows of the transposed weight).
+        k_arg: Inner dimension length; must be a multiple of
             `NVFP4_SF_VECTOR_SIZE` (16).
     """
+    var n = Int(n_arg)
+    var k = Int(k_arg)
     comptime SF = NVFP4_SF_VECTOR_SIZE  # 16 nibbles / scale block
     comptime BYTES = SF // 2  # 8 packed bytes / block
 
@@ -216,8 +218,8 @@ def enqueue_apple_fp4_gemv[
         a,
         packed,
         scales,
-        n,
-        k,
+        Int32(n),
+        Int32(k),
         grid_dim=grid,
         block_dim=BLK,
     )

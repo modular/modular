@@ -60,7 +60,7 @@ end-to-end correctness coverage.
 from std.math import ceildiv
 from std.utils import Index
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from layout import TileTensor
 
@@ -392,7 +392,7 @@ def amd_4wave_conv[
                 b,
                 c,
                 source_ptr,
-                source_row_stride,
+                Int32(source_row_stride),
                 beta,
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),
@@ -403,7 +403,7 @@ def amd_4wave_conv[
                 b,
                 c,
                 source_ptr,
-                source_row_stride,
+                Int32(source_row_stride),
                 beta,
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, DeviceContextArray
 from std.memory import alloc
 from std.testing import assert_equal, assert_true
 
@@ -169,6 +169,24 @@ def test_two_ranges_sequential(ctx: DeviceContext) raises:
     ptr.free()
 
 
+def test_device_context_array(ctx: DeviceContext) raises:
+    var arr: DeviceContextArray[2] = [ctx, ctx]
+    assert_equal(len(arr), 2)
+    assert_equal(arr[0].api(), ctx.api())
+    assert_equal(arr[1].api(), ctx.api())
+
+    # The length is inferred from the element count of the literal.
+    var inferred: DeviceContextArray[_] = [ctx, ctx, ctx]
+    comptime assert type_of(inferred).length == 3
+    assert_equal(len(inferred), 3)
+
+    # Direct variadic call, as synthesized by the graph compiler's
+    # multi-device lowering.
+    var direct = DeviceContextArray[2](ctx, ctx)
+    assert_equal(len(direct), 2)
+    assert_equal(direct[0].api(), ctx.api())
+
+
 def main() raises:
     with DeviceContext(api="cpu") as ctx:
         test_empty_func(ctx)
@@ -180,3 +198,4 @@ def main() raises:
         test_range_large(ctx)
         test_func_then_range(ctx)
         test_two_ranges_sequential(ctx)
+        test_device_context_array(ctx)

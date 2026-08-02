@@ -96,13 +96,9 @@ class MAXModelWorker(Worker):
         tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config
         )
-        eos_token_ids = frozenset(
-            getattr(tokenizer, "_default_eos_token_ids", ())
-        )
-
         # ``max_length`` is read off the resolved config in open().
         self.max_length: int | None = None
-        self._eos_token_ids: set[int] = set(eos_token_ids)
+        self._eos_token_ids: set[int] = set(tokenizer.eos_token_ids)
         self._model_factory = model_factory
 
         # lazy import to avoid circular imports when defining

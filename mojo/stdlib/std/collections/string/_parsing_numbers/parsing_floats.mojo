@@ -22,7 +22,7 @@ The reference implementation used was the one in C# and can be found here:
 - https://github.com/CarlVerret/csFastFloat
 """
 
-from std.collections import InlineArray
+from std.collections import Array
 
 import std.bit
 import std.memory
@@ -75,8 +75,8 @@ def _get_w_and_q_from_float_string(
     exponent_multiplier = 1
 
     # We'll assume that we'll never go over 24 digit for each number.
-    exponent = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
-    significand = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
+    exponent = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
+    significand = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
 
     comptime array_ptr = Pointer[
         type_of(exponent), origin_of(exponent, significand)
@@ -85,7 +85,10 @@ def _get_w_and_q_from_float_string(
     array_index = CONTAINER_SIZE
     buffer = input_string.unsafe_ptr()
 
-    if not (ord_0 <= buffer[0] <= ord_9) and buffer[0] != ord_dot:
+    if (
+        not (ord_0 <= buffer[unsafe_offset=0] <= ord_9)
+        and buffer[unsafe_offset=0] != ord_dot
+    ):
         raise Error(
             "The first character of '",
             input_string,
@@ -93,8 +96,12 @@ def _get_w_and_q_from_float_string(
         )
 
     if (
-        not (ord_0 <= buffer[input_string.byte_length() - 1] <= ord_9)
-        and buffer[input_string.byte_length() - 1] != ord_dot
+        not (
+            ord_0
+            <= buffer[unsafe_offset=input_string.byte_length() - 1]
+            <= ord_9
+        )
+        and buffer[unsafe_offset=input_string.byte_length() - 1] != ord_dot
     ):
         raise Error(
             "The last character of '",
@@ -112,32 +119,34 @@ def _get_w_and_q_from_float_string(
                 input_string,
                 "'",
             )
-        if buffer[i] == ord_dot:
+        if buffer[unsafe_offset=i] == ord_dot:
             dot_or_e_found = True
             if prt_to_array == array_ptr(to=exponent):
                 # We thought we were writing the exponent, but we were writing the significand.
                 significand = exponent.copy()
-                exponent = InlineArray[Byte, CONTAINER_SIZE](
-                    fill=Byte(ord("0"))
-                )
+                exponent = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
                 prt_to_array = array_ptr(to=significand)
 
             additional_exponent = CONTAINER_SIZE - array_index - 1
             # We don't want to progress in the significand array.
             array_index += 1
-        elif buffer[i] == ord_minus:
+        elif buffer[unsafe_offset=i] == ord_minus:
             # Next should be the E letter (or e), so we'll just continue.
             exponent_multiplier = -1
-        elif buffer[i] == ord_plus:
+        elif buffer[unsafe_offset=i] == ord_plus:
             # Next should be the E letter (or e), so we'll just continue.
             pass
-        elif buffer[i] == ord_e or buffer[i] == ord_E:
+        elif (
+            buffer[unsafe_offset=i] == ord_e or buffer[unsafe_offset=i] == ord_E
+        ):
             dot_or_e_found = True
             # We finished writing the exponent.
             prt_to_array = array_ptr(to=significand)
             array_index = CONTAINER_SIZE
-        elif (ord_0 <= buffer[i]) and (buffer[i] <= ord_9):
-            prt_to_array[][array_index] = buffer[i]
+        elif (ord_0 <= buffer[unsafe_offset=i]) and (
+            buffer[unsafe_offset=i] <= ord_9
+        ):
+            prt_to_array[][array_index] = buffer[unsafe_offset=i]
         else:
             raise Error(
                 "Invalid character(s) in the number: '", input_string, "'"
@@ -146,7 +155,7 @@ def _get_w_and_q_from_float_string(
     if not dot_or_e_found:
         # We were reading the significand
         significand = exponent.copy()
-        exponent = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
+        exponent = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
 
     exponent_as_integer = UInt64(exponent_multiplier) * to_integer(
         exponent
@@ -303,9 +312,9 @@ def _is_nan(stripped: StringSlice) -> Bool:
     comptime `a` = Byte(ord("a"))
     var ptr = stripped.unsafe_ptr()
     return stripped.byte_length() == 3 and (
-        (ptr[0] | _ascii_lower == `n`)
-        and (ptr[1] | _ascii_lower == `a`)
-        and (ptr[2] | _ascii_lower == `n`)
+        (ptr[unsafe_offset=0] | _ascii_lower == `n`)
+        and (ptr[unsafe_offset=1] | _ascii_lower == `a`)
+        and (ptr[unsafe_offset=2] | _ascii_lower == `n`)
     )
 
 
@@ -317,8 +326,8 @@ def _is_inf(stripped: StringSlice) -> Bool:
     comptime `t` = Byte(ord("t"))
     comptime `y` = Byte(ord("y"))
     var ptr = stripped.unsafe_ptr()
-    var in_start = (ptr[0] | _ascii_lower == `i`) and (
-        ptr[1] | _ascii_lower == `n`
+    var in_start = (ptr[unsafe_offset=0] | _ascii_lower == `i`) and (
+        ptr[unsafe_offset=1] | _ascii_lower == `n`
     )
     # f was removed previously
     var is_in = stripped.byte_length() == 2 and in_start
@@ -326,12 +335,12 @@ def _is_inf(stripped: StringSlice) -> Bool:
         is_in
         or (
             stripped.byte_length() == 8
-            and (ptr[2] | _ascii_lower == `f`)
-            and (ptr[3] | _ascii_lower == `i`)
-            and (ptr[4] | _ascii_lower == `n`)
-            and (ptr[5] | _ascii_lower == `i`)
-            and (ptr[6] | _ascii_lower == `t`)
-            and (ptr[7] | _ascii_lower == `y`)
+            and (ptr[unsafe_offset=2] | _ascii_lower == `f`)
+            and (ptr[unsafe_offset=3] | _ascii_lower == `i`)
+            and (ptr[unsafe_offset=4] | _ascii_lower == `n`)
+            and (ptr[unsafe_offset=5] | _ascii_lower == `i`)
+            and (ptr[unsafe_offset=6] | _ascii_lower == `t`)
+            and (ptr[unsafe_offset=7] | _ascii_lower == `y`)
         )
     )
 

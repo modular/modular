@@ -33,6 +33,7 @@ from std.random import rand
 from std.sys import get_defined_dtype, get_defined_int
 from std.sys.info import has_amd_gpu_accelerator
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     BenchConfig,
@@ -41,7 +42,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout import (
     UNKNOWN_VALUE,
@@ -392,7 +393,7 @@ def bench_conv3d[
                     ctx,
                 )
 
-            bencher.iter_custom[kernel](ctx)
+            bencher_iter_custom[kernel](bencher, ctx)
 
         b.bench_function[im2col_bench](
             BenchId("conv3d_im2col", input_id=bench_input_id),
@@ -418,7 +419,7 @@ def bench_conv3d[
                     ctx,
                 )
 
-            bencher.iter_custom[kernel](ctx)
+            bencher_iter_custom[kernel](bencher, ctx)
 
         b.bench_function[p1x1x1_bench](
             BenchId("conv3d_1x1x1", input_id=bench_input_id),
@@ -445,7 +446,7 @@ def bench_conv3d[
                         ctx,
                     )
 
-                bencher.iter_custom[kernel](ctx)
+                bencher_iter_custom[kernel](bencher, ctx)
 
             b.bench_function[qslice_bench](
                 BenchId("conv3d_qslice", input_id=bench_input_id),
@@ -483,7 +484,7 @@ def bench_conv3d[
                         ctx,
                     )
 
-                bencher.iter_custom[kernel](ctx)
+                bencher_iter_custom[kernel](bencher, ctx)
 
             b.bench_function[native_3d_bench](
                 BenchId("conv3d_native_3d", input_id=bench_input_id),
@@ -510,7 +511,7 @@ def bench_conv3d[
                         ctx,
                     )
 
-                bencher.iter_custom[kernel](ctx)
+                bencher_iter_custom[kernel](bencher, ctx)
 
             b.bench_function[miopen_bench](
                 BenchId("conv3d_miopen", input_id=bench_input_id),
@@ -537,7 +538,7 @@ def bench_conv3d[
                         ctx,
                     )
 
-                bencher.iter_custom[kernel](ctx)
+                bencher_iter_custom[kernel](bencher, ctx)
 
             b.bench_function[cudnn_bench](
                 BenchId("conv3d_cudnn", input_id=bench_input_id),
@@ -578,7 +579,7 @@ def bench_conv3d[
                     block_dim=(block_size, block_size, 1),
                 )
 
-            bencher.iter_custom[kernel](ctx)
+            bencher_iter_custom[kernel](bencher, ctx)
 
         b.bench_function[naive_bench](
             BenchId("conv3d_naive", input_id=bench_input_id),

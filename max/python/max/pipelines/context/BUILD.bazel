@@ -5,6 +5,7 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "context",
     srcs = glob(["**/*.py"]),
+    test_docstring_examples = True,
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/request",
@@ -12,5 +13,6 @@ modular_py_library(
         requirement("msgspec"),
         requirement("numpy"),
         requirement("pydantic"),
+        requirement("typing-extensions"),
     ],
 )

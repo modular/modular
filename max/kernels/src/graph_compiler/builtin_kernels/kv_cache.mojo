@@ -24,11 +24,11 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from layout.tile_tensor import row_major
-from std.gpu.host.info import is_gpu
+from max.gpu.host.info import is_gpu
 from kv_cache.types import KVCacheStaticParams
 from layout import (
     Coord,

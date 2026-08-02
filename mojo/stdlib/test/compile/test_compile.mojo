@@ -13,8 +13,8 @@
 
 from std.compile import compile_info
 from std.gpu import barrier, thread_idx
-from std.gpu.host import get_gpu_target
-from std.memory import stack_allocation
+from max.gpu.host import get_gpu_target
+from std.memory import unsafe_stack_allocation
 from std.testing import *
 from std.testing import TestSuite
 from std.sys.info import _cdna_4_or_newer, _is_amd_cdna, CompilationTarget
@@ -36,7 +36,7 @@ comptime target_short_ptr = __mlir_attr[
     `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
     `arch = "sm_80", `,
     `features = "+ptx81", `,
-    `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+    `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
     `simd_bit_width = 128,`,
     `index_bit_width = 64`,
     `> : !kgen.target`,
@@ -65,7 +65,7 @@ def _test_data_layout_llvm[emission_kind: StaticString]() raises:
     ]()
 
     assert_true(
-        "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64"
+        "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64"
         in target_short_llvm
     )
 
@@ -83,8 +83,10 @@ def test_data_layout_llvm() raises:
 def test_data_layout_asm() raises:
     @parameter
     def my_func(src: Pointer[Int32, ImmutAnyOrigin]):
-        var a = stack_allocation[20, Int32, address_space=AddressSpace.SHARED]()
-        a[thread_idx.x] = src[unsafe_offset=0]
+        var a = unsafe_stack_allocation[
+            20, Int32, address_space=AddressSpace.SHARED
+        ]()
+        a[unsafe_offset=thread_idx.x] = src[unsafe_offset=0]
         barrier()
 
     var target_short_asm = compile_info[

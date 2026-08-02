@@ -21,8 +21,10 @@ from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.sys.info import align_of, simd_width_of
 
-from std.algorithm import sync_parallelize, tile, vectorize
-from std.gpu.host import DeviceContext
+from std.algorithm import tile, vectorize
+
+from max.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
@@ -31,7 +33,7 @@ from layout import (
 from layout.tile_layout import TensorLayout, row_major
 from std.memory import alloc, dealloc, Allocation
 from std.memory.alloc import Layout as AllocLayout
-from std.runtime.asyncrt import parallelism_level
+from max.runtime.asyncrt import parallelism_level
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
@@ -438,7 +440,7 @@ struct TiledMatmul[
         # if b is packed, the packing was performed offline using a single inner
         # size and tile_n.
         comptime if not Self.b_packed:
-            comptime secondary_tiles = [
+            comptime secondary_tiles: List[Int] = [
                 Self.config.kernel_cols,
                 2 * Self.config.simd_size,
                 Self.config.simd_size,
@@ -452,7 +454,9 @@ struct TiledMatmul[
                 primary_cleanup_tile=Self.config.simd_size,
             )
         else:
-            comptime secondary_tiles_packed_b = [Self.config.kernel_cols]
+            comptime secondary_tiles_packed_b: List[Int] = [
+                Self.config.kernel_cols
+            ]
             tile[secondary_tiles_packed_b, Self.config.kernel_cols, m_loop](
                 0, valid_col_count, tile_n, primary_cleanup_tile=tile_n
             )
@@ -712,9 +716,12 @@ def matmul[
             AllocLayout[Scalar[scratch_type]](
                 count=scratch_m * scratch_n, alignment=scratch_align
             )
-        ).into_deletable()
+        ).into_managed()
+        var scratch_ptr: UnsafePointer[
+            Scalar[scratch_type], origin_of(scratch_alloc)
+        ] = scratch_alloc.unsafe_ptr()
         var scratch = TileTensor(
-            scratch_alloc.unsafe_ptr(), row_major(Coord(scratch_m, scratch_n))
+            scratch_ptr, row_major(Coord(scratch_m, scratch_n))
         )
 
         @parameter

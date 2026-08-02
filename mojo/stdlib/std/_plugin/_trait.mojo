@@ -22,13 +22,36 @@ from std.math.math import _ExpPluginHookFnType, _TanhPluginHookFnType
 from std.memory.stack_allocation import _StackAllocationPluginHookFnType
 from std.memory.unsafe_pointer import _UnsafeDanglingPluginHookFnType
 from std.io.io import _PrintEmitPluginHookFnType
-from std.algorithm.reduction import _ReduceGeneratorPluginHookFnType
 from std.collections.string.string_slice import (
     _get_kgen_string,
 )
+from std.utils import StaticTuple
+
+from .selector import Plugin
+
+comptime _ReduceGeneratorPluginHookFnType = (
+    def[
+        num_reductions: Int,
+        init_type: DType,
+        input_0_fn: def[dtype: DType, width: Int, rank: Int](
+            IndexList[rank]
+        ) capturing[_] -> SIMD[dtype, width],
+        output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
+            IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+        ) capturing[_] -> None,
+        reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
+            SIMD[ty, width], SIMD[ty, width]
+        ) capturing[_] -> SIMD[ty, width],
+    ](
+        shape: IndexList[_, element_type=DType.int64],
+        init: StaticTuple[Scalar[init_type], num_reductions],
+        reduce_dim: Int,
+    ) thin
+)
+"""Plugin-hook signature for `PluginHooks.reduce_generator_fn`; keep in sync with `_reduce_generator`."""
 
 
-trait PluginHooks:
+trait PluginHooks(Plugin):
     """Compile-time hook interface for pluggable stdlib behavior.
 
     Most hooks are `comptime OptionalReg[Callable]` fields; call sites invoke
@@ -103,7 +126,7 @@ trait PluginHooks:
     comptime unsafe_dangling_fn: OptionalReg[
         _UnsafeDanglingPluginHookFnType
     ] = None
-    """`UnsafePointer.unsafe_dangling()` address override.
+    """`Pointer.unsafe_dangling()` address override.
 
     Parameters:
         alignment: The natural alignment of the pointee type, which the
@@ -133,7 +156,7 @@ trait PluginHooks:
     @staticmethod
     def debug_assert_emit_fn[
         O: Origin
-    ](message: UnsafePointer[Byte, O], length: Int, loc: SourceLocation):
+    ](message: Pointer[Byte, O], length: Int, loc: SourceLocation):
         """Assertion-message emitter for targets without a usable `_printf`.
 
         Parameters:
@@ -168,7 +191,7 @@ trait PluginHooks:
                 width: Int, rank: Int, alignment: Int = 1
             ](IndexList[rank]) -> None
         ],
-        shape: IndexList[rank, ...],
+        shape: IndexList[rank, element_type=_],
         ctx: DeviceContext,
     ) raises:
         """Per-target plugin hook for `elementwise[...]`.

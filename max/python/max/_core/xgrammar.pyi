@@ -78,6 +78,7 @@ class GrammarCompiler:
         strict_mode: bool = True,
         require_object_root: bool = False,
         reject_unsupported: bool = False,
+        separators: tuple[str, str] | None = None,
     ) -> CompiledGrammar: ...
     def compile_grammar(
         self, ebnf_str: str, root_rule_name: str = "root"

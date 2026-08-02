@@ -21,7 +21,8 @@ and dedicated tests cover actual skipping for single- and multi-component
 indices.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
+from std.sys.info import has_apple_gpu_accelerator
 from std.testing import assert_equal
 from layout import TileTensor, row_major
 from nn.gather_scatter import ScatterOobIndexStrategy, scatter_nd_generator
@@ -757,23 +758,29 @@ def main() raises:
 
         test_reduce_duplicate_indices[f32, _add, 4096, 4, _upd_ones[f32]](ctx)
         test_reduce_duplicate_indices[i32, _add, 4096, 4, _upd_ones[i32]](ctx)
-        test_reduce_duplicate_indices[bf16, _add, 192, 1, _upd_ones[bf16]](ctx)
-        test_reduce_duplicate_indices[i8, _add, 100, 1, _upd_ones[i8]](ctx)
+        # These dtypes fail to compile on Apple GPU; see `_atomic_reduce`.
+        comptime if not has_apple_gpu_accelerator():
+            test_reduce_duplicate_indices[bf16, _add, 192, 1, _upd_ones[bf16]](
+                ctx
+            )
+            test_reduce_duplicate_indices[i8, _add, 100, 1, _upd_ones[i8]](ctx)
         test_reduce_duplicate_indices[
             f32, _mul, 4096, 4, _upd_twos_then_ones[f32, 16]
         ](ctx)
-        test_reduce_duplicate_indices[
-            f16, _mul, 4096, 4, _upd_twos_then_ones[f16, 16]
-        ](ctx)
+        comptime if not has_apple_gpu_accelerator():
+            test_reduce_duplicate_indices[
+                f16, _mul, 4096, 4, _upd_twos_then_ones[f16, 16]
+            ](ctx)
         test_reduce_duplicate_indices[
             f32, _max, 4096, 4, _upd_modular[f32, 251]
         ](ctx)
         test_reduce_duplicate_indices[
             i32, _max, 4096, 4, _upd_modular[i32, 251]
         ](ctx)
-        test_reduce_duplicate_indices[
-            bf16, _max, 4096, 4, _upd_modular[bf16, 251]
-        ](ctx)
+        comptime if not has_apple_gpu_accelerator():
+            test_reduce_duplicate_indices[
+                bf16, _max, 4096, 4, _upd_modular[bf16, 251]
+            ](ctx)
         test_reduce_duplicate_indices[
             f32, _min, 4096, 4, _upd_modular[f32, 251]
         ](ctx)

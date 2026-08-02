@@ -15,14 +15,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParamInterface,
+    spec_decode_cache_slack,
 )
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
@@ -30,7 +33,10 @@ from max.pipelines.lib.interfaces.arch_config import (
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -62,6 +68,13 @@ def _extract_eagle_aux_layer_ids(
 
 @dataclass(kw_only=True)
 class KimiK2_5TextConfig(DeepseekV3Config):
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+    }
+
     @override
     @classmethod
     def initialize(
@@ -93,9 +106,9 @@ class KimiK2_5TextConfig(DeepseekV3Config):
                 "Please ensure the model repository contains a valid config.json file."
             )
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding, model_config.kv_cache.kv_cache_format
@@ -152,7 +165,8 @@ class KimiK2_5TextConfig(DeepseekV3Config):
             first_k_dense_replace=config.first_k_dense_replace,
             norm_topk_prob=config.norm_topk_prob,
             hidden_act=config.hidden_act,
-            max_position_embeddings=config.max_position_embeddings,
+            max_position_embeddings=config.max_position_embeddings
+            + spec_decode_cache_slack(kv_params),
             max_seq_len=max_seq_len,
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
@@ -163,6 +177,7 @@ class KimiK2_5TextConfig(DeepseekV3Config):
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
             eagle_aux_hidden_state_layer_ids=eagle_aux_hidden_state_layer_ids,
+            quantization_encoding=quantization_encoding,
         )
 
     @classmethod
@@ -328,11 +343,21 @@ class VisionConfig:
 class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Configuration for Kimi-K2.5 models."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+    }
+
     devices: list[DeviceRef]
     """Devices that the Kimi-K2.5 model is parallelized over."""
 
     dtype: DType
     """DType of the Kimi-K2.5 model weights."""
+
+    quantization_encoding: SupportedEncoding | None = None
+    """The resolved weight encoding the model runs with."""
 
     bos_token_id: int
     """ID of the beginning-of-sequence (BOS) token."""
@@ -429,9 +454,9 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             raise ValueError("vision_config not found in huggingface_config")
 
         # Get quantization encoding for dtype
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
 
         # Create VisionConfig from the vision config
@@ -497,4 +522,5 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             vision_config=vision_config,
             # Composed language model configuration
             llm_config=llm_config,
+            quantization_encoding=quantization_encoding,
         )

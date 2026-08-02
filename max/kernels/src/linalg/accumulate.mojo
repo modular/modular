@@ -25,7 +25,7 @@ from linalg.utils import (
     partial_simd_load,
     partial_simd_store,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from std.utils.index import IndexList
 
@@ -64,7 +64,7 @@ struct _Accumulator[
             and (Self.simd_width > 0)
         )
         comptime alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
-        self._storage = stack_allocation[
+        self._storage = unsafe_stack_allocation[
             Self._size, Self.dtype, alignment=alignment
         ]()
 
@@ -229,7 +229,7 @@ struct _Accumulator[
             var transfer_count = min(
                 c_bound[1] - tile_n_idx, Self.num_cols * Self.simd_width
             )
-            var row_ptrs = InlineArray[
+            var row_ptrs = Array[
                 UnsafePointer[Scalar[Self.dtype], AnyOrigin[mut=c_ptr.mut]],
                 Self.num_rows,
             ](uninitialized=True)
@@ -860,7 +860,7 @@ struct _Accumulator[
         @parameter
         @always_inline
         def micro_kernel[num_lanes: Int](offset: Int):
-            var a_vecs = InlineArray[SIMD[a_type, num_lanes], Self.num_rows](
+            var a_vecs = Array[SIMD[a_type, num_lanes], Self.num_rows](
                 uninitialized=True
             )
 
@@ -919,7 +919,7 @@ struct _Accumulator[
         @parameter
         @always_inline
         def micro_kernel[num_lanes: Int](offset: Int):
-            var a_vecs = InlineArray[SIMD[a_type, num_lanes], Self.num_rows](
+            var a_vecs = Array[SIMD[a_type, num_lanes], Self.num_rows](
                 uninitialized=True
             )
 

@@ -18,13 +18,13 @@ synchronization, peer-to-peer memory access helpers, and the barrier utilities
 consumed by allreduce, scatter, and other collective operations.
 """
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.utils import StaticTuple
 from std.math.uutils import umod
 from std.sys import size_of
 
 from std.atomic import Atomic, Ordering
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu import (
     barrier,
     block_idx,
@@ -336,7 +336,7 @@ def _multi_gpu_barrier[
     named_barrier_id: Int = 1,
     domain_id: Int = 0,
 ](
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     self_sg: UnsafePointer[Signal, MutAnyOrigin],
     my_rank: Int,
 ):

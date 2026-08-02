@@ -69,7 +69,7 @@ def ldg[
     width: Int = 1,
     *,
     alignment: Int = align_of[SIMD[dtype, width]](),
-](x: UnsafePointer[mut=False, Scalar[dtype], _]) -> SIMD[
+](x: Pointer[Scalar[dtype], address_space=AddressSpace.GENERIC, ...]) -> SIMD[
     dtype, width
 ] where dtype.is_numeric():
     """Load data from global memory through the non-coherent cache.
@@ -95,7 +95,7 @@ def ldg[
         - Particularly beneficial for read-only texture-like access patterns.
         - May improve performance on memory-bound kernels.
     """
-    return x.load[width=width, alignment=alignment, invariant=True]()
+    return x.unsafe_load[width=width, alignment=alignment, invariant=True]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -719,7 +719,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         out self,
         # TODO: This should propagate mutability correctly.
         # E.g. only allow AMDBufferResource.store when mutable.
-        gds_ptr: UnsafePointer[Scalar[dtype], ...],
+        gds_ptr: Pointer[Scalar[dtype], ...],
         num_records: Int = Int(UInt32.MAX),
     ):
         """Constructs an AMD buffer resource descriptor.
@@ -838,8 +838,8 @@ struct AMDBufferResource(TrivialRegisterPassable):
     ](
         self,
         vector_offset: Int32,
-        shared_ptr: UnsafePointer[
-            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
+        shared_ptr: Pointer[
+            Scalar[dtype], address_space=AddressSpace.SHARED, ...
         ],
         *,
         scalar_offset: Int32 = 0,
@@ -896,20 +896,20 @@ struct AMDBufferResource(TrivialRegisterPassable):
 
         # Convert the SIMD[uint32, 4] descriptor to a `ptr addrspace(8)`
         # so the `.ptr.` form of the intrinsic accepts it.
-        var desc_ptr = UnsafePointer[
+        var desc_ptr = Pointer[
             Scalar[DType.bfloat16],
             MutAnyOrigin,
             address_space=AddressSpace.BUFFER_RESOURCE,
         ].unsafe_dangling()
-        var ptr_to_ptr = UnsafePointer(to=desc_ptr)
-        var ptr_to_simd = UnsafePointer(to=self.desc)
-        ptr_to_ptr[0] = ptr_to_simd.bitcast[
-            UnsafePointer[
+        var ptr_to_ptr = Pointer(to=desc_ptr)
+        var ptr_to_simd = Pointer(to=self.desc)
+        ptr_to_ptr[] = ptr_to_simd.unsafe_bitcast[
+            Pointer[
                 Scalar[DType.bfloat16],
                 MutAnyOrigin,
                 address_space=AddressSpace.BUFFER_RESOURCE,
             ]
-        ]()[0]
+        ]()[]
 
         comptime if not async_copies:
             # No alias-scope metadata — clean `llvm_intrinsic` call path.
@@ -1101,9 +1101,7 @@ def ds_read_tr16_b64[
     dtype: DType,
     //,
 ](
-    shared_ptr: UnsafePointer[
-        mut=False, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ]
+    shared_ptr: Pointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
 ) -> SIMD[dtype, 4]:
     """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.
 
@@ -1144,9 +1142,7 @@ def ds_read_tr8_b64[
     dtype: DType,
     //,
 ](
-    shared_ptr: UnsafePointer[
-        mut=False, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ]
+    shared_ptr: Pointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
 ) -> SIMD[dtype, 8]:
     """Reads a 64-bit LDS transpose block using TR8 layout and returns SIMD[dtype, 8] of 8-bit types.
 

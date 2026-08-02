@@ -26,6 +26,7 @@ from std.sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -34,10 +35,10 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
 from std.gpu.primitives import block
-from std.memory import alloc
+from std.memory import alloc, dealloc
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
@@ -69,7 +70,7 @@ def _verify_buffers_gpu[
 ](
     output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
     reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    length: Int,
+    length: Int32,
     atol: Float32,
     rtol: Float32,
     result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
@@ -91,7 +92,7 @@ def _verify_buffers_gpu[
 
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
-    while i < length:
+    while i < Int(length):
         var x = output[i].cast[DType.float32]()
         var y = reference[i].cast[DType.float32]()
         abs_diff_sum += abs(x - y)
@@ -142,7 +143,7 @@ def _check_verification_result[
     ctx.enqueue_function[kernel](
         c_device,
         c_device_ref,
-        c_size,
+        Int32(c_size),
         atol,
         rtol,
         result_device,
@@ -150,7 +151,10 @@ def _check_verification_result[
         block_dim=BLOCK_SIZE,
     )
 
-    var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
+    var result_host_alloc = alloc[Scalar[DType.float32]](
+        {count = NUM_BLOCKS * 5}
+    ).into_managed()
+    var result_host = UnsafePointer(result_host_alloc.unsafe_ptr())
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -168,7 +172,7 @@ def _check_verification_result[
         any_out_nz = max(any_out_nz, result_host[base + 3])
         any_ref_nz = max(any_ref_nz, result_host[base + 4])
 
-    result_host.free()
+    dealloc(result_host_alloc^)
 
     if any_out_nz == 0:
         raise String(label, ": kernel output is all zeros")
@@ -319,7 +323,7 @@ def bench_matmul_tma_epilogue[
     @parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
@@ -435,8 +439,14 @@ def bench_matmul_tma_epilogue[
 
         comptime if variant != "plain":
             # Add epilogue tensor to reference output on the host.
-            var epilogue_host = alloc[Scalar[dtype]](c_size)
-            var c_ref_host = alloc[Scalar[dtype]](c_size)
+            var epilogue_host_alloc = alloc[Scalar[dtype]](
+                {count = c_size}
+            ).into_managed()
+            var epilogue_host = UnsafePointer(epilogue_host_alloc.unsafe_ptr())
+            var c_ref_host_alloc = alloc[Scalar[dtype]](
+                {count = c_size}
+            ).into_managed()
+            var c_ref_host = UnsafePointer(c_ref_host_alloc.unsafe_ptr())
             ctx.enqueue_copy(epilogue_host, epilogue_ver_dev)
             ctx.enqueue_copy(c_ref_host, c_ref_dev)
             ctx.synchronize()
@@ -449,8 +459,8 @@ def bench_matmul_tma_epilogue[
 
             ctx.enqueue_copy(c_ref_dev, c_ref_host)
             ctx.synchronize()
-            epilogue_host.free()
-            c_ref_host.free()
+            dealloc(epilogue_host_alloc^)
+            dealloc(c_ref_host_alloc^)
 
         comptime NUM_BLOCKS = 32
         comptime BLOCK_SIZE = 256

@@ -31,8 +31,8 @@ from std.algorithm import vectorize
 from std.bit import log2_floor
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.dtype import _unsigned_integral_type_of
-from std.gpu.host import DeviceBuffer, HostBuffer, DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceBuffer, HostBuffer, DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
     block_dim,
     block_idx,
@@ -45,7 +45,7 @@ from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_shape
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils import IndexList, StaticTuple
 from std.utils.index import Index
 from .int_tuple import (
@@ -298,8 +298,8 @@ struct LayoutTensor[
     ```mojo
     from layout import Layout, LayoutTensor
 
-    # Create tensor on CPU using InlineArray to allocate storage space.
-    var storage = InlineArray[Float32, 5 * 4](uninitialized=True)
+    # Create tensor on CPU using Array to allocate storage space.
+    var storage = Array[Float32, 5 * 4](uninitialized=True)
     var tensor_5x4 = LayoutTensor[DType.float32, Layout.row_major(5, 4)](storage)
     ```
     """
@@ -441,11 +441,7 @@ struct LayoutTensor[
     @always_inline
     def __init__(
         out self: Self.GenericAddressSpaceLayoutTensor,
-        span: Span[
-            Scalar[Self.dtype],
-            Self.origin,
-            ...,
-        ],
+        span: Span[Scalar[Self.dtype], Self.origin],
     ):
         """Create a `LayoutTensor` with a `Span`.
 
@@ -460,11 +456,7 @@ struct LayoutTensor[
     @always_inline
     def __init__(
         out self: Self.GenericAddressSpaceLayoutTensor,
-        span: Span[
-            Scalar[Self.dtype],
-            Self.origin,
-            ...,
-        ],
+        span: Span[Scalar[Self.dtype], Self.origin],
         runtime_layout: RuntimeLayout[Self.layout, ...],
     ):
         """Create a `LayoutTensor` with a `Span` and a runtime layout
@@ -485,11 +477,7 @@ struct LayoutTensor[
     @always_inline
     def __init__(
         out self: Self.GenericAddressSpaceLayoutTensor,
-        span: Span[
-            Scalar[Self.dtype],
-            Self.origin,
-            ...,
-        ],
+        span: Span[Scalar[Self.dtype], Self.origin],
         runtime_layout: RuntimeLayout[Self.layout, ...],
         element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
     ):
@@ -668,7 +656,7 @@ struct LayoutTensor[
 
         Note that the device buffer memory is on the accelerator device (GPU
         global memory). Code running on the CPU can use the
-        [`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext) to
+        [`DeviceContext`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext) to
         allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
         that can be accessed on the GPU. You cannot directly access data in the
         `DeviceBuffer` or `LayoutTensor` from the CPU.
@@ -677,7 +665,7 @@ struct LayoutTensor[
         to construct a `LayoutTensor` that you can use on the GPU.
 
         ```mojo
-        from std.gpu.host import DeviceContext, DeviceBuffer
+        from max.gpu.host import DeviceContext, DeviceBuffer
         from layout import Layout, LayoutTensor
 
         comptime dtype = DType.float32
@@ -723,7 +711,7 @@ struct LayoutTensor[
         The resulting tensor's data can only be accessed on the CPU.
 
         ```mojo
-        from std.gpu.host import DeviceContext, HostBuffer
+        from max.gpu.host import DeviceContext, HostBuffer
         from layout import Layout, LayoutTensor
 
         comptime dtype = DType.float32
@@ -741,8 +729,10 @@ struct LayoutTensor[
         Args:
             host_buffer: Contains the underlying data to point to.
         """
+        # TODO(MOCO-4435): remove this temporary variable.
+        var host_ptr = Optional(host_buffer.unsafe_ptr())
         self = Self.GenericLayoutTensorType(
-            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
+            unsafe_cast[origin=Self.origin](host_ptr),
         )
 
     @always_inline
@@ -790,8 +780,10 @@ struct LayoutTensor[
             host_buffer: The `HostBuffer` containing to the underlying data.
             runtime_layout: The runtime layout of the `LayoutTensor`.
         """
+        # TODO(MOCO-4435): remove this temporary variable.
+        var host_ptr = Optional(host_buffer.unsafe_ptr())
         self = Self.GenericLayoutTensorType(
-            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
+            unsafe_cast[origin=Self.origin](host_ptr),
             runtime_layout,
         )
 
@@ -839,8 +831,10 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the `LayoutTensor`.
             element_runtime_layout: The runtime layout of each element.
         """
+        # TODO(MOCO-4435): remove this temporary variable.
+        var host_ptr = Optional(host_buffer.unsafe_ptr())
         self = Self.GenericLayoutTensorType(
-            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
+            unsafe_cast[origin=Self.origin](host_ptr),
             runtime_layout,
             element_runtime_layout,
         )
@@ -1079,7 +1073,7 @@ struct LayoutTensor[
         )
 
     @always_inline
-    def get_immutable(
+    def as_imm(
         self,
     ) -> Self.OriginCastType[ImmOrigin(Self.origin)]:
         """
@@ -1089,10 +1083,23 @@ struct LayoutTensor[
             A `LayoutTensor` covering the same elements, but without mutability.
         """
         return {
-            self.ptr.as_immutable(),
+            self.ptr.as_imm(),
             self.runtime_layout,
             self.runtime_element_layout,
         }
+
+    @always_inline
+    @deprecated(use=as_imm)
+    def get_immutable(
+        self,
+    ) -> Self.OriginCastType[ImmOrigin(Self.origin)]:
+        """
+        Return an immutable version of this tensor.
+
+        Returns:
+            A `LayoutTensor` covering the same elements, but without mutability.
+        """
+        return self.as_imm()
 
     @always_inline
     def _offset(self, m: Int, n: Int) -> Int:
@@ -1919,7 +1926,7 @@ struct LayoutTensor[
         """Computes element-wise exponential function.
 
         Returns a new tensor containing the
-        [element-wise exponential](/docs/std/math/math/exp/) of the input tensor.
+        [element-wise exponential](https://mojolang.org/docs/std/math/math/exp/) of the input tensor.
 
         Returns:
             A new tensor containing the element-wise exponential.
@@ -2432,6 +2439,7 @@ struct LayoutTensor[
             self._offset(coords)
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def store[
         width: SIMDLength, store_alignment: Int = Self.alignment
@@ -2509,6 +2517,7 @@ struct LayoutTensor[
             self._offset(m, n), val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def store[
         width: SIMDLength, store_alignment: Int = Self.alignment
@@ -2554,6 +2563,7 @@ struct LayoutTensor[
             self._offset(coords), val
         )
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def aligned_store[
         width: SIMDLength
@@ -2667,8 +2677,8 @@ struct LayoutTensor[
         )
 
         return Self.StackTensorType(
-            stack_allocation[
-                Self.layout.size() * Self.element_layout.size(),
+            unsafe_stack_allocation[
+                Self.layout.cosize() * Self.element_layout.size(),
                 Self.dtype,
                 alignment=stack_alignment,
                 address_space=Self.address_space,
@@ -4454,7 +4464,7 @@ struct LayoutTensor[
                     self.runtime_layout.stride.value[i] * vector_shape_i
                 )
 
-        var ptr = self.ptr.as_immutable().unsafe_origin_cast[_origin]()
+        var ptr = self.ptr.as_imm().unsafe_origin_cast[_origin]()
 
         comptime if Self.layout.all_dims_known():
             comptime if vectorized_type.masked:
@@ -5244,6 +5254,7 @@ struct LayoutTensor[
         """
         return self.CompositionType[rhs_layout, dst_layout](self.ptr)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def distance(
         self: Self.Immut,
@@ -5294,6 +5305,7 @@ struct LayoutTensor[
             Int(self.ptr) - Int(addr)
         ) // Scalar[Self.linear_idx_type](size_of[Self.dtype]())
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def distance[
         _layout: Layout,
@@ -5377,6 +5389,7 @@ struct LayoutTensor[
             )(rt)
             return idx
 
+    @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def copy_from(self: Self._AsMut, other: LayoutTensor):
         """Copy data from another tensor to this tensor.
@@ -5401,8 +5414,8 @@ struct LayoutTensor[
         ```mojo
         from layout import LayoutTensor, Layout
 
-        var src_storage = InlineArray[Float32, 2 * 3](uninitialized=True)
-        var dst_storage = InlineArray[Float32, 3 * 2](uninitialized=True)
+        var src_storage = Array[Float32, 2 * 3](uninitialized=True)
+        var dst_storage = Array[Float32, 3 * 2](uninitialized=True)
         var src = LayoutTensor[
             DType.float32,
             Layout([2, 3]),
@@ -5493,12 +5506,12 @@ struct LayoutTensor[
         performance.
 
         For optimal performance, you need to arrange the copy correctly. Use the
-        [`distribute()`](/docs/layout/layout_tensor/LayoutTensor/#distribute)
+        [`distribute()`](/api/mojo/layout/layout_tensor/LayoutTensor/#distribute)
         method to create thread-local fragments of the source and
         destination tensors, assigning each thread one or more elements to copy.
 
         Optionally, use the
-        [`vectorize()`](/docs/layout/layout_tensor/LayoutTensor/#vectorize)
+        [`vectorize()`](/api/mojo/layout/layout_tensor/LayoutTensor/#vectorize)
         method to get vectorized views of both tensors before calling
         `distribute()`. This allows each thread to copy multiple elements of the
         tensor. For example:
@@ -5510,9 +5523,9 @@ struct LayoutTensor[
         ```
 
         The copy operation is asynchronous, so you must call
-        [`async_copy_wait_all()`](/docs/std/gpu/memory/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](https://mojolang.org/docs/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/docs/std/gpu/memory/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](https://mojolang.org/docs/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
 
         Constraints:
@@ -5722,6 +5735,7 @@ struct LayoutTensor[
                     dst_ptr + dst_idx,
                 )
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def fill[
         *,
@@ -5767,7 +5781,7 @@ struct LayoutTensor[
         from layout import Layout, LayoutTensor
 
         def main() raises:
-            var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
+            var storage = Array[Float32, 3 * 4](uninitialized=True)
             var tensor = LayoutTensor[
                 DType.float32,
                 Layout([3, 4]),
@@ -5831,7 +5845,7 @@ struct LayoutTensor[
         from layout import Layout, LayoutTensor
 
         def main() raises:
-            var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
+            var storage = Array[Float32, 2 * 3](uninitialized=True)
             var tensor = LayoutTensor[
                 DType.float32,
                 Layout([2, 3]),
@@ -6485,9 +6499,9 @@ def cp_async_k_major[
     - The destination tensor must be in SHARED address space (SRAM).
     - Both tensors must have the same data type.
     - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/docs/std/gpu/memory/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](https://mojolang.org/docs/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/docs/std/gpu/memory/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](https://mojolang.org/docs/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
     - K-major layout is particularly beneficial for matrix multiplication
         operations where the inner dimension (K) is accessed contiguously.
@@ -6733,9 +6747,9 @@ def copy_dram_to_sram_async[
     - The destination tensor must be in SHARED address space (SRAM).
     - Both tensors must have the same data type.
     - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/docs/std/gpu/memory/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](https://mojolang.org/docs/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/docs/std/gpu/memory/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](https://mojolang.org/docs/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
     - The maximum size of each element that can be copied is 16 bytes.
     """

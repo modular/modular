@@ -58,26 +58,24 @@ class LinearLoRA(Module, SupportsLoRA):
 
         .. code-block:: python
 
+            from max.driver import Accelerator, CPU, accelerator_count
+            from max.dtype import DType
+            from max.graph import DeviceRef
+            from max.nn.lora import LinearLoRA
+
+            device = Accelerator() if accelerator_count() > 0 else CPU()
+            device_ref = DeviceRef.from_device(device)
+
             linear_layer = LinearLoRA(
                 in_dim=256,
                 out_dim=128,
                 max_lora_rank=16,
                 max_num_loras=100,
-                dtype=dtype.float32,
-                device=DeviceRef.GPU(),
-                has_bias=True,
+                dtype=DType.float32,
+                device=device_ref,
                 has_lora_bias=True,
                 name="lora_linear"
             )
-
-            lora_ids: TensorValue # shape: [max_num_loras,]
-            lora_ranks: TensorValue # shape: [max_num_loras,]
-            input_row_offsets: TensorValue
-            linear_layer.set_lora_batch_info(lora_ids, lora_ranks, input_row_offsets)
-
-            # Input tensor of shape: [batch, ..., 256]
-            input_tensor: TensorValue
-            output = linear_layer(input_tensor)
         """
         super().__init__()
 
@@ -121,8 +119,6 @@ class LinearLoRA(Module, SupportsLoRA):
         self.lora_end_idx: TensorValue | None = None
         self.batch_seq_len: TensorValue | None = None
         self.lora_grouped_offsets: TensorValue | None = None
-        self.lora_ids_kv: TensorValue | None = None
-        self.lora_grouped_offsets_kv: TensorValue | None = None
 
     def set_lora_batch_info(
         self,
@@ -132,8 +128,6 @@ class LinearLoRA(Module, SupportsLoRA):
         num_active_loras: TensorValue,
         lora_end_idx: TensorValue,
         batch_seq_len: TensorValue,
-        lora_ids_kv: TensorValue,
-        lora_grouped_offsets_kv: TensorValue,
     ) -> None:
         self.lora_ids = lora_ids
         self.lora_ranks = lora_ranks
@@ -141,8 +135,6 @@ class LinearLoRA(Module, SupportsLoRA):
         self.num_active_loras = num_active_loras
         self.lora_end_idx = lora_end_idx
         self.batch_seq_len = batch_seq_len
-        self.lora_ids_kv = lora_ids_kv
-        self.lora_grouped_offsets_kv = lora_grouped_offsets_kv
 
     def __call__(self, x: TensorValue, y: TensorValue) -> TensorValue:
         if (
@@ -204,18 +196,13 @@ class QKVLinearLoRA(Module, SupportsLoRA):
             _has_alias=True,
         )
 
-        self.lora_B_q = Weight(
-            name=f"{name}.lora_B_q.weight" if name else "lora_B_q.weight",
+        # Fused LoRA-B weight, output rows concatenated along the projection
+        # dimension as Q | K | V: shape [G, q_dim + 2*kv_dim, R]. A single
+        # boundary-aware grouped matmul handles all three projections.
+        self.lora_B = Weight(
+            name=f"{name}.lora_B.weight" if name else "lora_B.weight",
             dtype=dtype,
-            shape=[max_num_loras, q_dim, max_lora_rank],
-            device=device,
-            quantization_encoding=quantization_encoding,
-            _has_alias=True,
-        )
-        self.lora_B_kv = Weight(
-            name=f"{name}.lora_B_kv.weight" if name else "lora_B_kv.weight",
-            dtype=dtype,
-            shape=[2 * max_num_loras, kv_dim, max_lora_rank],
+            shape=[max_num_loras, q_dim + 2 * kv_dim, max_lora_rank],
             device=device,
             quantization_encoding=quantization_encoding,
             _has_alias=True,
@@ -227,8 +214,6 @@ class QKVLinearLoRA(Module, SupportsLoRA):
         self.lora_end_idx: TensorValue | None = None
         self.batch_seq_len: TensorValue | None = None
         self.lora_grouped_offsets: TensorValue | None = None
-        self.lora_ids_kv: TensorValue | None = None
-        self.lora_grouped_offsets_kv: TensorValue | None = None
 
     def set_lora_batch_info(
         self,
@@ -238,8 +223,6 @@ class QKVLinearLoRA(Module, SupportsLoRA):
         num_active_loras: TensorValue,
         lora_end_idx: TensorValue,
         batch_seq_len: TensorValue,
-        lora_ids_kv: TensorValue,
-        lora_grouped_offsets_kv: TensorValue,
     ) -> None:
         self.lora_ids = lora_ids
         self.lora_ranks = lora_ranks
@@ -247,8 +230,6 @@ class QKVLinearLoRA(Module, SupportsLoRA):
         self.num_active_loras = num_active_loras
         self.lora_end_idx = lora_end_idx
         self.batch_seq_len = batch_seq_len
-        self.lora_ids_kv = lora_ids_kv
-        self.lora_grouped_offsets_kv = lora_grouped_offsets_kv
 
     def __call__(
         self,
@@ -283,8 +264,6 @@ class QKVLinearLoRA(Module, SupportsLoRA):
             or self.num_active_loras is None
             or self.lora_end_idx is None
             or self.batch_seq_len is None
-            or self.lora_ids_kv is None
-            or self.lora_grouped_offsets_kv is None
         ):
             raise ValueError(
                 "'set_lora_batch_info' not called before executing forward pass."
@@ -293,22 +272,19 @@ class QKVLinearLoRA(Module, SupportsLoRA):
         xq_lora = sgmv_qkv_lora_kernel(
             input=x,
             lora_a=self.lora_A,
-            lora_b_q=self.lora_B_q,
-            lora_b_kv=self.lora_B_kv,
+            lora_b=self.lora_B,
             lora_ids=self.lora_ids,
-            lora_ranks=self.lora_ranks,
             input_row_offsets=input_row_offsets,
             lora_grouped_offsets=self.lora_grouped_offsets,
             lora_end_idx=self.lora_end_idx,
             batch_seq_len=self.batch_seq_len,
-            lora_ids_kv=self.lora_ids_kv,
-            lora_grouped_offsets_kv=self.lora_grouped_offsets_kv,
             kv_collection=kv_collection,
             kv_params=kv_params,
             layer_idx=layer_idx,
+            q_dim=self.q_dim,
+            kv_dim=self.kv_dim,
             max_lora_seq_len=max_seq_len,
             max_rank=self.max_lora_rank,
-            bias=None,
         )
 
         xq = sliced_add(xq, xq_lora, self.lora_end_idx)
@@ -332,8 +308,6 @@ class LoRAMixin(SupportsLoRA):
     num_active_loras: TensorValue | None = None
     lora_end_idx: TensorValue | None = None
     batch_seq_len: TensorValue | None = None
-    lora_ids_kv: TensorValue | None = None
-    lora_grouped_offsets_kv: TensorValue | None = None
 
     def set_lora_batch_info(
         self,
@@ -343,8 +317,6 @@ class LoRAMixin(SupportsLoRA):
         num_active_loras: TensorValue,
         lora_end_idx: TensorValue,
         batch_seq_len: TensorValue,
-        lora_ids_kv: TensorValue,
-        lora_grouped_offsets_kv: TensorValue,
     ) -> None:
         self.lora_ids = lora_ids
         self.lora_ranks = lora_ranks
@@ -352,8 +324,6 @@ class LoRAMixin(SupportsLoRA):
         self.num_active_loras = num_active_loras
         self.lora_end_idx = lora_end_idx
         self.batch_seq_len = batch_seq_len
-        self.lora_ids_kv = lora_ids_kv
-        self.lora_grouped_offsets_kv = lora_grouped_offsets_kv
 
     @classmethod
     def from_base(
@@ -512,9 +482,10 @@ class LoRALinear(Linear, LoRAMixin):
 class StackedLinearLoRA(StackedLinear, LoRAMixin):
     """An unfused QKV :class:`~max.nn.StackedLinear` with a fused LoRA term.
 
-    Adapter weights ``qkv_lora.lora_A`` / ``lora_B_q`` / ``lora_B_kv`` sit at
+    Adapter weights ``qkv_lora.lora_A`` / ``lora_B`` sit at
     ``<attn>.qkv_lora.*`` via the unfused name-omit, matching the keys
-    ``LoRAManager`` combines q/k/v adapters into.
+    ``LoRAManager`` combines q/k/v adapters into (``lora_B`` is the single fused
+    Q | K | V weight produced by ``_combine_lora_b_weights``).
     """
 
     def __init__(
@@ -567,20 +538,19 @@ class StackedLinearLoRA(StackedLinear, LoRAMixin):
             device=device,
             _has_alias=True,
         )
-        self.lora_B_q = Weight(
-            name="qkv_lora.lora_B_q.weight",
+        # Fused LoRA-B weight, output rows concatenated along the projection
+        # dimension as Q | K | V: shape [G, q_dim + 2*kv_dim, R]. A single
+        # boundary-aware grouped matmul handles all three projections, so there
+        # is no separate Q / stacked-KV weight and no K/V offset machinery.
+        self.lora_B = Weight(
+            name="qkv_lora.lora_B.weight",
             dtype=lora_dtype,
-            shape=[max_num_loras, q_dim, max_lora_rank],
+            shape=[max_num_loras, q_dim + 2 * k_dim, max_lora_rank],
             device=device,
             _has_alias=True,
         )
-        self.lora_B_kv = Weight(
-            name="qkv_lora.lora_B_kv.weight",
-            dtype=lora_dtype,
-            shape=[2 * max_num_loras, k_dim, max_lora_rank],
-            device=device,
-            _has_alias=True,
-        )
+        self.q_dim = q_dim
+        self.kv_dim = k_dim
 
     @classmethod
     def from_base(
@@ -627,11 +597,8 @@ class StackedLinearLoRA(StackedLinear, LoRAMixin):
         """Returns the fused ``[q|k|v]`` LoRA contribution for ``x``."""
         if (
             self.lora_ids is None
-            or self.lora_ranks is None
             or self.lora_grouped_offsets is None
             or self.lora_end_idx is None
-            or self.lora_ids_kv is None
-            or self.lora_grouped_offsets_kv is None
         ):
             raise ValueError(
                 "'set_lora_batch_info' not called before executing forward pass."
@@ -639,14 +606,12 @@ class StackedLinearLoRA(StackedLinear, LoRAMixin):
         return sgmv_qkv_lora_fused(
             input=x,
             lora_a=self.lora_A,
-            lora_b_q=self.lora_B_q,
-            lora_b_kv=self.lora_B_kv,
+            lora_b=self.lora_B,
             lora_ids=self.lora_ids,
-            lora_ranks=self.lora_ranks,
             lora_grouped_offsets=self.lora_grouped_offsets,
             lora_end_idx=self.lora_end_idx,
-            lora_ids_kv=self.lora_ids_kv,
-            lora_grouped_offsets_kv=self.lora_grouped_offsets_kv,
+            q_dim=self.q_dim,
+            kv_dim=self.kv_dim,
             max_lora_seq_len=self.max_lora_seq_len,
             max_rank=self.max_lora_rank,
         )

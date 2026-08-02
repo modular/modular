@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 
 # The NIXL drag race (//utils/benchmarking/nixl) reuses the cross-node harness
 # here as its per-role engine, so extend the inherited default visibility to
@@ -11,6 +11,18 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
     "//utils/benchmarking/nixl:__pkg__",
 ])
+
+modular_py_library(
+    name = "transfer_engine_test_helpers",
+    testonly = True,
+    srcs = ["_transfer_engine_helpers.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn",
+    ],
+)
 
 modular_py_binary(
     name = "run_cross_node",
@@ -33,6 +45,8 @@ modular_py_binary(
     ],
     deps = [
         "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/kv_cache",
         requirement("msgspec"),
         requirement("numpy"),
@@ -60,6 +74,7 @@ modular_py_test(
         "@platforms//os:linux",
     ],
     deps = [
+        ":transfer_engine_test_helpers",
         "//max/python/max/driver",
         "//max/python/max/pipelines/kv_cache",
         requirement("numpy"),
@@ -91,6 +106,7 @@ modular_py_test(
         "@platforms//os:linux",
     ],
     deps = [
+        ":transfer_engine_test_helpers",
         "//max/python/max/driver",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/tests/nixl:nixl_plugin_env",
@@ -122,6 +138,7 @@ modular_py_test(
         "@platforms//os:linux",
     ],
     deps = [
+        ":transfer_engine_test_helpers",
         "//max/python/max/driver",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/tests/nixl:nixl_plugin_env",
@@ -148,6 +165,7 @@ modular_py_test(
         "@platforms//os:linux",
     ],
     deps = [
+        ":transfer_engine_test_helpers",
         "//max/python/max/driver",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/tests/nixl:nixl_plugin_env",
@@ -192,6 +210,7 @@ modular_py_test(
         "@platforms//os:linux",
     ],
     deps = [
+        ":transfer_engine_test_helpers",
         "//max/python/max/driver",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/tests/nixl:nixl_plugin_env",
@@ -212,8 +231,10 @@ modular_py_test(
     imports = ["."],
     tags = ["gpu"],
     deps = [
+        ":transfer_engine_test_helpers",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/tests/nixl:nixl_plugin_env",
         requirement("numpy"),
@@ -235,6 +256,7 @@ modular_py_test(
     imports = ["."],
     tags = ["gpu"],
     deps = [
+        ":transfer_engine_test_helpers",
         "//max/python/max/driver",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/tests/nixl:nixl_plugin_env",

@@ -27,8 +27,8 @@ import extensibility
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
 
-from std.gpu.host import DeviceContext, DeviceContextArray
-from std.gpu.host.info import is_cpu
+from max.gpu.host import DeviceContext, DeviceContextArray
+from max.gpu.host.info import is_cpu
 from layout import IntTuple, TileTensor, UNKNOWN_VALUE, coord_to_index_list
 from layout.int_tuple import _IntTupleToCoordLike
 from layout.coord import DynamicCoord
@@ -1115,7 +1115,7 @@ struct StaticReshape:
         )
 
         return {
-            view_buffer.ptr,
+            view_buffer._storage,
             rebind[IndexList[output_rank]](
                 coord_to_index_list(view_buffer.layout.shape_coord())
             ),
@@ -1370,7 +1370,7 @@ struct Slice:
         )
 
         result = {
-            view_buffer.ptr,
+            view_buffer._storage,
             rebind[IndexList[rank]](
                 coord_to_index_list(view_buffer.layout.shape_coord())
             ),

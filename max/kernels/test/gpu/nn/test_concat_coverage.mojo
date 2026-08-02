@@ -24,7 +24,7 @@ This file tests various code paths in nn/concat.mojo:
 
 from std.collections import Optional
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.concat import (
     _concat_gpu,

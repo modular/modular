@@ -575,21 +575,23 @@ trait _Expable:
 def _exp_taylor[
     dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    comptime coefficients = [
-        Scalar[dtype](1.0),
-        1.0,
-        0.5,
-        0.16666666666666666667,
-        0.041666666666666666667,
-        0.0083333333333333333333,
-        0.0013888888888888888889,
-        0.00019841269841269841270,
-        0.000024801587301587301587,
-        2.7557319223985890653e-6,
-        2.7557319223985890653e-7,
-        2.5052108385441718775e-8,
-        2.0876756987868098979e-9,
-    ]
+    comptime coefficients = List(
+        [
+            Scalar[dtype](1.0),
+            1.0,
+            0.5,
+            0.16666666666666666667,
+            0.041666666666666666667,
+            0.0083333333333333333333,
+            0.0013888888888888888889,
+            0.00019841269841269841270,
+            0.000024801587301587301587,
+            2.7557319223985890653e-6,
+            2.7557319223985890653e-7,
+            2.5052108385441718775e-8,
+            2.0876756987868098979e-9,
+        ]
+    )
     return polynomial_evaluate[
         coefficients[:] if dtype == DType.float64 else coefficients[:8],
     ](x)
@@ -1365,7 +1367,7 @@ def iota(span: Span[mut=True, Int, _], offset: Int = 0):
         span: The Span to fill with numbers.
         offset: The starting value to fill at index 0.
     """
-    var buff = span.unsafe_ptr().bitcast[Scalar[DType.int]]()
+    var buff = span.unsafe_ptr().unsafe_bitcast[Scalar[DType.int]]()
     iota(buff, len(span), offset=offset)
 
 
@@ -2483,13 +2485,12 @@ def cbrt[
         return cbrt(x.cast[DType.float32]()).cast[dtype]()
     elif dtype == DType.float64:
         return _call_libm["cbrt"](x)
+    else:
+        var result = SIMD[DType.float32, width]()
+        for i in range(width):
+            result[i] = _cbrtf(rebind[Float32](x[i]))
 
-    var result = SIMD[DType.float32, width]()
-
-    for i in range(width):
-        result[i] = _cbrtf(rebind[Float32](x[i]))
-
-    return rebind[type_of(x)](result)
+        return rebind[type_of(x)](result)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2691,13 +2692,13 @@ def erfc[
         return erfc(x.cast[DType.float32]()).cast[dtype]()
     elif dtype == DType.float64:
         return _call_libm["erfc"](x)
+    else:
+        var result = SIMD[DType.float32, width]()
 
-    var result = SIMD[DType.float32, width]()
+        for i in range(width):
+            result[i] = _erfcf(rebind[Float32](x[i]))
 
-    for i in range(width):
-        result[i] = _erfcf(rebind[Float32](x[i]))
-
-    return rebind[type_of(x)](result)
+        return rebind[type_of(x)](result)
 
 
 # ===----------------------------------------------------------------------=== #

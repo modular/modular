@@ -632,7 +632,7 @@ struct ProduceContext[
         # take() already sets _stage to None
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self._stage^.deinit_assert_empty()
 
 
@@ -782,7 +782,7 @@ struct ConsumeContext[
         # take() already sets _stage to None
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self._stage^.deinit_assert_empty()
 
 
@@ -855,5 +855,5 @@ struct ExplicitConsumeContext[
         # take() already sets _stage to None
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self._stage^.deinit_assert_empty()

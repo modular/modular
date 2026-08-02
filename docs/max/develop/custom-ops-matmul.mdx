@@ -8,7 +8,7 @@ is_tutorial: true
 ---
 
 import Requirements from '@site/src/components/Requirements';
-import { requirementsWithGPU } from '../../requirements';
+import { requirementsWithGPU } from '../requirements';
 
 A GPU kernel that produces correct output and one that runs fast are different
 problems. Memory access patterns, thread occupancy, and warp utilization
@@ -17,7 +17,7 @@ determine where time actually goes — none of that is visible from the output.
 This tutorial uses a matrix multiplication kernel as the teaching vehicle. You
 won't end up with a production matmul — MAX already contains leading-edge
 implementations you can use with the
-[`max.graph`](/max/api/python/generated/max.graph.Graph) API — but you'll work
+[`max.graph`](/api/python/generated/max.graph.Graph) API — but you'll work
 through optimization strategies that apply to any GPU custom op you write in
 Mojo.
 
@@ -41,7 +41,7 @@ By the end of this tutorial, you'll be able to:
 url="/max/packages#system-requirements" />
 
 To use a GPU, your system must meet the [GPU
-requirements](/max/faq/#gpu-requirements).
+requirements](/faq/#gpu-requirements).
 
 ## Run and compare the results
 
@@ -101,7 +101,7 @@ download the code and run the benchmark script:
 ## Introduction
 
 MAX models are built as computational graphs using the
-[`Graph`](/max/api/python/generated/max.graph.Graph) API. MAX contains within
+[`Graph`](/api/python/generated/max.graph.Graph) API. MAX contains within
 it a powerful graph compiler that can take these graphs and optimize them for
 best performance on a wide range of hardware.
 
@@ -867,7 +867,7 @@ showing pathways to get the most speed out of modern GPUs using MAX and Mojo.
 ## Next steps
 
 - Follow [our tutorial for building a custom operation from
-scratch](/max/develop/build-custom-ops).
+scratch](/develop/build-custom-ops).
 
 - See the [GPU programming](https://mojolang.org/docs/manual/gpu/architecture)
   page in the Mojo manual.

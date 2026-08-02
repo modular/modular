@@ -7,7 +7,7 @@ show_languages: true
 is_tutorial: true
 ---
 
-import InstallModular from '../../_includes/install-modular.mdx';
+import InstallModular from '../_includes/install-modular.mdx';
 
 When working with PyTorch models, you might encounter performance bottlenecks in
 specific operations that could benefit from custom optimization. You might also
@@ -64,8 +64,8 @@ we need to bridge to our Mojo implementation.
 
 ## Integrate the custom operation
 
-The [`max.torch`](/max/api/python/experimental.torch) module provides
-[`CustomOpLibrary`](/max/api/python/generated/max.experimental.torch.CustomOpLibrary),
+The [`max.torch`](/api/python/experimental.torch) module provides
+[`CustomOpLibrary`](/api/python/generated/max.experimental.torch.CustomOpLibrary),
 which allows you to load and use compiled Mojo operations directly in PyTorch.
 
 Update the `grayscale.py` file to include the following code:
@@ -114,7 +114,7 @@ and add the following code:
 ```mojo title="grayscale.mojo"
 import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from extensibility import InputTensor, OutputTensor, foreach
 
 from std.utils.coord import Coord, coord_to_index_list
@@ -164,7 +164,7 @@ available to PyTorch under the name `grayscale`. This is the
 
 The `color_to_grayscale` function takes a coordinate into the output tensor and
 returns a SIMD vector of the grayscale value. The
-[`foreach`](/max/api/kernels/extensibility/managed_tensor_slice/foreach/)
+[`foreach`](/api/mojo/extensibility/managed_tensor_slice/foreach/)
 primitive automatically parallelizes the operation across available compute
 units.
 
@@ -224,8 +224,8 @@ improvements over CPU-only implementations.
 Now that you wrote a Mojo kernel with your PyTorch model, check out these
 other tutorials:
 
-- [Build custom ops for GPUs](/max/develop/build-custom-ops): Write custom GPU
+- [Build custom ops for GPUs](/develop/build-custom-ops): Write custom GPU
   and CPU operations in Mojo and load them into a MAX graph.
-- [Build a model graph with Module](/max/develop/modules): Learn how to
+- [Build a model graph with Module](/develop/modules): Learn how to
   compose modules, write custom modules with explicit weights, load checkpoint
   data, and construct a model graph.

@@ -13,7 +13,7 @@
 
 """Provides LoRA (Low-Rank Adaptation) grouped matmul kernels for SM100 GPUs."""
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 
 from std.utils import Index, IndexList

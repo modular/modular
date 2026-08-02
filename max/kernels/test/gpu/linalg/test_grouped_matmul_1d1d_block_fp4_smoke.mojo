@@ -18,8 +18,8 @@ block-scaled FP4 variants (e.g. NVFP4, MXFP4).
 """
 
 from std.math import ceildiv
-from std.gpu.host import DeviceContext
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand
 from layout import Coord, Idx, TileTensor, row_major
 from std.utils.index import Index, IndexList

@@ -3,6 +3,9 @@ title: Unsafe pointers
 description: Using unsafe pointers to access dynamically-allocated memory.
 ---
 
+<!-- markdownlint-disable MD033 MD045 -->
+<!-- FIXME: Add alt text to images -->
+
 The [`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/) type
 is one of several pointer types available in the standard library to indirectly
 reference locations in memory.
@@ -22,10 +25,10 @@ pointers](/docs/manual/pointers/).
 
 ## Unsafe pointer basics
 
-An `UnsafePointer` is a type that holds an address to memory. You can store
-and retrieve values in that memory. The `UnsafePointer` type is *generic*—it can
-point to any type of value, and the value type is specified as a parameter. The
-value pointed to by a pointer is sometimes called a *pointee*.
+An `UnsafePointer` is a type that holds an address to memory. You can store and
+retrieve values in that memory. The `UnsafePointer` type is *parameterized*—it
+can point to any type of value, and the value type is specified as a parameter.
+The value pointed to by a pointer is sometimes called a *pointee*.
 
 ```mojo
 # Allocate memory to hold a value
@@ -113,7 +116,7 @@ or point to a memory location:
   in undefined behavior.
 
   ```mojo
-  ptr.free()
+  ptr.unsafe_free()
   ```
 
 The following diagram shows the lifecycle of an `UnsafePointer`:
@@ -195,8 +198,8 @@ ptr[] = 0
 ```
 
 If you've allocated space for multiple values, you can use subscript syntax to
-access the values, as if they were an array, like `ptr[3]`. The empty subscript
-`[]` has the same meaning as `[0]`.
+access the values, as if they were an array, like `ptr[unsafe_offset=3]`. The
+empty subscript `[]` has the same meaning as `[unsafe_offset=0]`.
 
 :::caution
 
@@ -220,7 +223,7 @@ str_ptr[] += " pointers" # Works now
 ### Destroying or removing values
 
 The
-[`take_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#take_pointee)
+[`unsafe_take_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_take_pointee)
 method moves a pointee from the memory location pointed to by `ptr`. This is a
 consuming move. It invokes `__init__(take=)` on the destination value. It leaves
 the memory location uninitialized.
@@ -230,9 +233,9 @@ The
 method calls the destructor on the pointee, and leaves the memory location
 pointed to by `ptr` uninitialized.
 
-Both `take_pointee()` and `unsafe_deinit_pointee()` require that the pointer is
-non-null, and the memory location contains a valid, initialized value of the
-pointee's type; otherwise the function results in undefined behavior.
+Both `unsafe_take_pointee()` and `unsafe_deinit_pointee()` require that the
+pointer is non-null, and the memory location contains a valid, initialized value
+of the pointee's type; otherwise the function results in undefined behavior.
 
 Calling
 [`unsafe_write_move_from(self, src)`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_write_move_from)
@@ -249,8 +252,9 @@ It does not destroy existing contents before writing the value from `src`.
 
 ### Freeing memory
 
-Calling [`free()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#free) on a
-pointer frees the memory allocated by the pointer. It doesn't call the
+Calling
+[`unsafe_free()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_free) on
+a pointer frees the memory allocated by the pointer. It doesn't call the
 destructors on any values stored in the memory—you need to do that explicitly
 (for example, using
 [`unsafe_deinit_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_deinit)
@@ -262,8 +266,8 @@ memory leak—where your program keeps taking more and more memory, because not
 all allocated memory is being freed.
 
 On the other hand, if you have multiple copies of a pointer accessing the same
-memory, you need to make sure you only call `free()` on one of them. Freeing the
-same memory twice is also an error.
+memory, you need to make sure you only call `unsafe_free()` on one of them.
+Freeing the same memory twice is also an error.
 
 After freeing a pointer's memory, you're left with a dangling pointer—its
 address still points to the freed memory. Any attempt to access the memory,
@@ -278,14 +282,14 @@ to a pointer returns a new pointer offset by the specified number of values from
 the original pointer:
 
 ```mojo
-var third_ptr = first_ptr + 2
+var third_ptr = first_ptr.unsafe_offset(2)
 ```
 
 Pointers also support subtraction, as well as in-place addition and subtraction:
 
 ```mojo
 # Advance the pointer one element:
-ptr += 1
+ptr = ptr.unsafe_offset(1)
 ```
 
 <figure>
@@ -302,15 +306,15 @@ values, and initializes them all to zero.
 ```mojo
 var float_ptr = alloc[Float64](6)
 for offset in range(6):
-    (float_ptr+offset).unsafe_write(0.0)
+    float_ptr.unsafe_offset(offset).unsafe_write(0.0)
 ```
 
 Once the values are initialized, you can access them using subscript syntax:
 
 ```mojo
-float_ptr[2] = 3.0
+float_ptr[unsafe_offset=2] = 3.0
 for offset in range(6):
-    print(float_ptr[offset], end=", ")
+    print(float_ptr[unsafe_offset=offset], end=", ")
 ```
 
 ```output
@@ -385,7 +389,7 @@ origin. Here's an example:
 ```mojo
 def print_bytes(bytes: UnsafePointer[mut=False, Byte, _], count: Int):
     for i in range(count):
-        print(hex(bytes[i]), end=" ")
+        print(hex(bytes[unsafe_offset=i]), end=" ")
     print()
 
 By binding the infer-only `mut` parameter to `False`, and leaving the origin
@@ -460,7 +464,7 @@ def write_to_address(mmio_address: Int, value: Int32):
     # Writing to a raw memory address may require a volatile load/store as the
     # operation may have side effects not visible to the compiler.
     # You can specify this using the `volatile` parameter.
-    ptr.store[volatile = True](value)
+    ptr.unsafe_store[volatile=True](value)
 ```
 
 This is unsafe, as the caller must ensure the address is valid before writing to
@@ -485,7 +489,7 @@ def share_array() raises:
     var arr = np.array(Python.list(1, 2, 3, 4, 5, 6, 7, 8, 9))
     var ptr = arr.ctypes.data.unsafe_get_as_pointer[DType.int64]()
     for i in range(9):
-        print(ptr[i], end=", ")
+        print(ptr[unsafe_offset=i], end=", ")
     print()
 
 def main() raises:
@@ -535,13 +539,13 @@ C library function that takes a void pointer.
 has the same API as any other `UnsafePointer`.
 
 You can't dereference an opaque pointer, but you can cast it to a specific type
-using the `bitcast()` method. Similarly, you can create an opaque pointer from
-an existing pointer by bitcasting to `NoneType`. For example:
+using the `unsafe_bitcast()` method. Similarly, you can create an opaque
+pointer from an existing pointer by bitcasting to `NoneType`. For example:
 
 ```mojo
 var str = "Hello, world!"
 var str_ptr = UnsafePointer(to=str)
-var opaque_ptr = str_ptr.bitcast[NoneType]()
+var opaque_ptr = str_ptr.unsafe_bitcast[NoneType]()
 # ... call some foreign function that takes a void pointer
 ```
 
@@ -567,14 +571,14 @@ def read_chunks(
     while (chunk_size > 0):
         # Skip the 1 byte chunk_size and get a pointer to the first
         # UInt32 in the chunk
-        var ui32_ptr = (ptr + 1).bitcast[UInt32]()
+        var ui32_ptr = ptr.unsafe_offset(1).unsafe_bitcast[UInt32]()
         var chunk = List[UInt32](capacity=chunk_size)
         for i in range(chunk_size):
-            chunk.append(ui32_ptr[i])
+            chunk.append(ui32_ptr[unsafe_offset=i])
         # list is not implicitly copyable, so it needs the transfer sigil (^)
         chunks.append(chunk^)
         # Move our pointer to the next byte after the current chunk
-        ptr += (1 + 4 * chunk_size)
+        ptr = ptr.unsafe_offset(1 + 4 * chunk_size)
         # Read the size of the next chunk
         chunk_size = Int(ptr[])
     return chunks^
@@ -597,15 +601,17 @@ example, if the method above was reading big-endian data, you'd just need to
 change a single line:
 
 ```mojo no-test
-chunk.append(byte_swap(ui32_ptr[i]))
+chunk.append(byte_swap(ui32_ptr[unsafe_offset=i]))
 ```
 
 ## Working with SIMD vectors
 
 The `UnsafePointer` type includes
-[`load()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#load) and
-[`store()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#store) methods for
-performing aligned loads and stores of scalar values. It also has methods
+[`unsafe_load()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_load)
+and
+[`unsafe_store()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_store)
+methods for performing aligned loads and stores of scalar values. It also has
+methods
 supporting strided load/store and gather/scatter.
 
 Strided load loads values from memory into a SIMD vector using an offset (the
@@ -624,9 +630,9 @@ you want to access just the red values, you can use a strided load or store.
 </figure>
 
 The following function uses the
-[`strided_load()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#strided_load)
+[`unsafe_strided_load()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_strided_load)
 and
-[`strided_store()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#strided_store)
+[`unsafe_strided_store()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_strided_store)
 methods to invert the red pixel values in an image, 8 values at a time. (Note
 that this function only handles images where the number of pixels is evenly
 divisible by eight.)
@@ -638,17 +644,23 @@ def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8, _], pixel_count: Int)
     # bytes per pixel, which is also the stride size
     comptime bpp = 3
     for i in range(0, pixel_count * bpp, simd_width * bpp):
-        var red_values = (ptr + i).strided_load[width=simd_width](bpp)
+        var red_values = ptr.unsafe_offset(i).unsafe_strided_load[
+            width=simd_width
+        ](bpp)
         # Invert values and store them in their original locations
-        (ptr + i).strided_store[width=simd_width](~red_values, bpp)
+        ptr.unsafe_offset(i).unsafe_strided_store[width=simd_width](
+            ~red_values, bpp
+        )
 ```
 
-The [`gather()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#gather) and
-[`scatter()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#scatter) methods
-let you load or store a set of values that are stored in arbitrary locations.
-You do this by passing in a SIMD vector of *offsets* to the current pointer. For
-example, when using `gather()`, the <var>n</var>th value in the vector is loaded
-from (pointer address) + <var>offset[n]</var>.
+The
+[`unsafe_gather()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_gather)
+and
+[`unsafe_scatter()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_scatter)
+methods let you load or store a set of values that are stored in arbitrary
+locations. You do this by passing in a SIMD vector of *offsets* to the current
+pointer. For example, when using `unsafe_gather()`, the <var>n</var>th value in
+the vector is loaded from (pointer address) + <var>offset[n]</var>.
 
 ## Safety
 
@@ -665,3 +677,5 @@ Unsafe pointers are unsafe for several reasons:
 - `UnsafePointer` does have an `origin` parameter so Mojo can track the origin
   of the data it points to, but it also provides unsafe APIs. For example, when
   you do pointer arithmetic, the compiler doesn't do any bounds checking.
+
+<!-- markdownlint-enable MD033 MD045 -->

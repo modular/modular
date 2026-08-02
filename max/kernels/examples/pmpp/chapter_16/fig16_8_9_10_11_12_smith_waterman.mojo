@@ -16,9 +16,9 @@
 
 from std.math import ceildiv
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 # Scoring constants
 comptime MATCH = 1
@@ -61,9 +61,9 @@ def sw_kernel_square(
     sw: UnsafePointer[Int32, MutAnyOrigin],
     rea: UnsafePointer[UInt8, ImmutAnyOrigin],
     ref_seq: UnsafePointer[UInt8, ImmutAnyOrigin],
-    L: Int,
-    d: Int,
-    tile_width: Int,
+    L_dev: Int32,
+    d_dev: Int32,
+    tile_width_dev: Int32,
 ):
     """Figure 16.9: Smith-Waterman kernel with thread block-level tiling.
 
@@ -71,12 +71,16 @@ def sw_kernel_square(
         sw: Scoring matrix (L x L, flattened).
         rea: Query sequence (read).
         ref_seq: Reference sequence.
-        L: Length of scoring matrix side (sequence length + 1).
-        d: Current anti-diagonal of tiles.
-        tile_width: Width of each tile.
+        L_dev: Length of scoring matrix side (sequence length + 1).
+        d_dev: Current anti-diagonal of tiles.
+        tile_width_dev: Width of each tile.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var L = Int(L_dev)
+    var d = Int(d_dev)
+    var tile_width = Int(tile_width_dev)
     # Allocate shared memory for tile
-    var swTile = stack_allocation[
+    var swTile = unsafe_stack_allocation[
         MAX_TILE_WIDTH * MAX_TILE_WIDTH,
         Scalar[DType.int32],
         address_space=AddressSpace.SHARED,
@@ -372,9 +376,9 @@ def main() raises:
                 d_sw,
                 d_rea,
                 d_ref,
-                L,
-                d,
-                tile_width,
+                Int32(L),
+                Int32(d),
+                Int32(tile_width),
                 grid_dim=(numBlocks, 1, 1),
                 block_dim=(tile_width, 1, 1),
             )

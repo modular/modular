@@ -22,9 +22,9 @@ from std.sys import align_of, size_of
 
 from std.gpu import barrier, block_idx, thread_idx
 import std.gpu.primitives.warp as warp
-from std.gpu.host import DeviceContext, DeviceAttribute
+from max.gpu.host import DeviceContext, DeviceAttribute
 from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.math import ceildiv
 from std.utils.numerics import min_or_neg_inf
 from layout import TileTensor, row_major
@@ -442,21 +442,25 @@ def _bitonic_merge_desc[
 def _persistent_topk_2048_kernel(
     in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
-    N: Int,
-    K: Int,
+    N: Int32,
+    K: Int32,
 ):
     """Block-wide bitonic top-k for `N <= _PTOPK_TOTAL` (one block per row)."""
     var tid = thread_idx.x
     var token = block_idx.x
 
-    var smem_v = stack_allocation[
-        _PTOPK_TOTAL, Scalar[DType.float32], address_space=AddressSpace.SHARED
+    var smem_v = unsafe_stack_allocation[
+        _PTOPK_TOTAL,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
     ]()
-    var smem_i = stack_allocation[
+    var smem_i = unsafe_stack_allocation[
         _PTOPK_TOTAL, Scalar[DType.int32], address_space=AddressSpace.SHARED
     ]()
 
-    var row = token * N
+    var _N = Int(N)
+    var _K = Int(K)
+    var row = token * _N
     var e0 = tid * 4
     var e1 = tid * 4 + 1
     var e2 = tid * 4 + 2
@@ -471,7 +475,7 @@ def _persistent_topk_2048_kernel(
     var i2: Scalar[DType.int32]
     var i3: Scalar[DType.int32]
 
-    var lv, li = _load4_scores(in_scores, row, 0, e0, N)
+    var lv, li = _load4_scores(in_scores, row, 0, e0, _N)
     v0 = lv[0]
     v1 = lv[1]
     v2 = lv[2]
@@ -483,14 +487,14 @@ def _persistent_topk_2048_kernel(
 
     _bitonic_sort_desc(v0, v1, v2, v3, i0, i1, i2, i3, smem_v, smem_i, tid)
 
-    var base = token * K
-    if e0 < K:
+    var base = token * _K
+    if e0 < _K:
         out_idxs[base + e0] = i0
-    if e1 < K:
+    if e1 < _K:
         out_idxs[base + e1] = i1
-    if e2 < K:
+    if e2 < _K:
         out_idxs[base + e2] = i2
-    if e3 < K:
+    if e3 < _K:
         out_idxs[base + e3] = i3
 
 
@@ -498,8 +502,8 @@ def _persistent_topk_2048_kernel(
 def _streaming_topk_kernel(
     in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
-    N: Int,
-    K: Int,
+    N: Int32,
+    K: Int32,
 ):
     """Streaming top-K for `N > _PTOPK_TOTAL`, `K <= _TILE` (one block per row).
 
@@ -512,32 +516,34 @@ def _streaming_topk_kernel(
 
     # 16B-aligned so the canonical `e0..e3` accesses below are single 128-bit
     # LDS/STS (the swizzled sort/merge accesses stay scalar).
-    var champ_v = stack_allocation[
+    var champ_v = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.float32],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
-    var champ_i = stack_allocation[
+    var champ_i = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.int32],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
-    var scratch_v = stack_allocation[
+    var scratch_v = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.float32],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
-    var scratch_i = stack_allocation[
+    var scratch_i = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.int32],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
 
-    var row = token * N
+    var _N = Int(N)
+    var _K = Int(K)
+    var row = token * _N
     var e0 = tid * 4
     var e1 = tid * 4 + 1
     var e2 = tid * 4 + 2
@@ -561,10 +567,10 @@ def _streaming_topk_kernel(
     var i2: Scalar[DType.int32]
     var i3: Scalar[DType.int32]
 
-    var num_tiles = ceildiv(N, _TILE)
+    var num_tiles = ceildiv(_N, _TILE)
     for t in range(num_tiles):
         var g = t * _TILE
-        var lv, li = _load4_scores(in_scores, row, 0, g + e0, N)
+        var lv, li = _load4_scores(in_scores, row, 0, g + e0, _N)
         v0 = lv[0]
         v1 = lv[1]
         v2 = lv[2]
@@ -620,15 +626,15 @@ def _streaming_topk_kernel(
         )
         barrier()
 
-    var base = token * K
+    var base = token * _K
     var out_i = champ_i.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0)
-    if e0 < K:
+    if e0 < _K:
         out_idxs[base + e0] = out_i[0]
-    if e1 < K:
+    if e1 < _K:
         out_idxs[base + e1] = out_i[1]
-    if e2 < K:
+    if e2 < _K:
         out_idxs[base + e2] = out_i[2]
-    if e3 < K:
+    if e3 < _K:
         out_idxs[base + e3] = out_i[3]
 
 
@@ -637,9 +643,9 @@ def _split_partial_kernel(
     in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     part_v: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     part_i: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
-    N: Int,
-    slice_len: Int,
-    S: Int,
+    N_dev: Int32,
+    slice_len_dev: Int32,
+    S_dev: Int32,
 ):
     """Phase 1 of the split streaming top-k.
 
@@ -650,6 +656,10 @@ def _split_partial_kernel(
     restricted to the slice and emitting the full champion (values + indices)
     so phase 2 can merge partials by value.
     """
+    var N = Int(N_dev)
+    var slice_len = Int(slice_len_dev)
+    var S = Int(S_dev)
+
     var tid = thread_idx.x
     var block = block_idx.x
     var row = block // S
@@ -657,25 +667,25 @@ def _split_partial_kernel(
 
     # 16B-aligned so the canonical `e0..e3` accesses below are single 128-bit
     # LDS/STS (the swizzled sort/merge accesses stay scalar).
-    var champ_v = stack_allocation[
+    var champ_v = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.float32],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
-    var champ_i = stack_allocation[
+    var champ_i = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.int32],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
-    var scratch_v = stack_allocation[
+    var scratch_v = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.float32],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
-    var scratch_i = stack_allocation[
+    var scratch_i = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.int32],
         alignment=_V4_ALIGN,
@@ -782,9 +792,9 @@ def _reduce_partials_kernel(
     in_i: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
     out_v: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     out_i: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
-    count_in: Int,
-    count_out: Int,
-    g: Int,
+    count_in_dev: Int32,
+    count_out_dev: Int32,
+    g_dev: Int32,
 ):
     """Tree phase-2 round: merge groups of `g` partials in parallel.
 
@@ -796,6 +806,10 @@ def _reduce_partials_kernel(
     bitonic merge. Fanning the `S`-way reduction across `rows * count_out` blocks
     (vs one block per row) is what unblocks the low-row decode regime.
     """
+    var count_in = Int(count_in_dev)
+    var count_out = Int(count_out_dev)
+    var g = Int(g_dev)
+
     var tid = thread_idx.x
     var block = block_idx.x
     var row = block // count_out
@@ -803,25 +817,25 @@ def _reduce_partials_kernel(
 
     # 16B-aligned so the canonical `e0..e3` accesses below are single 128-bit
     # LDS/STS (the swizzled sort/merge accesses stay scalar).
-    var champ_v = stack_allocation[
+    var champ_v = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.float32],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
-    var champ_i = stack_allocation[
+    var champ_i = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.int32],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
-    var scratch_v = stack_allocation[
+    var scratch_v = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.float32],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
-    var scratch_i = stack_allocation[
+    var scratch_i = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.int32],
         alignment=_V4_ALIGN,
@@ -908,8 +922,8 @@ def _merge_partials_kernel(
     part_v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     part_i: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
     out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
-    count: Int,
-    K: Int,
+    count_dev: Int32,
+    K_dev: Int32,
 ):
     """Final round of the split streaming top-k (one block per row).
 
@@ -920,30 +934,33 @@ def _merge_partials_kernel(
     phase-1 split factor `S` (no tree reduction) or the residual partial count
     after `_reduce_partials_kernel` rounds.
     """
+    var count = Int(count_dev)
+    var K = Int(K_dev)
+
     var tid = thread_idx.x
     var row = block_idx.x
 
     # 16B-aligned so the canonical `e0..e3` accesses below are single 128-bit
     # LDS/STS (the swizzled sort/merge accesses stay scalar).
-    var champ_v = stack_allocation[
+    var champ_v = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.float32],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
-    var champ_i = stack_allocation[
+    var champ_i = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.int32],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
-    var scratch_v = stack_allocation[
+    var scratch_v = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.float32],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
-    var scratch_i = stack_allocation[
+    var scratch_i = unsafe_stack_allocation[
         _TILE,
         Scalar[DType.int32],
         alignment=_V4_ALIGN,
@@ -1011,15 +1028,16 @@ def _merge_partials_kernel(
         )
         barrier()
 
-    var base = row * K
+    var _K = Int(K)
+    var base = row * _K
     var out_i = champ_i.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0)
-    if e0 < K:
+    if e0 < _K:
         out_idxs[base + e0] = out_i[0]
-    if e1 < K:
+    if e1 < _K:
         out_idxs[base + e1] = out_i[1]
-    if e2 < K:
+    if e2 < _K:
         out_idxs[base + e2] = out_i[2]
-    if e3 < K:
+    if e3 < _K:
         out_idxs[base + e3] = out_i[3]
 
 
@@ -1059,8 +1077,8 @@ def persistent_topk_block(
         ctx.enqueue_function[_persistent_topk_2048_kernel](
             in_scores,
             out_idxs,
-            N,
-            K,
+            Int32(N),
+            Int32(K),
             grid_dim=total_seq_len,
             block_dim=_PTOPK_BLOCK,
         )
@@ -1068,8 +1086,8 @@ def persistent_topk_block(
         ctx.enqueue_function[_streaming_topk_kernel](
             in_scores,
             out_idxs,
-            N,
-            K,
+            Int32(N),
+            Int32(K),
             grid_dim=total_seq_len,
             block_dim=_PTOPK_BLOCK,
         )
@@ -1124,7 +1142,8 @@ def persistent_topk_block_split(
         persistent_topk_block(ctx, in_scores, out_idxs, N, K, total_seq_len)
         return
 
-    var num_tiles = ceildiv(N, _TILE)
+    var _N = Int(N)
+    var num_tiles = ceildiv(_N, _TILE)
     var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
     var S = _choose_split_factor(total_seq_len, num_tiles, sm_count)
     if S <= 1:
@@ -1148,9 +1167,9 @@ def persistent_topk_block_split(
         in_scores,
         a_v,
         a_i,
-        N,
-        slice_len,
-        S,
+        Int32(N),
+        Int32(slice_len),
+        Int32(S),
         grid_dim=total_seq_len * S,
         block_dim=_PTOPK_BLOCK,
     )
@@ -1189,9 +1208,9 @@ def persistent_topk_block_split(
             rebind[UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin]](src_i),
             dst_v,
             dst_i,
-            count,
-            count_out,
-            _MERGE_FANIN,
+            Int32(count),
+            Int32(count_out),
+            Int32(_MERGE_FANIN),
             grid_dim=total_seq_len * count_out,
             block_dim=_PTOPK_BLOCK,
         )
@@ -1207,8 +1226,8 @@ def persistent_topk_block_split(
         rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](src_v),
         rebind[UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin]](src_i),
         out_idxs,
-        count,
-        K,
+        Int32(count),
+        Int32(K),
         grid_dim=total_seq_len,
         block_dim=_PTOPK_BLOCK,
     )

@@ -17,6 +17,7 @@ from .cache_params import (
     KVCacheBuffer,
     KVCacheBufferInterface,
     KVCacheMemory,
+    KVCacheMemoryGroup,
     KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
@@ -32,6 +33,7 @@ from .cache_params import (
     compute_num_device_blocks,
     compute_num_host_blocks,
     estimated_memory_size,
+    spec_decode_cache_slack,
 )
 from .input_types import (
     KVCacheInputs,
@@ -61,6 +63,7 @@ __all__ = [
     "KVCacheInputsInterface",
     "KVCacheInputsPerDevice",
     "KVCacheMemory",
+    "KVCacheMemoryGroup",
     "KVCacheMetrics",
     "KVCacheParamInterface",
     "KVCacheParams",
@@ -83,4 +86,5 @@ __all__ = [
     "compute_num_device_blocks",
     "compute_num_host_blocks",
     "estimated_memory_size",
+    "spec_decode_cache_slack",
 ]

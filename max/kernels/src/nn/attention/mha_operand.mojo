@@ -17,8 +17,8 @@ tensors (including paged KV caches) are laid out in GPU memory and how
 TMA (tensor memory accelerator) descriptors are constructed for them.
 """
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
 from kv_cache.types import (
     KVCacheT,
     PagedRowIndices,
@@ -1013,8 +1013,8 @@ def _null_scale_tile_tensor[
 
 
 struct LayoutTensorMHAOperand[
-    origin: Origin[mut=False],
-    scale_origin: Origin[mut=False],
+    origin: ImmOrigin,
+    scale_origin: ImmOrigin,
     //,
     dtype_: DType,
     buffer_layout: TensorLayout,
@@ -1105,7 +1105,7 @@ struct LayoutTensorMHAOperand[
                 Int(head_dim_idx),
             )
         )
-        return ret_ptr.as_immutable().as_unsafe_any_origin()
+        return ret_ptr.as_imm().as_unsafe_any_origin()
 
     @always_inline
     def scales_block_paged_ptr(
@@ -1125,7 +1125,7 @@ struct LayoutTensorMHAOperand[
                 Int(head_dim_idx // Self.quantization_granularity),
             )
         )
-        return ret_ptr.as_immutable().as_unsafe_any_origin()
+        return ret_ptr.as_imm().as_unsafe_any_origin()
 
     @always_inline
     def load_scale[
@@ -1209,7 +1209,7 @@ struct LayoutTensorMHAOperand[
             row_major=row_major,
         ](
             ctx,
-            self.buffer.ptr.as_immutable().as_unsafe_any_origin(),
+            self.buffer.ptr.as_imm().as_unsafe_any_origin(),
             rows,
             Int(self.buffer.dim[2]()),
         )
@@ -1395,8 +1395,8 @@ struct LayoutTensorMHAOperand[
 
 
 struct RaggedMHAOperand[
-    origin: Origin[mut=False],
-    cache_origin: Origin[mut=False],
+    origin: ImmOrigin,
+    cache_origin: ImmOrigin,
     //,
     dtype_: DType,
     layout: TensorLayout,
@@ -1503,7 +1503,7 @@ struct RaggedMHAOperand[
                 Int(head_dim_idx),
             )
         )
-        return ret_ptr.as_immutable().as_unsafe_any_origin()
+        return ret_ptr.as_imm().as_unsafe_any_origin()
 
     @always_inline
     def scales_block_paged_ptr(
@@ -1597,7 +1597,7 @@ struct RaggedMHAOperand[
             row_major=row_major,
         ](
             ctx,
-            self.buffer.ptr.as_immutable().as_unsafe_any_origin(),
+            self.buffer.ptr.as_imm().as_unsafe_any_origin(),
             rows,
             Int(self.buffer.dim[1]()),
         )

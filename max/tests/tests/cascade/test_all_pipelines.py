@@ -22,7 +22,9 @@ architecture declares the common text pipeline class).
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from max.experimental.cascade.pipelines import all_pipelines
@@ -89,7 +91,7 @@ async def test_build_pipeline_uses_arch_factory(
         all_pipelines.PIPELINE_REGISTRY,
         "retrieve_factory",
         lambda config: (
-            SimpleNamespace(_default_eos_token_ids=()),
+            SimpleNamespace(eos_token_ids=set()),
             lambda: None,
         ),
     )
@@ -116,6 +118,25 @@ async def test_build_pipeline_no_models() -> None:
     config = PipelineConfig(models=ModelManifest({}))
     with pytest.raises(ValueError, match="No models specified"):
         await all_pipelines.build_pipeline(config)
+
+
+@pytest.fixture(autouse=True)
+def _offline_hf_construction() -> Iterator[None]:
+    """Keep ``MAXModelConfig`` construction offline (CI runs
+    ``HF_HUB_OFFLINE=1``): ``__init__`` eagerly builds the HuggingFace repo
+    handles. Real cached repos resolve normally; uncached/placeholder repos
+    get a fake path.
+    """
+
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=lambda repo_id, revision=None: f"/fake/cache/{repo_id}",
+        ),
+    ):
+        yield
 
 
 def test_llama_arch_declares_cascade_factory() -> None:

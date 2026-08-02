@@ -280,10 +280,12 @@ This groups as
 
 ## Walrus operator
 
-Regular assignment (`=`) is a statement. It can't appear inside a larger
-expression. The walrus operator (also known as the assignment expression)
-`:=` is the expression form of assignment: it binds a value to a name and
-evaluates to that same value, so the result can be used immediately:
+Regular assignments (`=`) are statements, not expressions. They don't
+produce a value.
+
+The walrus operator (:=) is the expression form of assignment. It binds
+a value to a name and evaluates to that value. You can assign and use the
+result in a single step:
 
 ```mojo
 if (n := len(items)) > 10:
@@ -293,10 +295,25 @@ while (name := input("Prompt: ")) != "quit":
     print(name)
 ```
 
-The walrus operator introduces a new binding in a subordinate scope, such
-as an `if` clause, `for` loop, or `while` loop. It has the lowest
-precedence of any expression operator. Use parentheses to avoid ambiguity
-when needed.
+The walrus operator introduces a new binding. It's most often used for
+temporary values created as part of a statement, although the binding
+remains available for the rest of its scope.
+
+The value on the right side of a walrus assignment doesn't have to exist in
+memory. For example, it might be a computed value that exists only in
+registers. The walrus operator doesn't imply anything about ownership or
+reference semantics.
+
+The walrus operator has the lowest precedence of any expression operator.
+Use parentheses when needed to make your intent clear:
+
+```mojo
+if item := list[idx] < 50:        # binds comparison result
+    print(t"{item} is under 50")  # "True is under 50"
+
+if (item := list[idx]) < 50:      # binds list item
+    print(t"{item} is under 50")  # "(actual number) is under 50"
+```
 
 ## Compile-time expressions
 

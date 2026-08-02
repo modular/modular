@@ -25,7 +25,7 @@ from layout import Layout
 from std.sys import size_of
 
 from std.gpu import syncwarp
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,
@@ -191,13 +191,13 @@ struct TmemAddress(TrivialRegisterPassable):
         data_paths: Int = 16,
         bits: Int = 256,
         repeat: Int = 1,
-    ](self) -> InlineArray[Scalar[dtype], width]:
+    ](self) -> Array[Scalar[dtype], width]:
         """Load upper accumulator fragment (rows 0-15).
 
         Parameters:
             dtype: Element type to load from TMEM.
             width: Total number of elements per row in the returned
-                `InlineArray`.
+                `Array`.
             data_paths: Number of SM100 TMEM data paths (defaults to 16).
             bits: Bits loaded per data path per repeat (defaults to 256).
             repeat: Number of times to repeat the load pattern (defaults
@@ -219,13 +219,13 @@ struct TmemAddress(TrivialRegisterPassable):
         data_paths: Int = 16,
         bits: Int = 256,
         repeat: Int = 1,
-    ](self) -> InlineArray[Scalar[dtype], width]:
+    ](self) -> Array[Scalar[dtype], width]:
         """Load lower accumulator fragment (rows 16-31).
 
         Parameters:
             dtype: Element type to load from TMEM.
             width: Total number of elements per row in the returned
-                `InlineArray`.
+                `Array`.
             data_paths: Number of SM100 TMEM data paths (defaults to 16).
             bits: Bits loaded per data path per repeat (defaults to 256).
             repeat: Number of times to repeat the load pattern (defaults
@@ -247,20 +247,20 @@ struct TmemAddress(TrivialRegisterPassable):
         data_paths: Int = 16,
         bits: Int = 256,
         repeat: Int = 1,
-    ](self, data: InlineArray[Scalar[dtype], width]):
+    ](self, data: Array[Scalar[dtype], width]):
         """Store upper accumulator fragment (rows 0-15).
 
         Parameters:
             dtype: Element type to store to TMEM.
             width: Total number of elements per row in the `data`
-                `InlineArray`.
+                `Array`.
             data_paths: Number of SM100 TMEM data paths (defaults to 16).
             bits: Bits stored per data path per repeat (defaults to 256).
             repeat: Number of times to repeat the store pattern (defaults
                 to 1).
 
         Args:
-            data: `InlineArray` of accumulator data to store.
+            data: `Array` of accumulator data to store.
         """
         tcgen05_st[
             datapaths=data_paths,
@@ -276,20 +276,20 @@ struct TmemAddress(TrivialRegisterPassable):
         data_paths: Int = 16,
         bits: Int = 256,
         repeat: Int = 1,
-    ](self, data: InlineArray[Scalar[dtype], width]):
+    ](self, data: Array[Scalar[dtype], width]):
         """Store lower accumulator fragment (rows 16-31).
 
         Parameters:
             dtype: Element type to store to TMEM.
             width: Total number of elements per row in the `data`
-                `InlineArray`.
+                `Array`.
             data_paths: Number of SM100 TMEM data paths (defaults to 16).
             bits: Bits stored per data path per repeat (defaults to 256).
             repeat: Number of times to repeat the store pattern (defaults
                 to 1).
 
         Args:
-            data: `InlineArray` of accumulator data to store.
+            data: `Array` of accumulator data to store.
         """
         tcgen05_st[
             datapaths=data_paths,
@@ -395,14 +395,14 @@ struct TmemTensor[
     @always_inline
     def load_upper[
         repeat: Int = 1,
-    ](self) -> InlineArray[Scalar[Self.dtype], Self.frag_size * repeat]:
+    ](self) -> Array[Scalar[Self.dtype], Self.frag_size * repeat]:
         """Load upper accumulator fragment (rows 0-15).
 
         Parameters:
             repeat: Number of times to repeat the load pattern.
 
         Returns:
-            InlineArray containing the upper fragment data.
+            Array containing the upper fragment data.
         """
         return self.address().load_upper[
             Self.dtype,
@@ -415,14 +415,14 @@ struct TmemTensor[
     @always_inline
     def load_lower[
         repeat: Int = 1,
-    ](self) -> InlineArray[Scalar[Self.dtype], Self.frag_size * repeat]:
+    ](self) -> Array[Scalar[Self.dtype], Self.frag_size * repeat]:
         """Load lower accumulator fragment (rows 16-31).
 
         Parameters:
             repeat: Number of times to repeat the load pattern.
 
         Returns:
-            InlineArray containing the lower fragment data.
+            Array containing the lower fragment data.
         """
         return self.address().load_lower[
             Self.dtype,
@@ -435,14 +435,14 @@ struct TmemTensor[
     @always_inline
     def store_upper[
         repeat: Int = 1,
-    ](self, data: InlineArray[Scalar[Self.dtype], Self.frag_size * repeat]):
+    ](self, data: Array[Scalar[Self.dtype], Self.frag_size * repeat]):
         """Store upper accumulator fragment (rows 0-15).
 
         Parameters:
             repeat: Number of times to repeat the store pattern.
 
         Args:
-            data: InlineArray containing the data to store.
+            data: Array containing the data to store.
         """
         self.address().store_upper[
             Self.dtype,
@@ -455,14 +455,14 @@ struct TmemTensor[
     @always_inline
     def store_lower[
         repeat: Int = 1,
-    ](self, data: InlineArray[Scalar[Self.dtype], Self.frag_size * repeat]):
+    ](self, data: Array[Scalar[Self.dtype], Self.frag_size * repeat]):
         """Store lower accumulator fragment (rows 16-31).
 
         Parameters:
             repeat: Number of times to repeat the store pattern.
 
         Args:
-            data: InlineArray containing the data to store.
+            data: Array containing the data to store.
         """
         self.address().store_lower[
             Self.dtype,
@@ -585,30 +585,30 @@ struct TmemFragments[
         TmemFragments.wait_store()
     """
 
-    var upper: InlineArray[Scalar[Self.dtype], Self.frag_size]
-    var lower: InlineArray[Scalar[Self.dtype], Self.frag_size]
+    var upper: Array[Scalar[Self.dtype], Self.frag_size]
+    var lower: Array[Scalar[Self.dtype], Self.frag_size]
 
     @always_inline
     def __init__(out self):
         """Initialize with zero fragments."""
-        self.upper = InlineArray[Scalar[Self.dtype], Self.frag_size](
+        self.upper = Array[Scalar[Self.dtype], Self.frag_size](
             fill=Scalar[Self.dtype](0)
         )
-        self.lower = InlineArray[Scalar[Self.dtype], Self.frag_size](
+        self.lower = Array[Scalar[Self.dtype], Self.frag_size](
             fill=Scalar[Self.dtype](0)
         )
 
     @always_inline
     def __init__(
         out self,
-        upper: InlineArray[Scalar[Self.dtype], Self.frag_size],
-        lower: InlineArray[Scalar[Self.dtype], Self.frag_size],
+        upper: Array[Scalar[Self.dtype], Self.frag_size],
+        lower: Array[Scalar[Self.dtype], Self.frag_size],
     ):
         """Initialize with provided fragments.
 
         Args:
-            upper: `InlineArray` of accumulator data for rows 0-15.
-            lower: `InlineArray` of accumulator data for rows 16-31.
+            upper: `Array` of accumulator data for rows 0-15.
+            lower: `Array` of accumulator data for rows 16-31.
         """
         self.upper = upper.copy()
         self.lower = lower.copy()
@@ -1104,13 +1104,13 @@ struct TmemStage[
         data_paths: Int = 16,
         bits: Int = 256,
         repeat: Int = 4,
-    ](self) -> InlineArray[Scalar[dtype], frag_size]:
+    ](self) -> Array[Scalar[dtype], frag_size]:
         """Load upper accumulator fragment (rows 0-15).
 
         Parameters:
             dtype: Element type to load from TMEM.
             frag_size: Total number of elements per row in the returned
-                `InlineArray`.
+                `Array`.
             data_paths: Number of SM100 TMEM data paths (defaults to 16).
             bits: Bits loaded per data path per repeat (defaults to 256).
             repeat: Number of times to repeat the load pattern (defaults
@@ -1127,13 +1127,13 @@ struct TmemStage[
         data_paths: Int = 16,
         bits: Int = 256,
         repeat: Int = 4,
-    ](self) -> InlineArray[Scalar[dtype], frag_size]:
+    ](self) -> Array[Scalar[dtype], frag_size]:
         """Load lower accumulator fragment (rows 16-31).
 
         Parameters:
             dtype: Element type to load from TMEM.
             frag_size: Total number of elements per row in the returned
-                `InlineArray`.
+                `Array`.
             data_paths: Number of SM100 TMEM data paths (defaults to 16).
             bits: Bits loaded per data path per repeat (defaults to 256).
             repeat: Number of times to repeat the load pattern (defaults

@@ -12,7 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Test loading and executing an external cubin binary."""
 
-from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
+from max.gpu.host import (
+    DeviceContext,
+)
+from max.gpu.host import DeviceGraph, DeviceGraphBuilder
 from std.gpu.host.device_context import DeviceExternalFunction
 from std.os import getenv
 from std.testing import assert_equal

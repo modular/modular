@@ -20,7 +20,7 @@ from std.gpu import (
     lane_id,
     WARP_SIZE,
 )
-from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
+from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from layout import Coord, Idx, stack_allocation, TileTensor
 from layout.tile_layout import row_major, blocked_product
 from std.sys import has_accelerator
@@ -104,7 +104,7 @@ def tile_tensor_vectorized_example() raises:
     comptime rows = 64
     comptime columns = 64
     comptime layout = row_major[rows, columns]()
-    var storage = InlineArray[Scalar[dtype], rows * columns](uninitialized=True)
+    var storage = Array[Scalar[dtype], rows * columns](uninitialized=True)
     for i in range(rows * columns):
         storage[i] = Int32(i)
     var tensor = TileTensor(storage, layout)

@@ -25,7 +25,7 @@ Supports two write modes:
 from std.sys import align_of, simd_width_of, size_of
 
 from std.gpu import WARP_SIZE, thread_idx, lane_id, warp_id as get_warp_id
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.sync import named_barrier
 from layout import (
@@ -236,10 +236,10 @@ struct BlockwiseFP8TileWriter[
             # Cast from accum_type to c_type in SIMD chunks of at
             # least 4 bytes for efficient hardware cast instructions.
             comptime frag_size = Self.epc.fragment_size * Self.repeats
-            var upper_st = InlineArray[Scalar[Self.c_type], frag_size](
+            var upper_st = Array[Scalar[Self.c_type], frag_size](
                 uninitialized=True
             )
-            var lower_st = InlineArray[Scalar[Self.c_type], frag_size](
+            var lower_st = Array[Scalar[Self.c_type], frag_size](
                 uninitialized=True
             )
 
@@ -258,8 +258,8 @@ struct BlockwiseFP8TileWriter[
                     upper_st[offset + _j] = casted_u[_j]
                     lower_st[offset + _j] = casted_l[_j]
             smem_writer.write_fragments[Self.repeats](
-                rebind[InlineArray[Scalar[Self.c_type], frag_size]](upper_st),
-                rebind[InlineArray[Scalar[Self.c_type], frag_size]](lower_st),
+                rebind[Array[Scalar[Self.c_type], frag_size]](upper_st),
+                rebind[Array[Scalar[Self.c_type], frag_size]](lower_st),
                 c_smem_tile,
             )
 
@@ -409,9 +409,9 @@ struct BlockwiseFP8TileWriter[
             ](0, 0)
             # Cast in SIMD chunks of at least 4 bytes for efficient
             # hardware cast instructions.
-            var upper_st = InlineArray[
-                Scalar[Self.c_type], Self.fragments_per_stage
-            ](uninitialized=True)
+            var upper_st = Array[Scalar[Self.c_type], Self.fragments_per_stage](
+                uninitialized=True
+            )
 
             comptime cast_width = 4 // size_of[Scalar[Self.c_type]]()
             comptime for _chunk in range(
@@ -432,7 +432,7 @@ struct BlockwiseFP8TileWriter[
             ](1, 0)
 
             comptime if Self.is_lower_frag_required:
-                var lower_st = InlineArray[
+                var lower_st = Array[
                     Scalar[Self.c_type], Self.fragments_per_stage
                 ](uninitialized=True)
 
@@ -553,16 +553,18 @@ struct BlockwiseFP8TileWriter[
                     var dst_offset = c_tensor.layout(
                         Coord(Int(global_i), Int(global_j))
                     )
-                    var dst_ptr = c_tensor.ptr + Int(dst_offset)
+                    var dst_ptr = c_tensor._storage + Int(dst_offset)
 
                     comptime if size_of[Self.c_type]() == 2:
-                        var src_ptr = c_smem_split.ptr + swizzle(linear_idx)
+                        var src_ptr = c_smem_split._storage + swizzle(
+                            linear_idx
+                        )
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
                         dst_ptr.store[width=simd_size, alignment=alignment](src)
                     else:
-                        var src_ptr = c_smem_split.ptr + linear_idx
+                        var src_ptr = c_smem_split._storage + linear_idx
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()

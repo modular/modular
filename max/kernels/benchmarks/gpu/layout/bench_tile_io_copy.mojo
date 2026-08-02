@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Benchmarks tile_io copy helpers against LayoutTensor copy helpers."""
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -20,8 +21,8 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.compile import get_gpu_target
+from max.gpu.host import DeviceContext
+from max.gpu.host.compile import get_gpu_target
 from std.gpu.memory import AddressSpace
 from std.memory import bitcast
 from std.os import abort
@@ -555,7 +556,7 @@ def bench_copy_roundtrip[
                 block_dim=(num_threads,),
             )
 
-        b.iter_custom(tile_io_roundtrip_launch, ctx)
+        bencher_iter_custom(b, tile_io_roundtrip_launch, ctx)
 
     @always_inline
     def bench_layout_tensor_roundtrip(mut b: Bencher) {var}:
@@ -574,7 +575,7 @@ def bench_copy_roundtrip[
                 block_dim=(num_threads,),
             )
 
-        b.iter_custom(layout_tensor_roundtrip_launch, ctx)
+        bencher_iter_custom(b, layout_tensor_roundtrip_launch, ctx)
 
     @always_inline
     def bench_tile_io_dram_to_sram(mut b: Bencher) {var}:
@@ -587,7 +588,7 @@ def bench_copy_roundtrip[
                 block_dim=(num_threads,),
             )
 
-        b.iter_custom(tile_io_dram_to_sram_launch, ctx)
+        bencher_iter_custom(b, tile_io_dram_to_sram_launch, ctx)
 
     @always_inline
     def bench_layout_tensor_dram_to_sram(mut b: Bencher) {var}:
@@ -603,7 +604,7 @@ def bench_copy_roundtrip[
                 block_dim=(num_threads,),
             )
 
-        b.iter_custom(layout_tensor_dram_to_sram_launch, ctx)
+        bencher_iter_custom(b, layout_tensor_dram_to_sram_launch, ctx)
 
     @always_inline
     def bench_tile_io_sram_to_dram(mut b: Bencher) {var}:
@@ -616,7 +617,7 @@ def bench_copy_roundtrip[
                 block_dim=(num_threads,),
             )
 
-        b.iter_custom(tile_io_sram_to_dram_launch, ctx)
+        bencher_iter_custom(b, tile_io_sram_to_dram_launch, ctx)
 
     @always_inline
     def bench_layout_tensor_sram_to_dram(mut b: Bencher) {var}:
@@ -632,7 +633,7 @@ def bench_copy_roundtrip[
                 block_dim=(num_threads,),
             )
 
-        b.iter_custom(layout_tensor_sram_to_dram_launch, ctx)
+        bencher_iter_custom(b, layout_tensor_sram_to_dram_launch, ctx)
 
     comptime roundtrip_bytes = 2 * num_elements * size_of[dtype]()
     comptime one_way_bytes = num_elements * size_of[dtype]()

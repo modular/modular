@@ -14,6 +14,7 @@
 from std.math import isclose, rsqrt
 from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -22,7 +23,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
 from layout import Idx, TileTensor, row_major
@@ -155,7 +156,7 @@ def run_mha[
                     num_partitions if num_partitions > 0 else Optional[Int](),
                 )
 
-            b.iter_custom[_kernel_launch](ctx)
+            bencher_iter_custom[_kernel_launch](b, ctx)
 
         def compute_flops() {imm} -> Int:
             # Using causal mask, skip half of tiles.

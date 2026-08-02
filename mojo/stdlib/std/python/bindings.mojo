@@ -27,7 +27,7 @@ from std.collections import StringDict
 
 from std.builtin._startup import _ensure_runtime_init
 from std.reflection import reflect
-from std.memory import OpaquePointer, stack_allocation
+from std.memory import OpaquePointer, unsafe_stack_allocation
 from std.python import Python, PythonObject
 from std.python._cpython import (
     GILAcquired,
@@ -135,7 +135,9 @@ def lookup_py_type_object[T: AnyType]() raises -> PythonObject:
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
 
-struct PyMojoObject[T: ImplicitlyDeletable]:
+struct PyMojoObject[T: ImplicitlyDeletable](
+    Movable where conforms_to(T, Movable)
+):
     """Storage backing a PyObject* wrapping a Mojo value.
 
     This struct represents the C-level layout of a Python object that contains
@@ -459,7 +461,7 @@ struct PythonModuleBuilder:
 
         Accepts functions with PythonObject arguments (up to 8), can optionally
         return a PythonObject, and can raise. Functions can also accept keyword
-        arguments via `**kwargs: PythonObject`.
+        arguments via `var **kwargs: PythonObject`.
 
         Non-kwargs callables register through CPython's `METH_FASTCALL`
         calling convention; kwargs-accepting callables use
@@ -471,8 +473,8 @@ struct PythonModuleBuilder:
 
         def func(arg1: PythonObject) -> PythonObject: ...
         def func(arg1: PythonObject, arg2: PythonObject) raises: ...
-        def func(**kwargs: PythonObject) -> PythonObject: ...
-        def func(arg1: PythonObject, **kwargs: PythonObject) raises: ...
+        def func(var **kwargs: PythonObject) -> PythonObject: ...
+        def func(arg1: PythonObject, var **kwargs: PythonObject) raises: ...
         ```
 
         Parameters:
@@ -652,7 +654,10 @@ struct PythonTypeBuilder(Copyable):
         if self.methods:
             self.methods.append(PyMethodDef())  # Zeroed item as terminator
             # FIXME: Avoid leaking the methods data pointer in this way.
-            self._insert_slot(PyType_Slot.tp_methods(self.methods.steal_data()))
+            var methods_ptr = (
+                self.methods.unsafe_take_allocation().unsafe_leak()
+            )
+            self._insert_slot(PyType_Slot.tp_methods(methods_ptr))
 
         # Convert _slots dictionary to a list of PyType_Slot structs
         var slots = List[PyType_Slot]()
@@ -664,7 +669,7 @@ struct PythonTypeBuilder(Copyable):
 
         var type_spec = PyType_Spec(
             # FIXME(MOCO-1306): This should be `T.__name__`.
-            self.type_name.unsafe_ptr().bitcast[c_char](),
+            self.type_name.unsafe_ptr().unsafe_bitcast[c_char](),
             c_int(self.basicsize),
             0,
             Py_TPFLAGS_DEFAULT,
@@ -1590,34 +1595,11 @@ def _try_convert_arg[
         )
 
 
-def _try_convert_arg[
-    T: type_of(Int)
-](
-    func_name: StringSlice, py_args: PythonObject, argidx: Int, out result: Int
-) raises:
-    try:
-        result = T(py=py_args[argidx])
-    except convert_err:
-        raise Error(
-            "TypeError: ",
-            func_name,
-            "() expected argument at position ",
-            argidx,
-            " to be instance of (or convertible to) Mojo '",
-            reflect[T].name(),
-            "'; got '",
-            _get_type_name(py_args[argidx]),
-            "'. (Note: attempted conversion failed due to: ",
-            convert_err,
-            ")",
-        )
-
-
 # NOTE:
-#   @always_inline is needed so that the stack_allocation() that appears in
-#   the definition below is valid in the _callers_ stack frame, effectively
-#   allowing us to "return" a pointer to stack-allocated data from this
-#   function.
+#   @always_inline is needed so that the unsafe_stack_allocation() that
+#   appears in the definition below is valid in the _callers_ stack frame,
+#   effectively allowing us to "return" a pointer to stack-allocated data
+#   from this function.
 @always_inline
 def check_and_get_or_convert_arg[
     T: ConvertibleFromPython
@@ -1646,58 +1628,15 @@ def check_and_get_or_convert_arg[
     """
 
     # Stack space to hold a converted value for this argument, if needed.
-    var converted_arg_ptr = stack_allocation[1, T]().as_unsafe_any_origin()
+    var converted_arg_ptr = unsafe_stack_allocation[
+        1, T
+    ]().as_unsafe_any_origin()
 
     try:
         return check_and_get_arg[T](func_name, py_args, index)
     except e:
         converted_arg_ptr.unsafe_write(
             _try_convert_arg[T](
-                func_name,
-                py_args,
-                index,
-            )
-        )
-        # Return a pointer to stack data. Only valid because this function is
-        # @always_inline.
-        return converted_arg_ptr
-
-
-@always_inline
-def check_and_get_or_convert_arg[
-    T: type_of(Int)
-](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
-    Int, MutAnyOrigin
-]:
-    """Get the argument at the given index and convert it to a given Mojo type.
-
-    If the argument cannot be directly downcast to the given type, it will be
-    converted to it.
-
-    Parameters:
-        T: The Mojo type to downcast or convert the argument to.
-
-    Args:
-        func_name: The name of the function referenced in the error message if
-            the downcast fails.
-        py_args: The Python tuple object containing the arguments.
-        index: The index of the argument.
-
-    Returns:
-        A pointer to the Mojo value contained in or converted from the argument.
-
-    Raises:
-        If the argument cannot be downcast or converted to the given type.
-    """
-
-    # Stack space to hold a converted value for this argument, if needed.
-    var converted_arg_ptr = stack_allocation[1, Int]().as_unsafe_any_origin()
-
-    try:
-        return check_and_get_arg[Int](func_name, py_args, index)
-    except e:
-        converted_arg_ptr.unsafe_write(
-            _try_convert_arg[Int](
                 func_name,
                 py_args,
                 index,

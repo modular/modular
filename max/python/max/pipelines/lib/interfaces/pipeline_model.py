@@ -17,13 +17,11 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
 
-import numpy as np
-import numpy.typing as npt
 from max.driver import (
     Buffer,
     Device,
@@ -47,12 +45,18 @@ from max.pipelines.kv_cache.config import (
     KVCacheConfig,
     cache_dtype_for_encoding,
 )
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.utils import (
     CompilationTimer,
     parse_state_dict_from_weights,
 )
 from max.pipelines.lora import LoRAInputs, LoRAManager
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -174,6 +178,12 @@ class ModelInputs:
 
     .. code-block:: python
 
+        from dataclasses import dataclass
+
+        from max.driver import Buffer
+        from max.dtype import DType
+        from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
+
         @dataclass
         class ReplitInputs(ModelInputs):
             tokens: Buffer
@@ -187,7 +197,8 @@ class ModelInputs:
         inputs = ReplitInputs(tokens=tokens, input_row_offsets=input_row_offsets)
 
         # Access tensors
-        list(inputs) == [tokens, input_row_offsets]  # Output: True
+        assert inputs.tokens is tokens
+        assert inputs.input_row_offsets is input_row_offsets
     """
 
     kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None
@@ -198,15 +209,16 @@ class ModelInputs:
     lora: LoRAInputs | None = None
     """Per-batch LoRA adapter buffers, or ``None`` when LoRA is disabled."""
 
-    vision_embeddings: list[Buffer] | None = None
-    """Assembled per-device vision embeddings for this step, set by the
-    pipeline from the ``VisionEncoderCache`` (an input, like
-    :attr:`kv_cache_inputs`). ``None`` on text-only / no-vision steps, where
-    the model uses its own empties."""
+    vision_embeddings: list[Buffer] = field(default_factory=list)
+    """Per-device vision-merge embedding inputs for the language graph, set
+    by the pipeline's vision seam (``finalize_vision_inputs``) on every
+    prepared batch of a vision-capable model: the assembled embeddings when
+    this step encoded images, the model's cached zero-row empties otherwise.
+    Stays empty for text-only architectures."""
 
-    vision_scatter_indices: npt.NDArray[np.int32] | None = None
-    """Scatter (merge) indices for :attr:`vision_embeddings`, set by the
-    pipeline alongside it; the model copies them to device."""
+    vision_scatter_indices: list[Buffer] = field(default_factory=list)
+    """Per-device merge (scatter) indices for :attr:`vision_embeddings`,
+    with the same lifecycle."""
 
     hidden_states: Buffer | list[Buffer] | None = None
     """Hidden states for a variable number of tokens per sequence.
@@ -455,12 +467,35 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return Signals.allocate(self.devices)
 
     @property
+    def _resolved_encoding(self) -> SupportedEncoding:
+        """The effective quantization encoding for this model.
+
+        The config holds only the raw user value (possibly ``None``); encoding
+        resolution lives in the consumer. Resolve here against the
+        architecture's ``DEFAULT_ENCODING`` (the same value
+        ``ArchConfig.initialize`` uses), for the generic consumers that hold
+        only the config class rather than a built ``ArchConfig``.
+        """
+        model_config = self.pipeline_config.model
+        default = getattr(
+            getattr(type(self), "model_config_cls", None),
+            "DEFAULT_ENCODING",
+            None,
+        )
+        if default is not None:
+            return _select_quantization_encoding(model_config, default)
+        encoding = model_config.quantization_encoding
+        if encoding is None:
+            raise ValueError(
+                "quantization_encoding could not be resolved for "
+                f"'{model_config.model_path}'."
+            )
+        return encoding
+
+    @property
     def dtype(self) -> DType:
-        """Returns the model data type from pipeline config."""
-        quantization_encoding = self.pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
-        return supported_encoding_dtype(quantization_encoding)
+        """Returns the model data type."""
+        return supported_encoding_dtype(self._resolved_encoding)
 
     @property
     def sampler_custom_extensions(self) -> Sequence[Path]:
@@ -772,7 +807,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             devices=self.device_refs,
             kv_cache_config=self.kv_cache_config,
             cache_dtype=cache_dtype_for_encoding(
-                self.pipeline_config.model.quantization_encoding,
+                self._resolved_encoding,
                 self.pipeline_config.model.kv_cache.kv_cache_format,
             ),
         )

@@ -96,10 +96,10 @@ But performance alone isn't enough. We're equally focused on:
 The conclusion of phase 1 is the natural point to **open source the Mojo
 compiler**.
 
-### Generics and metaprogramming features
+### Parameterized types and metaprogramming features
 
-The backbone of phase 1 is Mojo's **metaprogramming system**, combined with
-a **modern generic type system** that catches errors at compile time, before
+The backbone of phase 1 is Mojo's **metaprogramming system**, combined with a
+**modern parameterized type system** that catches errors at compile time, before
 code is instantiated. The following features capture how we think Mojo should
 evolve, but may change as we grow into them:
 
@@ -127,7 +127,7 @@ therefore support higher order functions like `map` that propagate the
   closures.
 
 - ✅ **`where` clauses**: Enable early constraint checking and better error
-messages for generics. See the
+messages for parameterized declarations. See the
 [where clauses proposal](https://github.com/modular/modular/blob/main/mojo/proposals/where_clauses.md).
 
 - ✅ **Conditional conformance**: Allow trait conformance based on predicates
@@ -232,8 +232,8 @@ potentially file system APIs) in phase 1.
 <Alert icon="⏰" title="NOT STARTED" color="danger"
        style={{ marginTop: '-20px' }} />
 
-Once the core generic type system and systems programming features converge and
-stabilize, we'll begin expanding Mojo to support application-level
+Once the core parameterized type system and systems programming features
+converge and stabilize, we'll begin expanding Mojo to support application-level
 programming—the kinds of problems typically addressed with languages like Rust
 and C++.
 

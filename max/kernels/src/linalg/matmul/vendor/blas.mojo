@@ -94,7 +94,7 @@ from _rocblas.rocblas import (
     rocblas_create_handle,
     rocblas_destroy_handle,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
 from layout import (
@@ -109,11 +109,13 @@ from layout import (
 )
 from layout.tile_tensor import NullableTileTensor
 from std.memory.alloc import Layout as AllocLayout
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils import IndexList
 from std.utils.variant import Variant
-from std.gpu.host.info import B200, _is_sm10x_gpu, _is_sm12x_gpu
+from max.gpu.host.info import B200, _is_sm10x_gpu, _is_sm12x_gpu
 from std.collections import OptionalReg
+
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
@@ -212,7 +214,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     """
 
     comptime resolved_backend = _resolve_backend[Self.backend]()
-    comptime _cublas_type = Optional[OpaquePointer[AnyOrigin[mut=True]]]
+    comptime _cublas_type = Optional[OpaquePointer[MutAnyOrigin]]
     comptime _rocblas_type = _rocblas.Handle
     comptime _hipblaslt_type = hipblasLtHandle_t
     comptime type = Variant[
@@ -313,26 +315,26 @@ comptime _DEBUG_VENDOR_BLAS = False
 @always_inline
 def _ffi_void_ptr[
     T: AnyType, origin: Origin, addr: AddressSpace
-](ptr: UnsafePointer[T, origin, address_space=addr]) -> UnsafePointer[
-    NoneType, MutAnyOrigin
+](ptr: UnsafePointer[T, origin, address_space=addr]) -> OpaquePointer[
+    MutAnyOrigin
 ]:
     """Cast any pointer to a void pointer for vendor FFI calls."""
-    return rebind[UnsafePointer[NoneType, MutAnyOrigin]](ptr)
+    return rebind[OpaquePointer[MutAnyOrigin]](ptr)
 
 
 @always_inline
 def _ffi_void_ptr[
     T: AnyType, origin: Origin, addr: AddressSpace
-](ptr: Optional[UnsafePointer[T, origin, address_space=addr]]) -> Optional[
-    UnsafePointer[NoneType, MutAnyOrigin]
-]:
+](
+    ptr: Optional[UnsafePointer[T, origin, address_space=addr]]
+) -> OptionalPointer[NoneType, MutAnyOrigin]:
     """Cast an optional non-null pointer to a nullable void pointer for vendor
     FFI calls.
 
     Returns None when the optional is empty.
     """
     if ptr:
-        return rebind[UnsafePointer[NoneType, MutAnyOrigin]](ptr.unsafe_value())
+        return rebind[OpaquePointer[MutAnyOrigin]](ptr.unsafe_value())
     return None
 
 
@@ -367,7 +369,7 @@ def _get_global_handle[
 ](ctx: DeviceContext) raises -> Handle[backend]:
     var HANDLE_NAME = String(t"LINALG_VENDOR_BLAS_{backend}_{ctx.id()}")
     if global_ptr := _get_global_or_null(HANDLE_NAME):
-        var ptr = global_ptr.value().bitcast[Handle[backend]]()
+        var ptr = global_ptr.value().unsafe_bitcast[Handle[backend]]()
         _attach_handle_to_stream(ctx, ptr[])
         return ptr[]
 
@@ -663,7 +665,7 @@ def matmul[
         elif handle.resolved_backend is Backend.CUBLASLT:
             _cublasLt_matmul(
                 ctx,
-                _ffi_void_ptr(handle._get_cublas()),
+                handle._get_cublas(),
                 c_tensor,
                 a_tensor,
                 b_tensor,
@@ -807,7 +809,7 @@ def _cublas_matmul[
                 Int32(K),
                 UnsafePointer(to=alpha)
                 .bitcast[NoneType]()
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),
                 _ffi_void_ptr(b.ptr),
                 _convert_to_cublas_datatype[b_type](),
@@ -817,7 +819,7 @@ def _cublas_matmul[
                 a_lead,
                 UnsafePointer(to=beta)
                 .bitcast[NoneType]()
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),
                 _ffi_void_ptr(c.ptr),
                 _convert_to_cublas_datatype[c_type](),
@@ -853,7 +855,7 @@ def _cublas_matmul[
             Int32(K),
             UnsafePointer(to=alpha)
             .bitcast[NoneType]()
-            .as_immutable()
+            .as_imm()
             .as_unsafe_any_origin(),
             _ffi_void_ptr(a.ptr),
             _convert_to_cublas_datatype[a_type](),
@@ -863,7 +865,7 @@ def _cublas_matmul[
             Int32(N) if transpose_b else Int32(K),
             UnsafePointer(to=beta)
             .bitcast[NoneType]()
-            .as_immutable()
+            .as_imm()
             .as_unsafe_any_origin(),
             _ffi_void_ptr(c.ptr),
             _convert_to_cublas_datatype[c_type](),
@@ -1122,7 +1124,7 @@ def _cublasLt_matmul[
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSA,
             UnsafePointer(to=transa)
             .bitcast[NoneType]()
-            .as_immutable()
+            .as_imm()
             .as_unsafe_any_origin(),
             size_of[cublasOperation_t](),
         ),
@@ -1134,7 +1136,7 @@ def _cublasLt_matmul[
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSB,
             UnsafePointer(to=transb)
             .bitcast[NoneType]()
-            .as_immutable()
+            .as_imm()
             .as_unsafe_any_origin(),
             size_of[cublasOperation_t](),
         ),
@@ -1234,7 +1236,7 @@ def _cublasLt_matmul[
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_MODE,
                     UnsafePointer(to=a_scale_mode)
                     .bitcast[NoneType]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin(),
                     size_of[Int32](),
                 ),
@@ -1249,7 +1251,7 @@ def _cublasLt_matmul[
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_MODE,
                     UnsafePointer(to=b_scale_mode)
                     .bitcast[NoneType]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin(),
                     size_of[Int32](),
                 ),
@@ -1265,7 +1267,7 @@ def _cublasLt_matmul[
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_POINTER,
                     UnsafePointer(to=a_scale_ptr)
                     .bitcast[NoneType]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin(),
                     size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
                 ),
@@ -1280,7 +1282,7 @@ def _cublasLt_matmul[
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_POINTER,
                     UnsafePointer(to=b_scale_ptr)
                     .bitcast[NoneType]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin(),
                     size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
                 ),
@@ -1358,7 +1360,7 @@ def _cublasLt_matmul[
             Preference.MAX_WORKSPACE_BYTES,
             UnsafePointer(to=workspace_size)
             .bitcast[NoneType]()
-            .as_immutable()
+            .as_imm()
             .as_unsafe_any_origin(),
             size_of[Int64](),
         ),
@@ -1393,6 +1395,7 @@ def _cublasLt_matmul[
         workspace_size
     )
 
+    var d_void = _ffi_void_ptr(d.ptr)
     if c_row_major:
         check_cublas_error(
             cublasLtMatmul(
@@ -1400,22 +1403,22 @@ def _cublasLt_matmul[
                 compute_desc,  # compute_desc
                 UnsafePointer(to=alpha)
                 .bitcast[NoneType]()
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),
                 _ffi_void_ptr(b.ptr),
                 _adesc,  # _adesc
-                _ffi_void_ptr(a.ptr).as_immutable(),  # _b
+                _ffi_void_ptr(a.ptr).as_imm(),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta)
                 .bitcast[NoneType]()
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),  # beta
                 None,  # _c
                 _cdesc,  # _cdesc
-                _ffi_void_ptr(d.ptr),  # _d
+                d_void,  # _d
                 _ddesc,  # _ddesc
                 UnsafePointer(to=heuristic_result.algo)
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),  # algo
                 matmul_workspace.unsafe_ptr()
                 .bitcast[NoneType]()
@@ -1432,22 +1435,22 @@ def _cublasLt_matmul[
                 compute_desc,  # compute_desc
                 UnsafePointer(to=alpha)
                 .bitcast[NoneType]()
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),  # alpha
                 _ffi_void_ptr(a.ptr),  # _a
                 _adesc,  # _adesc
-                _ffi_void_ptr(b.ptr).as_immutable(),  # _b
+                _ffi_void_ptr(b.ptr).as_imm(),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta)
                 .bitcast[NoneType]()
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),  # beta
                 None,  # _c
                 _cdesc,  # _cdesc
-                _ffi_void_ptr(d.ptr),  # _d
+                d_void,  # _d
                 _ddesc,  # _ddesc
                 UnsafePointer(to=heuristic_result.algo)
-                .as_immutable()
+                .as_imm()
                 .as_unsafe_any_origin(),  # algo
                 matmul_workspace.unsafe_ptr()
                 .bitcast[NoneType]()
@@ -1726,6 +1729,7 @@ def _hipblasLt_matmul[
     var workspace_size = heuristicResult.workspaceSize
     var workspace = ctx.enqueue_create_buffer[DType.uint8](workspace_size)
 
+    var d_void = _ffi_void_ptr(d.ptr)
     if c_row_major:
         _check_hipblas_error(
             hipblasLtMatmul(
@@ -1737,9 +1741,9 @@ def _hipblasLt_matmul[
                 _ffi_void_ptr(a.ptr),
                 _bdesc,
                 UnsafePointer(to=beta).bitcast[NoneType](),
-                _ffi_void_ptr(d.ptr),
+                d_void,
                 _ddesc,
-                _ffi_void_ptr(d.ptr),
+                d_void,
                 _ddesc,
                 UnsafePointer(to=heuristicResult.algo),
                 workspace.unsafe_ptr().bitcast[NoneType](),
@@ -1758,9 +1762,9 @@ def _hipblasLt_matmul[
                 _ffi_void_ptr(b.ptr),
                 _bdesc,
                 UnsafePointer(to=beta).bitcast[NoneType](),
-                _ffi_void_ptr(d.ptr),
+                d_void,
                 _ddesc,
-                _ffi_void_ptr(d.ptr),
+                d_void,
                 _ddesc,
                 UnsafePointer(to=heuristicResult.algo),
                 workspace.unsafe_ptr().bitcast[NoneType](),

@@ -48,11 +48,11 @@ from layout.tensor_core_async import (
 
 from linalg.arch.sm100.mma import smem_descriptor
 
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from std.gpu.memory import fence_async_view_proxy
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAKind,
 )
@@ -907,6 +907,11 @@ struct SM100MLA[
         # omitted param defaults to literal `False`, a DIFFERENT type from the
         # `config.fa4_config.use_ws` expression, and the two would not convert.
         use_ws=Self.config.fa4_config.use_ws,
+        # Same expression as SM100AttentionSMem.MiscMBarsType, for the same
+        # type-identity reason as use_ws above. MLA always resolves this to
+        # False (rope_depth() > 0), which is what keeps MLA's mbar accounting
+        # byte-identical to cross-P-off.
+        crossp=Self.config.fa4_config.crossp_on(),
     ]
 
     @staticmethod

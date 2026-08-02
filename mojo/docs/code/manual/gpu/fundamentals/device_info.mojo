@@ -18,7 +18,7 @@ from std.sys import (
     has_apple_gpu_accelerator,
 )
 
-from std.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceAttribute, DeviceContext
 
 
 def main() raises:

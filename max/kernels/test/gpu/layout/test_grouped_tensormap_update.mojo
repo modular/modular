@@ -35,8 +35,8 @@ This pattern is based on NVIDIA CuTe DSL's grouped block-scaled GEMM which uses
 from std.sys import size_of
 
 from std.gpu import barrier
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TMADescriptor
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TMADescriptor
 from std.gpu import block_idx, thread_idx
 from std.gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
@@ -50,7 +50,7 @@ from layout.tma_async import (
     TMATensorTile,
     TMATensorTileArray,
 )
-from std.memory import stack_allocation, UnsafePointer
+from std.memory import unsafe_stack_allocation, UnsafePointer
 
 from std.utils.index import Index, IndexList
 
@@ -139,15 +139,15 @@ def test_grouped_tensormap_update_kernel[
     ].stack_allocation()
 
     # Allocate SMEM for tensormap descriptors
-    var smem_desc_a = stack_allocation[
+    var smem_desc_a = unsafe_stack_allocation[
         1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
     ]()
-    var smem_desc_b = stack_allocation[
+    var smem_desc_b = unsafe_stack_allocation[
         1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
     ]()
 
     # Allocate barriers
-    var mbar = stack_allocation[
+    var mbar = unsafe_stack_allocation[
         2, SharedMemBarrier, address_space=AddressSpace.SHARED, alignment=8
     ]()
 
@@ -242,7 +242,7 @@ def test_grouped_tensormap_update[
     comptime tile_layout = Layout.row_major(M, N)
     comptime num_blocks = 1  # Single block for this test
 
-    # Create per-group source tensors using InlineArray for non-copyable types
+    # Create per-group source tensors using Array for non-copyable types
     # Use tensor[update=False]() to avoid overwriting with uninitialized device memory
     # Use float32 to avoid bfloat16 precision issues during testing
 

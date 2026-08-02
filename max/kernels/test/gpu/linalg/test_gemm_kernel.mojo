@@ -15,7 +15,7 @@ from std.math import ceildiv, isclose
 from std.sys import argv
 
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx, warp_id
 from std.gpu.memory import async_copy_wait_all
 from std.gpu.sync import barrier
@@ -263,9 +263,9 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         c_ref_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )

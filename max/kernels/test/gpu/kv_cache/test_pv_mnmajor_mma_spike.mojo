@@ -54,11 +54,11 @@ from std.gpu import (
 )
 from std.gpu import block_idx
 from std.gpu.primitives.cluster import block_rank_in_cluster
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
 from std.gpu.memory import external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
 
 from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
@@ -168,8 +168,10 @@ def pv_mma_kernel[
         is_k_major=not use_native_mn,
     ],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_iters = Int(num_iters_dev)
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -232,7 +234,7 @@ def pv_mma_kernel[
 
     comptime accum_type = get_accum_type[ab_type]()
     comptime c_frag_size = MMA_M * MMA_N // num_threads
-    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
+    var c_frag: Array[Scalar[accum_type], c_frag_size]
 
     comptime p_expected_bytes = p_size * size_of[ab_type]()
     comptime v_expected_bytes = v_size * size_of[ab_type]()
@@ -473,7 +475,7 @@ def run_pv_spike[
             p_tma_op,
             v_tma_op,
             o.device_tensor(),
-            K // BK,
+            Int32(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
@@ -505,7 +507,7 @@ def run_pv_spike[
             p_tma_op,
             v_tma_op,
             o.device_tensor(),
-            K // BK,
+            Int32(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,

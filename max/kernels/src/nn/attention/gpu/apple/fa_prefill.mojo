@@ -46,11 +46,11 @@ from std.gpu import (
     syncwarp,
     warp_id,
 )
-from std.gpu.compute.arch.mma_apple import (
+from max.gpu.compute.arch.mma_apple import (
     _apple_frag_layout,
     _mma_apple_transposable,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.warp import shuffle_xor
 from std.math import ceildiv, exp2
@@ -138,7 +138,7 @@ comptime MMA_DIM = 16
 # The M5 16x16 simdgroup fragment owns TWO rows per lane (`rb` and `rb+8`), so
 # every per-row quantity is width-2 and the cross-lane reduction is an XOR
 # butterfly over the row-sharing lanes. The `(m, l)` state lives in kernel-local
-# `InlineArray[Float32, _SOFTMAX_FRAG_ROWS]`s that the `_softmax_*` free functions
+# `Array[Float32, _SOFTMAX_FRAG_ROWS]`s that the `_softmax_*` free functions
 # take and mutate.
 
 comptime _SOFTMAX_FRAG_ROWS = 2  # M5 lane owns rows {rb, rb+8} of each 16x16 subtile
@@ -146,8 +146,8 @@ comptime _SOFTMAX_FRAG_ROWS = 2  # M5 lane owns rows {rb, rb+8} of each 16x16 su
 
 @always_inline
 def _softmax_seed_sink(
-    mut sm_m: InlineArray[Float32, _SOFTMAX_FRAG_ROWS],
-    mut sm_l: InlineArray[Float32, _SOFTMAX_FRAG_ROWS],
+    mut sm_m: Array[Float32, _SOFTMAX_FRAG_ROWS],
+    mut sm_l: Array[Float32, _SOFTMAX_FRAG_ROWS],
     sink_weight: Float32,
 ):
     """Pre-seed `(m, l)` with a sink token's contribution (init-state trick).
@@ -169,14 +169,14 @@ def _softmax_row_max[
     num_n_mmas: Int
 ](
     scores: MmaOpApple[DType.float32, DType.float32, 1, num_n_mmas].AccumType,
-) -> InlineArray[Float32, _SOFTMAX_FRAG_ROWS]:
+) -> Array[Float32, _SOFTMAX_FRAG_ROWS]:
     """Full-row max over the single score row-block (across all `ni` cols).
 
     Returns `[rb_max, rb8_max]` for the two rows this lane owns. The per-fragment
     max is combined across the `num_n_mmas` column fragments in registers before a
     single XOR butterfly reduces the row-sharing lanes.
     """
-    var r = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](fill=NEG_INF)
+    var r = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=NEG_INF)
     comptime for ni in range(num_n_mmas):
         var frag = scores[ni]
         var r0 = max(max(frag[0], frag[1]), max(frag[2], frag[3]))
@@ -188,15 +188,15 @@ def _softmax_row_max[
     r[0] = max(r[0], shuffle_xor(r[0], UInt32(8)))
     r[1] = max(r[1], shuffle_xor(r[1], UInt32(1)))
     r[1] = max(r[1], shuffle_xor(r[1], UInt32(8)))
-    return r
+    return r^
 
 
 @always_inline
 def _softmax_update[
     num_n_mmas: Int, out_num_n_mmas: Int
 ](
-    mut sm_m: InlineArray[Float32, _SOFTMAX_FRAG_ROWS],
-    mut sm_l: InlineArray[Float32, _SOFTMAX_FRAG_ROWS],
+    mut sm_m: Array[Float32, _SOFTMAX_FRAG_ROWS],
+    mut sm_l: Array[Float32, _SOFTMAX_FRAG_ROWS],
     mut scores: MmaOpApple[
         DType.float32, DType.float32, 1, num_n_mmas
     ].AccumType,
@@ -220,20 +220,20 @@ def _softmax_update[
       5. `output *= alpha`
     """
     var m_tile = _softmax_row_max[num_n_mmas](scores)
-    var m_new = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
+    var m_new = Array[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
     m_new[0] = max(sm_m[0], m_tile[0])
     m_new[1] = max(sm_m[1], m_tile[1])
     # A still-fully-masked row keeps its running max at the finite NEG_INF floor
     # (finite, so the subtraction never NaNs), and resolves once its first real
     # key arrives in a later tile.
-    var alpha = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
+    var alpha = Array[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
     alpha[0] = exp2(sm_m[0] - m_new[0])
     alpha[1] = exp2(sm_m[1] - m_new[1])
 
     # Accumulate `l` from each P fragment while it is still register-live (vs a
     # second pass re-reading the written-back scores), shortening the softmax
     # dependency chain. One butterfly after the loop does the cross-lane reduction.
-    var l_acc = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(0))
+    var l_acc = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(0))
     comptime for ni in range(num_n_mmas):
         var p = scores[ni]
         var p_lo = exp2(
@@ -265,7 +265,7 @@ def _softmax_update[
 def _softmax_normalize[
     out_num_n_mmas: Int
 ](
-    sm_l: InlineArray[Float32, _SOFTMAX_FRAG_ROWS],
+    sm_l: Array[Float32, _SOFTMAX_FRAG_ROWS],
     mut output: MmaOpApple[
         DType.float32, DType.float32, 1, out_num_n_mmas
     ].AccumType,
@@ -280,7 +280,7 @@ def _softmax_normalize[
     window and the key range; causal always attends its own position and the sink
     seed keeps `l >= 1`, so the guard is a no-op there.
     """
-    var inv = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
+    var inv = Array[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
     inv[0] = Float32(1) / sm_l[0] if sm_l[0] > Float32(0) else Float32(0)
     inv[1] = Float32(1) / sm_l[1] if sm_l[1] > Float32(0) else Float32(0)
     comptime for ni in range(out_num_n_mmas):
@@ -326,12 +326,12 @@ def fa_prefill_apple_core[
     ],
     sink_weights: OptionalReg[TileTensor[q_type, sink_layout, ImmutAnyOrigin]],
     scale: Float32,
-    batch_size: Int,
-    max_prompt_len: Int,
-    max_cache_size: Int,
-    num_heads: Int,
-    depth: Int,
-    group: Int,
+    batch_size: Int32,
+    max_prompt_len: Int32,
+    max_cache_size: Int32,
+    num_heads: Int32,
+    depth: Int32,
+    group: Int32,
 ):
     """Per-simdgroup core of the prefill kernel.
 
@@ -405,6 +405,12 @@ def fa_prefill_apple_core[
         so a 16-key sub-tile never crosses a page boundary. Other page sizes are
         gated to `mha_gpu_naive` by the dispatcher.
     """
+    var _batch_size = Int(batch_size)
+    var _max_prompt_len = Int(max_prompt_len)
+    var _max_cache_size = Int(max_cache_size)
+    var _num_heads = Int(num_heads)
+    var _depth = Int(depth)
+    var _group = Int(group)
     comptime assert Depth % MMA_DIM == 0, "Depth must be a multiple of 16"
     comptime assert k_t.page_size == 0 or k_t.page_size % MMA_DIM == 0, (
         "fa_prefill_apple_core requires contiguous KV (page_size == 0) or a"
@@ -414,18 +420,16 @@ def fa_prefill_apple_core[
     comptime SQ = MMA_DIM
     comptime SK = NumNMmas * MMA_DIM
     comptime DEPTH_MMAS = Depth // MMA_DIM
-
-    debug_assert(depth == Depth, "runtime depth must match comptime Depth")
-
+    debug_assert(_depth == Depth, "runtime _depth must match comptime Depth")
     # 3D grid (num_q_tiles, num_heads, batch) read directly from block_idx. The x
     # reversal schedules the highest q-tile (most causal KV work) first so the
     # longest poles don't form the makespan tail; light low-row tiles backfill the
     # grid drain.
-    var num_q_tiles = ceildiv(max_prompt_len, NumSimdgroups * SQ)
+    var num_q_tiles = ceildiv(_max_prompt_len, NumSimdgroups * SQ)
     var q_tile_id = (num_q_tiles - 1) - Int(block_idx.x)
     var head_id = Int(block_idx.y)
     var batch_id = Int(block_idx.z)
-    var kv_head = head_id // group
+    var kv_head = head_id // _group
     var sg = Int(warp_id())  # this simdgroup's slot in the threadgroup
     var lane = Int(lane_id())
     var rb_cb = _apple_frag_layout(lane)
@@ -442,8 +446,8 @@ def fa_prefill_apple_core[
         seq_start = Int(valid_length[batch_id])
         var seq_end = Int(valid_length[batch_id + 1])
         cur_query_len = seq_end - seq_start
-        q_offset = depth * (seq_start * num_heads + head_id)
-        out_offset = (seq_start * num_heads + head_id) * depth
+        q_offset = _depth * (seq_start * _num_heads + head_id)
+        out_offset = (seq_start * _num_heads + head_id) * _depth
         comptime if _is_cache_length_accurate:
             cur_cache_len = cur_query_len
         else:
@@ -451,7 +455,7 @@ def fa_prefill_apple_core[
     elif _use_valid_length:
         seq_start = batch_id
         cur_query_len = Int(valid_length[batch_id])
-        q_offset = depth * (head_id + num_heads * max_prompt_len * batch_id)
+        q_offset = _depth * (head_id + _num_heads * _max_prompt_len * batch_id)
         out_offset = q_offset
         comptime if _is_cache_length_accurate:
             cur_cache_len = cur_query_len
@@ -459,10 +463,10 @@ def fa_prefill_apple_core[
             cur_cache_len = k.cache_length(batch_id) + cur_query_len
     else:
         seq_start = batch_id
-        cur_query_len = max_prompt_len
-        q_offset = depth * (head_id + num_heads * max_prompt_len * batch_id)
+        cur_query_len = _max_prompt_len
+        q_offset = _depth * (head_id + _num_heads * _max_prompt_len * batch_id)
         out_offset = q_offset
-        cur_cache_len = max_cache_size
+        cur_cache_len = _max_cache_size
 
     # Each simdgroup owns its own `SQ` contiguous rows within the threadgroup's
     # `NumSimdgroups*SQ`-row span. A simdgroup whose rows are entirely past the
@@ -475,9 +479,16 @@ def fa_prefill_apple_core[
     # row 0.
     var q_load_row0 = q_row0 if q_row0 < cur_query_len else 0
 
-    # Per-simdgroup Q view: bake the ragged/BSHD + q_row0 offset into the base;
-    # the row (token) stride is runtime (num_heads*depth), the depth stride 1.
-    var q_row_stride = num_heads * depth
+    # Q/output row stride is _num_heads*_depth (the BSHD / ragged head stride);
+    # _depth is contiguous. Build this simdgroup's SQ-row TileTensor view by
+    # baking the ragged/BSHD offset + the q_row0 row offset into the tile base,
+    # then descending to 16x16 sub-tiles with `.tile[16, 16]()`. The score MMA
+    # reads Q from this view; no raw pointer arithmetic in the QK loop.
+    # Q tile shape (SQ, Depth) -- extents comptime, the row (token) stride a
+    # runtime `Int` (_num_heads*_depth) and the inner _depth stride a comptime 1.
+    # Build the layout value, then derive the TileTensor type via `type_of`
+    # (the matmul idiom for a runtime-stride layout).
+    var q_row_stride = _num_heads * _depth
     var q_layout_val = TileLayout(
         Coord(Idx[SQ], Idx[Depth]), Coord(q_row_stride, Idx[1])
     )
@@ -486,10 +497,16 @@ def fa_prefill_apple_core[
         layout=q_layout_val,
     )
 
-    # KV in-page token stride, as the diff of two consecutive key pointers
-    # (robust to ragged-3D vs dense-4D layout). Tokens 0 and 1 always share a page
-    # (page_size >= 16), and we resolve the page per 16-key sub-tile below, so this
-    # in-page stride is the only stride a sub-tile load needs.
+    # KV token stride (within a page): difference of two consecutive key
+    # pointers. Robust to the ragged-3D vs dense-4D head layout, and for paged
+    # KV it is the IN-PAGE token stride: tokens 0 and 1 always share a page
+    # (page_size >= 16 > 1), and the paged blocks layout
+    # [total_blocks, page_size, _num_heads, head_size] makes consecutive in-page
+    # tokens contiguous with a constant stride (_num_heads*head_size). We resolve
+    # the page per 16-row sub-tile below, so this in-page stride is the only
+    # stride a sub-tile load ever needs. The stride feeds the sub-tile
+    # TileTensor's layout (`kv_layout_val`), so `MmaOpApple` reads it via
+    # `_row_stride` -- no manual `ptr + row*stride` arithmetic in the load.
     var k_base0 = k.block_paged_ptr[1](
         UInt32(batch_id), UInt32(0), UInt32(kv_head), 0
     )
@@ -532,8 +549,8 @@ def fa_prefill_apple_core[
     var out_mma = OutMma()
     var output_accum = OutMma.zero_accum()
     # Online-softmax state, seeded m = NEG_INF, l = 0 (see `_softmax_*`).
-    var sm_m = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](fill=NEG_INF)
-    var sm_l = InlineArray[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(0))
+    var sm_m = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=NEG_INF)
+    var sm_l = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(0))
 
     comptime if sink:
         # Pre-seed (m, l) from the per-head sink weight (indexed by head_id). The
@@ -772,9 +789,7 @@ def fa_prefill_apple_core[
             # fragment loads before the MMAs consume them so the strided reads
             # overlap (~2x read BW) and the PV MMAs run back-to-back. Batching
             # wider than DEPTH_MMAS regressed (over-reserved registers).
-            var v_frags = InlineArray[SIMD[q_type, 8], DEPTH_MMAS](
-                uninitialized=True
-            )
+            var v_frags = Array[SIMD[q_type, 8], DEPTH_MMAS](uninitialized=True)
             if sk_tile_full:
                 comptime for ni in range(DEPTH_MMAS):
                     v_frags[ni] = out_mma.load_fragment[v_t.dtype](
@@ -848,8 +863,9 @@ def fa_prefill_apple_core[
 
 
 # ===-------------------------------------------------------------------=== #
-# Host launcher: dispatches the runtime `depth` to a compile-time `Depth`
-# specialization over multiples of 16.
+# Host launcher. Mirrors `mha_gpu_naive` / `naive_fa_decode_apple` (MHAOperand
+# overload) signature; enqueues the prefill kernel. Dispatches the runtime
+# `_depth` to a compile-time `Depth` specialization over multiples of 16.
 # ===-------------------------------------------------------------------=== #
 def fa_prefill_apple[
     output_type: DType,
@@ -957,7 +973,7 @@ def fa_prefill_apple[
     # Flatten the LayoutTensor ABI to 1D TileTensors; the kernel bakes the
     # ragged/BSHD + q_row0 offset into each per-simdgroup tile base.
     var q_flat = TileTensor(
-        q.ptr.as_immutable().as_unsafe_any_origin(),
+        q.ptr.as_imm().as_unsafe_any_origin(),
         row_major(Coord(Int(q.size()))),
     )
     var output_flat = TileTensor(
@@ -965,7 +981,7 @@ def fa_prefill_apple[
         row_major(Coord(Int(output.size()))),
     )
     var valid_length_flat = TileTensor(
-        valid_length.ptr.as_immutable().as_unsafe_any_origin(),
+        valid_length.ptr.as_imm().as_unsafe_any_origin(),
         row_major(Coord(Int(valid_length.size()))),
     )
 
@@ -981,7 +997,7 @@ def fa_prefill_apple[
         var sw = sink_weights.value()
         sink_tile = OptionalReg[SinkTile](
             SinkTile(
-                sw.ptr.as_immutable().as_unsafe_any_origin(),
+                sw.ptr.as_imm().as_unsafe_any_origin(),
                 sink_layout_val,
             )
         )
@@ -1029,12 +1045,12 @@ def fa_prefill_apple[
                     valid_length_flat,
                     sink_tile,
                     scale,
-                    batch_size,
-                    max_prompt_len,
-                    max_cache_size,
-                    num_heads,
-                    depth,
-                    group,
+                    Int32(batch_size),
+                    Int32(max_prompt_len),
+                    Int32(max_cache_size),
+                    Int32(num_heads),
+                    Int32(depth),
+                    Int32(group),
                     grid_dim=(num_q_tiles, num_heads, batch_size),
                     block_dim=sg * WARP_SIZE,
                 )

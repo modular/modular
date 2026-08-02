@@ -27,10 +27,7 @@ from std.pathlib import Path
 from std.sys import get_defined_bool
 from std.sys.arg import argv
 
-from std.gpu.host import DeviceContext
-
 from std.utils.numerics import FlushDenormals
-from std.algorithm import sync_parallelize
 
 from .benchmark import _run_impl, _run_impl_fixed, _RunOptions
 
@@ -559,7 +556,7 @@ struct Bench(Writable):
         Format,
     )
     from std.utils import IndexList
-    from std.gpu.host import DeviceContext
+    from max.gpu.host import DeviceContext
     from std.pathlib import Path
 
     def example_kernel():
@@ -817,110 +814,6 @@ struct Bench(Writable):
             func(b, input)
 
         self.bench_function[input_closure](bench_id, measures)
-
-    @always_inline
-    def bench_multicontext[
-        bench_fn: def(mut Bencher, DeviceContext, Int) raises capturing[
-            _
-        ] -> None,
-    ](
-        mut self,
-        list_of_ctx: List[DeviceContext],
-        bench_id: BenchId,
-        measures: List[ThroughputMeasure] = {},
-    ) raises:
-        """Benchmarks or Tests an input function across multiple device contexts.
-
-        The metric returned represents the *slowest* performing device.
-
-        Parameters:
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            list_of_ctx: A list of device contexts on which the bench_fn is run in parallel.
-            bench_id: The benchmark Id object used for identification.
-            measures: Optional arg used to represent a list of ThroughputMeasure's.
-
-        Raises:
-            If the operation fails.
-        """
-
-        @always_inline
-        def func_unified(mut b: Bencher, ctx: DeviceContext, i: Int) {}:
-            try:
-                bench_fn(b, ctx, i)
-            except e:
-                abort(String(e))
-
-        self.bench_multicontext(func_unified, list_of_ctx, bench_id, measures)
-
-    @always_inline
-    def bench_multicontext[
-        FuncType: def(mut Bencher, DeviceContext, Int) -> None,
-    ](
-        mut self,
-        func: FuncType,
-        list_of_ctx: List[DeviceContext],
-        bench_id: BenchId,
-        measures: List[ThroughputMeasure] = {},
-    ) raises:
-        """Benchmarks or Tests an input function across multiple device contexts.
-
-        The metric returned represents the *slowest* performing device.
-
-        Parameters:
-            FuncType: The body function type.
-
-        Args:
-            func: The closure carrying the captured state of the body function.
-            list_of_ctx: A list of device contexts on which the bench_fn is run in parallel.
-            bench_id: The benchmark Id object used for identification.
-            measures: Optional arg used to represent a list of ThroughputMeasure's.
-
-        Raises:
-            If the operation fails.
-        """
-
-        var num_ctxs = len(list_of_ctx)
-        assert (
-            num_ctxs > 1
-        ), "list_of_ctx must contain at least 2 DeviceContexts"
-        # Necessary to fill this List w/ default BenchmarkInfo otherwise each
-        # thread attempts to free uninitialized BenchmarkInfo when copying below.
-        var default_info = BenchmarkInfo(
-            name="",
-            result=Report(),
-            measures=List[ThroughputMeasure](),
-        )
-        var results_b = List[BenchmarkInfo](length=num_ctxs, fill=default_info)
-
-        # This closure runs in parallel on the host, 1 host thread per context.
-        @parameter
-        def per_gpu(i: Int) raises:
-            @parameter
-            def context_closure(mut b: Bencher) raises:
-                func(b, list_of_ctx[i], i)
-
-            var b = Bench()
-            b.bench_function[context_closure](
-                bench_id,
-                measures,
-            )
-            results_b[i] = b.info_vec[0].copy()
-
-        sync_parallelize[per_gpu](num_ctxs)
-
-        # Collect and print the worst-case GPU time.
-        var max_time = 0.0
-        var max_loc = 0
-
-        for i in range(num_ctxs):
-            var val = results_b[i].result.mean()
-            if val > max_time:
-                max_time = val
-                max_loc = i
-
-        self.info_vec.append(results_b[max_loc].copy())
 
     @always_inline
     def bench_function[
@@ -1544,6 +1437,11 @@ struct Bencher(RegisterPassable):
 
         self.iter(unified_closure)
 
+    # TODO(MOCO-4470): Collapse this overload and the raising one below into a
+    # single `iter[E: AnyType, //, IterFn: def() raises E](f: IterFn) raises E`
+    # once a non-raising argument can bind `E` to the empty error type. Today
+    # `raises E` is unconditionally raising, so the merged form would force
+    # every non-raising caller to handle an error.
     def iter[IterFn: def()](mut self, f: IterFn):
         """Returns the total elapsed time by running a target closure a
         particular number of times.
@@ -1553,6 +1451,26 @@ struct Bencher(RegisterPassable):
 
         Args:
             f: The closure to benchmark.
+        """
+
+        var start = std.time.perf_counter_ns()
+        for _ in range(self.num_iters):
+            f()
+        var stop = std.time.perf_counter_ns()
+        self.elapsed = Int(stop - start)
+
+    def iter[IterFn: def() raises](mut self, f: IterFn) raises:
+        """Returns the total elapsed time by running a raising target closure a
+        particular number of times.
+
+        Parameters:
+            IterFn: Type of the closure to benchmark.
+
+        Args:
+            f: The closure to benchmark.
+
+        Raises:
+            If the closure raises.
         """
 
         var start = std.time.perf_counter_ns()
@@ -1632,120 +1550,6 @@ struct Bencher(RegisterPassable):
 
         self.elapsed = func(self.num_iters)
 
-    def iter_custom[
-        kernel_launch_fn: def(DeviceContext) raises capturing[_] -> None
-    ](mut self, ctx: DeviceContext):
-        """Times a target GPU function with custom number of iterations via DeviceContext ctx.
-
-        Parameters:
-            kernel_launch_fn: The target GPU kernel launch function to benchmark.
-
-        Args:
-            ctx: The GPU DeviceContext for launching kernel.
-        """
-        try:
-            self.elapsed = ctx.execution_time[kernel_launch_fn](self.num_iters)
-        except e:
-            abort(String(e))
-
-    def iter_custom[
-        FuncType: def(DeviceContext) raises -> None,
-    ](mut self, ref func: FuncType, ctx: DeviceContext):
-        """Times a target GPU closure with custom number of iterations via DeviceContext ctx.
-
-        Parameters:
-            FuncType: The target GPU kernel launch closure type.
-
-        Args:
-            func: The closure carrying the captured state of the kernel launch.
-            ctx: The GPU DeviceContext for launching kernel.
-
-        Notes:
-
-        This overload is intentionally separate from the parametric
-        `iter_custom[kernel_launch_fn](ctx)` form. Nested launch closures that
-        capture benchmark-local state are closure values, and the current
-        closure typing rules do not let those values compose with a
-        `def(DeviceContext) raises capturing[_]` compile-time parameter while
-        preserving their capture object. This value-taking overload forwards
-        the closure to `DeviceContext.execution_time()` so `FuncType` carries
-        the captured state.
-        """
-
-        try:
-            self.elapsed = ctx.execution_time(func, self.num_iters)
-        except e:
-            abort(String(e))
-
-    def iter_custom[
-        kernel_launch_fn: def(DeviceContext, Int) raises capturing[_] -> None
-    ](mut self, ctx: DeviceContext):
-        """Times a target GPU function with custom number of iterations via DeviceContext ctx.
-
-        Parameters:
-            kernel_launch_fn: The target GPU kernel launch function to benchmark.
-
-        Args:
-            ctx: The GPU DeviceContext for launching kernel.
-        """
-        try:
-            self.elapsed = ctx.execution_time_iter[kernel_launch_fn](
-                self.num_iters
-            )
-        except e:
-            abort(String(e))
-
-    def iter_custom[
-        FuncType: def(DeviceContext, Int) raises -> None,
-    ](mut self, ref func: FuncType, ctx: DeviceContext):
-        """Times a target GPU closure with custom number of iterations via DeviceContext ctx.
-
-        Parameters:
-            FuncType: The target GPU kernel launch closure type.
-
-        Args:
-            func: The closure carrying the captured state of the kernel launch.
-            ctx: The GPU DeviceContext for launching kernel.
-
-        Notes:
-
-        This overload is intentionally separate from the parametric
-        `iter_custom[kernel_launch_fn](ctx)` form. Nested launch closures that
-        capture benchmark-local state are closure values, and the current
-        closure typing rules do not let those values compose with a
-        `def(DeviceContext, Int) raises capturing[_]` compile-time parameter
-        while preserving their capture object. This value-taking overload
-        forwards the closure to `DeviceContext.execution_time_iter()` so
-        `FuncType` carries the captured state.
-        """
-
-        try:
-            self.elapsed = ctx.execution_time_iter(func, self.num_iters)
-        except e:
-            abort(String(e))
-
-    def iter_custom_multicontext[
-        kernel_launch_fn: def() raises capturing[_] -> None
-    ](mut self, ctxs: List[DeviceContext]):
-        """Times a target GPU function with custom number of iterations via DeviceContext ctx.
-
-        Parameters:
-            kernel_launch_fn: The target GPU kernel launch function to benchmark.
-
-        Args:
-            ctxs: The list of GPU DeviceContext's for launching kernel.
-        """
-        try:
-            # Find the max elapsed time across the list of GPU DeviceContext's.
-            self.elapsed = 0
-            for i in range(len(ctxs)):
-                self.elapsed = max(
-                    self.elapsed,
-                    ctxs[i].execution_time[kernel_launch_fn](self.num_iters),
-                )
-        except e:
-            abort(String(e))
-
     def iter[iter_fn: def() capturing raises -> None](mut self) raises:
         """Returns the total elapsed time by running a target function a particular
         number of times.
@@ -1757,8 +1561,8 @@ struct Bencher(RegisterPassable):
             If the operation fails.
         """
 
-        var start = std.time.perf_counter_ns()
-        for _ in range(self.num_iters):
+        @always_inline
+        def unified_closure() raises {}:
             iter_fn()
-        var stop = std.time.perf_counter_ns()
-        self.elapsed = Int(stop - start)
+
+        self.iter(unified_closure)

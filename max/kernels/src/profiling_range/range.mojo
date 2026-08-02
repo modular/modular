@@ -16,8 +16,8 @@
 `KGEN/lib/CompilerRT/RangeBridge.cpp`. Use it as a context manager to emit a
 libkineto activity span: `__enter__` opens the span and `__exit__` closes it.
 
-`Range` mirrors `std.runtime.tracing.Trace`: the span is opened in `__enter__`
-and closed in `__exit__` rather than in `__init__`/`__del__`. This sidesteps
+`Range` mirrors `max.runtime.tracing.Trace`: the span is opened in `__enter__`
+and closed in `__exit__` rather than in `__init__`/`__deinit__`. This sidesteps
 Mojo's ASAP destruction: a `var span = Range(...)` whose handle is never read
 again would otherwise be destroyed immediately after construction, closing the
 span before any work inside it ran. The `with` statement keeps the object alive
@@ -75,7 +75,7 @@ struct Range(ImplicitlyCopyable):
     ```
 
     A future update will add a `category` parameter (mirroring
-    `std.runtime.tracing.Trace[level, category]`) and a `StringSlice` name
+    `max.runtime.tracing.Trace[level, category]`) and a `StringSlice` name
     overload for dynamically-built names (e.g. `Range("kernel_" + variant)`).
     """
 
@@ -103,7 +103,7 @@ struct Range(ImplicitlyCopyable):
             name: The span name. Passed straight through to libkineto in
                 `__enter__`. `StaticString` accepts both string literals and
                 runtime `StaticString` values; this matches the convention used
-                by `std.runtime.tracing.Trace`.
+                by `max.runtime.tracing.Trace`.
             color: 24-bit RGB color for trace viewers that honor it.
                 Defaults to 0 (libkineto's default color).
         """

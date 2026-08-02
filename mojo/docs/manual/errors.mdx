@@ -22,8 +22,8 @@ This page covers:
   — Use enumerated error types or the `Variant` type for pattern matching.
 - [**The `Never` type**](#the-never-type) — Mark functions that always raise
   or never raise.
-- [**Parametric raises**](#parametric-raises) — Write generic functions that
-  propagate error types from their arguments.
+- [**Parametric raises**](#parametric-raises) — Write parameterized functions
+  that propagate error types from their arguments.
 - [**Typed and `Error` interaction**](#typed-errors-and-error-interaction) —
   Work with code that uses both error styles.
 - [**Stack traces**](#enable-stack-trace-generation-for-errors) — Enable stack
@@ -145,7 +145,7 @@ def main() raises:
             except e:
                 if "invalid" in String(e):
                     print("except  => fatal:", e)
-                    raise e^
+                    raise e
                 print("except  => handled:", e)
             else:
                 print("else    => success:", result)
@@ -183,25 +183,31 @@ Notice:
 - When `id` is 1001: `process_record()` raises an error. The `except` clause
   handles it and execution continues with the next iteration.
 - When `id` is -3: `process_record()` raises an "invalid" error. The `except`
-  clause re-raises it with `raise e^`, which transfers ownership of the error
-  to the outer `try`/`except`. The `finally` clause still runs before the error
-  propagates. Because the re-raise exits the loop, `id` 42 is never processed.
+  clause re-raises it, so it propagates to the outer `try`/`except`. The
+  `finally` clause still runs before the error propagates. Because the re-raise
+  exits the loop, `id` 42 is never processed.
 
 ### Re-raise an error
 
-To re-raise a caught error, use `raise` with the
-[transfer sigil](/docs/manual/values/ownership/#transfer-arguments-var-and-)
-(`^`) to transfer ownership of the error value:
+To re-raise a caught error, pass it to `raise`:
 
 ```mojo
 try:
     result = process_record(-1)
 except e:
     print("Logging error:", e)
-    raise e^  # re-raise with ownership transfer
+    raise e  # re-raise
 ```
 
 You can also raise a different error from within an `except` clause.
+
+Re-raising copies the error, which is cheap because both its message and its
+optional stack trace are reference counted. To avoid the copy, transfer the
+error with the
+[transfer sigil](/docs/manual/values/ownership/#transfer-arguments-var-and-):
+`raise e^`. A [custom error type](#typed-errors) that doesn't conform to
+[`ImplicitlyCopyable`](/docs/std/builtin/value/ImplicitlyCopyable/) requires the
+transfer sigil to re-raise.
 
 ## Typed errors
 
@@ -535,7 +541,7 @@ This equivalency is especially useful in combination with
 ## Parametric raises
 
 You can write
-[generic functions](/docs/manual/parameters/#parameters-and-generics) that
+[parameterized functions](/docs/manual/parameters/#parameters-and-generics) that
 propagate the error type from a function argument to the caller. This uses a
 compile-time parameter for the error type:
 
@@ -1162,7 +1168,7 @@ Unhandled exception caught during execution: really bad
 ### Handle typed errors in `__exit__()`
 
 The `__exit__(self, error: Error)` overload handles only `Error` values.
-To handle typed errors, implement a generic `__exit__()` method with a
+To handle typed errors, implement a parameterized `__exit__()` method with a
 compile-time error type parameter:
 
 ```mojo

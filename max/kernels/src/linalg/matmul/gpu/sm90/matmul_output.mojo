@@ -23,7 +23,7 @@ from std.math import ceildiv
 from std.sys import simd_width_of, size_of
 
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.sync import named_barrier
 from layout import Coord, Idx, Layout, TensorLayout, TileTensor, row_major
 from layout.swizzle import make_ldmatrix_swizzle
@@ -453,7 +453,7 @@ struct MatmulTileWriter[
                     var tma_writer = TileWriterTMA(Pointer(to=tma_op))
 
                     if self.local_thread_idx < (Self.WG_BN // TMA_BN):
-                        var smem_offset = self.smem_tile.ptr + (
+                        var smem_offset = self.smem_tile._storage + (
                             Self.WG_BM * TMA_BN * self.local_thread_idx
                         )
                         comptime tma_smem_layout = row_major[

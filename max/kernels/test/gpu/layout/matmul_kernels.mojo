@@ -15,6 +15,7 @@ from std.math.uutils import udivmod
 from std.sys.info import simd_width_of
 
 import linalg.matmul.vendor.blas as vendor_blas
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -30,7 +31,7 @@ from std.gpu import (
     thread_idx,
     warp_id as get_warp_id,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import async_copy_wait_all
 from layout import Layout, LayoutTensor
 from layout.layout_tensor import copy_dram_to_sram_async
@@ -56,7 +57,7 @@ def time_kernel[
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             func(ctx)
 
-        m.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](m, ctx)
 
     m.bench_function[bench_func](
         BenchId(kernel_name),
@@ -96,7 +97,7 @@ def run_cublas[
                     transpose_b=False,
                 )
 
-            m.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](m, ctx)
 
         @parameter
         def get_bench_id() -> String:

@@ -18,8 +18,8 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
     GEMMKind,
 )
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc, unsafe_memset_zero
 from internal_utils import (
     assert_almost_equal,
@@ -243,8 +243,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         c_ref_tensor_lt,
         a_lt,
         b_lt,
-        a_scales_lt.get_immutable(),
-        b_scales_lt.get_immutable(),
+        a_scales_lt.as_imm(),
+        b_scales_lt.as_imm(),
         ctx,
     )
 

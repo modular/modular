@@ -4,6 +4,8 @@ sidebar_label: Compile-time evaluation
 description: When and how code is executed at compile time.
 ---
 
+<!-- markdownlint-disable MD033 -->
+
 To understand Mojo's metaprogramming, you need to understand how Mojo runs
 code at compile time. Several things can trigger compile-time code execution:
 
@@ -18,9 +20,9 @@ Here are some examples:
 comptime SIZE = 1024 // 32
 ```
 
-Here the expression `1024 // 32` invokes the `IntLiteral.__floordiv__()` method.
-Since it occurs in a `comptime` assignment, the method must be run at compile
-time.
+Here the expression `1024 // 32` invokes the `IntLiteral.__floordiv__()`
+method. Since it occurs in a `comptime` assignment, the method must be run
+at compile time.
 
 ```mojo
 comptime for i in range(4):
@@ -31,44 +33,44 @@ Here the `range(4)` function needs to run to produce an iterator for the
 `comptime for` statement.
 
 ```mojo
-var array = InlineArray[Int, get_array_size()]()
+var array = Array[Int, get_array_size()]()
 ```
 
-In this example, the `get_array_size()` function needs to run at compile time to
-determine the `length` parameter, which forms part of the type of `array`. (For
-example, if `get_array_size()` returns 32, the type of the `array` variable is
-`InlineArray[Int, 32]`.)
+In this example, the `get_array_size()` function needs to run at compile
+time to determine the `length` parameter, which forms part of the type of
+`array`. (For example, if `get_array_size()` returns 32, the type of the
+`array` variable is `Array[Int, 32]`.)
 
 When the compiler encounters a function call in a compile-time context, the
-compiler runs the function separately, as if it was a small separate program.
-This is similar in concept to how C++ evaluates a `constexpr`. (For a slightly
-deeper look at this process, see
-[How the compiler runs code](#how-the-compiler-runs-code).)
+compiler runs the function separately, as if it was a small separate
+program. This is similar in concept to how C++ evaluates a `constexpr`.
+(For a slightly deeper look at this process, see [How the compiler runs
+code](#how-the-compiler-runs-code).)
 
-While most code can run at compile time, Mojo won't run code that depends on
-the execution environment. The following are examples of code that Mojo won't
-run at compile time:
+While most code can run at compile time, Mojo won't run code that depends
+on the execution environment. The following are examples of code that Mojo
+won't run at compile time:
 
 - File I/O.
 - Foreign function calls (for example, to external libraries).
 - Functions that can
   [raise errors](/docs/manual/functions/#raising-and-non-raising-functions).
 
-In addition, the compiler can't run functions on the GPU. Compile-time functions
-in GPU code are actually run on the CPU.
+In addition, the compiler can't run functions on the GPU. Compile-time
+functions in GPU code are actually run on the CPU.
 
-When running code, the compiler can allocate memory and instantiate types that
-allocate memory, such as strings and collections. With some limitations, it can
-pass compile-time values on to run-time code, a process called
-_materialization_. For more information, see the section on
+When running code, the compiler can allocate memory and instantiate types
+that allocate memory, such as strings and collections. With some
+limitations, it can pass compile-time values on to run-time code, a process
+called _materialization_. For more information, see the section on
 [materialization](/docs/manual/metaprogramming/materialization/).
 
 ## `comptime` values
 
-It is very common to want to _name_ compile-time values. Whereas `var` defines a
-runtime value, we need a way to define a named compile-time constant. For this,
-Mojo uses a `comptime` declaration. At its simplest, `comptime` can be used to
-define a constant value:
+It is very common to want to _name_ compile-time values. Whereas `var`
+defines a runtime value, we need a way to define a named compile-time
+constant. For this, Mojo uses a `comptime` declaration. At its simplest,
+`comptime` can be used to define a constant value:
 
 ```mojo
 comptime rows = 512
@@ -76,16 +78,16 @@ comptime rows = 512
 
 A `comptime` value is always evaluated at compile time, so you can use
 `comptime` to force a function to run at compile time. You can use this to
-calculate constant values based on information available at compile time, such
-as hardware parameters.
+calculate constant values based on information available at compile time,
+such as hardware parameters.
 
 ```mojo
 comptime block_size = _calculate_block_size()
 ```
 
 Types are another common use for `comptime` values. Because types are
-compile-time expressions, you can use a `comptime` value as a shorthand (a type
-alias or "typedef") for a parameterized type:
+compile-time expressions, you can use a `comptime` value as a shorthand (a
+type alias or "typedef") for a parameterized type:
 
 ```mojo
 comptime Float16 = SIMD[DType.float16, 1]
@@ -99,7 +101,8 @@ var x: Float16 = 0  # Float16 works like a "typedef"
 
 You can also parameterize a `comptime` value to express more complicated
 relationships. For details, see
-[Parameterized `comptime` values](/docs/manual/parameters/#parameterized-comptime-values).
+[Parameterized `comptime`
+values](/docs/manual/parameters/#parameterized-comptime-values).
 
 ### Compile-time scope
 
@@ -138,7 +141,7 @@ flow control to conditionalize or repeat code. Some sample uses include:
 - Conditionalizing platform-specific code (CPU vs. GPU, Linux vs. macOS) without
   runtime overhead.
 - Unrolling loops to eliminate runtime branches.
-- Handling different data types in generic code.
+- Handling different data types in parameterized code.
 
 Unlike run-time flow control constructs, compile-time flow control constructs
 are evaluated once, at compile time, and determine what code is actually
@@ -240,3 +243,5 @@ your code runs in the order it appears in the function. For example, if your
 function includes a compile-time assertion that fails, compilation fails before
 the interpreter enters the function, so no part of the function is
 evaluated—even code that occurs _before_ the assertion.
+
+<!-- markdownlint-enable MD033 -->

@@ -29,6 +29,7 @@ from std.sys import (
     get_defined_string,
 )
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -36,7 +37,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer, CACHE_BUST_BYTES
 from internal_utils._utils import InitializationType
 from layout import Coord, Idx, TileTensor, row_major
@@ -268,7 +269,7 @@ def bench_preb[
     @parameter
     @always_inline
     def bench_func(mut bencher: Bencher):
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](bencher, ctx)
 
     bench.bench_function[bench_func](
         BenchId(

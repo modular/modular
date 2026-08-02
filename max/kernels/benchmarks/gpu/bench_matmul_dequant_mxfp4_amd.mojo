@@ -35,6 +35,7 @@ from std.math import ceildiv
 from std.sys import get_defined_int, size_of
 from std.random import rand, randint
 from std.memory import bitcast
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -42,7 +43,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import InitializationType, init_vector_launch
 from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
@@ -216,7 +217,7 @@ def bench_dequant_mxfp4[
     @parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](bencher, ctx)
 
     # Memory traffic: read packed (N*K/2) + scales (N*K/32), write FP8 (N*K)
     comptime total_bytes = N * packed_K + N * scale_K + N * K * size_of[
@@ -260,7 +261,7 @@ def bench_cast_bf16_to_fp8[
     @parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](bencher, ctx)
 
     # Memory traffic: read BF16 (M*K*2), write FP8 (M*K*1)
     var total_bytes = M * K * (size_of[DType.bfloat16]() + size_of[fp8_type]())
@@ -323,7 +324,7 @@ def bench_fp8_matmul[
     @parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](bencher, ctx)
 
     var flops = ThroughputMeasure(BenchMetric.flops, 2 * M * N * K)
 
@@ -373,7 +374,7 @@ def bench_mxfp4_matmul[
         @parameter
         @always_inline
         def bench_func(mut bencher: Bencher) raises:
-            bencher.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](bencher, ctx)
 
         var flops = ThroughputMeasure(BenchMetric.flops, 2 * M * N * K)
 

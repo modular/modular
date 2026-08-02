@@ -24,14 +24,14 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from std.algorithm import max as reduce_max
-from std.algorithm import mean
-from std.algorithm import min as reduce_min
-from std.algorithm import product, sum
-from std.algorithm.reduction import _reduce_generator
+from max.algorithm import max as reduce_max
+from max.algorithm import mean
+from max.algorithm import min as reduce_min
+from max.algorithm import product, sum
+from max.algorithm.reduction import _reduce_generator
 
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import is_gpu
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.info import is_gpu
 from nn import arg_nonzero
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
@@ -1028,8 +1028,10 @@ struct ReduceRMSNorm:
         # keeps its n-D `IndexList` form to match `rms_norm`'s `output_0_fn`.
         @parameter
         @always_inline
-        def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=width](
+        def input_fn[
+            width: Int, alignment: Int
+        ](coords: Coord) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 coords
             )
 
@@ -1500,9 +1502,9 @@ struct ReduceRMSNormFusedResidualAdd:
         @parameter
         @always_inline
         def input_fn[
-            width: Int, _rank: Int
+            width: Int, _rank: Int, alignment: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=width](
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 

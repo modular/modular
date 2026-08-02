@@ -30,15 +30,15 @@ print(len(bs))          # Prints 0.
 # ---------------------------------------------------------------------------
 
 
-from std.math import ceildiv
+from std.math import ceildiv, align_down
 from std.sys import simd_width_of, bit_width_of
 
 from std.algorithm import vectorize
 from std.bit import log2_floor, pop_count
 from std.format._utils import FormatStruct
-from std.memory import pack_bits
+from std.memory import pack_bits, unsafe_memcpy, unsafe_memset_zero
 
-from .inline_array import InlineArray
+from std.collections.array import Array
 
 # ===-----------------------------------------------------------------------===#
 # Utilities
@@ -58,6 +58,23 @@ def _word_index(idx: Int) -> Int:
 def _bit_mask(idx: Int) -> Int:
     """Returns a Int64 mask with only the bit corresponding to `idx` set."""
     return 1 << (idx & _WORD_BITS - 1)
+
+
+@always_inline
+def _range_mask(lo: Int, hi: Int) -> Int64:
+    """Creates an Int64 mask with bits in `[lo, hi)` set within a single Int.
+
+    Args:
+        lo: The low bit position, inclusive (`0 <= lo < hi`).
+        hi: The high bit position, exclusive (`lo < hi <= _WORD_BITS`).
+
+    Returns:
+        An Int64 mask with bits in `[lo, hi)` set within a single Int.
+    """
+    # `1 << _WORD_BITS` overflows Int64, so special-case a full-width span.
+    var high = ~Int64(0) if hi == _WORD_BITS else (Int64(1) << Int64(hi)) - 1
+    var low = (Int64(1) << Int64(lo)) - 1
+    return high & ~low
 
 
 @always_inline
@@ -106,7 +123,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
     """
 
     comptime _words_size = max(1, ceildiv(Self.size, _WORD_BITS))
-    var _words: InlineArray[Int64, Self._words_size]  # Payload storage.
+    var _words: Array[Int64, Self._words_size]  # Payload storage.
 
     # --------------------------------------------------------------------- #
     # Constructors
@@ -132,6 +149,89 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             self._words.unsafe_get(i) = pack_bits(
                 init.slice[step, offset=i * step]()
             ).cast[DType.int64]()
+
+    def __init__[
+        other_size: Int,
+        //,
+        *,
+        truncate: Bool = False,
+    ](out self, *, resized_from: BitSet[other_size]):
+        """Initializes a BitSet by copying from a BitSet of a different size.
+
+        if `truncate` is `False`, this constructor will `debug_assert` that no
+        set bits are lost when narrowing. If `truncate` is `True`, the
+        constructor will silently drop any set bits at or above the new size.
+        When narrowing, bits at or above `size` are dropped; when widening, the
+        new high bits are cleared.
+
+        Parameters:
+            other_size: The `size` of the source bitset.
+            truncate: Whether or not to allow truncating set bits.
+
+        Args:
+            resized_from: The BitSet to copy from.
+        """
+
+        comptime if not truncate and Self.size < other_size:
+            debug_assert(
+                resized_from.test_range[False, lo=Self.size](),
+                "Cast would truncate set bits.",
+            )
+
+        comptime if other_size == Self.size:
+            # delegate to copy constructor if sizes match
+            self._words = rebind[type_of(self._words)](
+                resized_from._words
+            ).copy()
+        else:
+            comptime words_to_copy = min(
+                Self._words_size, resized_from._words_size
+            )
+
+            var values = resized_from.copy()
+            comptime if resized_from.size < Self.size:
+                values._zero_upper()
+
+            __mlir_op.`lit.ownership.mark_initialized`(
+                __get_mvalue_as_litref(self._words)
+            )
+
+            unsafe_memcpy(
+                dest=self._words.unsafe_ptr(),
+                src=values._words.unsafe_ptr(),
+                count=words_to_copy,
+            )
+
+            comptime if Self._words_size > resized_from._words_size:
+                unsafe_memset_zero(
+                    self._words.unsafe_ptr().unsafe_offset(
+                        resized_from._words_size
+                    ),
+                    Self._words_size - resized_from._words_size,
+                )
+
+            comptime if Self.size < resized_from.size:
+                self._zero_upper()
+
+    def __init__[
+        other_size: Int,
+        //,
+        *,
+    ](out self, *, resized_from: BitSet[other_size], truncate_set_bits: ()):
+        """Initializes a BitSet by copying from a BitSet of a different size.
+
+        When narrowing, bits at or above `size` are dropped; when widening, the
+        new high bits are cleared.
+
+        Parameters:
+            other_size: The `size` of the source bitset.
+
+        Args:
+            resized_from: The BitSet to copy from.
+            truncate_set_bits: A marker argument to disambiguate an overload.
+        """
+
+        self = Self.__init__[truncate=True](resized_from=resized_from)
 
     # --------------------------------------------------------------------- #
     # Capacity queries
@@ -248,6 +348,115 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         _check_index_bounds["testing"](idx, Self.size)
         var w = _word_index(idx)
         return (self._words.unsafe_get(w) & Int64(_bit_mask(idx))) != 0
+
+    @always_inline
+    def test_range[
+        bit_value: Bool,
+        *,
+        lo: Int = 0,
+        hi: Int = Self.size,
+        max_unroll: Int = 16,
+    ](self) -> Bool:
+        """Tests whether every bit in `[lo, hi)` equals `bit_value`.
+
+        With `lo`/`hi` known at compile time, the word indices, bit offsets,
+        and boundary masks all fold away. The two boundary words are masked
+        and checked scalar; the interior full words are checked in SIMD
+        batches. An empty range is vacuously true.
+
+        Parameters:
+            bit_value: The value every in-range bit must have (1 if True, else 0).
+            lo: The low bit index, inclusive.
+            hi: The high bit index, exclusive.
+            max_unroll: The maximum unroll factor for SIMD loops.
+
+        Returns:
+            True if every bit in the range equals `bit_value`, False otherwise.
+        """
+        comptime assert (
+            0 <= lo
+        ), t"test_range: invalid range [lo, hi) = [{lo}, {hi})"
+        comptime assert (
+            lo <= hi
+        ), t"test_range: invalid range [lo, hi) = [{lo}, {hi})"
+        comptime assert (
+            hi <= Self.size
+        ), t"test_range: invalid range [lo, hi) = [{lo}, {hi})"
+        comptime assert (
+            max_unroll > 0
+        ), t"test_range: max_unroll must be positive, got {max_unroll}"
+
+        comptime if lo == hi:
+            return True
+        else:
+            comptime word_lo = _word_index(lo)
+            comptime word_hi = _word_index(hi - 1)
+            comptime lo_off = lo & (_WORD_BITS - 1)
+            comptime hi_off = ((hi - 1) & (_WORD_BITS - 1)) + 1
+
+            # A "violation" is a bit that disagrees with the expected value: a 0
+            # bit when checking for all-set, or a 1 bit when checking all-unset.
+            @always_inline
+            def _violations[
+                width: Int, //
+            ](word: SIMD[DType.int64, width]) -> SIMD[DType.int64, width]:
+                comptime if bit_value:
+                    return ~word
+                else:
+                    return word
+
+            comptime if word_lo == word_hi:
+                comptime mask = _range_mask(lo_off, hi_off)
+                return (
+                    _violations[width=1](self._words.unsafe_get(word_lo)) & mask
+                ) == 0
+            else:
+                comptime lead = _range_mask(lo_off, _WORD_BITS)
+                if (
+                    _violations[width=1](self._words.unsafe_get(word_lo)) & lead
+                ) != 0:
+                    return False
+                comptime trail = _range_mask(0, hi_off)
+                if (
+                    _violations[width=1](self._words.unsafe_get(word_hi))
+                    & trail
+                ) != 0:
+                    return False
+
+                # Interior words `(word_lo, word_hi)` are fully in range, so each
+                # must be all-ones (all_set) or all-zeros. Accumulate violation
+                # bits across SIMD batches, then handle the scalar tail.
+                comptime simd_width = simd_width_of[Int64]()
+                comptime interior_lo = word_lo + 1
+                comptime n_batches = (word_hi - interior_lo) // simd_width
+
+                comptime if n_batches > 0:
+                    comptime unroll_factor = min(n_batches, max_unroll)
+                    comptime unrolled = align_down(n_batches, unroll_factor)
+
+                    def kernel[width: Int](batch: Int) {mut, imm self} -> Bool:
+                        var vec = self._words.unsafe_ptr().unsafe_load[
+                            width=width
+                        ](interior_lo + batch * width)
+
+                        return _violations[width=width](vec).reduce_or() != 0
+
+                    for i in range(0, unrolled, unroll_factor):
+                        comptime for j in range(unroll_factor):
+                            if kernel[width=simd_width](i + j):
+                                return False
+
+                    comptime for i in range(unrolled, n_batches):
+                        if kernel[width=simd_width](i):
+                            return False
+
+                comptime tail_lo = interior_lo + n_batches * simd_width
+
+                comptime for i in range(tail_lo, word_hi):
+                    if _violations[width=1](self._words.unsafe_get(i)) != 0:
+                        return False
+
+                return True
 
     def clear_all(mut self):
         """Clears all bits in the set, resetting the logical size to 0.

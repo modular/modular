@@ -20,13 +20,14 @@ to half SMEM, TMA store to GMEM.
 from std.math import align_up, ceildiv
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
     Coord,
     Idx,
+    PointerStorage,
     RowMajorLayout,
     TensorLayout,
     TileTensor,
@@ -53,7 +54,7 @@ def _blackwell_matmul_swiglu[
     pdl_level: PDLLevel = PDLLevel(),
     BiasLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
-    c_out: TileTensor,
+    c_out: TileTensor[Storage=PointerStorage[element_width=1], ...],
     a_device: TileTensor,
     b_device: TileTensor,
     ctx: DeviceContext,
@@ -165,16 +166,16 @@ def _blackwell_matmul_swiglu[
 
     # c_out is always user-frame [user_M, user_H]; derive H from c_out so
     # this is correct under both AB_swapped values.
-    var c_gmem_ptr = c_out.ptr
+    var c_gmem_ptr = c_out._storage
     var c_gmem_stride = UInt32(Int(c_out.dim[1]()))
 
     # Build 1D bias tile (real ptr when use_bias, dummy c_out ptr otherwise).
     comptime ImmutPtr = UnsafePointer[Scalar[c_type], ImmutAnyOrigin]
     var bias_1d_ptr: ImmutPtr
     comptime if config.use_bias:
-        bias_1d_ptr = rebind[ImmutPtr](bias_tensor.value().ptr)
+        bias_1d_ptr = rebind[ImmutPtr](bias_tensor.value()._storage)
     else:
-        bias_1d_ptr = rebind[ImmutPtr](c_out.ptr)
+        bias_1d_ptr = rebind[ImmutPtr](c_out._storage)
     var bias_1d_tile = KernelType.Bias1DTile(
         bias_1d_ptr, KernelType.Bias1DTileLayout
     )

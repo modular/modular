@@ -13,16 +13,20 @@
 """MMA warp logic for FA4 (SM100 Flash Attention)."""
 
 from std.math import align_up, ceildiv
-from std.sys import size_of
+from std.sys import size_of, get_defined_bool
 from std.gpu.primitives.id import cluster_dim
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAKind,
     mma_arrive_multicast,
 )
-from nn.attention.gpu.nvidia.sm100.attention import FA4Config
+from nn.attention.gpu.nvidia.sm100.attention import (
+    FA4Config,
+    ExplicitTMEMCrossP,
+)
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
+    blasst_vote_unanimous,
     elect,
     elect_mma_arrive,
     SM100TensorAccumulator,
@@ -45,6 +49,11 @@ def fa4_mma[
     config: FA4Config,
     *,
     page_size: Int,
+    # Effective cross-stage-P switch, computed once at the kernel level where
+    # config, MaskType and the store shape are all visible. Defaults True so
+    # the config-level gate alone decides for callers that do not thread it;
+    # the MHA kernel passes its own narrower predicate.
+    crossp_effective: Bool = True,
 ](
     smem: SM100AttentionSMem[config],
     tmem_addr: UInt32,
@@ -80,28 +89,68 @@ def fa4_mma[
     comptime num_pv_stages = config.num_pv_stages
     comptime cta_group: Int = config.cta_group()
 
-    # Mb: WS packed P@V depth-tiling (comptime-dead until Md elaborates a BM=32
-    # config). For the `.ws` packed datapath (MMA_M=32, m_pack=4) the P@V op packs
+    # Mb: WS packed P@V (comptime-dead until Md/Layout-E elaborates a BM=32/64
+    # config). Layout-G (MMA_M=32, m_pack=4) DEPTH-SCATTERS: the P@V op packs
     # `m_pack` key-quarters x `depth_tile` output cols into one MMA_N=256 tile
     # (F16 caps N at 256), so the full `padded_ov_depth` is covered by
-    # `num_d_tiles` depth-tiled MMAs at C stride `depth_tile`. Every value folds to
-    # today's literal for non-WS (m_pack==1) -> the non-WS issue stream is
-    # byte-identical. Mirrors the consumer's derivation (softmax_warp.mojo:507-508).
+    # `num_d_tiles` depth-tiled MMAs at C stride `depth_tile`, each writing a
+    # DISJOINT output column range. Layout-E (MMA_M=64, m_pack=2) instead
+    # REDUCTION-SPLITS: V is split along the KEY axis (not depth) into
+    # `num_qk_stages` chunks of `pv_bk_chunk` keys each, packing the FULL
+    # `m_pack*padded_ov_depth` per stack into one MMA_N tile; `num_d_tiles` is
+    # repurposed as the reduction-chunk loop trip count and every chunk MMAs
+    # into the SAME (un-offset) `o_tmem` (accumulating, not scattering) -- see
+    # docs/plans/sm100-fa4-layout-e-mma64.md "the reduction-split geometry".
+    # Every value folds to today's literal for non-WS (m_pack==1) -> the
+    # non-WS issue stream is byte-identical. `depth_tile`/non-reduction-split
+    # mirrors the consumer's derivation (softmax_warp.mojo:507-508).
+    comptime is_reduction_split = config.use_ws and config.m_pack == 2
     comptime depth_tile = (
         256 // config.m_pack
     ) if config.use_ws else config.padded_ov_depth
     comptime num_d_tiles = (
-        config.padded_ov_depth // depth_tile
-    ) if config.use_ws else 1
+        config.num_qk_stages if is_reduction_split else (
+            config.padded_ov_depth // depth_tile
+        ) if config.use_ws else 1
+    )
     comptime pv_mma_n = (
-        config.m_pack * depth_tile
-    ) if config.use_ws else config.padded_ov_depth
-    comptime pv_bk = (BN // config.m_pack) if config.use_ws else BN
+        config.m_pack
+        * config.padded_ov_depth if is_reduction_split else (
+            config.m_pack * depth_tile
+        ) if config.use_ws else config.padded_ov_depth
+    )
+    # Layout-E's reduction-chunk width: a partition's `BN // m_pack` owned
+    # keys split `num_qk_stages` ways (=64 @depth128, matching Layout-G's own
+    # `BN // m_pack` @ m_pack=4 -- a coincidence of today's depth-128 numbers,
+    # not an identity that holds generally). This is exactly the V TMA box's
+    # KEY-row count, so it reads from that one definition.
+    comptime pv_bk_chunk = config.v_e_box_rows()
+    comptime pv_bk = (
+        pv_bk_chunk if is_reduction_split else (
+            BN // config.m_pack
+        ) if config.use_ws else BN
+    )
+    # Layout-E ONLY: P/S physically occupies `score_cols == BN//m_pack`
+    # columns (one partition's FULL key range), but `UMMA1Type`'s BK ==
+    # `pv_bk_chunk` covers only ONE reduction chunk's worth -- `stage_idx`
+    # (p_stage) only offsets the A (P) operand WITHIN a `pv_bk_chunk`-wide
+    # window at a manually-passed-in base (`attention_utils.mojo`'s
+    # `a_tmem_offset = (k_offset*operand_size)//4`, relative to `a`, not to
+    # any reduction-chunk notion). Without also advancing the BASE per `r`,
+    # every reduction chunk would silently re-read chunk 0's P columns.
+    # `s_tmem_chunk_words`: `pv_bk_chunk` KEYS worth of TMEM columns (4-byte
+    # units, mirrors the accumulator's own `a_tmem_offset` conversion) = 32
+    # @depth128 (64 keys * 2-byte bf16 // 4). Dead (unused) for Layout-G,
+    # where `s_tmem` never advances per `v_stage` (a depth axis there).
+    comptime s_tmem_chunk_words = (
+        pv_bk_chunk * size_of[config.qkv_dtype]()
+    ) // 4
     # Byte stride between adjacent V depth-tile regions in SMEM (one packed
-    # `[pv_mma_n, pv_bk]` mn-major region). Only referenced in the `v_stage > 0`
-    # branch, so it is dead for non-WS (num_d_tiles == 1). = 32768 @depth128.
+    # `[pv_mma_n, pv_bk]` mn-major region). Only referenced in `_pv_full`'s
+    # `v_stage > 0` branch; `_pv_full` is used only where `num_d_tiles == 1`
+    # (non-WS), so this stays dead there. = 32768 @depth128.
     comptime v_region_bytes = pv_mma_n * pv_bk * size_of[config.qkv_dtype]()
-    comptime if config.use_ws:
+    comptime if config.use_ws and not is_reduction_split:
         comptime assert (
             config.padded_ov_depth % depth_tile == 0
         ), "Mb: padded_ov_depth must be a multiple of depth_tile"
@@ -140,6 +189,10 @@ def fa4_mma[
         num_stages=num_pv_stages,
         mma_kind=mma_kind,
         b_page_dense=config.v_row_major(),
+        # Layout-E's reduction-split P@V wants an EVEN 2-then-2 split of each
+        # reduction chunk's own BK (so the P sub-stage chunks align with the
+        # V reduction chunks); Layout-G keeps the default 3-then-1 (unchanged).
+        allow_3_then_1_split=not is_reduction_split,
     ]
 
     # Runtime-k partial-page gate. Only the last KV tile can be partially
@@ -196,6 +249,36 @@ def fa4_mma[
 
     e = elect()
 
+    # BLASST (arXiv 2512.12087): skip P@V (UMMA1) when all 4 of a WG's softmax
+    # warps voted to skip; QK' (UMMA0) and the V load are never skipped. `and
+    # not config.use_ws` since main's `_pv_ws` P@V path has no BLASST analog.
+    comptime ENABLE_BLASST = get_defined_bool[
+        "ENABLE_BLASST", False
+    ]() and not config.use_ws
+    var blasst_vote = smem.blasst_vote_smem()
+
+    # Cross-stage P (BLASST enabler, 2Q + non-WS only): the MMA runs the
+    # QK0-first schedule (see the gated block below) and reads each stage's P
+    # from the OTHER stage's S columns (TMEM_P{wg}). Shared-KV path only (the
+    # headline config); split-KV is rejected at compile time.
+    comptime CrossP = crossp_effective and type_of(mbars).CrossP_enabled
+    # Fires only for an explicit `-D FA4_TMEM_CROSS_P=true` on a config outside
+    # the support matrix. The ON-by-default path resolves `crossp_on()` to
+    # False on those configs instead, so it never reaches here.
+    comptime assert not (ExplicitTMEMCrossP and not config.crossp_on()), (
+        "FA4_TMEM_CROSS_P=true was requested on a config that does not"
+        " support cross-stage P. Supported: 2Q, non-warp-specialized,"
+        " single-CTA, shared-KV, MHA (no rope split), full pages. See"
+        " FA4Config.crossp_supported"
+    )
+
+    # Called after consumer_s[*].wait(phase), which orders the vote write
+    # (softmax) before this read. Peel writes no vote -> reads 0 -> never skips.
+    @parameter
+    @always_inline
+    def blasst_should_skip(wg: UInt32, phase: UInt32) -> Bool:
+        return blasst_vote_unanimous(blasst_vote, wg, phase)
+
     @parameter
     @always_inline
     def _commit(
@@ -226,27 +309,51 @@ def fa4_mma[
         consumer_s: MBarType,
         wait_phase: UInt32,
         c_scale: UInt32,
+        wg: UInt32 = 0,
     ):
-        # V-smem tile outer; P-tmem stage inner. V-smem is the binding
-        # constraint, so each V region is fully contracted before the next.
-        comptime for v_stage in range(num_d_tiles):
+        # BLASST (gated): the wait always runs (orders the vote read); only
+        # the P@V UMMA is skipped on a unanimous vote, so O keeps its prior
+        # value. Depth-tiling waits are hoisted so the vote can be read after
+        # they retire.
+        comptime if ENABLE_BLASST:
             comptime for p_stage in range(num_pv_stages):
-                comptime if v_stage == 0:
-                    # First V pass: wait each P sub-stage exactly once (P stays
-                    # live in TMEM across all V regions; preserves the 3/4+1/4
-                    # P-stage overlap). Non-WS folds to today's stream.
-                    _ = consumer_s[p_stage].wait(wait_phase)
-                    UMMA1Type.mma[stage_idx=p_stage](
-                        s_tmem, v, o_tmem, elect=e, c_scale=c_scale
-                    )
-                else:
-                    UMMA1Type.mma[stage_idx=p_stage](
-                        s_tmem,
-                        v + UInt32(v_stage * v_region_bytes),
-                        o_tmem + UInt32(v_stage * depth_tile),
-                        elect=e,
-                        c_scale=c_scale,
-                    )
+                _ = consumer_s[p_stage].wait(wait_phase)
+            if not blasst_should_skip(wg, wait_phase):
+                comptime for v_stage in range(num_d_tiles):
+                    comptime for p_stage in range(num_pv_stages):
+                        comptime if v_stage == 0:
+                            UMMA1Type.mma[stage_idx=p_stage](
+                                s_tmem, v, o_tmem, elect=e, c_scale=c_scale
+                            )
+                        else:
+                            UMMA1Type.mma[stage_idx=p_stage](
+                                s_tmem,
+                                v + UInt32(v_stage * v_region_bytes),
+                                o_tmem + UInt32(v_stage * depth_tile),
+                                elect=e,
+                                c_scale=c_scale,
+                            )
+        else:
+            # V-smem tile outer; P-tmem stage inner. V-smem is the binding
+            # constraint, so each V region is fully contracted before the next.
+            comptime for v_stage in range(num_d_tiles):
+                comptime for p_stage in range(num_pv_stages):
+                    comptime if v_stage == 0:
+                        # First V pass: wait each P sub-stage exactly once (P
+                        # stays live in TMEM across all V regions; preserves the
+                        # 3/4+1/4 P-stage overlap). Non-WS folds to today's stream.
+                        _ = consumer_s[p_stage].wait(wait_phase)
+                        UMMA1Type.mma[stage_idx=p_stage](
+                            s_tmem, v, o_tmem, elect=e, c_scale=c_scale
+                        )
+                    else:
+                        UMMA1Type.mma[stage_idx=p_stage](
+                            s_tmem,
+                            v + UInt32(v_stage * v_region_bytes),
+                            o_tmem + UInt32(v_stage * depth_tile),
+                            elect=e,
+                            c_scale=c_scale,
+                        )
 
     @parameter
     @always_inline
@@ -258,31 +365,58 @@ def fa4_mma[
         wait_phase: UInt32,
         c_scale: UInt32,
         valid_k_mmas: UInt32,
+        wg: UInt32 = 0,
     ):
-        # V-smem tile outer; P-tmem stage inner (see `_pv_full`). `valid_k_mmas`
-        # is the KEY count, identical across V regions, so it passes through
-        # unchanged for every v_stage.
-        comptime for v_stage in range(num_d_tiles):
+        # BLASST (gated): see `_pv_full` -- same skip, partial-K variant.
+        comptime if ENABLE_BLASST:
             comptime for p_stage in range(num_pv_stages):
-                comptime if v_stage == 0:
-                    _ = consumer_s[p_stage].wait(wait_phase)
-                    UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
-                        s_tmem,
-                        v,
-                        o_tmem,
-                        c_scale=c_scale,
-                        elect=e,
-                        valid_k_mmas=valid_k_mmas,
-                    )
-                else:
-                    UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
-                        s_tmem,
-                        v + UInt32(v_stage * v_region_bytes),
-                        o_tmem + UInt32(v_stage * depth_tile),
-                        c_scale=c_scale,
-                        elect=e,
-                        valid_k_mmas=valid_k_mmas,
-                    )
+                _ = consumer_s[p_stage].wait(wait_phase)
+            if not blasst_should_skip(wg, wait_phase):
+                comptime for v_stage in range(num_d_tiles):
+                    comptime for p_stage in range(num_pv_stages):
+                        comptime if v_stage == 0:
+                            UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
+                                s_tmem,
+                                v,
+                                o_tmem,
+                                c_scale=c_scale,
+                                elect=e,
+                                valid_k_mmas=valid_k_mmas,
+                            )
+                        else:
+                            UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
+                                s_tmem,
+                                v + UInt32(v_stage * v_region_bytes),
+                                o_tmem + UInt32(v_stage * depth_tile),
+                                c_scale=c_scale,
+                                elect=e,
+                                valid_k_mmas=valid_k_mmas,
+                            )
+        else:
+            # V-smem tile outer; P-tmem stage inner (see `_pv_full`).
+            # `valid_k_mmas` is the KEY count, identical across V regions, so it
+            # passes through unchanged for every v_stage.
+            comptime for v_stage in range(num_d_tiles):
+                comptime for p_stage in range(num_pv_stages):
+                    comptime if v_stage == 0:
+                        _ = consumer_s[p_stage].wait(wait_phase)
+                        UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
+                            s_tmem,
+                            v,
+                            o_tmem,
+                            c_scale=c_scale,
+                            elect=e,
+                            valid_k_mmas=valid_k_mmas,
+                        )
+                    else:
+                        UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
+                            s_tmem,
+                            v + UInt32(v_stage * v_region_bytes),
+                            o_tmem + UInt32(v_stage * depth_tile),
+                            c_scale=c_scale,
+                            elect=e,
+                            valid_k_mmas=valid_k_mmas,
+                        )
 
     # Sliding-window / any non-zero `start_column` mask: the load and
     # softmax warps work the contraction in the `[start_column, num_keys)`
@@ -320,12 +454,32 @@ def fa4_mma[
                 * (config.shared_kv_cols() // config.num_qk_stages)
                 * size_of[config.qkv_dtype]()
             ), "WS kv_stage_bytes must equal one 256x64 sub-tile"
-            comptime assert (
-                num_d_tiles == config.num_qk_stages
-            ), "WS uniform sub-tile: num_d_tiles == num_qk_stages"
-            comptime assert (
-                256 // config.m_pack
-            ) == config.BK0, "WS uniform sub-tile: depth_tile == BK0"
+            # Uniform shared-ring sub-tile premise (mirrors the m_pack-selected
+            # invariant already enforced at `attention.mojo`'s `supported()`):
+            # Layout-G (m_pack==4) keeps its depth-scatter checks; Layout-E
+            # (m_pack==2) asserts its reduction-split V sub-tile divides the
+            # partition's keys evenly AND is byte-equal to one K/V ring slot.
+            comptime if is_reduction_split:
+                comptime assert (
+                    config.BN // config.m_pack
+                ) % config.num_qk_stages == 0, (
+                    "WS Layout-E: (BN // m_pack) must divide evenly by"
+                    " num_qk_stages"
+                )
+                comptime assert (
+                    pv_mma_n * pv_bk_chunk * size_of[config.qkv_dtype]()
+                    == kv_stage_bytes
+                ), (
+                    "WS Layout-E: reduction sub-tile bytes must equal one"
+                    " K/V ring slot"
+                )
+            else:
+                comptime assert (
+                    num_d_tiles == config.num_qk_stages
+                ), "WS uniform sub-tile: num_d_tiles == num_qk_stages"
+                comptime assert (
+                    256 // config.m_pack
+                ) == config.BK0, "WS uniform sub-tile: depth_tile == BK0"
 
         # K descriptor: k_major for Q@K' (BK0=64 -> one depth-half sub-tile).
         kv_desc_k = smem_descriptor[
@@ -335,9 +489,11 @@ def fa4_mma[
             is_k_major=True,
             page_dense=config.k_row_major(),
         ](kv_smem)
-        # V descriptor: mn_major for P@V. WS uses the proven packed
-        # [pv_mma_n=256, pv_bk=64] one-depth-tile box; non-WS keeps the full
-        # [v_cols_per_cta, BN] tile (byte-identical).
+        # V descriptor: mn_major for P@V. WS uses the packed [pv_mma_n, pv_bk]
+        # box -- Layout-G's proven one-depth-tile box (256x64) or Layout-E's
+        # reduction-chunk box (256x64, same numbers @depth128, different
+        # meaning); non-WS keeps the full [v_cols_per_cta, BN] tile
+        # (byte-identical).
         comptime v_desc_bmn = (
             pv_mma_n if config.use_ws else config.v_cols_per_cta()
         )
@@ -391,6 +547,11 @@ def fa4_mma[
             # kernel terminal `cluster_sync()` still runs after this return.
             if total_iters_runtime == 0:
                 return
+        # All-masked row (valid_length 0): total_iters == 0, so the
+        # `- (3 - num_q)` below underflows and the MMA warp spins, hanging the
+        # pipeline. Split-K is guarded above; guard the non-split path here.
+        if total_iters_runtime == 0:
+            return
         var iter_count: UInt32 = total_iters_runtime - UInt32(3 - num_q)
 
         # Release the KV slot at `release_idx`, advance to the next stage,
@@ -405,6 +566,127 @@ def fa4_mma[
             kv_pipeline.state.step()
             kv_pipeline.consumer_wait()
             return kv_pipeline.state.index()
+
+        # ===== Cross-stage P QK0-first JIT schedule + K-ahead KV ring =====
+        # Two cursors over the shared K0,K1,V0,K2,V1,... ring: ACQUIRE walks
+        # position order every step; RELEASE (`rel_slot`) lags by <=2 but fires
+        # in the SAME producer-fill order, so per-slot mbar parity never skips.
+        # Per-iter MMA order QK0(n)->PV0(n-1)->QK1(n)->PV1(n-1): QK0(n)
+        # overwrites S0 (incl. P1's window S0[32:96]) before PV1(n-1) reads
+        # P1(n-1) from there -- a WAR hazard made safe by the softmax JIT-P1
+        # seed, which delays P1(n-1)'s store to land after QK0(n). 2Q + non-WS
+        # only; aliased path below is byte-identical when off.
+        comptime if CrossP:
+            var p0_tmem = tmem_addr + UInt32(config.TMEM_P0)  # P0 in S1 window
+            var p1_tmem = tmem_addr + UInt32(config.TMEM_P1)  # P1 in S0 window
+            # MMA-side sfree consumers: QK{wg}(n) waits until softmax finished
+            # reading S{wg}(n-1) before overwriting it. Peel QKs skip this (no
+            # prior S). Persistent phase.
+            var sfree0 = mbars.sfree_consumer(0)
+            var sfree1 = mbars.sfree_consumer(1)
+
+            # Private in-order release cursor (slot = pos % num_kv_stages). No
+            # jump-back: releases fire in strict producer-fill order.
+            var rel_slot: UInt32 = 0
+            comptime last_stage = config.num_kv_stages - 1
+
+            # ---- Peel: acquire K0 (pos0); QK0(0); QK1(0); release K0. ----
+            kv_pipeline.consumer_wait()  # pos0 = K0
+            var kc = (
+                kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
+            )
+            kv_pipeline.state.step()
+            UMMA0Type.mma[stage_idx=0](q0, kc, s0_tmem, elect=e, c_scale=0)
+            _commit(pipeline_s0.producer_mbar())
+            var q1m = mbars.q1_wait_mbar()
+            q1m[0].wait()
+            UMMA0Type.mma[stage_idx=0](q1, kc, s1_tmem, elect=e, c_scale=0)
+            _commit(pipeline_s1.producer_mbar())
+            # release K0 (pos0)
+            _commit(kv_pipeline.consumer_mbar(rel_slot))
+            rel_slot = 0 if rel_slot == UInt32(last_stage) else rel_slot + 1
+
+            var xphase: UInt32 = 0
+            var xcscale: UInt32 = 0
+
+            # ---- Main loop: iter n (n=1..NT-1) makes S(n), drains P(n-1). ----
+            while iter_count != 0:
+                iter_count -= 1
+
+                # Acquire K_n (pos 2n-1).
+                kv_pipeline.consumer_wait()
+                var kn_idx = kv_pipeline.state.index()
+                kv_pipeline.state.step()
+                kc = kv_desc_k + UInt32(kv_stage_bytes) * kn_idx
+
+                # QK0(n): acquire sfree0 (softmax read S0(n-1)); q0*K_n -> S0.
+                sfree0.wait()
+                sfree0.step()
+                UMMA0Type.mma[stage_idx=0](q0, kc, s0_tmem, elect=e, c_scale=0)
+                _commit(pipeline_s0.producer_mbar())
+
+                # Acquire V_{n-1} (pos 2n).
+                kv_pipeline.consumer_wait()
+                var vn1_idx = kv_pipeline.state.index()
+                kv_pipeline.state.step()
+                var vn1 = kv_desc_v + UInt32(kv_stage_bytes) * vn1_idx
+
+                # PV0(n-1): P0(n-1) * V_{n-1} -> O0 (cross p0_tmem in S1 window).
+                _pv_full(p0_tmem, vn1, o0_tmem, consumer_s0, xphase, xcscale, 0)
+                _commit(pipeline_o0.producer_mbar())
+
+                # QK1(n): acquire sfree1; q1*K_n -> S1.
+                sfree1.wait()
+                sfree1.step()
+                UMMA0Type.mma[stage_idx=0](q1, kc, s1_tmem, elect=e, c_scale=0)
+                _commit(pipeline_s1.producer_mbar())
+
+                # Release K_n (pos 2n-1) -- BEFORE the deferred PV1 (FI 1317).
+                _commit(kv_pipeline.consumer_mbar(rel_slot))
+                rel_slot = 0 if rel_slot == UInt32(last_stage) else rel_slot + 1
+
+                # PV1(n-1): P1(n-1) * V_{n-1} -> O1 (cross p1_tmem in S0 window;
+                # JIT-protected -- softmax stored P1(n-1) after QK0(n)).
+                _pv_full(p1_tmem, vn1, o1_tmem, consumer_s1, xphase, xcscale, 1)
+                _commit(pipeline_o1.producer_mbar())
+
+                # Release V_{n-1} (pos 2n) -- after PV1 (FI 1333).
+                _commit(kv_pipeline.consumer_mbar(rel_slot))
+                rel_slot = 0 if rel_slot == UInt32(last_stage) else rel_slot + 1
+
+                xcscale = 1
+                xphase ^= 1
+
+            # ---- Epilogue: acquire V_{NT-1} (pos 2NT-1); drain P0/P1. ----
+            kv_pipeline.consumer_wait()
+            var vl_idx = kv_pipeline.state.index()
+            kv_pipeline.state.step()
+            var vl = kv_desc_v + UInt32(kv_stage_bytes) * vl_idx
+            comptime if PARTIAL_K:
+                var vkm = ceildiv(
+                    min(
+                        v_eff_keys
+                        - (total_iters_runtime - UInt32(1)) * UInt32(BN),
+                        UInt32(BN),
+                    ),
+                    UInt32(UMMA1Type.MMA_K),
+                )
+                _pv_partial(
+                    p0_tmem, vl, o0_tmem, consumer_s0, xphase, xcscale, vkm, 0
+                )
+                _commit(pipeline_o0.producer_mbar())
+                _pv_partial(
+                    p1_tmem, vl, o1_tmem, consumer_s1, xphase, xcscale, vkm, 1
+                )
+                _commit(pipeline_o1.producer_mbar())
+            else:
+                _pv_full(p0_tmem, vl, o0_tmem, consumer_s0, xphase, xcscale, 0)
+                _commit(pipeline_o0.producer_mbar())
+                _pv_full(p1_tmem, vl, o1_tmem, consumer_s1, xphase, xcscale, 1)
+                _commit(pipeline_o1.producer_mbar())
+            # release V_{NT-1} (pos 2NT-1)
+            _commit(kv_pipeline.consumer_mbar(rel_slot))
+            return
 
         # ---- WS sub-tile ring helpers (all fold to no-ops for non-WS) ----
         # `_qk_extra`: after the d=0 Q@K' mma at the first K sub-slot, do the
@@ -448,13 +730,23 @@ def fa4_mma[
                     )
                 )
 
-        # `_pv_ws`: P@V across num_d_tiles depth-tile ring slots (WS only).
-        # `v_idx0` is the first slot's ring index; the rest are ring-adjacent.
-        # V-slot outer, P-stage inner (mirrors `_pv_full`); wait each P sub-stage
-        # once on the first depth-tile only (P stays live in TMEM across tiles).
-        # Each depth-tile MMAs into `o_tmem + d*depth_tile` from its own slot
+        # `_pv_ws`: P@V across num_d_tiles ring slots (WS only). `v_idx0` is
+        # the first slot's ring index; the rest are ring-adjacent. V-slot
+        # outer, P-stage inner (mirrors `_pv_full`); wait each P sub-stage
+        # once on the first slot only (P stays live in TMEM across slots).
+        #
+        # Layout-G (m_pack==4, depth-scatter): `v_stage` selects a DISJOINT
+        # output depth-tile (`o_tmem + v_stage*depth_tile`) from its own slot
         # base (NOT the `+d*v_region_bytes` intra-slot offset the non-WS path
-        # uses for its contiguous V buffer).
+        # uses for its contiguous V buffer); the caller's `c_scale` applies to
+        # every v_stage unchanged (each writes independent columns).
+        #
+        # Layout-E (m_pack==2, reduction-accumulate): `v_stage` is instead a
+        # reduction (key) chunk `r` -- every chunk MMAs into the SAME
+        # (un-offset) `o_tmem`, so only `v_stage==0` uses the caller's
+        # `c_scale`; later chunks always accumulate (scale=1), composing with
+        # `UMMA1Type`'s own per-`p_stage` internal `stage_idx==0 -> c_scale
+        # else 1` handling.
         @parameter
         @always_inline
         def _pv_ws[
@@ -477,25 +769,46 @@ def fa4_mma[
                         config.num_kv_stages
                     )
                 var v_slot = kv_desc_v + UInt32(kv_stage_bytes) * v_idx_d
+                # Per-`v_stage` O / P-column offsets, exactly one nonzero per
+                # layout. Layout-G scatters O by depth-tile and never advances
+                # the P columns. Layout-E accumulates into un-offset O but must
+                # advance the P base by `v_stage` reduction chunks
+                # (`s_tmem_chunk_words` TMEM columns each): `UMMA1Type.mma`'s
+                # OWN internal offset only covers ONE `pv_bk_chunk`-wide window
+                # relative to the base passed in, so without this advance every
+                # chunk silently re-reads chunk 0's P columns against a
+                # DIFFERENT V key range. `v_stage` is a comptime loop var, so
+                # both offsets fold to constants.
+                comptime o_col_offset = (
+                    0 if is_reduction_split else v_stage * depth_tile
+                )
+                comptime s_col_offset = (
+                    v_stage * s_tmem_chunk_words if is_reduction_split else 0
+                )
+                var stage_o_tmem = o_tmem + UInt32(o_col_offset)
+                var stage_s_tmem = s_tmem + UInt32(s_col_offset)
+                var stage_c_scale: UInt32 = c_scale
+                comptime if is_reduction_split and v_stage != 0:
+                    stage_c_scale = 1
                 comptime for p_stage in range(num_pv_stages):
                     comptime if v_stage == 0:
                         _ = consumer_s[p_stage].wait(wait_phase)
                     comptime if partial:
                         UMMA1Type.mma_maybe_partial_k[stage_idx=p_stage](
-                            s_tmem,
+                            stage_s_tmem,
                             v_slot,
-                            o_tmem + UInt32(v_stage * depth_tile),
-                            c_scale=c_scale,
+                            stage_o_tmem,
+                            c_scale=stage_c_scale,
                             elect=e,
                             valid_k_mmas=valid_k_mmas,
                         )
                     else:
                         UMMA1Type.mma[stage_idx=p_stage](
-                            s_tmem,
+                            stage_s_tmem,
                             v_slot,
-                            o_tmem + UInt32(v_stage * depth_tile),
+                            stage_o_tmem,
                             elect=e,
-                            c_scale=c_scale,
+                            c_scale=stage_c_scale,
                         )
 
         # ---- Peeled iteration ----
@@ -616,6 +929,10 @@ def fa4_mma[
 
         var c_scale: UInt32 = 0
 
+        # BLASST: epilogue P@V is WG1 by default; the 1Q odd-T tail re-points
+        # s1 aliases to WG0, so flip this there too (DCE'd when off).
+        var blasst_epi_wg: UInt32 = 1
+
         # 1Q: release V_e[0] (all sub-slots); load V_o[0] and hold its
         # first slot index in v_prev_idx for the first main-loop iter's
         # P_o @ V_o[0] MMA.
@@ -651,6 +968,7 @@ def fa4_mma[
                     consumer_s1,
                     phase,
                     c_scale,
+                    1,
                 )
             _commit(pipeline_o1.producer_mbar())
             c_scale = 1
@@ -674,6 +992,7 @@ def fa4_mma[
                     o1_tmem = o0_tmem
                     consumer_s1 = consumer_s0
                     pipeline_o1 = pipeline_o0
+                    blasst_epi_wg = 0  # aliased to WG0 side
                     phase ^= 1  # advance from this iter's K@s1 phase
                     # to the V@o0 phase the s0 wait needs.
                     break
@@ -772,6 +1091,7 @@ def fa4_mma[
                     phase,
                     c_scale,
                     vkm,
+                    blasst_epi_wg,
                 )
         else:
             comptime if config.use_ws:
@@ -786,6 +1106,7 @@ def fa4_mma[
                     consumer_s1,
                     phase,
                     c_scale,
+                    blasst_epi_wg,
                 )
         _commit(pipeline_o1.producer_mbar())
         _commit(kv_pipeline.consumer_mbar(v_prev_idx))  # V_last_d0
@@ -845,6 +1166,11 @@ def fa4_mma[
             # kernel terminal `cluster_sync()` still runs after this return.
             if total_iters_runtime == 0:
                 return
+        # All-masked row (valid_length 0): total_iters == 0, so the
+        # `- (3 - num_q)` below underflows and the MMA warp spins, hanging the
+        # pipeline. Split-K is guarded above; guard the non-split path here.
+        if total_iters_runtime == 0:
+            return
         var iter_count: UInt32 = total_iters_runtime - UInt32(3 - num_q)
 
         # Q_0 @ K_0' (2Q) / Q @ K_e[0]' (1Q), staged over num_qk_stages
@@ -936,6 +1262,9 @@ def fa4_mma[
 
         var c_scale: UInt32 = 0
 
+        # BLASST: see the fused-mode `blasst_epi_wg` above -- same 1Q tail flip.
+        var blasst_epi_wg: UInt32 = 1
+
         # vo_prev_idx tracks the held V_o slot index in 1Q (needed
         # by the deferred consumer_release_at). Declared at outer
         # scope so it's visible across the 1Q comptime-if blocks
@@ -980,22 +1309,7 @@ def fa4_mma[
             _commit(pipeline_s0.producer_mbar())
 
             # O_1 + P_1 @ V_{n-1} (2Q) / O_o + P_o @ V_o[n-1] (1Q).
-            # V-smem tile outer; P-tmem stage inner.
-            comptime for v_stage in range(num_d_tiles):
-                comptime for p_stage in range(num_pv_stages):
-                    comptime if v_stage == 0:
-                        _ = consumer_s1[p_stage].wait(phase)
-                        UMMA1Type.mma[stage_idx=p_stage](
-                            s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
-                        )
-                    else:
-                        UMMA1Type.mma[stage_idx=p_stage](
-                            s1_tmem,
-                            vlatest + UInt32(v_stage * v_region_bytes),
-                            o1_tmem + UInt32(v_stage * depth_tile),
-                            elect=e,
-                            c_scale=c_scale,
-                        )
+            _pv_full(s1_tmem, vlatest, o1_tmem, consumer_s1, phase, c_scale, 1)
             _commit(pipeline_o1.producer_mbar())
             c_scale = 1
             # Release V_{n-1} (2Q at current state) / V_o[n-1] (1Q at
@@ -1024,6 +1338,7 @@ def fa4_mma[
                     o1_tmem = o0_tmem
                     consumer_s1 = consumer_s0
                     pipeline_o1 = pipeline_o0
+                    blasst_epi_wg = 0  # aliased to WG0 side
                     phase ^= 1
                     break
                 iter_count -= 1
@@ -1090,8 +1405,23 @@ def fa4_mma[
                 UInt32(UMMA1Type.MMA_K),
             )
             _pv_partial(
-                s1_tmem, vlatest, o1_tmem, consumer_s1, phase, c_scale, vkm
+                s1_tmem,
+                vlatest,
+                o1_tmem,
+                consumer_s1,
+                phase,
+                c_scale,
+                vkm,
+                blasst_epi_wg,
             )
         else:
-            _pv_full(s1_tmem, vlatest, o1_tmem, consumer_s1, phase, c_scale)
+            _pv_full(
+                s1_tmem,
+                vlatest,
+                o1_tmem,
+                consumer_s1,
+                phase,
+                c_scale,
+                blasst_epi_wg,
+            )
         _commit(pipeline_o1.producer_mbar())

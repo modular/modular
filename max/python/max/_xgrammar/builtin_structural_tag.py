@@ -1596,7 +1596,7 @@ def get_glm_4_7_structural_tag(
 
 
 @register_model_structural_tag("gemma_4")
-def _get_gemma_4_structural_tag(
+def get_gemma_4_structural_tag(
     tools: Optional[List[FunctionToolParam]] = None,
     builtin_tools: Optional[List[BuiltinToolParam]] = None,
     tool_choice: Literal["auto", "required", "forced"] = "auto",
@@ -1668,6 +1668,7 @@ def _get_gemma_4_structural_tag(
         "bare_key_literal_forbidden": r":{},\x00-\x20\x7f",
         "bare_key_pattern_forbidden": r" \t\n\r\f:{},\"\\\x00-\x1f",
         "max_whitespace_cnt": 1,
+        "strict_mode": False,
         # TODO(CENG-813): these per-model enables become redundant once the flags default on for all models.
         "require_object_root": True,
         "reject_unsupported": True,

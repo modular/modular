@@ -24,7 +24,7 @@ Intended to stress multithreaded heap **placement**, **first-touch**, and
 malloc/free metadata.
 """
 
-from std.algorithm import parallelize
+from max.algorithm import parallelize
 from std.benchmark import (
     Bench,
     BenchConfig,
@@ -72,17 +72,17 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
 
                 var k = 0
                 while k < n_elems:
-                    p[k] = seed ^ k
+                    p[unsafe_offset=k] = seed ^ k
                     k += 1
 
                 var fold = Scalar[DType.int64](0)
                 k = 0
                 while k < n_elems:
-                    fold ^= Scalar[DType.int64](p[k])
+                    fold ^= Scalar[DType.int64](p[unsafe_offset=k])
                     k += 1
                 acc += fold
 
-                p.free()
+                p.unsafe_free()
                 j += 1
 
             _ = checksum.fetch_add(acc)

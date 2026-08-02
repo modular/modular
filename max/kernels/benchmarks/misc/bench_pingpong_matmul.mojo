@@ -20,6 +20,7 @@ from std.sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -27,7 +28,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
@@ -200,7 +201,7 @@ def bench_matmul[
                         ctx,
                     )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,

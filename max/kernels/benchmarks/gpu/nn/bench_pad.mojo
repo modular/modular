@@ -13,6 +13,7 @@
 
 from std.sys import get_defined_dtype, get_defined_int, size_of
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     BenchConfig,
@@ -21,7 +22,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import TileTensor, row_major
 from nn.pad_gpu import pad_constant, get_padding_output_shape
@@ -33,9 +34,7 @@ def bench_pad_gpu[
     rank: Int, //, dtype: DType, shape: IndexList[rank], pad_size: Int
 ](ctx: DeviceContext, mut b: Bench) raises:
     # Create paddings with uniform pre/post padding on all dimensions.
-    var paddings_stack = InlineArray[Scalar[DType.int], 2 * rank](
-        uninitialized=True
-    )
+    var paddings_stack = Array[Scalar[DType.int], 2 * rank](uninitialized=True)
     var paddings = TileTensor(paddings_stack, row_major[2 * rank]())
     for i in range(rank):
         paddings[2 * i] = Scalar[DType.int](pad_size)
@@ -65,7 +64,7 @@ def bench_pad_gpu[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](b, ctx)
 
     # Total memory traffic: read input + write output.
     var total_bytes = (input_size + output_size) * size_of[dtype]()

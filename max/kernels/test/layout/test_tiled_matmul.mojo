@@ -13,7 +13,9 @@
 
 from std.sys import simd_width_of
 
-from std.algorithm import sync_parallelize, vectorize
+from std.algorithm import vectorize
+
+from max.algorithm import sync_parallelize
 from layout import *
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor

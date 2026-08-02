@@ -62,7 +62,7 @@ struct TString[
 
         @always_inline
         def write_string() {imm encoded_bytes, imm offset, mut writer} -> Int:
-            var literal_start = encoded_bytes.unsafe_ptr() + offset
+            var literal_start = encoded_bytes.unsafe_ptr().unsafe_offset(offset)
             var literal_length = _strlen(literal_start)
             var string_literal = StringSlice(
                 unsafe_from_utf8=Span(
@@ -74,7 +74,7 @@ struct TString[
 
         # Alternate writing NUL terminated string-literal part, followed
         # by the interpolated replacement field.
-        comptime for i in range(Self.Ts.size):
+        comptime for i in range(Self.Ts.length):
             var length = write_string()
             offset += length + 1
             self._values[i].write_to(writer)
@@ -166,7 +166,7 @@ def _encode_format_string_comptime[format: StringSlice]() -> List[Byte]:
         # Extract at comptime and explicitly materialize to runtime, since
         # `Variant[List[Byte], Error]` is not `ImplicitlyCopyable` (`Error`
         # is only `Copyable`).
-        comptime value = result.take[List[Byte]]()
+        comptime value = result.unwrap[List[Byte]]()
         return materialize[value]()
 
 
@@ -228,7 +228,7 @@ def _encode_format_string(format: StringSlice) raises -> List[Byte]:
     var bytes = format.as_bytes()
     var i = 0
 
-    var immut_bytes = bytes.get_immutable()
+    var immut_bytes = bytes.as_imm()
 
     @always_inline
     def peek_next_is(byte: Byte) {imm} -> Bool:

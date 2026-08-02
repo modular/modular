@@ -45,10 +45,10 @@ from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.primitives.grid_controls import launch_dependent_grids
 from std.gpu.primitives.warp import _vote_nvidia_helper
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
 from std.gpu.sync import named_barrier
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -533,7 +533,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             # tile — no prior O accumulator to correct).
             if tiles_done > first_processed_tile_sw:
                 c_prod.acquire()
-                var _scale_tuple = InlineArray[Scalar[Self.AccumType], 1](
+                var _scale_tuple = Array[Scalar[Self.AccumType], 1](
                     fill=scale_for_old_max
                 )
                 tcgen05_st[
@@ -981,7 +981,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         float2_register[j] = element * SIMD[Self.AccumType, 2](
                             scale_value
                         )
-                    var _o_st_corr = InlineArray[
+                    var _o_st_corr = Array[
                         Scalar[Self.AccumType], per_warp_corr_elems
                     ](uninitialized=True)
 

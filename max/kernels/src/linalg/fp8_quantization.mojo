@@ -20,7 +20,7 @@ from std.atomic import Atomic
 from std.sys import simd_width_of, has_nvidia_gpu_accelerator
 from std.sys import align_of, size_of, get_defined_bool
 import std.gpu.primitives.block as block
-from std.algorithm.functional import _elementwise_impl_gpu
+from max.algorithm.functional import _elementwise_impl_gpu
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -29,8 +29,8 @@ from std.gpu import (
     thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host.info import B200, _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
@@ -44,8 +44,8 @@ from layout.tile_layout import TensorLayout
 from layout.tensor_storage import TensorStorage
 from std.logger import Logger
 from std.memory import bitcast
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
-from std.algorithm import elementwise
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.algorithm import elementwise
 from std.utils.coord import Coord, Idx, coord_to_index_list
 from std.utils.index import Index, IndexList, StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
@@ -331,7 +331,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 scaled_output.address_space_cast[AddressSpace.GENERIC](),
                 scales.address_space_cast[AddressSpace.GENERIC](),
                 scale_ub.cast[scales_dtype](),
-                num_rows,
+                Int32(num_rows),
             )
 
             ctx.enqueue_function(
@@ -704,7 +704,7 @@ struct _QuantizeFp8KernelPerTensor[
         linear_idx_type=Self.scales_idx_type,
     ]
     var scale_ub: Scalar[Self.scales_type]
-    var num_rows: Int
+    var num_rows_dev: Int32
 
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -725,7 +725,7 @@ struct _QuantizeFp8KernelPerTensor[
         var output = TileTensor(self.output.ptr, self.output.layout)
         var scales = TileTensor(self.scales.ptr, self.scales.layout)
         var scale_ub = self.scale_ub
-        var num_rows = self.num_rows
+        var num_rows = Int(self.num_rows_dev)
         comptime accum_type = get_accum_type[Self.in_type]()
 
         var tid = thread_idx.x

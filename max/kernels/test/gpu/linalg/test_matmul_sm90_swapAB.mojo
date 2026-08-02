@@ -15,7 +15,7 @@
 from std.collections import Optional
 from std.sys import align_of
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from linalg.matmul.gpu.sm90.config import MatmulConfig as MatmulConfigSM90
 from linalg.matmul.gpu.sm90.testbed_swapAB import (
     test_matmul_sm90_swapAB_comparison,

@@ -16,7 +16,7 @@ from std.math import rsqrt
 from std.memory import unsafe_memcpy
 from std.random import random_ui64, seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache_test_utils import random_distinct
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -33,6 +33,17 @@ from std.utils import Index, IndexList
 
 comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime llama_num_q_heads = 32
+
+# MiniMax-M3's dense-layer shape at TP4: 16 query heads over one KV head, so
+# `group == num_heads` and the AMD decode query-token fold is eligible.
+comptime kv_params_single_kv = KVCacheStaticParams(num_heads=1, head_size=128)
+comptime fold_num_q_heads = 16
+
+# The EAGLE3 draft shape at TP4: 16 query heads over 16 KV heads (`group == 1`),
+# which folds on the token-strided Q/O path.
+comptime kv_params_one_q_per_kv = KVCacheStaticParams(
+    num_heads=16, head_size=128
+)
 
 
 def execute_ragged_flash_attention[
@@ -427,6 +438,74 @@ def test_flash_attention_with_sink_weights(ctx: DeviceContext) raises:
     )
 
 
+def test_speculative_decode_query_lengths(ctx: DeviceContext) raises:
+    """Verify-step query lengths (S > 1) against the padded naive reference.
+
+    On AMD these route to the decode kernel's query-token fold, which writes rows
+    `input_row_offsets[b] .. +S`. A NON-UNIFORM batch is what catches a wrong row
+    base — a short sequence would overwrite its neighbour's tokens — since the
+    comparison reads each output row at its ragged offset. Elsewhere these lengths
+    take prefill and are still valid coverage.
+    """
+    var max_seq_len_cache = 1024
+
+    # Uniform S, one kernel instantiation per S on the fold path.
+    for s in [2, 3, 4]:
+        var seq_lens = List[Int]()
+        var cache_lens = List[Int]()
+        for _ in range(4):
+            seq_lens.append(s)
+            cache_lens.append(Int(random_ui64(512, 1000)))
+        execute_ragged_flash_attention[
+            fold_num_q_heads, DType.bfloat16, kv_params_single_kv
+        ](seq_lens, max_seq_len_cache, cache_lens, 2, 0, ctx)
+
+    # Non-uniform S in one launch (drafts accepted to different depths, including
+    # a plain 1-token decode): the fold dispatches at S = max(seq_lens) and each
+    # CTA clamps to its own runtime length.
+    var mixed_seq_lens: List[Int] = [4, 1, 2, 4, 3]
+    var mixed_cache_lens: List[Int] = [900, 512, 700, 1000, 613]
+    execute_ragged_flash_attention[
+        fold_num_q_heads, DType.bfloat16, kv_params_single_kv
+    ](mixed_seq_lens, max_seq_len_cache, mixed_cache_lens, 2, 0, ctx)
+
+    # Single sequence, and a cache length far short of the BN=128 key tile.
+    var one_seq: List[Int] = [4]
+    var one_cache: List[Int] = [29]
+    execute_ragged_flash_attention[
+        fold_num_q_heads, DType.bfloat16, kv_params_single_kv
+    ](one_seq, max_seq_len_cache, one_cache, 2, 0, ctx)
+
+    # `group == 1`: a folded CTA's rows are the S tokens, stepping by the BSHD
+    # token stride rather than by depth. S=5 is an EAGLE3 step-0 width at K=3.
+    for s in [2, 3, 4, 5]:
+        var one_q_seq_lens = List[Int]()
+        var one_q_cache_lens = List[Int]()
+        for _ in range(4):
+            one_q_seq_lens.append(s)
+            one_q_cache_lens.append(Int(random_ui64(512, 1000)))
+        execute_ragged_flash_attention[
+            fold_num_q_heads, DType.bfloat16, kv_params_one_q_per_kv
+        ](one_q_seq_lens, max_seq_len_cache, one_q_cache_lens, 2, 0, ctx)
+
+    # Non-uniform S at `group == 1` — the production case, since a step-0
+    # declares K+2 but feeds K+1 rows. Dispatching at S = max = 5 with four of
+    # the five sequences shorter exercises pad-row clamping on the token-strided
+    # path, where the dead rows sit `num_heads*depth` apart instead of adjacent.
+    var one_q_mixed_seq_lens: List[Int] = [5, 1, 4, 2, 3]
+    var one_q_mixed_cache_lens: List[Int] = [900, 512, 700, 1000, 613]
+    execute_ragged_flash_attention[
+        fold_num_q_heads, DType.bfloat16, kv_params_one_q_per_kv
+    ](
+        one_q_mixed_seq_lens,
+        max_seq_len_cache,
+        one_q_mixed_cache_lens,
+        2,
+        0,
+        ctx,
+    )
+
+
 def main() raises:
     seed(42)
     with DeviceContext() as ctx:
@@ -434,3 +513,5 @@ def main() raises:
 
         # Test sink weights functionality
         test_flash_attention_with_sink_weights(ctx)
+
+        test_speculative_decode_query_lengths(ctx)

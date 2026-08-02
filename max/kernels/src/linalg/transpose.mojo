@@ -17,15 +17,18 @@ from std.sys.info import simd_width_of, size_of
 from std.sys.intrinsics import strided_load, strided_store
 
 from std.algorithm import (
-    sync_parallelize,
     tile,
-    unsafe_parallel_memcpy,
     vectorize,
 )
-from std.gpu.host import DeviceContext
+
+from max.algorithm import (
+    sync_parallelize,
+    unsafe_parallel_memcpy,
+)
+from max.gpu.host import DeviceContext
 from layout import TileTensor
 from std.memory import unsafe_memcpy
-from std.runtime.asyncrt import parallelism_level
+from max.runtime.asyncrt import parallelism_level
 
 from std.utils.index import IndexList, StaticTuple
 
@@ -1205,9 +1208,7 @@ def transpose_strided[
         ctx: The context to execute the work on.
     """
     # Compute row-major strides for input.
-    var input_strides_arr = InlineArray[Scalar[DType.int], rank](
-        uninitialized=True
-    )
+    var input_strides_arr = Array[Scalar[DType.int], rank](uninitialized=True)
     input_strides_arr[rank - 1] = 1
     comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2
@@ -1216,7 +1217,7 @@ def transpose_strided[
         ](Int(input.dim[axis + 1]()))
 
     # Permute input strides.
-    var permuted_strides_arr = InlineArray[Scalar[DType.int], rank](
+    var permuted_strides_arr = Array[Scalar[DType.int], rank](
         uninitialized=True
     )
     _permute_data[rank, DType.int](
@@ -1226,9 +1227,7 @@ def transpose_strided[
     )
 
     # Compute row-major strides for output.
-    var output_strides_arr = InlineArray[Scalar[DType.int], rank](
-        uninitialized=True
-    )
+    var output_strides_arr = Array[Scalar[DType.int], rank](uninitialized=True)
     output_strides_arr[rank - 1] = 1
     comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2

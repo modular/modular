@@ -27,7 +27,7 @@ developed.
 
 from asyncrt_test_utils import create_test_device_context
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
@@ -40,8 +40,10 @@ def vec_add(
     in0: UnsafePointer[Float32, MutAnyOrigin],
     in1: UnsafePointer[Float32, MutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -71,7 +73,7 @@ def test_kernel_with_device_pointers() raises:
         in0.device_ptr(),
         in1.device_ptr(),
         out.device_ptr(),
-        _LENGTH,
+        Int32(_LENGTH),
         grid_dim=(_LENGTH // _BLOCK_DIM),
         block_dim=_BLOCK_DIM,
     )
@@ -110,7 +112,7 @@ def test_kernel_mixed_buffer_and_device_pointer() raises:
         in0,  # DeviceBuffer
         in1.device_ptr(),  # DevicePointer
         out,  # DeviceBuffer
-        _LENGTH,
+        Int32(_LENGTH),
         grid_dim=(_LENGTH // _BLOCK_DIM),
         block_dim=_BLOCK_DIM,
     )

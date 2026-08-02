@@ -27,13 +27,18 @@ imports.
 from std.collections import (
     Dict,
     InlineArray,
+    Array,
     KeyElement,
     List,
     Optional,
+    ImmSpan,
+    MutSpan,
     Span,
 )
 from std.collections.string import (
     Codepoint,
+    ImmStringSlice,
+    MutStringSlice,
     StaticString,
     String,
     StringSlice,

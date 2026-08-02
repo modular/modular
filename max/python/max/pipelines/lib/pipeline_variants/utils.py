@@ -115,16 +115,18 @@ def calculate_num_steps(
 def build_response(
     context_batch: list[TextGenerationContextType],
     max_seq_len: int,
-    max_growth_per_step: int = 1,
 ) -> dict[RequestID, TextGenerationOutput]:
     """Build response from updated contexts.
+
+    Marks a context ``MAXIMUM_LENGTH`` only when it has no room for even one
+    more token. Callers that can append more than one token per step (e.g.
+    speculative decoding) are responsible for not overshooting the cap when
+    they commit tokens; see
+    :func:`update_spec_decode_context_and_prepare_responses`.
 
     Args:
         context_batch: The list of context objects.
         max_seq_len: The maximum sequence length.
-        max_growth_per_step: Maximum tokens that can be added in the next step.
-            For standard decoding this is 1. For speculative decoding this is
-            num_speculative_tokens + 1 (all drafts accepted + bonus token).
 
     Returns:
         Dictionary mapping request IDs to TextGenerationOutput objects.
@@ -136,16 +138,10 @@ def build_response(
             upper_bound=max_seq_len, default=context.max_length
         )
 
-        # If current length has hit the per-request cap, we're done.
-        # Note: the per-request cap can be much shorter than the model
-        # max-len, due to user-supplied settings such as
-        # `max_completion_tokens`.
+        # Mark done only when there is no room for even one more token. The
+        # per-step commit loop is responsible for not overshooting this cap.
         current_length = context.tokens.processed_length + 1
         if current_length >= context_max_length:
-            context.status = GenerationStatus.MAXIMUM_LENGTH
-        # If another step would exceed max_seq_len, we're done. This can stop
-        # spec-decode requests just short of max_seq_len; MXSERV-284 tracks it.
-        elif current_length + max_growth_per_step > max_seq_len:
             context.status = GenerationStatus.MAXIMUM_LENGTH
 
         output = context.to_generation_output()
@@ -268,38 +264,45 @@ def update_spec_decode_context_and_prepare_responses(
         if not ctx.tokens.generated_length:
             continue
 
+        # A spec-decode step can append up to num_speculative_tokens + 1
+        # tokens at once, which may cross max_seq_len. The KV pool carries
+        # num_draft_tokens slack beyond max_seq_len so the forward pass is
+        # safe, but committing past the limit would emit out-of-context
+        # tokens and push the next step past the pool. Cap the commit at the
+        # limit and mark the request done.
+        context_max_length = upper_bounded_default(
+            upper_bound=max_seq_len, default=ctx.max_length
+        )
+
         maybe_accepted_draft_tokens: list[int] = draft_tokens[
             batch_idx
         ].tolist()
         num_accept = num_accepted_draft_tokens[batch_idx]
         tokens = maybe_accepted_draft_tokens[:num_accept]
         tokens += [next_tokens[batch_idx]]
+        num_committed = 0
         for i, token in enumerate(tokens):
-            # The overlap scheduler leaves a FUTURE_TOKEN placeholder as the last
-            # generated token; realize_future_token overwrites it in place. Calling
-            # update() for that same index would append a duplicate (see
-            # update_context_and_prepare_responses with overwrite_future).
             if i == 0:
                 ctx.realize_future_token(token)
-                # For structured output, advance FSM with the realized token.
-                # realize_future_token only updates the token buffer, not the FSM.
-                # Skip when a CUDA host callback already advanced the FSM.
                 if ctx.matcher is not None and not skip_fsm_advance:
                     ctx.advance_fsm(token)
             elif ctx.is_done:
                 break
             else:
                 if skip_fsm_advance and ctx.matcher is not None:
-                    # Token buffer must still advance; FSM was already advanced
-                    # by the CUDA host callback. Only skip ctx.update() when
-                    # there is a matcher — unconstrained contexts must still
-                    # call ctx.update() so EOS detection fires normally.
                     ctx.advance_token_buffer(token)
                 else:
                     ctx.update(token)
 
+            num_committed = i + 1
+            if ctx.tokens.current_position >= context_max_length:
+                ctx.status = GenerationStatus.MAXIMUM_LENGTH
+                break
+
         if track_phase:
-            for token in tokens:
+            # Only the committed prefix reached the buffer; tokens dropped by
+            # the length cap must not toggle the reasoning phase.
+            for token in tokens[:num_committed]:
                 if token == think_start_token_id:
                     ctx.in_reasoning_phase = True
                 elif token == think_end_token_id:
@@ -307,20 +310,13 @@ def update_spec_decode_context_and_prepare_responses(
 
         ctx.spec_decoding_state.maybe_accepted_draft_tokens = []
         if not ctx.is_done:
-            # Save draft tokens for verification in the next TG step.
-            # Skipped when is_done=True: the context produces no further TG
-            # steps so draft tokens are unnecessary.
             ctx.spec_decoding_state.draft_tokens_to_verify = next_draft_tokens[
                 batch_idx
             ].tolist()
 
-    # With speculative decoding, the next step can add up to
-    # num_speculative_tokens (all drafts accepted) + 1 (bonus token).
-    max_growth_per_step = num_speculative_tokens + 1
     result = build_response(
         context_batch=context_batch,
         max_seq_len=max_seq_len,
-        max_growth_per_step=max_growth_per_step,
     )
 
     # Clear draft tokens for contexts that won't be processed further.
@@ -342,37 +338,6 @@ def get_rope_theta(config: AutoConfig) -> float:
         return rope_params["rope_theta"]
 
     return config.rope_theta
-
-
-def get_eos_tokens(hf_config: AutoConfig, eos_token_id: int) -> set[int]:
-    """Returns the set of end-of-sequence token IDs from config or fallback.
-
-    Args:
-        hf_config: HuggingFace model configuration.
-        eos_token_id: Default EOS token id when not present in config.
-
-    Returns:
-        Set of EOS token ids to use for generation.
-    """
-    # Expand eos tokens if more are provided in pipeline_config
-    if "eos_token_id" not in hf_config:
-        return set([eos_token_id])
-
-    hf_eos_tokens = hf_config.eos_token_id
-    if isinstance(hf_eos_tokens, int):
-        if hf_eos_tokens != eos_token_id:
-            msg = f"eos_token_id provided in huggingface config ({hf_eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"
-            logger.warning(msg)
-        return set([hf_eos_tokens])
-    elif isinstance(hf_eos_tokens, list):
-        if eos_token_id in hf_eos_tokens:
-            return set(hf_eos_tokens)
-        else:
-            return set([eos_token_id])
-    else:
-        msg = f"eos_token_id in huggingface_config is neither int or list: {hf_eos_tokens}"
-        logger.warning(msg)
-        return set([eos_token_id])
 
 
 @dataclass
@@ -500,6 +465,7 @@ class StructuredOutputHelper:
             vocab_size,
             # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
             reject_unsupported=(tool_parser_name == "gemma4"),
+            stop_token_ids=tokenizer.eos_token_ids,
         )
 
         # Extract structural tags from tool parser if available
@@ -678,9 +644,12 @@ class StructuredOutputHelper:
             context: Request context with grammar state.
         """
         if self.tool_call_region_delimiters is not None:
+            end_token_ids = self.tool_call_region_delimiters.end_token_ids
+            if context.grammar_state.has_json_schema:
+                end_token_ids = None
             context.set_tool_region(
                 start_token_ids=self.tool_call_region_delimiters.start_token_ids,
-                end_token_ids=self.tool_call_region_delimiters.end_token_ids,
+                end_token_ids=end_token_ids,
             )
 
     def _tokens_for_consume(self, token: int, was_enforced: bool) -> list[int]:

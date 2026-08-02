@@ -4,13 +4,13 @@ sidebar_position: 2
 description: Using TileTensor to manipulate multidimensional data.
 ---
 
-A [`TileTensor`](/docs/layout/tile_tensor/TileTensor/)
-provides a view of multi-dimensional data stored in a linear
-array. `TileTensor` abstracts the logical organization of multi-dimensional
-data from its actual arrangement in memory. You can generate new tensor "views"
-of the same data without copying the underlying data.
-This facilitates essential patterns for writing performant computational
-algorithms, such as:
+A
+[`TileTensor`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/)
+provides a view of multi-dimensional data stored in a linear array. `TileTensor`
+abstracts the logical organization of multi-dimensional data from its actual
+arrangement in memory. You can generate new tensor "views" of the same data
+without copying the underlying data. This facilitates essential patterns for
+writing performant computational algorithms, such as:
 
 - Extracting tiles (sub-tensors) from existing tensors. This is especially
   valuable on the GPU, allowing a thread block to load a tile into shared
@@ -61,12 +61,12 @@ information, see [Vectorizing tensors](#vectorizing-tensors).
 :::note TileTensor and LayoutTensor
 
 `TileTensor` is essentially a new version of
-[`LayoutTensor`](/docs/layout/layout_tensor/LayoutTensor/). `TileTensor`
-is more memory-efficient and makes it much easier to mix compile-time and
-runtime dimensions. However, some operations that are supported on
-`LayoutTensor` aren't yet supported on `TileTensor`. For these operations, you
-can easily create a `LayoutTensor` from a `TileTensor` using
-[`to_layout_tensor()`](/docs/layout/tile_tensor/TileTensor/#to_layout_tensor).
+[`LayoutTensor`](https://docs.modular.com/api/mojo/layout/layout_tensor/LayoutTensor/).
+`TileTensor` is more memory-efficient and makes it much easier to mix
+compile-time and runtime dimensions. However, some operations that are supported
+on `LayoutTensor` aren't yet supported on `TileTensor`. For these operations,
+you can easily create a `LayoutTensor` from a `TileTensor` using
+[`to_layout_tensor()`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/#to_layout_tensor).
 This method currently only supports flat (non-nested) layouts.
 
 :::
@@ -138,9 +138,10 @@ def takes_scalar_tensor(
 ```
 
 You can also access elements using the
-[`load()`](/docs/layout/tile_tensor/TileTensor/#load) and
-[`store()`](/docs/layout/tile_tensor/TileTensor/#store) methods, which
-let you specify the vector size explicitly:
+[`load()`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/#load)
+and
+[`store()`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/#store)
+methods, which let you specify the vector size explicitly:
 
 ```mojo
 var elements = tensor.load[4]((row, col))
@@ -218,20 +219,20 @@ While `TileTensor` is often used on the GPU, you can also use it to create
 tensors for use on the CPU.
 
 To create a `TileTensor` for use on the CPU, you need a
-[`Layout`](/docs/layout/tile_layout/Layout/) and a block
-of memory to store the tensor data. A common way to allocate memory for a
-`TileTensor` is to use an
-[`InlineArray`](/docs/std/collections/inline_array/InlineArray/) or a `List`:
+[`Layout`](https://docs.modular.com/api/mojo/layout/tile_layout/Layout/) and a
+block of memory to store the tensor data. A common way to allocate memory for a
+`TileTensor` is to use an [`Array`](/docs/std/collections/array/Array/) or a
+`List`:
 
 ```mojo
 comptime rows = 8
 comptime columns = 16
 comptime layout = row_major[rows, columns]()
-var storage = InlineArray[Float32, rows * columns](fill=0.0)
+var storage = Array[Float32, rows * columns](fill=0.0)
 var tensor = TileTensor(storage, layout)
 ```
 
-`InlineArray` is a statically-sized, stack-allocated array, so it's a fast and
+`Array` is a statically-sized, stack-allocated array, so it's a fast and
 efficient way to allocate storage for small tensors. There are
 target-dependent limits on how much memory can be allocated this way, however.
 This example and the following example initialize the tensor memory to zeros.
@@ -255,7 +256,7 @@ var tensor = TileTensor(storage, layout)
 Both of these examples use a `TileTensor` constructor that accepts a
 [`Span`](/docs/std/memory/span/Span/), a type that represents a contiguous block
 of memory that's owned elsewhere. Mojo can implicitly convert a `List` or
-`InlineArray` to a `Span` representing the underlying memory. The span tracks
+`Array` to a `Span` representing the underlying memory. The span tracks
 the size, data type, and ownership of the memory block, providing a safe way to
 reference the memory.
 
@@ -291,7 +292,7 @@ initializing a `TileTensor` from the CPU and passing it to a GPU kernel.
 
 ```mojo
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor, stack_allocation
 from layout.tile_layout import row_major
 
@@ -346,9 +347,9 @@ def initialize_tensor_from_cpu_example() raises:
 #### Creating a `TileTensor` in shared or local memory
 
 To create a tensor on the GPU in shared memory or local memory, use the
-[`stack_allocation()`](/docs/layout/tile_tensor/stack_allocation/)
-function from the `tile_tensor` module to allocate storage
-in the appropriate memory space.
+[`stack_allocation()`](https://docs.modular.com/api/mojo/layout/tile_tensor/stack_allocation/)
+function from the `tile_tensor` module to allocate storage in the appropriate
+memory space.
 
 Both shared and local memory are very limited resources, so a common pattern
 is to copy a small tile of a larger tensor into shared memory or local memory to
@@ -410,9 +411,9 @@ both tensors, instead of doing a bunch of math with thread and block indexes.
 The [`TileTensor` layouts](/docs/manual/tile-tensor/layouts/) page describes
 *tiled layouts*, which organize tensor elements by tile, so that all of the
 elements in a given tile are either contiguous in memory
-([`blocked_product()`](/docs/layout/tile_layout/blocked_product/))
+([`blocked_product()`](https://docs.modular.com/api/mojo/layout/tile_layout/blocked_product/))
 or easily addressed by logical coordinates
-([`zipped_divide()`](/docs/layout/tile_layout/zipped_divide/)).
+([`zipped_divide()`](https://docs.modular.com/api/mojo/layout/tile_layout/zipped_divide/)).
 
 These functions are distinct from the `TileTensor.tile()` method, which extracts
 a sub-tensor from a parent tensor. The `tile()` method works on both flat and
@@ -426,7 +427,7 @@ parent, it slices one outer index per mode and returns the inner fragment. See
 ### Extracting a tile
 
 The
-[`TileTensor.tile()`](/docs/layout/tile_tensor/TileTensor/#tile)
+[`TileTensor.tile()`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/#tile)
 method extracts a tile with a given size at a given set of coordinates. It works
 on both flat and nested parent layouts. The flat case is shown first, followed
 by the nested case.
@@ -489,7 +490,7 @@ var layout = row_major_nested(
         Coord(Idx[grid_cols], Idx[frag_cols]),
     )
 )
-var storage = InlineArray[Float32, total](uninitialized=True)
+var storage = Array[Float32, total](uninitialized=True)
 for i in range(total):
     storage[i] = Float32(i)
 var tensor = TileTensor(storage, layout)
@@ -505,8 +506,9 @@ The returned `fragment` is a rank-2 view of shape `(frag_rows, frag_cols)` whose
 strides are the parent's innermost sub-strides. See
 [`TileTensor` layouts](/docs/manual/tile-tensor/layouts/#nested-layouts) for how
 to construct nested layouts with
-[`row_major_nested()`](/docs/layout/tile_layout/row_major_nested/) and
-[`col_major_nested()`](/docs/layout/tile_layout/col_major_nested/).
+[`row_major_nested()`](https://docs.modular.com/api/mojo/layout/tile_layout/row_major_nested/)
+and
+[`col_major_nested()`](https://docs.modular.com/api/mojo/layout/tile_layout/col_major_nested/).
 
 ## Vectorizing tensors
 
@@ -523,7 +525,8 @@ hardware supports for the data type you're working with. (For example, if you're
 working with 4 byte values on a GPU that supports 16 byte copy operations, you
 can use a vector width of 4.)
 
-The [`vectorize()`](/docs/layout/tile_tensor/TileTensor/#vectorize)
+The
+[`vectorize()`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/#vectorize)
 method creates a new view of the tensor where each element of the tensor is a
 vector of values.
 
@@ -559,10 +562,10 @@ a 2D vector shape.
 
 When working with tensors on the GPU, it's sometimes desirable to distribute the
 elements of a tensor across the threads in a thread block. The
-[`distribute()`](/docs/layout/tile_tensor/TileTensor/#distribute)
+[`distribute()`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/#distribute)
 method takes a thread layout and a thread ID and returns a thread-specific
-*fragment* of the tensor. Many of the tensor copy APIs require you to pass
-in a thread layout, and call `distribute()` internally.
+*fragment* of the tensor. Many of the tensor copy APIs require you to pass in a
+thread layout, and call `distribute()` internally.
 
 The thread layout is tiled across the tensor. The *N*th thread receives a
 fragment consisting of the *N*th value from each tile. For example, Figure 5
@@ -611,19 +614,20 @@ layout.
 
 ## Splitting a tensor
 
-The [`split()`](/docs/layout/tile_tensor/TileTensor/#split) method divides a
-tensor into non-overlapping partitions along an axis. Unlike `tile()`, which
-returns a single sub-tile, `split()` returns every partition at once (or a
-single requested partition). Split views are immutable, so call
-[`as_immut()`](/docs/layout/tile_tensor/TileTensor/#as_immut) on a mutable
-tensor first.
+The
+[`split()`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/#split)
+method divides a tensor into non-overlapping partitions along an axis. Unlike
+`tile()`, which returns a single sub-tile, `split()` returns every partition at
+once (or a single requested partition). Split views are immutable, so call
+[`as_immut()`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/#as_immut)
+on a mutable tensor first.
 
 `split()` has two forms. The static form, `split[count]()`, takes a compile-time
 partition count and returns a `StaticTuple` of `count` equal-sized views. The
 split axis must be statically divisible by `count`:
 
 ```mojo
-var data = InlineArray[Int32, 16](uninitialized=True)
+var data = Array[Int32, 16](uninitialized=True)
 for i in range(16):
     data[i] = Int32(i)
 var tensor = TileTensor(data, row_major[4, 4]())
@@ -637,7 +641,7 @@ The dynamic form, `split(count, idx)`, takes a run-time partition count and
 returns a single partition with a run-time-sized split axis:
 
 ```mojo
-var data = InlineArray[Int32, 16](uninitialized=True)
+var data = Array[Int32, 16](uninitialized=True)
 for i in range(16):
     data[i] = Int32(i)
 var tensor = TileTensor(data, row_major[8, 2]())
@@ -655,13 +659,13 @@ and clamp (or empty) the trailing ones.
 ## Copying tensors
 
 `TileTensor` provides a
-[`copy_from()`](/docs/layout/tile_tensor/TileTensor/#copy_from) method for
-copying tensor data. In addition, the
-[`tile_io`](/docs/layout/tile_io/) module provides a set of
-utilities specialized for copying between various GPU memory spaces. All of the
-tensor copy methods respect the layouts—so you can transform a tensor by copying
-it to a tensor with a different layout (provided both layouts have the same
-total number of elements).
+[`copy_from()`](https://docs.modular.com/api/mojo/layout/tile_tensor/TileTensor/#copy_from)
+method for copying tensor data. In addition, the
+[`tile_io`](https://docs.modular.com/api/mojo/layout/tile_io/) module provides a
+set of utilities specialized for copying between various GPU memory spaces. All
+of the tensor copy methods respect the layouts—so you can transform a tensor by
+copying it to a tensor with a different layout (provided both layouts have the
+same total number of elements).
 
 The `TileTensor.copy_from()` method copies data from a source tensor into the
 current tensor, which may be in a different memory space. Because the copy is
@@ -672,8 +676,8 @@ layout. The source and destination dtypes may also differ, in which case each
 element is cast to the destination dtype:
 
 ```mojo
-var src_data: InlineArray[Int32, 4] = [1, 2, 3, 4]
-var dst_data = InlineArray[Float32, 4](fill=0.0)
+var src_data: Array[Int32, 4] = [1, 2, 3, 4]
+var dst_data = Array[Float32, 4](fill=0.0)
 
 var src = TileTensor(src_data, row_major[2, 2]())
 var dst = TileTensor(dst_data, row_major[2, 2]())
@@ -694,11 +698,12 @@ native SIMD widths. You can also `vectorize()` the tensors before calling
 
 ### Tile copiers
 
-The [`tile_io` package](/docs/layout/tile_io/) includes a `TileCopier` trait and
-a set of specialized tile copier structs for moving tensors between GPU memory
-spaces, such as copying from shared memory to local memory. These copiers are
-all *thread-layout-aware*: instead of passing in tensor fragments, you configure
-the copier with a thread layout which it uses to partition the work.
+The [`tile_io` package](https://docs.modular.com/api/mojo/layout/tile_io/)
+includes a `TileCopier` trait and a set of specialized tile copier structs for
+moving tensors between GPU memory spaces, such as copying from shared memory to
+local memory. These copiers are all *thread-layout-aware*: instead of passing in
+tensor fragments, you configure the copier with a thread layout which it uses to
+partition the work.
 
 As with the `copy_from()` method, you can use the `vectorize()`
 method prior to copying to take advantage of vectorized copy operations.
@@ -718,17 +723,17 @@ The individual tile copiers are parameterized structs that provide a method for
 copying between different memory spaces. Each copier covers a specific path,
 such as copying from global memory to shared memory:
 
-- [`GenericToSharedTileCopier`](/docs/layout/tile_io/GenericToSharedTileCopier/)
-- [`SharedToGenericTileCopier`](/docs/layout/tile_io/SharedToGenericTileCopier/)
-- [`GenericToLocalTileCopier`](/docs/layout/tile_io/GenericToLocalTileCopier/)
-- [`LocalToGenericTileCopier`](/docs/layout/tile_io/LocalToGenericTileCopier/)
-- [`SharedToLocalTileCopier`](/docs/layout/tile_io/SharedToLocalTileCopier/)
-- [`LocalToSharedTileCopier`](/docs/layout/tile_io/LocalToSharedTileCopier/)
+- [`GenericToSharedTileCopier`](https://docs.modular.com/api/mojo/layout/tile_io/GenericToSharedTileCopier/)
+- [`SharedToGenericTileCopier`](https://docs.modular.com/api/mojo/layout/tile_io/SharedToGenericTileCopier/)
+- [`GenericToLocalTileCopier`](https://docs.modular.com/api/mojo/layout/tile_io/GenericToLocalTileCopier/)
+- [`LocalToGenericTileCopier`](https://docs.modular.com/api/mojo/layout/tile_io/LocalToGenericTileCopier/)
+- [`SharedToLocalTileCopier`](https://docs.modular.com/api/mojo/layout/tile_io/SharedToLocalTileCopier/)
+- [`LocalToSharedTileCopier`](https://docs.modular.com/api/mojo/layout/tile_io/LocalToSharedTileCopier/)
 
 In addition to the synchronous tile copiers, the `tile_io` module currently
 includes one *asynchronous* tile copier:
 
-- [`GenericToSharedAsyncTileCopier`](/docs/layout/tile_io/GenericToSharedAsyncTileCopier/)
+- [`GenericToSharedAsyncTileCopier`](https://docs.modular.com/api/mojo/layout/tile_io/GenericToSharedAsyncTileCopier/)
 
 This copier conforms to a separate `AsyncTileCopier` trait. The traits are
 separate because the async tile copier has different semantics from a
@@ -745,7 +750,7 @@ from std.gpu import (
     barrier,
     WARP_SIZE,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import async_copy_commit_group, async_copy_wait_all
 from layout import TileTensor, stack_allocation
 from layout.tile_io import GenericToSharedAsyncTileCopier, SharedToGenericTileCopier
@@ -844,4 +849,4 @@ These patterns provide the building blocks for writing efficient kernels in Mojo
 while maintaining clean, readable code.
 
 To see some practical examples of `TileTensor` in use, see
-[Optimize custom ops for GPUs with Mojo](https://docs.modular.com/max/develop/custom-ops-matmul/).
+[Optimize custom ops for GPUs with Mojo](https://docs.modular.com/develop/custom-ops-matmul/).

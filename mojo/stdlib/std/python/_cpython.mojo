@@ -19,7 +19,7 @@ Documentation for these functions can be found online at:
 
 from .python import Python
 from .python_object import PythonObject
-from std.collections import InlineArray
+from std.collections import Array
 from std.memory import OpaquePointer
 from std.memory.alloc import alloc, Layout
 from std.memory.unsafe_pointer import unsafe_cast
@@ -276,7 +276,7 @@ struct PythonVersion(ImplicitlyCopyable, RegisterPassable):
         The version string is parsed to extract major, minor, and patch numbers.
         If parsing fails for any component, it defaults to -1.
         """
-        var components = InlineArray[Int, 3](fill=-1)
+        var components = Array[Int, 3](fill=-1)
         var start = 0
         var next_idx = 0
         var i = 0
@@ -378,11 +378,9 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
         #   type, similar to `get_linkage_name()`?
 
         var with_kwargs = func.isa[PyCFunctionWithKeywords]()
-        var func_ptr = rebind[OpaquePointer[MutUntrackedOrigin]](
+        var func_ptr = _fn_ptr_as_opaque(
             func[PyCFunctionWithKeywords]
-        ) if with_kwargs else rebind[OpaquePointer[MutUntrackedOrigin]](
-            func[PyCFunction]
-        )
+        ) if with_kwargs else _fn_ptr_as_opaque(func[PyCFunction])
 
         var flags = c_int(
             METH_VARARGS
@@ -390,10 +388,10 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
             | (METH_KEYWORDS if with_kwargs else 0)
         )
         return PyMethodDef(
-            func_name.unsafe_ptr().bitcast[c_char](),
+            func_name.unsafe_ptr().unsafe_bitcast[c_char](),
             func_ptr,
             flags,
-            docstring.unsafe_ptr().bitcast[c_char](),
+            docstring.unsafe_ptr().unsafe_bitcast[c_char](),
         )
 
     @staticmethod
@@ -419,7 +417,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
         var flags = c_int(METH_FASTCALL | (METH_STATIC if static_method else 0))
         return PyMethodDef(
             func_name.as_c_string_slice().unsafe_ptr(),
-            rebind[OpaquePointer[MutUntrackedOrigin]](func),
+            _fn_ptr_as_opaque(func),
             flags,
             docstring.as_c_string_slice().unsafe_ptr(),
         )
@@ -429,6 +427,17 @@ def _null_fn_ptr[T: TrivialRegisterPassable]() -> T:
     return __mlir_op.`pop.pointer.bitcast`[_type=T](
         __mlir_attr.`#interp.pointer<0> : !kgen.pointer<none>`
     )
+
+
+def _fn_ptr_as_opaque[
+    T: TrivialRegisterPassable
+](func: T) -> OpaquePointer[MutUntrackedOrigin]:
+    """Reinterprets a C ABI function as the `void *` CPython stores it in."""
+    return {
+        _mlir_value = __mlir_op.`pop.pointer.bitcast`[
+            _type=OpaquePointer[MutUntrackedOrigin]._mlir_type
+        ](func)
+    }
 
 
 comptime PyTypeObjectPtr = _CPointer[PyTypeObject, MutUntrackedOrigin]
@@ -506,14 +515,12 @@ struct PyType_Slot(ImplicitlyCopyable, RegisterPassable):
     def tp_dealloc(func: destructor) -> Self:
         return PyType_Slot(
             Py_tp_dealloc,
-            rebind[OpaquePointer[MutUntrackedOrigin]](func),
+            _fn_ptr_as_opaque(func),
         )
 
     @staticmethod
     def tp_init(func: Typed_initproc) -> Self:
-        return PyType_Slot(
-            Py_tp_init, rebind[OpaquePointer[MutUntrackedOrigin]](func)
-        )
+        return PyType_Slot(Py_tp_init, _fn_ptr_as_opaque(func))
 
     @staticmethod
     def tp_methods(methods: _CPointer[PyMethodDef, MutUntrackedOrigin]) -> Self:
@@ -524,15 +531,11 @@ struct PyType_Slot(ImplicitlyCopyable, RegisterPassable):
 
     @staticmethod
     def tp_new(func: Typed_newfunc) -> Self:
-        return PyType_Slot(
-            Py_tp_new, rebind[OpaquePointer[MutUntrackedOrigin]](func)
-        )
+        return PyType_Slot(Py_tp_new, _fn_ptr_as_opaque(func))
 
     @staticmethod
     def tp_repr(func: reprfunc) -> Self:
-        return PyType_Slot(
-            Py_tp_repr, rebind[OpaquePointer[MutUntrackedOrigin]](func)
-        )
+        return PyType_Slot(Py_tp_repr, _fn_ptr_as_opaque(func))
 
     @staticmethod
     def null() -> Self:
@@ -724,7 +727,7 @@ struct PyModuleDef(Movable, Writable):
 
     def __init__(out self, name: StaticString):
         self.base = {}
-        self.name = name.unsafe_ptr().bitcast[c_char]()
+        self.name = name.unsafe_ptr().unsafe_bitcast[c_char]()
         self.docstring = {}
         # setting `size` to -1 means that the module does not support sub-interpreters
         self.size = -1
@@ -1012,6 +1015,140 @@ comptime PyNumber_Float = ExternalFunction[
     "PyNumber_Float",
     # PyObject *PyNumber_Float(PyObject *o)
     def(PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_Add = ExternalFunction[
+    "PyNumber_Add",
+    # PyObject *PyNumber_Add(PyObject *o1, PyObject *o2)
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_Subtract = ExternalFunction[
+    "PyNumber_Subtract",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_Multiply = ExternalFunction[
+    "PyNumber_Multiply",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_TrueDivide = ExternalFunction[
+    "PyNumber_TrueDivide",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_FloorDivide = ExternalFunction[
+    "PyNumber_FloorDivide",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_Remainder = ExternalFunction[
+    "PyNumber_Remainder",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_Lshift = ExternalFunction[
+    "PyNumber_Lshift",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_Rshift = ExternalFunction[
+    "PyNumber_Rshift",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_And = ExternalFunction[
+    "PyNumber_And",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_Or = ExternalFunction[
+    "PyNumber_Or",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_Xor = ExternalFunction[
+    "PyNumber_Xor",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_Power = ExternalFunction[
+    "PyNumber_Power",
+    # PyObject *PyNumber_Power(PyObject *o1, PyObject *o2, PyObject *o3)
+    def(PyObjectPtr, PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_Negative = ExternalFunction[
+    "PyNumber_Negative",
+    # PyObject *PyNumber_Negative(PyObject *o)
+    def(PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_Positive = ExternalFunction[
+    "PyNumber_Positive",
+    def(PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_Invert = ExternalFunction[
+    "PyNumber_Invert",
+    def(PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_InPlaceAdd = ExternalFunction[
+    "PyNumber_InPlaceAdd",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_InPlaceSubtract = ExternalFunction[
+    "PyNumber_InPlaceSubtract",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_InPlaceMultiply = ExternalFunction[
+    "PyNumber_InPlaceMultiply",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_InPlaceTrueDivide = ExternalFunction[
+    "PyNumber_InPlaceTrueDivide",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_InPlaceFloorDivide = ExternalFunction[
+    "PyNumber_InPlaceFloorDivide",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_InPlaceRemainder = ExternalFunction[
+    "PyNumber_InPlaceRemainder",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_InPlaceLshift = ExternalFunction[
+    "PyNumber_InPlaceLshift",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_InPlaceRshift = ExternalFunction[
+    "PyNumber_InPlaceRshift",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_InPlaceAnd = ExternalFunction[
+    "PyNumber_InPlaceAnd",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_InPlaceOr = ExternalFunction[
+    "PyNumber_InPlaceOr",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_InPlaceXor = ExternalFunction[
+    "PyNumber_InPlaceXor",
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+comptime PyNumber_InPlacePower = ExternalFunction[
+    "PyNumber_InPlacePower",
+    def(PyObjectPtr, PyObjectPtr, PyObjectPtr) thin abi("C") -> PyObjectPtr,
+]
+
+# Object Protocol (rich comparison)
+
+# `opid` values for `PyObject_RichCompare`, from CPython's `object.h`.
+comptime Py_LT = c_int(0)
+comptime Py_LE = c_int(1)
+comptime Py_EQ = c_int(2)
+comptime Py_NE = c_int(3)
+comptime Py_GT = c_int(4)
+comptime Py_GE = c_int(5)
+
+comptime PyObject_RichCompare = ExternalFunction[
+    "PyObject_RichCompare",
+    # PyObject *PyObject_RichCompare(PyObject *o1, PyObject *o2, int opid)
+    def(PyObjectPtr, PyObjectPtr, c_int) thin abi("C") -> PyObjectPtr,
+]
+
+# Sequence Protocol
+comptime PySequence_Contains = ExternalFunction[
+    "PySequence_Contains",
+    # int PySequence_Contains(PyObject *o, PyObject *value)
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> c_int,
 ]
 
 # Iterator Protocol
@@ -1433,6 +1570,37 @@ struct CPython(Defaultable, Movable):
     # Number Protocol
     var _PyNumber_Long: PyNumber_Long.type
     var _PyNumber_Float: PyNumber_Float.type
+    var _PyNumber_Add: PyNumber_Add.type
+    var _PyNumber_Subtract: PyNumber_Subtract.type
+    var _PyNumber_Multiply: PyNumber_Multiply.type
+    var _PyNumber_TrueDivide: PyNumber_TrueDivide.type
+    var _PyNumber_FloorDivide: PyNumber_FloorDivide.type
+    var _PyNumber_Remainder: PyNumber_Remainder.type
+    var _PyNumber_Lshift: PyNumber_Lshift.type
+    var _PyNumber_Rshift: PyNumber_Rshift.type
+    var _PyNumber_And: PyNumber_And.type
+    var _PyNumber_Or: PyNumber_Or.type
+    var _PyNumber_Xor: PyNumber_Xor.type
+    var _PyNumber_Power: PyNumber_Power.type
+    var _PyNumber_Negative: PyNumber_Negative.type
+    var _PyNumber_Positive: PyNumber_Positive.type
+    var _PyNumber_Invert: PyNumber_Invert.type
+    var _PyNumber_InPlaceAdd: PyNumber_InPlaceAdd.type
+    var _PyNumber_InPlaceSubtract: PyNumber_InPlaceSubtract.type
+    var _PyNumber_InPlaceMultiply: PyNumber_InPlaceMultiply.type
+    var _PyNumber_InPlaceTrueDivide: PyNumber_InPlaceTrueDivide.type
+    var _PyNumber_InPlaceFloorDivide: PyNumber_InPlaceFloorDivide.type
+    var _PyNumber_InPlaceRemainder: PyNumber_InPlaceRemainder.type
+    var _PyNumber_InPlaceLshift: PyNumber_InPlaceLshift.type
+    var _PyNumber_InPlaceRshift: PyNumber_InPlaceRshift.type
+    var _PyNumber_InPlaceAnd: PyNumber_InPlaceAnd.type
+    var _PyNumber_InPlaceOr: PyNumber_InPlaceOr.type
+    var _PyNumber_InPlaceXor: PyNumber_InPlaceXor.type
+    var _PyNumber_InPlacePower: PyNumber_InPlacePower.type
+    # Object Protocol (rich comparison)
+    var _PyObject_RichCompare: PyObject_RichCompare.type
+    # Sequence Protocol
+    var _PySequence_Contains: PySequence_Contains.type
     # Iterator Protocol
     var _PyIter_Check: PyIter_Check.type
     var _PyIter_Next: PyIter_Next.type
@@ -1611,6 +1779,57 @@ struct CPython(Defaultable, Movable):
         # Number Protocol
         self._PyNumber_Long = PyNumber_Long.load(self.lib.borrow())
         self._PyNumber_Float = PyNumber_Float.load(self.lib.borrow())
+        self._PyNumber_Add = PyNumber_Add.load(self.lib.borrow())
+        self._PyNumber_Subtract = PyNumber_Subtract.load(self.lib.borrow())
+        self._PyNumber_Multiply = PyNumber_Multiply.load(self.lib.borrow())
+        self._PyNumber_TrueDivide = PyNumber_TrueDivide.load(self.lib.borrow())
+        self._PyNumber_FloorDivide = PyNumber_FloorDivide.load(
+            self.lib.borrow()
+        )
+        self._PyNumber_Remainder = PyNumber_Remainder.load(self.lib.borrow())
+        self._PyNumber_Lshift = PyNumber_Lshift.load(self.lib.borrow())
+        self._PyNumber_Rshift = PyNumber_Rshift.load(self.lib.borrow())
+        self._PyNumber_And = PyNumber_And.load(self.lib.borrow())
+        self._PyNumber_Or = PyNumber_Or.load(self.lib.borrow())
+        self._PyNumber_Xor = PyNumber_Xor.load(self.lib.borrow())
+        self._PyNumber_Power = PyNumber_Power.load(self.lib.borrow())
+        self._PyNumber_Negative = PyNumber_Negative.load(self.lib.borrow())
+        self._PyNumber_Positive = PyNumber_Positive.load(self.lib.borrow())
+        self._PyNumber_Invert = PyNumber_Invert.load(self.lib.borrow())
+        self._PyNumber_InPlaceAdd = PyNumber_InPlaceAdd.load(self.lib.borrow())
+        self._PyNumber_InPlaceSubtract = PyNumber_InPlaceSubtract.load(
+            self.lib.borrow()
+        )
+        self._PyNumber_InPlaceMultiply = PyNumber_InPlaceMultiply.load(
+            self.lib.borrow()
+        )
+        self._PyNumber_InPlaceTrueDivide = PyNumber_InPlaceTrueDivide.load(
+            self.lib.borrow()
+        )
+        self._PyNumber_InPlaceFloorDivide = PyNumber_InPlaceFloorDivide.load(
+            self.lib.borrow()
+        )
+        self._PyNumber_InPlaceRemainder = PyNumber_InPlaceRemainder.load(
+            self.lib.borrow()
+        )
+        self._PyNumber_InPlaceLshift = PyNumber_InPlaceLshift.load(
+            self.lib.borrow()
+        )
+        self._PyNumber_InPlaceRshift = PyNumber_InPlaceRshift.load(
+            self.lib.borrow()
+        )
+        self._PyNumber_InPlaceAnd = PyNumber_InPlaceAnd.load(self.lib.borrow())
+        self._PyNumber_InPlaceOr = PyNumber_InPlaceOr.load(self.lib.borrow())
+        self._PyNumber_InPlaceXor = PyNumber_InPlaceXor.load(self.lib.borrow())
+        self._PyNumber_InPlacePower = PyNumber_InPlacePower.load(
+            self.lib.borrow()
+        )
+        # Object Protocol (rich comparison)
+        self._PyObject_RichCompare = PyObject_RichCompare.load(
+            self.lib.borrow()
+        )
+        # Sequence Protocol
+        self._PySequence_Contains = PySequence_Contains.load(self.lib.borrow())
         # Iterator Protocol
         self._PyIter_Check = PyIter_Check.load(self.lib.borrow())
         self._PyIter_Next = PyIter_Next.load(self.lib.borrow())
@@ -1637,9 +1856,9 @@ struct CPython(Defaultable, Movable):
             ](0)
         else:
             # PyObject *Py_None
-            self._Py_None = PyObjectPtr(
-                upcast_from=self.lib.get_symbol[PyObject]("_Py_NoneStruct")
-            )
+            # TODO(MOCO-4435): remove this temporary variable.
+            var none_ptr = self.lib.get_symbol[PyObject]("_Py_NoneStruct")
+            self._Py_None = PyObjectPtr(upcast_from=none_ptr)
         # Integer Objects
         # PyTypeObject PyLong_Type
         self._PyLong_Type = self.lib.get_symbol[PyTypeObject](
@@ -1713,7 +1932,7 @@ struct CPython(Defaultable, Movable):
         # Common Object Structures
         self._Py_Is = Py_Is.load(self.lib.borrow())
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     def destroy(mut self):
@@ -2398,6 +2617,383 @@ struct CPython(Defaultable, Movable):
         """
         return self._PyNumber_Float(obj)
 
+    def PyNumber_Add(self, o1: PyObjectPtr, o2: PyObjectPtr) -> PyObjectPtr:
+        """Returns the result of adding `o1` and `o2`, or `NULL` on failure.
+        This is the equivalent of the Python expression `o1 + o2`.
+
+        Unlike a direct `__add__` lookup, this follows the full numeric
+        protocol, including the reflected `__radd__` fallback.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Add
+        """
+        return self._PyNumber_Add(o1, o2)
+
+    def PyNumber_Subtract(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the result of subtracting `o2` from `o1`, or `NULL` on
+        failure. This is the equivalent of the Python expression `o1 - o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Subtract
+        """
+        return self._PyNumber_Subtract(o1, o2)
+
+    def PyNumber_Multiply(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the result of multiplying `o1` and `o2`, or `NULL` on
+        failure. This is the equivalent of the Python expression `o1 * o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Multiply
+        """
+        return self._PyNumber_Multiply(o1, o2)
+
+    def PyNumber_TrueDivide(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the result of dividing `o1` by `o2`, or `NULL` on failure.
+        This is the equivalent of the Python expression `o1 / o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_TrueDivide
+        """
+        return self._PyNumber_TrueDivide(o1, o2)
+
+    def PyNumber_FloorDivide(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the floor of dividing `o1` by `o2`, or `NULL` on failure.
+        This is the equivalent of the Python expression `o1 // o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_FloorDivide
+        """
+        return self._PyNumber_FloorDivide(o1, o2)
+
+    def PyNumber_Remainder(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the remainder of dividing `o1` by `o2`, or `NULL` on failure.
+        This is the equivalent of the Python expression `o1 % o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Remainder
+        """
+        return self._PyNumber_Remainder(o1, o2)
+
+    def PyNumber_Lshift(self, o1: PyObjectPtr, o2: PyObjectPtr) -> PyObjectPtr:
+        """Returns the result of left shifting `o1` by `o2`, or `NULL` on
+        failure. This is the equivalent of the Python expression `o1 << o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Lshift
+        """
+        return self._PyNumber_Lshift(o1, o2)
+
+    def PyNumber_Rshift(self, o1: PyObjectPtr, o2: PyObjectPtr) -> PyObjectPtr:
+        """Returns the result of right shifting `o1` by `o2`, or `NULL` on
+        failure. This is the equivalent of the Python expression `o1 >> o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Rshift
+        """
+        return self._PyNumber_Rshift(o1, o2)
+
+    def PyNumber_And(self, o1: PyObjectPtr, o2: PyObjectPtr) -> PyObjectPtr:
+        """Returns the bitwise AND of `o1` and `o2`, or `NULL` on failure. This
+        is the equivalent of the Python expression `o1 & o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_And
+        """
+        return self._PyNumber_And(o1, o2)
+
+    def PyNumber_Or(self, o1: PyObjectPtr, o2: PyObjectPtr) -> PyObjectPtr:
+        """Returns the bitwise OR of `o1` and `o2`, or `NULL` on failure. This
+        is the equivalent of the Python expression `o1 | o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Or
+        """
+        return self._PyNumber_Or(o1, o2)
+
+    def PyNumber_Xor(self, o1: PyObjectPtr, o2: PyObjectPtr) -> PyObjectPtr:
+        """Returns the bitwise XOR of `o1` and `o2`, or `NULL` on failure. This
+        is the equivalent of the Python expression `o1 ^ o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Xor
+        """
+        return self._PyNumber_Xor(o1, o2)
+
+    def PyNumber_Power(
+        self, o1: PyObjectPtr, o2: PyObjectPtr, o3: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the result of raising `o1` to the power `o2`, modulo `o3`
+        (pass `Py_None` for two-argument power), or `NULL` on failure. This is
+        the equivalent of the Python expression `pow(o1, o2, o3)`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Power
+        """
+        return self._PyNumber_Power(o1, o2, o3)
+
+    def PyNumber_Negative(self, o: PyObjectPtr) -> PyObjectPtr:
+        """Returns the negation of `o`, or `NULL` on failure. This is the
+        equivalent of the Python expression `-o`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Negative
+        """
+        return self._PyNumber_Negative(o)
+
+    def PyNumber_Positive(self, o: PyObjectPtr) -> PyObjectPtr:
+        """Returns `o` with its sign unchanged, or `NULL` on failure. This is
+        the equivalent of the Python expression `+o`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Positive
+        """
+        return self._PyNumber_Positive(o)
+
+    def PyNumber_Invert(self, o: PyObjectPtr) -> PyObjectPtr:
+        """Returns the bitwise negation of `o`, or `NULL` on failure. This is
+        the equivalent of the Python expression `~o`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Invert
+        """
+        return self._PyNumber_Invert(o)
+
+    def PyNumber_InPlaceAdd(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the result of adding `o1` and `o2`, done in place when `o1`
+        supports it, or `NULL` on failure. This is the equivalent of the Python
+        statement `o1 += o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_InPlaceAdd
+        """
+        return self._PyNumber_InPlaceAdd(o1, o2)
+
+    def PyNumber_InPlaceSubtract(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the result of subtracting `o2` from `o1`, done in place when
+        `o1` supports it, or `NULL` on failure. This is the equivalent of the
+        Python statement `o1 -= o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_InPlaceSubtract
+        """
+        return self._PyNumber_InPlaceSubtract(o1, o2)
+
+    def PyNumber_InPlaceMultiply(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the result of multiplying `o1` and `o2`, done in place when
+        `o1` supports it, or `NULL` on failure. This is the equivalent of the
+        Python statement `o1 *= o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_InPlaceMultiply
+        """
+        return self._PyNumber_InPlaceMultiply(o1, o2)
+
+    def PyNumber_InPlaceTrueDivide(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the result of dividing `o1` by `o2`, done in place when `o1`
+        supports it, or `NULL` on failure. This is the equivalent of the Python
+        statement `o1 /= o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_InPlaceTrueDivide
+        """
+        return self._PyNumber_InPlaceTrueDivide(o1, o2)
+
+    def PyNumber_InPlaceFloorDivide(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the floor of dividing `o1` by `o2`, done in place when `o1`
+        supports it, or `NULL` on failure. This is the equivalent of the Python
+        statement `o1 //= o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_InPlaceFloorDivide
+        """
+        return self._PyNumber_InPlaceFloorDivide(o1, o2)
+
+    def PyNumber_InPlaceRemainder(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the remainder of dividing `o1` by `o2`, done in place when
+        `o1` supports it, or `NULL` on failure. This is the equivalent of the
+        Python statement `o1 %= o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_InPlaceRemainder
+        """
+        return self._PyNumber_InPlaceRemainder(o1, o2)
+
+    def PyNumber_InPlaceLshift(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the result of left shifting `o1` by `o2`, done in place when
+        `o1` supports it, or `NULL` on failure. This is the equivalent of the
+        Python statement `o1 <<= o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_InPlaceLshift
+        """
+        return self._PyNumber_InPlaceLshift(o1, o2)
+
+    def PyNumber_InPlaceRshift(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the result of right shifting `o1` by `o2`, done in place when
+        `o1` supports it, or `NULL` on failure. This is the equivalent of the
+        Python statement `o1 >>= o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_InPlaceRshift
+        """
+        return self._PyNumber_InPlaceRshift(o1, o2)
+
+    def PyNumber_InPlaceAnd(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the bitwise AND of `o1` and `o2`, done in place when `o1`
+        supports it, or `NULL` on failure. This is the equivalent of the Python
+        statement `o1 &= o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_InPlaceAnd
+        """
+        return self._PyNumber_InPlaceAnd(o1, o2)
+
+    def PyNumber_InPlaceOr(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the bitwise OR of `o1` and `o2`, done in place when `o1`
+        supports it, or `NULL` on failure. This is the equivalent of the Python
+        statement `o1 |= o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_InPlaceOr
+        """
+        return self._PyNumber_InPlaceOr(o1, o2)
+
+    def PyNumber_InPlaceXor(
+        self, o1: PyObjectPtr, o2: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the bitwise XOR of `o1` and `o2`, done in place when `o1`
+        supports it, or `NULL` on failure. This is the equivalent of the Python
+        statement `o1 ^= o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_InPlaceXor
+        """
+        return self._PyNumber_InPlaceXor(o1, o2)
+
+    def PyNumber_InPlacePower(
+        self, o1: PyObjectPtr, o2: PyObjectPtr, o3: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Returns the result of raising `o1` to the power `o2`, modulo `o3`
+        (pass `Py_None` for two-argument power), done in place when `o1`
+        supports it, or `NULL` on failure. This is the equivalent of the Python
+        statement `o1 **= o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_InPlacePower
+        """
+        return self._PyNumber_InPlacePower(o1, o2, o3)
+
+    def PyObject_RichCompare(
+        self, o1: PyObjectPtr, o2: PyObjectPtr, opid: c_int
+    ) -> PyObjectPtr:
+        """Compares `o1` and `o2` using the operation specified by `opid` (one
+        of `Py_LT`, `Py_LE`, `Py_EQ`, `Py_NE`, `Py_GT`, `Py_GE`). Returns the
+        result of the comparison on success, or `NULL` on failure. This is the
+        equivalent of the Python expression `o1 op o2`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_RichCompare
+        """
+        return self._PyObject_RichCompare(o1, o2, opid)
+
+    def PySequence_Contains(
+        self, obj: PyObjectPtr, value: PyObjectPtr
+    ) -> c_int:
+        """Determines if `obj` contains `value`. Returns `1` if an item in `obj`
+        is equal to `value`, `0` if not, and `-1` on error. This is the
+        equivalent of the Python expression `value in obj`.
+
+        References:
+        - https://docs.python.org/3/c-api/sequence.html#c.PySequence_Contains
+        """
+        return self._PySequence_Contains(obj, value)
+
     # ===-------------------------------------------------------------------===#
     # Iterator Protocol
     # ref: https://docs.python.org/3/c-api/iter.html
@@ -2720,8 +3316,8 @@ struct CPython(Defaultable, Movable):
         """
         return self._PyUnicode_DecodeUTF8(
             s.unsafe_ptr()
-            .bitcast[c_char]()
-            .as_immutable()
+            .unsafe_bitcast[c_char]()
+            .as_imm()
             .as_unsafe_any_origin(),
             Py_ssize_t(s.byte_length()),
             "strict".as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
@@ -2746,7 +3342,8 @@ struct CPython(Defaultable, Movable):
             return None
         return StringSlice[ImmutAnyOrigin](
             unsafe_from_utf8=Span(
-                unsafe_ptr=ptr.value().bitcast[Byte](), length=Int(length)
+                unsafe_ptr=ptr.value().unsafe_bitcast[Byte](),
+                length=Int(length),
             )
         )
 

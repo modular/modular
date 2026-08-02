@@ -134,6 +134,7 @@ Mixture of experts
    :template: autosummary/class.rst
 
    Allreduce
+   ~max.nn.comm.ep.EPCommBuffers
    MoE
    MoEGate
    MoEQuantized

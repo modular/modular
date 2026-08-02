@@ -45,13 +45,13 @@ from std.gpu.memory import (
     external_memory,
 )
 from std.gpu.sync import named_barrier
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_before,
     tcgen05_release_allocation_lock,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -235,7 +235,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             SplitAccumType=Self.SplitAccumType,
         ],
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        indices_stride: Int,
+        indices_stride: Int32,
         topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         attn_sink_ptr: OptionalReg[
             UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
@@ -252,7 +252,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        extra_indices_stride: Int,
+        extra_indices_stride: Int32,
         scalar_args: TileTensor[
             DType.int64,
             RowMajorLayout[ComptimeInt[3]],
@@ -262,6 +262,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         # The upstream dispatcher monomorphizes the kernel struct for both
         # `decoding_warp_split_k=True` and `False`; the split-K branch is
         # selected at runtime via `num_partitions > 1`.
+        var _indices_stride = Int(indices_stride)
+        var _extra_indices_stride = Int(extra_indices_stride)
         comptime assert Self.KVLUTType.dtype == DType.bfloat16
         comptime assert size_of[Self.KVLUTType.dtype]() == 2
         comptime assert Self.config.supported()
@@ -315,9 +317,9 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             q_max_seq_len,
             num_partitions,
             batch_size,
-            sparse_indices_stride=indices_stride,
+            sparse_indices_stride=_indices_stride,
             sparse_topk_lengths=topk_lengths,
-            sparse_extra_indices_stride=extra_indices_stride,
+            sparse_extra_indices_stride=_extra_indices_stride,
             sparse_extra_topk_lengths=extra_topk_lengths,
         )
 
@@ -330,7 +332,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
                 topk_lengths.unsafe_value()[Int(offset_position.batch_idx)]
             )
         else:
-            topk = indices_stride
+            topk = _indices_stride
         var extra_topk: Int = 0
         comptime if Self.has_extra_kv:
             comptime if Self.has_variable_topk:
@@ -340,7 +342,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
                     ]
                 )
             else:
-                extra_topk = extra_indices_stride
+                extra_topk = _extra_indices_stride
         # `num_keys` from OffsetPosition is topk+extra_topk; back-derive
         # the clamped topk.
         topk = offset_position.num_keys - extra_topk
@@ -545,12 +547,12 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         elif warp_idx >= 8 and warp_idx < 12:  # gather-load warpgroup
             warpgroup_reg_dealloc[num_reg_gather]()
             var batch_d_indices = d_indices.unsafe_value() + (
-                offset_position.q_token_idx * indices_stride
+                offset_position.q_token_idx * _indices_stride
             )
             var batch_extra_d_indices = extra_d_indices
             comptime if Self.has_extra_kv:
                 batch_extra_d_indices = extra_d_indices.unsafe_value() + (
-                    offset_position.q_token_idx * extra_indices_stride
+                    offset_position.q_token_idx * _extra_indices_stride
                 )
             Self.gather_load(
                 q_tma,

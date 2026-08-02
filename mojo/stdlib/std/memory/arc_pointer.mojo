@@ -27,8 +27,13 @@ from std.format._utils import (
 )
 from std.hashlib.hasher import Hasher
 from std.memory.unsafe_maybe_uninit import UnsafeMaybeUninit
-from std.reflection import reflect
-from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
+from std.memory.alloc import (
+    alloc,
+    dealloc,
+    Allocation,
+    ThinAllocation,
+    Layout,
+)
 
 
 @doc_hidden
@@ -200,17 +205,19 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
     def __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: Pointer[Self.T, MutUntrackedOrigin],
+        unsafe_from_raw_pointer: Pointer[Self._inner_type, MutUntrackedOrigin],
     ):
         """Constructs an `ArcPointer` from a raw pointer.
 
         Args:
-            unsafe_from_raw_pointer: A raw pointer previously returned from `ArcPointer.steal_data`.
+            unsafe_from_raw_pointer: A raw pointer to the control block, obtained
+                from `ArcPointer.unsafe_take_allocation().unsafe_leak()`.
 
         **Safety:**
 
-        The `unsafe_from_raw_pointer` argument *must* have been previously returned by a call
-        to `ArcPointer.steal_data`. Any other pointer may result in undefined behaviour.
+        The `unsafe_from_raw_pointer` argument *must* have been obtained from a
+        call to `ArcPointer.unsafe_take_allocation` (via `unsafe_leak()`). Any
+        other pointer may result in undefined behaviour.
 
         **Example:**
 
@@ -218,18 +225,13 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
         from std.memory import ArcPointer
 
         var initial_arc = ArcPointer[Int](42)
-        var raw_ptr = initial_arc^.steal_data()
+        var raw_ptr = initial_arc^.unsafe_take_allocation().unsafe_leak()
 
         # The following will ensure the data is properly destroyed and deallocated.
         var restored_arc = ArcPointer(unsafe_from_raw_pointer=raw_ptr)
         ```
         """
-        var pointer_to_payload = unsafe_from_raw_pointer.unsafe_bitcast[Byte]()
-        comptime payload_offset = reflect[Self._inner_type].field_offset[
-            name="payload"
-        ]()
-        var pointer_to_inner = pointer_to_payload.unsafe_offset(-payload_offset)
-        self._inner = pointer_to_inner.unsafe_bitcast[Self._inner_type]()
+        self._inner = unsafe_from_raw_pointer
 
     def __init__(out self, *, copy: Self):
         """Copy an existing reference. Increment the refcount to the object.
@@ -256,7 +258,7 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
         self._inner = _inner
 
     @no_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Delete the smart pointer.
 
         Decrement the reference count for the stored value. If there are no more
@@ -342,20 +344,23 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
         # is from a strong and there _must_ be exactly one implicit.
         return self._inner[].weak_count_with_implicit() - 1
 
-    def steal_data(deinit self) -> Pointer[Self.T, MutUntrackedOrigin]:
-        """Consume this `ArcPointer`, returning a raw pointer to the underlying data.
+    def unsafe_take_allocation(deinit self) -> Allocation[Self._inner_type]:
+        """Consume this `ArcPointer`, returning the owning handle to its allocation.
 
         Returns:
-            A `Pointer` to the underlying `T` value.
+            The `Allocation` that owns the reference-counted control block
+            backing this `ArcPointer`.
 
         **Safety:**
 
-        To avoid leaking memory, this pointer must be converted back to an `ArcPointer`
-        using `ArcPointer(unsafe_from_raw_pointer=ptr)`.
-        The returned pointer is not guaranteed to point to the beginning of the backing allocation,
-        meaning calling `UnsafePointer.free` may result in undefined behavior.
+        This does not decrement the strong reference count, so the payload stays
+        alive. To avoid leaking memory, pass the handle's raw pointer back to
+        `ArcPointer(unsafe_from_raw_pointer=handle^.unsafe_leak())`, which
+        restores the `ArcPointer` and its reference-counting bookkeeping.
         """
-        return Pointer(to=self._inner[].payload_ref())
+        return ThinAllocation(
+            unsafe_assume_ownership=self._inner
+        ).unsafe_with_layout(Layout[Self._inner_type].single())
 
     def __is__(self, rhs: Self) -> Bool:
         """Returns True if the two `ArcPointer` instances point at the same
@@ -455,7 +460,7 @@ struct WeakPointer[T: Movable & ImplicitlyDeletable](
     """
 
     comptime _inner_type = _ArcPointerInner[Self.T]
-    # FIXME MOCO-3525: use UnsafePointer[Self._inner_type, MutUntrackedOrigin]
+    # FIXME MOCO-3525: use Pointer[Self._inner_type, MutUntrackedOrigin]
     comptime _inner_ptr_type = Pointer[NoneType, MutUntrackedOrigin]
     var _inner: Optional[Self._inner_ptr_type]
 
@@ -512,7 +517,7 @@ struct WeakPointer[T: Movable & ImplicitlyDeletable](
         self._inner = copy._inner
 
     @no_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Decrement the weak count and free the allocation if last."""
         if (
             self._inner

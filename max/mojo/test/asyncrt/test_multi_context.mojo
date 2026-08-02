@@ -13,7 +13,7 @@
 
 from asyncrt_test_utils import create_test_device_context
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
@@ -26,8 +26,10 @@ def vec_func(
     in0: UnsafePointer[Float32, MutAnyOrigin],
     in1: UnsafePointer[Float32, MutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -70,7 +72,7 @@ def _run_test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in0_dev1,
         in1_dev1,
         out_dev1,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -78,7 +80,7 @@ def _run_test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in0_dev2,
         in1_dev2,
         out_dev2,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )

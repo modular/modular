@@ -13,7 +13,7 @@
 
 from std.sys.info import num_physical_cores
 
-from std.algorithm import parallelize, sync_parallelize
+from max.algorithm import parallelize, sync_parallelize
 from std.benchmark import Bench, Bencher, BenchId, keep
 from std.testing import assert_true
 

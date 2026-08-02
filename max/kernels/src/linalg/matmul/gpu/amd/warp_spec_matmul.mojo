@@ -45,7 +45,7 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.intrinsics import inlined_assembly
 from layout import Layout, LayoutTensor, TileTensor
 from layout.layout import blocked_product

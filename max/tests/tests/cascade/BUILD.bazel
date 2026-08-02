@@ -7,6 +7,20 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "test_native_backends",
+    size = "small",
+    srcs = ["test_native_backends.py"],
+    # aiohttp transitively provides multidict + frozenlist, which the test
+    # probes by name; it does not import aiohttp itself, hence ignore_extra_deps.
+    ignore_extra_deps = [
+        requirement("aiohttp"),
+    ],
+    deps = [
+        requirement("aiohttp"),
+    ],
+)
+
+modular_py_test(
     name = "test_local_runtime",
     size = "small",
     srcs = ["test_local_runtime.py"],
@@ -77,6 +91,17 @@ modular_py_test(
         requirement("fastapi"),
         requirement("httpx"),
         requirement("pillow"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_http_framing",
+    size = "small",
+    srcs = ["test_http_framing.py"],
+    deps = [
+        "//max/python/max/experimental/cascade/http_runtime",
+        requirement("aiohttp"),
         requirement("pytest-asyncio"),
     ],
 )
@@ -164,6 +189,7 @@ modular_py_test(
     name = "test_all_pipelines",
     size = "medium",
     srcs = ["test_all_pipelines.py"],
+    tags = ["skip-external-ci"],
     # TODO(SERVSYS-1284): importing max.pipelines.lib alone blows the 300s
     # budget on the shared BuildBuddy macOS workers (times out in pytest
     # collection).

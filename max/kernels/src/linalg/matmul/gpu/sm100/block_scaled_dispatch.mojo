@@ -16,7 +16,7 @@
 
 
 from std.math import ceildiv
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives.grid_controls import PDLLevel
 from layout import Coord, Idx, Layout, TileTensor, row_major
 from layout.tile_tensor import NullableTileTensor
@@ -30,7 +30,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     get_scaling_kind,
 )
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 from std.collections import Optional
 from linalg.utils import (
     elementwise_epilogue_type,
@@ -39,10 +39,10 @@ from linalg.utils import (
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from std.memory import UnsafePointer
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.sys import size_of, simd_width_of
-from std.algorithm import elementwise
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.algorithm import elementwise
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
@@ -183,11 +183,10 @@ def heuristic_and_outliers_dispatch[
         _get_tuning_list_sm100_mxfp8(), "mxfp8_heuristic_outliers"
     )
 
-    @always_inline
-    def rule(x: TuningConfigSM100) {} -> Bool:
-        return x.K == static_K and x.N == static_N
-
-    comptime outlier_configs = outliers.find(rule=rule)
+    comptime outlier_configs = outliers.find(
+        rule=lambda (x: TuningConfigSM100) -> Bool: x.K == static_K
+        and x.N == static_N
+    )
 
     comptime for tuning_config in outlier_configs:
         if m >= tuning_config.M and m < tuning_config.M_end:

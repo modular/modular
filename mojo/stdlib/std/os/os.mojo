@@ -21,7 +21,7 @@ from std.os import listdir
 """
 
 from std._plugin import CurrentPlugin
-from std.collections import InlineArray, List
+from std.collections import Array, List
 from std.collections.string.string_slice import _unsafe_strlen
 from std.format.tstring import TString
 from std.io import FileDescriptor
@@ -66,7 +66,7 @@ struct _dirent_linux(Copyable):
     """Length of the record."""
     var d_type: Int8
     """Type of file."""
-    var name: InlineArray[c_char, Self.MAX_NAME_SIZE]
+    var name: Array[c_char, Self.MAX_NAME_SIZE]
     """Name of entry."""
 
 
@@ -82,7 +82,7 @@ struct _dirent_macos(Copyable):
     """Length of the name."""
     var d_type: Int8
     """Type of file."""
-    var name: InlineArray[c_char, Self.MAX_NAME_SIZE]
+    var name: Array[c_char, Self.MAX_NAME_SIZE]
     """Name of entry."""
 
 
@@ -116,7 +116,7 @@ struct _DirHandle:
 
         self._handle = handle.value()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Closes the handle opened via popen."""
         _ = external_call["closedir", Int32](self._handle)
 
@@ -146,10 +146,10 @@ struct _DirHandle:
             ](self._handle)
             if not ep:
                 break
-            ref name = ep.unsafe_value().take_pointee().name
-            var name_ptr = name.unsafe_ptr().bitcast[Byte]()
+            ref name = ep.unsafe_value().unsafe_take_pointee().name
+            var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
-                unsafe_from_utf8=Span(
+                unsafe_from_utf8=Span[Byte, origin_of(name)](
                     unsafe_ptr=name_ptr,
                     length=Int(
                         _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
@@ -176,10 +176,10 @@ struct _DirHandle:
             ](self._handle)
             if not ep:
                 break
-            ref name = ep.unsafe_value().take_pointee().name
-            var name_ptr = name.unsafe_ptr().bitcast[Byte]()
+            ref name = ep.unsafe_value().unsafe_take_pointee().name
+            var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
-                unsafe_from_utf8=Span(
+                unsafe_from_utf8=Span[Byte, origin_of(name)](
                     unsafe_ptr=name_ptr,
                     length=Int(
                         _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)

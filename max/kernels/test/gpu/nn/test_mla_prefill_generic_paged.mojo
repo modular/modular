@@ -79,8 +79,8 @@ therefore pass both pre- and post-fix): ``ps256_nk256``,
 from std.random import seed
 from std.sys import get_defined_int
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
 
 from _paged_prefill_test_utils import (
     num_keys_to_test,

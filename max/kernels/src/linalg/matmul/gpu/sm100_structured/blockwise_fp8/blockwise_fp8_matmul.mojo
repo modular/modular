@@ -20,8 +20,8 @@ warp-specialized blockwise FP8 kernel with register-based accumulation.
 from std.math import align_up, ceildiv
 from std.sys import get_defined_bool, size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.info import B200
 from layout import TileTensor
 from structured_kernels.tile_types import create_tma_tile
 
@@ -235,7 +235,7 @@ def blockwise_fp8_matmul[
         c_tma_op,
         a_scales_tma_op,
         cluster_dim,
-        ceildiv(K, BK),
+        Int32(ceildiv(K, BK)),
         b_scales,
         problem_shape,
         grid_dim=grid_dim,

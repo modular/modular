@@ -71,7 +71,7 @@ from std.gpu import (
     thread_idx,
 )
 from std.gpu.intrinsics import lop, ds_read_tr16_b64
-from std.gpu.compute.mma import (
+from max.gpu.compute.mma import (
     get_amd_bf8_dtype,
     get_amd_fp8_dtype,
     ld_matrix,

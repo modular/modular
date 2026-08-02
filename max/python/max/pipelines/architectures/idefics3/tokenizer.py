@@ -92,7 +92,10 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         )
 
         # Initialize default EOS token IDs (required by parent class new_context method)
-        self._default_eos_token_ids = set([self.eos])
+        eos_token_id = self.delegate.eos_token_id
+        self._eos_token_ids = (
+            {eos_token_id} if eos_token_id is not None else set()
+        )
 
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs

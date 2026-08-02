@@ -27,6 +27,7 @@ from std.sys import (
     get_defined_int,
 )
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -35,7 +36,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
 from layout import Coord, Idx, TileTensor, row_major
@@ -149,7 +150,7 @@ def bench_flash[
                     ctx,
                 )
 
-            b.iter_custom[_kernel_launch](ctx)
+            bencher_iter_custom[_kernel_launch](b, ctx)
 
         def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
@@ -301,7 +302,7 @@ def bench_naive[
                     ctx,
                 )
 
-            b.iter_custom[_kernel_launch](ctx)
+            bencher_iter_custom[_kernel_launch](b, ctx)
 
         def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
@@ -493,7 +494,7 @@ def bench_manual[
                     ctx,
                 )
 
-            b.iter_custom[_kernel_launch](ctx)
+            bencher_iter_custom[_kernel_launch](b, ctx)
 
         def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth

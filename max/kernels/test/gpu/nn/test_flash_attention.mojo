@@ -16,9 +16,9 @@ from std.random import rand, seed
 from std.sys import argv
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys import Vendor, has_amd_gpu_accelerator
-from std.gpu.host.info import (
+from max.gpu.host.info import (
     A100,
     H100,
     GPUInfo,
@@ -257,7 +257,7 @@ def test[
 
 
 def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
-    var depths = [64, 128, 512]
+    var depths: List = [64, 128, 512]
 
     if info == materialize[H100]() or _is_sm10x_gpu(info):
         depths.append(80)
@@ -583,7 +583,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             scale,  # 0.0 -> all QK logits are exactly zero
             ctx,
             None,
-            sink_weights=sinks_device.get_immutable().as_unsafe_any_origin(),
+            sink_weights=sinks_device.as_imm().as_unsafe_any_origin(),
         )
 
     launch(ctx)

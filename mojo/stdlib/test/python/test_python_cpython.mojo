@@ -294,9 +294,9 @@ def _test_dictionary_object_api(cpy: CPython) raises:
 
     var succ = cpy.PyDict_Next(
         d,
-        UnsafePointer(to=pos).as_unsafe_any_origin(),
-        UnsafePointer(to=key).as_unsafe_any_origin(),
-        UnsafePointer(to=value).as_unsafe_any_origin(),
+        Pointer(to=pos).as_unsafe_any_origin(),
+        Pointer(to=key).as_unsafe_any_origin(),
+        Pointer(to=value).as_unsafe_any_origin(),
     )
     assert_equal(pos, 1)
     assert_equal(key, b)
@@ -305,9 +305,9 @@ def _test_dictionary_object_api(cpy: CPython) raises:
 
     succ = cpy.PyDict_Next(
         d,
-        UnsafePointer(to=pos).as_unsafe_any_origin(),
-        UnsafePointer(to=key).as_unsafe_any_origin(),
-        UnsafePointer(to=value).as_unsafe_any_origin(),
+        Pointer(to=pos).as_unsafe_any_origin(),
+        Pointer(to=key).as_unsafe_any_origin(),
+        Pointer(to=value).as_unsafe_any_origin(),
     )
     assert_false(succ)
 
@@ -326,7 +326,7 @@ def _test_module_object_api(cpy: CPython) raises:
     assert_true(mod)
     assert_true(cpy.PyModule_GetDict(mod))
 
-    var funcs = InlineArray[PyMethodDef, 1](fill={})
+    var funcs = Array[PyMethodDef, 1](fill={})
     # returns 0 on success, -1 on failure
     assert_equal(
         cpy.PyModule_AddFunctions(
@@ -370,7 +370,7 @@ def _test_capsule_api(cpy: CPython) raises:
     # lifetime, so the pointer remains valid for the `PyCapsule_GetPointer`
     # lookups after `PyCapsule_New` returns.
     var capsule = cpy.PyCapsule_New(
-        capsule_impl_ptr.bitcast[NoneType]().unsafe_origin_cast[
+        capsule_impl_ptr.unsafe_bitcast[NoneType]().unsafe_origin_cast[
             MutUntrackedOrigin
         ](),
         "some_name",

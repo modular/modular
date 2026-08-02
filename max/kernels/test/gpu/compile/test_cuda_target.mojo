@@ -17,7 +17,7 @@ from std.math.uutils import ufloordiv, udivmod
 from std.sys.info import is_nvidia_gpu, simd_width_of
 
 import std.gpu.primitives.warp as warp
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
@@ -29,9 +29,9 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.compile import _compile_code
-from std.memory import unsafe_memset_zero, stack_allocation
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.compile import _compile_code
+from std.memory import unsafe_memset_zero, unsafe_stack_allocation
 from std.testing import *
 
 from std.utils.coord import Coord
@@ -193,7 +193,7 @@ def test_erf_kernel_sm90() raises:
 def test_shared_stack_allocation() -> (
     UnsafePointer[Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED]
 ):
-    return stack_allocation[
+    return unsafe_stack_allocation[
         999, DType.int8, 8, address_space=AddressSpace.SHARED
     ]()
 
@@ -290,7 +290,7 @@ def gemm(
         c[row + col * m] = val
 
     # Allocate B array into shared memory for tiling.
-    var b_shared = stack_allocation[
+    var b_shared = unsafe_stack_allocation[
         TILE_SZ_RATIO * TILE_SZ_B,
         DType.float32,
         address_space=AddressSpace.SHARED,
@@ -301,7 +301,7 @@ def gemm(
     var col = block_idx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
-    var c_reg = stack_allocation[TILE_SZ_B, DType.float32]()
+    var c_reg = unsafe_stack_allocation[TILE_SZ_B, DType.float32]()
 
     unsafe_memset_zero(c_reg, TILE_SZ_B)
 
@@ -460,7 +460,7 @@ def test_warp_sum_reduce_sm90() raises:
 
 
 def block_reduce(val: Float32) -> Float32:
-    var shared = stack_allocation[
+    var shared = unsafe_stack_allocation[
         WARP_SIZE, DType.float32, address_space=AddressSpace.SHARED
     ]()
 

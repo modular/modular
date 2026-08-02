@@ -56,13 +56,13 @@ struct CStringSlice[origin: ImmOrigin](
         *,
         unsafe_from_ptr: Pointer[Int8, Self.origin],
     ):
-        """Construct a `CStringSlice` from an `UnsafePointer`.
+        """Construct a `CStringSlice` from a `Pointer`.
 
         Args:
-            unsafe_from_ptr: The `UnsafePointer` to construct the `CStringSlice` from.
+            unsafe_from_ptr: The `Pointer` to construct the `CStringSlice` from.
 
         Safety:
-            The `UnsafePointer` must be a valid nul-terminated C string.
+            The `Pointer` must be a valid nul-terminated C string.
             The pointer cannot be null. To represent nullability, use
             `Optional[CStringSlice]`.
 
@@ -116,7 +116,7 @@ struct CStringSlice[origin: ImmOrigin](
         """
         _validate_bytes(slice.as_bytes())
         # Safety: _validate_bytes ensures span is a non-null terminated cstring.
-        self._data = slice.unsafe_ptr().bitcast[Int8]()
+        self._data = slice.unsafe_ptr().unsafe_bitcast[Int8]()
 
     @always_inline
     def __init__(out self, span: Span[Byte, Self.origin]) raises:
@@ -131,7 +131,7 @@ struct CStringSlice[origin: ImmOrigin](
         """
         _validate_bytes(span)
         # Safety: _validate_bytes ensures span is a non-null terminated cstring.
-        self._data = span.unsafe_ptr().bitcast[Int8]()
+        self._data = span.unsafe_ptr().unsafe_bitcast[Int8]()
 
     @always_inline
     def __eq__(self, rhs_same: Self) -> Bool:

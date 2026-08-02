@@ -16,6 +16,7 @@ from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
 from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -33,7 +34,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout._fillers import random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -373,9 +374,7 @@ def execute_kv_cache_ragged_flash_attention[
         dtype,
         Layout.row_major(UNKNOWN_VALUE),
     ](
-        sink_weights_dev_buffer.unsafe_ptr()
-        .as_immutable()
-        .as_unsafe_any_origin(),
+        sink_weights_dev_buffer.unsafe_ptr().as_imm().as_unsafe_any_origin(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             IndexList[1](num_q_heads)
         ),
@@ -471,7 +470,7 @@ def execute_kv_cache_ragged_flash_attention[
                             ctx,
                         )
 
-            b.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom[kernel_launch](b, ctx)
 
         flop_count = flops(
             batch_size,

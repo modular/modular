@@ -15,8 +15,8 @@
 
 from std.algorithm import vectorize
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu, is_gpu
 from std.math import ceildiv
 from std.python import Python, PythonObject
 from std.reflection import reflect
@@ -124,8 +124,8 @@ def mojo_square_array(array_obj: PythonObject) raises:
     var ptr = array_obj.ctypes.data.unsafe_get_as_pointer[DType.int64]()
 
     def pow[width: Int](i: Int) {mut ptr}:
-        var elem = ptr.load[width=width](i)
-        ptr.store[width=width](i, elem * elem)
+        var elem = ptr.unsafe_load[width=width](i)
+        ptr.unsafe_store[width=width](i, elem * elem)
 
     vectorize[simd_width](len(array_obj), pow)
 

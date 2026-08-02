@@ -31,6 +31,7 @@ from comm.allreduce import allreduce
 
 from comm.allreduce_lamport_rmsnorm import lamport_allreduce_rmsnorm
 from comm.allreduce_residual_rmsnorm import allreduce_residual_rmsnorm
+from comm.allgather_rmsnorm import _dispatch_ag_norm
 from comm.lamport import Lamport
 from std.gpu import WARP_SIZE
 from comm.reducescatter import reducescatter
@@ -40,7 +41,7 @@ from comm.broadcast import broadcast
 from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
-from std.gpu.host import DeviceContext, DeviceContextArray
+from max.gpu.host import DeviceContext, DeviceContextArray
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from extensibility import (
@@ -65,7 +66,7 @@ comptime logger = Logger()
 
 from std.utils import IndexList
 from std.utils.index import Index
-from std.collections import InlineArray, Optional
+from std.collections import Array, Optional
 
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
@@ -159,9 +160,9 @@ struct DistributedAllReduceSum:
             )
 
         # Marshal signal buffers into the expected format.
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
         comptime for i in range(num_devices):
             rank_sigs[i] = (
                 signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
@@ -172,7 +173,7 @@ struct DistributedAllReduceSum:
             comptime InputTensorType = type_of(
                 inputs[0].to_tile_tensor[DType.int64]().as_immut()
             )
-            var in_tensors = InlineArray[InputTensorType, num_devices](
+            var in_tensors = Array[InputTensorType, num_devices](
                 uninitialized=True
             )
             comptime for i in range(num_devices):
@@ -209,7 +210,7 @@ struct DistributedAllReduceSum:
                 )
 
             _launch_device_collective[num_devices](
-                launch_vendor_allreduce, dev_ctxs_input
+                launch_vendor_allreduce, dev_ctxs_input.copy()
             )
             return
 
@@ -217,9 +218,7 @@ struct DistributedAllReduceSum:
         comptime InputTensorType = type_of(
             inputs[0].to_tile_tensor[DType.int64]().as_immut()
         )
-        var in_tensors = InlineArray[InputTensorType, inputs.size](
-            uninitialized=True
-        )
+        var in_tensors = Array[InputTensorType, inputs.size](uninitialized=True)
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
                 inputs[i].to_tile_tensor[DType.int64]().as_immut()
@@ -245,7 +244,9 @@ struct DistributedAllReduceSum:
                 dev_ctxs_input[index],
             )
 
-        _launch_device_collective[num_devices](launch_allreduce, dev_ctxs_input)
+        _launch_device_collective[num_devices](
+            launch_allreduce, dev_ctxs_input.copy()
+        )
 
 
 @extensibility.register("mo.distributed.reducescatter.sum")
@@ -310,7 +311,7 @@ struct DistributedReduceScatterSum:
         )
 
         # Marshal input tensors into fully dynamic TileTensors so groups can
-        # have different static shapes while sharing one InlineArray type.
+        # have different static shapes while sharing one Array type.
 
         @always_inline
         def launch_reducescatter[
@@ -331,10 +332,10 @@ struct DistributedReduceScatterSum:
                 inputs[group_start].to_tile_tensor[DType.int64]().as_immut()
             )
 
-            var in_tensors = InlineArray[InputTensorType, group_size](
+            var in_tensors = Array[InputTensorType, group_size](
                 uninitialized=True
             )
-            var rank_sigs = InlineArray[
+            var rank_sigs = Array[
                 UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
             ](uninitialized=True)
 
@@ -383,7 +384,7 @@ struct DistributedReduceScatterSum:
             )
 
         _launch_device_collective[num_devices](
-            launch_reducescatter, dev_ctxs_input
+            launch_reducescatter, dev_ctxs_input.copy()
         )
 
 
@@ -473,13 +474,13 @@ struct DistributedAllGather:
                     row_major(outputs[index * group_size].size()),
                 )
             )
-            var group_in_tensors = InlineArray[InputTensorType, group_size](
+            var group_in_tensors = Array[InputTensorType, group_size](
                 uninitialized=True
             )
-            var device_out_tensors = InlineArray[OutputTensorType, group_size](
+            var device_out_tensors = Array[OutputTensorType, group_size](
                 uninitialized=True
             )
-            var group_rank_sigs = InlineArray[
+            var group_rank_sigs = Array[
                 UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
             ](uninitialized=True)
 
@@ -510,7 +511,9 @@ struct DistributedAllGather:
                 local_rank,
             )
 
-        _launch_device_collective[num_devices](launch_allgather, dev_ctxs_input)
+        _launch_device_collective[num_devices](
+            launch_allgather, dev_ctxs_input.copy()
+        )
 
 
 @extensibility.register("mo.distributed.broadcast")
@@ -578,9 +581,9 @@ struct DistributedBroadcast:
 
         var in_buf = input.to_tile_tensor[DType.int64]()
 
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
 
         comptime for i in range(signal_buffers.size):
             rank_sigs[i] = (
@@ -600,7 +603,7 @@ struct DistributedBroadcast:
                 outputs[index]
                 .to_tile_tensor[DType.int64]()
                 .make_dynamic[DType.int64]()
-                .ptr,
+                ._storage,
                 in_buf.layout,
             )
             broadcast[num_devices](
@@ -611,7 +614,9 @@ struct DistributedBroadcast:
                 root,
             )
 
-        _launch_device_collective[num_devices](launch_broadcast, dev_ctxs_input)
+        _launch_device_collective[num_devices](
+            launch_broadcast, dev_ctxs_input.copy()
+        )
 
 
 @extensibility.register("mo.distributed.scatter")
@@ -659,17 +664,17 @@ struct DistributedScatter:
         )
 
         # Inputs can have different static shapes, so use make_dynamic to
-        # produce a homogeneous fully-dynamic TileTensor type for InlineArray.
+        # produce a homogeneous fully-dynamic TileTensor type for Array.
         comptime InputTensorType = type_of(
             inputs[0]
             .to_tile_tensor[DType.int64]()
             .make_dynamic[DType.int64]()
             .as_immut()
         )
-        var in_tensors = InlineArray[InputTensorType, ngpus](uninitialized=True)
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
+        var in_tensors = Array[InputTensorType, ngpus](uninitialized=True)
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
 
         comptime for i in range(ngpus):
             in_tensors[i] = rebind[InputTensorType](
@@ -699,7 +704,7 @@ struct DistributedScatter:
                 dev_ctxs_input[index],
             )
 
-        _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input)
+        _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input.copy())
 
 
 @extensibility.register(
@@ -777,14 +782,12 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         comptime InputTensorType = type_of(
             inputs[0].to_tile_tensor[DType.int64]().as_immut()
         )
-        var in_tensors = InlineArray[InputTensorType, inputs.size](
-            uninitialized=True
-        )
+        var in_tensors = Array[InputTensorType, inputs.size](uninitialized=True)
 
         # Marshal signal buffers.
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
 
         comptime for i in range(inputs.size):
             in_tensors[i] = rebind[InputTensorType](
@@ -844,7 +847,9 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
                 dev_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_fused_allreduce, dev_ctxs)
+        _launch_device_collective[num_devices](
+            launch_fused_allreduce, dev_ctxs.copy()
+        )
 
 
 @extensibility.register("mo.composite.distributed.reduce_scatter_rms_norm")
@@ -913,12 +918,10 @@ struct DistributedReduceScatterRMSNorm:
         comptime InputTensorType = type_of(
             inputs[0].to_tile_tensor[DType.int64]().as_immut()
         )
-        var in_tensors = InlineArray[InputTensorType, num_devices](
+        var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
             uninitialized=True
         )
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
 
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
@@ -1006,7 +1009,189 @@ struct DistributedReduceScatterRMSNorm:
                 dev_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_fused_rs_norm, dev_ctxs)
+        _launch_device_collective[num_devices](
+            launch_fused_rs_norm, dev_ctxs.copy()
+        )
+
+
+@extensibility.register("mo.composite.distributed.allgather_rms_norm")
+struct DistributedAllGatherRMSNorm:
+    """Registers the `mo.composite.distributed.allgather_rms_norm` graph op with the graph compiler.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        outputs_normed: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        outputs_residual: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
+        epsilons: InputVariadicTensors[dtype=DType.float32, ...],
+        weight_offsets: InputVariadicTensors[dtype=dtype, ...],
+        dev_ctxs_input: DeviceContextArray,
+    ) capturing raises:
+        """Fused all-gather + RMSNorm (bf16 in/out, no quantization).
+
+        All-gathers `inputs` (per-device `[shard_i, cols]` row-shards) into the
+        full replicated `[rows, cols]` stream and RMSNorms every gathered row in
+        one launch: normed to `outputs_normed`, gathered residual to
+        `outputs_residual` (both full and replicated).
+
+        Parameters:
+            dtype: Element type of the input/output tensors.
+            rank: Tensor rank of the inputs and outputs.
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
+
+        Args:
+            outputs_normed: Per-device normed output (full replicated `[rows, cols]`).
+            outputs_residual: Per-device gathered residual (full replicated,
+                the residual stream).
+            inputs: Per-device input row-shards to gather.
+            signal_buffers: Per-device synchronization buffers.
+            gammas: Per-device RMSNorm gamma weights (in_dtype, length cols).
+            epsilons: Per-device RMSNorm epsilon scalars (float32).
+            weight_offsets: Per-device gamma offset scalars (in_dtype).
+            dev_ctxs_input: Device contexts for participating GPUs.
+
+        Limitations:
+            - Maximum of 8 GPUs supported (matches MAX_GPUS in comm/sync.mojo).
+            - Full-world all-gather only (no device grouping); requires P2P.
+        """
+        comptime num_devices = inputs.size
+        comptime assert signal_buffers.size == num_devices, (
+            "expected allgather_rms_norm inputs and signal buffers to have the"
+            " same number of elements"
+        )
+
+        # Like plain all-gather, no scratch: only the Signal struct.
+        _check_signal_buffer_size(signal_buffers[0].size(), 0)
+
+        # epsilon/weight_offset are rank-0 CPU scalars, so drop CPU devices.
+        var dev_ctxs = dev_ctxs_input.filter_gpu_contexts[num_devices]()
+
+        comptime InputTensorType = type_of(
+            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+        )
+        var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
+
+        comptime for i in range(num_devices):
+            in_tensors[i] = rebind[InputTensorType](
+                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+            )
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
+
+        @always_inline
+        def launch_fused_ag_norm[
+            index: Int
+        ]() raises {
+            imm in_tensors,
+            imm rank_sigs,
+            imm dev_ctxs,
+            imm gammas,
+            imm epsilons,
+            imm weight_offsets,
+            imm outputs_normed,
+            imm outputs_residual,
+        }:
+            var normed_buf = outputs_normed[index].to_tile_tensor[DType.int64]()
+            var sum_buf = outputs_residual[index].to_tile_tensor[DType.int64]()
+            var gamma_tensor = gammas[index].to_tile_tensor[DType.int64]()
+            var epsilon = epsilons[index].unsafe_ptr()[]
+            var weight_offset = weight_offsets[index].unsafe_ptr()[]
+
+            # Two-launch fallback (above the fuse threshold, where the
+            # fabric-saturated standalone gather wins): all-gather into `sum_buf`,
+            # then `rms_norm_gpu` into `normed_buf`. `sum_buf` is the residual on
+            # both branches. mbc=True.
+            @parameter
+            @always_inline
+            def two_launch() raises:
+                # Gather each shard into its contiguous row-range of `sum_buf`
+                # (natural concat order) so the norm runs over the whole tensor.
+                var cols_rt = Int(sum_buf.dim[rank - 1]())
+                var base = rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                    sum_buf._storage
+                )
+                comptime OutViewType = type_of(
+                    TileTensor(base, row_major(cols_rt, cols_rt))
+                )
+                var out_views = Array[OutViewType, num_devices](
+                    uninitialized=True
+                )
+                var row_off = 0
+                comptime for i in range(num_devices):
+                    var len_i = Int(in_tensors[i].num_elements()) // cols_rt
+                    out_views[i] = TileTensor(
+                        base + row_off * cols_rt,
+                        row_major(len_i, cols_rt),
+                    )
+                    row_off += len_i
+
+                allgather[dtype=dtype, ngpus=num_devices](
+                    in_tensors, out_views, rank_sigs, dev_ctxs[index], index
+                )
+
+                # `@__copy_capture` REQUIRED: without it the local `var`
+                # (`sum_buf`/`normed_buf`) reaches the `rms_norm_gpu` device
+                # kernel as a garbage host-stack pointer and corrupts memory.
+                @__copy_capture(sum_buf)
+                @parameter
+                @always_inline
+                def norm_input_fn[
+                    width: Int
+                ](coords: Coord) -> SIMD[dtype, width]:
+                    return sum_buf.raw_load[width=width](sum_buf.layout(coords))
+
+                @__copy_capture(normed_buf)
+                @parameter
+                @always_inline
+                def norm_output_fn[
+                    width: SIMDLength, alignment: Int
+                ](coords: Coord, val: SIMD[dtype, width]) -> None:
+                    normed_buf.raw_store[width=width, alignment=alignment](
+                        normed_buf.layout(coords), val
+                    )
+
+                rms_norm_gpu[
+                    rank,
+                    norm_input_fn,
+                    norm_output_fn,
+                    multiply_before_cast=True,
+                ](
+                    sum_buf.layout.shape_coord(),
+                    gamma_tensor,
+                    epsilon,
+                    weight_offset,
+                    dev_ctxs[index],
+                )
+
+            _dispatch_ag_norm[two_launch=two_launch](
+                in_tensors,
+                normed_buf,
+                sum_buf,
+                gamma_tensor,
+                epsilon,
+                weight_offset,
+                rank_sigs,
+                dev_ctxs[index],
+            )
+
+        _launch_device_collective[num_devices](
+            launch_fused_ag_norm, dev_ctxs.copy()
+        )
 
 
 @extensibility.register("mo.composite.distributed.matmul_reduce_scatter.sum")
@@ -1050,18 +1235,16 @@ struct DistributedMatmulReduceScatterSum:
         comptime OutputTileType = type_of(
             outputs[0].to_tile_tensor[DType.int64]()
         )
-        var c_peer_tt = InlineArray[OutputTileType, num_devices](
-            uninitialized=True
-        )
+        var c_peer_tt = Array[OutputTileType, num_devices](uninitialized=True)
         comptime for i in range(num_devices):
             c_peer_tt[i] = rebind[OutputTileType](
                 outputs[i].to_tile_tensor[DType.int64]()
             )
 
         # Marshal signal buffers.
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
         comptime for i in range(num_devices):
             rank_sigs[i] = (
                 signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
@@ -1111,13 +1294,11 @@ struct DistributedMatmulReduceScatterSum:
 
         # Marshal per-peer input TileTensors. All peers' A (and B) share
         # the same comptime spec; rebind to a common type so we can build
-        # one InlineArray per kind.
+        # one Array per kind.
         comptime InputATileType = type_of(
             inputs_a[0].to_tile_tensor[DType.int64]()
         )
-        var a_per_peer = InlineArray[InputATileType, num_devices](
-            uninitialized=True
-        )
+        var a_per_peer = Array[InputATileType, num_devices](uninitialized=True)
         comptime for i in range(num_devices):
             a_per_peer[i] = rebind[InputATileType](
                 inputs_a[i].to_tile_tensor[DType.int64]()
@@ -1126,9 +1307,7 @@ struct DistributedMatmulReduceScatterSum:
         comptime InputBTileType = type_of(
             inputs_b[0].to_tile_tensor[DType.int64]()
         )
-        var b_per_peer = InlineArray[InputBTileType, num_devices](
-            uninitialized=True
-        )
+        var b_per_peer = Array[InputBTileType, num_devices](uninitialized=True)
         comptime for i in range(num_devices):
             b_per_peer[i] = rebind[InputBTileType](
                 inputs_b[i].to_tile_tensor[DType.int64]()
@@ -1191,9 +1370,9 @@ struct LamportAllreduceRMSNorm:
         comptime epsilon = Float32(1e-6)
         comptime dtype = output.dtype
 
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
         comptime for i in range(ngpus):
             rank_sigs[i] = (
                 signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()

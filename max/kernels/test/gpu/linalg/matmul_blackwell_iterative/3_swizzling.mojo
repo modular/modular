@@ -18,11 +18,11 @@ import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import WARP_SIZE, barrier
 from std.gpu import block_idx, lane_id, thread_idx, warp_id
 from std.gpu.primitives.cluster import block_rank_in_cluster
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
 
 # Additional imports for testing
 from internal_utils import assert_almost_equal
@@ -76,8 +76,9 @@ def kernel_3[
     a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    var num_iters = Int(num_iters_dev)
     comptime assert num_threads == 128 or num_threads == 256
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -170,7 +171,7 @@ def kernel_3[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime c_frag_size = MMA_M * MMA_N // num_threads  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
-    var c_frag: InlineArray[
+    var c_frag: Array[
         Scalar[accum_type], c_frag_size
     ]  # array of accumulator elements
 
@@ -415,7 +416,7 @@ def blackwell_kernel_3[
         a_tma_op,
         b_tma_op,
         c,
-        K // BK,
+        Int32(K // BK),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,

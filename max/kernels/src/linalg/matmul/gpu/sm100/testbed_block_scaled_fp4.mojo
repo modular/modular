@@ -19,8 +19,8 @@ scaling formats via the `scales_dtype` parameter.
 from std.math import align_up, ceildiv
 from std.sys import argv
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc, bitcast, dealloc, ThinAllocation
 from std.memory.alloc import Layout as AllocLayout
 from std.random import rand, random_ui64, seed
@@ -53,7 +53,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 from linalg.fp4_quantization import naive_block_scaled_matmul
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def _rand_mxfp4_value() -> Scalar[MXFP4_SF_DTYPE]:
@@ -182,20 +182,29 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var a_host_alloc = alloc(
         AllocLayout[Scalar[a_type]](count=a_size)
-    ).into_deletable()
-    var a_host = TileTensor(a_host_alloc.unsafe_ptr(), a_shape)
+    ).into_managed()
+    var a_host_ptr: UnsafePointer[
+        Scalar[a_type], origin_of(a_host_alloc)
+    ] = a_host_alloc.unsafe_ptr()
+    var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_alloc = alloc(
         AllocLayout[Scalar[b_type]](count=b_size)
-    ).into_deletable()
-    var b_host = TileTensor(b_host_alloc.unsafe_ptr(), b_shape)
+    ).into_managed()
+    var b_host_ptr: UnsafePointer[
+        Scalar[b_type], origin_of(b_host_alloc)
+    ] = b_host_alloc.unsafe_ptr()
+    var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
-    ).into_deletable()
+    ).into_managed()
     var c_host = TileTensor(c_host_alloc.unsafe_ptr(), c_shape)
     var c_host_ref_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
-    ).into_deletable()
-    var c_host_ref = TileTensor(c_host_ref_alloc.unsafe_ptr(), c_shape)
+    ).into_managed()
+    var c_host_ref_ptr: UnsafePointer[
+        Scalar[c_type], origin_of(c_host_ref_alloc)
+    ] = c_host_ref_alloc.unsafe_ptr()
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_tensor = TileTensor(a_device, a_shape)
@@ -243,16 +252,18 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var a_scales_host_alloc = alloc(
         AllocLayout[Scalar[scales_dtype]](count=a_scales_total)
-    ).into_deletable()
-    var a_scales_host = TileTensor(
-        a_scales_host_alloc.unsafe_ptr(), a_scales_shape
-    )
+    ).into_managed()
+    var a_scales_host_ptr: UnsafePointer[
+        Scalar[scales_dtype], origin_of(a_scales_host_alloc)
+    ] = a_scales_host_alloc.unsafe_ptr()
+    var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_host_alloc = alloc(
         AllocLayout[Scalar[scales_dtype]](count=b_scales_total)
-    ).into_deletable()
-    var b_scales_host = TileTensor(
-        b_scales_host_alloc.unsafe_ptr(), b_scales_shape
-    )
+    ).into_managed()
+    var b_scales_host_ptr: UnsafePointer[
+        Scalar[scales_dtype], origin_of(b_scales_host_alloc)
+    ] = b_scales_host_alloc.unsafe_ptr()
+    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
@@ -432,12 +443,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    dealloc(a_host_alloc^.into_allocation())
-    dealloc(b_host_alloc^.into_allocation())
-    dealloc(c_host_alloc^.into_allocation())
-    dealloc(c_host_ref_alloc^.into_allocation())
-    dealloc(a_scales_host_alloc^.into_allocation())
-    dealloc(b_scales_host_alloc^.into_allocation())
+    dealloc(a_host_alloc^)
+    dealloc(b_host_alloc^)
+    dealloc(c_host_alloc^)
+    dealloc(c_host_ref_alloc^)
+    dealloc(a_scales_host_alloc^)
+    dealloc(b_scales_host_alloc^)
     _ = a_device^
     _ = b_device^
     _ = c_device^

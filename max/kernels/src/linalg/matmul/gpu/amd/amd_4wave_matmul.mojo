@@ -38,7 +38,7 @@ from std.math import ceildiv
 from std.sys import align_of, size_of, llvm_intrinsic
 from std.sys.intrinsics import readfirstlane
 from std.utils import Index, IndexList, StaticTuple
-from std.collections import InlineArray
+from std.collections import Array
 from std.utils.numerics import get_accum_type
 
 from std.gpu import (
@@ -48,8 +48,8 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import MI355X
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import MI355X
 from std.gpu.intrinsics import AMDBufferResource
 from std.gpu.sync import schedule_barrier, s_waitcnt
 
@@ -1251,7 +1251,7 @@ struct AMD4WaveMatmul[
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
         source_ptr: UnsafePointer[Scalar[Self.c_type], ImmutAnyOrigin],
-        source_row_stride: Int,
+        source_row_stride: Int32,
         beta: Float32,
     ):
         """Runs the 4-wave kernel as a 2D convolution via implicit-GEMM.
@@ -1306,6 +1306,7 @@ struct AMD4WaveMatmul[
             beta: Residual scale. Unused when `has_residual=False`.
         """
         Self.validate_config()
+        var _source_row_stride = Int(source_row_stride)
 
         comptime BM = Self.BM
         comptime BN = Self.BN
@@ -1784,14 +1785,14 @@ struct AMD4WaveMatmul[
         # of total kernel time). A single `s_waitcnt vmcnt(0)` drains
         # the cluster before the first `v_pk_fma_f32` in the epilogue.
         #
-        # Storage: per-lane `InlineArray` of
+        # Storage: per-lane `Array` of
         # `SIMD[c_type, c_frag_size]` × num_m_mmas × num_n_mmas. For
         # BM=BN=128 / MMA=16x16 / c_frag_size=4 that's 16 slots × 4 bf16
         # = 16 dwords per lane (well under the 196-Dword VGPR headroom
         # at 316 baseline). OOB blocks waste a few HBM reads — SRD
         # bounds clamping returns 0, so it's harmless.
         comptime n_slots = num_m_mmas * num_n_mmas
-        var prefetched = InlineArray[SIMD[Self.c_type, c_frag_size], n_slots](
+        var prefetched = Array[SIMD[Self.c_type, c_frag_size], n_slots](
             uninitialized=True
         )
         var lane_group, thread_m = divmod(Int(_lane_id), MMA_M)
@@ -1808,7 +1809,7 @@ struct AMD4WaveMatmul[
             # this fix replaces), making workgroups with
             # `pid_m >= num_pid_m/2` read OOB → SRD-clamped to 0.
             # Keep both expressed in elements.
-            var src_size_elem = M * source_row_stride
+            var src_size_elem = M * _source_row_stride
             var src_bc = AMDBufferResource(
                 readfirstlane(source_ptr), readfirstlane(src_size_elem)
             )
@@ -1832,7 +1833,7 @@ struct AMD4WaveMatmul[
                         + lane_group * c_frag_size
                     )
                     var elem_off = Int32(
-                        m_logical * source_row_stride + n_global
+                        m_logical * _source_row_stride + n_global
                     )
                     prefetched[m_mma * num_n_mmas + n_mma] = src_bc.load[
                         Self.c_type, c_frag_size

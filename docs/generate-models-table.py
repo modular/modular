@@ -197,10 +197,76 @@ def _resolve_module_level_collections(
     return result
 
 
+def _resolve_class_collections(
+    tree: ast.Module,
+) -> dict[str, dict[str, list[str]]]:
+    """Map ``{class_name: {attr: [str, ...]}}`` for class-level set/list
+    constants in a ``model_config.py``.
+
+    Lets an ``arch.py`` registration that passes
+    ``supported_encodings=<Arch>Config.SUPPORTED_ENCODINGS`` (a class-attribute
+    reference) resolve to the underlying values. Same-file base-class constants
+    are merged into subclasses so inherited constants resolve too.
+    """
+    raw: dict[str, dict[str, list[str]]] = {}
+    bases: dict[str, list[str]] = {}
+    for node in ast.iter_child_nodes(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        attrs: dict[str, list[str]] = {}
+        for stmt in node.body:
+            if isinstance(stmt, ast.AnnAssign) and isinstance(
+                stmt.target, ast.Name
+            ):
+                target_id, value = stmt.target.id, stmt.value
+            elif (
+                isinstance(stmt, ast.Assign)
+                and len(stmt.targets) == 1
+                and isinstance(stmt.targets[0], ast.Name)
+            ):
+                target_id, value = stmt.targets[0].id, stmt.value
+            else:
+                continue
+            if isinstance(value, (ast.Set, ast.List)):
+                attrs[target_id] = [
+                    e.value
+                    for e in value.elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)
+                ]
+        raw[node.name] = attrs
+        bases[node.name] = [b.id for b in node.bases if isinstance(b, ast.Name)]
+
+    def resolve(cls_name: str, seen: set[str]) -> dict[str, list[str]]:
+        if cls_name in seen or cls_name not in raw:
+            return {}
+        seen.add(cls_name)
+        merged: dict[str, list[str]] = {}
+        for base in bases.get(cls_name, []):
+            merged.update(resolve(base, seen))
+        merged.update(raw[cls_name])
+        return merged
+
+    return {name: resolve(name, set()) for name in raw}
+
+
+def _parse_optional(path: Path) -> ast.Module | None:
+    """Parse a Python file to an AST module, or ``None`` if it doesn't exist."""
+    return ast.parse(path.read_text()) if path.exists() else None
+
+
 def parse_arch_file(arch_path: Path) -> list[dict[str, Any]]:
     """Parse an arch.py file and extract all SupportedArchitecture definitions."""
     tree = ast.parse(arch_path.read_text())
     module_collections = _resolve_module_level_collections(tree)
+    # Config classes (and their SUPPORTED_ENCODINGS constants) may live in
+    # arch.py itself (diffusion arches) or the sibling model_config.py.
+    class_collections: dict[str, dict[str, list[str]]] = {}
+    for class_tree in (
+        tree,
+        _parse_optional(arch_path.parent / "model_config.py"),
+    ):
+        if class_tree is not None:
+            class_collections.update(_resolve_class_collections(class_tree))
     results = []
 
     for node in ast.iter_child_nodes(tree):
@@ -261,6 +327,14 @@ def parse_arch_file(arch_path: Path) -> list[dict[str, Any]]:
             isinstance(enc_node, ast.Name) and enc_node.id in module_collections
         ):
             supported_encodings = set(module_collections[enc_node.id])
+        elif isinstance(enc_node, ast.Attribute) and isinstance(
+            enc_node.value, ast.Name
+        ):
+            supported_encodings = set(
+                class_collections.get(enc_node.value.id, {}).get(
+                    enc_node.attr, []
+                )
+            )
         supported_encodings = {
             e for e in supported_encodings if not e.startswith("q4_")
         }
@@ -554,7 +628,7 @@ def main() -> None:
             "❗  - Should this architecture be listed?\n"
             "❗  - Are the model names correct? Do the Hugging Face links work?\n"
             "❗  - Are the supported modalities correct?\n"
-            "❗ This is the file for docs.modular.com/max/models.\n"
+            "❗ This is the file for docs.modular.com/models.\n"
             "❗ If you have issues or questions, raise them in #ask-docs."
         )
 

@@ -17,7 +17,7 @@ OpCost, TargetCostModel, OpDesc, DepKind, DepEdge, EdgeRule, and
 the annotate_ops helper.
 """
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.collections import List
 
 # =============================================================================
@@ -276,10 +276,13 @@ struct TargetCostModel(ImplicitlyCopyable, Movable):
     ```
     """
 
-    var _costs: InlineArray[OpCost, 128]
+    var _costs: Array[OpCost, 128]
 
     def __init__(out self):
-        self._costs = InlineArray[OpCost, 128](fill=OpCost.none())
+        self._costs = Array[OpCost, 128](fill=OpCost.none())
+
+    def __init__(out self, *, copy: Self):
+        self._costs = copy._costs.copy()
 
     def set_cost(mut self, tag: Int, cost: OpCost):
         """Register a cost annotation for a kernel op tag (0-127).

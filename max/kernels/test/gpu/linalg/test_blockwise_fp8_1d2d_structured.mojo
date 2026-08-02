@@ -22,7 +22,7 @@ Uses DeepSeek V3-style MoE shapes:
 
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,

@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host import ConstantMemoryMapping, DeviceContext
-from std.gpu.host.compile import _compile_code
+from max.gpu.host import ConstantMemoryMapping, DeviceContext
+from max.gpu.host.compile import _compile_code
 from std.gpu import thread_idx
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal, assert_true
 
 
@@ -25,7 +25,7 @@ def test_constant_memory_compile(ctx: DeviceContext) raises:
     ]() -> UnsafePointer[
         Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]:
-        return stack_allocation[
+        return unsafe_stack_allocation[
             n, Float32, address_space=AddressSpace.CONSTANT
         ]()
 
@@ -44,7 +44,7 @@ def test_constant_mem(ctx: DeviceContext) raises:
     ]() -> UnsafePointer[
         Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]:
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             n, Float32, address_space=AddressSpace.CONSTANT
         ]()
 
@@ -77,7 +77,7 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
     ]() -> UnsafePointer[
         Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]:
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             n, Float32, address_space=AddressSpace.CONSTANT
         ]()
 
@@ -108,7 +108,7 @@ def test_external_constant_mem(ctx: DeviceContext) raises:
     print("== test_external_constant_mem")
 
     def static_constant_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
-        var static_constant = stack_allocation[
+        var static_constant = unsafe_stack_allocation[
             16,
             Float32,
             name=StaticString("static_constant"),

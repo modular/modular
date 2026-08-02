@@ -28,9 +28,9 @@ Usage:
 
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     ComptimeInt,
     Coord,
@@ -49,7 +49,7 @@ from layout.tma_async import (
 )
 from layout.tile_layout import Layout
 from std.utils.index import IndexList
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils.index import IndexList
 
 # Core matrix constant from tensor_core_async.mojo
@@ -654,7 +654,7 @@ struct SMemTileArrayWithLayout[
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
     # Storage type for stack allocation
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     # Pointer to the array data
     var ptr: UnsafePointer[
@@ -736,7 +736,7 @@ struct SMemTileArrayWithLayout[
         Returns:
             A new SMemTileArrayWithLayout backed by stack-allocated shared memory.
         """
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
@@ -808,7 +808,7 @@ struct SMemTileArray[
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
     # Storage type for stack allocation
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     # Pointer to the array data
     var ptr: UnsafePointer[
@@ -899,7 +899,7 @@ struct SMemTileArray[
         Returns:
             A new SMemTileArray backed by stack-allocated shared memory.
         """
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
@@ -978,7 +978,7 @@ struct SMemTileArray2D[
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
     # Storage type for stack allocation
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     # Pointer to the array data
     var ptr: UnsafePointer[
@@ -1095,7 +1095,7 @@ struct SMemTileArray2D[
         Returns:
             A new SMemTileArray2D backed by stack-allocated shared memory.
         """
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
@@ -1153,7 +1153,7 @@ struct SMemTileArray2DRowMajor[
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
     # Storage type for stack allocation
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     # Pointer to the array data
     var ptr: UnsafePointer[
@@ -1238,7 +1238,7 @@ struct SMemTileArray2DRowMajor[
         Returns:
             A new SMemTileArray2DRowMajor backed by stack-allocated shared memory.
         """
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,

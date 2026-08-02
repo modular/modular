@@ -26,7 +26,7 @@ BF16 GMEM round trip).
 
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import UnsafePointer
 from layout import Coord, Idx, TileTensor, row_major
@@ -166,14 +166,16 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
 
     comptime c_packed_row_stride = type_of(c_packed).static_shape[1]
     comptime sf_dim1 = type_of(c_swiglu_scales).static_shape[1]
-    var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](c_packed.ptr)
+    var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](
+        c_packed._storage
+    )
     var c_swiglu_scales_ptr = rebind[
         UnsafePointer[Scalar[MXFP8_SF_DTYPE], MutAnyOrigin]
-    ](c_swiglu_scales.ptr)
+    ](c_swiglu_scales._storage)
     # MXFP8 doesn't use a per-expert tensor_sf; the trait method is
     # gated out for MXFP8 so this pointer is never dereferenced.
     var c_input_scales_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
-        expert_scales.ptr
+        expert_scales._storage
     )
     var swiglu_out = RealSwiGLUOutput[
         c_packed_row_stride,

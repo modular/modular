@@ -77,15 +77,15 @@ from std.random import randn, seed
 from std.sys import size_of
 
 from std.gpu import barrier, thread_idx, warp_id as get_warp_id
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import _is_sm10x_gpu
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
     mma_arrive,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -313,7 +313,7 @@ def pv_ts_batched_kernel[
     # All 4 warps store to the SAME address a_tmem (datapaths=32); the hardware
     # subpartition routes warp g's store to quarter g (no per-warp offset). This
     # single packed P feeds ALL depth-tile MMAs (P is depth-independent).
-    var frag = InlineArray[Scalar[DType.uint32], P_FRAG_U32](uninitialized=True)
+    var frag = Array[Scalar[DType.uint32], P_FRAG_U32](uninitialized=True)
     for j in range(P_FRAG_U32):
         var pair = SIMD[OP_TYPE, 2]()
         pair[0] = p_input[row, g * PART_KEYS + 2 * j][0]

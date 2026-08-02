@@ -26,6 +26,7 @@ from max.pipelines.kv_cache import (
     TransferReqData,
 )
 from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
     PipelineConfig,
     TextGenerationPipeline,
 )
@@ -136,7 +137,7 @@ class PrefillScheduler(Scheduler):
         )
 
     def handle_prefill_request(
-        self, message: PrefillRequest, identity: ClientIdentity
+        self, message: PrefillRequest[TextContext], identity: ClientIdentity
     ) -> None:
         """Handles a prefill request from the dispatcher."""
         logger.debug("received request from decode node.")
@@ -424,6 +425,9 @@ class PrefillScheduler(Scheduler):
             batch_vision_metrics=self.pipeline.batch_vision_metrics()
             if hasattr(self.pipeline, "batch_vision_metrics")
             else None,
+            batch_video_metrics=self.pipeline.batch_video_metrics()
+            if hasattr(self.pipeline, "batch_video_metrics")
+            else None,
         )
 
         return SchedulerProgress.MADE_PROGRESS
@@ -454,9 +458,19 @@ def load_prefill_scheduler(
         pipeline_config, pipeline.max_batch_size
     )
 
+    # Decode incoming prefill requests into the architecture's concrete
+    # context type (e.g. a TextAndVisionContext subclass for VLMs), mirroring
+    # the aggregated serving path. Decoding into the base TextContext would
+    # silently drop the subclass and its vision fields on the wire.
+    context_type = PIPELINE_REGISTRY.retrieve_context_type(pipeline_config)
+    assert issubclass(context_type, TextContext)
+
     return PrefillScheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
         kv_cache=pipeline.kv_manager,
-        dispatcher=PrefillDispatcherServer(bind_addr=settings.di_bind_address),
+        dispatcher=PrefillDispatcherServer(
+            bind_addr=settings.di_bind_address,
+            context_type=context_type,
+        ),
     )

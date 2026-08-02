@@ -25,5 +25,5 @@ def main():
     comptime for i in range(4):
         print(i)
 
-    var array = InlineArray[Int, get_array_size()](fill=0)
+    var array = Array[Int, get_array_size()](fill=0)
     _ = array

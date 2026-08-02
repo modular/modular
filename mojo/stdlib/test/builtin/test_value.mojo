@@ -44,7 +44,7 @@ struct ConditionalTriviality[
         self.events = Pointer(to=events)
         self.add_event(EVENT_INIT)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         comptime if is_trivially_deletable[Self.T]():
             self.add_event(EVENT_DEL | EVENT_TRIVIAL)
         else:
@@ -139,7 +139,7 @@ def _test_type_inherit_triviality[T: Copyable & ImplicitlyDeletable]() raises:
 
 def test_type_inherit_triviality() raises:
     _test_type_inherit_triviality[Float64]()
-    # _test_type_inherit_triviality[InlineArray[InlineArray[Int, 4], 4]]()
+    # _test_type_inherit_triviality[Array[Array[Int, 4], 4]]()
 
 
 def _test_type_inherit_non_triviality[
@@ -163,7 +163,7 @@ def _test_type_inherit_non_triviality[
 
 def test_type_inherit_non_triviality() raises:
     _test_type_inherit_non_triviality[String]()
-    # _test_type_inherit_non_triviality[InlineArray[InlineArray[String, 4], 4]]()
+    # _test_type_inherit_non_triviality[Array[Array[String, 4], 4]]()
 
 
 def main() raises:

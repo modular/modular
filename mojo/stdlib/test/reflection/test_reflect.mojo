@@ -421,7 +421,7 @@ def test_field_offset_by_index_matches_by_name() raises:
 
 
 def test_field_offset_iteration() raises:
-    var offsets = InlineArray[Int, 4](uninitialized=True)
+    var offsets = Array[Int, 4](uninitialized=True)
     comptime r = reflect[OffsetTestStruct]
     comptime for i in range(r.field_count()):
         offsets[i] = r.field_offset[index=i]()

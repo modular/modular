@@ -27,11 +27,11 @@ from std.gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     CoordLike,
     Coord,
@@ -129,8 +129,9 @@ def blockscaled_pair_cta_mxfp8[
         b_scales_desc_shape,
     ],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    var num_iters = Int(num_iters_dev)
     comptime assert (
         a_type == b_type == DType.float8_e4m3fn
     ), "a_type and b_type must be the same and either float8_e4m3fn"
@@ -233,7 +234,7 @@ def blockscaled_pair_cta_mxfp8[
     var ptr_tmem_addr = (smem_pool.bitcast[Int64]() + 4).bitcast[UInt32]()
 
     comptime c_frag_size = MMA_M * MMA_N // 128 // cta_group
-    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
+    var c_frag: Array[Scalar[accum_type], c_frag_size]
 
     comptime a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
     comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
@@ -743,7 +744,7 @@ def sm100_blockscaled_mxfp8_cta_pair[
         a_scales_tma_op,
         b_scales_tma_op,
         c,
-        ceildiv(K, BK),
+        Int32(ceildiv(K, BK)),
         grid_dim=(
             align_up(ceildiv(M, BM), Int(cluster_shape[0])),
             align_up(ceildiv(N, BN) // cta_group, Int(cluster_shape[1])),

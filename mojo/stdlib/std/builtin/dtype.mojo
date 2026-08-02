@@ -393,66 +393,70 @@ struct DType(
         # This per-`dtype` chain must stay in sync with
         # `_scalar_repr_alias` in `simd.mojo`, which maps the same set of
         # `dtype`s to their `Scalar` alias names for scalar `repr()`.
+        #
+        # `write_string` rather than `write`: `write` promotes each literal to a
+        # `String`, so all 27 arms would carry a stack slot, a small-string
+        # branch and a refcounted teardown.
         if self == DType.bool:
-            return writer.write("bool")
+            return writer.write_string("bool")
         elif self == DType.int:
-            return writer.write("int")
+            return writer.write_string("int")
         elif self == DType.uint:
-            return writer.write("uint")
+            return writer.write_string("uint")
 
         elif self == DType.uint8:
-            return writer.write("uint8")
+            return writer.write_string("uint8")
         elif self == DType.int8:
-            return writer.write("int8")
+            return writer.write_string("int8")
         elif self == DType.uint16:
-            return writer.write("uint16")
+            return writer.write_string("uint16")
         elif self == DType.int16:
-            return writer.write("int16")
+            return writer.write_string("int16")
         elif self == DType.uint32:
-            return writer.write("uint32")
+            return writer.write_string("uint32")
         elif self == DType.int32:
-            return writer.write("int32")
+            return writer.write_string("int32")
         elif self == DType.uint64:
-            return writer.write("uint64")
+            return writer.write_string("uint64")
         elif self == DType.int64:
-            return writer.write("int64")
+            return writer.write_string("int64")
         elif self == DType.uint128:
-            return writer.write("uint128")
+            return writer.write_string("uint128")
         elif self == DType.int128:
-            return writer.write("int128")
+            return writer.write_string("int128")
         elif self == DType.uint256:
-            return writer.write("uint256")
+            return writer.write_string("uint256")
         elif self == DType.int256:
-            return writer.write("int256")
+            return writer.write_string("int256")
 
         elif self == DType.float4_e2m1fn:
-            return writer.write("float4_e2m1fn")
+            return writer.write_string("float4_e2m1fn")
 
         elif self == DType.float8_e3m4:
-            return writer.write("float8_e3m4")
+            return writer.write_string("float8_e3m4")
         elif self == DType.float8_e4m3fn:
-            return writer.write("float8_e4m3fn")
+            return writer.write_string("float8_e4m3fn")
         elif self == DType.float8_e4m3fnuz:
-            return writer.write("float8_e4m3fnuz")
+            return writer.write_string("float8_e4m3fnuz")
         elif self == DType.float8_e8m0fnu:
-            return writer.write("float8_e8m0fnu")
+            return writer.write_string("float8_e8m0fnu")
         elif self == DType.float8_e5m2:
-            return writer.write("float8_e5m2")
+            return writer.write_string("float8_e5m2")
         elif self == DType.float8_e5m2fnuz:
-            return writer.write("float8_e5m2fnuz")
+            return writer.write_string("float8_e5m2fnuz")
 
         elif self == DType.bfloat16:
-            return writer.write("bfloat16")
+            return writer.write_string("bfloat16")
         elif self == DType.float16:
-            return writer.write("float16")
+            return writer.write_string("float16")
 
         elif self == DType.float32:
-            return writer.write("float32")
+            return writer.write_string("float32")
 
         elif self == DType.float64:
-            return writer.write("float64")
+            return writer.write_string("float64")
 
-        return writer.write("<<unknown>>")
+        return writer.write_string("<<unknown>>")
 
     @always_inline("nodebug")
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -461,7 +465,8 @@ struct DType(
         Args:
             writer: The value to write to.
         """
-        writer.write("DType.", self)
+        writer.write_string("DType.")
+        self.write_to(writer)
 
     @always_inline("nodebug")
     def get_value(self) -> __mlir_type.`!kgen.dtype`:
@@ -484,10 +489,13 @@ struct DType(
 
     @doc_hidden
     @always_inline("builtin")
-    def _as_ui8(self) -> UInt8._mlir_type:
-        return __mlir_op.`pop.cast_from_builtin`[_type=UInt8._mlir_type](
-            __mlir_op.`pop.dtype.to_ui8`(self._mlir_value)
-        )
+    # Raw MLIR type avoids a circular dependency: UInt8._mlir_type would pull
+    # in UInt8 = Scalar[DType.uint8] → Scalar → SIMD signature → DevicePassable
+    # where-clause → _as_ui8 → UInt8 (cycle) during constraint evaluation.
+    def _as_ui8(self) -> __mlir_type.`!kgen.scalar<ui8>`:
+        return __mlir_op.`pop.cast_from_builtin`[
+            _type=__mlir_type.`!kgen.scalar<ui8>`
+        ](__mlir_op.`pop.dtype.to_ui8`(self._mlir_value))
 
     @doc_hidden
     @always_inline("builtin")
@@ -496,7 +504,7 @@ struct DType(
 
     @doc_hidden
     @always_inline("builtin")
-    def _match(self, mask: UInt8._mlir_type) -> Bool:
+    def _match(self, mask: __mlir_type.`!kgen.scalar<ui8>`) -> Bool:
         return Bool(
             mlir_value=__mlir_op.`pop.cmp`[
                 pred=__mlir_attr.`#kgen<cmp_pred ne>`

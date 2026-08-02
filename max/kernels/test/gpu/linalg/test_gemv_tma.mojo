@@ -18,8 +18,8 @@ from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from std.gpu.primitives import warp
 from std.gpu.memory import (
     AddressSpace,
@@ -67,10 +67,14 @@ def gemv_tma_kernel[
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
     a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
     b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
+    M_dev: Int32,
+    N_dev: Int32,
+    K_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var M = Int(M_dev)
+    var N = Int(N_dev)
+    var K = Int(K_dev)
     var bidx = block_idx.x
     var block_row = bidx * BLOCK_SIZE_M
 
@@ -136,7 +140,7 @@ def gemv_tma_kernel[
     ]()
 
     # Initialize dot products for all rows before column processing.
-    var dot_products = InlineArray[Scalar[accum_type], ROWS_PER_WARP](fill=0)
+    var dot_products = Array[Scalar[accum_type], ROWS_PER_WARP](fill=0)
 
     if thread_idx.x == 0:
         comptime for i in range(NUM_PIPELINE_STAGES):
@@ -288,9 +292,9 @@ def gemv_tma[
         c,
         a,
         b,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
         shared_mem_bytes=smem_use,

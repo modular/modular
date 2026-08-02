@@ -62,7 +62,7 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
@@ -443,7 +443,7 @@ struct BlockScaledMmaOp[
                     0
                 ]
             )
-            a_packed = a_packed | rebind[Scalar[DType.int32]](
+            a_packed = a_packed | bitcast[DType.int32](
                 byte_val << UInt32(m_mma * 8)
             )
         self._a_scale_packed.raw_store(k_tile_idx, a_packed)
@@ -463,7 +463,7 @@ struct BlockScaledMmaOp[
                     0
                 ]
             )
-            b_packed = b_packed | rebind[Scalar[DType.int32]](
+            b_packed = b_packed | bitcast[DType.int32](
                 byte_val << UInt32(n_mma * 8)
             )
         self._b_scale_packed.raw_store(k_tile_idx, b_packed)
@@ -1144,9 +1144,9 @@ def _launch_mxfp4_split_k[
     ctx.enqueue_function[reduce_kernel](
         workspace.scratch.unsafe_ptr(),
         c.ptr,
-        total_elems,
-        elems_per_split,
-        N,
+        Int32(total_elems),
+        Int32(elems_per_split),
+        Int32(N),
         grid_dim=num_blocks,
         block_dim=block_dim_x,
     )

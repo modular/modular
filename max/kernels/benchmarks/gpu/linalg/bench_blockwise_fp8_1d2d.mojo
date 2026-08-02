@@ -34,6 +34,7 @@ Usage:
 
 from std.sys import get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -41,7 +42,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
@@ -313,7 +314,7 @@ def bench_blockwise_fp8_1d2d[
                 ctx,
             )
 
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](bencher, ctx)
 
     bench.bench_function[bench_legacy](
         BenchId(run_name_prefix + " legacy"),
@@ -354,7 +355,7 @@ def bench_blockwise_fp8_1d2d[
                 ctx,
             )
 
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom[kernel_launch](bencher, ctx)
 
     bench.bench_function[bench_structured](
         BenchId(run_name_prefix + " structured"),

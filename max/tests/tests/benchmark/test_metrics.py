@@ -75,18 +75,14 @@ def test_percentile_metrics_str_representation() -> None:
     )
     result = str(metrics)
 
-    assert "Mean:" in result
-    assert "10.50" in result
-    assert "Std:" in result
-    assert "2.30" in result
-    assert "P50:" in result
-    assert "9.80" in result
-    assert "P90:" in result
-    assert "12.70" in result
-    assert "P95:" in result
-    assert "14.20" in result
-    assert "P99:" in result
-    assert "18.90" in result
+    # All stats render on a single line in a table-aligned key=value form.
+    assert "\n" not in result
+    assert "Mean=10.50" in result
+    assert "Std=2.30" in result
+    assert "P50=9.80" in result
+    assert "P90=12.70" in result
+    assert "P95=14.20" in result
+    assert "P99=18.90" in result
 
 
 def test_percentile_metrics_format_with_prefix() -> None:
@@ -102,12 +98,15 @@ def test_percentile_metrics_format_with_prefix() -> None:
     )
     result = metrics.format_with_prefix("latency")
 
-    assert "Mean latency (ms):" in result
-    assert "Std latency (ms):" in result
-    assert "P50 latency (ms):" in result
-    assert "P90 latency (ms):" in result
-    assert "P95 latency (ms):" in result
-    assert "P99 latency (ms):" in result
+    # The prefix and unit label the whole single line; each stat is a column.
+    assert "\n" not in result
+    assert "latency (ms)" in result
+    assert "Mean=10.00" in result
+    assert "Std=2.00" in result
+    assert "P50=9.50" in result
+    assert "P90=12.00" in result
+    assert "P95=14.00" in result
+    assert "P99=18.00" in result
 
 
 def test_percentile_metrics_format_with_prefix_override_unit() -> None:
@@ -123,8 +122,10 @@ def test_percentile_metrics_format_with_prefix_override_unit() -> None:
     )
     result = metrics.format_with_prefix("latency", unit="seconds")
 
-    assert "Mean latency (seconds):" in result
-    assert "P99 latency (seconds):" in result
+    assert "\n" not in result
+    assert "latency (seconds)" in result
+    assert "Mean=10.00" in result
+    assert "P99=18.00" in result
 
 
 def test_percentile_metrics_format_with_prefix_no_unit() -> None:
@@ -134,10 +135,12 @@ def test_percentile_metrics_format_with_prefix_no_unit() -> None:
     )
     result = metrics.format_with_prefix("metric")
 
-    assert "Mean metric:" in result
-    assert "P99 metric:" in result
-    assert " (ms):" not in result
-    assert " (seconds):" not in result
+    assert "\n" not in result
+    assert "metric" in result
+    assert "Mean=10.00" in result
+    assert "P99=18.00" in result
+    assert "(ms)" not in result
+    assert "(seconds)" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -902,11 +905,44 @@ def test_benchmark_metrics_to_result_dict_keys() -> None:
     assert d["completed"] == 10
     assert d["total_input_tokens"] == 500
     assert d["total_output_tokens"] == 200
+    # (500 + 200) tokens * 60 / 10.0 s = 4200 tokens/min.
+    assert d["aggregate_tokens_per_minute"] == 4200.0
     assert d["request_throughput"] == 5.0
     assert "mean_ttft_ms" in d
     assert "p99_latency_ms" in d
     assert "mean_input_throughput" in d
     assert "p99_output_throughput" in d
+
+
+def test_aggregate_tokens_per_minute_derived_and_serialized() -> None:
+    """The derived TPM is a real field, so it flows through model_dump (JSON)."""
+    result = _make_metrics(total_input=500, total_output=200)
+    text_data = result.text_data
+    assert text_data is not None
+    # Derived from token totals and duration, regardless of construction path.
+    assert text_data.aggregate_tokens_per_minute == 4200.0
+    # A stored field (not a computed_field), so it appears in model_dump — the
+    # payload the results-publication JSON reporter serializes.
+    dumped = result.model_dump()
+    assert dumped["text_data"]["aggregate_tokens_per_minute"] == 4200.0
+
+
+def test_aggregate_tokens_per_minute_nan_for_nonpositive_duration() -> None:
+    """Degenerate runs with non-positive duration yield NaN, not a crash."""
+    text_data = TextGenAggregates(
+        duration=0.0,
+        completed=0,
+        failures=0,
+        request_throughput=0.0,
+        total_input=0,
+        total_output=0,
+        nonempty_response_chunks=0,
+        max_input=0,
+        max_output=0,
+        max_total=0,
+        global_cached_token_rate=0.0,
+    )
+    assert np.isnan(text_data.aggregate_tokens_per_minute)
 
 
 # ---------------------------------------------------------------------------

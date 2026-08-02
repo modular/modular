@@ -14,8 +14,8 @@ from std.math import align_up
 from std.sys import argv, size_of
 import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from std.random import rand
 from internal_utils import assert_almost_equal
@@ -41,7 +41,7 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     set_scale_factor,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def simple_init() -> Bool:
@@ -241,8 +241,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         c_ref_tensor_lt.as_unsafe_any_origin(),
         a_lt,
         b_lt,
-        a_scales=a_scales_lt.get_immutable().as_unsafe_any_origin(),
-        b_scales=b_scales_lt.get_immutable().as_unsafe_any_origin(),
+        a_scales=a_scales_lt.as_imm().as_unsafe_any_origin(),
+        b_scales=b_scales_lt.as_imm().as_unsafe_any_origin(),
         transpose_b=transpose_b,
         c_row_major=True,
         alpha=alpha,

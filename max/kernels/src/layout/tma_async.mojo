@@ -37,12 +37,12 @@ from std.math.uutils import udivmod
 from std.sys import align_of, llvm_intrinsic, simd_width_of, size_of
 from std.sys._assembly import inlined_assembly
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.host._tensormap import (
     SwizzleMode as _SwizzleMode,
     create_tensormap_im2col as _create_tensormap_im2col,
 )
-from std.gpu.host.nvidia.tma import (
+from max.gpu.host.nvidia.tma import (
     TensorMapL2Promotion,
     TensorMapSwizzle,
     TMADescriptor,

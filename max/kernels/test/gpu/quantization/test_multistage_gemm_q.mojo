@@ -23,7 +23,7 @@ from std.gpu import (
     block_idx,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import lop
 from std.gpu.memory import external_memory
 
@@ -408,7 +408,7 @@ struct _block_Q4_0:
     comptime group_size = 32
 
     var base_scale: Float16
-    var q_bits: InlineArray[UInt8, Self.group_size // 2]
+    var q_bits: Array[UInt8, Self.group_size // 2]
 
 
 def test_repack_Q4_0_for_sm8x[
@@ -416,7 +416,7 @@ def test_repack_Q4_0_for_sm8x[
 ](ctx: DeviceContext, n: NType, k: KType) raises:
     print("test repack_Q4_0_for_sm8x")
 
-    def fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype], ...]):
+    def fill_random[dtype: DType](mut array: Array[Scalar[dtype], ...]):
         rand(array.unsafe_ptr(), len(array), min=0, max=255)
 
     def build_b_buffer(

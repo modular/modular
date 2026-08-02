@@ -141,7 +141,7 @@ def test_associated_types() raises:
     _ = unboxed^
 
 
-# --- Generic associated type ---
+# --- Associated type ---
 
 
 comptime Base = Copyable & ImplicitlyDeletable & Writable
@@ -156,7 +156,7 @@ struct Box_1[T: Base](Boxable):
         return self.value.copy()
 
 
-def test_generic_associated_type() raises:
+def test_associated_type() raises:
     var box = Box_1[Int](value=42)
     var unboxed = box.unbox()
     assert_equal(unboxed, 42)
@@ -309,7 +309,7 @@ def main() raises:
     test_describable()
     test_able_to_say_hello()
     test_associated_types()
-    test_generic_associated_type()
+    test_associated_type()
     test_comptime_constants()
     test_required_values()
     test_trait_refinement()

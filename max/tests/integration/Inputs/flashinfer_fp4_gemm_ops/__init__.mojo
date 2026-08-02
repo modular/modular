@@ -14,7 +14,7 @@
 
 import extensibility
 import std.format
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUstream
 from std.memory import stack_allocation
 from std.collections import Span
@@ -55,7 +55,7 @@ struct Module:
         # `DLTensor.__copyinit__` (used at the call site) already fixed
         # up self-referential pointers + nulled strides for contiguous
         # tensors.  So we can take their addresses directly.
-        args: InlineArray[TVMFFIAny, 8] = [
+        args: Array[TVMFFIAny, 8] = [
             TVMFFIAny(UnsafePointer(to=mat1)),
             TVMFFIAny(UnsafePointer(to=mat2)),
             TVMFFIAny(UnsafePointer(to=mat1_scale)),
@@ -118,7 +118,7 @@ struct FlashInferFP4Gemm[lib_path: StaticString]:
         ctx: DeviceContext,
     ) raises:
         """Execute the FP4 GEMM operation by calling FlashInfer."""
-        comptime assert [target == "gpu"]
+        comptime assert target == "gpu"
 
         mod = Module(OwnedDLHandle(path=Self.lib_path))
 

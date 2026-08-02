@@ -25,8 +25,8 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
 )
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import MI355X
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import MI355X
 from std.gpu.memory import CacheOperation
 
 from layout import Coord, Idx, TensorLayout, TileTensor
@@ -161,9 +161,11 @@ struct PreShuffledBGroupedGEMM[
         expert_ids: TileTensor[
             mut=False, DType.int32, ExpertIdsLayout, ImmutAnyOrigin
         ],
-        num_active_experts: Int,
-        max_padded_M: Int,
+        num_active_experts: Int32,
+        max_padded_M: Int32,
     ):
+        var _num_active_experts = Int(num_active_experts)
+        var _max_padded_M = Int(max_padded_M)
         comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
         comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
@@ -186,7 +188,7 @@ struct PreShuffledBGroupedGEMM[
         comptime K_SCALES = a_tensor.static_shape[1] // 16
         comptime gx_n = ceildiv(N, BN)
 
-        if N == 0 or num_active_experts == 0:
+        if N == 0 or _num_active_experts == 0:
             return
 
         var linear_wg = Int(block_idx.x)
@@ -202,7 +204,7 @@ struct PreShuffledBGroupedGEMM[
         # the current tile in the grid stride loop, all WGs start at tile 0
         var current_tile = 0
 
-        for expert_slot in range(num_active_experts):
+        for expert_slot in range(_num_active_experts):
             var M = a_offsets[expert_slot + 1] - a_offsets[expert_slot]
 
             # No real work — skip this expert and don't update current_tile.
@@ -243,7 +245,7 @@ struct PreShuffledBGroupedGEMM[
             # stores) write only real-token scales; the pad-row matmul outputs
             # are discarded after the gather, so the slot tail is not
             # zero-filled.
-            var sfa_start_row = UInt32(expert_slot * max_padded_M)
+            var sfa_start_row = UInt32(expert_slot * _max_padded_M)
             var sfa_padded_M = align_up(Int(M), 32)
 
             var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
@@ -365,9 +367,10 @@ struct PreShuffledBGroupedGEMM[
         expert_ids: TileTensor[
             mut=False, DType.int32, ExpertIdsLayout, ImmutAnyOrigin
         ],
-        num_active_experts: Int,
-        max_padded_M: Int,
+        num_active_experts: Int32,
+        max_padded_M: Int32,
     ):
+        var _max_padded_M = Int(max_padded_M)
         comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
         comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
@@ -401,7 +404,7 @@ struct PreShuffledBGroupedGEMM[
         var a_start_row = a_offsets[block_idx.z]
         # Preshuffled A-scales: fixed-stride slot at e * max_padded_M.
         # Per-expert tight V# bound = align_up(num_tokens, 32).
-        var sfa_start_row = UInt32(Int(block_idx.z) * max_padded_M)
+        var sfa_start_row = UInt32(Int(block_idx.z) * _max_padded_M)
         var sfa_padded_M = align_up(Int(M), 32)
 
         var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
@@ -495,27 +498,27 @@ struct PreShuffledBGroupedGEMM[
         comptime K_BYTES = a.static_shape[1]
 
         var a_i = TileTensor(
-            a.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+            a.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             a.layout,
         )
         var b_pre_i = TileTensor(
-            b_pre.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+            b_pre.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             b_pre.layout,
         )
         var a_scales_i = TileTensor(
-            a_scales.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+            a_scales.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             a_scales.layout,
         )
         var b_scales_i = TileTensor(
-            b_scales.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+            b_scales.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             b_scales.layout,
         )
         var a_off_i = TileTensor(
-            a_offsets.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+            a_offsets.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             a_offsets.layout,
         )
         var expert_ids_i = TileTensor(
-            expert_ids.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+            expert_ids.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             expert_ids.layout,
         )
 
@@ -562,8 +565,8 @@ struct PreShuffledBGroupedGEMM[
                 b_scales_i,
                 a_off_i,
                 expert_ids_i,
-                num_active_experts,
-                max_padded_M,
+                Int32(num_active_experts),
+                Int32(max_padded_M),
                 grid_dim=(Self.total_wg, 1, 1),
                 block_dim=MatmulDeviceFunctionType.num_threads,
             )
@@ -609,8 +612,8 @@ struct PreShuffledBGroupedGEMM[
                 b_scales_i,
                 a_off_i,
                 expert_ids_i,
-                num_active_experts,
-                max_padded_M,
+                Int32(num_active_experts),
+                Int32(max_padded_M),
                 grid_dim=(
                     ceildiv(N, BN),
                     ceildiv(m_cap, BM),
@@ -656,7 +659,7 @@ def mxfp4_grouped_matmul_amd_kernel[
     expert_ids: TileTensor[
         mut=False, DType.int32, ExpertIdsLayout, ImmutAnyOrigin
     ],
-    num_active_experts: Int,
+    num_active_experts: Int32,
 ):
     """MXFP4 grouped matmul kernel with expert dispatch via block_idx.z.
 
@@ -853,27 +856,27 @@ def _launch_mxfp4_grouped[
     comptime K_SCALES = b_scales.static_shape[2]  # K//32
 
     var a_i = TileTensor(
-        a.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        a.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         a.layout,
     )
     var b_2d = TileTensor(
-        b.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        b.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         row_major[num_experts * N, K_BYTES](),
     )
     var a_scales_i = TileTensor(
-        a_scales.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        a_scales.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         a_scales.layout,
     )
     var sfb_2d = TileTensor(
-        b_scales.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        b_scales.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         row_major[num_experts_sf * N_sf, K_SCALES](),
     )
     var a_off_i = TileTensor(
-        a_offsets.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        a_offsets.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         a_offsets.layout,
     )
     var expert_ids_i = TileTensor(
-        expert_ids.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        expert_ids.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
         expert_ids.layout,
     )
 
@@ -905,7 +908,7 @@ def _launch_mxfp4_grouped[
         sfb_2d,
         a_off_i,
         expert_ids_i,
-        num_active_experts,
+        Int32(num_active_experts),
         grid_dim=(
             ceildiv(N, BN),
             ceildiv(max_num_tokens_per_expert, BM),
