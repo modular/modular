@@ -19,6 +19,13 @@ comptime emptyParams[]: Int = 89
 # CHECK: lit.alias.decl *"idInt{{.*}}": !lit.generator<<"x": !Int>!alias_Int1> = <#kgen.gen<rebind(:!Int *(0,0))>>
 comptime idInt[x: Int]: Int = x
 
+# A parametric comptime may annotate a body type that depends on its parameters
+# (e.g. `SIMD[DType.int, x]`). That annotation is a result-type schema for the
+# generator, not a concrete type to construct — accept the initializer without
+# "cannot construct a value with parametric type".
+# CHECK: lit.alias.decl *"ComptimeWithParametricType{{.*}}": !lit.generator<<"x": !Int>{{.*}}!lit.struct<#SIMD
+comptime ComptimeWithParametricType[x: Int]: SIMD[DType.int, x] = SIMD[DType.int, x]()
+
 # CHECK: lit.alias.decl *"myIntAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">){{.*}}>>
 comptime myIntAdd[x: Int, y: Int] = x + y
 
@@ -31,7 +38,7 @@ comptime myDependentDefaultAdd[x: Int, y: Int = x] = x + y
 # CHECK: lit.alias.decl *"myIntFMA{{.*}}": !lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">), #lit.struct.extract<:!Int *(0,2), "_mlir_value">){{.*}})>>
 comptime myIntFMA[x: Int, y: Int, z: Int] = x * y + z
 
-# CHECK: lit.alias.decl *"myTypeSelector`0x7": !lit.generator<<"cond": !Bool, "t_type": !AnyType, "f_type": !AnyType>!AnyType> = <#kgen.gen<
+# CHECK: lit.alias.decl *"myTypeSelector{{.*}}": !lit.generator<<"cond": !Bool, "t_type": !AnyType, "f_type": !AnyType>!AnyType> = <#kgen.gen<
 # CHECK-SAME: cond(#lit.struct.extract<:!Bool *(0,0), "_mlir_value">, *(0,1), *(0,2))>>
 comptime myTypeSelector[
     cond: Bool, t_type: AnyType, f_type: AnyType
