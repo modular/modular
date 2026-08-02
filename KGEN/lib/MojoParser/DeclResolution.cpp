@@ -2726,22 +2726,32 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
       return failure();
 
     IREmitter emitter(sigDecl, EC_AliasValue);
-    if (type.hasUnknownParameters()) {
-      p.emitError(initExpr->getLoc(),
-                  "cannot construct a value with parametric type: ")
-          << type << initExpr->getRange();
-      return failure();
+
+    // Parametric aliases become generator types whose *body* type may still
+    // mention unbound / infer-only parameters (e.g. `Origin[mut=mut]` leaves
+    // `_mlir_origin` open). That type annotation maybe dependent on the
+    // parameters of the comptime.
+    ASTType emissionType = type;
+    if (type && type.hasUnknownParameters()) {
+      if (paramSignature.paramDeclAttrs.empty()) {
+        p.emitError(initExpr->getLoc(),
+                    "cannot construct a value with parametric type: ")
+            << type << initExpr->getRange();
+        return failure();
+      }
+      emissionType = {};
     }
-    // Emit the value and convert to the expected type if we know it.
-    PValue rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
+
+    // Emit the value and convert to the expected type if we know it and it is
+    // concrete enough to convert into.
+    PValue rhsValue =
+        emitter.emitExprPValue(initExpr, EC_AliasValue, emissionType);
     if (!rhsValue)
       return failure();
 
-    // If we had no declared body type (`alias x = 42`), infer the body type
-    // from the initializer.
-    if (!type)
-      type = rhsValue.getType();
-
+    // If we had no declared body type (`alias x = 42`), or if it was parametric
+    // in a way we couldn't use, infer the body type from the initializer.
+    type = rhsValue.getType();
     initValue = rhsValue.get();
   } else {
     ASTDecl &parentDecl = *decl.getParentDecl();
