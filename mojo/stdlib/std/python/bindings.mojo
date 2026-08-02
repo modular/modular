@@ -135,7 +135,9 @@ def lookup_py_type_object[T: AnyType]() raises -> PythonObject:
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
 
-struct PyMojoObject[T: ImplicitlyDeletable]:
+struct PyMojoObject[T: ImplicitlyDeletable](
+    Movable where conforms_to(T, Movable)
+):
     """Storage backing a PyObject* wrapping a Mojo value.
 
     This struct represents the C-level layout of a Python object that contains

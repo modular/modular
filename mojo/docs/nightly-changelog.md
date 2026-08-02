@@ -369,6 +369,11 @@ This version is still a work in progress.
   - Anywhere in the midst of an `import` statement, save for parenthesized
     import lists.
 
+- Struct types are now Movable by default. To opt-out of always-on movability,
+  either explicitly specify a conditionally Movable conformance using
+  `Movable where <cond>`, or opt out of Movable conformance entirely using
+  `Movable where False`.
+
 ## Library stabilizations
 <!-- rumdl-disable MD013 -->
 
