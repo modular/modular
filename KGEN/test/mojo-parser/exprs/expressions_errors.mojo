@@ -984,7 +984,7 @@ def test_dependent[a: Int](arg: HasDependent[a], arg2: HasDependent[a, 4]):
   # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
   test_dependent(arg, arg)
 
-struct HasIntParam[p: Int]:
+struct HasIntParam[p: Int](Movable where False):
   def __init__(out self): # expected-note {{function declared here}}
      pass
 

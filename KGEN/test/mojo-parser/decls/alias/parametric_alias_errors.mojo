@@ -197,7 +197,7 @@ def use_variadic_bad():
 # Handle type alias with extra constraints
 ##===----------------------------------------------------------------------===##
 
-struct Iter[Cond: Bool]:
+struct Iter[Cond: Bool](Movable where False):
     # expected-note @+1 {{function declared here}}
     def __init__(out self: Iter[False]):
         pass

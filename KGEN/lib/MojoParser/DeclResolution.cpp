@@ -3632,13 +3632,15 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait("AnyType", decl.getLoc());
   ASTDecl *implicitDelDecl =
       shared.lookupBuiltinTrait("ImplicitlyDeletable", decl.getLoc());
+  ASTDecl *movableDecl = shared.lookupBuiltinTrait("Movable", decl.getLoc());
 
   DenseSet<SymbolRefAttr> compilerInjectedTraits;
   if (anyTypeDecl)
     compilerInjectedTraits.insert(anyTypeDecl->getSymbolRef());
   if (implicitDelDecl)
     compilerInjectedTraits.insert(implicitDelDecl->getSymbolRef());
-
+  if (movableDecl)
+    compilerInjectedTraits.insert(movableDecl->getSymbolRef());
   // Build the final constraint map from the parsed constraints.
   DenseMap<SymbolRefAttr, ConstraintAttr> traitConstraints;
   if (failed(buildTraitConstraintsMap(parsedConstraints, explicitTraits,
@@ -3664,28 +3666,29 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   if (anyTypeDecl)
     parentTraits.push_back(anyTypeDecl->getSymbolRef());
 
-  // Make every nominal struct type inherit from `ImplicitlyDeletable`.
-  // May be overridden / narrowed by explicit conditional `where` conformance.
+  // Make every nominal struct type inherit from `ImplicitlyDeletable` and
+  // `Movable`. May be overridden / narrowed by explicit conditional `where`
+  // conformance.
   if (implicitDelDecl)
     parentTraits.push_back(implicitDelDecl->getSymbolRef());
 
   // Temporary opt-in migration aid:  Warn on structs that don't explicitly
   // mention `Movable`, with a fix-it that makes it explicit via `Movable where
   // False`. Only fires for structs in the main file. Also requires builtins to
-  // be in scope (matching how the AnyType/ImplicitlyDeletable injection above
-  // guards on `anyTypeDecl`/`implicitDelDecl`): with builtins disabled there
-  // is no `Movable` to conform to or opt out of, and inserting a reference to
-  // it would just produce an unresolvable identifier.
+  // be in scope (matching how the AnyType/ImplicitlyDeletable/Movable injection
+  // above guards on `anyTypeDecl`/`implicitDelDecl`/`movableDecl`): with
+  // builtins disabled there is no `Movable` to conform to or opt out of, and
+  // inserting a reference to it would just produce an unresolvable identifier.
   if (shared.shouldDiagnoseMissingMovableConformance() &&
       shared.hasBuiltinModule() &&
       shared.diags.sourceMgr.FindBufferContainingLoc(identifierLoc) ==
           shared.diags.sourceMgr.getMainFileID()) {
-    if (ASTDecl *movableDecl =
-            shared.lookupBuiltinTrait("Movable", decl.getLoc())) {
+    if (movableDecl) {
       if (!llvm::is_contained(parentTraits, movableDecl->getSymbolRef())) {
         MojoInflightDiag diag =
             shared.emitWarning(identifierLoc)
-            << "struct does not explicitly conform to 'Movable'";
+            << "struct does not explicitly conform to "
+               "'Movable'. Treating as Movable unless explicitly opted out";
         if (!parsedConformances.empty()) {
           const ParsedConformanceEntry &lastConformance =
               parsedConformances.back();
@@ -3713,6 +3716,9 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       }
     }
   }
+
+  if (movableDecl)
+    parentTraits.push_back(movableDecl->getSymbolRef());
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.

@@ -54,7 +54,7 @@ struct WrapsMadeFromPack[*Ts: AnyType](Movable where False):
         self.data = args
 
 
-struct Constructible:
+struct Constructible(Movable where False):
     @implicit
     def __init__(out self, arg: Int):
         pass

@@ -420,7 +420,7 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
   };
 
   // Build the input struct, which contains each of the persistent variables.
-  exprOS << "struct __mojo_repl_context__:\n";
+  exprOS << "struct __mojo_repl_context__(Movable where False):\n";
   for (auto &[name, type] : variables) {
     exprOS << llvm::formatv("  @__allow_legacy_any_origin_fields\n"
                             "  var `{0}`: "

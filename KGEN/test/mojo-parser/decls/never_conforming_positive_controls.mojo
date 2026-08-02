@@ -9,10 +9,11 @@
 # onto conformances that genuinely hold. Each case below asserts that a member
 # IS synthesized and that the constraint attached to it is exactly right:
 #
-#   1. an unconditional conformance synthesizes with NO `where True` leak -- the
-#      canonical trait marker carries no `constrained_` prefix and the
-#      synthesized signature carries no constraint suffix (the Category-B
-#      regression that four tests only caught incidentally);
+#   1. an unconditional conformance -- written explicitly or injected by
+#      default -- synthesizes with NO `where True` leak: the canonical trait
+#      marker carries no `constrained_` prefix and the synthesized signature
+#      carries no constraint suffix (the Category-B regression that four tests
+#      only caught incidentally);
 #   2. a satisfiable conditional keeps its constraint verbatim in both the marker
 #      and the synthesized signature;
 #   3. a condition *implied* by the struct's own clause (`n > 0` under `n > 5`)
@@ -34,6 +35,13 @@
 # CHECK-LABEL: lit.struct.decl @UncondMovable(!AnyType_ImplicitlyDeletable_Movable)
 # CHECK: lit.fn @"__init__(move:{{.*}}UncondMovable$)"
 struct UncondMovable(Movable):
+    pass
+
+
+# A struct that never mentions `Movable` gets the same result.
+# CHECK-LABEL: lit.struct.decl @DefaultMovable(!AnyType_ImplicitlyDeletable_Movable)
+# CHECK: lit.fn @"__init__(move:{{.*}}DefaultMovable$)"
+struct DefaultMovable:
     pass
 
 

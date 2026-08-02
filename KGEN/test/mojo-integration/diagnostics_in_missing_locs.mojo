@@ -48,11 +48,11 @@ def main():
     # CHECK-NEXT: def overloaded_function(n: Int, m: Float64)
     diags_package.overloaded_function()
 
-    # CHECK: error: invalid initialization: failed to infer parameter 'b' of parent struct 'PosOnlyStruct'
+    # CHECK: error: no matching function in initialization
+    # CHECK: note: candidate not viable: failed to infer parameter 'b' of parent struct 'PosOnlyStruct'
+    # CHECK-NEXT: def __init__(out self) # note - generated function
     # CHECK: note: struct declared here
     # CHECK-NEXT: struct PosOnlyStruct[a: Int, b: Int, /, c: Int = Int(9)]    # note - synthetic signature
-    # CHECK: note: function declared here
-    # CHECK-NEXT: def __init__(out self) # note - generated function
     _ = diags_package.PosOnlyStruct[1, c=9]()
 
     # CHECK: error: deprecated implicit conversion from 'IntLiteral[1]' to 'DeprecatedImplicitConversion'

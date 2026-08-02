@@ -30,7 +30,7 @@ struct AlignedTrivialParam[n: Int](TrivialRegisterPassable):
 # CHECK-LABEL: lit.struct.decl @MultiParam
 # CHECK-SAME: minAlignment = #kgen.cast_to_builtin<#lit.struct.extract<:!Int align_val, "_mlir_value"> : !kgen.scalar<index>> : index
 @align(align_val)
-struct MultiParam[T: __mlir_type.`!kgen.type`, align_val: Int]:
+struct MultiParam[T: __mlir_type.`!kgen.type`, align_val: Int](Movable where False):
     var value: Self.T
 
     def __deinit__(deinit self):
