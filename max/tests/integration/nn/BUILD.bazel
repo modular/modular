@@ -329,7 +329,6 @@ modular_py_test(
     srcs = [
         "conftest.py",
         "test_linear_fp8_amd_gpu.py",
-        "test_router_gate_mixed_gemv_gpu.py",
     ],
     exec_properties = {
         "test.resources:gpu-memory": "2",
@@ -398,6 +397,33 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Split out of :amd_tests, which is tagged "manual" for an unrelated timeout
+# (GEX-2676) and so never ran this in CI.
+modular_py_test(
+    name = "router_gate_mixed_gemv_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_router_gate_mixed_gemv_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("hypothesis"),
         requirement("torch"),
     ],
 )
