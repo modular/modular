@@ -13,8 +13,10 @@
 """Helpers for dispatching collective operations across devices."""
 
 from std.collections import Array, Optional
+from std.runtime.asyncrt import TaskGroup
+
 from max.gpu.host import DeviceContext, DeviceContextArray
-from std.runtime.asyncrt import TaskGroup, task_id_for_device
+from max.runtime.asyncrt import task_id_for_device
 
 
 @always_inline
