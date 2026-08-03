@@ -850,6 +850,25 @@ def main() raises:
 
 </details>
 
+:::tip macOS
+
+If you're on Apple silicon and getting:
+
+```output
+error: Metal Compiler failed to compile metallib. Please submit a bug report.
+from std.gpu.host import DeviceContext
+^
+mojo: error: failed to run the pass manager
+```
+
+Please try:
+
+```bash
+xcodebuild -downloadComponent MetalToolchain
+```
+
+:::
+
 The `enqueue_function()` method enqueues the compilation and invocation
 of the `vector_addition()` kernel function, passing the input and output tensors
 as arguments. The `grid_dim` and `block_dim` arguments use the `num_blocks` and
