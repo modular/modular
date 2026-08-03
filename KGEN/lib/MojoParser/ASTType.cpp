@@ -535,13 +535,15 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
     return {};
 
   if (auto anyStruct = dyn_cast<StructType>(strippedType))
-    return &shared.declResolver->getDeclForTypeSymbol(anyStruct.getSymbol());
+    return shared.declResolver->getDeclForTypeSymbolIfExists(
+        anyStruct.getSymbol());
 
   if (auto traitType = dyn_cast<TraitType>(strippedType))
     return shared.declResolver->getTraitDecl(traitType);
 
   if (auto module = dyn_cast<ModuleType>(strippedType))
-    return &shared.declResolver->getDeclForTypeSymbol(module.getSymbol());
+    return shared.declResolver->getDeclForTypeSymbolIfExists(
+        module.getSymbol());
 
   return nullptr;
 }
