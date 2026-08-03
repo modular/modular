@@ -1919,11 +1919,12 @@ LogicalResult DeclResolver::resolveAllWildcardImports(ASTDecl &module) {
 
 ASTDecl &DeclResolver::getDeclForTypeSymbol(SymbolRefAttr symbol) const {
   auto it = declForTypeSymbol.find(symbol);
-#ifndef NDEBUG
-  if (it == declForTypeSymbol.end())
-    symbol.dump();
-  assert(it != declForTypeSymbol.end() && "Unknown decl symbol!");
-#endif
+  if (it == declForTypeSymbol.end()) {
+    std::string message;
+    llvm::raw_string_ostream os(message);
+    os << "unknown decl symbol: " << symbol;
+    llvm::report_fatal_error(llvm::StringRef(message));
+  }
   return *it->second;
 }
 
