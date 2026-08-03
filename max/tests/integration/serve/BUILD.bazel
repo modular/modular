@@ -316,11 +316,8 @@ modular_py_test(
         "no-sandbox",
         "requires-network",
     ],
-    # TODO(GEX-3155): Times out on remote macOS CI (~374s due to model compilation)
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    # Note this test is a critical part of local max serve debugging workflow
+    # and should not be disabled on mac os. Please fix Mac CI runners instead.
     deps = [
         "//max/python/max/_entrypoints",
         "//max/python/max/driver",
