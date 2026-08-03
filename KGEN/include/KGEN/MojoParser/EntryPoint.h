@@ -76,10 +76,6 @@ struct ParserConfig {
   /// If true, this will diagnose missing pieces of documentation strings.
   bool diagnoseMissingDocStrings = false;
 
-  /// If true, this will diagnose structs that do not explicitly state
-  /// whether they conform to `Movable`.
-  bool diagnoseMissingMovableConformance = false;
-
   /// If true, ignore any already-compiled `foo.mojoc` that appear in its import
   /// search paths. Doing so results in Mojo source packages named `foo/` being
   /// found instead, and those source packages being parsed anew.

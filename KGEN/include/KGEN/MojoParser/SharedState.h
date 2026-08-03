@@ -147,10 +147,6 @@ public:
   /// Returns if we should diagnose missing doc strings.
   bool shouldDiagnoseMissingDocStrings() const;
 
-  /// Returns if we should diagnose structs that do not explicitly state
-  /// whether they conform to `Movable`.
-  bool shouldDiagnoseMissingMovableConformance() const;
-
   /// Get the library base path for documentation generation.
   StringRef getDocsBasePath() const { return docsBasePath; }
 
