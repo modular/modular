@@ -14,12 +14,12 @@
 
 
 @extern("my_add_one")
-def my_add_one(x: UnsafePointer[Int32, MutAnyOrigin]) abi("Mojo"):
+def my_add_one(x: Pointer[Int32, MutAnyOrigin]) abi("Mojo"):
     ...
 
 
 def main():
     # CHECK: 3
     var two: Int32 = 2
-    my_add_one(UnsafePointer(to=two).as_unsafe_any_origin())
+    my_add_one(Pointer(to=two).as_unsafe_any_origin())
     print(two)

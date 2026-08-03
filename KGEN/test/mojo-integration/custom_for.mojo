@@ -39,7 +39,7 @@ struct my_iter:
 @fieldwise_init
 struct MyList(ImplicitlyCopyable):
     @__allow_legacy_any_origin_fields
-    var start: UnsafePointer[Int, MutAnyOrigin]
+    var start: Pointer[Int, MutAnyOrigin]
     var size: Int
 
     def __setitem__(mut self, idx: Int, val: Int):
@@ -63,7 +63,7 @@ def main():
         count=Int(3).__mlir_index__(),
         _type=__mlir_type[`!kgen.pointer<`, Int, `>`],
     ]()
-    var my_pointer = UnsafePointer[Int, MutAnyOrigin](_mlir_value=buffer)
+    var my_pointer = Pointer[Int, MutAnyOrigin](_mlir_value=buffer)
 
     var my_list = MyList(my_pointer, 3)
     my_list[0] = 25

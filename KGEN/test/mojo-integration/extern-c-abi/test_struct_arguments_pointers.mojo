@@ -9,7 +9,7 @@
 # RUN: %t.dir/test_pointers | FileCheck %s
 
 from std.ffi import external_call
-from std.memory import UnsafePointer, alloc, dealloc
+from std.memory import Pointer, alloc, dealloc
 
 
 # ============================================================================
@@ -18,7 +18,7 @@ from std.memory import UnsafePointer, alloc, dealloc
 # ============================================================================
 @fieldwise_init
 struct PtrInt32Struct(TrivialRegisterPassable):
-    var p: UnsafePointer[Int32, MutUntrackedOrigin]
+    var p: Pointer[Int32, MutUntrackedOrigin]
     var i: Int32
 
 
@@ -44,11 +44,11 @@ def test_ptr_int32():
 # ============================================================================
 @fieldwise_init
 struct ThreePtrStruct(TrivialRegisterPassable):
-    var a: UnsafePointer[Int32, MutUntrackedOrigin]
+    var a: Pointer[Int32, MutUntrackedOrigin]
 
-    var b: UnsafePointer[Int32, MutUntrackedOrigin]
+    var b: Pointer[Int32, MutUntrackedOrigin]
 
-    var c: UnsafePointer[Int32, MutUntrackedOrigin]
+    var c: Pointer[Int32, MutUntrackedOrigin]
 
 
 def test_three_ptr():

@@ -28,7 +28,7 @@ struct MyPairPair:
         self.second = MyPair(c, d)
 
 
-def use_address(ptr: UnsafePointer[Int, _]):
+def use_address(ptr: Pointer[Int, _]):
     print(ptr[])
 
 
@@ -38,7 +38,7 @@ def main():
     p.first = 3
     p.second = 4
     print(p.first, p.second)  # breakpoint
-    use_address(UnsafePointer(to=p.first))
+    use_address(Pointer(to=p.first))
 
     var pp = MyPairPair(5, 6, 7, 8)
     print(pp.second.first)  # breakpoint

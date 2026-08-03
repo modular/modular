@@ -11,20 +11,20 @@
 #
 # RUN: %mojo %s | FileCheck %s
 
-from std.memory import UnsafePointer
+from std.memory import Pointer
 
 
 comptime PackFn = def(
-    UnsafePointer[UInt8, MutAnyOrigin],
-    UnsafePointer[UInt8, MutAnyOrigin],
+    Pointer[UInt8, MutAnyOrigin],
+    Pointer[UInt8, MutAnyOrigin],
     Int,
     Int,
 ) thin -> None
 
 
 def pack_noop(
-    src: UnsafePointer[UInt8, MutAnyOrigin],
-    dst: UnsafePointer[UInt8, MutAnyOrigin],
+    src: Pointer[UInt8, MutAnyOrigin],
+    dst: Pointer[UInt8, MutAnyOrigin],
     rows: Int,
     cols: Int,
 ):

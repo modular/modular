@@ -15,7 +15,7 @@ comptime _invalid_dtype = DType(
 
 @fieldwise_init
 struct A(ImplicitlyCopyable):
-    var x: UnsafePointer[Scalar[_invalid_dtype], MutUntrackedOrigin]
+    var x: Pointer[Scalar[_invalid_dtype], MutUntrackedOrigin]
 
     def __init__(out self):
         var y = alloc[Int8]({count = 1}).unsafe_leak()

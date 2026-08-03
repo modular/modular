@@ -10,8 +10,8 @@
 # CHECK-LABEL: @mayalias(
 @export
 def mayalias(
-    a: UnsafePointer[Float32, ImmUnsafeAnyOrigin],
-    b: UnsafePointer[Float32, MutAnyOrigin],
+    a: Pointer[Float32, ImmUnsafeAnyOrigin],
+    b: Pointer[Float32, MutAnyOrigin],
 ) abi("Mojo") -> Float32:
     # CHECK: store
     b[] += a[] * b[]
@@ -23,8 +23,8 @@ def mayalias(
 # CHECK-LABEL: @noalias(
 @export
 def noalias(
-    a0: UnsafePointer[Float32, ImmUnsafeAnyOrigin],
-    b: UnsafePointer[Float32, MutAnyOrigin],
+    a0: Pointer[Float32, ImmUnsafeAnyOrigin],
+    b: Pointer[Float32, MutAnyOrigin],
 ) abi("Mojo") -> Float32:
     a = a0.unsafe_as_noalias()
 

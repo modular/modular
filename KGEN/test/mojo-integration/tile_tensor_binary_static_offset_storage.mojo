@@ -31,12 +31,8 @@ def main():
     for i in range(8):
         rhs_data[_OFFSET + i] = Float32(10 * (i + 1))
 
-    var dst_ptr: UnsafePointer[
-        Float32, origin_of(dst_data)
-    ] = dst_data.unsafe_ptr()
-    var rhs_ptr: UnsafePointer[
-        Float32, origin_of(rhs_data)
-    ] = rhs_data.unsafe_ptr()
+    var dst_ptr: Pointer[Float32, origin_of(dst_data)] = dst_data.unsafe_ptr()
+    var rhs_ptr: Pointer[Float32, origin_of(rhs_data)] = rhs_data.unsafe_ptr()
     PointerStorage[element_width=1].iadd[
         dtype=DType.float32,
         OtherStorage=StaticOffsetStorage[static_offset=_OFFSET],
@@ -53,7 +49,7 @@ def main():
     bias_data[_OFFSET] = 100.0
     bias_data[_OFFSET + 1] = 200.0
 
-    var bias_ptr: UnsafePointer[
+    var bias_ptr: Pointer[
         Float32, origin_of(bias_data)
     ] = bias_data.unsafe_ptr()
     PointerStorage[element_width=1].iadd[

@@ -10,8 +10,8 @@ from std.sys import llvm_intrinsic, size_of
 
 
 def memcpy(
-    dst: UnsafePointer[mut=True, Int, _],
-    src: UnsafePointer[Int, _],
+    dst: Pointer[mut=True, Int, _],
+    src: Pointer[Int, _],
     count: Int,
 ):
     var byte_count = count * size_of[Int]()
@@ -31,7 +31,7 @@ def memcpy(
 
 
 struct Data(ImplicitlyCopyable, Writable):
-    var _data: UnsafePointer[Int, MutUntrackedOrigin]
+    var _data: Pointer[Int, MutUntrackedOrigin]
     var _size: Int
 
     def __init__(out self, *, size: Int):

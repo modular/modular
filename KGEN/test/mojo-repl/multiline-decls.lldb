@@ -64,16 +64,16 @@ zaz()
 # Will test a multiline alias with imports and a function that uses this alias
 
 from std.memory import (
-  UnsafePointer
+  Pointer
 )
 
 from max.gpu.host import DeviceContext
 
 comptime unary_fn_type = __mlir_type[
     `(`,
-    UnsafePointer[Int, MutAnyOrigin],
+    Pointer[Int, MutAnyOrigin],
     `, `,
-    UnsafePointer[Int, MutAnyOrigin],
+    Pointer[Int, MutAnyOrigin],
     `, `,
     DeviceContext,
     `) -> `,

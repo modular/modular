@@ -10,7 +10,7 @@
 # when alignment is specified via a struct parameter.
 
 from std.sys import align_of
-from std.memory import UnsafePointer, alloc, dealloc
+from std.memory import Pointer, alloc, dealloc
 from std.testing import assert_equal, assert_true, TestSuite
 
 
@@ -39,21 +39,21 @@ def test_parametric_align_stack() raises:
     """Test that stack allocations respect parametric @align."""
     # Test 64-byte alignment
     var buf64 = AlignedBuffer[64]()
-    var addr64 = Int(UnsafePointer(to=buf64))
+    var addr64 = Int(Pointer(to=buf64))
     assert_true(
         (addr64 & 63) == 0, "AlignedBuffer[64] should be 64-byte aligned"
     )
 
     # Test 128-byte alignment
     var buf128 = AlignedBuffer[128]()
-    var addr128 = Int(UnsafePointer(to=buf128))
+    var addr128 = Int(Pointer(to=buf128))
     assert_true(
         (addr128 & 127) == 0, "AlignedBuffer[128] should be 128-byte aligned"
     )
 
     # Test 256-byte alignment
     var buf256 = AlignedBuffer[256]()
-    var addr256 = Int(UnsafePointer(to=buf256))
+    var addr256 = Int(Pointer(to=buf256))
     assert_true(
         (addr256 & 255) == 0, "AlignedBuffer[256] should be 256-byte aligned"
     )
@@ -96,7 +96,7 @@ def test_nested_parametric_align() raises:
 
     # Verify stack allocation is aligned
     var outer = Outer[64]()
-    var addr = Int(UnsafePointer(to=outer))
+    var addr = Int(Pointer(to=outer))
     assert_true((addr & 63) == 0, "Outer[64] should be 64-byte aligned")
 
 
@@ -108,7 +108,7 @@ def test_parametric_align_default() raises:
 
     # Verify the struct can be instantiated and used normally.
     var buf = AlignedBuffer[1]()
-    var addr = Int(UnsafePointer(to=buf))
+    var addr = Int(Pointer(to=buf))
     # Natural alignment of Int (8 bytes) should be respected.
     assert_true((addr & 7) == 0, "AlignedBuffer[1] should be 8-byte aligned")
 
@@ -133,8 +133,8 @@ def test_parametric_field_offset_alignment() raises:
     """
     var container = ContainsParametricAligned[64](99)
 
-    var base_ptr = UnsafePointer(to=container)
-    var second_ptr = UnsafePointer(to=container.second)
+    var base_ptr = Pointer(to=container)
+    var second_ptr = Pointer(to=container.second)
 
     var base_addr = Int(base_ptr)
     var second_addr = Int(second_ptr)
@@ -155,8 +155,8 @@ def test_parametric_field_offset_alignment() raises:
 
     # Test with a different alignment parameter.
     var container128 = ContainsParametricAligned[128](42)
-    var base128 = Int(UnsafePointer(to=container128))
-    var second128 = Int(UnsafePointer(to=container128.second))
+    var base128 = Int(Pointer(to=container128))
+    var second128 = Int(Pointer(to=container128.second))
     assert_equal(
         second128 - base128,
         128,

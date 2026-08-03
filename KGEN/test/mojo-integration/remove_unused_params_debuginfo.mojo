@@ -12,7 +12,7 @@
 @no_inline
 def agnostic_user[
     T: AnyType, dt: DType
-](b: UnsafePointer[T, _], dp: UnsafePointer[Scalar[dt], _]):
+](b: Pointer[T, _], dp: Pointer[Scalar[dt], _]):
     print(b.unsafe_bitcast[UInt32]())
     print(dp.unsafe_bitcast[UInt32]())
 
@@ -27,12 +27,12 @@ def main():
     var y: Float64 = 42.5
     var d: UInt8 = 9
     agnostic_user[Int, DType.uint8](
-        UnsafePointer(to=x),
-        UnsafePointer(to=d),
+        Pointer(to=x),
+        Pointer(to=d),
     )
     agnostic_user[Float64, DType.uint8](
-        UnsafePointer(to=y),
-        UnsafePointer(to=d),
+        Pointer(to=y),
+        Pointer(to=d),
     )
 
 
