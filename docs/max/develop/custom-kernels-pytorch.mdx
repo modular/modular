@@ -7,7 +7,7 @@ show_languages: true
 is_tutorial: true
 ---
 
-import InstallModular from '../_includes/install-modular.mdx';
+import InstallMAX from '../_includes/install-modular.mdx';
 
 When working with PyTorch models, you might encounter performance bottlenecks in
 specific operations that could benefit from custom optimization. You might also
@@ -30,11 +30,11 @@ integrating a custom op in Mojo and running it in PyTorch.
 
 Let's start by creating a Python project and installing the necessary tools.
 
-<InstallModular folder="pytorch_custom_ops" extraLibraries={["torch", "pillow", "numpy"]} />
+<InstallMAX folder="pytorch_custom_ops" extraLibraries={["torch", "pillow", "numpy"]} />
 
-This will install the `modular` package along with PyTorch (`torch`), PIL for
+This will install the `max` package along with PyTorch (`torch`), PIL for
 image processing (`pillow`), and NumPy for array operations. When you install
-the `modular` package, you'll get access to the `max` Python APIs and the Mojo
+the `max` package, you'll get access to the MAX Python APIs and the Mojo
 compiler—everything needed to build high-performance custom operations.
 
 ## Build the PyTorch interface
