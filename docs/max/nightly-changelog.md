@@ -141,6 +141,14 @@ This version is still a work in progress.
   residual distribution when stochastic acceptance rejects a draft token. This
   preserves the target distribution for argmax draft proposals instead of
   sampling recovery from the full target distribution.
+- Kimi with DFlash speculative decoding
+  (`UnifiedDflashKimiK25ForCausalLM`) now supports image input. Previously
+  this path was served text-only: the vision encoder was not compiled, so
+  image tokens reached the language model as bare placeholder embeddings and
+  image prompts were answered as if the model were blind. The vision encoder
+  now runs during prefill and its patch-merged embeddings are scattered into
+  the target model's token embeddings, matching the non-speculative and Eagle3
+  Kimi paths.
 
 ## MAX framework
 

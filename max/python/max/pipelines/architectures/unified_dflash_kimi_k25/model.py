@@ -25,14 +25,13 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
-from unittest.mock import MagicMock
 
 import numpy as np
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, Value
+from max.graph import Graph, Module, Value
 from max.graph.weights import WeightData, load_weights
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputsInterface, KVCacheParams
@@ -68,19 +67,30 @@ logger = logging.getLogger("max.pipelines")
 class UnifiedDflashKimiK25Inputs(UnifiedSpecDecodeInputs, KimiK2_5ModelInputs):
     """Inputs for the unified DFlash Kimi K2.5 graph.
 
-    Same as :class:`KimiK2_5ModelInputs` plus the spec-decode fields and
-    trailing buffer packing from :class:`UnifiedSpecDecodeInputs`. The draft
-    owns its own MHA :class:`KVCacheInputs` so its dispatch metadata is
-    independent of the target's MLA cache. The DFlash graph does not bind
-    ``in_thinking_phase``.
+    Same as :class:`KimiK2_5ModelInputs` -- including the per-device
+    vision-merge inputs (base ``vision_embeddings`` /
+    ``vision_scatter_indices``, set by the pipeline's vision seam) that the
+    unified graph scatters into the merged token embedding before the target
+    forward -- plus the spec-decode fields and trailing buffer packing from
+    :class:`UnifiedSpecDecodeInputs`. The draft owns its own MHA
+    :class:`KVCacheInputs` so its dispatch metadata is independent of the
+    target's MLA cache. The DFlash graph does not bind ``in_thinking_phase``.
     """
 
     token_bitmasks: Buffer | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        assert len(self.vision_embeddings) == len(
+            self.vision_scatter_indices
+        ), (
+            "vision_embeddings and vision_scatter_indices must have the "
+            "same length"
+        )
         buffers = (
             self.tokens,
+            *self.vision_embeddings,
+            *self.vision_scatter_indices,
             self.input_row_offsets,
             self.host_input_row_offsets,
             self.return_n_logits,
@@ -316,27 +326,30 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
                 continue
             self.state_dict[f"draft.{k}"] = v
 
-        vision_model = MagicMock(spec=Model)
-        logger.warning(
-            "Skipping vision model compilation. Vision support is not yet "
-            "implemented for Kimi DFlash."
-        )
-
-        with CompilationTimer("unified_dflash_kimi_k25_language_model") as t:
+        with CompilationTimer("vision + unified_dflash_kimi_k25 model") as t:
+            graph_module = Module()
+            vision_graph, _ = self._build_vision_graph(
+                kimik2_5_config, vision_state_dict, module=graph_module
+            )
             with Graph(
                 "unified_dflash_kimi_k25_graph",
                 input_types=nn_model.input_types(self.kv_params),
+                module=graph_module,
             ) as graph:
-                (
-                    tokens,
-                    devices_input_row_offsets,
-                    host_input_row_offsets,
-                    return_n_logits,
-                    data_parallel_splits,
-                    *variadic_args,
-                ) = graph.inputs
+                tokens, *rest_inputs = graph.inputs
+                variadic_args_iter = iter(rest_inputs)
 
-                variadic_args_iter = iter(variadic_args)
+                image_embeddings_in = [
+                    next(variadic_args_iter).tensor for _ in range(n_devices)
+                ]
+                image_token_indices_in = [
+                    next(variadic_args_iter).tensor for _ in range(n_devices)
+                ]
+                devices_input_row_offsets = next(variadic_args_iter)
+                host_input_row_offsets = next(variadic_args_iter)
+                return_n_logits = next(variadic_args_iter)
+                data_parallel_splits = next(variadic_args_iter)
+
                 signal_buffers = [
                     next(variadic_args_iter).buffer
                     for _ in range(len(self.devices))
@@ -383,15 +396,19 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
                     max_k=max_k,
                     top_p=top_p,
                     min_top_p=min_top_p,
+                    image_embeddings=image_embeddings_in,
+                    image_token_indices=image_token_indices_in,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
                 )
                 graph.output(*outputs)
 
             t.mark_build_complete()
-            language_model = session.load(
-                graph, weights_registry=self.state_dict
+            models = session.load_all(
+                graph_module, weights_registry=self.state_dict
             )
+            vision_model = models[vision_graph.name]
+            language_model = models[graph.name]
 
         return vision_model, language_model
 
