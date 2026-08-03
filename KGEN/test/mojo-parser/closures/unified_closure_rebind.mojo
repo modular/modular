@@ -6,7 +6,6 @@
 # RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values -o %t.mlir
 
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S0 < %t.mlir
-# RUN: FileCheck %s --enable-var-scope --check-prefixes=S1 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S2 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S3 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S4 < %t.mlir
@@ -33,13 +32,6 @@
 def makeIt[U: TrivialRegisterPassable](a: U):
     def parametric() {var a} -> U:
         return a
-
-# COM: Check that device passable conformance is emitted properly
-# S1: kgen.conformance @"{{.*}}::DevicePassable" {
-# S1-NEXT: kgen.witness "device_type" : type =
-# S1-NEXT: kgen.witness "_is_convertible_to_device_type{{.*}}" : !lit.generator
-# S1-NEXT: kgen.witness "_to_device_type{{.*}}" : !lit.generator
-# S1-NEXT: kgen.witness "get_type_name{{.*}}" : !lit.generator
 
 
 

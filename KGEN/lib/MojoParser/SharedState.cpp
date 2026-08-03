@@ -365,8 +365,8 @@ struct SharedState::Impl {
   DenseMap<GeneratorType, ASTDecl *> closureTraits;
   /// Closure wrappers are unique to their combined trait type and local to a
   /// file module. The TraitType key encodes the closure trait plus Movable,
-  /// Copyable (if copyable), DevicePassable (if trivial), and extern trait
-  /// (if stateless).
+  /// Copyable (if copyable), DevicePassable (if captures are device-encodable),
+  /// and extern trait (if stateless).
   DenseMap<std::pair<TraitType, ASTDecl *>, ASTDecl *> unifiedClosureWrappers;
 
   /// The capture values and decls associated with their enclosing nested
@@ -2744,23 +2744,27 @@ ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
 
 ASTDecl *SharedState::getOrCreateClosureWrapper(
     SMLoc loc, FnTypeGeneratorType sig, ASTDecl *moduleDecl, bool isCopyable,
-    TypeConvention typeConvention, bool isStateless) {
+    TypeConvention typeConvention, bool isStateless, bool capturesEncodable) {
   ASTDecl *traitDecl = getOrCreateClosureTrait(loc, *moduleDecl, sig);
 
   // Compute the wrapper's combined TraitType based on all conformances.
   // This uniquely identifies the wrapper configuration.
   TraitType wrapperTraitType = closureEmitter->getWrapperTraitType(
-      *traitDecl, *moduleDecl, isCopyable, typeConvention);
-  auto &wrapper = impl->unifiedClosureWrappers[{wrapperTraitType, moduleDecl}];
-  if (!wrapper) {
-    auto traitOp = cast<TraitDeclOp>(traitDecl->getIfOperation());
-    SmallString<128> baseName(traitOp.getSymName());
-    closureEmitter->enumerateWrapperTraits(baseName, wrapperTraitType,
-                                           *moduleDecl);
-    wrapper = closureEmitter->createStructWrapper(
-        *moduleDecl, baseName, *traitDecl, loc, typeConvention, isCopyable,
-        isStateless, sig);
-  }
+      *traitDecl, *moduleDecl, isCopyable, typeConvention, capturesEncodable);
+  std::pair<TraitType, ASTDecl *> key{wrapperTraitType, moduleDecl};
+  if (ASTDecl *cached = impl->unifiedClosureWrappers.lookup(key))
+    return cached;
+
+  auto traitOp = cast<TraitDeclOp>(traitDecl->getIfOperation());
+  SmallString<128> baseName(traitOp.getSymName());
+  closureEmitter->enumerateWrapperTraits(baseName, wrapperTraitType,
+                                         *moduleDecl);
+  ASTDecl *wrapper = closureEmitter->createStructWrapper(
+      *moduleDecl, baseName, *traitDecl, loc, typeConvention, isCopyable,
+      isStateless, capturesEncodable, sig);
+
+  if (wrapper)
+    impl->unifiedClosureWrappers[key] = wrapper;
 
   return wrapper;
 }

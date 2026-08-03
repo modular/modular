@@ -631,7 +631,7 @@ public:
   ASTDecl *getOrCreateClosureWrapper(SMLoc loc, FnTypeGeneratorType sig,
                                      ASTDecl *moduleDecl, bool isCopyable,
                                      TypeConvention typeConvention,
-                                     bool isStateless);
+                                     bool isStateless, bool capturesEncodable);
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain
   /// invariants with packaging.
