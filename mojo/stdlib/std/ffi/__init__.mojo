@@ -672,17 +672,14 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
 
         Constraints:
             `result_type` must be a function pointer type annotated with
-            `abi("C")` (e.g. `def(Float64) abi("C") -> Float64`). Using a
+            `abi("C")` (e.g. `def(Float64) thin abi("C") -> Float64`). Using a
             plain Mojo function type causes silent ABI corruption for struct
             arguments and return values.
         """
-        # TODO(MOCO-3709): Re-enable this constraint once kgen-opt passes
-        # (e.g. mogg-annotate-kernels) can parse extern|cabi function types
-        # in prebuilt stdlib packages without failing with "expected '->'".
-        # comptime assert __fn_type_is_cabi[result_type](), (
-        #     'result_type must be a C-ABI function pointer type: use abi("C") on'
-        #     ' the function type, e.g. `def(Float64) abi("C") -> Float64`'
-        # )
+        comptime assert __fn_type_is_cabi[result_type](), (
+            'result_type must be a C-ABI function pointer type: use abi("C") on'
+            ' the function type, e.g. `def(Float64) thin abi("C") -> Float64`'
+        )
 
         return self._get_function[result_type](
             cstr_name=name.as_c_string_slice().unsafe_ptr()
