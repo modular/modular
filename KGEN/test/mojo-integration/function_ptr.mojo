@@ -20,7 +20,7 @@ def bar(var s: Foo):
     print(s.thing)
 
 
-struct Foo(ImplicitlyCopyable, ImplicitlyDeletable):
+struct Foo(Deinitable, ImplicitlyCopyable):
     var thing: Int
     var closure_taking_a_foo: def(var s: Foo) thin
 

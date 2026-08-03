@@ -14,8 +14,8 @@
 # RUN: kgen -elaborate -S -o - %s | FileCheck %s
 
 
-struct ConditionalRP[T: Movable & ImplicitlyDeletable](
-    ImplicitlyDeletable,
+struct ConditionalRP[T: Movable & Deinitable](
+    Deinitable,
     Movable,
     RegisterPassable where conforms_to(T, RegisterPassable),
 ):
@@ -25,10 +25,8 @@ struct ConditionalRP[T: Movable & ImplicitlyDeletable](
         self.value = value^
 
 
-struct TwoFieldRP[
-    A: Movable & ImplicitlyDeletable, B: Movable & ImplicitlyDeletable
-](
-    ImplicitlyDeletable,
+struct TwoFieldRP[A: Movable & Deinitable, B: Movable & Deinitable](
+    Deinitable,
     Movable,
     RegisterPassable where conforms_to(A, RegisterPassable) and conforms_to(
         B, RegisterPassable

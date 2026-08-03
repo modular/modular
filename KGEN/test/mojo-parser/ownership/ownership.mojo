@@ -1011,7 +1011,7 @@ def test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExamp
     return a if x else b
 
 
-struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable & ImplicitlyDeletable](Movable where False):
+struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable & Deinitable](Movable where False):
     var a: Self.T
     var b: Self.T
 
@@ -1374,7 +1374,7 @@ def origin_of_def_arg(a: String) raises:
 
 # MOCO-1542: Need to rebind field type when checking size.
 @fieldwise_init
-struct MyParameterizedField[T: ImplicitlyCopyable & ImplicitlyDeletable](ImplicitlyCopyable, ImplicitlyDeletable):
+struct MyParameterizedField[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable, Deinitable):
   var a: Self.T
   var b: Self.T
 
@@ -1415,7 +1415,7 @@ struct SomeStruct(Movable where False):
     def __init__(out self) raises:
         self.test_agent = SomeValue(123)
 
-struct SomeValue[T: ImplicitlyCopyable & ImplicitlyDeletable](Movable where False):
+struct SomeValue[T: ImplicitlyCopyable & Deinitable](Movable where False):
     var value: Self.T
     var name: String
     var tmp: Int
@@ -1428,8 +1428,8 @@ struct SomeValue[T: ImplicitlyCopyable & ImplicitlyDeletable](Movable where Fals
 # This triggered a bug handling parameterized types with substitutions, reported
 # on discord.
 # CHECK-LABEL: ParametricTask
-struct ParametricTask[T1: Movable & ImplicitlyDeletable,
-                      T2: Movable & ImplicitlyDeletable](Movable):
+struct ParametricTask[T1: Movable & Deinitable,
+                      T2: Movable & Deinitable](Movable):
     var t1: Self.T1
     var t2: Self.T2
     def __init__(out self, var t1: Self.T1, var t2: Self.T2):
@@ -1529,7 +1529,7 @@ def test_is_trivial(var a0: OccasionallyTrivial[0],
 
 # CHECK-LABEL: lit.struct.decl @TestConditionallyLinearType
 struct TestConditionallyLinearType[T: Movable](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable), Movable where False
+    Deinitable where conforms_to(T, Deinitable), Movable where False
 ):
     var data: Self.T
 
@@ -1538,17 +1538,17 @@ struct TestConditionallyLinearType[T: Movable](
 # CHECK-NEXT: lit.call{{.*}}__deinit__{{.*}}([[TMP]])
 # CHECK-NEXT: kgen.param.constant: none
 
-    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
         pass
 
 
 # CHECK-LABEL: lit.struct.decl @TestSynthesizedConditionalDtor
-struct TestSynthesizedConditionalDtor[T: Movable & ImplicitlyDeletable](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable), Movable where False
+struct TestSynthesizedConditionalDtor[T: Movable & Deinitable](
+    Deinitable where conforms_to(T, Deinitable), Movable where False
 ):
     var data: Self.T
 
-# CHECK: lit.fn @"__deinit__{{.*}}TestSynthesizedConditionalDtor{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, {{.*}}ImplicitlyDeletable{{.*}}synthetic
+# CHECK: lit.fn @"__deinit__{{.*}}TestSynthesizedConditionalDtor{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, {{.*}}Deinitable{{.*}}synthetic
 
 # MOCO-4059: Conditionally linear type with concrete struct.
 # CHECK-LABEL: lit.struct.decl @AConditionallyLinearType
@@ -1556,14 +1556,14 @@ struct TestSynthesizedConditionalDtor[T: Movable & ImplicitlyDeletable](
 @fieldwise_init
 struct AConditionallyLinearType[T: AnyType](
     Copyable,
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
+    Deinitable where conforms_to(T, Deinitable),
 ):
 
-    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
       pass
 
     # CHECK-LABEL: lit.fn @"example_method
-    def example_method(self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def example_method(self) where conforms_to(Self.T, Deinitable):
         var _copy = self.copy()
         # CHECK-NEXT: %_copy = lit.var.decl
         # CHECK-NEXT: lit.var.lifetime.start %_copy

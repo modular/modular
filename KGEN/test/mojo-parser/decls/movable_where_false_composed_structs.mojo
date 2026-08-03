@@ -33,7 +33,7 @@
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | FileCheck %s
 
 # `Movable where False` is an opt-out: no move constructor is synthesized, so
-# each struct below carries only the unconditionally-injected `ImplicitlyDeletable`
+# each struct below carries only the unconditionally-injected `Deinitable`
 # `__del__`. The per-struct `CHECK-NOT`s (bounded by the next `CHECK-LABEL`)
 # pin that absence; without the opt-out honored, a move ctor or a "does not
 # implement all requirements for 'Movable'" error would appear here.
@@ -62,13 +62,13 @@ struct ComposedOuter[value: Int](Movable where False) where value >= 0:
 # Mixed-conformance case: Inner additionally has a genuinely conditional
 # (non-False) conformance to a different trait, matching
 # explicit_destroy.mojo's PredicateOnStructInner shape. The conditional
-# `ImplicitlyDeletable` slot survives (`!constrained_..._Marker`) while the
+# `Deinitable` slot survives (`!constrained_..._Marker`) while the
 # `Movable where False` slot is dropped.
 # CHECK-LABEL: lit.struct.decl @MixedConformanceInner
-# CHECK-SAME: (!constrained_AnyType_ImplicitlyDeletable)
+# CHECK-SAME: (!constrained_AnyType_Deinitable)
 # CHECK-NOT: __init__(move:
 struct MixedConformanceInner[value: Int](
-    ImplicitlyDeletable where value >= 0, Movable where False,
+    Deinitable where value >= 0, Movable where False,
 ):
     pass
 

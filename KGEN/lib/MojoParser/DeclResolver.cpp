@@ -1766,10 +1766,9 @@ void DeclResolver::resolveAllWithin(ASTDecl &decl) {
 // Top-Level Decl Resolution
 
 void DeclResolver::resolveReferencedDecls() {
-  // ImplicitlyDeletable and its members will be referenced by
+  // Deinitable and its members will be referenced by
   // CheckLifetimes, so make sure to resolve it.
-  if (ASTDecl *traitDecl =
-          shared.lookupBuiltinTrait("ImplicitlyDeletable", SMLoc()))
+  if (ASTDecl *traitDecl = shared.lookupBuiltinTrait("Deinitable", SMLoc()))
     resolveAllWithin(*traitDecl);
 
   // Iteratively resolve all of the parsed decls that got referenced outside

@@ -26,7 +26,7 @@
 
 # --- Positive controls: the conventions still apply unconditionally ---------
 
-# CHECK: lit.struct.decl @RPUncond(!AnyType_ImplicitlyDeletable_Movable_RegisterPassable) register_passable attributes
+# CHECK: lit.struct.decl @RPUncond(!AnyType_Deinitable_Movable_RegisterPassable) register_passable attributes
 struct RPUncond(RegisterPassable):
     pass
 
@@ -39,11 +39,11 @@ struct TRPUncond(TrivialRegisterPassable):
 
 # The false slot is erased from the canonical trait, so neither the marker nor a
 # convention keyword mentions RegisterPassable.
-# CHECK: lit.struct.decl @RPFalse(!AnyType_ImplicitlyDeletable_Movable) attributes
+# CHECK: lit.struct.decl @RPFalse(!AnyType_Deinitable_Movable) attributes
 struct RPFalse(RegisterPassable where False):
     pass
 
-# CHECK: lit.struct.decl @TRPFalse(!AnyType_ImplicitlyDeletable_Movable) attributes
+# CHECK: lit.struct.decl @TRPFalse(!AnyType_Deinitable_Movable) attributes
 struct TRPFalse(TrivialRegisterPassable where False):
     pass
 

@@ -36,7 +36,7 @@ def use() -> Int:
 
 
 # CHECK: lit.struct.decl @"def() thin -> Int_PtrWrapper"
-# CHECK: kgen.conformance @"std::builtin::stubs::ImplicitlyDeletable"
+# CHECK: kgen.conformance @"std::builtin::stubs::Deinitable"
 # CHECK: kgen.conformance @"std::builtin::stubs::Movable"
 # CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
 # CHECK: kgen.conformance @"def() -> Int"

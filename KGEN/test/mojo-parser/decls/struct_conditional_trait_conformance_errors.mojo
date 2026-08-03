@@ -33,7 +33,7 @@ trait DiamondDerivedB(DiamondBase):
     pass
 
 
-struct DiamondMissingExplicitBase[T: Movable & ImplicitlyDeletable](
+struct DiamondMissingExplicitBase[T: Movable & Deinitable](
     # expected-error @below {{ancestor trait 'DiamondBase' is reached via multiple inheritance paths with different constraints; it must be explicitly listed in the conformance list with the desired constraint}}
     DiamondDerivedA where conforms_to(T, Copyable),
     DiamondDerivedB where conforms_to(T, Intable),
@@ -60,7 +60,7 @@ trait AncestorImplicationDerived(AncestorImplicationBase):
     pass
 
 
-struct DerivedDoesNotImplyAncestor[T: Movable & ImplicitlyDeletable](
+struct DerivedDoesNotImplyAncestor[T: Movable & Deinitable](
     # Base requires Intable
     AncestorImplicationBase where conforms_to(T, Intable),
     # But Derived only requires Copyable - this doesn't imply Intable!
@@ -90,7 +90,7 @@ trait UnconditionalDerivedChild(UnconditionalDerivedBase):
     pass
 
 
-struct UnconditionalDerivedConditionalAncestor[T: Movable & ImplicitlyDeletable](
+struct UnconditionalDerivedConditionalAncestor[T: Movable & Deinitable](
     # Derived is unconditional - always conforms
     Movable,
     # But ancestor is conditional - inconsistent!
@@ -112,7 +112,7 @@ struct UnconditionalDerivedConditionalAncestor[T: Movable & ImplicitlyDeletable]
 # with field-level triviality witnesses.
 
 
-struct ConditionalTrivialRegPassable[T: Movable & ImplicitlyDeletable](
+struct ConditionalTrivialRegPassable[T: Movable & Deinitable](
     Movable,
     # expected-error @below {{conditional conformance to 'TrivialRegisterPassable' is not supported}}
     TrivialRegisterPassable where conforms_to(T, TrivialRegisterPassable),
@@ -130,7 +130,7 @@ struct ConditionalTrivialRegPassable[T: Movable & ImplicitlyDeletable](
 # parametric isMemoryOnly bit resolves per-instantiation during lowering.
 
 
-struct ConditionalRegPassable[T: Movable & ImplicitlyDeletable](
+struct ConditionalRegPassable[T: Movable & Deinitable](
     Movable,
     RegisterPassable where conforms_to(T, RegisterPassable),
 ):
@@ -145,7 +145,7 @@ struct ConditionalRegPassable[T: Movable & ImplicitlyDeletable](
 # the argument would be promoted to a register and the origin would dangle).
 # expected-error @+3 {{cannot return 'x's origin, because it might expand to a RegisterPassable type}}
 def bad_conditional_rp_origin[
-    T: Movable & ImplicitlyDeletable
+    T: Movable & Deinitable
 ](x: ConditionalRegPassable[T]) -> ref[x] ConditionalRegPassable[T]:
     return x
 
@@ -153,7 +153,7 @@ def bad_conditional_rp_origin[
 # Workaround: using `ref` convention forces indirect passing, so the argument
 # always has a stable memory address regardless of RP status. This must compile.
 def ok_conditional_rp_ref_origin[
-    T: Movable & ImplicitlyDeletable
+    T: Movable & Deinitable
 ](ref x: ConditionalRegPassable[T]) -> ref[x] ConditionalRegPassable[T]:
     return x
 
@@ -173,7 +173,7 @@ trait RPRequiringTrait(RegisterPassable):
         ...
 
 
-struct RPTraitWeakerConstraint[T: Movable & ImplicitlyDeletable](
+struct RPTraitWeakerConstraint[T: Movable & Deinitable](
     Movable,
     # expected-error @below {{constraint for 'RPRequiringTrait' does not imply constraint for ancestor trait 'RegisterPassable'}}
     RPRequiringTrait where conforms_to(T, Movable),
@@ -199,8 +199,8 @@ struct RPTraitWeakerConstraint[T: Movable & ImplicitlyDeletable](
 # This test documents that such usage is accepted (no error expected).
 
 
-struct NoExplicitRPConformsToRPTrait[T: ImplicitlyDeletable & Movable](
-    ImplicitlyDeletable,
+struct NoExplicitRPConformsToRPTrait[T: Deinitable & Movable](
+    Deinitable,
     Movable,
     RPRequiringTrait where conforms_to(T, RegisterPassable),
 ):
@@ -487,9 +487,9 @@ def call_on_zero_field[T: Movable](x: ZeroFieldConditional[T]):
 # constraintImpliesConformance correctly rejects OR disjuncts.
 
 
-struct CopySynthFailsWithOR[T: ImplicitlyDeletable & Movable](
+struct CopySynthFailsWithOR[T: Deinitable & Movable](
     Copyable where conforms_to(T, Copyable) or conforms_to(T, Intable),
-    ImplicitlyDeletable,
+    Deinitable,
     Movable,
 ):
     # expected-error @below {{cannot synthesize copy constructor because field 'value' has non-copyable type}}
@@ -508,11 +508,11 @@ struct CopySynthFailsWithOR[T: ImplicitlyDeletable & Movable](
 
 
 struct CopySynthFailsMultiField[
-    T: ImplicitlyDeletable & Movable,
-    U: ImplicitlyDeletable & Movable,
+    T: Deinitable & Movable,
+    U: Deinitable & Movable,
 ](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDeletable,
+    Deinitable,
     Movable,
 ):
     var first: Self.T

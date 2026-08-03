@@ -242,7 +242,7 @@ def test_violated_vs_inconclusive():
 ##===----------------------------------------------------------------------===##
 
 @fieldwise_init
-struct Lin(Copyable, ImplicitlyDeletable where False):
+struct Lin(Copyable, Deinitable where False):
     pass
 
 
@@ -252,9 +252,9 @@ def make[
     # Make sure compiler does not crash when emitting the note, dependent type
     # `origin[*(0, 0)]` need to be replaced properly.
     #
-    # expected-note-re @below {{constraint declared here evaluated to False, expected 'conforms_to(Keys.IteratorType[{{.*}}].Element, ImplicitlyDeletable)'}}
+    # expected-note-re @below {{constraint declared here evaluated to False, expected 'conforms_to(Keys.IteratorType[{{.*}}].Element, Deinitable)'}}
 ](ref keys: Keys) where conforms_to(
-    Keys.IteratorType[origin_of(keys)].Element, ImplicitlyDeletable
+    Keys.IteratorType[origin_of(keys)].Element, Deinitable
 ):
     pass
 

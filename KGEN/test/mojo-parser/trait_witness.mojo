@@ -52,10 +52,10 @@ struct S1[X: Int](R1, R1Child, R2, TrivialRegisterPassable):
     # CHECK: kgen.conformance @{{.*}}AnyType
     # CHECK-NEXT: }
 
-    # CHECK: kgen.conformance @{{.*}}ImplicitlyDeletable
+    # CHECK: kgen.conformance @{{.*}}Deinitable
     # CHECK-NEXT: kgen.witness "__deinit__{{.*}}" : {{.*}} = {{.*}}@S1::@"__deinit__{{.*}}"<:!Int X>
     # CHECK-NEXT: kgen.witness "__del__is_trivial" : !Bool = {:scalar<bool> true}
-    # CHECK-NEXT: traitRef = [[ANYTYPE_NAME:(@[^:]+::)+@ImplicitlyDeletable]]
+    # CHECK-NEXT: traitRef = [[ANYTYPE_NAME:(@[^:]+::)+@Deinitable]]
 
     # CHECK: kgen.conformance @{{.*}}Movable
     # CHECK-NEXT: kgen.witness "__init__{{.*}}(*, "move":{{.*}} = {{.*}}@S1::@"__init__{{.*}}"{{.*}}<:!Int X>

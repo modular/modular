@@ -25,7 +25,7 @@ struct MyCipher[KeySize: Int](Cipher, Copyable, Movable):
 
 
 def check[
-    C: Cipher & Copyable & ImplicitlyDeletable,
+    C: Cipher & Copyable & Deinitable,
     KeySize: Int,
     cipher_init: def(Array[UInt8, KeySize]) raises capturing[_] -> C,
 ](n: Int) raises:
@@ -36,7 +36,7 @@ def check[
 
 def run[
     check: def[
-        C: Cipher & Copyable & ImplicitlyDeletable,
+        C: Cipher & Copyable & Deinitable,
         KeySize: Int,
         cipher_init: def(Array[UInt8, KeySize]) raises capturing[_] -> C,
     ](Int) raises capturing[_],

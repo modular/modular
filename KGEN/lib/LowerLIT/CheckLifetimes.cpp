@@ -159,9 +159,9 @@ namespace {
 struct StructInfo {
   /// This is the decl for the struct type, and is always present.
   LIT::StructDeclOp decl;
-  /// This is the conformance information for ImplicitlyDeletable if it
+  /// This is the conformance information for Deinitable if it
   /// exists.
-  ConformanceOp implicitlyDestructible;
+  ConformanceOp deinitable;
 };
 } // namespace
 
@@ -177,8 +177,8 @@ struct WholeProgramState {
   DenseMap<SymbolRefAttr, FnOp> funcMap;
   DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
 
-  // This is the ImplicitlyDeletable.__deinit__ trait member function.
-  FnOp implicitlyDestructibleDtor;
+  // This is the Deinitable.__deinit__ trait member function.
+  FnOp deinitableDtor;
 };
 } // namespace
 
@@ -202,26 +202,25 @@ WholeProgramState::WholeProgramState(Operation *module,
       if (!funcOp->getParentOfType<FnOp>())
         funcList.emplace_back(funcOp);
 
-      // Remember the ImplicitlyDeletable.__deinit__ member function.
+      // Remember the Deinitable.__deinit__ member function.
       if (funcOp.getSpecialFunctionKind() == SpecialFunctionKind::kDeinit &&
           isa<TraitDeclOp>(funcOp->getParentOp()) &&
-          cast<TraitDeclOp>(funcOp->getParentOp()).getSymName() ==
-              "ImplicitlyDeletable")
-        implicitlyDestructibleDtor = funcOp;
+          cast<TraitDeclOp>(funcOp->getParentOp()).getSymName() == "Deinitable")
+        deinitableDtor = funcOp;
     }
 
     // Collect structs.
     else if (auto structOp = dyn_cast<LIT::StructDeclOp>(op)) {
-      // Find the conformance to ImplicitlyDeletable if it exists.
-      ConformanceOp implicitlyDestructibleConformance;
+      // Find the conformance to Deinitable if it exists.
+      ConformanceOp deinitableConformance;
       for (auto conformance : structOp.getFields().getOps<ConformanceOp>()) {
-        if (conformance.getSymName().ends_with("::ImplicitlyDeletable")) {
-          implicitlyDestructibleConformance = conformance;
+        if (conformance.getSymName().ends_with("::Deinitable")) {
+          deinitableConformance = conformance;
           break;
         }
       }
-      structMap[getFullyResolvedSymbolRef(structOp)] = {
-          structOp, implicitlyDestructibleConformance};
+      structMap[getFullyResolvedSymbolRef(structOp)] = {structOp,
+                                                        deinitableConformance};
     } else if (auto traitOp = dyn_cast<LIT::TraitDeclOp>(op)) {
       traitMap[getFullyResolvedSymbolRef(traitOp)] = traitOp;
     }
@@ -469,12 +468,12 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
                                                      Location loc) const {
 
   // If all the types in the trait composition are linear, then the trait
-  // itself is linear.  If any of them is ImplicitlyDeletable, then the
+  // itself is linear.  If any of them is Deinitable, then the
   // whole thing is.
   auto getMessageIfTraitIsLinear = [&](ParamType generic,
                                        TraitType refinedTrait) -> StringAttr {
     // If all the types in the trait composition are linear, then the trait
-    // itself is linear.  If any of them is ImplicitlyDeletable, then the
+    // itself is linear.  If any of them is Deinitable, then the
     // whole thing is.
     if (refinedTrait.getSymbols().empty())
       return StringAttr::get(generic.getContext(),
@@ -484,7 +483,7 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
     for (SymbolRefAttr symbol : llvm::reverse(refinedTrait.getSymbols())) {
       TraitDeclOp traitDecl = shared->traitMap.at(symbol);
       // If the trait has a linear type error message set, it means it does
-      // not conform to ImplicitlyDeletable and is a linear type.
+      // not conform to Deinitable and is a linear type.
       if (auto errorMsg = traitDecl.getLinearTypeErrorMsgAttr()) {
         message = errorMsg;
         continue;
@@ -506,11 +505,11 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
       if (StringAttr message = getMessageIfTraitIsLinear(generic, refinedTrait))
         return SpecialMemberInfo::unavailable(message);
 
-      // Otherwise, it is ImplicitlyDeletable, take the
-      // ImplicitlyDeletable.__deinit__ member function and rebind Self to the
-      // right type. If we didn't find ImplicitlyDeletable.__deinit__ (e.g. in
+      // Otherwise, it is Deinitable, take the
+      // Deinitable.__deinit__ member function and rebind Self to the
+      // right type. If we didn't find Deinitable.__deinit__ (e.g. in
       // LSP cases) just assume everything is trivial.
-      FnOp delFn = shared->implicitlyDestructibleDtor;
+      FnOp delFn = shared->deinitableDtor;
       if (!delFn)
         return SpecialMemberInfo::available({});
 
@@ -520,7 +519,7 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
              "Should have Self as a parameter");
 
       // Determine the result Self type.  We upcast the current
-      // trait/composition up to ImplicitlyDeletable so we can set the
+      // trait/composition up to Deinitable so we can set the
       // type.
       auto selfParam = UpcastAttr::get(impDestroyTrait.getParams()[0].getType(),
                                        generic.getParam());
@@ -538,17 +537,16 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
   }
 
   // Check if this specific instantiation of the struct type is
-  // ImplicitlyDeletable by substituting the parameters into the where clause
-  // constraint of ImplicitlyDeletable (if any).
+  // Deinitable by substituting the parameters into the where clause
+  // constraint of Deinitable (if any).
   //
   // Returns nullopt if the trait isn't in the composition at all.
-  auto isTypeImplicitlyDeletable = [&](StructInfo info,
-                                       Type structType) -> TriState {
+  auto isTypeDeinitable = [&](StructInfo info, Type structType) -> TriState {
     TraitType canonTrait = info.decl.getCanonicalTrait();
     ArrayRef<SymbolRefAttr> symbols = canonTrait.getSymbols();
     ArrayRef<ConstraintAttr> constraints = canonTrait.getConstraints();
     for (auto [i, symbol] : llvm::enumerate(symbols)) {
-      if (symbol.getLeafReference() != "ImplicitlyDeletable")
+      if (symbol.getLeafReference() != "Deinitable")
         continue;
       if (i >= constraints.size())
         return TriState::yes(); // Unconditional conformance.
@@ -575,23 +573,23 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
   };
 
   auto getDestructor = [&](StructInfo info) -> SpecialMemberInfo {
-    auto conformance = info.implicitlyDestructible;
-    // Determine conformance to ImplicitlyDeletable via the declared trait bound
+    auto conformance = info.deinitable;
+    // Determine conformance to Deinitable via the declared trait bound
     // of the struct type. This info is always available (in both LSP & normal
     // compile).
-    TriState isImplicitlyDeletable = isTypeImplicitlyDeletable(info, type);
+    TriState isDeinitable = isTypeDeinitable(info, type);
 
     // - If the conformance condition is provably False, the type is NOT
-    // ImplicitlyDeletable.
+    // Deinitable.
     // - If the conformance condition is unprovable, conservatively treat it as
-    // NOT ImplicitlyDeletable. We can improve this error message in the future.
-    if (!isImplicitlyDeletable.isTrue()) {
+    // NOT Deinitable. We can improve this error message in the future.
+    if (!isDeinitable.isTrue()) {
       StringAttr message = info.decl.getLinearTypeErrorMsgAttr();
       assert(message && "should have a message");
       return SpecialMemberInfo::unavailable(message);
     }
 
-    // After this point, we're confident the type is ImplicitlyDeletable.
+    // After this point, we're confident the type is Deinitable.
 
     // If we didn't find a conformance op, we must be in LSP mode. Treat the
     // type as trivial since the exact dtor isn't important.
@@ -608,8 +606,8 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
         isTrivialAttr = witness.getValue();
       } else {
         assert(witness.getName().starts_with("__deinit__(") &&
-               "Unknown witness in ImplicitlyDeletable");
-        assert(!dtorAttr && "Multiple dtors found in ImplicitlyDeletable");
+               "Unknown witness in Deinitable");
+        assert(!dtorAttr && "Multiple dtors found in Deinitable");
         dtorAttr = witness.getValue();
       }
     }
@@ -3599,13 +3597,13 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
     }
 
     // If the value is a parameter of trait type, then that parameter needs to
-    // add an ImplicitlyDeletable trait conformance.
+    // add a Deinitable trait conformance.
     if (auto generic = sugarDynCast<ParamType>(destroyedType)) {
       if (auto trait = sugarDynCast<TraitType>(generic.getParam().getType())) {
         // TODO: We should really be able to use ASTPrinter.cpp here, need to
         // sink it to LIT dialect support though.
         diag.attachNote(builder.getLoc())
-            << "consider adding trait conformance to ImplicitlyDeletable";
+            << "consider adding trait conformance to Deinitable";
       }
     }
     return;

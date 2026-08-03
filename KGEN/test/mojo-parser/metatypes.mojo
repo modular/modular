@@ -55,15 +55,15 @@ def metatypes():
     T.bar()
 
     # COM: Test that binding to a generic type works.
-    # CHECK: bound{{.*}}: !lit.generator<<>!kgen.func.literal<{{.*}}@"anytype[::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]()"<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Thing>>
+    # CHECK: bound{{.*}}: !lit.generator<<>!kgen.func.literal<{{.*}}@"anytype[::AnyType & ::Copyable & ::Deinitable & ::ImplicitlyCopyable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]()"<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Thing>>
     comptime bound = anytype[Thing]
 
     # COM: Test that result types are bound correctly.
-    # CHECK: call {{.*}}@"anytype_result[::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]()"<:{{.*}} !Thing>
+    # CHECK: call {{.*}}@"anytype_result[::AnyType & ::Copyable & ::Deinitable & ::ImplicitlyCopyable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]()"<:{{.*}} !Thing>
     var v: Thing = anytype_result[Thing]()
 
     # COM: Test that argument type inference works correctly.
-    # CHECK: call {{.*}}@"anytype_arg[::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]($0)"<:{{.*}} !Thing>
+    # CHECK: call {{.*}}@"anytype_arg[::AnyType & ::Copyable & ::Deinitable & ::ImplicitlyCopyable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]($0)"<:{{.*}} !Thing>
     anytype_arg(v)
 
     # COM: Test inferring from a nonmaterializable type.
@@ -73,7 +73,7 @@ def metatypes():
     # CHECK-NEXT: lit.ref.store [[NMVAL]], [[DNMVAL]]
     # CHECK-NEXT: [[IMMUT:%.*]] = lit.ref.immut [[DNMVAL]]
     # CHECK-NEXT: [[MVAL:%.*]] = lit.call {{.*}}@Thing::@"__init__{{.*}}([[IMMUT]])
-    # CHECK-NEXT: call {{.*}}@"anytype_arg[::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]($0)"<:{{.*}} !Thing>([[MVAL]])
+    # CHECK-NEXT: call {{.*}}@"anytype_arg[::AnyType & ::Copyable & ::Deinitable & ::ImplicitlyCopyable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]($0)"<:{{.*}} !Thing>([[MVAL]])
     anytype_arg(nm_alias)
 
 

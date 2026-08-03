@@ -18,13 +18,13 @@
 # COM: "U" cannot be called "T" until MOCO-4028 is fixed
 # COM: The captured parameter becomes an alias on the trait
 # S0: lit.trait.decl @"def{{.*}} -> U{1}"
-# S0-NEXT: lit.alias.decl U: !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable
+# S0-NEXT: lit.alias.decl U: !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable
 # COM: The captured parameter becomes a parameter of the storage struct
-# S0: lit.struct.decl @"makeIt{{.*}}::parametric::__storage"<U: !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable, {{.*}}>
-# S0: kgen.witness "U" : !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable = U
+# S0: lit.struct.decl @"makeIt{{.*}}::parametric::__storage"<U: !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable, {{.*}}>
+# S0: kgen.witness "U" : !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable = U
 # COM: The alias is set to the alias of the impl in the struct wrapper
 # S0: lit.struct.decl @"def{{.*}} -> U{1}_{{.*}}"
-# S0: kgen.witness "U" : !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable = #kgen.get_witness<:{{.*}} impl, "def{{.*}} -> U{1}", "U">
+# S0: kgen.witness "U" : !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable = #kgen.get_witness<:{{.*}} impl, "def{{.*}} -> U{1}", "U">
 
 
 

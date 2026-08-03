@@ -208,17 +208,17 @@ struct RegPassable(ImplicitlyCopyable, RegisterPassable):
   def __rmatmul__(lhs, rhs: Self) -> Self: pass
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam<comparator: !lit.generator
-# CHECK-SAME: <"T": !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable>(!kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>, |)
+# CHECK-SAME: <"T": !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable>(!kgen.param<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>, |)
 struct StructWithFuncParam[comparator: def[T: TrivialRegisterPassable] (T) thin -> None](Movable where False):
     # CHECK-LABEL: lit.fn @"f
-    # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.generator<<"T": !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable>(!kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>
+    # CHECK-SAME: %self: !lit.ref<{{.*}}<:!lit.generator<<"T": !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable>(!kgen.param<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>
     def f(self):
         pass
 
     # CHECK-LABEL: lit.fn @"g
     def g(self):
-        # CHECK: lit.call {{.*}}[imm *"self`2x"]<:!lit.generator<<"T": !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable>(!kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>, |)
-        # CHECK-SAME: !lit.ref<{{.*}}<"T": !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable>(!kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>, |)
+        # CHECK: lit.call {{.*}}[imm *"self`2x"]<:!lit.generator<<"T": !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable>(!kgen.param<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>, |)
+        # CHECK-SAME: !lit.ref<{{.*}}<"T": !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable>(!kgen.param<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>, |)
         self.f()
 
 # CHECK-LABEL: lit.fn @"simpleMath

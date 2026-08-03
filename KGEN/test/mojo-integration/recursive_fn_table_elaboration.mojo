@@ -33,7 +33,7 @@ struct IntVal(Movable):
 comptime Payload = Variant[Arr, Str, IntVal]
 
 
-struct Value(ImplicitlyDeletable, Movable):
+struct Value(Deinitable, Movable):
     comptime Kind = UInt8
     comptime ARRAY: Self.Kind = 0
     comptime STRING: Self.Kind = 1

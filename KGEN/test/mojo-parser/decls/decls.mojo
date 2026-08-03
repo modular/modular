@@ -170,9 +170,9 @@ def take_variadic_struct[*Ts: TrivialRegisterPassable](a: VariadicStruct[*Ts]):
 
 # CHECK-LABEL: lit.fn @"variadic_params()"
 def variadic_params():
-    # CHECK-NEXT: call {{.*}}param_func[{{.*}}SIMD[::DType(int), ::SIMDLength(1)]]()"<:param_list<!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !FloatDyn], {{.*}}, :!Int {:scalar<index> 4}>
+    # CHECK-NEXT: call {{.*}}param_func[{{.*}}SIMD[::DType(int), ::SIMDLength(1)]]()"<:param_list<!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !FloatDyn], {{.*}}, :!Int {:scalar<index> 4}>
     VariadicStruct[Int, FloatDyn].param_func[4]()
-    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:param_list<!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !FloatDyn],
+    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:param_list<!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !FloatDyn],
     take_variadic_struct(VariadicStruct[Int, FloatDyn]())
 
 
@@ -198,7 +198,7 @@ def orvalueInferType():
     def func(x: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: call {{.*}}paramRefFunc{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable{{.*}}!lit.generator<("x": index) -> index>>
+    # CHECK: call {{.*}}paramRefFunc{{.*}}<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable{{.*}}!lit.generator<("x": index) -> index>>
     paramRefFunc(func)
 
 
@@ -488,9 +488,9 @@ def callVariadic[p: Int](x: Int):
     # CHECK-SAME: @"variadics{{.*}}SIMD[::DType(int), ::SIMDLength(1)]*)"{{.*}}[store_to_mem(p), store_to_mem({:scalar<index> 1})]
     comptime NonEmptyVariadic = variadics(p, 1)
 
-    # CHECK: lit.call {{.*}}parameterizedVariadic{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int
+    # CHECK: lit.call {{.*}}parameterizedVariadic{{.*}}<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int
     parameterizedVariadic(1, 2)
-    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int
+    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__{{.*}}<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int
     _ = ParameterizedStruct(3)
     # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__{{.*}}<:param_list<!Int> [{:scalar<index> 4}, {:scalar<index> 5}]
     _ = VarArgsParameterizedStruct[4, 5]()
@@ -1334,7 +1334,7 @@ struct Bound[T: AnyType](Movable where False):
 # CHECK: lit.struct.decl @Match
 struct Match[lt: __mlir_type.`!lit.origin<false>`](Movable where False):
     pass
-    # CHECK: kgen.conformance {{.*}}::ImplicitlyDeletable
+    # CHECK: kgen.conformance {{.*}}::Deinitable
     # CHECK-NEXT: kgen.witness "__deinit__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<#Match <:origin<false> lt>>, mut *[0,0]> deinit_mem,
 
 

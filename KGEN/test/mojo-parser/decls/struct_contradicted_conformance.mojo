@@ -14,7 +14,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # The conformance is suppressed exactly like the literal `where False` spelling:
-# no move constructor is synthesized, only the unconditional `ImplicitlyDeletable`
+# no move constructor is synthesized, only the unconditional `Deinitable`
 # `__del__` remains. The `CHECK-NOT`s (each bounded by the next `CHECK-LABEL`)
 # pin that absence; a leaked move ctor or a "does not implement all requirements
 # for 'Movable'" error would fail here.

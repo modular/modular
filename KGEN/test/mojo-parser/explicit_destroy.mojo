@@ -23,7 +23,7 @@ def testAffineThing():
 
 
 # CHECK-LABEL: lit.struct.decl @EmptyExplicit
-struct EmptyExplicit(ImplicitlyDeletable where False, Movable where False):
+struct EmptyExplicit(Deinitable where False, Movable where False):
     def __init__(out self):
         pass
 
@@ -46,7 +46,7 @@ def correctUseExample():
 
 # CHECK-LABEL: lit.struct.decl @ExplicitDestroyThrowing
 @explicit_destroy("end lifetime with foo()")
-struct ExplicitDestroyThrowing(ImplicitlyDeletable where False, Movable where False):
+struct ExplicitDestroyThrowing(Deinitable where False, Movable where False):
     var field: MyAffine
 
     # CHECK-LABEL: lit.fn @"foo
@@ -73,7 +73,7 @@ struct ExplicitDestroyThrowing(ImplicitlyDeletable where False, Movable where Fa
         self.method_that_raises()
 
 
-struct ImplicitlyDeletableContainerOfExplicit(Movable where False):
+struct DeinitableContainerOfExplicit(Movable where False):
     var m: EmptyExplicit
 
     def __init__(out self):
@@ -93,12 +93,12 @@ def foo2[T: AnyType](x: T):
     pass
 
 
-def foo3[T: ImplicitlyDeletable](var x: T):
+def foo3[T: Deinitable](var x: T):
     # Is fine, there's a x.__deinit__() available
     pass
 
 
-trait Iterator(ImplicitlyDeletable):
+trait Iterator(Deinitable):
     comptime Element: AnyType
 
 
@@ -144,6 +144,6 @@ struct PredicateOnStructOuter[value: Int](Movable where False) where value >= 0:
     var field: PredicateOnStructInner[Self.value]
 
 struct PredicateOnStructInner[value: Int](
-    ImplicitlyDeletable where value >= 0, Movable where False,
+    Deinitable where value >= 0, Movable where False,
 ):
     pass

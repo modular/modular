@@ -9,7 +9,7 @@ comptime Testdef = def(x: Int) thin raises -> Tuple[Bool, Int]
 
 
 @no_inline
-def printIt[T: ImplicitlyCopyable & ImplicitlyDeletable]():
+def printIt[T: ImplicitlyCopyable & Deinitable]():
     if T.__del__is_trivial:
         print("deinit trivial")
     if T.__move_ctor_is_trivial:

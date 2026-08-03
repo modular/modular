@@ -15,7 +15,7 @@ def takeItParams[
     print(product2)
 
 
-trait Trait(ImplicitlyCopyable, ImplicitlyDeletable):
+trait Trait(Deinitable, ImplicitlyCopyable):
     def get(self) -> Int:
         ...
 
@@ -45,9 +45,7 @@ def captureParams[X: Trait, Y: Trait](impl2: X, mut impl3: Y):
 
 
 @fieldwise_init
-struct Parameter[*, base: ImplicitlyCopyable & ImplicitlyDeletable & Writable](
-    Copyable
-):
+struct Parameter[*, base: ImplicitlyCopyable & Deinitable & Writable](Copyable):
     var impl: Self.base
 
     def useIt(self):
@@ -66,7 +64,7 @@ def captureIt(p: Parameter[...]):
     takeIt(closure)
 
 
-trait Coord(ImplicitlyCopyable, ImplicitlyDeletable):
+trait Coord(Deinitable, ImplicitlyCopyable):
     def prettyPrint(self):
         ...
 

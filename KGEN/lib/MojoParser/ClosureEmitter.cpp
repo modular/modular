@@ -218,8 +218,7 @@ ClosureEmitter::ClosureEmitter(SharedState &shared)
       copyName(StringAttr::get(ctx, "copy")),
       anyParent("AnyType", "", ClosureMethod::NONE),
       moveParent("Movable", "__init__", ClosureMethod::MOVE),
-      implicitlyDestructibleParent("ImplicitlyDeletable", "__deinit__",
-                                   ClosureMethod::DEL),
+      deinitableParent("Deinitable", "__deinit__", ClosureMethod::DEL),
       registerPassableParent("RegisterPassable", "", ClosureMethod::NONE),
       trivialRegisterTypeParent("TrivialRegisterPassable", "",
                                 ClosureMethod::NONE),
@@ -871,7 +870,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   }
   SmallVector<ClosureParent> closureParents{
       ClosureParent(trait, callFn, ClosureMethod::CALL), moveParent,
-      implicitlyDestructibleParent, anyParent};
+      deinitableParent, anyParent};
   if (isCopyable) {
     closureParents.push_back(copyParent);
     closureParents.push_back(implicitlyCopyableParent);
@@ -1156,8 +1155,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   // Generate is-trivial special aliases
   bool trivialValue = typeConvention == TypeConvention::RegisterPassableTrivial;
   generateIsTrivialSpecialAlias("__del__is_trivial", trivialValue, shared,
-                                structDecl, implicitlyDestructibleParent,
-                                moduleDecl);
+                                structDecl, deinitableParent, moduleDecl);
   generateIsTrivialSpecialAlias("__move_ctor_is_trivial", trivialValue, shared,
                                 structDecl, moveParent, moduleDecl);
   if (isCopyable)
@@ -1260,7 +1258,7 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
                                      moveParent,
                                      copyParent,
                                      implicitlyCopyableParent,
-                                     implicitlyDestructibleParent,
+                                     deinitableParent,
                                      trivialRegisterTypeParent,
                                      registerPassableParent};
   TraitType traitType = getTraitType(parents, moduleDecl);
@@ -1322,7 +1320,7 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
 
   // Empty __del__
   auto delFnOp = structEmitter.synthesizeEmptyDtor();
-  addWitnessEntry(implicitlyDestructibleParent, delFnOp);
+  addWitnessEntry(deinitableParent, delFnOp);
 
   // Empty move ctor.
   auto moveFnOp = structEmitter.synthesizeEmptyMoveOrCopyInit(true);
@@ -1336,7 +1334,7 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
 
   // All of these operations are trivial in all cases; the struct has no fields.
   generateIsTrivialSpecialAlias("__del__is_trivial", true, shared, structDecl,
-                                implicitlyDestructibleParent, moduleDecl);
+                                deinitableParent, moduleDecl);
   generateIsTrivialSpecialAlias("__move_ctor_is_trivial", true, shared,
                                 structDecl, moveParent, moduleDecl);
   generateIsTrivialSpecialAlias("__copy_ctor_is_trivial", true, shared,
@@ -1618,7 +1616,7 @@ ASTDecl *ClosureEmitter::createClosureTrait(
     SMLoc nestedFunctionOrTypeLocation) {
   // Generate the movable, destructable closure trait, populating the trait
   // definition with the single characteristic "__call__" method.
-  SmallVector<ClosureParent> parents{moveParent, implicitlyDestructibleParent};
+  SmallVector<ClosureParent> parents{moveParent, deinitableParent};
   auto populate = [&](ASTDecl &decl,
                       DenseSet<std::pair<StringAttr, StringAttr>> &functions) {
     TraitDeclOp closureTrait = cast<TraitDeclOp>(decl.getIfOperation());
@@ -2664,8 +2662,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
 
   bool isTrivial = convention == TypeConvention::RegisterPassableTrivial;
   generateIsTrivialSpecialAlias("__del__is_trivial", isTrivial, shared,
-                                structDecl, implicitlyDestructibleParent,
-                                moduleDecl);
+                                structDecl, deinitableParent, moduleDecl);
   generateIsTrivialSpecialAlias("__move_ctor_is_trivial", isTrivial, shared,
                                 structDecl, moveParent, moduleDecl);
   if (methodImpls.contains(ClosureMethod::COPY))
@@ -2851,7 +2848,7 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   SmallVector<ClosureParent> closureParents{
       ClosureParent(trait, getFnOpNamed(trait, "__call__"),
                     ClosureMethod::CALL),
-      moveParent, implicitlyDestructibleParent, anyParent};
+      moveParent, deinitableParent, anyParent};
   if (isCopyable) {
     closureParents.push_back(copyParent);
     closureParents.push_back(implicitlyCopyableParent);
@@ -3935,7 +3932,7 @@ TraitType ClosureEmitter::getWrapperTraitType(ASTDecl &traitDecl,
   SmallVector<SymbolRefAttr> symbols;
   symbols.push_back(traitDecl.getSymbolRef());
   symbols.push_back(moveParent.getSymbolRef(moduleDecl));
-  symbols.push_back(implicitlyDestructibleParent.getSymbolRef(moduleDecl));
+  symbols.push_back(deinitableParent.getSymbolRef(moduleDecl));
   if (isCopyable) {
     symbols.push_back(copyParent.getSymbolRef(moduleDecl));
     symbols.push_back(implicitlyCopyableParent.getSymbolRef(moduleDecl));
@@ -3962,8 +3959,7 @@ void ClosureEmitter::enumerateWrapperTraits(SmallVectorImpl<char> &out,
   if (!parentOrdinals) {
     parentOrdinals.emplace();
     (*parentOrdinals)[moveParent.getSymbolRef(moduleDecl)] = 0;
-    (*parentOrdinals)[implicitlyDestructibleParent.getSymbolRef(moduleDecl)] =
-        1;
+    (*parentOrdinals)[deinitableParent.getSymbolRef(moduleDecl)] = 1;
     (*parentOrdinals)[copyParent.getSymbolRef(moduleDecl)] = 2;
     (*parentOrdinals)[implicitlyCopyableParent.getSymbolRef(moduleDecl)] = 3;
     (*parentOrdinals)[trivialRegisterTypeParent.getSymbolRef(moduleDecl)] = 4;

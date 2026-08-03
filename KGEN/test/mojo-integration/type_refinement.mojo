@@ -22,7 +22,7 @@ trait Describable:
         ...
 
 
-struct Dog(Copyable, Describable, Greetable, ImplicitlyDeletable, Movable):
+struct Dog(Copyable, Deinitable, Describable, Greetable, Movable):
     var name: String
 
     def __init__(out self, name: String):
@@ -35,7 +35,7 @@ struct Dog(Copyable, Describable, Greetable, ImplicitlyDeletable, Movable):
         return "Dog(" + self.name + ")"
 
 
-struct Cat(Copyable, Greetable, ImplicitlyDeletable, Movable):
+struct Cat(Copyable, Deinitable, Greetable, Movable):
     var name: String
 
     def __init__(out self, name: String):
@@ -75,7 +75,7 @@ trait StaticRefinedOverload:
         ...
 
 
-trait ArgConstructible(ImplicitlyDeletable):
+trait ArgConstructible(Deinitable):
     def __init__(out self, value: Int):
         ...
 
@@ -218,39 +218,33 @@ def static_label_does_not_rewrite_type_uses[
 
 def default_construct_refined[
     T: AnyType
-]() where conforms_to(T, Defaultable & ImplicitlyDeletable):
+]() where conforms_to(T, Defaultable & Deinitable):
     _ = T()
 
 
 def default_construct_with_original_candidate[
     T: ArgConstructible
-]() -> String where conforms_to(
-    T, RefinedDefaultConstructible & ImplicitlyDeletable
-):
+]() -> String where conforms_to(T, RefinedDefaultConstructible & Deinitable):
     _ = T()
     return "refined-constructor"
 
 
 def original_construct_with_refined_candidates[
     T: ArgConstructible
-]() -> String where conforms_to(
-    T, RefinedDefaultConstructible & ImplicitlyDeletable
-):
+]() -> String where conforms_to(T, RefinedDefaultConstructible & Deinitable):
     _ = T(1)
     return "original-constructor"
 
 
 def accept_refined_implicit_conversion[
     T: ArgConstructible
-](value: T) -> String where conforms_to(T, ImplicitlyDeletable):
+](value: T) -> String where conforms_to(T, Deinitable):
     return "refined-implicit-conversion"
 
 
 def implicit_construct_with_original_candidate[
     T: ArgConstructible
-]() -> String where conforms_to(
-    T, RefinedStringConstructible & ImplicitlyDeletable
-):
+]() -> String where conforms_to(T, RefinedStringConstructible & Deinitable):
     return accept_refined_implicit_conversion[T](String("converted"))
 
 
@@ -509,7 +503,7 @@ def call_greet_ref[
 
 
 def call_greet_var[
-    T: ImplicitlyDeletable
+    T: Deinitable
 ](var x: T) -> String where conforms_to(T, Greetable):
     return x.greet()
 
@@ -527,7 +521,7 @@ def test_conventions():
 
 
 def copyable_and_greetable[
-    T: Copyable & ImplicitlyDeletable
+    T: Copyable & Deinitable
 ](imm x: T) -> String where conforms_to(T, Greetable):
     var y = x.copy()
     return y.greet()
@@ -579,9 +573,9 @@ trait Countable:
 struct Widget(
     Copyable,
     Countable,
+    Deinitable,
     Describable,
     Greetable,
-    ImplicitlyDeletable,
     Movable,
 ):
     var name: String
@@ -673,7 +667,7 @@ trait HasBar:
         ...
 
 
-struct FooBar(HasBar, HasFoo, ImplicitlyDeletable):
+struct FooBar(Deinitable, HasBar, HasFoo):
     def __init__(out self):
         pass
 
@@ -693,7 +687,7 @@ def test_per_candidate_self_binding():
     print(use_both(FooBar()))
 
 
-struct Box[T: ImplicitlyDeletable & Movable]:
+struct Box[T: Deinitable & Movable]:
     var item: Self.T
 
     def __init__(out self, var item: Self.T):
@@ -713,9 +707,9 @@ struct Box[T: ImplicitlyDeletable & Movable]:
         return self.item.greet() + " | " + self.item.describe()
 
 
-struct GreetableBox[T: ImplicitlyDeletable & Movable](
+struct GreetableBox[T: Deinitable & Movable](
+    Deinitable,
     Greetable where conforms_to(T, Greetable),
-    ImplicitlyDeletable,
     Movable,
 ):
     var item: Self.T
@@ -876,7 +870,7 @@ def test_register_passable():
     print("refine-rp-assert:", refine_rp_assert_then_pass(RegGreeter()))
 
 
-struct Wrapper[T: ImplicitlyDeletable & Movable]:
+struct Wrapper[T: Deinitable & Movable]:
     comptime Element = Self.T
     var value: Self.T
 
@@ -887,7 +881,7 @@ struct Wrapper[T: ImplicitlyDeletable & Movable]:
         return self.value
 
 
-struct DoubleAliasWrapper[T: ImplicitlyDeletable & Movable]:
+struct DoubleAliasWrapper[T: Deinitable & Movable]:
     comptime Inner = Self.T
     comptime Element = Self.Inner
     var value: Self.T
@@ -899,7 +893,7 @@ struct DoubleAliasWrapper[T: ImplicitlyDeletable & Movable]:
         return self.value
 
 
-struct Pair[A: ImplicitlyDeletable & Movable, B: ImplicitlyDeletable & Movable]:
+struct Pair[A: Deinitable & Movable, B: Deinitable & Movable]:
     comptime First = Self.A
     comptime Second = Self.B
     var first: Self.A
@@ -917,20 +911,20 @@ struct Pair[A: ImplicitlyDeletable & Movable, B: ImplicitlyDeletable & Movable]:
 
 
 def greet_wrapper[
-    T: ImplicitlyDeletable & Movable
+    T: Deinitable & Movable
 ](w: Wrapper[T]) -> String where conforms_to(T, Greetable):
     return w.get().greet()
 
 
 def greet_double_alias[
-    T: ImplicitlyDeletable & Movable
+    T: Deinitable & Movable
 ](w: DoubleAliasWrapper[T]) -> String where conforms_to(T, Greetable):
     return w.get().greet()
 
 
 def greet_first[
-    A: ImplicitlyDeletable & Movable,
-    B: ImplicitlyDeletable & Movable,
+    A: Deinitable & Movable,
+    B: Deinitable & Movable,
 ](p: Pair[A, B]) -> String where conforms_to(A, Greetable):
     return p.get_first().greet()
 
@@ -944,7 +938,7 @@ def test_comptime_aliases():
     print(greet_first(Pair(Cat("Socks"), Dog("Bear"))))
 
 
-trait SimpleIterator(ImplicitlyDeletable, Movable):
+trait SimpleIterator(Deinitable, Movable):
     comptime Element: Movable
 
     def next(mut self) -> Self.Element:
@@ -958,7 +952,7 @@ trait SimpleIterable:
         ...
 
 
-struct DogIter(ImplicitlyDeletable, Movable, SimpleIterator):
+struct DogIter(Deinitable, Movable, SimpleIterator):
     comptime Element = Dog
     var dog: Dog
 
@@ -983,7 +977,7 @@ struct DogContainer(SimpleIterable):
 def any_greetable[
     C: SimpleIterable
 ](container: C) -> String where conforms_to(
-    C.IterType.Element, Greetable & ImplicitlyDeletable & Movable
+    C.IterType.Element, Greetable & Deinitable & Movable
 ):
     var it = container.iter()
     var elem = it.next()
@@ -993,7 +987,7 @@ def any_greetable[
 def greet_and_describe_nested[
     C: SimpleIterable
 ](container: C) -> String where conforms_to(
-    C.IterType.Element, Greetable & ImplicitlyDeletable & Movable
+    C.IterType.Element, Greetable & Deinitable & Movable
 ) and conforms_to(C.IterType.Element, Describable):
     var it = container.iter()
     var elem = it.next()
@@ -1003,7 +997,7 @@ def greet_and_describe_nested[
 def discard_associated_iterator_element[
     C: SimpleIterable
 ](container: C) -> String where conforms_to(
-    C.IterType.Element, ImplicitlyDeletable & Movable
+    C.IterType.Element, Deinitable & Movable
 ):
     var it = container.iter()
     _ = it.next()
@@ -1020,13 +1014,13 @@ def test_associated_type_chains():
 
 
 def call_greet_ptr[
-    T: Copyable & ImplicitlyDeletable, O: Origin
+    T: Copyable & Deinitable, O: Origin
 ](p: Pointer[T, O]) -> String where conforms_to(T, Greetable):
     return p[].greet()
 
 
 def ptr_eq[
-    T: Copyable & ImplicitlyDeletable, O: Origin
+    T: Copyable & Deinitable, O: Origin
 ](p: Pointer[T, O], value: T) -> Bool where conforms_to(T, Equatable):
     return p[] == value
 
@@ -1049,7 +1043,7 @@ def explicit_downcast_ref_to_original_ref[
 
 
 @fieldwise_init
-struct RefinedFieldHolder[T: Copyable & ImplicitlyDeletable]:
+struct RefinedFieldHolder[T: Copyable & Deinitable]:
     var value: Self.T
 
     def use_value(self) -> Bool where conforms_to(Self.T, Equatable):
@@ -1110,28 +1104,28 @@ def local_ref_binding[
 
 
 def local_var_copy[
-    T: Copyable & ImplicitlyDeletable
+    T: Copyable & Deinitable
 ](imm x: T) -> String where conforms_to(T, Greetable):
     var y: T = x.copy()
     return y.greet()
 
 
 def local_var_move[
-    T: Movable & ImplicitlyDeletable
+    T: Movable & Deinitable
 ](var x: T) -> String where conforms_to(T, Greetable):
     var y: T = x^
     return y.greet()
 
 
 def tuple_from_refined_args[
-    T: Copyable & ImplicitlyDeletable
+    T: Copyable & Deinitable
 ](imm a: T, imm b: T) -> String where conforms_to(T, Greetable):
     var t = (a.copy(), b.copy())
     return t[0].greet() + " and " + t[1].greet()
 
 
 def nested_comptime_outer_binding_refinement[
-    T: Copyable & ImplicitlyDeletable
+    T: Copyable & Deinitable
 ](imm x: T) where conforms_to(T, Greetable) and conforms_to(T, Describable):
     var val: T = x.copy()
     print("outer:", val.greet())
@@ -1142,7 +1136,7 @@ def nested_comptime_outer_binding_refinement[
 
 
 def nested_comptime_inner_shadow_refinement[
-    T: Copyable & ImplicitlyDeletable
+    T: Copyable & Deinitable
 ](imm y: T) where conforms_to(T, Greetable) and conforms_to(T, Describable):
     comptime if conforms_to(T, Describable):
         # Inner scope adds Describable on top of the where-clause Greetable.
@@ -1152,7 +1146,7 @@ def nested_comptime_inner_shadow_refinement[
 
 
 def nested_comptime_fallback_refinement[
-    T: Copyable & ImplicitlyDeletable
+    T: Copyable & Deinitable
 ](imm x: T, imm y: T) where conforms_to(T, Greetable):
     var val: T = x.copy()
     print("outer:", val.greet())
@@ -1191,7 +1185,7 @@ def use_refined_dtor[T: AnyType](ref x: T):
     print("use-dtor")
 
 
-struct DestructTracer(Copyable, ImplicitlyDeletable, Movable):
+struct DestructTracer(Copyable, Deinitable, Movable):
     var tag: Int
 
     def __init__(out self, tag: Int):
@@ -1202,7 +1196,7 @@ struct DestructTracer(Copyable, ImplicitlyDeletable, Movable):
         print("deinit-dtor", self.tag)
 
 
-struct MarkedDestructTracer(Copyable, DtorMarker, ImplicitlyDeletable, Movable):
+struct MarkedDestructTracer(Copyable, Deinitable, DtorMarker, Movable):
     var tag: Int
 
     def __init__(out self, tag: Int):
@@ -1213,19 +1207,17 @@ struct MarkedDestructTracer(Copyable, DtorMarker, ImplicitlyDeletable, Movable):
         print("deinit-dtor", self.tag)
 
 
-def destroy_via_where[
-    T: Movable
-](var x: T) where conforms_to(T, ImplicitlyDeletable):
+def destroy_via_where[T: Movable](var x: T) where conforms_to(T, Deinitable):
     use_refined_dtor(x)
 
 
 def destroy_via_comptime_assert[T: Movable](var x: T):
-    comptime assert conforms_to(T, ImplicitlyDeletable)
+    comptime assert conforms_to(T, Deinitable)
     use_refined_dtor(x)
 
 
 def destroy_via_comptime_if[T: Movable](var x: T):
-    comptime if conforms_to(T, ImplicitlyDeletable):
+    comptime if conforms_to(T, Deinitable):
         use_refined_dtor(x)
     else:
         # Keep both branches consuming `x` symmetrically.
@@ -1235,7 +1227,7 @@ def destroy_via_comptime_if[T: Movable](var x: T):
 def destroy_via_chained_refinement[
     T: Movable
 ](var x: T) where conforms_to(T, DtorMarker):
-    comptime assert conforms_to(T, ImplicitlyDeletable)
+    comptime assert conforms_to(T, Deinitable)
     use_refined_dtor(x)
 
 
@@ -1311,7 +1303,7 @@ def downcast_preserves_refinement_ref[
 # `rebind_var` consumes its argument, so copy to keep `x` live and
 # verify its Describable refinement survives across the owning downcast call.
 def downcast_preserves_refinement_var[
-    T: Copyable & ImplicitlyDeletable
+    T: Copyable & Deinitable
 ](var x: T) -> String where conforms_to(T, Describable):
     var before = needs_describable(x)
     var y = rebind_var[downcast[T, Greetable]](x.copy())
@@ -1354,7 +1346,7 @@ def greet_variadic_elements[*Ts: AnyType](*args: *Ts):
 
 
 def copy_variadic_elements_from_all_copyable[
-    *Ts: ImplicitlyDeletable & Movable
+    *Ts: Deinitable & Movable
 ](*args: *Ts) where Ts.all_conforms_to[Copyable]():
     comptime for i in range(args.__len__()):
         # The variadic all_conforms_to() constraint should refine each element.
@@ -1363,7 +1355,7 @@ def copy_variadic_elements_from_all_copyable[
 
 
 def copy_variadic_elements_from_conforms_to_param_list[
-    *Ts: ImplicitlyDeletable & Movable
+    *Ts: Deinitable & Movable
 ](*args: *Ts) where conforms_to(Ts.values, Copyable):
     comptime for i in range(args.__len__()):
         _ = args[i].copy()
@@ -1386,7 +1378,7 @@ def repr_variadic_tuple_in_all_writable_if[
 
 
 def copy_variadic_elements_after_all_copyable_assert[
-    *Ts: ImplicitlyDeletable & Movable
+    *Ts: Deinitable & Movable
 ](*args: *Ts):
     comptime assert Ts.all_conforms_to[Copyable]()
     comptime for i in range(args.__len__()):
@@ -1395,7 +1387,7 @@ def copy_variadic_elements_after_all_copyable_assert[
 
 
 def copy_variadic_elements_in_all_copyable_if[
-    *Ts: ImplicitlyDeletable & Movable
+    *Ts: Deinitable & Movable
 ](*args: *Ts):
     comptime if Ts.all_conforms_to[Copyable]():
         comptime for i in range(args.__len__()):

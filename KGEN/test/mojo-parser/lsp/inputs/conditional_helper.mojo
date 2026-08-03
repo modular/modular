@@ -4,13 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Generic struct with a conditional `ImplicitlyDeletable` conformance, used to
+# Generic struct with a conditional `Deinitable` conformance, used to
 # check that destructor discharge works when this struct is imported and left
 # signature-resolved only.
 
 
 struct ConditionalHelper[T: Movable](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
+    Deinitable where conforms_to(T, Deinitable),
     Movable,
 ):
     var value: Self.T
@@ -18,5 +18,5 @@ struct ConditionalHelper[T: Movable](
     def __init__(out self, var value: Self.T):
         self.value = value^
 
-    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
         pass

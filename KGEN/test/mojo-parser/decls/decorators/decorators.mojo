@@ -240,7 +240,7 @@ struct StructExample(ImplicitlyCopyable, RegisterPassable):
         pass
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable)
+# CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable)
 # CHECK: move :!lit.generator<[2]({{.*}} deinit_mem, ?, {{.*}} byref_result) {{.*}}@ValueMem::@"__init__(move:
 @fieldwise_init
 struct ValueMem(ImplicitlyCopyable):
@@ -286,14 +286,14 @@ struct ValueMem(ImplicitlyCopyable):
 # CHECK-NEXT: lit.ref.store [[TMP]], %[[PB]]
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable)
+# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable)
 @fieldwise_init
 struct ValueMemHasCopy(ImplicitlyCopyable):
     var a: Int
     var b: StructExample
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable)
+# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable)
 @fieldwise_init
 struct ValueMemHasMove(ImplicitlyCopyable, Movable):
     var a: Int
@@ -301,7 +301,7 @@ struct ValueMemHasMove(ImplicitlyCopyable, Movable):
 
 
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
-# CHECK-SAME: (!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable) register_passable_trivial
+# CHECK-SAME: (!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable) register_passable_trivial
 
 # CHECK: lit.fn @"__init__{{.*}}"{{.*}}[{{.*}}](*, %move: !lit.ref<!ValueRegTrivial, {{.*}}> deinit_mem,
 # CHECK-SAME: %self: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result)
@@ -359,7 +359,7 @@ struct ValueReg(ImplicitlyCopyable, RegisterPassable):
 
 
 # COM: Ensure that "self" is a valid field name.
-# CHECK-LABEL: lit.struct.decl @Foo(!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable) attributes
+# CHECK-LABEL: lit.struct.decl @Foo(!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable) attributes
 @fieldwise_init
 struct Foo(ImplicitlyCopyable):
     var a: Int
@@ -378,7 +378,7 @@ struct ParamVarArg[*I: Int](TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @TraitMember
 @fieldwise_init
-struct TraitMember[T: ImplicitlyCopyable & ImplicitlyDeletable](ImplicitlyCopyable):
+struct TraitMember[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable):
     var value: Self.T
     # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %move:
     # CHECK: lit.call{{.*}}__init__(move:$0$)">

@@ -30,7 +30,7 @@ struct X_T_U(ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.struct.decl @C
 #  CHECK-SAME: <X: [[X_TYPE:!.*]], Y: [[Y_TYPE:!.*]]>
-struct C[X: ImplicitlyCopyable & ImplicitlyDeletable, Y: ImplicitlyCopyable & ImplicitlyDeletable](ImplicitlyCopyable):
+struct C[X: ImplicitlyCopyable & Deinitable, Y: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable):
     var x: Self.X
     var y: Self.Y
 
@@ -42,12 +42,12 @@ struct C[X: ImplicitlyCopyable & ImplicitlyDeletable, Y: ImplicitlyCopyable & Im
     # CHECK-NEXT:      kgen.witness "copy{{.*}}"
     # CHECK: kgen.witness "__copy_ctor_is_trivial" : !Bool = sugar_builtin(apply({{.*}})
 
-    # CHECK-LABEL:  kgen.conformance @"{{.*}}::ImplicitlyCopyable" {
-    # CHECK-NEXT:   }
-
-    # CHECK-LABEL:  kgen.conformance @"{{.*}}::ImplicitlyDeletable" {
+    # CHECK-LABEL:  kgen.conformance @"{{.*}}::Deinitable" {
     # CHECK-NEXT:    kgen.witness "__deinit__{{.*}}"
     # CHECK: kgen.witness "__del__is_trivial" : !Bool = sugar_builtin(apply({{.*}})
+
+    # CHECK-LABEL:  kgen.conformance @"{{.*}}::ImplicitlyCopyable" {
+    # CHECK-NEXT:   }
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::Movable" {
     # CHECK-NEXT:    kgen.witness "__init__{{.*}}(*, "move":{{.*}}"
@@ -93,9 +93,9 @@ struct Wrapper(Copyable):
 
 
 # CHECK-LABEL: lit.struct.decl @TrivialFieldGen
-# CHECK: lit.alias.decl __del__is_trivial: !Bool = <#kgen.get_witness<:!AnyType_ImplicitlyDeletable_Movable T, "{{.*}}::ImplicitlyDeletable", "__del__is_trivial">>
-# CHECK: lit.alias.decl __move_ctor_is_trivial: !Bool = <#kgen.get_witness<:!AnyType_ImplicitlyDeletable_Movable T, "{{.*}}::Movable", "__move_ctor_is_trivial">>
-struct TrivialFieldGen[T: Movable & ImplicitlyDeletable](Movable):
+# CHECK: lit.alias.decl __del__is_trivial: !Bool = <#kgen.get_witness<:!AnyType_Deinitable_Movable T, "{{.*}}::Deinitable", "__del__is_trivial">>
+# CHECK: lit.alias.decl __move_ctor_is_trivial: !Bool = <#kgen.get_witness<:!AnyType_Deinitable_Movable T, "{{.*}}::Movable", "__move_ctor_is_trivial">>
+struct TrivialFieldGen[T: Movable & Deinitable](Movable):
     var z: Self.T
     var y: Int
     var q: Self.T
@@ -110,7 +110,7 @@ struct TestTrivialRegisterPassable[T: TrivialRegisterPassable](Copyable):
 
 
 # MOCO-3862: overriding a base trait's defaulted `__init__` while conforming to
-# a builtin `Copyable`/`Movable`/`ImplicitlyDeletable` trait must not crash
+# a builtin `Copyable`/`Movable`/`Deinitable` trait must not crash
 # trivial-special-function synthesis.
 trait DefaultsInit:
     def __init__(out self, x: Int):

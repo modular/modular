@@ -41,7 +41,7 @@ struct S[T: AnyType](
 
 
 @fieldwise_init
-struct NotMovable(ImplicitlyDeletable):
+struct NotMovable(Deinitable):
     var x: Int
 
 

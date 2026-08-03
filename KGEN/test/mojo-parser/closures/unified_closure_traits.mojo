@@ -19,7 +19,7 @@
 # COM: requires recursive matching through both composite attr types.
 # S0-LABEL: lit.fn @"repro_struct_attr()"
 # S0: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}} <:trait<@"def() -> Container[Pair(Int(2), Int(0))]"
-# S0: lit.call @unified_closure_traits::@"struct_callee[::SIMD[::DType(int), ::SIMDLength(1)],def[tag: Int, //]() -> Container[Pair(tag, Int(0))]{1} & ::AnyType & ::ImplicitlyDeletable & ::Movable]($1){(eq $1.tag, $0)}"
+# S0: lit.call @unified_closure_traits::@"struct_callee[::SIMD[::DType(int), ::SIMDLength(1)],def[tag: Int, //]() -> Container[Pair(tag, Int(0))]{1} & ::AnyType & ::Deinitable & ::Movable]($1){(eq $1.tag, $0)}"
 # S0-SAME: <:!Int {:scalar<index> 2}
 
 
@@ -54,7 +54,7 @@ def repro_struct_attr():
 # COM: parameterized by a function reference (exercises symbol recursion).
 # S1-LABEL: lit.fn @"repro_symbol_attr()"
 # S1-DAG: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}} <:trait<@"def() -> Dispatch[identity]"
-# S1-DAG: lit.call @unified_closure_traits::@"symbol_callee[::SIMD[::DType(int), ::SIMDLength(1)],def() -> Dispatch[identity] & ::AnyType & ::ImplicitlyDeletable & ::Movable]($1)"{{.*}}<:!Int {:scalar<index> 1}
+# S1-DAG: lit.call @unified_closure_traits::@"symbol_callee[::SIMD[::DType(int), ::SIMDLength(1)],def() -> Dispatch[identity] & ::AnyType & ::Deinitable & ::Movable]($1)"{{.*}}<:!Int {:scalar<index> 1}
 
 
 struct Dispatch[F: def(Int) thin -> Int](Movable where False):
@@ -172,7 +172,7 @@ struct s4_Foo(Movable where False):
 # S5-DAG:   kgen.witness "U" : {{.*}} = [[S5_INT]]
 
 
-comptime CollectionElement = ImplicitlyDeletable & ImplicitlyCopyable
+comptime CollectionElement = Deinitable & ImplicitlyCopyable
 
 
 def s5_foo(x: Int):
@@ -274,7 +274,7 @@ def s8_call_inner[
 # S9:   kgen.witness "element_types.values`" : param_list<{{.*}}> = [!String, !Int]
 
 
-struct s9_MiniTuple[*element_types: Movable & ImplicitlyDeletable](Movable):
+struct s9_MiniTuple[*element_types: Movable & Deinitable](Movable):
     comptime _mlir_type = __mlir_type[
         `!kgen.struct<:`,
         type_of(Self.element_types.values),

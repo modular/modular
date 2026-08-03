@@ -34,8 +34,8 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=STAR_ARGS_KWARGS_FN_PTR < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S20 < %t.mlir
 # COM: Verify generated trait and struct structure.
-# S0-DAG: [[S0_PARENT:!Int_AnyType_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
-# S0-DAG: [[S0_IMPL_PARENT:!Int_AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
+# S0-DAG: [[S0_PARENT:!Int_AnyType_Deinitable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable>
+# S0-DAG: [[S0_IMPL_PARENT:!Int_AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>
 # S0-DAG: [[S0_INT:!.*]] = !lit.struct<#SIMD <{{.*}}>>
 # S0-DAG: lit.trait.decl @"def(y: Int) -> Int"<?, *"_Self`{{.*}}": [[S0_PARENT]]>([[S0_PARENT]])
 # S0-DAG: lit.fn @"__call__($0,::SIMD[::DType(int), ::SIMDLength(1)])"[mut *"self`"](%{{.*}}: !lit.ref<:{{.*}}, mut *"self`"> read_mem, |, %y: {{.*}}) capturing -> {{.*}} attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
@@ -103,7 +103,7 @@ def make_identical_closure(x: Int):
         return y
 
 # COM: Test that parametric functions in traits are handled correctly
-# S3: [[S3_TRAIT:!None_AnyType_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def[T: s3_MyInterface, b: T, c: Foo[T, b]](a: T) -> None", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
+# S3: [[S3_TRAIT:!None_AnyType_Deinitable_Movable.*]] = !lit.trait<@"def[T: s3_MyInterface, b: T, c: Foo[T, b]](a: T) -> None", @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable>
 # S3: lit.trait.decl @"def[T: s3_MyInterface, b: T, c: Foo[T, b]](a: T) -> None"<?, *"_Self`{{.*}}": [[S3_TRAIT]]>(!{{.*}}) unspecified attributes {{{.*}}} {
 # S3: lit.fn @"__call__{{.*}}"<T: !AnyType_Movable_MyInterface, b: !kgen.param<:!AnyType_Movable_MyInterface T>, c: {{.*}}Foo <:!AnyType_Movable {{.*}}, :!kgen.param<:!AnyType_Movable_MyInterface T> b>>
 # S3-SAME: [mut *"self`", imm *"[[S3_L1:.*]]`"](%0[*""]: !lit.ref<:[[S3_TRAIT]] *"_Self`{{.*}}", mut *"self`"> read_mem, |, %a: !lit.ref<:!AnyType_Movable_MyInterface T, imm *"[[S3_L1]]`"> read_mem) capturing -> !kgen.none
@@ -128,7 +128,7 @@ def s3_make_closure(x: Int, mem: String) -> Int:
     return x
 
 # COM: Test that explicit origins are handled correctly alongside implicit origins.
-# S4: [[S4_TRAIT:!None_AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def[{{.*}}](a: ref[lt] String, b: String) -> None",
+# S4: [[S4_TRAIT:!None_AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable.*]] = !lit.trait<@"def[{{.*}}](a: ref[lt] String, b: String) -> None",
 # S4: lit.struct.decl @"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{[^"]*}}"<impl: {{.*}}, origin_set: origin.set, |>({{.*}}) attributes {definesClosure,{{.*}}synthetic}
 # S4: lit.struct.field field0 : !kgen.param<:[[S4_TRAIT]] impl>
 # S4-NEXT: lit.fn @"__call__{{.*}}"<{{.*}}, lt: !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"lt._mlir_origin`2x">>>[
@@ -145,7 +145,7 @@ def s3_make_closure(x: Int, mem: String) -> Int:
 # S4: kgen.conformance @{{.*}}::Movable" {
 # S4-NEXT: kgen.witness "__init__{{.*}}" : !lit.generator<[2](*, "move": !lit.ref<!lit.struct<[[S4_T]] <:[[S4_TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, ?, "self": !lit.ref<!lit.struct<[[S4_T]] <:[[S4_TRAIT]] impl, :origin.set origin_set>>, mut *[0,1]> byref_result) -> !kgen.none
 # S4-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__init__(move:
-# S4: kgen.conformance @"{{.*}}::ImplicitlyDeletable" {
+# S4: kgen.conformance @"{{.*}}::Deinitable" {
 # S4-NEXT:  kgen.witness "__deinit__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<[[S4_T]] <:[[S4_TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, |) -> !kgen.none
 # S4-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__deinit__{{.*}}"<{{.*}}>
 # S4: kgen.conformance @"{{.*}}::AnyType" {
@@ -170,7 +170,7 @@ def s4_make_closure(x: Int, mem: String) -> Int:
     return x
 
 # COM: Verify that the constructor is assembled correctly
-# S5: [[S5_TRAIT:!None_AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def[T: s5_MyInterface](a: T) -> None", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
+# S5: [[S5_TRAIT:!None_AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable.*]] = !lit.trait<@"def[T: s5_MyInterface](a: T) -> None", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>
 # S5: lit.fn @"__init__($0$)"[mut *"impl`", mut *"self`"](%impl: !lit.ref<:[[S5_TRAIT]] impl, mut *"impl`"> owned_in_mem, |, ?, %self: !lit.ref<!lit.struct<[[S5_T:#.*]] <:[[S5_TRAIT]] impl, :origin.set origin_set>>, mut *"self`"> byref_result)
 # S5-NEXT: [[S5_V0:%.*]] = lit.ref.struct.ger %self[field0] : <!lit.struct<[[S5_T]] <:[[S5_TRAIT]] impl, :origin.set origin_set>>, mut *"self`"> -> :[[S5_TRAIT]] impl
 # S5-NEXT: [[S5_V1:%.*]] = lit.call[!lit.generator<[2](*, "move": !lit.ref<:[[S5_TRAIT]] impl, mut *[0,0]> deinit_mem, ?, "self": !lit.ref<:[[S5_TRAIT]] impl, mut *[0,1]> byref_result) -> !kgen.none>: #kgen.get_witness<:[[S5_TRAIT]] impl, "{{.*}}::Movable", "__init__(move:$0$)">][mut *"impl`", mut *"self`"->field0](%impl, [[S5_V0]])
@@ -213,7 +213,7 @@ def s6_make_closure(x: Int, mem: String):
         return x + y
 
 # COM: Check that the argument is augmented at the definition site.
-# S7-DAG: [[S7_TRAIT:!Int_AnyType_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
+# S7-DAG: [[S7_TRAIT:!Int_AnyType_Deinitable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable>
 
 # S7: lit.fn @"s7_take_closure{{.*}}"<f: [[S7_TRAIT]]>[imm *"myFunc`"](%myFunc: !lit.ref<:[[S7_TRAIT]] f, imm *"myFunc`"> read_mem, %x: !Int1) capturing -> !kgen.none
 # S7-NEXT: %0 = lit.call tail[!lit.generator<[1](!lit.ref<:[[S7_TRAIT]] f, mut *[0,0]> read_mem, |, "y": !Int1) capturing -> !Int1>: #kgen.get_witness<:[[S7_TRAIT]] f, "def(y: Int) -> Int", "__call__{{.*}}">][imm *"myFunc`"](%myFunc, %x)
@@ -228,10 +228,10 @@ def s7_take_closure[f: def(y: Int) -> Int](myFunc: f, x: Int):
     _ = myFunc(x)
 
 # COM: Ensure the transformed parameters are propagated into the underlying closure trait.
-# S8-DAG: [[S8_TRAIT:!Int_AnyType_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
+# S8-DAG: [[S8_TRAIT:!Int_AnyType_Deinitable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable>
 # S8-DAG: [[S8_INT:!Int.*]] = !lit.struct<#SIMD <{{.*}}>>
 # S8-DAG: lit.trait.decl @"def(y: Int) -> Int"
-# S8-DAG: lit.fn *"nested[def(y: Int) -> Int & ::AnyType & ::ImplicitlyDeletable & ::Movable]($0,::SIMD[::DType(int), ::SIMDLength(1)])"<closure2: [[S8_TRAIT]]>
+# S8-DAG: lit.fn *"nested[def(y: Int) -> Int & ::AnyType & ::Deinitable & ::Movable]($0,::SIMD[::DType(int), ::SIMDLength(1)])"<closure2: [[S8_TRAIT]]>
 
 
 
@@ -245,10 +245,10 @@ def s8_take_closure[closure1: def(y: Int) -> Int](x: Int):
 
 # COM: ensure many closure parameters are handled.
 # S9: lit.fn @"take_closures{{.*}})"
-# S9-SAME: <closure1: !Int_AnyType_ImplicitlyDeletable_Movable{{.*}}, T: !Int1, closure2: !Int_AnyType_ImplicitlyDeletable_Movable{{.*}}, U: !Int1>
+# S9-SAME: <closure1: !Int_AnyType_Deinitable_Movable{{.*}}, T: !Int1, closure2: !Int_AnyType_Deinitable_Movable{{.*}}, U: !Int1>
 # S9-SAME: [imm *"[[S9_L0:.*]]`", imm *"[[S9_L1:.*]]`1"]
-# S9-SAME: (%impl1: !lit.ref<:!Int_AnyType_ImplicitlyDeletable_Movable{{.*}} closure1, imm *"[[S9_L0]]`"> read_mem
-# S9-SAME: , %impl2: !lit.ref<:!Int_AnyType_ImplicitlyDeletable_Movable{{.*}} closure2, imm *"[[S9_L1]]`1"> read_mem, %x: !Int1) capturing -> !kgen.none
+# S9-SAME: (%impl1: !lit.ref<:!Int_AnyType_Deinitable_Movable{{.*}} closure1, imm *"[[S9_L0]]`"> read_mem
+# S9-SAME: , %impl2: !lit.ref<:!Int_AnyType_Deinitable_Movable{{.*}} closure2, imm *"[[S9_L1]]`1"> read_mem, %x: !Int1) capturing -> !kgen.none
 
 
 
@@ -263,10 +263,10 @@ def take_closures[
     pass
 
 # COM: Unified Closure Parameters compose
-# S10-DAG: [[S10_INNER:!Int_AnyType_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(z: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
+# S10-DAG: [[S10_INNER:!Int_AnyType_Deinitable_Movable.*]] = !lit.trait<@"def(z: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable>
 # S10-DAG: lit.fn @"__call__[def(z: Int) -> Int{{.*}}"<y: [[S10_INNER]]>
-# S10-DAG: lit.fn @"nested[def[y: def(z: Int) -> Int](impl: y, u: Int) -> Int & ::AnyType & ::ImplicitlyDeletable & ::Movable]($0,::SIMD[::DType(int), ::SIMDLength(1)])"
-# S10-DAG: %impl: !lit.ref<:!Int_AnyType_ImplicitlyDeletable_Movable{{.*}} x, imm *{{.*}} read_mem
+# S10-DAG: lit.fn @"nested[def[y: def(z: Int) -> Int](impl: y, u: Int) -> Int & ::AnyType & ::Deinitable & ::Movable]($0,::SIMD[::DType(int), ::SIMDLength(1)])"
+# S10-DAG: %impl: !lit.ref<:!Int_AnyType_Deinitable_Movable{{.*}} x, imm *{{.*}} read_mem
 # S10-DAG: %do_not_dce_int: !Int1) capturing -> !kgen.none attributes {{.*}}sourceName = "nested"
 
 
@@ -280,10 +280,10 @@ def nested[
     pass
 
 # COM: Check that the closure storage struct is generated correctly.
-# S11-DAG: [[S11_TRAIT:!Int_AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(z: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
+# S11-DAG: [[S11_TRAIT:!Int_AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable.*]] = !lit.trait<@"def(z: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>
 # S11-DAG: lit.struct.decl @"s11_bindIt(::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::String)::myclosure::__storage"
 # S11-DAG: kgen.conformance @"{{.*}}::AnyType" {
-# S11-DAG: kgen.conformance @"{{.*}}::ImplicitlyDeletable" {
+# S11-DAG: kgen.conformance @"{{.*}}::Deinitable" {
 # S11-DAG: kgen.witness "__deinit__{{.*}}"
 # S11-DAG: kgen.conformance @"{{.*}}::Movable" {
 # S11-DAG: kgen.witness "__init__(move:$0$)"
@@ -445,7 +445,7 @@ def s17_bindIt(z: Int, mem: String):
 
 # COM: Ensure that structs can conform to the closure trait
 
-# S18-DAG: lit.struct.decl @custom(!Int_AnyType_ImplicitlyDeletable_Movable{{.*}})
+# S18-DAG: lit.struct.decl @custom(!Int_AnyType_Deinitable_Movable{{.*}})
 
 
 
@@ -455,8 +455,8 @@ struct custom(def(x: Int) -> Int):
         return x
 
 # COM: The wrapper conforms to copyable
-# S19-DAG: !lit.trait<@"def(x: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
-# S19-DAG: lit.struct.decl @"def(x: Int) -> Int_{{.*}}"<impl: !Int_AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable{{.*}}, origin_set: origin.set, |>
+# S19-DAG: !lit.trait<@"def(x: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>
+# S19-DAG: lit.struct.decl @"def(x: Int) -> Int_{{.*}}"<impl: !Int_AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable{{.*}}, origin_set: origin.set, |>
 
 
 
@@ -666,11 +666,11 @@ def star_args_kwargs_fn_ptr_useFnWrapper() -> Int:
 
 
 # COM: Ensure index replacement is asserted on name not attribute identity since replacement operates over uncanonical form
-# S20-DAG: lit.trait.decl @"def[X: Copyable & ImplicitlyDeletable, //](y: X) -> None{{.*}}"
+# S20-DAG: lit.trait.decl @"def[X: Copyable & Deinitable, //](y: X) -> None{{.*}}"
 
 
 # COM: S20_Bound has sugared type
-comptime S20_Bound = Copyable & ImplicitlyDeletable
+comptime S20_Bound = Copyable & Deinitable
 
 
 def s20_apply[X: S20_Bound, //, F: def(X)](f: F):

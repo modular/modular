@@ -15,9 +15,9 @@ from std.utils import Variant
 
 # A wrapper struct with conditional Copyable conformance.
 # ConditionalCopyableWrapper[T] is Copyable if and only if T is Copyable.
-struct ConditionalCopyableWrapper[T: ImplicitlyDeletable & Movable](
+struct ConditionalCopyableWrapper[T: Deinitable & Movable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDeletable,
+    Deinitable,
     Movable,
 ):
     var value: Self.T
@@ -40,7 +40,7 @@ def needs_copyable[T: Copyable](x: T):
 
 
 # A movable-only type (not Copyable)
-struct MovableOnlyType(ImplicitlyDeletable, Movable):
+struct MovableOnlyType(Deinitable, Movable):
     var x: Int
 
     def __init__(out self, x: Int):
@@ -123,7 +123,7 @@ def use_printable_closure[
 
 # CHECK: argument type 'ConditionalCopyableWrapper[T]' does not conform to trait 'Copyable'
 def unsound_generic_call[
-    T: ImplicitlyDeletable & Movable
+    T: Deinitable & Movable
 ](x: ConditionalCopyableWrapper[T]):
     needs_copyable(x)
 
@@ -149,7 +149,7 @@ def unsound_variadic_call[*types: Movable](t: Tuple[*types]):
 
 # CHECK: argument type 'ConditionalCopyableWrapper[T]' does not conform to trait 'Copyable'
 def wrong_where_clause[
-    T: ImplicitlyDeletable & Movable
+    T: Deinitable & Movable
 ](x: ConditionalCopyableWrapper[T]) where conforms_to(T, Intable):
     needs_copyable(x)
 
@@ -163,9 +163,9 @@ def wrong_where_clause[
 
 
 @fieldwise_init
-struct AliasWrapper[T: ImplicitlyDeletable & Movable](
+struct AliasWrapper[T: Deinitable & Movable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDeletable,
+    Deinitable,
     Movable,
 ):
     comptime Inner = ConditionalCopyableWrapper[Self.T]
@@ -186,8 +186,8 @@ def alias_needs_copyable():
 # RegisterPassable) to a function requiring RegisterPassable must be rejected.
 
 
-struct ConditionalRPWrapper[T: ImplicitlyDeletable & Movable](
-    ImplicitlyDeletable,
+struct ConditionalRPWrapper[T: Deinitable & Movable](
+    Deinitable,
     Movable,
     RegisterPassable where conforms_to(T, RegisterPassable),
 ):
@@ -241,16 +241,16 @@ def main():
 @fieldwise_init
 struct NegativeVariadicCopyField[*Ts: Movable](
     Copyable where Ts.all_conforms_to[Copyable](),
-    ImplicitlyDeletable,
+    Deinitable,
     Movable,
 ):
     var tag: Int
 
 
 # CHECK: cannot synthesize copy constructor because field 'field' has non-copyable type
-struct UnsatisfiedVariadicCopySynthesis[T: ImplicitlyDeletable & Movable](
+struct UnsatisfiedVariadicCopySynthesis[T: Deinitable & Movable](
     Copyable,
-    ImplicitlyDeletable,
+    Deinitable,
     Movable,
 ):
     var field: NegativeVariadicCopyField[Int, Self.T]
@@ -258,15 +258,15 @@ struct UnsatisfiedVariadicCopySynthesis[T: ImplicitlyDeletable & Movable](
 
 @fieldwise_init
 struct NegativeVariadicMoveField[*Ts: AnyType](
-    ImplicitlyDeletable,
+    Deinitable,
     Movable where Ts.all_conforms_to[Movable](),
 ):
     var tag: Int
 
 
 # CHECK: cannot synthesize move constructor because field 'field' has non-movable and non-implicitly-copyable type
-struct UnsatisfiedVariadicMoveSynthesis[T: ImplicitlyDeletable](
-    ImplicitlyDeletable,
+struct UnsatisfiedVariadicMoveSynthesis[T: Deinitable](
+    Deinitable,
     Movable,
 ):
     var field: NegativeVariadicMoveField[Int, Self.T]

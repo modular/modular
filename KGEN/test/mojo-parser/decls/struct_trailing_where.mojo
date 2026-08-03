@@ -29,8 +29,8 @@ struct SingleLineTrailingWhere[T: Base] (Movable where False) where conforms_to(
 # CHECK-LABEL: lit.struct.decl @TrailingWhereWithParent
 # CHECK-SAME: <T: !AnyType_Base, {{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra))
 # The `Movable where False` opt-out is erased from the canonical trait, leaving
-# the injected `AnyType`/`ImplicitlyDeletable` plus the unconditional `Marker`.
-# CHECK-SAME: (!AnyType_ImplicitlyDeletable_Marker)
+# the injected `AnyType`/`Deinitable` plus the unconditional `Marker`.
+# CHECK-SAME: (!AnyType_Deinitable_Marker)
 @fieldwise_init
 struct TrailingWhereWithParent[T: Base](Marker, Movable where False) where conforms_to(T, Extra):
     pass
@@ -39,7 +39,7 @@ struct TrailingWhereWithParent[T: Base](Marker, Movable where False) where confo
 # CHECK-LABEL: lit.struct.decl @MultilineParentTrailingWhere
 # CHECK-SAME: <T: !AnyType_Base, {{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra))
 # Same trait set as @TrailingWhereWithParent above, so it shares that alias.
-# CHECK-SAME: (!AnyType_ImplicitlyDeletable_Marker)
+# CHECK-SAME: (!AnyType_Deinitable_Marker)
 @fieldwise_init
 struct MultilineParentTrailingWhere[T: Base](Marker, Movable where False) where conforms_to(
     T, Extra
@@ -58,7 +58,7 @@ struct MultipleTrailingWhereClauses[T: Base] (Movable where False) where conform
 
 
 struct ConditionallyDeletableWrapper[T: AnyType](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable), Movable where False,
+    Deinitable where conforms_to(T, Deinitable), Movable where False,
 ):
     var value: Self.T
 
@@ -69,7 +69,7 @@ struct ConditionallyDeletableWrapper[T: AnyType](
 # CHECK: lit.struct.field value : !lit.struct<#ConditionallyDeletableWrapper
 # CHECK-SAME: <:!AnyType T>>
 struct TrailingWhereDeletableField[T: AnyType](Movable where False)
-    where conforms_to(T, ImplicitlyDeletable):
+    where conforms_to(T, Deinitable):
     var value: ConditionallyDeletableWrapper[Self.T]
 
 
@@ -78,17 +78,17 @@ struct TrailingWhereDeletableField[T: AnyType](Movable where False)
 # field's conditional conformance -- mirroring the dtor case above, but
 # exercising StructEmitter::synthesizeFieldwiseInit's field-movability check
 # instead of synthesizeEmptyDtor's.
-struct ConditionallyMovableWrapper[T: ImplicitlyDeletable](
+struct ConditionallyMovableWrapper[T: Deinitable](
     Movable where conforms_to(T, Movable),
 ):
     var value: Self.T
 
 
 # CHECK-LABEL: lit.struct.decl @TrailingWhereMovableField
-# CHECK-SAME: <T: !AnyType_ImplicitlyDeletable
+# CHECK-SAME: <T: !AnyType_Deinitable
 # CHECK: lit.struct.field value : !lit.struct<#ConditionallyMovableWrapper
-# CHECK-SAME: <:!AnyType_ImplicitlyDeletable T>>
-struct TrailingWhereMovableField[T: ImplicitlyDeletable](
+# CHECK-SAME: <:!AnyType_Deinitable T>>
+struct TrailingWhereMovableField[T: Deinitable](
     Movable where conforms_to(T, Movable)
 ):
     var value: ConditionallyMovableWrapper[Self.T]

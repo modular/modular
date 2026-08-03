@@ -601,7 +601,7 @@ def test_unused_var(mut mut_arg: Int):
 
 @explicit_destroy("Use `consume() method` to finalize")
 @fieldwise_init
-struct LinearType(ImplicitlyDeletable where False, Movable where False):
+struct LinearType(Deinitable where False, Movable where False):
     def consume(deinit self):
         pass
 
@@ -637,7 +637,7 @@ def test_linear_no_return_complex_lifetime(
 
 
 # Hard case for conditional lifetime analysis on abort.  This should compile.
-struct ReducedVariant(ImplicitlyDeletable where False, Movable where False):
+struct ReducedVariant(Deinitable where False, Movable where False):
     var _storage: ReducedStorage
 
     def take[T: Movable](deinit self, cond: Bool) -> T:
@@ -646,14 +646,14 @@ struct ReducedVariant(ImplicitlyDeletable where False, Movable where False):
         return self._storage^.take[T]()
 
 
-struct ReducedStorage(ImplicitlyDeletable where False, Movable where False):
+struct ReducedStorage(Deinitable where False, Movable where False):
     def take[U: Movable](deinit self) -> U:
         abort()
 
 
 @explicit_destroy("This needs explicit destruction when T isn't linear")
 struct ConditionallyLinearType[T: AnyType](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable), Movable where False
+    Deinitable where conforms_to(T, Deinitable), Movable where False
 ):
     # var data: Self.T
 
@@ -663,7 +663,7 @@ struct ConditionallyLinearType[T: AnyType](
     def use(self):
         pass
 
-    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
         pass  # self.data^.__deinit__()
 
 
@@ -681,7 +681,7 @@ def testConditionallyLinearType():
 # ===----------------------------------------------------------------------=== #
 
 
-struct Pair[T: Movable & ImplicitlyDeletable](Movable):
+struct Pair[T: Movable & Deinitable](Movable):
     var first: Self.T
     var second: Self.T
 

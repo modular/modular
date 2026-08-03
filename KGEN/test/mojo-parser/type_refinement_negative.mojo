@@ -155,7 +155,7 @@ def needs_copyable_trait[T: Copyable](x: T):
 
 
 def test_variadic_refinement_does_not_leak_past_branch[
-    *Ts: ImplicitlyDeletable & Movable
+    *Ts: Deinitable & Movable
 ](*args: *Ts):
     comptime if AllCopyableAttr[*Ts]:
         needs_copyable_trait(args[0])

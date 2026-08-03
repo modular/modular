@@ -9,7 +9,7 @@ from std.sys import argv
 from std.memory.pointer import AddressSpace
 
 
-trait Config(ImplicitlyDeletable):
+trait Config(Deinitable):
     comptime R: AnyType
 
     @staticmethod
@@ -117,14 +117,14 @@ struct Polar[y: Int](Coordinate, ImplicitlyCopyable):
 
 
 def useDefinesCapturingParamClosure[
-    X: Coordinate & ImplicitlyCopyable & ImplicitlyDeletable, C: def() -> X
+    X: Coordinate & ImplicitlyCopyable & Deinitable, C: def() -> X
 ](impl: C):
     var coordinate = impl()
     coordinate.prettyPrint()
 
 
 def definesCapturingParamClosure[
-    X: Coordinate & ImplicitlyCopyable & ImplicitlyDeletable
+    X: Coordinate & ImplicitlyCopyable & Deinitable
 ](something: X, one: Int) raises:
     def closureImpl() {var} -> X:
         return something
@@ -140,7 +140,7 @@ def definesCapturingParamClosure[
 
 
 def usesParamRefClosure[
-    T: Coordinate & ImplicitlyCopyable & ImplicitlyDeletable,
+    T: Coordinate & ImplicitlyCopyable & Deinitable,
     C: def[x: Int, Y: Coordinate](xx: T, unused: Y) -> Polar[x],
 ](impl: C, value: T):
     var result = impl[3, Cartesian](value, Cartesian(3, 3))
@@ -148,7 +148,7 @@ def usesParamRefClosure[
 
 
 def definesParamRefClosure[
-    T: Coordinate & ImplicitlyCopyable & ImplicitlyDeletable
+    T: Coordinate & ImplicitlyCopyable & Deinitable
 ](value: T):
     def closureImpl[x: Int, Y: Coordinate](xx: T, unused: Y) {var} -> Polar[x]:
         _ = value
@@ -214,7 +214,7 @@ def demo_origin_closure[
 
 
 def sinkClosureResult[
-    T: ImplicitlyCopyable & ImplicitlyDeletable, F: def() -> T
+    T: ImplicitlyCopyable & Deinitable, F: def() -> T
 ](*, call: F) -> T:
     return call()
 
@@ -223,14 +223,14 @@ def sinkClosureResult[
 # COM: to the enclosing scope's `T` through the captured-parameter `where`
 # COM: clause `eq(G.T, T)`.
 def forwardClosureResult[
-    T: ImplicitlyCopyable & ImplicitlyDeletable, //, G: def() -> T
+    T: ImplicitlyCopyable & Deinitable, //, G: def() -> T
 ](*, call: G) -> T:
     return sinkClosureResult(call=call)
 
 
 # COM: Same forward, but the result is declared with the witness spelling `G.T`.
 def forwardClosureResultWitness[
-    T: ImplicitlyCopyable & ImplicitlyDeletable, //, G: def() -> T
+    T: ImplicitlyCopyable & Deinitable, //, G: def() -> T
 ](*, call: G) -> G.T:
     return sinkClosureResult(call=call)
 
@@ -250,8 +250,8 @@ def addsViaForwardedClosureWitness(x: Int, y: Int) -> Int:
 
 
 @fieldwise_init
-struct Boxed[T: ImplicitlyCopyable & ImplicitlyDeletable](
-    ImplicitlyCopyable, ImplicitlyDeletable
+struct Boxed[T: ImplicitlyCopyable & Deinitable](
+    Deinitable, ImplicitlyCopyable
 ):
     var value: Self.T
 
@@ -259,7 +259,7 @@ struct Boxed[T: ImplicitlyCopyable & ImplicitlyDeletable](
 # COM: Sink whose signature carries the nesting: the leaf `T` binds directly,
 # COM: so no lazy conformance (binding `T := Boxed[T]`) is required.
 def sinkBoxedResult[
-    T: ImplicitlyCopyable & ImplicitlyDeletable, F: def() -> Boxed[T]
+    T: ImplicitlyCopyable & Deinitable, F: def() -> Boxed[T]
 ](*, call: F) -> Boxed[T]:
     return call()
 
@@ -269,7 +269,7 @@ def sinkBoxedResult[
 # COM: the forwarded call comes back spelled `Boxed[G.T]`; the call-site rebind
 # COM: externs the capture structurally back to `Boxed[T]`.
 def forwardBoxedResult[
-    T: ImplicitlyCopyable & ImplicitlyDeletable, //, G: def() -> Boxed[T]
+    T: ImplicitlyCopyable & Deinitable, //, G: def() -> Boxed[T]
 ](*, call: G) -> Boxed[T]:
     return sinkBoxedResult(call=call)
 

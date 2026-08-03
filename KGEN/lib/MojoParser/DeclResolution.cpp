@@ -3036,7 +3036,7 @@ static LogicalResult resolvePropagatedConstraints(
 ///
 /// `compilerInjectedTraits` contains canonical symbols for traits that the
 /// compiler injects into every struct's parent list when the stdlib is
-/// available (e.g., `AnyType`, `ImplicitlyDeletable`). These are treated
+/// available (e.g., `AnyType`, `Deinitable`). These are treated
 /// as unconditionally available and never require explicit listing. The set
 /// may be empty when builtins are disabled (`--mojo-disable-builtins`).
 ///
@@ -3527,7 +3527,7 @@ getConformanceCondition(ASTDecl &structDecl, StringRef traitName) {
 
 /// Emits the diagnostic for a bare `@explicit_destroy` decorator, which now
 /// requires a string message argument, with a note nudging users toward the
-/// `ImplicitlyDeletable where ...` replacement. The caller marks the decl
+/// `Deinitable where ...` replacement. The caller marks the decl
 /// erroneous and returns failure. Shared by `struct` and `trait` resolution.
 static void emitExplicitDestroyRequiresArgError(SharedState &shared,
                                                 SMLoc decoratorLoc,
@@ -3536,7 +3536,7 @@ static void emitExplicitDestroyRequiresArgError(SharedState &shared,
               << "@explicit_destroy requires an argument: "
                  "`@explicit_destroy(\"...\")`";
   diag.attachNote(decl)
-      << "Use `ImplicitlyDeletable where False` conformance to opt out of "
+      << "Use `Deinitable where False` conformance to opt out of "
          "implicit deletion. `@explicit_destroy` is no longer required.";
 }
 
@@ -3641,7 +3641,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // so the trait names are stated only once here.
   ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait("AnyType", decl.getLoc());
   ASTDecl *implicitDelDecl =
-      shared.lookupBuiltinTrait("ImplicitlyDeletable", decl.getLoc());
+      shared.lookupBuiltinTrait("Deinitable", decl.getLoc());
   ASTDecl *movableDecl = shared.lookupBuiltinTrait("Movable", decl.getLoc());
 
   DenseSet<SymbolRefAttr> compilerInjectedTraits;
@@ -3676,7 +3676,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   if (anyTypeDecl)
     parentTraits.push_back(anyTypeDecl->getSymbolRef());
 
-  // Make every nominal struct type inherit from `ImplicitlyDeletable` and
+  // Make every nominal struct type inherit from `Deinitable` and
   // `Movable`. May be overridden / narrowed by explicit conditional `where`
   // conformance.
   if (implicitDelDecl)
@@ -3685,7 +3685,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Temporary opt-in migration aid:  Warn on structs that don't explicitly
   // mention `Movable`, with a fix-it that makes it explicit via `Movable where
   // False`. Only fires for structs in the main file. Also requires builtins to
-  // be in scope (matching how the AnyType/ImplicitlyDeletable/Movable injection
+  // be in scope (matching how the AnyType/Deinitable/Movable injection
   // above guards on `anyTypeDecl`/`implicitDelDecl`/`movableDecl`): with
   // builtins disabled there is no `Movable` to conform to or opt out of, and
   // inserting a reference to it would just produce an unresolvable identifier.
@@ -3778,17 +3778,17 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Always generate SourceName for structs (even on non-debug builds).
   structOp.setSourceNameAttr(shared.getSourceName(structOp));
 
-  if (std::optional<ConstraintAttr> implicitlyDeletableConstraint =
-          getConformanceCondition(decl, "ImplicitlyDeletable")) {
-    if (isTriviallyTrueConstraint(*implicitlyDeletableConstraint)) {
-      // Unconditional ImplicitlyDeletable cannot be combined with
+  if (std::optional<ConstraintAttr> deinitableConstraint =
+          getConformanceCondition(decl, "Deinitable")) {
+    if (isTriviallyTrueConstraint(*deinitableConstraint)) {
+      // Unconditional Deinitable cannot be combined with
       // @explicit_destroy.
       if (linearTypeErrorMsg) {
         auto diag = shared.emitError(std::get<1>(*linearTypeErrorMsg))
                     << "@explicit_destroy is not valid on `struct` with "
-                       "unconditional conformance to `ImplicitlyDeletable`";
+                       "unconditional conformance to `Deinitable`";
         diag.attachNote(decl.getLoc())
-            << "Add `ImplicitlyDeletable where False` conformance or "
+            << "Add `Deinitable where False` conformance or "
                "remove `@explicit_destroy`";
         decl.setErroneous();
         return failure();
@@ -3796,15 +3796,15 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     } else if (!structOp.getLinearTypeErrorMsg().has_value()) {
       structOp.setLinearTypeErrorMsg(
           "type '" + structOp.getDeclName().str() +
-          "' does not conditionally conform to 'ImplicitlyDeletable' "
+          "' does not conditionally conform to 'Deinitable' "
           "for these parameters");
     }
   } else if (!structOp.getLinearTypeErrorMsg().has_value()) {
-    // Never ImplicitlyDeletable: the struct is linear.
+    // Never Deinitable: the struct is linear.
     // Synthesize a default message since the user didn't provide one.
     structOp.setLinearTypeErrorMsg(
         "type '" + structOp.getDeclName().str() +
-        "' is not implicitly deletable and must be explicitly "
+        "' does not conform to 'Deinitable' and must be explicitly "
         "destroyed");
   }
 
@@ -4116,18 +4116,18 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     }
   }
 
-  // Determine if there is an explicit conformance to ImplicitlyDeletable.
-  if (std::optional<ConstraintAttr> implicitlyDeletableConstraint =
-          getConformanceCondition(structDecl, "ImplicitlyDeletable")) {
+  // Determine if there is an explicit conformance to Deinitable.
+  if (std::optional<ConstraintAttr> deinitableConstraint =
+          getConformanceCondition(structDecl, "Deinitable")) {
     // Synthesize an empty __deinit__ when the type conforms to
-    // ImplicitlyDeletable
+    // Deinitable
     // ([mojo-lang] Accept '__deinit__' as the canonical destructor spelling)
-    // ImplicitlyDeletable but has no explicit destructor.
+    // Deinitable but has no explicit destructor.
     if (!shared.typeHasMember(structDecl, "__deinit__", structDecl.getLoc()))
       (void)StructEmitter(structDecl)
-          .synthesizeEmptyDtor(*implicitlyDeletableConstraint);
+          .synthesizeEmptyDtor(*deinitableConstraint);
 
-    // If the structure conforms to "ImplicitlyDeletable", we populate the
+    // If the structure conforms to "Deinitable", we populate the
     // trivial flag.
     synthesizeTrivialFlagIfNeeded("__del__");
   }
@@ -4567,11 +4567,11 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   if (conformsToTrait("TrivialRegisterPassable"))
     traitOp.setConvention(TypeConvention::RegisterPassableTrivial);
 
-  // Check if the trait conforms to ImplicitlyDeletable by checking the
+  // Check if the trait conforms to Deinitable by checking the
   // parent traits list. We can't use doesNominalTypeConformTo or
   // lookupBuiltinTrait here because they would trigger signature resolution
   // and cause a cycle when resolving base traits like AnyType.
-  bool conformsToImplicitlyDeletable = conformsToTrait("ImplicitlyDeletable");
+  bool conformsToDeinitable = conformsToTrait("Deinitable");
 
   // Parse @explicit_destroy decorator if present. It requires a string message
   // argument; the bare and empty-argument forms are errors, mirroring the
@@ -4598,15 +4598,15 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   }
 
   // Validate @explicit_destroy usage and set error message for linear traits.
-  if (conformsToImplicitlyDeletable) {
+  if (conformsToDeinitable) {
     if (linearTypeErrorMsg) {
       shared.emitError(decl.getLoc(),
                        "@explicit_destroy cannot be used on a trait that "
-                       "conforms to ImplicitlyDeletable");
+                       "conforms to Deinitable");
       return failure();
     }
   } else {
-    // Trait does not conform to ImplicitlyDeletable, so it is a linear type.
+    // Trait does not conform to Deinitable, so it is a linear type.
     // Set a default error message if @explicit_destroy wasn't used.
     if (!linearTypeErrorMsg) {
       linearTypeErrorMsg = "unhandled explicitly destroyed type '" +
