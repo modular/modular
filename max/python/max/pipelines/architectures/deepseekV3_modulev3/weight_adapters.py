@@ -165,7 +165,15 @@ def _convert_fp8_state_dict(
 
         if max_name.endswith(".k_scale") or max_name.endswith(".v_scale"):
             continue
-        out[max_name] = value.data()
+        data = value.data()
+        # DeepSeek-V3.1-Terminus stores norm gammas (``model.norm.weight``,
+        # the MLA ``kv_a_layernorm.weight``) in float32; the module declares
+        # them bf16 and the ModuleV3 loader validates dtypes strictly. Match
+        # the checkpoint name: the MLA remap strips ``.weight`` from the
+        # emitted name.
+        if data.dtype == DType.float32 and name.endswith("norm.weight"):
+            data = data.astype(DType.bfloat16)
+        out[max_name] = data
     return out
 
 
