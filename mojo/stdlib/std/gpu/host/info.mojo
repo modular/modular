@@ -2166,6 +2166,10 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     # NVIDIA: "nvidia:sm_90a" -> "sm_90a", "nvidia:sm90" -> "sm_90", "nvidia:80" -> "sm_80", "sm80" -> "sm_80"
     # AMD: "mi300x" -> "gfx942", "mi355x" -> "gfx950", "amdgpu:gfx942" -> "gfx942", "amd:gfx942" -> "gfx942"
     # Apple: "metal:4" -> "apple-m4"
+    #
+    # Every rule below must leave each `_all_targets` entry unchanged: these are
+    # substring replacements, so a pattern that is a prefix of an already
+    # canonical name corrupts it.
     comptime target_arch = (
         target_arch0
         # NVIDIA normalization
@@ -2179,7 +2183,6 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         .replace("mi250x", "gfx90a")
         .replace("mi300x", "gfx942")
         .replace("mi355x", "gfx950")
-        .replace("gfx90", "gfx90a")
         .replace("amdgpu:", "")
         .replace("amd:", "")
         # Apple normalization, general "metal:" → "apple-m" replacement.
