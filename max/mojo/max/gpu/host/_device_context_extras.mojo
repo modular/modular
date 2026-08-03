@@ -18,7 +18,7 @@ from std.reflection import get_linkage_name, call_location, SourceLocation
 from std.sys.compile import DebugLevel, OptimizationLevel
 from std.sys import size_of
 
-from std.gpu.host.compile import _compile_code, get_gpu_target
+from max.gpu.host.compile import _compile_code, get_gpu_target
 
 from . import (
     Dim,
@@ -335,7 +335,7 @@ __extension DeviceContext:
         without compiling it first:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         def kernel():
             print("hello from the GPU")
@@ -350,7 +350,7 @@ __extension DeviceContext:
         first to remove the overhead:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         def kernel():
             print("hello from the GPU")
@@ -446,7 +446,7 @@ __extension DeviceContext:
             location: Source location for the function call.
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         def kernel(x: Int):
             print("Value:", x)

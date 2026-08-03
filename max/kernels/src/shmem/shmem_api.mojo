@@ -35,8 +35,8 @@ from max.gpu.host import (
     DeviceFunction,
     DeviceStream,
 )
-from std.gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
-from std.gpu.host._amdgpu_hip import HIP, HIP_MODULE
+from max.gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
+from max.gpu.host._amdgpu_hip import HIP, HIP_MODULE
 
 from ._rocshmem import (
     rocshmem_my_pe,

@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the gpu host package."""
 
-from std.gpu.host import (
-    get_gpu_target,
-    ConstantMemoryMapping,
-    DeviceAttribute,
+from std.gpu.host import Dim, LaunchAttribute, get_gpu_target
+
+from .constant_memory_mapping import ConstantMemoryMapping
+from .device_attribute import DeviceAttribute
+from .device_context import (
     CompletionFlag,
     DeviceBuffer,
     DeviceContext,
@@ -27,12 +28,8 @@ from std.gpu.host import (
     DevicePointer,
     DeviceStream,
     HostBuffer,
-    Dim,
-    Attribute,
-    FuncAttribute,
-    LaunchAttribute,
 )
-
+from .func_attribute import Attribute, FuncAttribute
 from .device_graph import (
     DeviceGraph,
     DeviceGraphBuilder,

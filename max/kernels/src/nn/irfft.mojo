@@ -30,7 +30,7 @@ from _cufft.types import Type
 from _cufft.utils import check_error
 from std.complex import ComplexFloat32
 from max.gpu.host import DeviceContext
-from std.gpu.host._nvidia_cuda import CUDA
+from max.gpu.host._nvidia_cuda import CUDA
 from layout import TileTensor, coord_to_index_list
 
 

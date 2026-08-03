@@ -1262,6 +1262,7 @@ This version is still a work in progress.
   - `std.benchmark.Bencher.iter_custom(DeviceContext)` ->
     `max.benchmark.bencher_iter_custom`
   - `std.gpu.compute` -> `max.gpu.compute`
+  - `std.gpu.host` -> `max.gpu.host`
 
 - `AddressSpace` is now target-extensible rather than a fixed, portable enum.
   The built-in GPU spaces (`GENERIC`, `GLOBAL`, `SHARED`, `CONSTANT`, `LOCAL`,

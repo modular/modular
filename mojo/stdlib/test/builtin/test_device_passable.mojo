@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.gpu.host.device_context import DefaultDeviceTypeEncoder
 from std.testing import assert_equal, TestSuite
 from std.utils import StaticTuple
 from std.utils.coord import ComptimeInt, Coord, Idx
+
+from max.gpu.host.device_context import DefaultDeviceTypeEncoder
 
 
 # A DevicePassable type whose `_to_device_type` scales the encoded value, so a

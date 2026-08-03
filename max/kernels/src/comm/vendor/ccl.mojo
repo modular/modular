@@ -31,8 +31,8 @@ from layout import TensorLayout, TileTensor
 from std.memory.unsafe_pointer import unsafe_cast
 from std.memory.alloc import Layout as AllocLayout
 from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
-from std.gpu.host._amdgpu_hip import HIP
-from std.gpu.host._nvidia_cuda import CUDA
+from max.gpu.host._amdgpu_hip import HIP
+from max.gpu.host._nvidia_cuda import CUDA
 from comm import MAX_GPUS, Signal
 from comm.allreduce import elementwise_epilogue_type
 from std.gpu.primitives.grid_controls import PDLLevel

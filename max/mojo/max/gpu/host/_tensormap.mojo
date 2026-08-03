@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import size_of
-from std.gpu.host import DeviceBuffer
 from std.utils import IndexList, StaticTuple
+
+from max.gpu.host import DeviceBuffer
 
 
 @fieldwise_init("implicit")

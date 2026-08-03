@@ -17,7 +17,7 @@ from std.ffi import _CPointer, _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
 
-from std.gpu.host._nvidia_cuda import _CUstream_st
+from max.gpu.host._nvidia_cuda import _CUstream_st
 
 from std.utils import StaticTuple
 

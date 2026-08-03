@@ -40,7 +40,7 @@ from max.gpu.host import (
     FuncAttribute,
     LaunchAttribute,
 )
-from std.gpu.host.device_context import _DumpPath
+from max.gpu.host.device_context import _DumpPath
 from std.gpu.host.launch_attribute import (
     LaunchAttributeID,
     LaunchAttributeValue,

@@ -10,6 +10,7 @@ mojo_library(
     ignore_deprecated = IGNORED_POINTER_DEPRECATIONS,
     use_production_compiler_for_asan = True,
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

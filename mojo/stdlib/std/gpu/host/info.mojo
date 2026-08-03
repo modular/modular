@@ -30,6 +30,26 @@ from std.sys.info import (
     _TargetType,
 )
 
+
+@always_inline
+def get_gpu_target[
+    # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
+    target_arch: StaticString = _accelerator_arch(),
+]() -> _TargetType:
+    """Gets the GPU target information for the specified architecture.
+
+    Parameters:
+        target_arch: GPU architecture name (defaults to current accelerator architecture).
+
+    Returns:
+        Target type information for the specified GPU architecture.
+    """
+    comptime assert (
+        target_arch != ""
+    ), "target_arch must be a valid GPU architecture."
+    return GPUInfo.from_name[target_arch]().target()
+
+
 comptime _KB = 1024
 comptime _K = 1024
 
