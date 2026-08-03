@@ -39,23 +39,8 @@ extension for VS Code, and getting started with Mojo programming, see the
   automaton, demonstrating Mojo basics including structs, modules, and Python
   interoperability.
 
-- `gpu-intro/`: The
-  [Get started with GPU programming](https://docs.modular.com/mojo/manual/gpu/intro-tutorial)
-  tutorial solution. An introduction to GPU programming in Mojo with a
-  simple vector addition kernel.
-
-- `gpu-block-and-warp/`: Advanced GPU programming demonstrating
-  block-level and warp-level synchronization and operations.
-
 - `python-interop/`: Calling Mojo functions from Python
   code, enabling progressive migration of Python hotspots to Mojo.
-
-- `layouts/`: Using Mojo's
-  [`layout` package](https://docs.modular.com/mojo/manual/layout/layouts) for
-  working with dense multidimensional arrays.
-
-- `layout_tensor/`: Companion code for
-  [Using LayoutTensor](https://docs.modular.com/mojo/manual/layout/tensors)
 
 - `operators/`:
   [Implementing operators for a custom Mojo type](https://docs.modular.com/mojo/manual/operators#an-example-of-implementing-operators-for-a-custom-type).

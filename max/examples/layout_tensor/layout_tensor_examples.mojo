@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: mojo/docs/manual/layout/tensors.mdx
+# DOC: max/layout/tensors.mdx
 
 from layout import (
     IntTuple,

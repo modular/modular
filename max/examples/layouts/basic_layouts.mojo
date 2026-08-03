@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: mojo/docs/manual/layout/layouts.mdx
+# DOC: max/layout/layouts.mdx
 
 from layout import IntTuple, Layout, print_layout
 

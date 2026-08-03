@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/gpu/block-and-warp.mdx
+
 """
 Tiled Matrix Multiplication GPU Kernel Example.
 
