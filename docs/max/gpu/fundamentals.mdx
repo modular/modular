@@ -12,7 +12,7 @@ different vendors.
 Key topics covered in this guide:
 
 - Understanding the CPU-GPU programming model.
-- Working with Mojo's GPU support through the standard library.
+- Working with Mojo's GPU support through the MAX accelerator library.
 - Managing GPU devices and contexts using `DeviceContext`.
 - Writing and executing kernel functions for parallel computation.
 - Memory management and data transfer between CPU and GPU.
@@ -25,15 +25,17 @@ suggest you read the [Intro to GPU architectures](/gpu/architecture/).
 
 ## Overview of GPU programming in Mojo
 
-The Mojo language, including its standard library and open source MAX kernels
-library, allow you to develop GPU-enabled applications.
+The Mojo language, together with the open source [MAX accelerator
+library](/api/mojo/), allows you to develop GPU-enabled applications.
 
-### GPU support in the Mojo standard library
+### GPU support in the MAX accelerator library
 
-The [`gpu`](https://mojolang.org/docs/std/gpu/) package of the Mojo standard
-library includes several subpackages for interacting with GPUs, with the
-[`gpu.host`](https://mojolang.org/docs/std/gpu/host/) package providing most of
-the commonly used APIs. However, the
+The [`max.gpu`](/api/mojo/max/gpu/) package of the MAX accelerator library
+includes several subpackages for interacting with GPUs, with the
+[`max.gpu.host`](/api/mojo/max/gpu/host/) package providing most of the commonly
+used APIs. A few APIs that you use inside kernel functions—such as the thread
+and block indices—remain in the Mojo standard library's
+[`gpu`](https://mojolang.org/docs/std/gpu/) package. And the standard library's
 [`sys`](https://mojolang.org/docs/std/sys/info/) package contains a few basic
 introspection functions for determining whether a system has a supported GPU:
 
@@ -217,8 +219,8 @@ Modified host buffer: HostBuffer([20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0
 
 ## Accessing and managing GPUs with `DeviceContext`
 
-The [`gpu.host`](https://mojolang.org/docs/std/gpu/host/) package includes the
-[`DeviceContext`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/)
+The [`max.gpu.host`](/api/mojo/max/gpu/host/) package includes the
+[`DeviceContext`](/api/mojo/max/gpu/host/device_context/DeviceContext/)
 struct, which represents a logical instance of a GPU device. It provides methods
 for allocating memory on the device, copying data between the host CPU and the
 GPU, and compiling and running functions (also known as *kernels*) on the
@@ -229,7 +231,7 @@ device.
 Mojo supports systems with multiple GPUs. GPUs are uniquely identified by
 integer indices starting with `0`, which is considered the "default" device. You
 can determine the number of GPUs available by invoking the
-[`DeviceContext.number_of_devices()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#number_of_devices)
+[`DeviceContext.number_of_devices()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#number_of_devices)
 static method.
 
 The `DeviceContext()` constructor returns an instance for interacting with a
@@ -251,7 +253,7 @@ stream of queued operations to execute on the GPU. Operations within a stream
 execute in the order they are enqueued.
 
 The
-[`synchronize()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#synchronize)
+[`synchronize()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#synchronize)
 method blocks execution of the current CPU thread until all queued operations on
 the associated `DeviceContext` stream have completed. Most commonly, you use
 this to wait until the result of a kernel function is copied from device memory
@@ -279,7 +281,7 @@ dimensions.
 You specify the grid and thread block dimensions with the `grid_dim` and
 `block_dim` keyword arguments when you enqueue a kernel function to execute
 using the
-[`enqueue_function()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#enqueue_function)
+[`enqueue_function()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_function)
 method. For example:
 
 ```mojo
@@ -478,9 +480,9 @@ named `device_type` that maps the type as used on the CPU host to a
 corresponding type used on the GPU device.
 
 As an example,
-[`DeviceBuffer`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceBuffer/)
-is a host-side representation of a buffer located in the GPU's global memory
-space. But it defines its `device_type` member as `UnsafePointer`, so the data
+[`DeviceBuffer`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/) is a
+host-side representation of a buffer located in the GPU's global memory space.
+But it defines its `device_type` member as `UnsafePointer`, so the data
 represented by a `DeviceBuffer` is actually passed to the kernel function as a
 value of type
 [`UnsafePointer`](https://mojolang.org/docs/std/memory/unsafe_pointer/UnsafePointer/).
@@ -495,7 +497,7 @@ that conform to the `DevicePassable` trait.
 | Host type                                                                                    | Device Type                                                                                           | Description                                                                                         |
 |----------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
 | [`SIMD[dtype, width]`](https://mojolang.org/docs/std/builtin/simd/SIMD/)                     | `SIMD[dtype, width]`                                                                                  | Small vector backed by a hardware vector element                                                    |
-| [`DeviceBuffer[dtype]`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceBuffer/) | [`UnsafePointer[SIMD[dtype, 1]]`](https://mojolang.org/docs/std/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values                                                                     |
+| [`DeviceBuffer[dtype]`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/)                 | [`UnsafePointer[SIMD[dtype, 1]]`](https://mojolang.org/docs/std/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values                                                                     |
 | [`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor/)                                     | `TileTensor`                                                                                          | A powerful abstraction for multi-dimensional data. See [Using `TileTensor`](/tile-tensor/tensors/). |
 
 ### `DeviceBuffer` and `HostBuffer`
@@ -507,7 +509,7 @@ host memory.
 #### Creating a `DeviceBuffer`
 
 The
-[`DeviceBuffer`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceBuffer/)
+[`DeviceBuffer`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/)
 type represents a block of device memory associated with a particular
 `DeviceContext`. Specifically, the buffer is located in the device's
 *global memory* space. As such, the buffer is accessible by all threads of all
@@ -521,7 +523,7 @@ by the function is of type `UnsafePointer`. Attempting to use the `DeviceBuffer`
 type directly from within a kernel function results in an error.
 
 The
-[`DeviceContext.enqueue_create_buffer()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#enqueue_create_buffer)
+[`DeviceContext.enqueue_create_buffer()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_create_buffer)
 method creates a `DeviceBuffer` associated with that `DeviceContext`. It accepts
 the data type as a compile-time
 [`DType`](https://mojolang.org/docs/std/builtin/dtype/DType/) parameter and the
@@ -540,14 +542,14 @@ operations](#asynchronous-operation-and-synchronizing-the-cpu-and-gpu).
 #### Creating a `HostBuffer`
 
 The
-[`HostBuffer`](https://mojolang.org/docs/std/gpu/host/device_context/HostBuffer/)
+[`HostBuffer`](/api/mojo/max/gpu/host/device_context/HostBuffer/)
 type is analogous to `DeviceBuffer`, but represents a block of host memory
 associated with a particular `DeviceContext`. It supports methods for
 transferring data between host and device memory, as well as a basic set of
 methods for accessing data elements by index and for printing the buffer.
 
 The
-[`DeviceContext.enqueue_create_host_buffer()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#enqueue_create_host_buffer)
+[`DeviceContext.enqueue_create_host_buffer()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_create_host_buffer)
 method accepts the data type as a compile-time
 [`DType`](https://mojolang.org/docs/std/builtin/dtype/DType/) parameter and the
 size of the buffer as a run-time argument and returns a `HostBuffer`. As with
@@ -571,7 +573,7 @@ for i in range(1024):
 #### Copying data between host and device memory
 
 The
-[`enqueue_copy()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#enqueue_copy)
+[`enqueue_copy()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_copy)
 method is overloaded to support copying from host to device, device to host, or
 even device to device for systems that have multiple GPUs. Typically, you'll use
 it to copy data that you've staged in a `HostBuffer` to a `DeviceBuffer` before
@@ -596,9 +598,9 @@ data from the data structure to a `HostBuffer` before copying it to the
 `DeviceBuffer`.
 
 Both `DeviceBuffer` and `HostBuffer` also include
-[`enqueue_copy_to()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceBuffer/#enqueue_copy_to)
+[`enqueue_copy_to()`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/#enqueue_copy_to)
 and
-[`enqueue_copy_from()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceBuffer/#enqueue_copy_from)
+[`enqueue_copy_from()`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/#enqueue_copy_from)
 methods. These are simply convenience methods that call the `enqueue_copy()`
 method on their corresponding `DeviceContext`. For example, the following two
 method calls are interchangeable:
@@ -611,7 +613,7 @@ host_buffer.enqueue_copy_to(dst=device_buffer)
 ```
 
 Finally, as a convenience for testing or prototyping, you can use the
-[`DeviceBuffer.map_to_host()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceBuffer/#map_to_host)
+[`DeviceBuffer.map_to_host()`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/#map_to_host)
 method to create a host-accessible view of the device buffer's contents. This
 returns `HostBuffer` as a
 [context manager](https://mojolang.org/docs/manual/errors/#use-a-context-manager)
@@ -671,12 +673,12 @@ explanation of object destruction.
 ### Compiling and enqueuing a kernel function for execution
 
 The
-[`compile_function()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#compile_function)
+[`compile_function()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#compile_function)
 method accepts a kernel function as a compile-time
 [parameter](https://mojolang.org/docs/manual/parameters/) and then compiles it
 for the associated `DeviceContext`. Then you can enqueue the compiled kernel for
 execution by passing it to the
-[`enqueue_function()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#enqueue_function)
+[`enqueue_function()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_function)
 method. The example in the [GPU programming model](#gpu-programming-model)
 demonstrated this pattern:
 

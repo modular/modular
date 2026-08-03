@@ -90,13 +90,13 @@ other options, see [Packages](/packages/)).
 ## 2. Get a reference to the GPU device
 
 The
-[`DeviceContext`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/)
+[`DeviceContext`](/api/mojo/max/gpu/host/device_context/DeviceContext/)
 type represents a logical instance of a GPU device. It provides methods for
 allocating memory on the device, copying data between the host CPU and the GPU,
 and compiling and running functions (also known as *kernels*) on the device.
 
 Use the
-[`DeviceContext()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#__init__)
+[`DeviceContext()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#__init__)
 constructor to get a reference to the GPU device. The constructor raises an
 error if no compatible GPU is available. You can use the
 [`has_accelerator()`](https://mojolang.org/docs/std/sys/info/has_accelerator/)
@@ -266,7 +266,7 @@ stream of queued operations to execute on the GPU. Operations within a stream
 execute in the order they are issued.
 
 The
-[`enqueue_function()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#enqueue_function)
+[`enqueue_function()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_function)
 method compiles a kernel function and enqueues it to run on the given device.
 You must provide the name of the kernel function as a compile-time Mojo
 parameter, and the following arguments:
@@ -345,7 +345,7 @@ that's ready to run.
 
 After enqueuing the kernel function, we want to ensure that the CPU waits for it
 to finish execution before exiting the program. We do this by calling the
-[`synchronize()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#synchronize)
+[`synchronize()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#synchronize)
 method of the `DeviceContext` object, which blocks until the device completes
 all operations in its queue.
 
@@ -460,7 +460,7 @@ function. Similarly, if your kernel function produces data that you want the CPU
 to use later, you must explicitly copy it back to host memory.
 
 For this tutorial, we'll use the
-[`HostBuffer`](https://mojolang.org/docs/std/gpu/host/device_context/HostBuffer/)
+[`HostBuffer`](/api/mojo/max/gpu/host/device_context/HostBuffer/)
 type to represent our vectors on the host. A `HostBuffer` is a block of host
 memory associated with a particular `DeviceContext`. It supports methods for
 transferring data between host and device memory, as well as a basic set of
@@ -509,7 +509,7 @@ def main() raises:
 ```
 
 The
-[`enqueue_create_host_buffer()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#enqueue_create_host_buffer)
+[`enqueue_create_host_buffer()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_create_host_buffer)
 method accepts the data type as a compile-time parameter and the size of the
 buffer as a run-time argument and returns a `HostBuffer`. As with all
 `DeviceContext` methods whose name starts with `enqueue_`, the method is
@@ -574,7 +574,7 @@ Add the following code to the end of the `main()` function:
 ```
 
 The
-[`DeviceBuffer`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceBuffer/)
+[`DeviceBuffer`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/)
 type is analogous to the `HostBuffer` type, but represents a block of device
 memory associated with a particular `DeviceContext`. Specifically, the buffer is
 located in the device's *global memory* space, which is accessible by all
@@ -584,14 +584,14 @@ it is no longer referenced in the program or until the `DeviceContext` itself is
 destroyed.
 
 The
-[`enqueue_create_buffer()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#enqueue_create_buffer)
+[`enqueue_create_buffer()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_create_buffer)
 method accepts the data type as a compile-time parameter and the size of the
 buffer as a run-time argument and returns a `DeviceBuffer`. The operation is
 asynchronous, but we don't need to call the `synchronize()` method yet because
 we have more operations to add to the queue.
 
 The
-[`enqueue_copy()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#enqueue_copy)
+[`enqueue_copy()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_copy)
 method is overloaded to support copying from host to device, device to host, or
 even device to device for systems that have multiple GPUs. In this example, we
 use it to copy the data in our `HostBuffer`s to the `DeviceBuffer`s.
@@ -599,9 +599,9 @@ use it to copy the data in our `HostBuffer`s to the `DeviceBuffer`s.
 :::note
 
 Both `DeviceBuffer` and `HostBuffer` also include
-[`enqueue_copy_to()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceBuffer/#enqueue_copy_to)
+[`enqueue_copy_to()`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/#enqueue_copy_to)
 and
-[`enqueue_copy_from()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceBuffer/#enqueue_copy_from)
+[`enqueue_copy_from()`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/#enqueue_copy_from)
 methods. These are simply convenience methods that call the `enqueue_copy()`
 method on their corresponding `DeviceContext`. Therefore, we could have written
 the copy operations in the previous example with the following equivalent code:
@@ -901,7 +901,7 @@ exit
 
 ## Summary
 
-In this tutorial, we've learned how to use Mojo's `gpu.host` package to write a
+In this tutorial, we've learned how to use the `max.gpu.host` package to write a
 simple kernel function that performs an element-wise addition of two vectors. We
 covered:
 
