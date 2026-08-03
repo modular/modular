@@ -151,7 +151,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     weight_offset: Scalar[in_dtype],
     rows: Int32,
     cols: Int32,
-    scale_ub: Scalar[scales_dtype],
+    scale_ub: Float32,
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int32,
     residual: _ComptimeConditionalTileTensor[
@@ -343,7 +343,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     weight_offset: Scalar[in_dtype],
     rows: Int32,
     cols: Int32,
-    scale_ub: Scalar[scales_dtype],
+    scale_ub: Float32,
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int32,
     residual: _ComptimeConditionalTileTensor[

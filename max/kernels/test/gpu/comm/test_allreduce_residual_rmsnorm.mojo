@@ -100,9 +100,11 @@ def _assert_fp8_close[
         )
 
 
-def _assert_scales_close(
-    ref_host: UnsafePointer[Float32, _],
-    fused_host: UnsafePointer[Float32, _],
+def _assert_scales_close[
+    scales_dtype: DType,
+](
+    ref_host: UnsafePointer[Scalar[scales_dtype], _],
+    fused_host: UnsafePointer[Scalar[scales_dtype], _],
     rows: Int,
     *,
     max_rel_diff: Float32 = 0.005,
@@ -114,8 +116,8 @@ def _assert_scales_close(
     """
     var scale_errors = 0
     for i in range(rows):
-        var ref_s = ref_host[i]
-        var fused_s = fused_host[i]
+        var ref_s = ref_host[i].cast[DType.float32]()
+        var fused_s = fused_host[i].cast[DType.float32]()
         var denom = max(abs(ref_s), Float32(1e-12))
         var rel_diff = abs(ref_s - fused_s) / denom
         if rel_diff > max_rel_diff:
@@ -196,6 +198,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     out_dtype: DType,
     rows: Int,
     cols: Int,
+    scales_dtype: DType = DType.float32,
 ](list_of_ctx: List[DeviceContext]) raises:
     """Verify fused kernel against separate allreduce → fused RMSNorm+FP8."""
     comptime length = rows * cols
@@ -211,6 +214,8 @@ def test_fused_allreduce_rmsnorm_fp8[
         rows,
         "x",
         cols,
+        ", scales=",
+        scales_dtype,
         "]",
     )
 
@@ -285,7 +290,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     ctx.synchronize()
 
     var ref_fp8_dev = ctx.enqueue_create_buffer[out_dtype](length)
-    var ref_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var ref_scales_dev = ctx.enqueue_create_buffer[scales_dtype](rows)
 
     var ref_sum_ptr = ref_sum_dev.unsafe_ptr()
 
@@ -310,7 +315,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     rms_norm_fused_fp8[
         in_dtype,
         out_dtype,
-        DType.float32,
+        scales_dtype,
         2,
         ref_input_fn,
     ](
@@ -334,7 +339,7 @@ def test_fused_allreduce_rmsnorm_fp8[
         list_of_ctx[i].synchronize()
 
     var fused_fp8_dev = ctx.enqueue_create_buffer[out_dtype](length)
-    var fused_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var fused_scales_dev = ctx.enqueue_create_buffer[scales_dtype](rows)
 
     var fused_fp8_tile = TileTensor(
         fused_fp8_dev,
@@ -376,8 +381,8 @@ def test_fused_allreduce_rmsnorm_fp8[
     )
 
     # --- Compare per-row scale factors ---
-    var ref_scales_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
-    var fused_scales_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
+    var ref_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](rows)
+    var fused_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](rows)
     ctx.enqueue_copy(ref_scales_host, ref_scales_dev)
     ctx.enqueue_copy(fused_scales_host, fused_scales_dev)
     ctx.synchronize()
@@ -1089,6 +1094,18 @@ def main() raises:
         ](list_of_ctx)
         test_fused_allreduce_rmsnorm_fp8[
             num_gpus, DType.bfloat16, out_fp8_dtype, 20, 16384
+        ](list_of_ctx)
+
+        # --- bf16 scale buffer. Checkpoints that store `weight_scale` in
+        #     bf16 (compressed-tensors FP8-dynamic) drive the activation
+        #     scales dtype to bf16, so both kernels must instantiate for a
+        #     scales dtype other than float32. rows=1 takes the 1-stage
+        #     kernel, rows=8192 the 2-stage one. ---
+        test_fused_allreduce_rmsnorm_fp8[
+            num_gpus, DType.bfloat16, out_fp8_dtype, 1, 16384, DType.bfloat16
+        ](list_of_ctx)
+        test_fused_allreduce_rmsnorm_fp8[
+            num_gpus, DType.bfloat16, out_fp8_dtype, 8192, 8192, DType.bfloat16
         ](list_of_ctx)
 
         print(
