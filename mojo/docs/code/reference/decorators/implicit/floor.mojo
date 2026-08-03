@@ -25,9 +25,7 @@ struct FlooringInt:
     # that can be floored (the decimal portion omitted)
     # and converted to an Integer
     @implicit
-    def __init__[
-        T: Floorable & Intable & ImplicitlyDeletable
-    ](out self, value: T):
+    def __init__[T: Floorable & Intable & Deinitable](out self, value: T):
         self.floored = Int(floor(value))
 
 

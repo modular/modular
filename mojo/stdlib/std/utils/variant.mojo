@@ -49,7 +49,7 @@ def _get_type_index[T: AnyType, *Ts: AnyType]() -> Int:
     return _InvalidTypeIndex
 
 
-trait _VariantStorage(Copyable, ImplicitlyDeletable):
+trait _VariantStorage(Copyable, Deinitable):
     """Internal storage backend for `Variant`.
 
     This trait abstracts over the two concrete storage strategies:
@@ -104,7 +104,7 @@ trait _VariantStorage(Copyable, ImplicitlyDeletable):
         ...
 
 
-trait _NicheStorage(Defaultable, ImplicitlyCopyable, ImplicitlyDeletable):
+trait _NicheStorage(Defaultable, Deinitable, ImplicitlyCopyable):
     """Internal abstraction over niche backing storage backends."""
 
     def as_uninit[
@@ -249,7 +249,7 @@ struct _NichedOptionalStorage[
 
     @always_inline
     def __deinit__(deinit self):
-        comptime assert conforms_to(Self.T, ImplicitlyDeletable)
+        comptime assert conforms_to(Self.T, Deinitable)
         if self.isa[Self.T]():
             self._memory.as_uninit[Self.T]()[].unsafe_assume_init_destroy()
 
@@ -346,7 +346,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     def __deinit__(deinit self):
         comptime for i in range(Self.Ts.length):
             comptime T = Self.Ts[i]
-            comptime assert conforms_to(T, ImplicitlyDeletable)
+            comptime assert conforms_to(T, Deinitable)
 
             if self.get_discriminant() == UInt8(i):
                 self.unsafe_ptr[T]().unsafe_deinit_pointee()
@@ -420,10 +420,10 @@ when eligible, falling back to the general discriminant-tagged storage."""
 
 struct Variant[*Ts: AnyType](
     Copyable where Ts.all_conforms_to[Copyable](),
+    Deinitable where Ts.all_conforms_to[Deinitable](),
     Equatable where Ts.all_conforms_to[Equatable](),
     Hashable where Ts.all_conforms_to[Hashable](),
     ImplicitlyCopyable where Ts.all_conforms_to[ImplicitlyCopyable](),
-    ImplicitlyDeletable where Ts.all_conforms_to[ImplicitlyDeletable](),
     Movable where Ts.all_conforms_to[Movable](),
     RegisterPassable where Ts.all_conforms_to[RegisterPassable](),
     Writable where Ts.all_conforms_to[Writable](),
@@ -621,11 +621,11 @@ struct Variant[*Ts: AnyType](
 
     def __deinit__(
         deinit self,
-    ) where Self.Ts.all_conforms_to[ImplicitlyDeletable]():
+    ) where Self.Ts.all_conforms_to[Deinitable]():
         """Destroy the variant, running the destructor of the currently held value.
 
         Constraints:
-            All types in `Ts` must conform to `ImplicitlyDeletable`.
+            All types in `Ts` must conform to `Deinitable`.
         """
         self._storage^.__deinit__()
 
@@ -837,7 +837,7 @@ struct Variant[*Ts: AnyType](
 
     @always_inline
     def replace[
-        Tin: Movable & ImplicitlyDeletable,
+        Tin: Movable & Deinitable,
         Tout: Movable,
     ](mut self, var value: Tin) -> Tout:
         """Replace the current value of the variant with the provided type.
@@ -894,9 +894,7 @@ struct Variant[*Ts: AnyType](
 
     def set[
         T: Movable
-    ](mut self, var value: T) where Self.Ts.all_conforms_to[
-        ImplicitlyDeletable
-    ]():
+    ](mut self, var value: T) where Self.Ts.all_conforms_to[Deinitable]():
         """Set the variant value.
 
         This will call the destructor on the old value, and update the variant's
@@ -933,7 +931,7 @@ struct Variant[*Ts: AnyType](
                 once.
 
         Constraints:
-            All types in `Ts` must conform to `ImplicitlyDeletable`, since the
+            All types in `Ts` must conform to `Deinitable`, since the
             outgoing value is destroyed in place.
 
         Examples:
@@ -954,8 +952,8 @@ struct Variant[*Ts: AnyType](
         ```
         """
         comptime assert Self.Ts.all_conforms_to[
-            ImplicitlyDeletable
-        ](), "Cannot replace in place when a type is not `ImplicitlyDeletable`"
+            Deinitable
+        ](), "Cannot replace in place when a type is not `Deinitable`"
         Self._check[T]()
         # Destroy-then-emplace is exception-safe only because `init_with` cannot
         # raise (closure types are not `raises`); a throw here would leave the
@@ -1085,7 +1083,7 @@ struct Variant[*Ts: AnyType](
         provided destructor function.
 
         This method can be used to deinitialize types that do not conform to
-        `ImplicitlyDeletable` in a `Variant` in-place.
+        `Deinitable` in a `Variant` in-place.
 
         This method will abort if this variant does not current contain an
         element of the specified type `T`.

@@ -94,15 +94,15 @@ struct Optional[T: AnyType](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
+    Deinitable where conforms_to(T, Deinitable),
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
     ),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
-    IterableOwned where conforms_to(T, Movable & ImplicitlyDeletable),
+    IterableOwned where conforms_to(T, Movable & Deinitable),
     Movable where conforms_to(T, Movable),
     RegisterPassable where conforms_to(T, RegisterPassable),
     Writable where conforms_to(T, Writable),
@@ -149,7 +149,7 @@ struct Optional[T: AnyType](
     # `Array`); only the unparameterized `IteratorOwnedType` can be gated.
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _OptionalIter[downcast[Self.T, Movable & ImplicitlyDeletable]]
+    ]: Iterator = _OptionalIter[downcast[Self.T, Movable & Deinitable]]
     """The iterator type for this optional.
 
     Parameters:
@@ -159,7 +159,7 @@ struct Optional[T: AnyType](
 
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
     comptime IteratorOwnedType: Iterator where conforms_to(
-        Self.T, Movable & ImplicitlyDeletable
+        Self.T, Movable & Deinitable
     ) = _OptionalIter[Self.T]
     """The owned iterator type for this optional."""
 
@@ -393,20 +393,18 @@ struct Optional[T: AnyType](
         ```
         """
         comptime assert conforms_to(
-            Self.T, Movable & ImplicitlyDeletable
+            Self.T, Movable & Deinitable
         ) and conforms_to(
             Self.T, Copyable
         ), "Cannot iterate over a non-copyable or non-movable Optional."
         # Rebind the copy to the `downcast` element type that the borrow-side
         # `IteratorType` alias names.
-        comptime E = downcast[Self.T, Movable & ImplicitlyDeletable]
+        comptime E = downcast[Self.T, Movable & Deinitable]
         return _OptionalIter[E](rebind_var[Optional[E]](self.copy()))
 
     def __iter__(
         var self,
-    ) -> Self.IteratorOwnedType where conforms_to(
-        Self.T, Movable & ImplicitlyDeletable
-    ):
+    ) -> Self.IteratorOwnedType where conforms_to(Self.T, Movable & Deinitable):
         """Consume the Optional and return an iterator over its value.
 
         Optionals act as a collection of size 0 or 1.
@@ -748,8 +746,8 @@ struct Optional[T: AnyType](
         caller-provided deinitializer function.
 
         This method can be used to destroy `Optional` values whose element
-        type is not `ImplicitlyDeletable`. The `__deinit__` on `Optional`
-        requires `T: ImplicitlyDeletable`, so explicit-deinit users must
+        type is not `Deinitable`. The `__deinit__` on `Optional`
+        requires `T: Deinitable`, so explicit-deinit users must
         destroy an `Optional[T]` through this API instead.
 
         If `self` is empty, `deinit_func` is not called. Otherwise
@@ -766,7 +764,7 @@ struct Optional[T: AnyType](
 
         ```mojo
         @fieldwise_init
-        struct ExplicitDeinit(Movable, ImplicitlyDeletable where False):
+        struct ExplicitDeinit(Movable, Deinitable where False):
             var data: Int
 
             def explicit_deinit(deinit self):
@@ -790,7 +788,7 @@ struct Optional[T: AnyType](
         """Destroys an empty `Optional`, asserting that it holds no value.
 
         Use this on an `Optional[T]` whose element type is not
-        `ImplicitlyDeletable` when the value is known to be empty. Unlike
+        `Deinitable` when the value is known to be empty. Unlike
         `deinit_with`, it takes no deinitializer function (there is no live
         value to destroy). In safe-assert builds it aborts if the `Optional`
         is non-empty.
@@ -810,7 +808,7 @@ struct Optional[T: AnyType](
 
     def or_else(
         deinit self, var default: Self.T
-    ) -> Self.T where conforms_to(Self.T, Movable & ImplicitlyDeletable):
+    ) -> Self.T where conforms_to(Self.T, Movable & Deinitable):
         """Return the underlying value contained in the `Optional` or a default
         value if the `Optional`'s underlying value is not present.
 
@@ -935,7 +933,7 @@ struct Optional[T: AnyType](
             return {mapper(self._value^.unsafe_unwrap[Self.T]())}
         else:
             # Destroy the empty `Optional` explicitly: an implicit drop here
-            # would require `T: ImplicitlyDeletable`, ruling out linear `T`.
+            # would require `T: Deinitable`, ruling out linear `T`.
             self^.deinit_assert_empty()
             return None
 
@@ -994,7 +992,7 @@ struct Optional[T: AnyType](
             return mapper(self._value^.unsafe_unwrap[Self.T]())
         else:
             # Destroy the empty `Optional` explicitly: an implicit drop here
-            # would require `T: ImplicitlyDeletable`, ruling out linear `T`.
+            # would require `T: Deinitable`, ruling out linear `T`.
             self^.deinit_assert_empty()
             return None
 
@@ -1005,9 +1003,9 @@ struct Optional[T: AnyType](
 
 
 @fieldwise_init
-struct _OptionalIter[T: Movable & ImplicitlyDeletable](
+struct _OptionalIter[T: Movable & Deinitable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDeletable,
+    Deinitable,
     Iterable where conforms_to(T, Copyable),
     IterableOwned,
     Iterator,

@@ -56,6 +56,7 @@ from std.io.io import input, print
 
 from std.builtin.anytype import (
     AnyType,
+    Deinitable,
     Some,
     SomeTypeList,
     ImplicitlyDestructible,

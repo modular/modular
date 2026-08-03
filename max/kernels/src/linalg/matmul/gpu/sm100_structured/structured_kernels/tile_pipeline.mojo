@@ -813,7 +813,7 @@ struct InputProducerStage[
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-](ImplicitlyDeletable where False, Movable):
+](Deinitable where False, Movable):
     """Linear type handle for producer tile access.
 
     Compiler-enforced: must call release() to advance the producer stage.
@@ -972,7 +972,7 @@ struct InputConsumerStage[
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-](ImplicitlyDeletable where False, Movable):
+](Deinitable where False, Movable):
     """Linear type handle for consumer tile access.
 
     Compiler-enforced: must call release() to signal consumption and
@@ -1720,7 +1720,7 @@ struct OutputConsumer[
 struct MmaStage[
     origin: MutOrigin,
     opc: OutputPipelineConfig,
-](ImplicitlyDeletable where False):
+](Deinitable where False):
     """Unified linear type handle for MMA stage in output pipeline.
 
     Works as both a linear type (direct use) and within context managers.
@@ -1784,7 +1784,7 @@ struct MmaStage[
 struct EpilogueStage[
     origin: MutOrigin,
     opc: OutputPipelineConfig,
-](ImplicitlyDeletable where False):
+](Deinitable where False):
     """Unified linear type handle for epilogue stage in output pipeline.
 
     Works as both a linear type (direct use) and within context managers.

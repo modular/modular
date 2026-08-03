@@ -568,12 +568,12 @@ def test_set_conditional_conformances() raises:
     assert_false(conforms_to(Set[MoveOnly[Int]], Hashable))
     assert_false(conforms_to(Set[MoveOnly[Int]], Writable))
 
-    # ImplicitlyDeletable conformance is conditional on the element type.
-    assert_true(conforms_to(Set[Int], ImplicitlyDeletable))
-    assert_true(conforms_to(Set[String], ImplicitlyDeletable))
-    assert_true(conforms_to(Set[MoveOnly[Int]], ImplicitlyDeletable))
+    # Deinitable conformance is conditional on the element type.
+    assert_true(conforms_to(Set[Int], Deinitable))
+    assert_true(conforms_to(Set[String], Deinitable))
+    assert_true(conforms_to(Set[MoveOnly[Int]], Deinitable))
     # A linear (explicitly-destroyed) element makes the set itself linear.
-    assert_false(conforms_to(Set[ExplicitDestroyKey], ImplicitlyDeletable))
+    assert_false(conforms_to(Set[ExplicitDestroyKey], Deinitable))
 
 
 def test_set_iter_owned() raises:
@@ -607,7 +607,7 @@ def test_set_iter_owned_bounds() raises:
 
 def test_set_move_only_element() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `Set[T: KeyElement & ImplicitlyDeletable, H]`
+    # conformance path of `Set[T: KeyElement & Deinitable, H]`
     # where the element type is move-only. Copy-requiring ops (`union`,
     # `intersection`, iteration, ...) are unavailable for this `T`, but the
     # add / remove / contains / pop / discard / clear core remains usable.
@@ -647,7 +647,7 @@ def test_set_move_only_element() raises:
 
 
 def test_set_insert_linear() raises:
-    # `insert` on a linear (non-`ImplicitlyDeletable`) element type moves any
+    # `insert` on a linear (non-`Deinitable`) element type moves any
     # displaced equal element out and returns it instead of destroying it in
     # place. The returned `Optional[T]` is itself linear and is consumed via
     # `deinit_with`. The final `deinit_with` covers `Set`'s per-element

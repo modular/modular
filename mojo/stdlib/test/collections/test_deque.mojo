@@ -1093,7 +1093,7 @@ def test_reversed_iter() raises:
 def _test_deque_iter_bounds[
     I: Iterator
 ](var deque_iter: I, deque_len: Int) raises where conforms_to(
-    I.Element, ImplicitlyDeletable
+    I.Element, Deinitable
 ):
     var iter = deque_iter^
 
@@ -1171,7 +1171,7 @@ struct NonEquatable(Copyable):
     pass
 
 
-struct CopyableExplicitDestroy(Copyable, ImplicitlyDeletable where False):
+struct CopyableExplicitDestroy(Copyable, Deinitable where False):
     """Test type that is `Copyable` but must be explicitly destroyed."""
 
     var value: Int
@@ -1214,22 +1214,20 @@ def test_deque_conditional_conformances() raises:
     assert_true(conforms_to(Deque[Int], Writable))
     assert_false(conforms_to(Deque[NonEquatable], Writable))
 
-    # `ImplicitlyDeletable` is conditional on the element type.
-    assert_true(conforms_to(Deque[Int], ImplicitlyDeletable))
-    assert_false(conforms_to(Deque[ExplicitDestroy], ImplicitlyDeletable))
+    # `Deinitable` is conditional on the element type.
+    assert_true(conforms_to(Deque[Int], Deinitable))
+    assert_false(conforms_to(Deque[ExplicitDestroy], Deinitable))
 
-    # Owned iteration requires `ImplicitlyDeletable` elements; consuming
+    # Owned iteration requires `Deinitable` elements; consuming
     # iteration moves elements out, so it no longer requires `Copyable`.
     assert_true(conforms_to(Deque[Int], IterableOwned))
     assert_false(conforms_to(Deque[ExplicitDestroy], IterableOwned))
     assert_true(conforms_to(Deque[MoveOnly[Int]], IterableOwned))
 
-    # A `Copyable` but non-`ImplicitlyDeletable` element type makes the deque
+    # A `Copyable` but non-`Deinitable` element type makes the deque
     # `Copyable` (copying never destroys an element) yet still linear.
     assert_true(conforms_to(Deque[CopyableExplicitDestroy], Copyable))
-    assert_false(
-        conforms_to(Deque[CopyableExplicitDestroy], ImplicitlyDeletable)
-    )
+    assert_false(conforms_to(Deque[CopyableExplicitDestroy], Deinitable))
 
 
 def test_deque_with_explicit_destroy_type() raises:
@@ -1249,7 +1247,7 @@ def test_deque_with_explicit_destroy_type() raises:
 
 
 def test_deque_copy_copyable_explicit_destroy_type() raises:
-    # Copying requires only `Copyable`, not `ImplicitlyDeletable`: a deque of a
+    # Copying requires only `Copyable`, not `Deinitable`: a deque of a
     # `Copyable` but linear element type can be copied, and both the original
     # and the copy must then be drained explicitly.
     var deque = Deque[CopyableExplicitDestroy](
@@ -1391,7 +1389,7 @@ def test_deque_iter_owned_bounds() raises:
 
 def test_deque_move_only() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `Deque[T: Movable & ImplicitlyDeletable]`.
+    # conformance path of `Deque[T: Movable & Deinitable]`.
     assert_false(conforms_to(Deque[MoveOnly[Int]], Copyable))
 
     var d = Deque[MoveOnly[Int]]()

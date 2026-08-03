@@ -127,7 +127,7 @@ entirely, making the generated code faster and avoiding ambiguity.
 ## Implicit destructors {#destructor}
 
 Mojo calls a value's destructor after the value's last use unless a type
-opts out of `ImplicitlyDeletable` destruction. The deletable trait provides
+opts out of `Deinitable` destruction. The deletable trait provides
 a default no-op destructor (`__deinit__()`), which you can override.
 
 Create a custom `__deinit__()` implementation to perform any required cleanup.
@@ -291,7 +291,7 @@ cleanup path, such as invoking a secondary destructor.
 
 ```mojo
 @explicit_destroy("Must call save_and_close() or discard()")
-struct FileBuffer(ImplicitlyDeletable where False):
+struct FileBuffer(Deinitable where False):
     var path: String
     var data: String
 
@@ -370,7 +370,7 @@ struct BatchProcessor:
 
 ### Explicit destruction in parameterized code
 
-Code parameterized over `AnyType` can accept both implicitly deletable
+Code parameterized over `AnyType` can accept both `Deinitable`
 and explicitly destructible values. However, it cannot automatically destroy
 values that require explicit destruction.
 
@@ -383,7 +383,7 @@ def parameterized_function_1[T: AnyType](var value: T):
     #        Unhandled explicitly destroyed type AnyType
     pass  # value abandoned here
 
-def parameterized_function_2[T: ImplicitlyDeletable](var value: T):
+def parameterized_function_2[T: Deinitable](var value: T):
     # OK: T can be implicitly destroyed
     pass  # value.__deinit__() called automatically
 ```
@@ -396,12 +396,12 @@ constrained. Choose one of the following approaches:
 - Accept the value by mutable or immutable reference instead of by ownership,
   so the function does not consume it.
 - Return the value or transfer ownership instead of consuming it.
-- Require implicit destruction with the ImplicitlyDeletable trait, which
+- Require implicit destruction with the Deinitable trait, which
   guarantees that a `__deinit__()` destructor is available and can be called
   automatically:
 
   ```mojo
-  def parameterized_function_3[T: ImplicitlyDeletable](var value: T):
+  def parameterized_function_3[T: Deinitable](var value: T):
       pass  # value.__deinit__() called automatically
   ```
 

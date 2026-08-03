@@ -1537,7 +1537,7 @@ struct MoggAsyncPackHelper:
 
     def __init__(
         out self,
-        var data: Some[Movable & ImplicitlyDeletable],
+        var data: Some[Movable & Deinitable],
         async_ptr: AnyAsyncValueRefPtr,
     ):
         """
@@ -1574,7 +1574,7 @@ def mogg_async_pack_owned_tensor[
     This is a dedicated (non-overloaded) entry point rather than a
     `MoggAsyncPackHelper` constructor: the parametric `OwnedTensor` overload
     would lose overload resolution to the generic `Some[Movable &
-    ImplicitlyDeletable]` constructor and get mis-packed as an opaque Mojo
+    Deinitable]` constructor and get mis-packed as an opaque Mojo
     value. The emitter calls this directly for `!mgp.tensor` pack sites.
 
     The storage handle is copied (retained) rather than moved out, so the

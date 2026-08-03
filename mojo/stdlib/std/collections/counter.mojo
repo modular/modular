@@ -41,7 +41,7 @@ from std.utils import Variant
 
 @fieldwise_init
 struct Counter[
-    V: KeyElement & Copyable & ImplicitlyDeletable,
+    V: KeyElement & Copyable & Deinitable,
     H: Hasher = default_hasher,
 ](
     Boolable,
@@ -992,9 +992,7 @@ struct Counter[
             self._data.setdefault(item.key.copy(), 0) -= item.value
 
 
-struct CountTuple[V: KeyElement & Copyable & ImplicitlyDeletable](
-    Comparable, Copyable
-):
+struct CountTuple[V: KeyElement & Copyable & Deinitable](Comparable, Copyable):
     """A tuple representing a value and its count in a `Counter`.
 
     Parameters:

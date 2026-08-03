@@ -1187,12 +1187,12 @@ struct VariadicList[
         # normally torn down when CheckLifetimes is left to its own devices.
         comptime if Self.is_owned:
             _constrained_conforms_to[
-                conforms_to(Self.element_type, ImplicitlyDeletable),
+                conforms_to(Self.element_type, Deinitable),
                 Parent=Self,
                 Element=Self.element_type,
-                ParentConformsTo="ImplicitlyDeletable",
+                ParentConformsTo="Deinitable",
             ]()
-            comptime assert conforms_to(Self.element_type, ImplicitlyDeletable)
+            comptime assert conforms_to(Self.element_type, Deinitable)
 
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
@@ -1457,12 +1457,12 @@ struct VariadicPack[
             comptime for i in reversed(range(Self.__len__())):
                 comptime element_type = Self.element_types[i]
                 _constrained_conforms_to[
-                    conforms_to(element_type, ImplicitlyDeletable),
+                    conforms_to(element_type, Deinitable),
                     Parent=Self,
                     Element=element_type,
-                    ParentConformsTo="ImplicitlyDeletable",
+                    ParentConformsTo="Deinitable",
                 ]()
-                comptime assert conforms_to(element_type, ImplicitlyDeletable)
+                comptime assert conforms_to(element_type, Deinitable)
 
                 # Safety: We own the elements in this pack.
                 Pointer(to=self[i]).mut_cast[True]().unsafe_deinit_pointee()

@@ -13,12 +13,12 @@
 
 
 @fieldwise_init
-struct Container[ElementType: Movable & ImplicitlyDeletable]:
+struct Container[ElementType: Movable & Deinitable]:
     var element: Self.ElementType
 
     @__allow_legacy_custom_self_type
     def __str__[
-        StrElementType: Writable & Copyable & ImplicitlyDeletable, //
+        StrElementType: Writable & Copyable & Deinitable, //
     ](self: Container[StrElementType]) -> String:
         return String(self.element)
 

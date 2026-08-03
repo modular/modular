@@ -749,7 +749,7 @@ def test_linked_list_iter_owned_bounds() raises:
 
 def test_linked_list_move_only() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `LinkedList[T: Movable & ImplicitlyDeletable]`.
+    # conformance path of `LinkedList[T: Movable & Deinitable]`.
     assert_false(conforms_to(LinkedList[MoveOnly[Int]], Copyable))
 
     var l = LinkedList[MoveOnly[Int]]()
@@ -774,13 +774,13 @@ def test_linked_list_move_only() raises:
 
 
 # ===-------------------------------------------------------------------===#
-# Conditional `ImplicitlyDeletable` (MSTDL-2775)
+# Conditional `Deinitable` (MSTDL-2775)
 # ===-------------------------------------------------------------------===#
 
 
 def test_linked_list_conditional_implicitly_deletable() raises:
-    assert_true(conforms_to(LinkedList[Int], ImplicitlyDeletable))
-    assert_false(conforms_to(LinkedList[ExplicitDestroy], ImplicitlyDeletable))
+    assert_true(conforms_to(LinkedList[Int], Deinitable))
+    assert_false(conforms_to(LinkedList[ExplicitDestroy], Deinitable))
     assert_true(conforms_to(LinkedList[Int], IterableOwned))
     assert_true(conforms_to(LinkedList[MoveOnly[Int]], IterableOwned))
     assert_false(conforms_to(LinkedList[ExplicitDestroy], IterableOwned))
@@ -868,7 +868,7 @@ def test_linked_list_extend_into_empty_explicit_destroy() raises:
 
 def test_linked_list_insert_explicit_destroy() raises:
     # This only compiles because `insert` dropped its
-    # `ImplicitlyDeletable` requirement; re-adding it breaks this. Covers the
+    # `Deinitable` requirement; re-adding it breaks this. Covers the
     # head, tail, and middle branches.
     var l = LinkedList[ExplicitDestroy]()
     l.insert(0, ExplicitDestroy(2))  # [2]        (head into empty)

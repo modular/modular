@@ -32,7 +32,7 @@ paths — either by passing it to `dealloc` or by taking the raw pointer with
 
 For automatic cleanup, an `Allocation` can be converted into a
 `ManagedAllocation[T]` with `into_managed()`. Unlike the two explicitly
-destroyed handles, a `ManagedAllocation` implements `ImplicitlyDeletable`: it
+destroyed handles, a `ManagedAllocation` implements `Deinitable`: it
 deallocates its storage in its destructor, which Mojo runs automatically after
 the value's last use (ASAP destruction), so no explicit `dealloc` is needed.
 Like `dealloc`, this frees the storage without running the destructors of any
@@ -77,7 +77,7 @@ dealloc(thin^.unsafe_with_layout(layout))
 
 Memory safety:
 
-Because `Allocation` and `ThinAllocation` are non-`ImplicitlyDeletable types,
+Because `Allocation` and `ThinAllocation` are non-`Deinitable types,
 the compiler catches the three classic allocation bugs at compile time, instead
 of leaving them as runtime hazards.
 
@@ -134,7 +134,7 @@ from std.sys.intrinsics import unlikely
     " `unsafe_leak()` to take ownership of the underlying pointer."
 )
 struct Allocation[T: AnyType](
-    ImplicitlyDeletable where False, RegisterPassable, Writable
+    Deinitable where False, RegisterPassable, Writable
 ):
     """An owning handle to a heap allocation of `T` together with its `Layout`.
 
@@ -338,7 +338,7 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
 
     A `ManagedAllocation` wraps an `Allocation` and deallocates the storage in
     its destructor. It is the self-freeing counterpart to `Allocation`: where
-    `Allocation` is non-`ImplicitlyDeletable` and must be passed to `dealloc` on
+    `Allocation` is non-`Deinitable` and must be passed to `dealloc` on
     every path, a `ManagedAllocation` deallocates its storage automatically.
     Mojo runs the destructor after the value's last use, following its "as soon
     as possible" (ASAP) destruction policy — including on error paths, where the
@@ -459,7 +459,7 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
     " call `unsafe_leak()` to take ownership of the underlying pointer."
 )
 struct ThinAllocation[T: AnyType](
-    ImplicitlyDeletable where False, RegisterPassable, Writable
+    Deinitable where False, RegisterPassable, Writable
 ):
     """An owning handle to a heap allocation of `T`, without its `Layout`.
 

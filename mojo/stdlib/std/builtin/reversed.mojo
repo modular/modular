@@ -122,7 +122,7 @@ def reversed[
 
 
 def reversed[
-    T: Copyable & ImplicitlyDeletable
+    T: Copyable & Deinitable
 ](ref value: Deque[T]) -> _DequeIter[T, origin_of(value), False]:
     """Get a reversed iterator of the deque.
 

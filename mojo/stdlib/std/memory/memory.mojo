@@ -636,7 +636,7 @@ def is_trivially_deletable[T: AnyType]() -> Bool:
 
     A destructor is trivial when the compiler generates it and all of `T`'s
     fields are themselves trivially destructible. In practice this means
-    `__deinit__` is a no-op. A non-`ImplicitlyDeletable` (linear) type returns `False`
+    `__deinit__` is a no-op. A non-`Deinitable` (linear) type returns `False`
 
     Parameters:
         T: The type to check.
@@ -644,7 +644,7 @@ def is_trivially_deletable[T: AnyType]() -> Bool:
     Returns:
         `True` if `T` has a trivial destructor.
     """
-    comptime if conforms_to(T, ImplicitlyDeletable):
+    comptime if conforms_to(T, Deinitable):
         return T.__del__is_trivial
     else:
         return False
@@ -881,7 +881,7 @@ def uninit_copy_n[
 
 @always_inline
 def unsafe_destroy_n[
-    T: ImplicitlyDeletable
+    T: Deinitable
 ](pointer: Pointer[mut=True, T, _], count: Int):
     """Destroy `count` initialized values at `pointer`.
 
@@ -892,7 +892,7 @@ def unsafe_destroy_n[
     Otherwise, it calls `unsafe_deinit_pointee()` on each element.
 
     Parameters:
-        T: The type of values to destroy, which must be `ImplicitlyDeletable`.
+        T: The type of values to destroy, which must be `Deinitable`.
 
     Args:
         pointer: Pointer to the memory region containing values to destroy.
@@ -916,9 +916,7 @@ def unsafe_destroy_n[
 
 @always_inline
 @deprecated(use=unsafe_destroy_n)
-def destroy_n[
-    T: ImplicitlyDeletable
-](pointer: Pointer[mut=True, T, _], count: Int):
+def destroy_n[T: Deinitable](pointer: Pointer[mut=True, T, _], count: Int):
     """Destroy `count` initialized values at `pointer`.
 
     This function runs the destructor for each of the `count` values, leaving
@@ -928,7 +926,7 @@ def destroy_n[
     Otherwise, it calls `unsafe_deinit_pointee()` on each element.
 
     Parameters:
-        T: The type of values to destroy, which must be `ImplicitlyDeletable`.
+        T: The type of values to destroy, which must be `Deinitable`.
 
     Args:
         pointer: Pointer to the memory region containing values to destroy.

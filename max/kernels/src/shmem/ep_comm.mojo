@@ -326,7 +326,7 @@ def get_device_alignment() -> Int:
     return gpu_alignment
 
 
-trait TokenFormat(DevicePassable, ImplicitlyDeletable):
+trait TokenFormat(Deinitable, DevicePassable):
     """Specifies the wire format for a single MoE token in EP dispatch/combine.
 
     Implementors encode how a token's hidden-state vector is packed for

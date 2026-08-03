@@ -67,7 +67,7 @@ from .vnni import Inner_matmul_vnni
 # - _run_inner_loop_i8mm()
 
 
-trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDeletable):
+trait InnerMatmulKernel(Deinitable, ImplicitlyCopyable):
     """Trait for CPU matmul microkernels operating on pre-packed tiles.
 
     Conforming types implement `__inner_matmul__`, which accumulates a

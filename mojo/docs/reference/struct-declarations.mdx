@@ -134,7 +134,7 @@ struct Unsound:
     var item: Writable  # Error because dynamic traits not supported
 
 @fieldwise_init
-struct Sound[T: Writable & Copyable & ImplicitlyDeletable]:
+struct Sound[T: Writable & Copyable & Deinitable]:
     var item: Self.T    # OK: concrete at compile time
 
 def main():
@@ -201,7 +201,7 @@ valid in the struct body:
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDeletable]:
+struct Pair[T: Copyable & Deinitable]:
     var first: Self.T
     var second: Self.T
 ```
@@ -242,7 +242,7 @@ A conformance list accepts traits and conditional `where` clauses:
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDeletable](
+struct Pair[T: Copyable & Deinitable](
     Equatable where conforms_to(T, Equatable)
 ):
     var first: Self.T
@@ -252,13 +252,13 @@ struct Pair[T: Copyable & ImplicitlyDeletable](
 ### Implicit conformances
 
 The compiler automatically conforms every struct to `AnyType` and
-`ImplicitlyDeletable` when all members are also implicitly deletable. With
-parameterized types, the parameter's traits must include `ImplicitlyDeletable`
+`Deinitable` when all members are also `Deinitable`. With
+parameterized types, the parameter's traits must include `Deinitable`
 for this to apply:
 
 ```mojo
 @fieldwise_init
-struct Box[T: Copyable & ImplicitlyDeletable](
+struct Box[T: Copyable & Deinitable](
     Equatable where conforms_to(T, Equatable)
 ):
     var item: Self.T
@@ -268,7 +268,7 @@ def main():
     print(box.item)  # OK
 ```
 
-Without `ImplicitlyDeletable`, the compiler can't verify that the struct
+Without `Deinitable`, the compiler can't verify that the struct
 is safe to destroy using the built-in `__deinit__()` destructor:
 
 ```mojo
@@ -397,7 +397,7 @@ Consider a parameterized version of this `Pair` type:
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDeletable]:
+struct Pair[T: Copyable & Deinitable]:
     var first: Self.T
     var second: Self.T
 ```
@@ -413,7 +413,7 @@ conforms to `Writable` only when its fields do. Test the `T` type with
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDeletable](
+struct Pair[T: Copyable & Deinitable](
     Writable where conforms_to(T, Writable)
 ):
     var first: Self.T
@@ -425,7 +425,7 @@ You can print `Pair[Int]` because `Int` is `Writable`, but not
 
 ```mojo
 @fieldwise_init
-struct NotWritable(ImplicitlyCopyable & ImplicitlyDeletable):
+struct NotWritable(ImplicitlyCopyable & Deinitable):
     var item: Int
 
 def main():
@@ -441,7 +441,7 @@ conformance list:
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDeletable](
+struct Pair[T: Copyable & Deinitable](
     Equatable where conforms_to(T, Equatable),
     Writable where conforms_to(T, Writable),
     Copyable
@@ -553,7 +553,7 @@ Implicitly deletable structs get a default `__deinit__()`. A custom
 Explicitly destroyed structs write their own cleanup logic, using a
 consuming method with `deinit self`.
 
-Opt out with `ImplicitlyDeletable where False`.
+Opt out with `Deinitable where False`.
 :::
 
 ## `comptime` members

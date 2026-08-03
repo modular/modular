@@ -145,7 +145,7 @@ def test_unsafe_take_allocation() raises:
 
 
 def test_owned_pointer_linear_type() raises:
-    # An `OwnedPointer` holding a linear (non-`ImplicitlyDeletable`) element
+    # An `OwnedPointer` holding a linear (non-`Deinitable`) element
     # has no implicit destructor, so it is consumed explicitly with
     # `into_inner()`.
     # The linear value is destroyed before any raising assert runs (the

@@ -33,7 +33,7 @@ from layout.coord import Coord
 
 @fieldwise_init
 struct ConvIm2colParams(
-    Copyable, DevicePassable, ImplicitlyCopyable, ImplicitlyDeletable, Movable
+    Copyable, Deinitable, DevicePassable, ImplicitlyCopyable, Movable
 ):
     """Runtime conv geometry for the online im2col A-operand loader.
 

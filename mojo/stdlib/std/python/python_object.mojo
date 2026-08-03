@@ -178,9 +178,7 @@ struct PythonObject(
         self = source^.to_python_object()
 
     @always_inline
-    def __init__[
-        T: Movable & ImplicitlyDeletable
-    ](out self, *, var alloc: T) raises:
+    def __init__[T: Movable & Deinitable](out self, *, var alloc: T) raises:
         """Allocate a new `PythonObject` and store a Mojo value in it.
 
         The newly allocated Python object will contain the provided Mojo `T`
@@ -1438,7 +1436,7 @@ struct PythonObject(
         )
 
     def downcast_value_ptr[
-        T: ImplicitlyDeletable
+        T: Deinitable
     ](self, *, func: Optional[StaticString] = None) raises -> Pointer[
         T, MutAnyOrigin
     ]:
@@ -1490,7 +1488,7 @@ struct PythonObject(
             )
 
     def _try_downcast_value[
-        T: ImplicitlyDeletable
+        T: Deinitable
     ](var self) raises -> Optional[Pointer[T, MutAnyOrigin]]:
         """Try to get a pointer to the expected contained Mojo value of type `T`.
 
@@ -1517,7 +1515,7 @@ struct PythonObject(
         return None
 
     def unchecked_downcast_value_ptr[
-        mut: Bool, origin: Origin[mut=mut], //, T: ImplicitlyDeletable
+        mut: Bool, origin: Origin[mut=mut], //, T: Deinitable
     ](ref[origin] self) -> Pointer[T, origin]:
         """Get a pointer to the expected Mojo value of type `T`.
 
@@ -1576,7 +1574,7 @@ def _unsafe_alloc[
 
 
 def _unsafe_init[
-    T: Movable & ImplicitlyDeletable,
+    T: Movable & Deinitable,
     //,
 ](obj_ptr: PyObjectPtr, var mojo_value: T) raises:
     """Initialize a Python object pointer with a Mojo value.
@@ -1599,7 +1597,7 @@ def _unsafe_init[
 
 
 def _unsafe_alloc_init[
-    T: Movable & ImplicitlyDeletable,
+    T: Movable & Deinitable,
     //,
 ](type_obj_ptr: PyTypeObjectPtr, var mojo_value: T) raises -> PythonObject:
     """Allocate a Python object pointer and initialize it with a Mojo value.

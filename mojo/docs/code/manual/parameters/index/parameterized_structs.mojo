@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct ParameterizedArray[ElementType: Copyable & ImplicitlyDeletable]:
+struct ParameterizedArray[ElementType: Copyable & Deinitable]:
     var data: UnsafePointer[Self.ElementType, MutUntrackedOrigin]
     var size: Int
 

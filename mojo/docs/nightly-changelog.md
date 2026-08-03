@@ -314,20 +314,20 @@ This version is still a work in progress.
     instead of once per module.
 
 - The `@explicit_destroy` decorator is no longer sufficient for a `struct` type
-  to opt out of `ImplicitlyDeletable` conformance. As before, all structs
+  to opt out of `Deinitable` conformance. As before, all structs
   implicitly conform by default; to narrow or opt out, write a constrained
-  `ImplicitlyDeletable where ...` conformance instead — `where False` for types
+  `Deinitable where ...` conformance instead — `where False` for types
   that are never deletable, or a non-trivial condition:
 
   ```mojo
   struct NeverDeletable(
-      ImplicitlyDeletable where False
+      Deinitable where False
   ):
       def destroy(deinit self):
           pass
 
   struct Container[T: AnyType](
-      ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
+      Deinitable where conforms_to(T, Deinitable)
   ):
       var value: Self.T
   ```
@@ -377,7 +377,7 @@ This version is still a work in progress.
 ## Library stabilizations
 <!-- rumdl-disable MD013 -->
 
-- `trait ImplicitlyDeletable`
+- `trait Deinitable`
 - `trait Movable`
 - `trait Copyable`
 - `trait ImplicitlyCopyable`
@@ -387,9 +387,9 @@ This version is still a work in progress.
   - `def __init__(out self, *, capacity: Int)`
   - `def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):`
   - `def __init__(out self, *, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable):`
-  - `def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):`
+  - `def __del__(deinit self) where conforms_to(Self.T, Deinitable):`
   - `def reserve(mut self, capacity: Int):`
-  - `def resize(mut self, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):`
+  - `def resize(mut self, length: Int, fill: Self.T) where conforms_to(Self.T, Copyable & Deinitable):`
   - `def __getitem__[origin: Origin, //](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin_of(self)._get_owned_interior["element"]]:`
   - `def __iadd__(mut self, var other: Self, /) where conforms_to(Self.T, Copyable):`
   - `def extend(mut self, var other: Self):`
@@ -418,6 +418,12 @@ This version is still a work in progress.
   stdlib plugin contributes for hardware the stdlib has no built-in knowledge
   of. The accompanying `GPUInfo.name` and `GPUInfo.api` identify the
   accelerator.
+
+- `ImplicitlyDestructible` has been renamed to `Deinitable`, for
+  consistency with the `deinit` argument convention and the `__deinit__`
+  spelling of the destructor. Both `ImplicitlyDestructible` and the
+  intermediate `ImplicitlyDeletable` spelling remain available as deprecated
+  aliases.
 
 - `Span` now has a keyword-only `address_space` parameter (defaulting to
   `AddressSpace.GENERIC`), so a span can view memory in a non-default address
@@ -583,7 +589,7 @@ This version is still a work in progress.
   constructors and `Variant.set()` overload, which construct the value directly
   into storage (placement-new) rather than moving it. `deinit_with()` on both
   types also no longer requires `Movable`, so element types that are neither
-  `Movable` nor `ImplicitlyDeletable` are fully usable:
+  `Movable` nor `Deinitable` are fully usable:
 
   ```mojo
   @fieldwise_init
@@ -712,7 +718,7 @@ This version is still a work in progress.
 - Added `Dict.insert(key, value)` and `Dict.clear_with(destroy_func)`, with
   mirroring `Set.insert(element)` and `Set.clear_with(destroy_func)`, so a
   `Dict` or `Set` whose key, value, or element type is not
-  `ImplicitlyDeletable` can be populated and cleared. Unlike
+  `Deinitable` can be populated and cleared. Unlike
   `dict[key] = value`, `insert` does not destroy a displaced entry: it moves
   it out and returns it as an `Optional` for the caller to destroy.
   `clear_with` hands each entry to `destroy_func` and retains capacity:
@@ -725,29 +731,29 @@ This version is still a work in progress.
 
 - `Dict.fromkeys(keys, value)` has been generalized from taking a `List` to
   accepting any iterable of keys. Both forms require the key and
-  value types to be `ImplicitlyDeletable`.
+  value types to be `Deinitable`.
 
 - By-reference `Dict` iteration (`for entry in dict`, `keys()`, `values()`,
   `items()`, and `reversed()`) no longer requires the key and value types to be
-  `ImplicitlyDeletable`. These iterators only borrow references and never
+  `Deinitable`. These iterators only borrow references and never
   destroy an entry, so they now work on a `Dict` whose key or value type is not
-  `ImplicitlyDeletable`. Consuming iteration (`for entry in dict^` and
-  `take_items()`) still requires `ImplicitlyDeletable`, since it drops the
+  `Deinitable`. Consuming iteration (`for entry in dict^` and
+  `take_items()`) still requires `Deinitable`, since it drops the
   entries it does not yield.
 
 - `Span` has moved from `std.memory.span` to `std.collections.span`.
 
 - The container backing variadic `**kwargs` has been renamed from
   `OwnedKwargsDict` to `StringDict`. `StringDict` no longer
-  requires its value type `V` to be `ImplicitlyDeletable`. A keyword dictionary
-  whose values are linear (non-`ImplicitlyDeletable`) is itself linear and must
+  requires its value type `V` to be `Deinitable`. A keyword dictionary
+  whose values are linear (non-`Deinitable`) is itself linear and must
   be torn down explicitly with the new `deinit_with(deinit_func)`, which hands
   each key and value to `deinit_func`. It also gained `insert(key, value)`
   (returns the displaced entry as an `Optional[DictEntry]` without destroying
   it) and `popitem()` (moves out and returns a whole entry), mirroring `Dict`.
   Operations that destroy a displaced value in place — `kwargs[key] = value` and
   the two-argument `pop(key, default)` — still require `V` to be
-  `ImplicitlyDeletable`; use `insert`, `popitem`, or the single-argument
+  `Deinitable`; use `insert`, `popitem`, or the single-argument
   `pop(key)` for linear values.
 
 - `Coord` now conforms to `DevicePassable`, so a `Coord` embedded in a
@@ -830,11 +836,9 @@ This version is still a work in progress.
               args[i].write_to(writer)
   ```
 
-- `ImplicitlyDestructible` has been renamed to `ImplicitlyDeletable`, for
-  better name consistency with its required `__del__()` "delete" special
-  method, and `is_trivially_destructible()` to `is_trivially_deletable()`.
-  The latter now also accepts any type (`T: AnyType`) instead of requiring
-  `T: ImplicitlyDeletable`, returning `False` for non-`ImplicitlyDeletable`
+- `is_trivially_destructible()` has been renamed to
+  `is_trivially_deletable()`. It now accepts any type (`T: AnyType`) instead
+  of requiring `T: Deinitable`, returning `False` for non-`Deinitable`
   (linear) types.
 
 - `List.insert()` and `LinkedList.insert()` no longer normalize negative
@@ -859,9 +863,9 @@ This version is still a work in progress.
   `ImplicitlyCopyable`, since it is not inherently cheap to copy. It continues
   to conform to `Copyable`.
 
-- Several collection types now *conditionally* conform to `ImplicitlyDeletable`,
+- Several collection types now *conditionally* conform to `Deinitable`,
   conforming only when their element type does. This lets a collection hold
-  non-`ImplicitlyDeletable` elements at all (previously such a collection failed
+  non-`Deinitable` elements at all (previously such a collection failed
   to compile); a collection of non-deletable elements is itself linear and must
   be drained explicitly with the new `deinit_with()` method, which calls a
   closure on each element:
@@ -870,17 +874,17 @@ This version is still a work in progress.
   collection^.deinit_with(my_destroy_closure)
   ```
 
-  For `ImplicitlyDeletable` element types — the common case — all of this is
+  For `Deinitable` element types — the common case — all of this is
   transparent, but generic code that takes one of these collections by value
-  may now need `& ImplicitlyDeletable` added to its element bound so the
+  may now need `& Deinitable` added to its element bound so the
   collection can be dropped:
 
   ```mojo
-  def foo[T: Movable & ImplicitlyDeletable, //](var arr: InlineArray[T, 3]):
+  def foo[T: Movable & Deinitable, //](var arr: InlineArray[T, 3]):
       pass
   ```
 
-  Affected types, and the operations that still require `ImplicitlyDeletable`
+  Affected types, and the operations that still require `Deinitable`
   elements:
 
   - `InlineArray`: no remaining restrictions.
@@ -900,8 +904,8 @@ This version is still a work in progress.
   - `Tuple`: a tuple with a linear element must be torn down with
     `deinit_with()` or fully consumed with `consume_elements()`. Generic code
     that stores a `Tuple[*Ts]` with an unbounded pack may need
-    `& ImplicitlyDeletable` on the pack bound.
-  - `Set`: the element bound loosened from `KeyElement & ImplicitlyDeletable`
+    `& Deinitable` on the pack bound.
+  - `Set`: the element bound loosened from `KeyElement & Deinitable`
     to just `KeyElement`; element-mutating operations (`add`, `remove`,
     `discard`, `clear`) and consuming iteration still require deletable
     elements, so a `Set` with linear elements can be constructed and torn
@@ -930,14 +934,14 @@ This version is still a work in progress.
 - `Optional` gained `deinit_assert_empty()`, which destroys an empty linear
   `Optional` without a caller-provided deinitializer, aborting in safe-assert
   builds if it is non-empty. `Optional.map()` and `Optional.and_then()` also
-  now work when the element type is linear (not `ImplicitlyDeletable`): they
+  now work when the element type is linear (not `Deinitable`): they
   move the contained value out and destroy the emptied `Optional` explicitly,
   so a linear value can be transformed and handed back to the caller.
 
 - It is now possible to iterate over owned elements in `List`, `Dict`,
   `InlineArray`, `LinkedList`, and `Set` when the element type is not
   `Copyable`: the `IterableOwned` conformance on these collections now
-  requires only `Movable & ImplicitlyDeletable`, dropping `Copyable`.
+  requires only `Movable & Deinitable`, dropping `Copyable`.
 
   ```mojo
   def iterate[T: Movable](var list: List[T]):
@@ -1038,8 +1042,8 @@ This version is still a work in progress.
     keyword argument (`ptr.unsafe_write(copy=value)`).
   - `destroy_pointee()` and `destroy_pointee_with()` become
     `unsafe_deinit_pointee()`: call it with no arguments to destroy an
-    `ImplicitlyDeletable` pointee, or pass a deinitializing closure to
-    destroy a non-`ImplicitlyDeletable` pointee in place.
+    `Deinitable` pointee, or pass a deinitializing closure to
+    destroy a non-`Deinitable` pointee in place.
   - `init_pointee_move_from()` becomes `unsafe_write_move_from(src)`, which
     moves the value out of a source pointer into the uninitialized memory
     `self` points to (leaving the source uninitialized).

@@ -280,7 +280,7 @@ def _run(var handle: Coroutine[...], out result: handle.type):
 # ===-----------------------------------------------------------------------===#
 
 
-struct Task[type: ImplicitlyDeletable, origins: OriginSet](Movable where False):
+struct Task[type: Deinitable, origins: OriginSet](Movable where False):
     """Represents an asynchronous task that will produce a value of the specified type.
 
     A Task encapsulates a coroutine that is executing asynchronously and will eventually
@@ -405,7 +405,7 @@ def create_raising_task[
 
 
 struct RaisingTask[type: Movable, origins: OriginSet](
-    ImplicitlyDeletable where False,
+    Deinitable where False,
 ):
     """Represents an async task that may raise an error upon completion.
 
@@ -413,7 +413,7 @@ struct RaisingTask[type: Movable, origins: OriginSet](
     produces a result value or raises an error. The error is propagated
     to the caller when `wait()` is called.
 
-    This type does not conform to `ImplicitlyDeletable` because only one of the
+    This type does not conform to `Deinitable` because only one of the
     result or error slots is valid after completion. The caller must call
     `wait()` or `force_destroy()` to consume the task.
 
@@ -534,7 +534,7 @@ struct RaisingTask[type: Movable, origins: OriginSet](
         result = self^._into_result()
 
     # TODO: Add force_destroy() when we have a trait that combines
-    # Movable and ImplicitlyDeletable. Currently, the caller must
+    # Movable and Deinitable. Currently, the caller must
     # call wait() to consume the task.
 
 
@@ -567,9 +567,7 @@ struct _TaskGroupBox(Copyable, RegisterPassable):
 
     var handle: AnyCoroutine
 
-    def __init__[
-        type: ImplicitlyDeletable
-    ](out self, var coro: Coroutine[type, ...]):
+    def __init__[type: Deinitable](out self, var coro: Coroutine[type, ...]):
         self.handle = coro^._take_handle()
 
     def __deinit__(deinit self):

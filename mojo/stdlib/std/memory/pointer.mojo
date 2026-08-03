@@ -666,7 +666,7 @@ struct Pointer[
         ](other._mlir_value)
 
     def __init__[
-        U: ImplicitlyDeletable, //
+        U: Deinitable, //
     ](
         out self: Pointer[U, Self.origin],
         *,
@@ -2541,7 +2541,7 @@ struct Pointer[
     @always_inline
     @deprecated(use=unsafe_deinit_pointee)
     def destroy_pointee[
-        U: ImplicitlyDeletable, //
+        U: Deinitable, //
     ](self: Pointer[U, _]) where type_of(self).mut:
         _ = __get_address_as_owned_value(self._mlir_value)
 
@@ -2565,7 +2565,7 @@ struct Pointer[
     ) where (
         Self.mut
         and Self.address_space == AddressSpace.GENERIC
-        and conforms_to(Self.T, ImplicitlyDeletable)
+        and conforms_to(Self.T, Deinitable)
     ):
         """Destroys the pointed-to value.
 
@@ -2593,7 +2593,7 @@ struct Pointer[
         """Destroys the pointed-to value using a user-provided deinitializer
         function.
 
-        This can be used to destroy non-`ImplicitlyDeletable` values in-place
+        This can be used to destroy non-`Deinitable` values in-place
         without moving.
 
         Args:

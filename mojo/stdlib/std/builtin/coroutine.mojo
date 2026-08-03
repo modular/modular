@@ -81,8 +81,8 @@ def _coro_resume_noop_callback(null: AnyCoroutine):
 # ===----------------------------------------------------------------------=== #
 
 
-struct Coroutine[type: ImplicitlyDeletable, origins: OriginSet](
-    ImplicitlyDeletable where False,
+struct Coroutine[type: Deinitable, origins: OriginSet](
+    Deinitable where False,
     RegisterPassable,
 ):
     """Represents a coroutine.
@@ -183,7 +183,7 @@ struct Coroutine[type: ImplicitlyDeletable, origins: OriginSet](
 
 
 struct RaisingCoroutine[type: AnyType, origins: OriginSet](
-    ImplicitlyDeletable where False,
+    Deinitable where False,
     RegisterPassable,
 ):
     """Represents a coroutine that can raise.

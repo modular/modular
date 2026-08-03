@@ -87,7 +87,7 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
     Iterable where conforms_to(IteratorTypeA, Copyable),
     IterableOwned,
     Iterator,
-) where conforms_to(IteratorTypeA.Element, ImplicitlyDeletable):
+) where conforms_to(IteratorTypeA.Element, Deinitable):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
     ]
@@ -183,7 +183,7 @@ def product[
     IterableTypeB.IteratorType[origin_of(iterable_b)],
 ] where conforms_to(
     IterableTypeA.IteratorType[origin_of(iterable_a)].Element,
-    ImplicitlyDeletable,
+    Deinitable,
 ) and conforms_to(
     IterableTypeB.IteratorType[origin_of(iterable_b)], Copyable & Iterator
 ):
@@ -237,7 +237,7 @@ def _flatten[
     The nested `product` iterators build their tuples one pair at a time, so
     each `__next__` yields a right-nested tuple that has to be flattened. The
     element types are only known to be `Movable` and `Tuple` is only
-    conditionally `ImplicitlyDeletable`, so `arg` can't be dropped implicitly.
+    conditionally `Deinitable`, so `arg` can't be dropped implicitly.
     Each element is moved into `result` instead, then `arg` is discarded
     without running a destructor.
     """
@@ -275,9 +275,9 @@ struct _Product3[
     IterableOwned,
     Iterator,
 ) where conforms_to(
-    IteratorTypeA.Element, ImplicitlyDeletable
+    IteratorTypeA.Element, Deinitable
 ) and conforms_to(
-    IteratorTypeB.Element, ImplicitlyDeletable
+    IteratorTypeB.Element, Deinitable
 ):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
@@ -344,11 +344,11 @@ def product[
     )
     and conforms_to(
         IterableTypeA.IteratorType[origin_of(iterable_a)].Element,
-        ImplicitlyDeletable,
+        Deinitable,
     )
     and conforms_to(
         IterableTypeB.IteratorType[origin_of(iterable_b)].Element,
-        ImplicitlyDeletable,
+        Deinitable,
     )
 ):
     """Returns an iterator that yields tuples of the elements of the outer
@@ -404,9 +404,9 @@ struct _Product4[
     IterableOwned,
     Iterator,
 ) where (
-    conforms_to(IteratorTypeA.Element, ImplicitlyDeletable)
-    and conforms_to(IteratorTypeB.Element, ImplicitlyDeletable)
-    and conforms_to(IteratorTypeC.Element, ImplicitlyDeletable)
+    conforms_to(IteratorTypeA.Element, Deinitable)
+    and conforms_to(IteratorTypeB.Element, Deinitable)
+    and conforms_to(IteratorTypeC.Element, Deinitable)
 ):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
@@ -483,15 +483,15 @@ def product[
     )
     and conforms_to(
         IterableTypeA.IteratorType[origin_of(iterable_a)].Element,
-        ImplicitlyDeletable,
+        Deinitable,
     )
     and conforms_to(
         IterableTypeB.IteratorType[origin_of(iterable_b)].Element,
-        ImplicitlyDeletable,
+        Deinitable,
     )
     and conforms_to(
         IterableTypeC.IteratorType[origin_of(iterable_c)].Element,
-        ImplicitlyDeletable,
+        Deinitable,
     )
 ):
     """Returns an iterator that yields tuples of the elements of the outer
@@ -544,7 +544,7 @@ def product(
 ] where conforms_to(
     type_of(iterable_b).IteratorOwnedType, Copyable & Iterator
 ) and conforms_to(
-    type_of(iterable_a).IteratorOwnedType.Element, ImplicitlyDeletable
+    type_of(iterable_a).IteratorOwnedType.Element, Deinitable
 ):
     """Returns an iterator that yields tuples of the elements of the outer
     product of the iterables, consuming both iterables.
@@ -577,11 +577,11 @@ def product(
     and conforms_to(type_of(iterable_c).IteratorOwnedType, Copyable & Iterator)
     and conforms_to(
         type_of(iterable_a).IteratorOwnedType.Element,
-        ImplicitlyDeletable,
+        Deinitable,
     )
     and conforms_to(
         type_of(iterable_b).IteratorOwnedType.Element,
-        ImplicitlyDeletable,
+        Deinitable,
     )
 ):
     """Returns an iterator that yields tuples of the elements of the outer
@@ -620,15 +620,15 @@ def product(
     and conforms_to(type_of(iterable_d).IteratorOwnedType, Copyable & Iterator)
     and conforms_to(
         type_of(iterable_a).IteratorOwnedType.Element,
-        ImplicitlyDeletable,
+        Deinitable,
     )
     and conforms_to(
         type_of(iterable_b).IteratorOwnedType.Element,
-        ImplicitlyDeletable,
+        Deinitable,
     )
     and conforms_to(
         type_of(iterable_c).IteratorOwnedType.Element,
-        ImplicitlyDeletable,
+        Deinitable,
     )
 ):
     """Returns an iterator that yields tuples of the elements of the outer
@@ -835,7 +835,7 @@ struct _TakeWhileIterator[
 
     @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:
-        comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+        comptime assert conforms_to(Self.Element, Deinitable)
 
         if self._exhausted:
             raise StopIteration()
@@ -857,10 +857,7 @@ def take_while[
 ](ref[origin] iterable: IterableType) -> _TakeWhileIterator[
     InnerIteratorType=IterableType.IteratorType[origin],
     predicate=predicate,
-] where conforms_to(
-    IterableType.IteratorType[origin].Element,
-    ImplicitlyDeletable,
-):
+] where conforms_to(IterableType.IteratorType[origin].Element, Deinitable,):
     """Creates an iterator that yields elements while predicate returns True.
 
     This function returns an iterator that yields elements from the input
@@ -905,10 +902,7 @@ def take_while[
 ](var iterable: IterableType) -> _TakeWhileIterator[
     InnerIteratorType=IterableType.IteratorOwnedType,
     predicate=predicate,
-] where conforms_to(
-    IterableType.IteratorOwnedType.Element,
-    ImplicitlyDeletable,
-):
+] where conforms_to(IterableType.IteratorOwnedType.Element, Deinitable,):
     """Creates an iterator that yields elements while predicate returns True,
     consuming the iterable.
 
@@ -992,7 +986,7 @@ struct _DropWhileIterator[
 
     @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:
-        comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+        comptime assert conforms_to(Self.Element, Deinitable)
 
         if self._dropping:
             while True:
@@ -1015,10 +1009,7 @@ def drop_while[
 ](ref[origin] iterable: IterableType) -> _DropWhileIterator[
     InnerIteratorType=IterableType.IteratorType[origin],
     predicate=predicate,
-] where conforms_to(
-    IterableType.IteratorType[origin].Element,
-    ImplicitlyDeletable,
-):
+] where conforms_to(IterableType.IteratorType[origin].Element, Deinitable,):
     """Creates an iterator that drops elements while predicate returns True.
 
     This function returns an iterator that drops elements from the input
@@ -1064,10 +1055,7 @@ def drop_while[
 ](var iterable: IterableType) -> _DropWhileIterator[
     InnerIteratorType=IterableType.IteratorOwnedType,
     predicate=predicate,
-] where conforms_to(
-    IterableType.IteratorOwnedType.Element,
-    ImplicitlyDeletable,
-):
+] where conforms_to(IterableType.IteratorOwnedType.Element, Deinitable,):
     """Creates an iterator that drops elements while predicate returns True,
     consuming the iterable.
 
@@ -1096,7 +1084,7 @@ def drop_while[
 
 
 @fieldwise_init
-struct _RepeatIterator[ElementType: Copyable & ImplicitlyDeletable](
+struct _RepeatIterator[ElementType: Copyable & Deinitable](
     Copyable, Iterable, IterableOwned, Iterator
 ):
     """Iterator that repeats an element a specified number of times.
@@ -1132,7 +1120,7 @@ struct _RepeatIterator[ElementType: Copyable & ImplicitlyDeletable](
 
 @always_inline
 def repeat[
-    ElementType: Copyable & ImplicitlyDeletable
+    ElementType: Copyable & Deinitable
 ](element: ElementType, *, times: Int) -> _RepeatIterator[ElementType]:
     """Constructs an iterator that repeats the given element a specified number of times.
 
@@ -1275,7 +1263,7 @@ def take[
     ```
     """
     assert count >= 0, "The `count` argument must be non-negative"
-    # Unlike `drop` and `take_while`, `take` has no `ImplicitlyDeletable`
+    # Unlike `drop` and `take_while`, `take` has no `Deinitable`
     # constraint on the element type: it never discards an element, it just
     # stops yielding once `count` is reached.
     # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
@@ -1365,7 +1353,7 @@ struct _DropIterator[InnerIteratorType: Iterator](
 
     @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:
-        comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+        comptime assert conforms_to(Self.Element, Deinitable)
 
         while self._to_drop > 0:
             # Discard dropped elements. If `next` raises, `_to_drop` is not
@@ -1392,10 +1380,7 @@ def drop[
     //,
 ](ref[origin] iterable: IterableType, count: Int) -> _DropIterator[
     IterableType.IteratorType[origin]
-] where conforms_to(
-    IterableType.IteratorType[origin].Element,
-    ImplicitlyDeletable,
-):
+] where conforms_to(IterableType.IteratorType[origin].Element, Deinitable,):
     """Creates an iterator that drops the first `count` elements.
 
     This function returns an iterator that drops the first `count` elements
@@ -1436,10 +1421,7 @@ def drop[
     IterableType: IterableOwned, //
 ](var iterable: IterableType, count: Int) -> _DropIterator[
     IterableType.IteratorOwnedType
-] where conforms_to(
-    IterableType.IteratorOwnedType.Element,
-    ImplicitlyDeletable,
-):
+] where conforms_to(IterableType.IteratorOwnedType.Element, Deinitable,):
     """Creates an iterator that drops the first `count` elements, consuming
     the iterable.
 

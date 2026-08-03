@@ -130,7 +130,7 @@ struct _PrecompiledEntriesRuntime[format_origin: ImmOrigin, //, *Ts: Writable](
 
 @always_inline
 def _comptime_list_to_span[
-    T: ImplicitlyDeletable & Copyable, //, list: List[T]
+    T: Deinitable & Copyable, //, list: List[T]
 ]() -> Span[T, ImmStaticOrigin]:
     """Convert a comptime list to a runtime span of static constant origin."""
 

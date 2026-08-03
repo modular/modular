@@ -33,13 +33,13 @@
     </section>
 
     <section class="panel">
-      <h2>ImplicitlyDeletable <span class="sum">has an implicit destructor, called at last use</span> <span class="src">builtin/anytype.mojo</span></h2>
+      <h2>Deinitable <span class="sum">has an implicit destructor, called at last use</span> <span class="src">builtin/anytype.mojo</span></h2>
       <div class="body">
         <div class="reqs">
           <div class="req"><span class="sig">__del__(deinit self, /)</span><span class="rmk">provided</span></div>
           <div class="req"><span class="sig">comptime __del__is_trivial: Bool</span><span class="rmk">compile-time flag</span></div>
         </div>
-        <p class="note">Automatically added to every eligible type (all fields are also <b>ImplicitlyDeletable</b>). When the type is trivial, Mojo skips the destructor.</p>
+        <p class="note">Automatically added to every eligible type (all fields are also <b>Deinitable</b>). When the type is trivial, Mojo skips the destructor.</p>
       </div>
     </section>
 
@@ -97,7 +97,7 @@
     <section class="panel">
       <h2>TrivialRegisterPassable <span class="sum"><b class="mtag">marker</b> register-passable, copyable by moving bits, no side effects</span> <span class="src">builtin/value.mojo</span></h2>
       <div class="body">
-        <p class="meta"><b>Refines:</b> ImplicitlyCopyable &lt; Copyable &lt; Movable, ImplicitlyDeletable, RegisterPassable &nbsp;·&nbsp; no requirements (marker)</p>
+        <p class="meta"><b>Refines:</b> ImplicitlyCopyable &lt; Copyable &lt; Movable, Deinitable, RegisterPassable &nbsp;·&nbsp; no requirements (marker)</p>
         <p class="note">A type whose values are treated as basic bit patterns. No constructors or destructors needed. All fields must also conform.</p>
       </div>
     </section>
@@ -132,9 +132,9 @@
     <section class="panel">
       <h2>Strategy <span class="sum">produces random inputs for property-based tests</span> <span class="src">testing/prop/strategy/__init__.mojo</span></h2>
       <div class="body">
-        <p class="meta"><b>Refines:</b> ImplicitlyDeletable, Movable</p>
+        <p class="meta"><b>Refines:</b> Deinitable, Movable</p>
         <div class="reqs">
-          <div class="req"><span class="sig">Value: Copyable &amp; ImplicitlyDeletable</span><span class="rmk">associated type</span></div>
+          <div class="req"><span class="sig">Value: Copyable &amp; Deinitable</span><span class="rmk">associated type</span></div>
           <div class="req"><span class="sig">value(mut self, mut rng: Rng) raises -&gt; Self.Value</span></div>
         </div>
         <p class="note">Allows strategies to carry and advance state between draws. <b>value()</b> draws one sample from the random number generator.</p>
@@ -329,7 +329,7 @@
     <section class="panel">
       <h2>Iterator <span class="sum">produces elements one at a time; the for-loop workhorse</span> <span class="src">iter/__init__.mojo</span></h2>
       <div class="body">
-        <p class="meta"><b>Refines:</b> ImplicitlyDeletable, Movable</p>
+        <p class="meta"><b>Refines:</b> Deinitable, Movable</p>
         <div class="reqs">
           <div class="req"><span class="sig">Element: Movable</span><span class="rmk">associated type</span></div>
           <div class="req"><span class="sig">__next__(mut self) raises StopIteration -&gt; Self.Element</span></div>
@@ -357,7 +357,7 @@
     <section class="panel">
       <h2>ConvertibleToPython <span class="sum">can be sent to Python</span> <span class="src">python/conversions.mojo</span></h2>
       <div class="body">
-        <p class="meta"><b>Refines:</b> ImplicitlyDeletable</p>
+        <p class="meta"><b>Refines:</b> Deinitable</p>
         <div class="reqs">
           <div class="req"><span class="sig">to_python_object(var self) raises -&gt; PythonObject</span></div>
         </div>
@@ -367,7 +367,7 @@
     <section class="panel">
       <h2>ConvertibleFromPython <span class="sum">can be created from a Python object</span> <span class="src">python/conversions.mojo</span></h2>
       <div class="body">
-        <p class="meta"><b>Refines:</b> Copyable &lt; Movable, ImplicitlyDeletable</p>
+        <p class="meta"><b>Refines:</b> Copyable &lt; Movable, Deinitable</p>
         <div class="reqs">
           <div class="req"><span class="sig">__init__(out self, *, py: PythonObject) raises</span></div>
         </div>
