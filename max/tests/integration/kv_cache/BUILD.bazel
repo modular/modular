@@ -98,7 +98,6 @@ modular_py_test(
         exclude = [
             "*_distributed_gpu.py",
             "test_lora_*.py",
-            "test_fused_qk_rms_norm_rope_fusion_gpu.py",  # disabled: QUA-780 / MXSERV-283
             "test_msa_fp8_kv_store_gpu.py",
             "test_dual_qk_fp8_kv_store_gpu.py",
         ],
@@ -122,6 +121,7 @@ modular_py_test(
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",
         requirement("hypothesis"),
+        requirement("ml-dtypes"),
         requirement("numpy"),
     ],
 )
@@ -179,33 +179,6 @@ modular_py_test(
         "//max/tests/integration/test_common:graph_utils",
         requirement("numpy"),
         requirement("torch"),
-    ],
-)
-
-# Disabled due to nondeterminism. Tracking: QUA-780
-# Re-enable tracking: https://linear.app/modularml/issue/MXSERV-283
-modular_py_test(
-    name = "test_fused_qk_rms_norm_rope_fusion_gpu",
-    srcs = [
-        "conftest.py",
-        "test_fused_qk_rms_norm_rope_fusion_gpu.py",
-    ],
-    exec_properties = {
-        "test.resources:gpu-memory": "2",
-    },
-    tags = ["gpu"],
-    target_compatible_with = ["@platforms//:incompatible"],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        "//max/python/max/pipelines/kv_cache",
-        "//max/tests/integration/test_common:context_utils",
-        requirement("hypothesis"),
-        requirement("ml-dtypes"),
-        requirement("numpy"),
     ],
 )
 

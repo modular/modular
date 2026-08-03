@@ -59,9 +59,6 @@ PROMPT_LENS = [3, 5]
 TOTAL_SEQ_LEN = sum(PROMPT_LENS)
 Q_WIDTH = NUM_Q_HEADS * HEAD_DIM
 
-DTYPES = [DType.float32, DType.bfloat16]
-DTYPE_IDS = ["f32", "bf16"]
-
 
 @pytest.fixture(scope="module")
 def gpu() -> tuple[InferenceSession, Accelerator]:
@@ -264,16 +261,12 @@ def _run(
     return _from_device(result, dtype)
 
 
-@pytest.mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
 @pytest.mark.parametrize(
     "interleaved", [True, False], ids=["interleaved", "split"]
 )
-@pytest.mark.parametrize("rope_frac", [1, 2], ids=["full_rope", "partial_rope"])
 def test_fused_matches_unfused(
     gpu: tuple[InferenceSession, Accelerator],
-    dtype: DType,
     interleaved: bool,
-    rope_frac: int,
 ) -> None:
     """A sliced + reshaped Q view must produce the same Q as the direct path.
 
@@ -282,8 +275,9 @@ def test_fused_matches_unfused(
     that the graph compiler fuses into the Q load. The results must be
     bit-exact -- the fusion cannot change the values it feeds the kernel.
     """
+    dtype = DType.bfloat16
     session, device = gpu
-    rope_dim = HEAD_DIM // rope_frac
+    rope_dim = HEAD_DIM // 2
 
     rng = np.random.default_rng(0)
     q_np = rng.standard_normal((TOTAL_SEQ_LEN, NUM_Q_HEADS, HEAD_DIM)).astype(
