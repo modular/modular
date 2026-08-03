@@ -416,11 +416,11 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             external_call[
                 "AsyncRT_DeviceGraphBuilder_recordingContext",
                 _CString[],
-                UnsafePointer[_DeviceContextPtr[mut=True], origin_of(result)],
+                Pointer[_DeviceContextPtr[mut=True], origin_of(result)],
                 _DeviceGraphBuilderPtr[mut=True],
                 Int32,
             ](
-                UnsafePointer(to=result),
+                Pointer(to=result),
                 self._handle,
                 seed.id,
             )

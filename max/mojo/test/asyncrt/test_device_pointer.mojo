@@ -382,9 +382,7 @@ def test_unsafe_ptr_advances_by_offset() raises:
     var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
     var p = buf.device_ptr()
     var q = p + 8
-    assert_true(
-        q.unsafe_ptr() == UnsafePointer(p.unsafe_ptr()).unsafe_offset(8)
-    )
+    assert_true(q.unsafe_ptr() == Pointer(p.unsafe_ptr()).unsafe_offset(8))
 
 
 # ===-----------------------------------------------------------------------===#

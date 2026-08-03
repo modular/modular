@@ -101,15 +101,9 @@ def _run_cuda_external_function(ctx: DeviceContext) raises:
 
     # Signature of externally compiled kernel function
     def vec_add_sig(
-        # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a
-        # safe `Pointer`.
-        # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer
-        # args to `UnsafePointer` (their `device_type`) and matches the declared
-        # param type exactly, so these stay `UnsafePointer` (safe `Pointer`
-        # won't match).
-        in0: UnsafePointer[Float32, MutAnyOrigin],
-        in1: UnsafePointer[Float32, MutAnyOrigin],
-        output: UnsafePointer[Float32, MutAnyOrigin],
+        in0: Pointer[Float32, MutAnyOrigin],
+        in1: Pointer[Float32, MutAnyOrigin],
+        output: Pointer[Float32, MutAnyOrigin],
         len: Int,
     ):
         pass
@@ -216,13 +210,7 @@ def _run_cuda_external_function_distinct_entry_points(
     print("_run_cuda_external_function_distinct_entry_points()")
 
     def kernel_sig(
-        # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a
-        # safe `Pointer`.
-        # GPU kernel entry param: `enqueue_function` lowers the DeviceBuffer
-        # arg to `UnsafePointer` (its `device_type`) and matches the declared
-        # param type exactly, so this stays `UnsafePointer` (safe `Pointer`
-        # won't match).
-        output: UnsafePointer[Float32, MutAnyOrigin],
+        output: Pointer[Float32, MutAnyOrigin],
         len: Int,
     ):
         pass

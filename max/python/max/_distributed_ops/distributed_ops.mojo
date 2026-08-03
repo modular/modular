@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Array
-from std.memory import OpaquePointer, UnsafePointer
+from std.memory import OpaquePointer, Pointer
 from std.os import abort
 from max.gpu.host import DeviceContext, DeviceContextArray
 from std.python import Python, PythonObject
@@ -84,34 +84,34 @@ def _do_broadcast[
     var root_v = Int(py=root)
     var in_addr = Int(py=input_data_ptr)
 
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[Pointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     for i in range(ngpus):
         var sig_addr = Int(py=signal_data_ptrs[i])
-        rank_sigs[i] = UnsafePointer[Signal, MutAnyOrigin](
+        rank_sigs[i] = Pointer[Signal, MutAnyOrigin](
             unsafe_from_address=sig_addr
         )
 
-    var in_ptr = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
+    var in_ptr = Pointer[Scalar[DType.uint8], MutAnyOrigin](
         unsafe_from_address=in_addr
     )
     var in_tile = TileTensor(in_ptr, row_major(n)).as_immut()
 
-    var out_ptrs = Array[
-        UnsafePointer[Scalar[DType.uint8], MutAnyOrigin], ngpus
-    ](uninitialized=True)
+    var out_ptrs = Array[Pointer[Scalar[DType.uint8], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
     var ctx_array = Array[DeviceContext, ngpus](uninitialized=True)
     for i in range(ngpus):
         var buf = output_buffers[i]
         var out_addr = Int(py=buf._data_ptr())
         var ctx_addr = Int(py=buf.device._device_context_ptr())
-        out_ptrs[i] = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
+        out_ptrs[i] = Pointer[Scalar[DType.uint8], MutAnyOrigin](
             unsafe_from_address=out_addr
         )
         # unsafe_write prevents DeviceContext.__deinit__ from dropping a
         # refcount, so assigning into the uninitialized slot would destroy it
-        var ctx_array_ptr: UnsafePointer[
+        var ctx_array_ptr: Pointer[
             DeviceContext, origin_of(ctx_array)
         ] = ctx_array.unsafe_ptr()
         ctx_array_ptr.unsafe_offset(i).unsafe_write(

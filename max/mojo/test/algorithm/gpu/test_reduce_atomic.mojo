@@ -36,11 +36,8 @@ struct FillStrategy(Equatable, ImplicitlyCopyable):
 
 
 def reduce_add(
-    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
-    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
-    # matches the declared param type exactly, so a safe `Pointer` won't match.
-    res_add: UnsafePointer[Float32, MutAnyOrigin],
-    vec: UnsafePointer[Float32, MutAnyOrigin],
+    res_add: Pointer[Float32, MutAnyOrigin],
+    vec: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
@@ -54,11 +51,8 @@ def reduce_add(
 
 
 def reduce_add_via_cas(
-    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
-    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
-    # matches the declared param type exactly, so a safe `Pointer` won't match.
-    res_add: UnsafePointer[Float32, MutAnyOrigin],
-    vec: UnsafePointer[Float32, MutAnyOrigin],
+    res_add: Pointer[Float32, MutAnyOrigin],
+    vec: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
@@ -78,11 +72,8 @@ def reduce_add_via_cas(
 
 
 def reduce_add_via_shared_cas(
-    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
-    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
-    # matches the declared param type exactly, so a safe `Pointer` won't match.
-    res_add: UnsafePointer[Float32, MutAnyOrigin],
-    vec: UnsafePointer[Float32, MutAnyOrigin],
+    res_add: Pointer[Float32, MutAnyOrigin],
+    vec: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
     """Same CAS-retry-loop reduction as `reduce_add_via_cas`, but on
@@ -114,12 +105,9 @@ def reduce_add_via_shared_cas(
 
 
 def reduce_min_max(
-    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
-    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
-    # matches the declared param type exactly, so a safe `Pointer` won't match.
-    res_min: UnsafePointer[Float32, MutAnyOrigin],
-    res_max: UnsafePointer[Float32, MutAnyOrigin],
-    vec: UnsafePointer[Float32, MutAnyOrigin],
+    res_min: Pointer[Float32, MutAnyOrigin],
+    res_max: Pointer[Float32, MutAnyOrigin],
+    vec: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.

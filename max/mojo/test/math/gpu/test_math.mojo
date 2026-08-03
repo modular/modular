@@ -25,7 +25,7 @@ def run_func[
 ](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
     @parameter
     def kernel(
-        output: UnsafePointer[Scalar[dtype], MutAnyOrigin], input: Scalar[dtype]
+        output: Pointer[Scalar[dtype], MutAnyOrigin], input: Scalar[dtype]
     ):
         output[unsafe_offset=0] = kernel_fn(input)
 

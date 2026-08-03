@@ -50,10 +50,7 @@ struct CoordBox(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
 
 # Launched single-threaded (grid=1/block=1), so the kernel writes
 # unconditionally and needs no `global_idx`.
-# TODO(MSTDL-2875): kernel entry params keep `UnsafePointer` until
-# `DeviceBuffer.device_type` becomes a safe `Pointer` (enqueue matches the
-# declared param type exactly).
-def _read_back_kernel(box: CoordBox, dst: UnsafePointer[Int64, MutAnyOrigin]):
+def _read_back_kernel(box: CoordBox, dst: Pointer[Int64, MutAnyOrigin]):
     dst[] = Int64(Int(box.dims[0].value()))
     dst[unsafe_offset=1] = Int64(Int(box.dims[1].value()))
     dst[unsafe_offset=2] = Int64(box.tag)

@@ -64,12 +64,12 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
+    var data: Pointer[Scalar[Self.dtype], MutUntrackedOrigin]
     var nd: Int
 
-    var dimensions: UnsafePointer[Int, MutUntrackedOrigin]
+    var dimensions: Pointer[Int, MutUntrackedOrigin]
 
-    var strides: UnsafePointer[Int, MutUntrackedOrigin]
+    var strides: Pointer[Int, MutUntrackedOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
     var flags: Int
@@ -90,7 +90,7 @@ def _mojo_block_hasher[
     dtype: DType,
     //,
 ](
-    py_array_object_ptr: UnsafePointer[PyArrayObject[dtype], _],
+    py_array_object_ptr: Pointer[PyArrayObject[dtype], _],
     block_size: Int,
     parent_hash: Int,
 ) -> PythonObject:
@@ -130,7 +130,7 @@ def mojo_block_hasher(
     parent_hash_obj: PythonObject,
 ) raises -> PythonObject:
     # Parse np array tokens input
-    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32], _](
+    var py_array_object_ptr = Pointer[PyArrayObject[DType.int32], _](
         unchecked_downcast_value=py_array_object
     )
 
@@ -148,10 +148,10 @@ def mojo_block_hasher(
 
 @always_inline
 def _mojo_block_hasher_sha256(
-    tokens_ptr: UnsafePointer[PyArrayObject[DType.int32], _],
+    tokens_ptr: Pointer[PyArrayObject[DType.int32], _],
     block_size: Int,
-    parent_hash_ptr: UnsafePointer[PyArrayObject[DType.uint8], _],
-    out_ptr: UnsafePointer[PyArrayObject[DType.uint8], _],
+    parent_hash_ptr: Pointer[PyArrayObject[DType.uint8], _],
+    out_ptr: Pointer[PyArrayObject[DType.uint8], _],
 ):
     """Chained block hashing using SHA-256. Writes (num_blocks, 32) bytes to out_ptr.
     Args:
@@ -169,7 +169,7 @@ def _mojo_block_hasher_sha256(
     var out_bytes = out_ptr[].data
 
     var pair = Array[UInt8, 64](fill=UInt8(0))
-    var pair_ptr: UnsafePointer[UInt8, origin_of(pair)] = pair.unsafe_ptr()
+    var pair_ptr: Pointer[UInt8, origin_of(pair)] = pair.unsafe_ptr()
 
     # Initialise prev with the caller-provided parent hash
     unsafe_memcpy(dest=pair_ptr.unsafe_offset(32), src=parent_bytes, count=32)
@@ -202,8 +202,8 @@ def _mojo_block_hasher_sha256(
 
 @always_inline
 def _mojo_sha256_oneshot(
-    data_ptr: UnsafePointer[PyArrayObject[DType.uint8], _],
-    out_ptr: UnsafePointer[PyArrayObject[DType.uint8], _],
+    data_ptr: Pointer[PyArrayObject[DType.uint8], _],
+    out_ptr: Pointer[PyArrayObject[DType.uint8], _],
 ):
     """One-shot SHA-256 of a uint8 array; writes 32-byte digest to ``out``."""
     var n = data_ptr[].num_elts()
@@ -217,10 +217,10 @@ def mojo_sha256_oneshot(
     data_obj: PythonObject,
     out_obj: PythonObject,
 ) raises -> PythonObject:
-    var data_ptr = UnsafePointer[PyArrayObject[DType.uint8], _](
+    var data_ptr = Pointer[PyArrayObject[DType.uint8], _](
         unchecked_downcast_value=data_obj
     )
-    var out_ptr = UnsafePointer[PyArrayObject[DType.uint8], _](
+    var out_ptr = Pointer[PyArrayObject[DType.uint8], _](
         unchecked_downcast_value=out_obj
     )
     _mojo_sha256_oneshot(data_ptr, out_ptr)
@@ -233,13 +233,13 @@ def mojo_block_hasher_sha256(
     parent_hash_obj: PythonObject,
     out_obj: PythonObject,
 ) raises -> PythonObject:
-    var tokens_ptr = UnsafePointer[PyArrayObject[DType.int32], _](
+    var tokens_ptr = Pointer[PyArrayObject[DType.int32], _](
         unchecked_downcast_value=tokens_obj
     )
-    var parent_ptr = UnsafePointer[PyArrayObject[DType.uint8], _](
+    var parent_ptr = Pointer[PyArrayObject[DType.uint8], _](
         unchecked_downcast_value=parent_hash_obj
     )
-    var out_ptr = UnsafePointer[PyArrayObject[DType.uint8], _](
+    var out_ptr = Pointer[PyArrayObject[DType.uint8], _](
         unchecked_downcast_value=out_obj
     )
     var block_size = Int(py=block_size_obj)

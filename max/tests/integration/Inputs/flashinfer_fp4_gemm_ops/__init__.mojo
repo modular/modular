@@ -57,22 +57,20 @@ struct Module:
         # up self-referential pointers + nulled strides for contiguous
         # tensors.  So we can take their addresses directly.
         args: Array[TVMFFIAny, 8] = [
-            TVMFFIAny(UnsafePointer(to=mat1)),
-            TVMFFIAny(UnsafePointer(to=mat2)),
-            TVMFFIAny(UnsafePointer(to=mat1_scale)),
-            TVMFFIAny(UnsafePointer(to=mat2_scale)),
-            TVMFFIAny(UnsafePointer(to=global_scale)),
-            TVMFFIAny(UnsafePointer(to=out_tensor)),
-            TVMFFIAny(UnsafePointer(to=workspace)),
+            TVMFFIAny(Pointer(to=mat1)),
+            TVMFFIAny(Pointer(to=mat2)),
+            TVMFFIAny(Pointer(to=mat1_scale)),
+            TVMFFIAny(Pointer(to=mat2_scale)),
+            TVMFFIAny(Pointer(to=global_scale)),
+            TVMFFIAny(Pointer(to=out_tensor)),
+            TVMFFIAny(Pointer(to=workspace)),
             TVMFFIAny(tactic),
         ]
 
         result = TVMFFIAny(0)
 
         errno = safe_call(
-            Optional[
-                UnsafePointer[NoneType, MutAnyOrigin]
-            ](),  # null unused module
+            Optional[Pointer[NoneType, MutAnyOrigin]](),  # null unused module
             Pointer[TVMFFIAny, MutAnyOrigin](to=args[0]),
             8,  # num_args
             Pointer[TVMFFIAny, MutAnyOrigin](to=result),

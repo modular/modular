@@ -29,7 +29,7 @@ is then released for the entire GPU-work region.
 """
 
 from std.collections import Array
-from std.memory import OpaquePointer, UnsafePointer
+from std.memory import OpaquePointer, Pointer
 from std.os import abort
 from max.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from std.python import Python, PythonObject
@@ -100,7 +100,7 @@ def copy_h2d(
     # ------------------------------------------------------------------ #
     # Pre-extraction: materialise all Python ints into native Mojo arrays. #
     # ------------------------------------------------------------------ #
-    var host_base = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
+    var host_base = Pointer[Scalar[DType.uint8], MutAnyOrigin](
         unsafe_from_address=Int(py=host_info[0])
     )
     var host_stride_v = Int(py=host_info[1])
@@ -194,9 +194,9 @@ def copy_h2d(
             var host_off = 0
             for j in range(num_aux_v):
                 var stride = aux_stride_arr[j]
-                var dev_base = UnsafePointer[
-                    Scalar[DType.uint8], MutUntrackedOrigin
-                ](unsafe_from_address=aux_buf_arr[j])
+                var dev_base = Pointer[Scalar[DType.uint8], MutUntrackedOrigin](
+                    unsafe_from_address=aux_buf_arr[j]
+                )
                 var dev_buf = DeviceBuffer[DType.uint8](
                     aux_ctxs[j],
                     dev_base.unsafe_offset(dst_v * stride),
@@ -249,18 +249,18 @@ def _do_broadcast_units[
     The ``DeviceContextArray`` is built once and shallow-copied for each unit's
     ``_launch_device_collective`` call.
     """
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[Pointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     for i in range(ngpus):
-        rank_sigs[i] = UnsafePointer[Signal, MutAnyOrigin](
+        rank_sigs[i] = Pointer[Signal, MutAnyOrigin](
             unsafe_from_address=sig_arr[i]
         )
 
     # Build the DeviceContextArray once; copy it for each unit's launch.
     var ctx_array = Array[DeviceContext, ngpus](uninitialized=True)
     for i in range(ngpus):
-        var ctx_array_ptr: UnsafePointer[
+        var ctx_array_ptr: Pointer[
             DeviceContext, origin_of(ctx_array)
         ] = ctx_array.unsafe_ptr()
         ctx_array_ptr.unsafe_offset(i).unsafe_write(
@@ -275,10 +275,10 @@ def _do_broadcast_units[
     for u in range(num_units):
         var stride = out_stride_arr[u]
         var unit_ptrs = Array[
-            UnsafePointer[Scalar[DType.uint8], MutAnyOrigin], ngpus
+            Pointer[Scalar[DType.uint8], MutAnyOrigin], ngpus
         ](uninitialized=True)
         for i in range(ngpus):
-            unit_ptrs[i] = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
+            unit_ptrs[i] = Pointer[Scalar[DType.uint8], MutAnyOrigin](
                 unsafe_from_address=out_addr_arr[u * ngpus + i] + dst * stride
             )
         var in_tile = TileTensor(unit_ptrs[0], row_major(stride)).as_immut()
@@ -330,7 +330,7 @@ def copy_d2h(
         dst_ids:          Destination host block IDs.
         src_ids:          Source device block IDs.
     """
-    var host_base = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
+    var host_base = Pointer[Scalar[DType.uint8], MutAnyOrigin](
         unsafe_from_address=Int(py=host_buf_ptr)
     )
     var host_stride_v = Int(py=host_stride)
@@ -369,9 +369,9 @@ def copy_d2h(
             var host_off = 0
             for j in range(num_bufs_v):
                 var stride = stride_arr[j]
-                var dev_base = UnsafePointer[
-                    Scalar[DType.uint8], MutUntrackedOrigin
-                ](unsafe_from_address=buf_arr[j])
+                var dev_base = Pointer[Scalar[DType.uint8], MutUntrackedOrigin](
+                    unsafe_from_address=buf_arr[j]
+                )
                 var dev_buf = DeviceBuffer[DType.uint8](
                     dev_ctxs[j],
                     dev_base.unsafe_offset(src_arr[i] * stride),
