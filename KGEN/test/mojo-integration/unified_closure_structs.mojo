@@ -59,7 +59,7 @@ def takeIt[f: def(z: Int) -> Int](impl: f, y: Int):
 # COM: Ensure closures work when a RegisterPassable struct forwards
 # COM: a concrete type argument through a generic closure parameter.
 @fieldwise_init
-struct RegPassWrapper[U: RegisterPassable & ImplicitlyDeletable](
+struct RegPassWrapper[U: RegisterPassable & Deinitable](
     RegisterPassable,
 ):
     var u: Self.U
@@ -81,10 +81,8 @@ def testRegisterPassableUnifiedClosureAdaptor():
 @fieldwise_init
 struct ParametricClosureField[
     dtype: DType,
-    F: ImplicitlyCopyable
-    & ImplicitlyDeletable
-    & (def[w: Int]() -> SIMD[dtype, w]),
-](ImplicitlyCopyable, ImplicitlyDeletable):
+    F: ImplicitlyCopyable & Deinitable & (def[w: Int]() -> SIMD[dtype, w]),
+](Deinitable, ImplicitlyCopyable):
     var f: Self.F
 
     def call[w: Int](self) -> SIMD[Self.dtype, w]:
@@ -104,10 +102,8 @@ def testParametricClosureField():
 struct InferredClosureField[
     dtype: DType,
     //,
-    F: ImplicitlyCopyable
-    & ImplicitlyDeletable
-    & (def[w: Int]() -> SIMD[dtype, w]),
-](ImplicitlyCopyable, ImplicitlyDeletable):
+    F: ImplicitlyCopyable & Deinitable & (def[w: Int]() -> SIMD[dtype, w]),
+](Deinitable, ImplicitlyCopyable):
     var f: Self.F
 
     def call[w: Int](self) -> SIMD[Self.dtype, w]:
@@ -126,9 +122,7 @@ def testInferredClosureField():
 # COM: trait whose captured alias (`in_dtype`) differs from the enclosing struct
 # COM: parameter it is bound to (`in_type`), with the captured auxiliary
 # COM: parameter bound explicitly by keyword on `__call__`.
-comptime _fn_trait[
-    in_dtype: DType
-] = ImplicitlyCopyable & ImplicitlyDeletable & (
+comptime _fn_trait[in_dtype: DType] = ImplicitlyCopyable & Deinitable & (
     def[w: Int]() -> SIMD[in_dtype, w]
 )
 
@@ -137,7 +131,7 @@ comptime _fn_trait[
 struct ExplicitAuxClosureField[
     in_type: DType,
     F: _fn_trait[in_type],
-](ImplicitlyCopyable, ImplicitlyDeletable):
+](Deinitable, ImplicitlyCopyable):
     var f: Self.F
 
     def call[w: Int](self) -> SIMD[Self.in_type, w]:
@@ -159,7 +153,7 @@ struct InferredAliasClosureField[
     in_type: DType,
     //,
     F: _fn_trait[in_type],
-](ImplicitlyCopyable, ImplicitlyDeletable):
+](Deinitable, ImplicitlyCopyable):
     var f: Self.F
 
     def call[w: Int](self) -> SIMD[Self.in_type, w]:
@@ -177,7 +171,7 @@ def testInferredAliasClosureField():
 # COM: A chain of parametric-alias traits.
 comptime _chained_fn_trait0[
     FOO: DType, cw: Int
-] = ImplicitlyCopyable & ImplicitlyDeletable & (def() -> SIMD[FOO, cw])
+] = ImplicitlyCopyable & Deinitable & (def() -> SIMD[FOO, cw])
 
 comptime _chained_fn_trait1[BAR: DType] = _chained_fn_trait0[BAR, 4]
 
@@ -187,7 +181,7 @@ struct ChainedAliasClosureField[
     in_type: DType,
     //,
     F: _chained_fn_trait1[in_type],
-](ImplicitlyCopyable, ImplicitlyDeletable):
+](Deinitable, ImplicitlyCopyable):
     var f: Self.F
 
     def call(self) -> SIMD[Self.in_type, 4]:

@@ -44,7 +44,7 @@ struct PointerStorage(TensorStorage):
     ]
 
 
-trait Kernel(ImplicitlyCopyable, ImplicitlyDeletable):
+trait Kernel(Deinitable, ImplicitlyCopyable):
     def run(self, c: Tile[mut=True, ...]):
         ...
 

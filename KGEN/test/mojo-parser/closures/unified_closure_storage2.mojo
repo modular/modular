@@ -23,7 +23,7 @@
 # CHECK-SAME:    %immut_ptr:{{.*}} read_mem
 
 @fieldwise_init
-struct hasParam[P:Copyable & ImplicitlyDeletable](Movable where False):
+struct hasParam[P:Copyable & Deinitable](Movable where False):
     var T: Self.P
 
 struct Ptr[mut: Bool, //, O: Origin[mut=mut]](TrivialRegisterPassable):

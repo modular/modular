@@ -14,17 +14,17 @@ struct NoConformanceList:
 
 
 # Struct with an existing conformance list (constrained entry) that doesn't
-# mention `Movable` (and, unlike `Copyable`, `ImplicitlyDeletable` doesn't
+# mention `Movable` (and, unlike `Copyable`, `Deinitable` doesn't
 # transitively refine `Movable` either) -- the fix-it must append to the
 # existing list.
 # expected-warning @below {{struct does not explicitly conform to 'Movable'}}
-struct NonEmptyConformanceListWithWhere(ImplicitlyDeletable where False):
+struct NonEmptyConformanceListWithWhere(Deinitable where False):
     pass
 
 
 # Same as above, but the existing entry has no `where` clause.
 # expected-warning @below {{struct does not explicitly conform to 'Movable'}}
-struct NonEmptyConformanceListNoWhere(ImplicitlyDeletable):
+struct NonEmptyConformanceListNoWhere(Deinitable):
     pass
 
 

@@ -11,7 +11,7 @@ from std.builtin.coroutine import Coroutine, RaisingCoroutine, AnyCoroutine
 
 
 @explicit_destroy("Must use consume!")
-struct EmptyExplicit(ImplicitlyDeletable where False, Movable where False):
+struct EmptyExplicit(Deinitable where False, Movable where False):
     def __init__(out self):
         pass
 
@@ -25,8 +25,8 @@ def errorExample():
 
 
 @explicit_destroy("Must use consume!")
-struct ImplicitlyDeletableContainerOfExplicitWithAutoDel(
-    ImplicitlyDeletable where False, Movable where False
+struct DeinitableContainerOfExplicitWithAutoDel(
+    Deinitable where False, Movable where False
 ):
     var m: EmptyExplicit
 
@@ -34,12 +34,12 @@ struct ImplicitlyDeletableContainerOfExplicitWithAutoDel(
         self.m = EmptyExplicit()
 
 
-def testImplicitlyDeletableContainerOfExplicitWithAutoDel():
+def testDeinitableContainerOfExplicitWithAutoDel():
     # expected-error @below {{Must use consume!}}
-    _ = ImplicitlyDeletableContainerOfExplicitWithAutoDel()
+    _ = DeinitableContainerOfExplicitWithAutoDel()
 
 
-struct ImplicitlyDeletableContainerOfExplicitWithIncompleteDel(Movable where False):
+struct DeinitableContainerOfExplicitWithIncompleteDel(Movable where False):
     var m: EmptyExplicit
 
     def __init__(out self):
@@ -52,7 +52,7 @@ struct ImplicitlyDeletableContainerOfExplicitWithIncompleteDel(Movable where Fal
 
 # CHECK-LABEL: @"test_any_type_error
 # expected-error @below {{unhandled explicitly destroyed type 'AnyType'}}
-# expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
+# expected-note @below {{consider adding trait conformance to Deinitable}}
 def test_any_type_error[T: AnyType](var x: T):
     pass
 
@@ -84,7 +84,7 @@ def test_any_type_error[T: AnyType](var x: T):
 
 # CHECK-LABEL: lit.fn @"callsWith
 def callsWith():
-    # expected-error @below {{type 'Coroutine' is not implicitly deletable and must be explicitly destroy}}
+    # expected-error @below {{type 'Coroutine' does not conform to 'Deinitable' and must be explicitly destroy}}
     _ = testAsyncVoid()
     # CHECK-NOT: lit.call {{.*}}__deinit__
 
@@ -99,7 +99,7 @@ async def testAsyncVoid():
 
 # MOCO-2787 - Linear types do not error if they contain an explicit deinit
 @explicit_destroy("must use __deinit__() explicitly")
-struct ExplicitWithDeinit(ImplicitlyDeletable where False, Movable where False):
+struct ExplicitWithDeinit(Deinitable where False, Movable where False):
     def __init__(out self):
         pass
 
@@ -130,13 +130,13 @@ def testExplicitWithDeinit():
 # ===----------------------------------------------------------------------=== #
 
 
-# Trait without @explicit_destroy and without ImplicitlyDeletable
+# Trait without @explicit_destroy and without Deinitable
 trait PlainTrait:
     def do_something(self):
         ...
 
 
-# A plain trait (no @explicit_destroy, no ImplicitlyDeletable) is linear and
+# A plain trait (no @explicit_destroy, no Deinitable) is linear and
 # uses the synthesized default message.
 trait LinearNoMessage:
     def destroy_no_msg(deinit self):
@@ -151,14 +151,14 @@ trait ExplicitDestroyWithMessage:
 
 # Test: Plain trait without @explicit_destroy
 # expected-error @below {{unhandled explicitly destroyed type 'PlainTrait'}}
-# expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
+# expected-note @below {{consider adding trait conformance to Deinitable}}
 def take_plain_trait[T: PlainTrait](var value: T):
     pass
 
 
 # Test: Plain linear trait with no custom message uses the default message
 # expected-error @below {{unhandled explicitly destroyed type 'LinearNoMessage'}}
-# expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
+# expected-note @below {{consider adding trait conformance to Deinitable}}
 def take_generic_linear_no_message[T: LinearNoMessage](var value: T):
     pass
 
@@ -167,7 +167,7 @@ def take_generic_linear_no_message[T: LinearNoMessage](var value: T):
 def take_generic_linear_with_message[
     T: ExplicitDestroyWithMessage
     # expected-error @below {{Use `destroy()` method.}}
-    # expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
+    # expected-note @below {{consider adding trait conformance to Deinitable}}
 ](var value: T):
     pass
 
@@ -191,7 +191,7 @@ trait LinearBar:
 
 # Test: First trait has custom message - uses that message
 # expected-error @below {{Use custom_bar_destroy().}}
-# expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
+# expected-note @below {{consider adding trait conformance to Deinitable}}
 def take_foo_and_bar[T: LinearFoo & LinearBar](var value: T):
     pass
 
@@ -200,7 +200,7 @@ def take_foo_and_bar[T: LinearFoo & LinearBar](var value: T):
 # the trait carrying an explicit @explicit_destroy message provides the
 # diagnostic.
 # expected-error @below {{Use custom_bar_destroy().}}
-# expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
+# expected-note @below {{consider adding trait conformance to Deinitable}}
 def take_no_msg_first[T: LinearNoMessage & LinearBar](var value: T):
     pass
 
@@ -211,7 +211,7 @@ def take_no_msg_first[T: LinearNoMessage & LinearBar](var value: T):
 
 
 # Test: Empty string message is valid on a linear trait (trait without
-# ImplicitlyDeletable). The empty message will be used as the error.
+# Deinitable). The empty message will be used as the error.
 @explicit_destroy("")
 trait LinearWithEmptyMessage:
     def consume(deinit self):
@@ -219,56 +219,56 @@ trait LinearWithEmptyMessage:
 
 
 # expected-error @below {{abandoned without being explicitly destroyed: }}
-# expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
+# expected-note @below {{consider adding trait conformance to Deinitable}}
 def take_linear_empty_message[T: LinearWithEmptyMessage](var value: T):
     pass
 
 
 # ===----------------------------------------------------------------------=== #
-# Conditional ImplicitlyDeletable without @explicit_destroy
+# Conditional Deinitable without @explicit_destroy
 # ===----------------------------------------------------------------------=== #
 
 
-# A struct may conditionally conform to ImplicitlyDeletable via a where-clause
+# A struct may conditionally conform to Deinitable via a where-clause
 # without using @explicit_destroy. When the where-clause is not satisfied for a
 # given instantiation the type is linear, and the compiler emits a synthesized
 # default linear-type error message.
-struct CondImplicitlyDeletableDefault[cond: Bool](
-    ImplicitlyDeletable where cond, Movable where False
+struct CondDeinitableDefault[cond: Bool](
+    Deinitable where cond, Movable where False
 ):
     def __init__(out self):
         pass
 
 
-def testConditionalImplicitlyDeletableDefaultMessage():
+def testConditionalDeinitableDefaultMessage():
     # cond=True satisfies the where-clause, no error.
-    _ = CondImplicitlyDeletableDefault[True]()
+    _ = CondDeinitableDefault[True]()
 
-    # expected-error @below {{abandoned without being explicitly destroyed: type 'CondImplicitlyDeletableDefault' does not conditionally conform to 'ImplicitlyDeletable' for these parameters}}
-    _ = CondImplicitlyDeletableDefault[False]()
+    # expected-error @below {{abandoned without being explicitly destroyed: type 'CondDeinitableDefault' does not conditionally conform to 'Deinitable' for these parameters}}
+    _ = CondDeinitableDefault[False]()
 
 
 # ===----------------------------------------------------------------------=== #
-# `ImplicitlyDeletable where False` opts out of implicit deletability (MOCO-4235)
+# `Deinitable where False` opts out of implicit deletability (MOCO-4235)
 # ===----------------------------------------------------------------------=== #
 
 
 # An unsatisfiable where-clause opts the struct out of implicit deletability
 # entirely. A default linear-type error message is used when no custom one is
 # provided by `@explicit_destroy`.
-struct WhereFalseLinear(ImplicitlyDeletable where False, Movable where False):
+struct WhereFalseLinear(Deinitable where False, Movable where False):
     def __init__(out self):
         pass
 
 
 def testWhereFalseLinear():
-    # expected-error @below {{abandoned without being explicitly destroyed: type 'WhereFalseLinear' is not implicitly deletable and must be explicitly destroyed}}
+    # expected-error @below {{abandoned without being explicitly destroyed: type 'WhereFalseLinear' does not conform to 'Deinitable' and must be explicitly destroyed}}
     _ = WhereFalseLinear()
 
 
 # A custom message via @explicit_destroy is used in preference to the default.
 @explicit_destroy("use consume()")
-struct WhereFalseCustom(ImplicitlyDeletable where False, Movable where False):
+struct WhereFalseCustom(Deinitable where False, Movable where False):
     def __init__(out self):
         pass
 
@@ -278,21 +278,21 @@ def testWhereFalseCustomMessage():
     _ = WhereFalseCustom()
 
 
-# A conditional ImplicitlyDeletable slot that the struct's own where-clause
+# A conditional Deinitable slot that the struct's own where-clause
 # renders unsatisfiable (`where not (n > 0)` under `where n > 0`) is an opt-out
 # indistinguishable from the literal `where False` above: for any instantiable
 # `n`, the struct is linear and reports the *same* default message. This is
 # invariant 2 (semantic == literal unsatisfiability) applied to the message
 # text, not just to synthesis.
 struct ContradictedLinear[n: Int](
-    ImplicitlyDeletable where not (n > 0), Movable where False
+    Deinitable where not (n > 0), Movable where False
 ) where n > 0:
     def __init__(out self):
         pass
 
 
 def testContradictedLinear():
-    # expected-error @below {{abandoned without being explicitly destroyed: type 'ContradictedLinear' is not implicitly deletable and must be explicitly destroyed}}
+    # expected-error @below {{abandoned without being explicitly destroyed: type 'ContradictedLinear' does not conform to 'Deinitable' and must be explicitly destroyed}}
     _ = ContradictedLinear[1]()
 
 
@@ -307,7 +307,7 @@ def testContradictedLinear():
 # diagnostic describes the abandoned value generically and relies on the
 # source location to point at the offending expression.
 @explicit_destroy("use consume()")
-struct IndirectAssignLinear(Movable, ImplicitlyDeletable where False):
+struct IndirectAssignLinear(Movable, Deinitable where False):
     def __init__(out self):
         pass
 

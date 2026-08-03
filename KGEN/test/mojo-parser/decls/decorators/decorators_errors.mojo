@@ -277,7 +277,7 @@ struct DecoratorSameLine(Movable where False):
 
 
 @fieldwise_init # expected-error {{'FieldwiseInitExample' has an explicitly declared fieldwise initializer}}
-struct FieldwiseInitExample[T: Movable & ImplicitlyDeletable](Movable where False):
+struct FieldwiseInitExample[T: Movable & Deinitable](Movable where False):
   var x: Int
   var y: Self.T
 

@@ -430,7 +430,7 @@ def concrete_non_copyable() -> NeedsCopyableConcrete[MoveOnly]:
 # separately.
 
 
-struct CondCopyable[T: Movable & ImplicitlyDeletable](
+struct CondCopyable[T: Movable & Deinitable](
     Copyable where conforms_to(T, Copyable), Movable
 ):
     var value: Self.T
@@ -440,7 +440,7 @@ struct CondCopyable[T: Movable & ImplicitlyDeletable](
 
 
 # Discharged: the trailing `where` names the compound receiver's conformance.
-def cond_discharged[U: Movable & ImplicitlyDeletable]() -> NeedsCopyable[CondCopyable[U]]
+def cond_discharged[U: Movable & Deinitable]() -> NeedsCopyable[CondCopyable[U]]
     where conforms_to(CondCopyable[U], Copyable):
     pass
 
@@ -450,5 +450,5 @@ def cond_discharged[U: Movable & ImplicitlyDeletable]() -> NeedsCopyable[CondCop
 # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
 # expected-note @below {{constraint declared here needs evidence for 'conforms_to(CondCopyable[U], Copyable)'}}
 # expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(CondCopyable[U], Copyable)'}}
-def cond_undischarged[U: Movable & ImplicitlyDeletable]() -> NeedsCopyable[CondCopyable[U]]:
+def cond_undischarged[U: Movable & Deinitable]() -> NeedsCopyable[CondCopyable[U]]:
     pass

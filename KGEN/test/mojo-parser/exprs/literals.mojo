@@ -186,7 +186,7 @@ def test_list_comprehension():
 
 
 struct MyDict[
-    K: Copyable & ImplicitlyDeletable, V: Copyable & ImplicitlyDeletable
+    K: Copyable & Deinitable, V: Copyable & Deinitable
 ](Movable where False):
     def __init__(
         out self,
@@ -227,7 +227,7 @@ def test_dict_literal(aBool: Bool):
 
 # CHECK-LABEL: lit.fn @"test_dict_comprehension
 def test_dict_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!AnyType_Copyable_ImplicitlyDeletable_Movable !Int, :!AnyType_Copyable_ImplicitlyDeletable_Movable !String>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!AnyType_Copyable_Deinitable_Movable !Int, :!AnyType_Copyable_Deinitable_Movable !String>
     # CHECK: lit.loop {
     # CHECK-NEXT: [[ANONI:%.*]] = lit.var.decl "anonymous*"
     # CHECK:     lit.call {{.*}}SimpleIntRange::@"__next__
@@ -441,7 +441,7 @@ def test_moco_3801_pack_of_literals():
     _moco_3801_pack([1, 2, 3], [4, 5, 6])
 
     # COM: Dict literal defaults to Dict[Int, Int].
-    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@Dict<:!AnyType_Copyable_ImplicitlyDeletable_Movable !Int, :!AnyType_Copyable_ImplicitlyDeletable_Movable !Int>]
+    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@Dict<:!AnyType_Copyable_Deinitable_Movable !Int, :!AnyType_Copyable_Deinitable_Movable !Int>]
     _moco_3801_pack({1: 2})
 
     # COM: Set literal defaults to Set[Int].

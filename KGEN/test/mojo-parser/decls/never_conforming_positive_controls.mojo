@@ -20,7 +20,7 @@
 #      still synthesizes -- this guards the two-check contradiction logic in
 #      getConformanceCondition against collapsing an implied (true) condition to
 #      false;
-#   4. the MixedConformance shape keeps `ImplicitlyDeletable` and drops only the
+#   4. the MixedConformance shape keeps `Deinitable` and drops only the
 #      `Movable where False` slot.
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
@@ -28,18 +28,18 @@
 
 # --- 1. Unconditional: synthesizes, no `where True` leak --------------------
 
-# The marker is the plain `!AnyType_ImplicitlyDeletable_Movable` alias (no
+# The marker is the plain `!AnyType_Deinitable_Movable` alias (no
 # `constrained_` prefix), and the synthesized ctor name ends `$)` with no
 # `{constraint}` suffix. A leaked `where True` would turn both into the
 # constrained spelling.
-# CHECK-LABEL: lit.struct.decl @UncondMovable(!AnyType_ImplicitlyDeletable_Movable)
+# CHECK-LABEL: lit.struct.decl @UncondMovable(!AnyType_Deinitable_Movable)
 # CHECK: lit.fn @"__init__(move:{{.*}}UncondMovable$)"
 struct UncondMovable(Movable):
     pass
 
 
 # A struct that never mentions `Movable` gets the same result.
-# CHECK-LABEL: lit.struct.decl @DefaultMovable(!AnyType_ImplicitlyDeletable_Movable)
+# CHECK-LABEL: lit.struct.decl @DefaultMovable(!AnyType_Deinitable_Movable)
 # CHECK: lit.fn @"__init__(move:{{.*}}DefaultMovable$)"
 struct DefaultMovable:
     pass
@@ -47,7 +47,7 @@ struct DefaultMovable:
 
 # --- 2. Satisfiable conditional: constraint preserved -----------------------
 
-# CHECK-LABEL: lit.struct.decl @SatMovable<T: !AnyType>(!constrained_AnyType_ImplicitlyDeletable_Movable)
+# CHECK-LABEL: lit.struct.decl @SatMovable<T: !AnyType>(!constrained_AnyType_Deinitable_Movable)
 # CHECK: __init__(move:{{.*}}SatMovable[$0]$){conforms_to($0, ::AnyType & ::Movable)}
 struct SatMovable[T: AnyType](Movable where conforms_to(T, Movable)):
     pass
@@ -65,16 +65,16 @@ struct ImpliedMovable[n: Int](Movable where n > 0) where n > 5:
     pass
 
 
-# --- 4. MixedConformance: keep ImplicitlyDeletable, drop Movable ------------
+# --- 4. MixedConformance: keep Deinitable, drop Movable ------------
 
-# The conditional `ImplicitlyDeletable where value >= 0` slot survives (marker
-# keeps `ImplicitlyDeletable`, and the struct is linear pending that condition);
+# The conditional `Deinitable where value >= 0` slot survives (marker
+# keeps `Deinitable`, and the struct is linear pending that condition);
 # the `Movable where False` slot is dropped, so no move ctor is synthesized.
-# CHECK-LABEL: lit.struct.decl @MixedInner<value: !Int>(!constrained_AnyType_ImplicitlyDeletable)
-# CHECK-SAME: does not conditionally conform to 'ImplicitlyDeletable' for these parameters
+# CHECK-LABEL: lit.struct.decl @MixedInner<value: !Int>(!constrained_AnyType_Deinitable)
+# CHECK-SAME: does not conditionally conform to 'Deinitable' for these parameters
 # CHECK-NOT: __init__(move:
 struct MixedInner[value: Int](
-    ImplicitlyDeletable where value >= 0, Movable where False,
+    Deinitable where value >= 0, Movable where False,
 ):
     pass
 

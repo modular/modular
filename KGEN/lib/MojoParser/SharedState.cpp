@@ -1617,7 +1617,7 @@ static SmallString<64> makeBuiltinCacheKey(const SharedState::ImportPath &path,
   return key;
 }
 
-/// Lookup a builtin trait like `AnyType`, `ImplicitlyDeletable`, `Copyable`,
+/// Lookup a builtin trait like `AnyType`, `Deinitable`, `Copyable`,
 /// `Movable` etc.  On error this returns null but does not print an error.
 ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, SMLoc loc) {
   if (LLVM_UNLIKELY(!hasBuiltinModule())) {

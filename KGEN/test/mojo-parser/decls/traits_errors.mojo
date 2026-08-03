@@ -129,19 +129,19 @@ struct StructViolation3(MemTraitViolation):
         pass
 
 
-trait NotImplicitlyDeletable:
+trait NotDeinitable:
     def foo(self):
         ...
 
 
 @fieldwise_init
-struct Bar[T: NotImplicitlyDeletable](Movable where False):  # expected-note {{'Bar' declared here}}
+struct Bar[T: NotDeinitable](Movable where False):  # expected-note {{'Bar' declared here}}
     pass
 
 
 def bindAnyTraitToTrait():
-    # expected-error @+1 {{'Bar' parameter 'T' has 'NotImplicitlyDeletable' type, but value has type 'AnyTrait[NotImplicitlyDeletable]'}}
-    var _list = Bar[NotImplicitlyDeletable]()
+    # expected-error @+1 {{'Bar' parameter 'T' has 'NotDeinitable' type, but value has type 'AnyTrait[NotDeinitable]'}}
+    var _list = Bar[NotDeinitable]()
 
 
 def anytrait_assignment():
@@ -213,29 +213,29 @@ struct ConflictStruct[a: Int](ConflictTraitName, Movable where False):
 
 # MOCO-4252
 struct CondDeletableField1[T: AnyType](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable), Movable where False,
+    Deinitable where conforms_to(T, Deinitable), Movable where False,
 ):
     var value: Self.T  # Ok
 
 
 struct CondDeletableField2[T: AnyType, X: Int](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable) and X > 10, Movable where False,
+    Deinitable where conforms_to(T, Deinitable) and X > 10, Movable where False,
 ):
     var value: Self.T  # Ok
 
 
 struct CondDeletableField3[T: AnyType, X: Int](
-    ImplicitlyDeletable where X > 10, Movable where False,
+    Deinitable where X > 10, Movable where False,
 ):
-    var value: Self.T  # expected-error {{field 'value' has non-implicitly deletable type 'T'}}
+    var value: Self.T  # expected-error {{field 'value' has non-'Deinitable' type 'T'}}
 
 
 # MOCO-4262
-struct NeverDeletableInner(ImplicitlyDeletable where False, Movable where False):
+struct NeverDeletableInner(Deinitable where False, Movable where False):
     pass
 
 
-struct NeverDeletableOuter(ImplicitlyDeletable where False, Movable where False):
+struct NeverDeletableOuter(Deinitable where False, Movable where False):
     var m: NeverDeletableInner
 
 
@@ -313,7 +313,7 @@ def never_copyable_call_is_no_candidates_found():
 
 # Same as above, but exercised through a user-defined trait with a defaulted
 # method (synthesizeDefaultTraitMethodWrapper) instead of a builtin special
-# member (Movable/Copyable/ImplicitlyDeletable). Confirms the fix isn't
+# member (Movable/Copyable/Deinitable). Confirms the fix isn't
 # specific to compiler-synthesized special members.
 trait Greeter:
     def greet(self, name: String) -> String:

@@ -6,7 +6,7 @@
 
 # ===----------------------------------------------------------------------=== #
 #
-# Destructor discharge for a conditionally `ImplicitlyDeletable` imported
+# Destructor discharge for a conditionally `Deinitable` imported
 # generic type must work under LSP mode, where the imported struct's body is
 # left unresolved.
 #
@@ -25,20 +25,20 @@ struct PlainThing(Movable):
         self.x = x
 
 
-struct NeverDeletable(ImplicitlyDeletable where False, Movable):
+struct NeverDeletable(Deinitable where False, Movable):
     var x: Int
 
     def __init__(out self, x: Int):
         self.x = x
 
 
-# `PlainThing` is (implicitly) `ImplicitlyDeletable`, so `h` should be
+# `PlainThing` is (implicitly) `Deinitable`, so `h` should be
 # destroyed with no diagnostic.
 def use_conforming(var h: ConditionalHelper[PlainThing]):
     pass
 
 
-# `NeverDeletable` opts out of `ImplicitlyDeletable`, so `ConditionalHelper`
+# `NeverDeletable` opts out of `Deinitable`, so `ConditionalHelper`
 # genuinely cannot destroy `h` implicitly.
 # expected-error @below {{'h' abandoned without being explicitly destroyed}}
 def use_non_conforming(var h: ConditionalHelper[NeverDeletable]):
@@ -49,7 +49,7 @@ def use_non_conforming(var h: ConditionalHelper[NeverDeletable]):
 # conformance from context, so `h` is destroyed with no diagnostic.
 def use_generic_conforming[
     T: Movable
-](var h: ConditionalHelper[T]) where conforms_to(T, ImplicitlyDeletable):
+](var h: ConditionalHelper[T]) where conforms_to(T, Deinitable):
     pass
 
 
@@ -61,7 +61,7 @@ def use_generic_unconstrained[T: Movable](var h: ConditionalHelper[T]):
     pass
 
 
-struct CondDeletable[flag: Bool](ImplicitlyDeletable where flag, Movable):
+struct CondDeletable[flag: Bool](Deinitable where flag, Movable):
     var x: Int
 
     def __init__(out self, x: Int):

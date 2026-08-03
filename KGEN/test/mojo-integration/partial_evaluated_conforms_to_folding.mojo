@@ -12,7 +12,7 @@ trait Store:
 
     @staticmethod
     def add[
-        LT: ImplicitlyCopyable & ImplicitlyDeletable, //, dtype: DType
+        LT: ImplicitlyCopyable & Deinitable, //, dtype: DType
     ](storage: Tuple[Self.StorageType[dtype], LT]):
         ...
 
@@ -22,7 +22,7 @@ struct PS(Store):
 
     @staticmethod
     def add[
-        LT: ImplicitlyCopyable & ImplicitlyDeletable, //, dtype: DType
+        LT: ImplicitlyCopyable & Deinitable, //, dtype: DType
     ](storage: Tuple[Self.StorageType[dtype], LT]):
         # CHECK: worked
         print("worked")
@@ -30,7 +30,7 @@ struct PS(Store):
 
 # Dispatch `add` through the generic `S: Store` bound.
 def go[
-    S: Store, dt: DType, LT: ImplicitlyCopyable & ImplicitlyDeletable
+    S: Store, dt: DType, LT: ImplicitlyCopyable & Deinitable
 ](p: S.StorageType[dt], layout: LT):
     # Here, in order to match the type between trait and witness table, we need
     # to be able to fold `conforms_to(SIMD[*(0, 1)], xxx)` to true. (Note that

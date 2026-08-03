@@ -156,9 +156,9 @@ trait TraitWithTrailingWhereAlias:
 # usages
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.alias.decl *"__SomeImpl{{.*}}": !lit.generator<<"Trait": !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable, "T": !kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>>!kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>> = <#kgen.gen<*(0,1)>>
+# CHECK: lit.alias.decl *"__SomeImpl{{.*}}": !lit.generator<<"Trait": !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable, "T": !kgen.param<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>>!kgen.param<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable *(0,0)>> = <#kgen.gen<*(0,1)>>
 comptime __SomeImpl[Trait: TrivialRegisterPassable, T: Trait] = T
-# CHECK: lit.alias.decl *"Some{{.*}}": !lit.generator<<"Trait": !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable>!lit.generator<<"T": !kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable *(1,0)>>!kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable *(1,0)>>> = <#kgen.gen<#kgen.gen<*(0,0)>>>
+# CHECK: lit.alias.decl *"Some{{.*}}": !lit.generator<<"Trait": !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable>!lit.generator<<"T": !kgen.param<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable *(1,0)>>!kgen.param<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable *(1,0)>>> = <#kgen.gen<#kgen.gen<*(0,0)>>>
 comptime Some[Trait: TrivialRegisterPassable] = __SomeImpl[Trait, ...]
 
 # CHECK: lit.alias.decl *"myDouble{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2){{.*}})>>

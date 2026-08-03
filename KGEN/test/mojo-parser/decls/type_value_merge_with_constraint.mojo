@@ -10,7 +10,7 @@
 # constraint carried by that bound.
 
 
-# The field's trait bound. Deliberately does NOT require `ImplicitlyDeletable`.
+# The field's trait bound. Deliberately does NOT require `Deinitable`.
 trait Storage(Defaultable):
     pass
 
@@ -21,36 +21,36 @@ def predicate() -> Bool:
 
 @explicit_destroy("StorageA must be explicitly destroyed.")
 struct StorageA[T: AnyType](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
+    Deinitable where conforms_to(T, Deinitable),
     Storage, Movable where False,
 ):
     def __init__(out self):
         pass
 
-    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
         pass
 
 
 @explicit_destroy("StorageB must be explicitly destroyed.")
 struct StorageB[T: AnyType](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
+    Deinitable where conforms_to(T, Deinitable),
     Storage, Movable where False,
 ):
     def __init__(out self):
         pass
 
-    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
         pass
 
 
 # CHECK-LABEL: lit.struct.decl @Container
 @explicit_destroy("Container must be explicitly destroyed.")
 struct Container[T: AnyType](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable), Movable where False,
+    Deinitable where conforms_to(T, Deinitable), Movable where False,
 ):
     # The merged `_Storage` type value must be a constrained trait bound.
 
-    # CHECK: lit.alias.decl {{.*}}_Storage{{.*}}: !constrained_{{.*}}ImplicitlyDeletable{{.*}}Storage
+    # CHECK: lit.alias.decl {{.*}}_Storage{{.*}}: !constrained_{{.*}}Deinitable{{.*}}Storage
     comptime _Storage = StorageA[Self.T] if predicate() else StorageB[Self.T]
 
     var _storage: Self._Storage
@@ -58,5 +58,5 @@ struct Container[T: AnyType](
     def __init__(out self):
         self._storage = Self._Storage()
 
-    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
         self._storage^.__deinit__()

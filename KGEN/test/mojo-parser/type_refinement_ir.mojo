@@ -287,21 +287,21 @@ def no_refinement_before_comptime_assert[T: Base](read x: T):
 
 # CHECK-LABEL: lit.fn @"refine_in_comptime_if_no_call
 # CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_SomeTrait T, mut *"x`"> owned_in_mem)
-# CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType_SomeTrait T, :meta<!{{.*}}ImplicitlyDeletable> !{{.*}}ImplicitlyDeletable){{.*}}> {
-# CHECK: [[IF_REBIND:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}ImplicitlyDeletable{{.*}}downcast(:!AnyType_SomeTrait T){{.*}}
+# CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType_SomeTrait T, :meta<!{{.*}}Deinitable> !{{.*}}Deinitable){{.*}}> {
+# CHECK: [[IF_REBIND:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Deinitable{{.*}}downcast(:!AnyType_SomeTrait T){{.*}}
 # CHECK: lit.ownership.use [[IF_REBIND]]
 def refine_in_comptime_if_no_call[T: SomeTrait](var x: T):
-    comptime if conforms_to(T, ImplicitlyDeletable):
+    comptime if conforms_to(T, Deinitable):
         _ = x
 
 
 # CHECK-LABEL: lit.fn @"refine_after_comptime_assert_no_call
 # CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_SomeTrait T, mut *"x`"> owned_in_mem)
-# CHECK: kgen.param.assert <{{.*}}conforms_to(:!AnyType_SomeTrait T, :meta<!{{.*}}ImplicitlyDeletable> !{{.*}}ImplicitlyDeletable){{.*}}>
-# CHECK: [[ASSERT_REBIND:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}ImplicitlyDeletable{{.*}}downcast(:!AnyType_SomeTrait T){{.*}}
+# CHECK: kgen.param.assert <{{.*}}conforms_to(:!AnyType_SomeTrait T, :meta<!{{.*}}Deinitable> !{{.*}}Deinitable){{.*}}>
+# CHECK: [[ASSERT_REBIND:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Deinitable{{.*}}downcast(:!AnyType_SomeTrait T){{.*}}
 # CHECK: lit.ownership.use [[ASSERT_REBIND]]
 def refine_after_comptime_assert_no_call[T: SomeTrait](var x: T):
-    comptime assert conforms_to(T, ImplicitlyDeletable)
+    comptime assert conforms_to(T, Deinitable)
     _ = x
 
 

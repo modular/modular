@@ -19,7 +19,7 @@ comptime CallbackType = def(Int) -> Int
 # CHECK: lit.alias.decl *"CallbackType`0x":
 # CHECK-SAME: meta<!{{[A-Za-z0-9_]+}}> = <!{{[A-Za-z0-9_]+}}>
 
-# CHECK: lit.fn @"repro[def(Int) -> Int & ::AnyType & ::ImplicitlyDeletable & ::Movable]($0)"<F: !alias_CallbackType{{[0-9]+}}>
+# CHECK: lit.fn @"repro[def(Int) -> Int & ::AnyType & ::Deinitable & ::Movable]($0)"<F: !alias_CallbackType{{[0-9]+}}>
 def repro[F: CallbackType](callback: F) -> Int:
     return callback(0)
 
@@ -36,7 +36,7 @@ def wrap_cb(a: Int) -> Int:
 # CHECK: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__" synth
 # CHECK-SAME: !lit.ref<!lit.struct<#PtrWrapper
 # CHECK: lit.call {{.*}}@"def(a: Int) thin -> Int_PtrWrapper"::@"__init__()"
-# CHECK: lit.call {{.*}}@"repro[def(Int) -> Int & ::AnyType & ::ImplicitlyDeletable & ::Movable]($0)"
+# CHECK: lit.call {{.*}}@"repro[def(Int) -> Int & ::AnyType & ::Deinitable & ::Movable]($0)"
 # CHECK-SAME: <:!alias_CallbackType{{[0-9]+}} #kgen.type<!lit.struct<#PtrWrapper
 def driver() -> Int:
     return repro(wrap_cb)

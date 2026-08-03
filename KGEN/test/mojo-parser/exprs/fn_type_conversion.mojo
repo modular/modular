@@ -74,13 +74,13 @@ def test_more_conversions():
 # its result type.  We should remove this when we have more powerful Iterator
 # traits and origins that can support that.
 trait TraitExpectingValueReturn:
-    comptime Element: ImplicitlyDeletable
+    comptime Element: Deinitable
 
     def return_value(self) -> Self.Element:
         ...
 
 
-struct StructProvidingRefReturn[T: Copyable & ImplicitlyDeletable](
+struct StructProvidingRefReturn[T: Copyable & Deinitable](
     TraitExpectingValueReturn, Movable where False
 ):
     comptime Element = Self.T

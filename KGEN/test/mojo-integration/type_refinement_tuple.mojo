@@ -16,9 +16,9 @@ trait Greetable:
 
 struct Dog(
     Copyable,
+    Deinitable,
     Greetable,
     ImplicitlyCopyable,
-    ImplicitlyDeletable,
     Movable,
 ):
     var name: String
@@ -32,7 +32,7 @@ struct Dog(
 
 # Value unpack from zip: each iteration binds two copied element values.
 def test_for_bind[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
     for left, right in zip(items1, items2):
         print("bind:", left.greet(), right.greet())
@@ -40,7 +40,7 @@ def test_for_bind[
 
 # Ref unpack from zip: tuple pair exposed as two refs into list elements.
 def test_for_ref[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
     for ref left, right in zip(items1, items2):
         print("ref:", left.greet(), right.greet())
@@ -48,7 +48,7 @@ def test_for_ref[
 
 # Var unpack from zip: per-iteration `var` slots (not refs into the lists).
 def test_for_var_each[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
     for var left, right in zip(items1, items2):
         print("var:", left.greet(), right.greet())
@@ -56,7 +56,7 @@ def test_for_var_each[
 
 # Whole-tuple `var (left, right)` unpack from each zip-produced pair.
 def test_for_var_whole[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
     for var (left, right) in zip(items1, items2):
         print("var_tuple:", left.greet(), right.greet())
@@ -65,7 +65,7 @@ def test_for_var_whole[
 # `var` unpack then reassign one side after first use; store-time refinement
 # must track the loop-carried `var` binding across the assignment.
 def test_for_var_reassign[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
     for (var left), (var right) in zip(items1, items2):
         var before = left.greet()
@@ -75,7 +75,7 @@ def test_for_var_reassign[
 
 # Single binding for the zip pair; read tuple fields via subscript (no unpack).
 def test_implicit_subscript[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
     for pair in zip(items1, items2):
         print("subscript:", pair[0].greet(), pair[1].greet())
@@ -83,15 +83,15 @@ def test_implicit_subscript[
 
 # NOTE: The `enumerate` refinement cases moved to
 # `type_refinement_tuple_enumerate_xfail.mojo`. They no longer compile now that
-# `Tuple` is conditionally `ImplicitlyDeletable`: `enumerate` yields
+# `Tuple` is conditionally `Deinitable`: `enumerate` yields
 # `Tuple[Int, Iterator.Element]`, and `Iterator.Element: Movable` erases the
-# element's `ImplicitlyDeletable` refinement in a generic context. See
+# element's `Deinitable` refinement in a generic context. See
 # MOCO-4361.
 
 
 # `ref` to each zip pair; subscript reads the two tuple elements.
 def test_ref_subscript[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
     for ref pair in zip(items1, items2):
         print("ref_sub:", pair[0].greet(), pair[1].greet())
@@ -99,7 +99,7 @@ def test_ref_subscript[
 
 # `var` copy of each enumerate pair; subscript reads on the copy.
 def test_var_subscript[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
     for var pair in zip(items1, items2):
         print("var_sub:", pair[0].greet(), pair[1].greet())
@@ -115,7 +115,7 @@ def test_for_single_ref[
 
 # Single-column `for` with explicit `var` element binding.
 def test_for_single_var[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](items: List[T]) where conforms_to(T, Greetable):
     for var item in items:
         print("single_var:", item.greet())
@@ -124,7 +124,7 @@ def test_for_single_var[
 # Sequential loops reuse `left`/`right` names — refinement must attach to the
 # right VarDecl per loop, not by name alone. (Value unpack variant.)
 def test_shadow_bind[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](a1: List[T], a2: List[T], b1: List[T], b2: List[T]) where conforms_to(
     T, Greetable
 ):
@@ -136,7 +136,7 @@ def test_shadow_bind[
 
 # Same shadowing pattern with `ref left, ref right` unpacks.
 def test_shadow_ref[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](a1: List[T], a2: List[T], b1: List[T], b2: List[T]) where conforms_to(
     T, Greetable
 ):
@@ -154,7 +154,7 @@ def greet_through_ref_param[T: Greetable](ref x: T) -> String:
 # Unpacked `ref` tuple elements passed into `ref` parameters (not only direct
 # `.greet()` on the binding).
 def test_ref_pass_through_unpack[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](items1: List[T], items2: List[T]) where conforms_to(T, Greetable):
     for ref left, right in zip(items1, items2):
         print(

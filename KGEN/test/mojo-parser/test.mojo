@@ -13,15 +13,15 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK: !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable = !lit.trait<
+# CHECK: !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable = !lit.trait<
 # CHECK-SAME: @std::@builtin::@stubs::@AnyType,
 # CHECK-SAME: @std::@builtin::@stubs::@Copyable,
+# CHECK-SAME: @std::@builtin::@stubs::@Deinitable,
 # CHECK-SAME: @std::@builtin::@stubs::@ImplicitlyCopyable,
-# CHECK-SAME: @std::@builtin::@stubs::@ImplicitlyDeletable,
 # CHECK-SAME: @std::@builtin::@stubs::@Movable>
 
 
-# CHECK: lit.struct.decl @BoxedInt(!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable)
+# CHECK: lit.struct.decl @BoxedInt(!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable)
 @fieldwise_init
 struct BoxedInt(ImplicitlyCopyable):
     var value: Int

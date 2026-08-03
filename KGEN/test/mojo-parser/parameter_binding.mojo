@@ -88,7 +88,7 @@ def use_defaulted_slice_param():
 
 # // -----
 
-comptime KE = Movable & ImplicitlyDeletable
+comptime KE = Movable & Deinitable
 
 
 struct Entry[K: KE](Movable where False):

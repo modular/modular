@@ -56,11 +56,11 @@ def generic_fn[a: DType, b: Int, c: TrivialRegisterPassable](d : Int):
 # CHECK: lit.fn @"call_generic{{.*}}"<dt: !DType>()
 def call_generic[dt: DType]():
   # CHECK: %[[C57:.*]] = {{.*}}constant{{.*}}57
-  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {{.*}}42{{.*}}, :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !DType>(%[[C57]])
+  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {{.*}}42{{.*}}, :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !DType>(%[[C57]])
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[C57_2:.*]] = {{.*}}constant{{.*}}57
-  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {:scalar<index> 13}, :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable {{.*}}SIMD<:!DType dt, :!SIMDLength {4}>>(%[[C57_2]])
+  # CHECK: lit.call {{.*}}@"generic_fn{{.*}}"<:!DType dt, :!Int {:scalar<index> 13}, :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable {{.*}}SIMD<:!DType dt, :!SIMDLength {4}>>(%[[C57_2]])
   generic_fn[dt, 13, SIMD[dt, 4]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
@@ -173,7 +173,7 @@ struct TypeParameter[T: __mlir_type.`!kgen.non_struct_type`](Movable where False
 
 # Test that parameter decls can refine subsequent ones in the same param list.
 # CHECK-LABEL: lit.struct.decl @ParamSubst
-# CHECK-SAME: <T: {{.*}}, shape: param_list<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable T>>
+# CHECK-SAME: <T: {{.*}}, shape: param_list<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable T>>
 struct ParamSubst[
     T: TrivialRegisterPassable,
     shape: __mlir_type[`!kgen.param_list<`, T,`>`],
@@ -181,7 +181,7 @@ struct ParamSubst[
 
 # CHECK-LABEL: lit.fn @"testParamSubst
 def testParamSubst():
-  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable {{..*}}<:non_struct_type index>, {{.*}}:param_list<index> [1, 2]>>,
+  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable {{..*}}<:non_struct_type index>, {{.*}}:param_list<index> [1, 2]>>,
   var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.param_list<1, 2> : !kgen.param_list<index>`]
 
 
@@ -769,7 +769,7 @@ def dependent_variadic_parameter[
 def pass_variadic[elems: __mlir_type.`!kgen.param_list<index>`]():
     # CHECK-NEXT: lit.call {{.*}}@"variadic_parameter{{.*}}"<:param_list<index> elems>
     _ = variadic_parameter[elems]()
-    # CHECK: lit.call {{.*}}@"dependent_variadic_parameter{{.*}}"<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int, :param_list<!Int>
+    # CHECK: lit.call {{.*}}@"dependent_variadic_parameter{{.*}}"<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int, :param_list<!Int>
     _ = dependent_variadic_parameter[type=Int, 1, 2]()
 
 
@@ -855,7 +855,7 @@ def testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
   callee1(b)
   # CHECK-NEXT: lit.call tail {{.*}}callee1{{.*}}{_mlir_value: scalar<index> = add(#lit.struct.extract<:!Int size, "_mlir_value">, 2)}{{.*}}>(%b2)
   callee1(b2)
-  # CHECK-NEXT: lit.call {{.*}}callee2{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable {{.*}}StaticVec<:!Int size>>(%b)
+  # CHECK-NEXT: lit.call {{.*}}callee2{{.*}}<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable {{.*}}StaticVec<:!Int size>>(%b)
   callee2(b)
   # CHECK-NEXT: lit.call {{.*}}callee3{{.*}}<:!Int {:scalar<index> 17}, :dtype f32>(%c)
   callee3[17](c)
@@ -941,11 +941,11 @@ def tail_types[T: TrivialRegisterPassable, *U: AnyType](a: T, *b: *U):
 
 # CHECK-LABEL: lit.fn @"call_with_tail_types()"
 def call_with_tail_types():
-    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [], :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int,
+    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [], :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int,
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!FloatDyn], :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int,
+    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!FloatDyn], :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int,
     tail_types(1, 1.2)
-    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!Int], :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int,
+    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!Int], :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int,
     tail_types(1, 77)
 
 # COM: We can't infer parameters from the default value, but we need to test if
@@ -1022,7 +1022,7 @@ struct CallableArg[ArgT: TrivialRegisterPassable](Movable where False):
 
 # CHECK-LABEL: lit.fn @"infer_conversion_arg_type
 def infer_conversion_arg_type(callable: CallableArg[NoneType]):
-    # CHECK: lit.call {{.*}}CallableArg::@"__call__{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !NoneType>
+    # CHECK: lit.call {{.*}}CallableArg::@"__call__{{.*}}<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !NoneType>
     callable(None)
 
 def take_two[a_type: DType, c_type: DType, width: SIMDLength](
@@ -1434,8 +1434,8 @@ struct StructWithParametricDefaultValue[T: TrivialRegisterPassable, N: Int = Int
 # CHECK-LABEL: lit.fn @"test_struct_with_parametric_default_value()"
 def test_struct_with_parametric_default_value():
     # CHECK: lit.alias.decl *"a{{.*}}": meta<!lit.struct<{{.*}}>> = <@{{.*}}::@StructWithParametricDefaultValue<
-    # CHECK-SAME: :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int,
-    # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[::AnyType & ::Copyable & ::ImplicitlyCopyable & ::ImplicitlyDeletable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]()"{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int>)>
+    # CHECK-SAME: :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int,
+    # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[::AnyType & ::Copyable & ::Deinitable & ::ImplicitlyCopyable & ::Movable & ::RegisterPassable & ::TrivialRegisterPassable]()"{{.*}}<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int>)>
     comptime a = StructWithParametricDefaultValue[Int]
 
 ##===----------------------------------------------------------------------===##

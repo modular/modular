@@ -12,17 +12,17 @@
 # Type aliases with constraints are generated for constrained trait compositions.
 # Check for constrained trait type aliases containing the expected constraints:
 # CHECK-DAG: @Copyable where #kgen.constraint<{{.*}}conforms_to(:{{.*}} T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
-# CHECK-DAG: @Intable where #kgen.constraint<{{.*}}conforms_to(:{{.*}} T, :meta<!AnyType_ImplicitlyDeletable_Intable> !AnyType_ImplicitlyDeletable_Intable)
+# CHECK-DAG: @Intable where #kgen.constraint<{{.*}}conforms_to(:{{.*}} T, :meta<!AnyType_Deinitable_Intable> !AnyType_Deinitable_Intable)
 
 
 # ===========================================================================
 # Unconditional conformance - struct is always Movable
 # ===========================================================================
 # The struct should NOT have any constraint in its trait type.
-# CHECK: lit.struct.decl @UnconditionalMovable<T: !AnyType_ImplicitlyDeletable_Movable>
+# CHECK: lit.struct.decl @UnconditionalMovable<T: !AnyType_Deinitable_Movable>
 # CHECK-NOT: where #kgen.constraint
 # CHECK-SAME: attributes
-struct UnconditionalMovable[T: Movable & ImplicitlyDeletable](Movable):
+struct UnconditionalMovable[T: Movable & Deinitable](Movable):
     var value: Self.T
 
     def __init__(out self, var value: Self.T):
@@ -33,10 +33,10 @@ struct UnconditionalMovable[T: Movable & ImplicitlyDeletable](Movable):
 # Single conditional conformance - Copyable only when T is Copyable
 # ===========================================================================
 # Verify the ConformanceOp has the constraint attached:
-# CHECK: lit.struct.decl @ConditionalCopyable<T: !AnyType_ImplicitlyDeletable_Movable>
+# CHECK: lit.struct.decl @ConditionalCopyable<T: !AnyType_Deinitable_Movable>
 # CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
-struct ConditionalCopyable[T: Movable & ImplicitlyDeletable](
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+struct ConditionalCopyable[T: Movable & Deinitable](
     Copyable where conforms_to(T, Copyable), Movable
 ):
     var value: Self.T
@@ -55,12 +55,12 @@ struct ConditionalCopyable[T: Movable & ImplicitlyDeletable](
 # Multiple conditional conformances - Copyable and Intable
 # ===========================================================================
 # Verify ConformanceOps have constraints for both Copyable and Intable:
-# CHECK: lit.struct.decl @MultipleConditionalConformances<T: !AnyType_ImplicitlyDeletable_Movable>
+# CHECK: lit.struct.decl @MultipleConditionalConformances<T: !AnyType_Deinitable_Movable>
 # CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 # CHECK: kgen.conformance @"std::builtin::stubs::Intable"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_ImplicitlyDeletable_Intable> !AnyType_ImplicitlyDeletable_Intable)
-struct MultipleConditionalConformances[T: Movable & ImplicitlyDeletable](
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Deinitable_Intable> !AnyType_Deinitable_Intable)
+struct MultipleConditionalConformances[T: Movable & Deinitable](
     Copyable where conforms_to(T, Copyable),
     Intable where conforms_to(T, Intable),
     Movable,
@@ -89,7 +89,7 @@ struct MultipleConditionalConformances[T: Movable & ImplicitlyDeletable](
 # The provable candidate is correctly selected with no error.
 #
 # Just verify the struct declaration is generated (no compilation error):
-# CHECK: lit.struct.decl @DisprovedWithProvableAlternative<T: !AnyType_ImplicitlyDeletable_Movable>
+# CHECK: lit.struct.decl @DisprovedWithProvableAlternative<T: !AnyType_Deinitable_Movable>
 
 
 trait WhereNotTestTrait:
@@ -97,7 +97,7 @@ trait WhereNotTestTrait:
         ...
 
 
-struct DisprovedWithProvableAlternative[T: Movable & ImplicitlyDeletable](
+struct DisprovedWithProvableAlternative[T: Movable & Deinitable](
     WhereNotTestTrait where conforms_to(T, Copyable),
     Movable,
 ):
@@ -131,12 +131,12 @@ struct DisprovedWithProvableAlternative[T: Movable & ImplicitlyDeletable](
 # NOTE: Using UNRELATED traits like `where not conforms_to(T, Intable)` would
 # NOT work - it would be "unprovable" and cause an error.
 #
-# CHECK: lit.struct.decl @WitnessSelectionWithWhereNot<T: !AnyType_ImplicitlyDeletable_Movable>
+# CHECK: lit.struct.decl @WitnessSelectionWithWhereNot<T: !AnyType_Deinitable_Movable>
 
 trait Greeter:
     def greet(self): ...
 
-struct WitnessSelectionWithWhereNot[T: Movable & ImplicitlyDeletable](
+struct WitnessSelectionWithWhereNot[T: Movable & Deinitable](
     Greeter where conforms_to(T, Copyable),
     Movable,
 ):
@@ -167,12 +167,12 @@ struct WitnessSelectionWithWhereNot[T: Movable & ImplicitlyDeletable](
 # - Method with `where conforms_to(T, Intable)` → provable (conformance implies it)
 # - Method with `where not conforms_to(T, Intable)` → disproved (conformance implies Intable)
 #
-# CHECK: lit.struct.decl @CompoundConformanceWithWhereNot<T: !AnyType_ImplicitlyDeletable_Movable>
+# CHECK: lit.struct.decl @CompoundConformanceWithWhereNot<T: !AnyType_Deinitable_Movable>
 
 trait Formatter:
     def format(self): ...
 
-struct CompoundConformanceWithWhereNot[T: Movable & ImplicitlyDeletable](
+struct CompoundConformanceWithWhereNot[T: Movable & Deinitable](
     Formatter where conforms_to(T, Copyable) and conforms_to(T, Intable),
     Movable,
 ):
@@ -203,12 +203,12 @@ struct CompoundConformanceWithWhereNot[T: Movable & ImplicitlyDeletable](
 # with `and`, but as long as one part contradicts the conformance, the
 # overload is filtered out.
 #
-# CHECK: lit.struct.decl @CompoundMethodConstraint<T: !AnyType_ImplicitlyDeletable_Movable>
+# CHECK: lit.struct.decl @CompoundMethodConstraint<T: !AnyType_Deinitable_Movable>
 
 trait Processor:
     def process(self): ...
 
-struct CompoundMethodConstraint[T: Movable & ImplicitlyDeletable](
+struct CompoundMethodConstraint[T: Movable & Deinitable](
     Processor where conforms_to(T, Copyable),
     Movable,
 ):
@@ -237,11 +237,11 @@ struct CompoundMethodConstraint[T: Movable & ImplicitlyDeletable](
 # When a trait composition `A & B` has a conditional conformance, both A and B
 # should get the same constraint. Verify both conformance ops have constraints.
 #
-# CHECK: lit.struct.decl @CompositionConditional<T: !AnyType_ImplicitlyDeletable_Movable>
+# CHECK: lit.struct.decl @CompositionConditional<T: !AnyType_Deinitable_Movable>
 # CHECK: kgen.conformance @"{{.*}}CompTraitA"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 # CHECK: kgen.conformance @"{{.*}}CompTraitB"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 
 trait CompTraitA:
     def comp_a_method(self): ...
@@ -249,7 +249,7 @@ trait CompTraitA:
 trait CompTraitB:
     def comp_b_method(self): ...
 
-struct CompositionConditional[T: Movable & ImplicitlyDeletable](
+struct CompositionConditional[T: Movable & Deinitable](
     CompTraitA & CompTraitB where conforms_to(T, Copyable),
     Movable,
 ):
@@ -270,14 +270,14 @@ struct CompositionConditional[T: Movable & ImplicitlyDeletable](
 # ===========================================================================
 # Listing the same trait twice with the same constraint is redundant but valid.
 #
-# CHECK: lit.struct.decl @DuplicateSameConstraint<T: !AnyType_ImplicitlyDeletable_Movable>
+# CHECK: lit.struct.decl @DuplicateSameConstraint<T: !AnyType_Deinitable_Movable>
 # CHECK: kgen.conformance @"{{.*}}DupSameTrait"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 
 trait DupSameTrait:
     def dup_method(self): ...
 
-struct DuplicateSameConstraint[T: Movable & ImplicitlyDeletable](
+struct DuplicateSameConstraint[T: Movable & Deinitable](
     DupSameTrait where conforms_to(T, Copyable),
     DupSameTrait where conforms_to(T, Copyable),
     Movable,
@@ -297,11 +297,11 @@ struct DuplicateSameConstraint[T: Movable & ImplicitlyDeletable](
 # A & B where cond, A where cond — A appears twice but with the same
 # constraint, which is valid.
 #
-# CHECK: lit.struct.decl @CompositionStandaloneSameConstraint<T: !AnyType_ImplicitlyDeletable_Movable>
+# CHECK: lit.struct.decl @CompositionStandaloneSameConstraint<T: !AnyType_Deinitable_Movable>
 # CHECK: kgen.conformance @"{{.*}}CSTraitA"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 # CHECK: kgen.conformance @"{{.*}}CSTraitB"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 
 trait CSTraitA:
     def cs_a_method(self): ...
@@ -309,7 +309,7 @@ trait CSTraitA:
 trait CSTraitB:
     def cs_b_method(self): ...
 
-struct CompositionStandaloneSameConstraint[T: Movable & ImplicitlyDeletable](
+struct CompositionStandaloneSameConstraint[T: Movable & Deinitable](
     CSTraitA & CSTraitB where conforms_to(T, Copyable),
     CSTraitA where conforms_to(T, Copyable),
     Movable,
@@ -352,7 +352,7 @@ trait SplitDerived(SplitAncestor):
     pass
 
 # CHECK-LABEL: lit.struct.decl @SplitImpliesComposite
-struct SplitImpliesComposite[T: Movable & ImplicitlyDeletable](
+struct SplitImpliesComposite[T: Movable & Deinitable](
     SplitAncestor where conforms_to(T, Copyable & Intable),
     SplitDerived where conforms_to(T, Copyable) and conforms_to(T, Intable),
     Movable,
@@ -361,7 +361,7 @@ struct SplitImpliesComposite[T: Movable & ImplicitlyDeletable](
 
 # Other direction: composite implies split (subsumption).
 # CHECK-LABEL: lit.struct.decl @CompositeImpliesSplit
-struct CompositeImpliesSplit[T: Movable & ImplicitlyDeletable](
+struct CompositeImpliesSplit[T: Movable & Deinitable](
     SplitAncestor where conforms_to(T, Copyable) and conforms_to(T, Intable),
     SplitDerived where conforms_to(T, Copyable & Intable),
     Movable,
@@ -475,13 +475,13 @@ struct Moco4296Collection[T: AnyType](Movable):
     # CHECK-SAME: %__result__: !lit.ref<!lit.struct<#Moco4296Iter <{{.*}}downcast(:!AnyType T)>>,{{.*}}> byref_result
     def foo(
         var self,
-    ) -> Moco4296Iter[Self.T] where conforms_to(Self.T, Movable & ImplicitlyDeletable):
+    ) -> Moco4296Iter[Self.T] where conforms_to(Self.T, Movable & Deinitable):
         # CHECK: lit.call {{.*}}@struct_conditional_trait_conformance::@Moco4296Iter::@"__init__
         return Moco4296Iter(self^)
 
 
 @fieldwise_init
-struct Moco4296Iter[T: Movable & ImplicitlyDeletable](Movable where False):
+struct Moco4296Iter[T: Movable & Deinitable](Movable where False):
     var _collection: Moco4296Collection[Self.T]
 
 

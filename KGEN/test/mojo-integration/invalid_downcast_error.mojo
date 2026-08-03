@@ -22,11 +22,11 @@ struct Foo(ImplicitlyCopyable):
     pass
 
 
-def print_foo_invalid[T: Writable & ImplicitlyDeletable](var x: T):
+def print_foo_invalid[T: Writable & Deinitable](var x: T):
     print(x)
 
 
-def invalid[T: ImplicitlyCopyable & ImplicitlyDeletable](x: T):
+def invalid[T: ImplicitlyCopyable & Deinitable](x: T):
     print_foo_invalid(rebind[downcast[T, Writable]](x))
 
 

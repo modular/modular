@@ -707,7 +707,7 @@ struct List[T: Copyable](Copyable, Iterable):
 
     def append(
         mut self, var value: Self.T
-    ) where conforms_to(Self.T, ImplicitlyDeletable):
+    ) where conforms_to(Self.T, Deinitable):
         pass
 
     def __getitem__(
@@ -785,9 +785,7 @@ struct Set[T: AnyType]:
         pass
 
 
-struct Dict[
-    K: Copyable & ImplicitlyDeletable, V: Copyable & ImplicitlyDeletable
-]:
+struct Dict[K: Copyable & Deinitable, V: Copyable & Deinitable]:
     def __init__(out self):
         pass
 
@@ -835,7 +833,7 @@ trait ImplicitlyCopyable(Copyable):
 
 
 trait TrivialRegisterPassable(
-    ImplicitlyCopyable, ImplicitlyDeletable, Movable, RegisterPassable
+    Deinitable, ImplicitlyCopyable, Movable, RegisterPassable
 ):
     pass
 
@@ -869,7 +867,7 @@ trait Movable:
     comptime __move_ctor_is_trivial: Bool
 
 
-trait ImplicitlyDeletable:
+trait Deinitable:
     def __deinit__(deinit self, /):
         ...
 
@@ -1497,7 +1495,7 @@ struct StopIteration(TrivialRegisterPassable):
     pass
 
 
-trait Iterator(ImplicitlyDeletable, Movable):
+trait Iterator(Deinitable, Movable):
     comptime Element: Movable
 
     def __next__(mut self) raises StopIteration -> Self.Element:
@@ -1508,7 +1506,7 @@ def paramfor_has_next[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> Bool where conforms_to(
     IteratorType.Element,
-    Movable & ImplicitlyDeletable,
+    Movable & Deinitable,
 ):
     var result = it.copy()
     try:
@@ -1523,7 +1521,7 @@ def paramfor_next_iter[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> IteratorType where conforms_to(
     IteratorType.Element,
-    Movable & ImplicitlyDeletable,
+    Movable & Deinitable,
 ):
     # NOTE: This function is called by the compiler's elaborator only when
     # paramfor_has_next will return true. This is needed because the interpreter
@@ -1641,7 +1639,7 @@ def trait_downcast[
 # ===----------------------------------------------------------------------=== #
 
 
-trait Intable(ImplicitlyDeletable):
+trait Intable(Deinitable):
     def __int__(self) -> Int:
         ...
 

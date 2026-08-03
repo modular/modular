@@ -843,12 +843,12 @@ struct HList[T: ImplicitlyCopyable]:
 # CHECK-NEXT:     "path": "/std/builtin/value/Copyable"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
-# CHECK-NEXT:     "name": "ImplicitlyCopyable",
-# CHECK-NEXT:     "path": "/std/builtin/value/ImplicitlyCopyable"
+# CHECK-NEXT:     "name": "Deinitable",
+# CHECK-NEXT:     "path": "/std/builtin/anytype/Deinitable"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
-# CHECK-NEXT:     "name": "ImplicitlyDeletable",
-# CHECK-NEXT:     "path": "/std/builtin/anytype/ImplicitlyDeletable"
+# CHECK-NEXT:     "name": "ImplicitlyCopyable",
+# CHECK-NEXT:     "path": "/std/builtin/value/ImplicitlyCopyable"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "Movable",

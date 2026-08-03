@@ -34,13 +34,13 @@ struct No:
 ##===----------------------------------------------------------------------===##
 
 
-struct OkBox[T: ImplicitlyDeletable](
+struct OkBox[T: Deinitable](
     Marker where (conforms_to(T, Marker), "OkBox[T] is a Marker only when T is")
 ):
     pass
 
 
-def wants_marker_ok[U: Marker & ImplicitlyDeletable](x: U):
+def wants_marker_ok[U: Marker & Deinitable](x: U):
     pass
 
 
@@ -53,7 +53,7 @@ def use_ok(b: OkBox[Yes]):
 ##===----------------------------------------------------------------------===##
 
 
-struct GenBox[T: ImplicitlyDeletable](
+struct GenBox[T: Deinitable](
     # expected-note @below {{unsatisfied conditional conformance: GenBox[T] requires T to be a Marker}}
     Marker where (conforms_to(T, Marker), "GenBox[T] requires T to be a Marker")
 ):
@@ -61,12 +61,12 @@ struct GenBox[T: ImplicitlyDeletable](
 
 
 # expected-note @below {{function declared here}}
-def wants_marker_gen[U: Marker & ImplicitlyDeletable](x: U):
+def wants_marker_gen[U: Marker & Deinitable](x: U):
     pass
 
 
 def use_gen(b: GenBox[No]):
-    # expected-error @below {{does not conform to trait 'ImplicitlyDeletable & Marker'}}
+    # expected-error @below {{does not conform to trait 'Deinitable & Marker'}}
     wants_marker_gen(b)
 
 
@@ -75,7 +75,7 @@ def use_gen(b: GenBox[No]):
 ##===----------------------------------------------------------------------===##
 
 
-struct ConcreteBox[T: ImplicitlyDeletable](
+struct ConcreteBox[T: Deinitable](
     # expected-note @below {{unsatisfied conditional conformance: ConcreteBox[T] requires T to be a Marker}}
     Marker where (
         conforms_to(T, Marker), "ConcreteBox[T] requires T to be a Marker"
@@ -85,12 +85,12 @@ struct ConcreteBox[T: ImplicitlyDeletable](
 
 
 # expected-note @below {{function declared here}}
-def wants_marker_concrete(x: Marker & ImplicitlyDeletable):
+def wants_marker_concrete(x: Marker & Deinitable):
     pass
 
 
 def use_concrete(b: ConcreteBox[No]):
-    # expected-error @below {{cannot be converted from 'ConcreteBox[No]' to 'ImplicitlyDeletable & Marker'}}
+    # expected-error @below {{cannot be converted from 'ConcreteBox[No]' to 'Deinitable & Marker'}}
     wants_marker_concrete(b)
 
 
@@ -99,7 +99,7 @@ def use_concrete(b: ConcreteBox[No]):
 ##===----------------------------------------------------------------------===##
 
 
-struct VarBox[T: ImplicitlyDeletable](
+struct VarBox[T: Deinitable](
     # expected-note @below {{unsatisfied conditional conformance: VarBox[T] requires T to be a Marker}}
     Marker where (conforms_to(T, Marker), "VarBox[T] requires T to be a Marker")
 ):
@@ -107,8 +107,8 @@ struct VarBox[T: ImplicitlyDeletable](
 
 
 def use_var(b: VarBox[No]):
-    # expected-error @below {{cannot implicitly convert 'VarBox[No]' value to 'ImplicitlyDeletable & Marker' in 'var' initializer}}
-    var m: Marker & ImplicitlyDeletable = b
+    # expected-error @below {{cannot implicitly convert 'VarBox[No]' value to 'Deinitable & Marker' in 'var' initializer}}
+    var m: Marker & Deinitable = b
 
 
 ##===----------------------------------------------------------------------===##
@@ -126,7 +126,7 @@ trait Refined(Base):
     pass
 
 
-struct RefinedBox[T: ImplicitlyDeletable](
+struct RefinedBox[T: Deinitable](
     # expected-note @below {{unsatisfied conditional conformance: RefinedBox[T] requires T to be a Marker}}
     Refined where (conforms_to(T, Marker), "RefinedBox[T] requires T to be a Marker")
 ):
@@ -134,12 +134,12 @@ struct RefinedBox[T: ImplicitlyDeletable](
 
 
 # expected-note @below {{function declared here}}
-def wants_base[U: Base & ImplicitlyDeletable](x: U):
+def wants_base[U: Base & Deinitable](x: U):
     pass
 
 
 def use_ancestor(b: RefinedBox[No]):
-    # expected-error @below {{does not conform to trait 'ImplicitlyDeletable & Base'}}
+    # expected-error @below {{does not conform to trait 'Deinitable & Base'}}
     wants_base(b)
 
 
@@ -167,7 +167,7 @@ trait CommonB:
     pass
 
 
-struct TwoBox[T: ImplicitlyDeletable](
+struct TwoBox[T: Deinitable](
     CommonA where (conforms_to(T, MarkerA), "TwoBox needs MarkerA for CommonA"),
     # expected-note @below {{unsatisfied conditional conformance: TwoBox needs MarkerB for CommonB}}
     CommonB where (conforms_to(T, MarkerB), "TwoBox needs MarkerB for CommonB"),
@@ -176,13 +176,13 @@ struct TwoBox[T: ImplicitlyDeletable](
 
 
 # expected-note @below {{function declared here}}
-def wants_both[U: CommonA & CommonB & ImplicitlyDeletable](x: U):
+def wants_both[U: CommonA & CommonB & Deinitable](x: U):
     pass
 
 
 # V is assumed to be MarkerA (so the CommonA conformance holds) but nothing is
 # assumed about MarkerB, so only CommonB genuinely fails.
-def use_two[V: ImplicitlyDeletable](b: TwoBox[V]) where (
+def use_two[V: Deinitable](b: TwoBox[V]) where (
     conforms_to(V, MarkerA), "V is a MarkerA"
 ):
     # expected-error @below {{does not conform to trait}}
@@ -196,7 +196,7 @@ def use_two[V: ImplicitlyDeletable](b: TwoBox[V]) where (
 ##===----------------------------------------------------------------------===##
 
 
-struct BothBox[T: ImplicitlyDeletable](
+struct BothBox[T: Deinitable](
     # expected-note @below {{unsatisfied conditional conformance: BothBox needs MarkerA for CommonA}}
     CommonA where (conforms_to(T, MarkerA), "BothBox needs MarkerA for CommonA"),
     # expected-note @below {{unsatisfied conditional conformance: BothBox needs MarkerB for CommonB}}
@@ -206,11 +206,11 @@ struct BothBox[T: ImplicitlyDeletable](
 
 
 # expected-note @below {{function declared here}}
-def wants_both_nm[U: CommonA & CommonB & ImplicitlyDeletable](x: U):
+def wants_both_nm[U: CommonA & CommonB & Deinitable](x: U):
     pass
 
 
-def use_both_none[V: ImplicitlyDeletable](b: BothBox[V]):
+def use_both_none[V: Deinitable](b: BothBox[V]):
     # expected-error @below {{does not conform to trait}}
     wants_both_nm(b)
 
@@ -220,7 +220,7 @@ def use_both_none[V: ImplicitlyDeletable](b: BothBox[V]):
 ##===----------------------------------------------------------------------===##
 
 
-struct PackBox[T: ImplicitlyDeletable](
+struct PackBox[T: Deinitable](
     # expected-note @below {{unsatisfied conditional conformance: PackBox[T] requires T to be a Marker}}
     Marker where (conforms_to(T, Marker), "PackBox[T] requires T to be a Marker")
 ):
@@ -228,7 +228,7 @@ struct PackBox[T: ImplicitlyDeletable](
 
 
 # expected-note @below {{function declared here}}
-def wants_markers[*Ts: Marker & ImplicitlyDeletable](*args: *Ts):
+def wants_markers[*Ts: Marker & Deinitable](*args: *Ts):
     pass
 
 

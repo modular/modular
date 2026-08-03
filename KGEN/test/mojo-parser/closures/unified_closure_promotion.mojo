@@ -143,7 +143,7 @@ def trigger_promoted_param_wrapper[n: Int]():
 # COM: parameter.
 # S6-LABEL: lit.fn @"s6_trigger
 # S6: lit.alias.decl *"X`": !alias_Int1 = <apply(
-# S6-SAME: @"take_closure_param[def[n: Int](arg: Int) -> Int & ::AnyType & ::ImplicitlyDeletable & ::Movable]($0)"
+# S6-SAME: @"take_closure_param[def[n: Int](arg: Int) -> Int & ::AnyType & ::Deinitable & ::Movable]($0)"
 # S6-SAME: store_to_mem(apply_result_slot(
 # S6-SAME: @"def[n: Int](arg: Int) capturing thin -> Int_PtrWrapper"::@"__init__()"
 # S6: lit.call @{{.*}}::@"take_closure_param

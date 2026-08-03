@@ -130,7 +130,7 @@ trait CFMTraitParams:
 struct CFMStructParams[t1: TrivialRegisterPassable, t2: TrivialRegisterPassable](
     CFMTraitParams, Movable where False
 ):
-    # CHECK: lit.fn @"f1{{.*}}"<x: !AnyType_CFMTraitParams>[{{.*}}](%self: !lit.ref<!lit.struct<#CFMStructParams <:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable t1, :!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable t2>>{{.*}}> read_mem)
+    # CHECK: lit.fn @"f1{{.*}}"<x: !AnyType_CFMTraitParams>[{{.*}}](%self: !lit.ref<!lit.struct<#CFMStructParams <:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable t1, :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable t2>>{{.*}}> read_mem)
     def f1[x: CFMTraitParams](self):
         pass
 
@@ -448,7 +448,7 @@ trait SimpleTraitB:
 
 
 # CHECK-LABEL: lit.struct.decl @TwoThunks
-# CHECK-SAME: (!AnyType_ImplicitlyDeletable_Movable_RegisterPassable_SimpleTraitA_SimpleTraitB)
+# CHECK-SAME: (!AnyType_Deinitable_Movable_RegisterPassable_SimpleTraitA_SimpleTraitB)
 struct TwoThunks(RegisterPassable, SimpleTraitA, SimpleTraitB):
     # CHECK: lit.fn @"method({{.*}}TwoThunks)"
     def method(self):
@@ -699,7 +699,7 @@ def converted_metatype_struct_element(x: Collection[Item]):
 
 
 # CHECK-LABEL: lit.struct.decl @TraitMember
-struct TraitMember[T: Movable & ImplicitlyDeletable](Movable where False):
+struct TraitMember[T: Movable & Deinitable](Movable where False):
     # CHECK: lit.fn @"__deinit__
     var value: Self.T
 
@@ -904,15 +904,15 @@ struct ParamType[x: Int](TrivialRegisterPassable):
     pass
 
 # CHECK: lit.trait.decl @RGTrait{{.*}}
-trait RGTrait(ImplicitlyDeletable, RegisterPassable):
-    # CHECK-NEXT: lit.fn @"doSomething{{.*}}"[imm *"{{.*}}"](%self: !lit.ref<:!AnyType_ImplicitlyDeletable_Movable_RegisterPassable_RGTrait *"{{.*}}", imm *"{{.*}}"> read_mem) -> !kgen.none
+trait RGTrait(Deinitable, RegisterPassable):
+    # CHECK-NEXT: lit.fn @"doSomething{{.*}}"[imm *"{{.*}}"](%self: !lit.ref<:!AnyType_Deinitable_Movable_RegisterPassable_RGTrait *"{{.*}}", imm *"{{.*}}"> read_mem) -> !kgen.none
     def doSomething(self):
         ...
-    # CHECK: lit.fn @"__deinit__({{.*}})"[mut *"{{.*}}"](%self: !lit.ref<:!AnyType_ImplicitlyDeletable_Movable_RegisterPassable_RGTrait *"{{.*}}", mut *"{{.*}}"> deinit_mem, |) -> !kgen.none
+    # CHECK: lit.fn @"__deinit__({{.*}})"[mut *"{{.*}}"](%self: !lit.ref<:!AnyType_Deinitable_Movable_RegisterPassable_RGTrait *"{{.*}}", mut *"{{.*}}"> deinit_mem, |) -> !kgen.none
 
 # CHECK-LABEL: lit.trait.decl @RGTrivialTrait{{.*}} register_passable_trivial
 trait RGTrivialTrait(TrivialRegisterPassable):
-    # CHECK-NEXT: lit.fn @"doSomething{{.*}}"(%self: !kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable_RGTrivialTrait {{.*}}>) -> !kgen.none
+    # CHECK-NEXT: lit.fn @"doSomething{{.*}}"(%self: !kgen.param<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable_RGTrivialTrait {{.*}}>) -> !kgen.none
     def doSomething(self):
         ...
 

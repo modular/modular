@@ -9,9 +9,9 @@
 # XFAIL: *
 # TODO(MOCO-4361): Remove the XFAIL and fold these cases back into
 # `type_refinement_tuple.mojo` once generic `enumerate` unpacking compiles
-# again. Since `Tuple` became conditionally `ImplicitlyDeletable`, `enumerate`
+# again. Since `Tuple` became conditionally `Deinitable`, `enumerate`
 # yields `Tuple[Int, Iterator.Element]` and `Iterator.Element: Movable` erases
-# the element's `ImplicitlyDeletable` refinement in a generic context, so the
+# the element's `Deinitable` refinement in a generic context, so the
 # per-iteration tuple temporary can't be dropped. (Concrete-element `enumerate`
 # still compiles; only the generic form regressed.)
 #
@@ -25,9 +25,9 @@ trait Greetable:
 
 struct Dog(
     Copyable,
+    Deinitable,
     Greetable,
     ImplicitlyCopyable,
-    ImplicitlyDeletable,
     Movable,
 ):
     var name: String
@@ -41,7 +41,7 @@ struct Dog(
 
 # `enumerate`: index + element unpack (value iteration).
 def test_enumerate_bind[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](items: List[T]) where conforms_to(T, Greetable):
     for i, item in enumerate(items):
         print("enum:", i, item.greet())
@@ -49,7 +49,7 @@ def test_enumerate_bind[
 
 # `enumerate` with `var` index and element bindings.
 def test_enumerate_var[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](items: List[T]) where conforms_to(T, Greetable):
     for var idx, var item in enumerate(items):
         print("enum_var:", idx, item.greet())
@@ -57,7 +57,7 @@ def test_enumerate_var[
 
 # `ref` enumerate pair: mixed index (value) and `ref` subscript on item.
 def test_enumerate_ref_subscript[
-    T: ImplicitlyCopyable & ImplicitlyDeletable
+    T: ImplicitlyCopyable & Deinitable
 ](items: List[T]) where conforms_to(T, Greetable):
     for ref pair in enumerate(items):
         print("enum_ref:", pair[0], pair[1].greet())

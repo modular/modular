@@ -750,7 +750,7 @@ FnOp StructEmitter::synthesizeEmptyDtor(ConstraintAttr conformanceConstraint) {
   // deletable. We would rather error in the parser than in check lifetimes.
   // We do this after creating the function so we don't emit a redundant error
   // complaining that a missing __deinit__ means the struct doesn't conform to
-  // ImplicitlyDeletable.
+  // Deinitable.
   SmallVector<ConstraintAttr> assumptions;
   structDecl.getKnownAssumptionsIncludingParents(assumptions);
   assumptions.append(constraints);
@@ -758,16 +758,16 @@ FnOp StructEmitter::synthesizeEmptyDtor(ConstraintAttr conformanceConstraint) {
     ASTType fieldType = fieldOp.getType();
     TriState confResult =
         fieldType
-            .conformsToBuiltinTrait("ImplicitlyDeletable", structDecl.getLoc(),
-                                    shared, assumptions)
+            .conformsToBuiltinTrait("Deinitable", structDecl.getLoc(), shared,
+                                    assumptions)
             .first;
     if (!confResult.isTrue() &&
-        !fieldConditionallyConformsToBuiltin(fieldType, "ImplicitlyDeletable",
-                                             shared, structDecl, assumptions) &&
+        !fieldConditionallyConformsToBuiltin(fieldType, "Deinitable", shared,
+                                             structDecl, assumptions) &&
         !fieldType.isTrivialRegisterType(structDecl.getLoc(), shared)) {
       emitError(fieldOp.getLoc())
-          << "field '" << fieldOp.getName()
-          << "' has non-implicitly deletable type " << fieldType;
+          << "field '" << fieldOp.getName() << "' has non-'Deinitable' type "
+          << fieldType;
       funcDecl->setErroneous();
       break;
     }
@@ -1089,7 +1089,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   switch (kind) {
   case SpecialFunctionKind::kDeinit:
     baseName = "__del__";
-    traitName = "ImplicitlyDeletable";
+    traitName = "Deinitable";
     break;
   case SpecialFunctionKind::kCopyCtor:
     baseName = "__copy_ctor_";

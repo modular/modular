@@ -39,7 +39,7 @@ Closures (specifically, their struct wrappers) conform to several traits
 automatically:
 
 - `AnyType`
-- `ImplicitlyDeletable`
+- `Deinitable`
 - `Movable`
 
 Additionally, they conform to several other types conditionally:

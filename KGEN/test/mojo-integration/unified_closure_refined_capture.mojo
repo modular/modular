@@ -12,7 +12,7 @@
 # the implicit copy / move (MOCO-4229).
 
 
-trait Weak(Copyable, ImplicitlyDeletable, Movable):
+trait Weak(Copyable, Deinitable, Movable):
     pass
 
 
@@ -25,7 +25,7 @@ struct Thing(TrivialRegisterPassable, Weak):
 
 # NOTE: no `Copyable` here — `Copyable` requires `Movable`, which would make
 # the declared bound movable and defeat the refinement test below.
-trait WeakNoMove(ImplicitlyDeletable):
+trait WeakNoMove(Deinitable):
     pass
 
 

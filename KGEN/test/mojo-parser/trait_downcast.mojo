@@ -32,7 +32,7 @@ def raw_downcast_preserves_trivial_passability[
 
 # CHECK-LABEL: lit.fn @"trait_downcast_reg_type
 def trait_downcast_reg_type[T: TrivialRegisterPassable](x: T):
-    # CHECK: lit.var.decl "y" var : !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable_ToCastInto downcast(:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable T), mut *"y`1">
+    # CHECK: lit.var.decl "y" var : !lit.ref<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable_ToCastInto downcast(:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable T), mut *"y`1">
     var y = trait_downcast[ToCastInto](x)
     y.test()
 
@@ -44,14 +44,14 @@ def trait_downcast_anytype[T: AnyType](x: T):
     y.test()
 
 
-struct ListIterator[T: Copyable & ImplicitlyDeletable](Movable where False):
+struct ListIterator[T: Copyable & Deinitable](Movable where False):
     var t: Self.T
 
 
-struct List[T: Movable & ImplicitlyDeletable](Movable where False):
+struct List[T: Movable & Deinitable](Movable where False):
     var t: Self.T
 
-    # CHECK: lit.alias.decl *"Iterator`": meta<!lit.struct<#ListIterator <:{{.*}} downcast(:!AnyType_ImplicitlyDeletable_Movable T)>>>
+    # CHECK: lit.alias.decl *"Iterator`": meta<!lit.struct<#ListIterator <:{{.*}} downcast(:!AnyType_Deinitable_Movable T)>>>
     comptime Iterator = ListIterator[downcast[Self.T, Copyable]]
 
     def iter(self) -> Self.Iterator:
@@ -62,7 +62,7 @@ def sink[T: ToCastInto](x: T):
     pass
 
 
-def foo[T: Movable & ToCastInto & ImplicitlyDeletable](l: List[T]):
+def foo[T: Movable & ToCastInto & Deinitable](l: List[T]):
     var iter = l.iter()
     # Make sure ToCastInfo conformance survives the downcast.
     # CHECK: lit.call @{{.*}}::@"sink{{.*}}

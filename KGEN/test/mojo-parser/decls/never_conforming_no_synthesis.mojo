@@ -18,7 +18,7 @@
 #
 # The ambient-false spelling (`... where False` on the struct) additionally makes
 # the struct linear: an unsatisfiable body clause contradicts even the
-# unconditionally-injected `ImplicitlyDeletable` slot, so the struct is
+# unconditionally-injected `Deinitable` slot, so the struct is
 # uninstantiable anyway. The shared invariant asserted per row -- no move/copy/
 # defaulted-method synthesis -- still holds across all four spellings.
 
@@ -111,16 +111,16 @@ struct GreeterAmbient[T: AnyType](
     pass
 
 
-# --- ImplicitlyDeletable: struct becomes linear, same message per spelling --
+# --- Deinitable: struct becomes linear, same message per spelling --
 
 # CHECK-LABEL: lit.struct.decl @IDLiteral
-# CHECK-SAME: is not implicitly deletable and must be explicitly destroyed
-struct IDLiteral(ImplicitlyDeletable where False):
+# CHECK-SAME: does not conform to 'Deinitable' and must be explicitly destroyed
+struct IDLiteral(Deinitable where False):
     pass
 
 # CHECK-LABEL: lit.struct.decl @IDArith
-# CHECK-SAME: is not implicitly deletable and must be explicitly destroyed
-struct IDArith[n: Int](ImplicitlyDeletable where not (n > 0)) where n > 0:
+# CHECK-SAME: does not conform to 'Deinitable' and must be explicitly destroyed
+struct IDArith[n: Int](Deinitable where not (n > 0)) where n > 0:
     pass
 
 

@@ -14,14 +14,14 @@
 
 # A plain (non-register-passable) struct: capturing it forces the closure to
 # the memory convention.
-struct MemOnly(Copyable, ImplicitlyCopyable, Movable, ImplicitlyDeletable):
+struct MemOnly(Copyable, ImplicitlyCopyable, Movable, Deinitable):
     var x: Int
 
     def __init__(out self):
         self.x = 0
 
 
-struct MoveOnly(Movable, ImplicitlyDeletable):
+struct MoveOnly(Movable, Deinitable):
     var x: Int
 
     def __init__(out self):

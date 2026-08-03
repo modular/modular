@@ -13,7 +13,7 @@
 # the function's own body constraints reference its own parameters by index,
 # while types elsewhere in the body reference them by name.
 
-trait MyIterator(ImplicitlyDeletable):
+trait MyIterator(Deinitable):
     comptime Element: Movable
 
     def next(mut self) -> Self.Element:
@@ -23,9 +23,9 @@ trait MyIterator(ImplicitlyDeletable):
 # CHECK-LABEL: lit.fn @"take_and_peek
 # CHECK: lit.var.decl "x" var
 # CHECK: lit.call{{.*}}"next
-# CHECK: get_witness<:!AnyType_Movable #kgen.get_witness<{{.*}}"Element">, "std::builtin::stubs::ImplicitlyDeletable", "__deinit__
+# CHECK: get_witness<:!AnyType_Movable #kgen.get_witness<{{.*}}"Element">, "std::builtin::stubs::Deinitable", "__deinit__
 def take_and_peek[Iter: MyIterator](var it: Iter) where conforms_to(
-    Iter.Element, ImplicitlyDeletable
+    Iter.Element, Deinitable
 ):
     var x = it.next()
     _ = x

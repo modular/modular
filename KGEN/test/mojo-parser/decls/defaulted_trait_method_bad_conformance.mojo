@@ -21,7 +21,7 @@ struct Map[Strat: Strategy, Dest: Copyable, //, mapFn: def (Strat.Value) thin ->
         return Self.mapFn(self.strat.value())
 
 
-trait Strategy(ImplicitlyDeletable, Movable):
+trait Strategy(Deinitable, Movable):
     comptime Value: Copyable
 
     def value(mut self) raises -> Self.Value:

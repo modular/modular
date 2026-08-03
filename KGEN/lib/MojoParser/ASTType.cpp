@@ -826,7 +826,7 @@ TriState ASTType::isSpecialFunctionTrivial(llvm::SMLoc loc,
   default:
     llvm_unreachable("Invalid special function kind");
   case SpecialFunctionKind::kDeinit:
-    traitName = "ImplicitlyDeletable";
+    traitName = "Deinitable";
     isTrivialHook = "__del__is_trivial";
     break;
   case SpecialFunctionKind::kCopyCtor:

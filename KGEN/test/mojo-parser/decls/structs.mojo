@@ -47,9 +47,9 @@ struct DtorExample3[T: RPTTrait](Movable where False):
 # CHECK-LABEL: lit.struct.decl @DtorExample4
 # Dtor is trivial if T's dtor is trivial.
 # CHECK: lit.alias.decl __del__is_trivial:
-# CHECK-SAME: <#kgen.get_witness<:!AnyType_ImplicitlyDeletable T, {{.*}}"__del__is_trivial">>
-# expected-warning @below {{redundant trait composition: 'ImplicitlyDeletable' already implies 'AnyType}}
-struct DtorExample4[T: AnyType & ImplicitlyDeletable](Movable where False):
+# CHECK-SAME: <#kgen.get_witness<:!AnyType_Deinitable T, {{.*}}"__del__is_trivial">>
+# expected-warning @below {{redundant trait composition: 'Deinitable' already implies 'AnyType}}
+struct DtorExample4[T: AnyType & Deinitable](Movable where False):
     var thing: Self.T
 
 
@@ -132,14 +132,14 @@ def testCopyMoveSynthNonTrivial(var a: IntPairNT, var b: IntPairWrapperNT):
 
 
 @fieldwise_init
-struct FieldwiseInitExample1[T: Movable & ImplicitlyDeletable](Movable where False):
+struct FieldwiseInitExample1[T: Movable & Deinitable](Movable where False):
     var x: Int
     var y: Self.T
 
 
 # CHECK-LABEL: lit.struct.decl @FieldwiseInitExample1
 # CHECK: lit.fn @"__init__(::SIMD
-# CHECK-SAME: (%x: !alias_Int1, %y: !lit.ref<:!AnyType_ImplicitlyDeletable_Movable T, mut *"y`"> owned_in_mem,
+# CHECK-SAME: (%x: !alias_Int1, %y: !lit.ref<:!AnyType_Deinitable_Movable T, mut *"y`"> owned_in_mem,
 # CHECK-SAME: %self: !lit.ref<{{.*}}> byref_result)
 # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[x]
 # CHECK-NEXT: lit.ref.store %x, [[TMP]]

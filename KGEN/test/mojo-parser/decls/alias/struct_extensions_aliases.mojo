@@ -135,7 +135,7 @@ struct ZInt(ImplicitlyCopyable):
         pass
 
 
-struct Container[T: ImplicitlyCopyable & ImplicitlyDeletable](Movable where False):
+struct Container[T: ImplicitlyCopyable & Deinitable](Movable where False):
     var data: Self.T
 
 
