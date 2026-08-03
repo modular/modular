@@ -18,6 +18,7 @@
 import enum
 import inspect
 import os
+import pathlib
 import types
 from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, overload
@@ -114,6 +115,16 @@ def set_global_value(key: str, value: str) -> None:
 
 def unset_global_value(key: str) -> None:
     """Removes an override set by :func:`set_global_value`."""
+
+def max_cache_dir() -> pathlib.Path | None:
+    """
+    Returns the directory the engine caches compiled models (``.mef``) in.
+
+    Resolved by the compiler itself.
+
+    Returns:
+        pathlib.Path | None: the cache directory, or None if unresolvable.
+    """
 
 @overload
 def read(path: str | os.PathLike) -> CompiledModels:

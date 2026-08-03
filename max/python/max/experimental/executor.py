@@ -37,7 +37,7 @@ from concurrent.futures import Future
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from max import _core, driver, engine
+from max import _core, _eager_policy, driver, engine
 from max._core.dialects import rmo
 from max.graph import Graph
 
@@ -254,7 +254,7 @@ class CompositeExecutor:
         self,
         *,
         interpreter: InterpreterExecutor | None,
-        fallback_on_error: bool,
+        fallback_on_error: bool | None = None,
     ) -> None:
         """Initializes the executor.
 
@@ -263,9 +263,22 @@ class CompositeExecutor:
                 compile.
             fallback_on_error: Whether to fall back to compilation when the
                 interpreter raises a non-:class:`UnsupportedGraphError` error.
+                ``None`` follows ``MAX_EAGER_ALLOW_LAZY_COMPILE``, read per
+                execute rather than captured here.
         """
         self._interpreter = interpreter
-        self._fallback_on_error = fallback_on_error
+        self._fallback_override = fallback_on_error
+
+    @property
+    def _fallback_on_error(self) -> bool:
+        """Whether an interpreter error falls back to compiling the graph.
+
+        Read at call time so the ambient default, built at import, still honors
+        a policy ``max serve`` sets afterwards.
+        """
+        if self._fallback_override is None:
+            return _eager_policy.allow_lazy_compile()
+        return self._fallback_override
 
     def execute(
         self, graph: Graph, inputs: Sequence[driver.Buffer]
@@ -354,11 +367,13 @@ def _default_composite() -> CompositeExecutor:
 
     Interprets graphs within the ``MAX_INTERPRETER_MAX_OPS`` threshold and
     falls back to a cached compile on refusal or interpreter error.  This is
-    the out-of-the-box eager execution path.
+    the out-of-the-box eager execution path.  An interpreter error is masked by
+    a compile only while ``MAX_EAGER_ALLOW_LAZY_COMPILE`` permits one.
     """
     return CompositeExecutor(
         interpreter=InterpreterExecutor(max_ops=_interpreter_max_ops()),
-        fallback_on_error=True,
+        # Defer to the policy: this runs at import, before a launcher sets it.
+        fallback_on_error=None,
     )
 
 
@@ -390,7 +405,9 @@ def default_executor() -> Executor:
 
     The initial default is selected by the ``MAX_EAGER_EXECUTOR``
     environment variable (``composite`` | ``jit`` | ``compile`` |
-    ``interpreter``; default ``composite``), read at import time.
+    ``interpreter``; default ``composite``), read at import time. The
+    cold-compile policy is not: ``composite`` reads
+    ``MAX_EAGER_ALLOW_LAZY_COMPILE`` on each execute.
     """
     return _DEFAULT_EXECUTOR
 

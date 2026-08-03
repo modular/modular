@@ -345,9 +345,9 @@ def reduce_model(
         The compiled model ready for execution.
 
     Raises:
-        KeyError: If the (op, device, dtype) is outside the supported set; or,
-            with ``MAX_EAGER_OP_PRECOMPILE=1``, if a supported target was not
-            swept.
+        KeyError: If the (op, device, dtype) is outside the supported set.
+        EagerLazyCompileDisallowed: If a supported target is not already
+            compiled and ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.
     """
     key = _graph_name(op_type, device, dtype, variant)
     # Cache-check before building the closures below: this runs on every
@@ -376,5 +376,4 @@ def reduce_model(
         device,
         build,
         unsupported_reason=check_supported,
-        display_name="reduce",
     )

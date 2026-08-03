@@ -58,6 +58,7 @@ modular_py_library(
     deps = [
         "//max/python/max/_entrypoints",
         "//max/python/max:_core",
+        "//max/python/max:_eager_policy",
         "//max/python/max/profiler",
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve:config",
@@ -68,6 +69,7 @@ modular_py_library(
         "//max/python/max/benchmark:benchmark_serving_lib",
         requirement("click"),
         requirement("exceptiongroup"),  # only for python < 3.11
+        requirement("tqdm"),
         requirement("typing-extensions"),
     ],
 )
@@ -95,6 +97,7 @@ modular_py_binary(
     deps = ALL_ARCHITECTURES + [
         ":_entrypoints",
         "//max/python/max:_core",
+        "//max/python/max:_eager_policy",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/benchmark:benchmark_serving_lib",
         "//max/python/max/pipelines",
@@ -105,6 +108,7 @@ modular_py_binary(
         "//max/python/max/serve/telemetry",
         requirement("click"),
         requirement("exceptiongroup"),  # only for python < 3.11
+        requirement("tqdm"),
         requirement("typing-extensions"),
     ],
 )
@@ -122,7 +126,9 @@ modular_py_binary(
         "no-pydeps",
     ],
     deps = [
+        "//max/python/max:_eager_policy",
         "//max/python/max/benchmark:benchmark_serving_lib",
+        requirement("tqdm"),
     ],
 )
 

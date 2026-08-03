@@ -169,8 +169,8 @@ def matmul_model(device: Device, dtype: DType) -> engine.Model:
         The compiled :class:`~max.engine.Model`.
 
     Raises:
-        KeyError: With ``MAX_EAGER_OP_PRECOMPILE=1``, if the target was not
-            precompiled.
+        EagerLazyCompileDisallowed: If the target is not already compiled and
+            ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.
 
     Note:
         No support guard (unlike unary): RMO->MO casts both operands to a

@@ -84,29 +84,52 @@ def _pin_to_parent_death() -> None:
     libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL)
 
 
-# Worker-process state, created once per worker by _init_worker.
-_WORKER_SESSION: engine.InferenceSession | None = None
+# Worker-process state, created by _init_worker and _session_for.
+_WORKER_DEVICE_SPECS: tuple[driver.DeviceSpec, ...] = ()
+_WORKER_SESSIONS: dict[
+    tuple[driver.DeviceSpec, ...], engine.InferenceSession
+] = {}
 
 
 def _init_worker(device_specs: Sequence[driver.DeviceSpec]) -> None:
-    """Pins the worker's lifetime and builds its compile session."""
-    global _WORKER_SESSION
+    """Pins the worker's lifetime and records its default session devices."""
+    global _WORKER_DEVICE_SPECS
     _pin_to_parent_death()
-    _WORKER_SESSION = engine.InferenceSession(
-        devices=driver.load_devices(device_specs)
-    )
+    _WORKER_DEVICE_SPECS = tuple(device_specs)
+
+
+def _session_for(
+    device_specs: tuple[driver.DeviceSpec, ...],
+) -> engine.InferenceSession:
+    """Returns this worker's session for *device_specs*, creating it lazily.
+
+    Keyed by the ordered tuple, not a set: the leading device is the
+    session's default compile target and enters the MEF cache key (see
+    :meth:`ProcessCompilePool.compile_module`).
+    """
+    session = _WORKER_SESSIONS.get(device_specs)
+    if session is None:
+        session = engine.InferenceSession(
+            devices=driver.load_devices(device_specs)
+        )
+        _WORKER_SESSIONS[device_specs] = session
+    return session
 
 
 def _compile_to_mef(
-    bytecode: bytes, extensions: Sequence[Path], mef_path: Path
+    bytecode: bytes,
+    extensions: Sequence[Path],
+    mef_path: Path,
+    device_specs: tuple[driver.DeviceSpec, ...] | None = None,
 ) -> Path:
-    assert _WORKER_SESSION is not None, "worker initializer did not run"
-
     try:
+        if device_specs is None:
+            device_specs = _WORKER_DEVICE_SPECS
+        session = _session_for(device_specs)
         module = Module(
             mlir_module=Operation.from_bytecode(bytecode, mlir.Context())
         )
-        compiled = _WORKER_SESSION.compile(module, custom_extensions=extensions)
+        compiled = session.compile(module, custom_extensions=extensions)
         compiled.export_mef(mef_path)
     except BaseException:
         # Tracebacks don't survive pickling.
@@ -185,14 +208,65 @@ class ProcessCompilePool:
             RuntimeError: If the pool is closed.
             BrokenProcessPool: If a worker has already died.
         """
+        return self._submit(
+            graph._module.bytecode, graph.kernel_libraries_paths, None
+        )
+
+    def compile_module(
+        self,
+        module: Module,
+        *,
+        device_specs: Sequence[driver.DeviceSpec] | None = None,
+        custom_extensions: Sequence[Path] = (),
+    ) -> Future[engine.CompiledModel]:
+        """Schedules a multi-graph :class:`~max.graph.Module` for compilation.
+
+        Args:
+            module: The module to compile; may hold several ``mo.graph`` ops
+                that compile into one artifact (one MEF cache entry).
+            device_specs: Devices for the compiling session, in order — the
+                leading device is the session's default compile target and
+                enters the artifact's cache key. Pass the exact devices (and
+                order) a later in-process compile of the same module will
+                use so it hits the shared MEF cache; ``None`` uses the
+                pool's devices.
+            custom_extensions: Paths to custom Mojo extension libraries.
+                Note that compiles with extensions bypass the MEF cache.
+
+        Returns:
+            A future resolving to the compiled artifact, as :meth:`compile`.
+
+        Raises:
+            ValueError: If ``device_specs`` is provided but empty.
+            RuntimeError: If the pool is closed.
+            BrokenProcessPool: If a worker has already died.
+        """
+        if device_specs is not None and not device_specs:
+            raise ValueError(
+                "device_specs must name at least one device when provided;"
+                " pass None to use the pool's devices"
+            )
+        return self._submit(
+            module.mlir_module.bytecode,
+            list(custom_extensions),
+            tuple(device_specs) if device_specs is not None else None,
+        )
+
+    def _submit(
+        self,
+        bytecode: bytes,
+        extensions: Sequence[Path],
+        device_specs: tuple[driver.DeviceSpec, ...] | None,
+    ) -> Future[engine.CompiledModel]:
         if self._closed:
             raise RuntimeError("the compile pool is closed")
 
         mef_future = self._executor.submit(
             _compile_to_mef,
-            graph._module.bytecode,
-            graph.kernel_libraries_paths,
+            bytecode,
+            extensions,
             Path(self._mef_dir.name) / f"{uuid.uuid4()}.mef",
+            device_specs,
         )
 
         def load(mef_path: Path) -> engine.CompiledModel:

@@ -148,8 +148,9 @@ def conv_model(device: Device, dtype: DType) -> engine.Model:
         The compiled model ready for execution.
 
     Raises:
-        KeyError: If (device, dtype) is outside the supported set; or, with
-            ``MAX_EAGER_OP_PRECOMPILE=1``, if a supported target was not swept.
+        KeyError: If (device, dtype) is outside the supported set.
+        EagerLazyCompileDisallowed: If a supported target is not already
+            compiled and ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.
     """
     key = _graph_name(device, dtype)
     model = _FAMILY.cache.get(key)

@@ -16,13 +16,14 @@ These tests verify that the graph-compiler-backed op handlers produce
 correct results by comparing against numpy reference implementations.
 """
 
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from max import _core
 from max._core.dialects import mo, rmo
 from max._interpreter_ops import (
     data_movement_gc,
@@ -5672,21 +5673,6 @@ class TestScatterNdFusedModel:
             out.to_numpy().reshape(x_np.shape), expected
         )
 
-    def test_precompile_raises_on_miss(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """With =1, a supported-but-unswept scatter_nd target is a hard
-        error. Each op-keyed family (scatter_nd/_add/_max/_min/_mul) must
-        dispatch through its own registered family object on a miss."""
-        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
-        monkeypatch.setattr(
-            scatter_nd_gc._FAMILIES[mo.ScatterNdOp], "cache", {}
-        )
-        with pytest.raises(KeyError, match="No pre-compiled scatter_nd model"):
-            scatter_nd_gc.scatter_nd_model(
-                mo.ScatterNdOp, CPU(), DType.uint32, DType.int64
-            )
-
     def test_lazy_default_compiles_on_miss(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -9178,15 +9164,64 @@ class TestLazyGCModelCompilation:
             mo.ExpOp, cpu, DType.float32
         )
 
-    def test_matmul_model_precompile_raises_on_miss(
-        self, monkeypatch: pytest.MonkeyPatch
+    # MXF-510: a residual precompile-mode cache miss used to raise KeyError.
+    @pytest.mark.parametrize(
+        ("family", "call_model"),
+        [
+            (
+                matmul_gc._FAMILY,
+                lambda: matmul_gc.matmul_model(CPU(), DType.float32),
+            ),
+            (
+                select_gc._FAMILY,
+                lambda: select_gc.select_model(CPU(), DType.float32),
+            ),
+            (
+                unary_elementwise_gc._FAMILY,
+                lambda: unary_elementwise_gc.unary_model(
+                    mo.ExpOp, CPU(), DType.float32
+                ),
+            ),
+            (
+                elementwise_binary_gc._FAMILY,
+                lambda: elementwise_binary_gc.binary_model(
+                    mo.AddOp, CPU(), DType.float32
+                ),
+            ),
+            (
+                shape_rearrange_gc._FAMILY,
+                lambda: shape_rearrange_gc.model(
+                    mo.ConcatOp, CPU(), DType.uint32
+                ),
+            ),
+            # Op-keyed: each of scatter_nd/_add/_max/_min/_mul dispatches
+            # through its own registered family object on a miss.
+            (
+                scatter_nd_gc._FAMILIES[mo.ScatterNdOp],
+                lambda: scatter_nd_gc.scatter_nd_model(
+                    mo.ScatterNdOp, CPU(), DType.uint32, DType.int64
+                ),
+            ),
+        ],
+        ids=[
+            "matmul",
+            "select",
+            "unary",
+            "binary",
+            "shape_rearrange",
+            "scatter_nd",
+        ],
+    )
+    def test_precompile_miss_compiles(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        family: gc_compile.GCOpFamily,
+        call_model: Callable[[], object],
     ) -> None:
-        """With MAX_EAGER_OP_PRECOMPILE=1, a cache miss is a hard error."""
-        # Opt into precompile mode and simulate a target the sweep did not cover.
+        """With MAX_EAGER_OP_PRECOMPILE=1, a residual cache miss compiles."""
         monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
-        monkeypatch.setattr(matmul_gc._FAMILY, "cache", {})
-        with pytest.raises(KeyError, match="No pre-compiled matmul model"):
-            matmul_gc.matmul_model(CPU(), DType.float32)
+        monkeypatch.setattr(family, "cache", {})
+        assert call_model() is not None
 
     def test_matmul_model_lazy_default_compiles_on_miss(
         self, monkeypatch: pytest.MonkeyPatch
@@ -9206,15 +9241,6 @@ class TestLazyGCModelCompilation:
         second = select_gc.select_model(cpu, DType.float32)
         assert first is second
 
-    def test_select_model_precompile_raises_on_miss(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """With MAX_EAGER_OP_PRECOMPILE=1, a cache miss is a hard error."""
-        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
-        monkeypatch.setattr(select_gc._FAMILY, "cache", {})
-        with pytest.raises(KeyError, match="No pre-compiled select model"):
-            select_gc.select_model(CPU(), DType.float32)
-
     def test_select_model_lazy_default_compiles_on_miss(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -9225,17 +9251,6 @@ class TestLazyGCModelCompilation:
         monkeypatch.setattr(select_gc._FAMILY, "cache", {})
         model = select_gc.select_model(CPU(), DType.float32)
         assert model is not None
-
-    def test_unary_model_precompile_raises_on_miss(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """With =1, a supported-but-unswept target is a hard error."""
-        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
-        monkeypatch.setattr(unary_elementwise_gc._FAMILY, "cache", {})
-        # float32 Exp is supported (passes the _is_supported guard), so the miss
-        # falls through to the precompile-mode hard error, not "Unsupported".
-        with pytest.raises(KeyError, match="No pre-compiled unary model"):
-            unary_elementwise_gc.unary_model(mo.ExpOp, CPU(), DType.float32)
 
     def test_unary_model_lazy_default_compiles_on_miss(
         self, monkeypatch: pytest.MonkeyPatch
@@ -9326,12 +9341,13 @@ class TestLazyGCModelCompilation:
     def test_cache_dir_from_derived_path(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """The stamp dir is MODULAR_DERIVED_PATH/cache/.max_cache, else None."""
+        """The stamp dir is MODULAR_DERIVED_PATH/cache/.max_cache, else the
+        engine's own MEF cache dir."""
         monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
         assert gc_compile._cache_dir() == tmp_path / "cache" / ".max_cache"
 
         monkeypatch.delenv("MODULAR_DERIVED_PATH")
-        assert gc_compile._cache_dir() is None
+        assert gc_compile._cache_dir() == _core.engine.max_cache_dir()
 
     def test_context_signature_stable(self) -> None:
         """The signature is stable and pins count + host/accelerator arch.
@@ -9539,17 +9555,6 @@ class TestLazyGCModelCompilation:
         model = elementwise_binary_gc.binary_model(mo.PowOp, CPU(), DType.int32)
         assert model is not None
 
-    def test_binary_model_precompile_raises_on_miss(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """With =1, a supported-but-unswept target is a hard error."""
-        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
-        monkeypatch.setattr(elementwise_binary_gc._FAMILY, "cache", {})
-        # float32 Add is supported (passes the _is_supported guard), so the miss
-        # falls through to the precompile-mode hard error, not "Unsupported".
-        with pytest.raises(KeyError, match="No pre-compiled binary model"):
-            elementwise_binary_gc.binary_model(mo.AddOp, CPU(), DType.float32)
-
     def test_binary_model_lazy_default_compiles_on_miss(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -9562,19 +9567,6 @@ class TestLazyGCModelCompilation:
             mo.AddOp, CPU(), DType.float32
         )
         assert model is not None
-
-    def test_shape_rearrange_precompile_raises_on_miss(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """With =1, a supported-but-unswept rearrange target is a hard error."""
-        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
-        monkeypatch.setattr(shape_rearrange_gc._FAMILY, "cache", {})
-        # uint32 concat passes the _is_supported guard, so the miss falls
-        # through to the precompile-mode hard error, not "Unsupported".
-        with pytest.raises(
-            KeyError, match="No pre-compiled shape-rearrange model"
-        ):
-            shape_rearrange_gc.model(mo.ConcatOp, CPU(), DType.uint32)
 
     def test_uint_view_dtype_rejects_sub_byte(self) -> None:
         """Byte-aligned dtypes bit-cast to a same-width uint; sub-byte raises."""

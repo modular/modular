@@ -17,6 +17,10 @@ This module defines the operation handler registry and the graph-compiler-
 backed op bindings for the MO graph interpreter.
 """
 
+import time
+
+from max import _eager_policy
+
 from . import (
     band_part_gc,
     cast_gc,
@@ -60,16 +64,36 @@ GC_FAMILIES: tuple[gc_compile.GCOpFamily, ...] = (
 
 
 def compile_all_families() -> None:
-    """Compile every registered GC family's full sweep into the cache."""
-    for family in GC_FAMILIES:
-        family.compile_sweep()
+    """Compile every registered GC family's full sweep into the cache.
+
+    Stamps once, after every family; a manifest force-load does not stamp.
+    """
+    swept = [family.compile_sweep() for family in GC_FAMILIES]
+    if swept and all(swept):
+        gc_compile.write_warm_stamp()
 
 
 # Opt-in (MAX_EAGER_OP_PRECOMPILE=1) precompile of the full GC matrix; lazy
 # per-dispatch otherwise (MXF-508).
 def _precompile_gc_models() -> None:
-    if gc_compile.should_precompile():
-        compile_all_families()
+    if not gc_compile.should_precompile():
+        return
+    provisioned = gc_compile.provisioned()
+    if not _eager_policy.allow_lazy_compile() and not provisioned:
+        # Fail at import rather than mid-request. (MXF-569)
+        raise _eager_policy.EagerLazyCompileDisallowed(
+            "MAX_EAGER_OP_PRECOMPILE=1 asks to compile the eager op matrix,"
+            f" but {_eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR}=0 forbids it and"
+            " this machine has no warm cache to load.\n\n"
+            "Run `max warm-interpreter-cache` on this machine."
+        )
+    will_compile = not provisioned
+    if will_compile:
+        _eager_policy.note_sweep_start()
+    start = time.perf_counter()
+    compile_all_families()
+    if will_compile:
+        _eager_policy.note_sweep_end(time.perf_counter() - start)
 
 
 _precompile_gc_models()

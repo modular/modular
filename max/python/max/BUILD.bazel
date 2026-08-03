@@ -131,6 +131,11 @@ modular_py_library(
     ],
 )
 
+modular_py_library(
+    name = "_eager_policy",
+    srcs = ["_eager_policy.py"],
+)
+
 alias(
     name = "tensor",
     actual = "//max/python/max/experimental",
