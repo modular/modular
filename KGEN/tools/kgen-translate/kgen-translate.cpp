@@ -16,7 +16,6 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "Support/Compiler/Diags.h"
 #include "Support/Driver/DiagnosticFormat.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -29,7 +28,6 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 
@@ -98,12 +96,6 @@ int main(int argc, char *argv[]) {
       "mojo-diagnose-missing-doc-strings",
       cl::desc("Diagnose partial or missing doc strings."), cl::init(false)};
 
-  M::cl::MOpt<bool> diagnoseMissingMovableConformance{
-      "mojo-diagnose-missing-movable-conformance",
-      cl::desc("Diagnose structs that do not explicitly state whether they "
-               "conform to `Movable`."),
-      cl::init(false)};
-
   M::cl::MOpt<unsigned> maxNotesPerDiagnostic{
       "max-notes-per-diagnostic",
       cl::desc("Maximum number of notes emitted per diagnostic."),
@@ -133,21 +125,6 @@ int main(int argc, char *argv[]) {
       cl::desc("Additional search paths for Mojo modules. Can be specified "
                "multiple times. Paths are searched in the order specified.")};
 
-  M::cl::MOpt<bool> experimentalFixit{
-      "experimental-fixit",
-      cl::desc("Automatically apply fix-its to the code. WARNING: this "
-               "feature is highly experimental and may result in "
-               "irreversible data loss."),
-      cl::init(false)};
-
-  M::cl::MOpt<std::string> experimentalExportFixit{
-      "experimental-export-fixit",
-      cl::desc("Export fix-its to a YAML file in clang-tidy format instead "
-               "of applying them directly. The file can be applied using "
-               "'clang-apply-replacements'. WARNING: this feature is highly "
-               "experimental."),
-      cl::init("")};
-
   mlir::TranslateToMLIRRegistration fromMojo(
       "import-mojo", "Import 'mojo' from source",
       [&](llvm::SourceMgr &sourceMgr,
@@ -165,17 +142,6 @@ int main(int argc, char *argv[]) {
           }
           effectiveUseMLIRDiagnostics = false;
         }
-
-        // Fix-it collection only happens on the SourceMgr diagnostic path
-        // (AutoFixItHandler is bypassed when MLIR diagnostics are used), so
-        // force it off whenever either fix-it flag is requested -- otherwise
-        // fix-its silently go uncollected while the tool still reports
-        // success.
-        bool experimentalFixitRequested =
-            experimentalFixit || !experimentalExportFixit.getValue().empty();
-        if (experimentalFixitRequested)
-          effectiveUseMLIRDiagnostics = false;
-
         sourceMgr.setDiagHandler(getDiagHandler(diagnosticFormat));
 
         clOptions.withSingleThreaded();
@@ -194,25 +160,9 @@ int main(int argc, char *argv[]) {
         config.stripFilePrefix = clOptions.stripFilePrefix;
         config.useMLIRDiagnostics = effectiveUseMLIRDiagnostics;
         config.diagnoseMissingDocStrings = diagnoseMissingDocStrings;
-        config.diagnoseMissingMovableConformance =
-            diagnoseMissingMovableConformance;
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
         config.disablePrebuiltPackages = !enablePrebuiltPackages;
         config.useBuiltinModule = !disableBuiltinModule;
-
-        if (experimentalFixit && !experimentalExportFixit.getValue().empty()) {
-          llvm::errs() << "error: cannot use both -experimental-fixit and "
-                       << "-experimental-export-fixit simultaneously\n";
-          return {};
-        }
-        std::unique_ptr<AutoFixItHandler> fixItHandler;
-        if (experimentalFixit) {
-          fixItHandler = std::make_unique<AutoFixItHandler>();
-        } else if (!experimentalExportFixit.getValue().empty()) {
-          fixItHandler = std::make_unique<AutoFixItHandler>(
-              experimentalExportFixit.getValue());
-        }
-        config.autoFixItHandler = fixItHandler.get();
 
         OwningOpRef<ModuleOp> output;
         if (lspMode) {
@@ -242,43 +192,6 @@ int main(int argc, char *argv[]) {
         } else {
           output = LIT::importMojoFile(*ctxOr, sourceMgr, config, ts,
                                        /*includedFiles=*/nullptr);
-        }
-
-        // Handle fix-it output based on mode. This runs before checking
-        // whether parsing actually produced a module: diagnostics (and their
-        // fix-its) collected on decls resolved before a later fatal parse
-        // error are still worth applying/exporting, mirroring how the
-        // shared `invokeMojoParser` (used by mojo build/run) processes
-        // fix-its immediately after parsing, before its own null-module
-        // check.
-        if (fixItHandler) {
-          if (fixItHandler->isApplyMode()) {
-            if (fixItHandler->hasFixIts()) {
-              fixItHandler->applyFixIts();
-              llvm::outs() << "Fixits applied.\n";
-            } else {
-              llvm::outs() << "No fixits to apply.\n";
-            }
-            // Return an empty (but valid, non-null) module: apply mode is
-            // a source-rewrite side effect, not a translation, and a null
-            // OwningOpRef would be read by the generic translate-main
-            // framework as failure.
-            return OwningOpRef<ModuleOp>(
-                ModuleOp::create(mlir::UnknownLoc::get(context)));
-          }
-
-          // Export mode: write the YAML file but continue with normal
-          // execution. Unlike clang-tidy, we create the file even if there
-          // are no fix-its.
-          if (auto err = fixItHandler->exportFixIts()) {
-            llvm::errs() << "error: failed to export fix-its: "
-                         << err.getError() << "\n";
-            return {};
-          }
-          StringRef yamlPath = experimentalExportFixit.getValue();
-          llvm::outs() << "Fix-its exported to: " << yamlPath << "\n";
-          llvm::outs() << "Apply with: 'clang-apply-replacements "
-                       << llvm::sys::path::parent_path(yamlPath) << "'\n";
         }
 
         if (!output)

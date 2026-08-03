@@ -346,10 +346,6 @@ struct SharedState::Impl {
   /// Flag indicating if we should diagnose missing doc strings while parsing.
   bool diagnoseMissingDocStrings = false;
 
-  /// Flag indicating if we should diagnose structs that do not explicitly
-  /// state whether they conform to `Movable`.
-  bool diagnoseMissingMovableConformance = false;
-
   /// This keeps track of body decorators for a given declaration, this is
   /// logically part of ASTDecl, but is stored out of line to reduce its size
   /// since these are uncommon.
@@ -471,8 +467,6 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
   }
   llvm::append_range(impl->autoImportDirs, options.extraSearchPaths);
   impl->diagnoseMissingDocStrings = config.diagnoseMissingDocStrings;
-  impl->diagnoseMissingMovableConformance =
-      config.diagnoseMissingMovableConformance;
   docsBasePath = config.docsBasePath;
 
   preloadAllKGENDialects(config.context);
@@ -505,10 +499,6 @@ SharedState::~SharedState() { declResolver.reset(); }
 
 bool SharedState::shouldDiagnoseMissingDocStrings() const {
   return impl->diagnoseMissingDocStrings;
-}
-
-bool SharedState::shouldDiagnoseMissingMovableConformance() const {
-  return impl->diagnoseMissingMovableConformance;
 }
 
 void SharedState::initialize(ASTDecl &topLevelDecl) {
