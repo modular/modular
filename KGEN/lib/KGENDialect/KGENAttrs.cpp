@@ -74,6 +74,8 @@ void KGENDialect::registerAttributes() {
 namespace M::KGEN {
 TypedAttr getTypeRefForTypeValueIfResolved(TypedAttr typeRef) {
   typeRef = SugarAttr::strip(typeRef);
+  // An extension's underlying type identity is its anchor.
+  typeRef = ExtensionAttr::strip(typeRef);
   if (isa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
     return typeRef;
 
@@ -665,6 +667,7 @@ DowncastAttr::getChecked(function_ref<::mlir::InFlightDiagnostic()> emitError,
 
 bool UpcastAttr::isConstant() const { return false; }
 bool DowncastAttr::isConstant() const { return false; }
+bool ExtensionAttr::isConstant() const { return false; }
 
 TypedAttr DowncastAttr::getTypeRefIfResolved() {
   return getTypeRefForTypeValueIfResolved(getInputTypeValue());
