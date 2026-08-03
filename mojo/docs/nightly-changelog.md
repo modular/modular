@@ -1332,6 +1332,12 @@ This version is still a work in progress.
 
 ## Fixed
 
+- Targeting an MI250X now works. While normalizing the architecture name,
+  `gfx90a` was rewritten to the nonexistent `gfx90aa`, so both
+  `--target-accelerator` and `GPUInfo.from_name` reported every spelling of the
+  target (`gfx90a`, `mi250x`, `amdgpu:gfx90a` and `amd:gfx90a`) as an
+  unsupported architecture.
+
 - Code completion now reports the correct completion kind for names bound by a
   `from module import name` statement that hasn't been resolved yet. Structs,
   traits, and functions imported this way previously completed with no kind at
