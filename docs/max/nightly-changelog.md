@@ -690,6 +690,14 @@ This version is still a work in progress.
   optimization: if skipped, or on a different device set, dispatch compiles each
   target lazily.
 
+- `max serve` now refuses on-demand eager interpreter compiles by default
+  (opt back in with `--allow-cold-interpreter-cache` or
+  `MAX_EAGER_ALLOW_LAZY_COMPILE=1`); adopting a warm cache still works, and
+  any permitted on-demand compile warns with the target and its duration.
+  `max warm-interpreter-cache` no longer needs environment setup, compiles op
+  families in parallel worker processes (bound with `--jobs`), and gained
+  `--check` and `--force`.
+
 - Added `max.experimental.nn.subgraphable` for `Module` subgraph compilation: a
   repeated block (via the `@subgraphable` class decorator, or the
   `subgraphable(layer)(x)` call form) lowers to one shared subgraph reused per

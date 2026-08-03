@@ -17,6 +17,7 @@ modular_py_test(
             "mojo_runtime_background_thread_subprocess_thread.py",
             "mojo_runtime_foreign_thread_subprocess.py",
             "test_compile_pool.py",
+            "test_eager_cold_start_policy.py",
             "test_executor.py",
             "test_flashinfer_cubin.py",
             "test_interpreter.py",
@@ -187,6 +188,23 @@ modular_eager_py_test(
         "//max/python/max/graph",
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+modular_eager_py_test(
+    name = "test_eager_cold_start_policy",
+    timeout = "eternal",
+    srcs = ["test_eager_cold_start_policy.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max:_eager_policy",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
     ],
 )
 

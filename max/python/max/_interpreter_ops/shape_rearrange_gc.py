@@ -229,7 +229,6 @@ def model(
         device,
         build,
         unsupported_reason=check_supported,
-        display_name="shape-rearrange",
     )
 
 

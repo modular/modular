@@ -155,13 +155,18 @@ def _reduce_dtypes(device: Device) -> list[DType]:
 
     ``float_dtypes`` (f32/f64 on CPU -- 16-bit floats don't compile on CPU;
     f16/f32/bf16 on GPU) plus every signed/unsigned int width. The int set is
-    full on both devices (empirically all widths compile).
+    full on CPU and CUDA/ROCm (empirically all widths compile); Metal is
+    32-bit only -- its atomic compare-exchange has no other width, and the
+    reduce kernel asserts on it at compile time (KERN-3243).
     """
-    return (
+    dtypes = (
         gc_compile.float_dtypes(device)
         + gc_compile.SIGNED_INT_DTYPES
         + gc_compile.UNSIGNED_INT_DTYPES
     )
+    if device.api == "metal":
+        dtypes = [d for d in dtypes if d.size_in_bits == 32]
+    return dtypes
 
 
 def _data_dtypes(spec: ScatterNdSpec, device: Device) -> list[DType]:

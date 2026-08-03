@@ -7,11 +7,14 @@ modular_py_library(
     srcs = glob(["**/*.py"]),
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:_eager_policy",
         "//max/python/max:_mlir_context",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental",
         "//max/python/max/graph",
+        "//max/python/max/mlir",
         requirement("numpy"),
     ],
 )
