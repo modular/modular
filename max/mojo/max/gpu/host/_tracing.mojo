@@ -51,7 +51,9 @@ comptime _TraceType_MAX = 4
 
 @always_inline
 def _setup_category(
-    name_category: def(UInt32, Pointer[UInt8, ImmutAnyOrigin]) thin -> NoneType,
+    name_category: def(UInt32, Pointer[UInt8, ImmutAnyOrigin]) thin abi(
+        "C"
+    ) -> NoneType,
     value: Int,
     name: StaticString,
 ):
@@ -59,7 +61,9 @@ def _setup_category(
 
 
 def _setup_categories(
-    name_category: def(UInt32, Pointer[UInt8, ImmutAnyOrigin]) thin -> NoneType
+    name_category: def(UInt32, Pointer[UInt8, ImmutAnyOrigin]) thin abi(
+        "C"
+    ) -> NoneType
 ):
     _setup_category(name_category, _TraceType_OTHER, "Other")
     _setup_category(name_category, _TraceType_ASYNCRT, "AsyncRT")
@@ -99,7 +103,9 @@ def _init_dylib() -> OwnedDLHandle:
         comptime if has_nvidia_gpu_accelerator():
             _setup_categories(
                 dylib._handle.get_function[
-                    def(UInt32, Pointer[UInt8, ImmutAnyOrigin]) thin -> NoneType
+                    def(
+                        UInt32, Pointer[UInt8, ImmutAnyOrigin]
+                    ) thin abi("C") -> NoneType
                 ]("nvtxNameCategoryA")
             )
 
