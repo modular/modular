@@ -174,7 +174,7 @@ def test_optional_conformance() raises:
 
 @fieldwise_init
 struct _NonWritable(Movable):
-    """A `Movable & ImplicitlyDeletable` type that is not `Writable`,
+    """A `Movable & Deinitable` type that is not `Writable`,
     `Copyable`, or `Hashable` — used to exercise the negative case of
     `Optional`'s conditional conformances."""
 
@@ -542,9 +542,9 @@ def test_optional_deinit_with_none_does_not_call_destroy() raises:
     assert_equal(counter, 0)
 
 
-# `ImplicitlyDeletable` but explicitly not `Movable`: rejected at the parameter
+# `Deinitable` but explicitly not `Movable`: rejected at the parameter
 # bound under the old `Optional[T: Movable]`, admitted under the `AnyType` floor.
-struct _NotMovable(ImplicitlyDeletable, Movable where False):
+struct _NotMovable(Deinitable, Movable where False):
     var x: Int
 
     def __init__(out self, x: Int):

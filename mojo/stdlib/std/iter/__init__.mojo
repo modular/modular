@@ -131,7 +131,7 @@ struct StopIteration(TrivialRegisterPassable, Writable):
         writer.write("StopIteration")
 
 
-trait Iterator(ImplicitlyDeletable, Movable):
+trait Iterator(Deinitable, Movable):
     """The `Iterator` trait describes a type that can be used as an
     iterator, e.g. in a `for` loop.
     """
@@ -191,7 +191,7 @@ trait Iterator(ImplicitlyDeletable, Movable):
             `n + 1` remaining elements.
 
         Constraints:
-            `Self.Element` must conform to `ImplicitlyDeletable` so the
+            `Self.Element` must conform to `Deinitable` so the
             intermediate elements can be discarded.
 
         Examples:
@@ -207,7 +207,7 @@ trait Iterator(ImplicitlyDeletable, Movable):
         # bare `_ = self.__next__()` won't type-check without this assertion.
         # Drop this workaround once MOCO-3947 lets us put the bound in a
         # `where` clause on the method.
-        comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+        comptime assert conforms_to(Self.Element, Deinitable)
 
         debug_assert[assert_mode="safe"](n.ge(0), "nth: n must be non-negative")
         try:
@@ -326,7 +326,7 @@ def empty[T: Movable]() -> _Empty[T]:
 
 
 @fieldwise_init
-struct _Once[T: Movable & ImplicitlyDeletable](
+struct _Once[T: Movable & Deinitable](
     Copyable where conforms_to(T, Copyable),
     Iterable where conforms_to(T, Copyable),
     IterableOwned,
@@ -365,7 +365,7 @@ struct _Once[T: Movable & ImplicitlyDeletable](
 
 
 @always_inline
-def once[T: Movable & ImplicitlyDeletable, //](var element: T, /) -> _Once[T]:
+def once[T: Movable & Deinitable, //](var element: T, /) -> _Once[T]:
     """Creates an iterator that yields an element exactly once.
 
     Parameters:
@@ -494,7 +494,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
     Iteration stops as soon as any inner iterator raises `StopIteration`.
     When that happens mid-tuple, any elements already produced for the
     current tuple are destroyed before propagating the exception, which is
-    why each element type in `Ts` must be `ImplicitlyDeletable`.
+    why each element type in `Ts` must be `Deinitable`.
 
     Parameters:
         origin: The origin from which the inner iterators were produced.
@@ -503,7 +503,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
             `MutUntrackedOrigin` by the owning overload since its iterators
             own their data.
         Ts: The inner iterator types being zipped. Each must conform to
-            `Iterator` and its `Element` must be `ImplicitlyDeletable`.
+            `Iterator` and its `Element` must be `Deinitable`.
     """
 
     comptime _InjectedValues = Tuple[*Self.Ts]
@@ -543,9 +543,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
             return res^
         except StopIteration:
             comptime for i in range(Self._InjectedValues.__len__()):
-                comptime assert conforms_to(
-                    type_of(res[i]), ImplicitlyDeletable
-                )
+                comptime assert conforms_to(type_of(res[i]), Deinitable)
                 if i < initialized:
                     Pointer(to=res[i]).unsafe_deinit_pointee()
 
@@ -571,7 +569,7 @@ def zip[
     out res: _ZipIterator[
         iterables.origin, *_iterable_to_iterator[iterables.origin, *Ts]
     ],
-) where res.Ts.all_conforms_to[ImplicitlyDeletable]():
+) where res.Ts.all_conforms_to[Deinitable]():
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
 
@@ -608,7 +606,7 @@ def zip[
     out res: _ZipIterator[
         MutUntrackedOrigin, *_iterable_owned_to_iterator[*Ts]
     ],
-) where res.Ts.all_conforms_to[ImplicitlyDeletable]():
+) where res.Ts.all_conforms_to[Deinitable]():
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
 
@@ -775,7 +773,7 @@ struct _PeekableIterator[InnerIterator: Iterator](
     ),
     IterableOwned,
     Iterator,
-) where conforms_to(InnerIterator.Element, ImplicitlyDeletable):
+) where conforms_to(InnerIterator.Element, Deinitable):
     comptime Element = Self.InnerIterator.Element
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -830,7 +828,7 @@ def peekable(
     type_of(iterable).IteratorType[origin_of(iterable)]
 ] where conforms_to(
     type_of(iterable).IteratorType[origin_of(iterable)].Element,
-    ImplicitlyDeletable,
+    Deinitable,
 ):
     """Returns a peekable iterator that can use the `peek` method to look ahead
     at the next element without advancing the iterator.
@@ -848,7 +846,7 @@ def peekable(
     var iterable: Some[IterableOwned],
 ) -> _PeekableIterator[type_of(iterable).IteratorOwnedType] where conforms_to(
     type_of(iterable).IteratorOwnedType.Element,
-    ImplicitlyDeletable,
+    Deinitable,
 ):
     """Returns a peekable iterator that can use the `peek` method to look ahead
     at the next element without advancing the iterator, consuming the iterable.

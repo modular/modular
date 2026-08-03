@@ -327,7 +327,7 @@ def _test_iter_bounds[
     var dict_iter: I,
     dict_len: Int,
 ) raises where conforms_to(
-    I.Element, ImplicitlyDeletable
+    I.Element, Deinitable
 ):
     var iter = dict_iter^
     for i in range(dict_len):
@@ -1342,7 +1342,7 @@ def test_dict_hash() raises:
     assert_equal(hash(Dict[String, Int]()), hash(Dict[String, Int]()))
 
 
-struct NonWritable(Copyable, ImplicitlyDeletable):
+struct NonWritable(Copyable, Deinitable):
     pass
 
 
@@ -1447,7 +1447,7 @@ def test_dict_iter_owned_bounds() raises:
 
 def test_dict_move_only_value() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `Dict[K, V: Movable & ImplicitlyDeletable, H]`.
+    # conformance path of `Dict[K, V: Movable & Deinitable, H]`.
     assert_false(conforms_to(Dict[String, MoveOnly[Int]], Copyable))
 
     var d = Dict[String, MoveOnly[Int]]()
@@ -1567,9 +1567,9 @@ def test_dict_move_only_key_and_value() raises:
 
 
 def test_dict_conditional_implicitly_deletable() raises:
-    assert_true(conforms_to(Dict[Int, Int], ImplicitlyDeletable))
+    assert_true(conforms_to(Dict[Int, Int], Deinitable))
 
-    assert_false(conforms_to(Dict[Int, ExplicitDestroy], ImplicitlyDeletable))
+    assert_false(conforms_to(Dict[Int, ExplicitDestroy], Deinitable))
 
 
 def test_dict_deinit_with() raises:
@@ -1653,7 +1653,7 @@ def test_dict_clear_with_empty() raises:
 
 def test_dict_clear_with_linear() raises:
     # `clear_with` on a populated linear `Dict` (neither key nor value is
-    # `ImplicitlyDeletable`). Populate via `insert`, then verify every entry
+    # `Deinitable`). Populate via `insert`, then verify every entry
     # reaches the closure once, the dict empties, and its capacity is reused.
     var d = Dict[ExplicitDestroyKey, ExplicitDestroy]()
     var disposed = List[Int]()

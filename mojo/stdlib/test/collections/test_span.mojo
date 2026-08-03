@@ -622,7 +622,7 @@ def test_span_hashable() raises:
 
 
 @fieldwise_init
-struct HashableOnly(Hashable, ImplicitlyDeletable, Movable):
+struct HashableOnly(Deinitable, Hashable, Movable):
     var value: Int
 
     def __hash__(self, mut hasher: Some[Hasher]):

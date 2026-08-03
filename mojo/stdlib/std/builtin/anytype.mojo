@@ -18,7 +18,7 @@ managed and destroyed in Mojo:
 - `AnyType`: The most basic trait that all types extend by default.
    Types with this trait have no destructor and no lifetime management.
 
-- `ImplicitlyDeletable`: The base trait for types that require lifetime
+- `Deinitable`: The base trait for types that require lifetime
    management through destructors. Any type that needs cleanup when it goes out
    of scope should implement this trait.
 
@@ -40,10 +40,10 @@ trait AnyType:
     requirements on the types that conform to it, not even that they provide
     a `__deinit__()` implicit destructor.
 
-    A type that conforms to `AnyType` but not to `ImplicitlyDeletable` is
-    called a linear type, also known as a non-implicitly-deletable type.
+    A type that conforms to `AnyType` but not to `Deinitable` is
+    called a linear type, also known as a non-`Deinitable` type.
 
-    Generic code will commonly want to use `T: ImplicitlyDeletable` instead
+    Generic code will commonly want to use `T: Deinitable` instead
     of `T: AnyType`.
 
     **`AnyType`, Object Destructors, and Linear Types**
@@ -72,7 +72,7 @@ trait AnyType:
 
     * A `__deinit__()` destructor method that the compiler may call implicitly
       whenever an owned object instances has no further uses. Such types
-      conform to `ImplicitlyDeletable`.
+      conform to `Deinitable`.
 
     * Named destructor methods that type user must choose to call explicitly.
       Failing to explicitly destroy such a type will lead to a compile-time
@@ -93,13 +93,13 @@ trait AnyType:
     Linear types can act as a guard that some explicit action must be performed
     sometime "in the future" after initial object construction.
 
-    The following is a simple example of a non-implicitly-deletable type with
+    The following is a simple example of a non-`Deinitable` type with
     a named destructor method:
 
     ```mojo
     from std.pathlib import Path
 
-    struct FileBuffer(ImplicitlyDeletable where False):
+    struct FileBuffer(Deinitable where False):
         def __init__(out self, path: Path):
             pass  # ... open the file at the specified `path` ...
 
@@ -130,28 +130,37 @@ trait AnyType:
     pass
 
 
-@deprecated(use=ImplicitlyDeletable)
-comptime ImplicitlyDestructible = ImplicitlyDeletable
+@deprecated(use=Deinitable)
+comptime ImplicitlyDestructible = Deinitable
 """Deprecated: A trait for types that require lifetime management through destructors.
 
-This trait has been renamed to `ImplicitlyDeletable`. This alias will be removed
+This trait has been renamed to `Deinitable`. This alias will be removed
+in a future version of Mojo."""
+
+
+@doc_hidden
+@deprecated(use=Deinitable)
+comptime ImplicitlyDeletable = Deinitable
+"""Deprecated: A trait for types that require lifetime management through destructors.
+
+This trait has been renamed to `Deinitable`. This alias will be removed
 in a future version of Mojo."""
 
 
 @stable(since="1.0")
-trait ImplicitlyDeletable:
+trait Deinitable:
     """A trait for types that require lifetime management through destructors.
 
-    The `ImplicitlyDeletable` trait is fundamental to Mojo's memory
+    The `Deinitable` trait is fundamental to Mojo's memory
     management system. It indicates that a type has a destructor that needs to
     be called when instances go out of scope. This is essential for types that
     own resources like memory, file handles, or other system resources that need
     proper cleanup.
 
-    By default, all Mojo types implement `ImplicitlyDeletable`, unless they
+    By default, all Mojo types implement `Deinitable`, unless they
     opt-in to required explicit named destructor methods using a
-    `ImplicitlyDeletable where False`, or conditionally with
-    `ImplicitlyDeletable where <cond>`.
+    `Deinitable where False`, or conditionally with
+    `Deinitable where <cond>`.
 
     Key aspects:
 
@@ -166,7 +175,7 @@ trait ImplicitlyDeletable:
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout, Allocation
 
-    struct ResourceOwner(ImplicitlyDeletable):
+    struct ResourceOwner(Deinitable):
         var allocation: Allocation[Int]
 
         def __init__(out self, size: Int):
@@ -181,7 +190,7 @@ trait ImplicitlyDeletable:
 
     - Implement this trait when your type owns resources that need cleanup
     - Ensure the destructor properly frees all owned resources
-    - Consider using a `ImplicitlyDeletable where False` conformance on types
+    - Consider using a `Deinitable where False` conformance on types
       that should never be deleted implicitly.
     - Use composition to automatically handle nested resource cleanup
     """

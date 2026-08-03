@@ -37,7 +37,7 @@ from std.memory.alloc import (
 
 
 @doc_hidden
-struct _ArcPointerInner[T: Movable & ImplicitlyDeletable]:
+struct _ArcPointerInner[T: Movable & Deinitable]:
     """
     The backing _shared_ piece of an ArcPointer.
     Referenced by all Arc and Weak for a given value.
@@ -136,7 +136,7 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDeletable]:
         return self.payload.unsafe_assume_init_ref()
 
 
-struct ArcPointer[T: Movable & ImplicitlyDeletable](
+struct ArcPointer[T: Movable & Deinitable](
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     Identifiable,
@@ -436,7 +436,7 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
         ).fields(Repr(self[]))
 
 
-struct WeakPointer[T: Movable & ImplicitlyDeletable](
+struct WeakPointer[T: Movable & Deinitable](
     ImplicitlyCopyable, RegisterPassable
 ):
     """Non-owning atomic reference to an `ArcPointer`'s allocation.

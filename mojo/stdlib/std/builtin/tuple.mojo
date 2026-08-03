@@ -34,19 +34,17 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 @lldb_formatter_wrapping_type
 @explicit_destroy(
     "Use `deinit_with()` to explicitly destroy a `Tuple` with"
-    " non-`ImplicitlyDeletable` elements"
+    " non-`Deinitable` elements"
 )
 struct Tuple[*element_types: Movable](
     Comparable where element_types.all_conforms_to[Comparable](),
     Copyable where element_types.all_conforms_to[Copyable](),
     Defaultable where element_types.all_conforms_to[Defaultable](),
+    Deinitable where element_types.all_conforms_to[Deinitable](),
     Equatable where element_types.all_conforms_to[Equatable](),
     Hashable where element_types.all_conforms_to[Hashable](),
     ImplicitlyCopyable where element_types.all_conforms_to[
         ImplicitlyCopyable
-    ](),
-    ImplicitlyDeletable where element_types.all_conforms_to[
-        ImplicitlyDeletable
     ](),
     Movable,
     RegisterPassable where element_types.all_conforms_to[RegisterPassable](),
@@ -121,11 +119,11 @@ struct Tuple[*element_types: Movable](
 
     def __deinit__(
         deinit self,
-    ) where Self.element_types.all_conforms_to[ImplicitlyDeletable]():
+    ) where Self.element_types.all_conforms_to[Deinitable]():
         """Destructor that destroys all of the elements.
 
         Constraints:
-            All `element_types` must be `ImplicitlyDeletable`. When any element
+            All `element_types` must be `Deinitable`. When any element
             is not, the tuple has no implicit destructor and must be torn down
             with `deinit_with()`.
         """
@@ -140,7 +138,7 @@ struct Tuple[*element_types: Movable](
         """Consume the tuple, deinitializing each element with a closure.
 
         Use this to tear down a `Tuple` whose elements are not
-        `ImplicitlyDeletable`. Elements are visited in index order.
+        `Deinitable`. Elements are visited in index order.
 
         Parameters:
             deinit_func: A closure called once per element, receiving ownership

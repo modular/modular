@@ -61,7 +61,7 @@ struct BufferView(Movable, Writable):
 
 
 @fieldwise_init
-struct Buffer(ImplicitlyDeletable, Movable, Writable):
+struct Buffer(Deinitable, Movable, Writable):
     """Python projection of HAL ``Buffer``.
 
     Owns a device (or host-pinned) memory allocation plus a strong

@@ -32,12 +32,12 @@ from std.testing import assert_equal, assert_false, assert_true
 from std.sys.info import is_64bit
 
 # --- Intro: value parameter alongside a type parameter ---
-# The page bounds `T` as `Comparable & ImplicitlyCopyable & ImplicitlyDeletable`
+# The page bounds `T` as `Comparable & ImplicitlyCopyable & Deinitable`
 # so the compile-time `threshold` value can be used in the runtime comparison.
 
 
 def count_above[
-    T: Comparable & ImplicitlyCopyable & ImplicitlyDeletable, threshold: T
+    T: Comparable & ImplicitlyCopyable & Deinitable, threshold: T
 ](values: List[T]) -> Int:
     var count = 0
     for v in values:
@@ -64,7 +64,7 @@ def all_equal_int(ref lhs: List[Int], ref rhs: List[Int]) -> Bool:
 
 
 def all_equal[
-    T: Equatable & Copyable & ImplicitlyDeletable
+    T: Equatable & Copyable & Deinitable
 ](ref lhs: List[T], ref rhs: List[T]) -> Bool:
     if len(lhs) != len(rhs):
         return False
@@ -166,7 +166,7 @@ def show_some(*pack: *SomeTypeList[Writable]):
 
 
 @fieldwise_init
-struct IndexParam[T: Copyable & ImplicitlyDeletable]:
+struct IndexParam[T: Copyable & Deinitable]:
     var x: Self.T
 
     def __getitem__[I: Indexer, //](self, idx: I) -> ref[self.x] Self.T:
@@ -174,7 +174,7 @@ struct IndexParam[T: Copyable & ImplicitlyDeletable]:
 
 
 @fieldwise_init
-struct IndexSome[T: Copyable & ImplicitlyDeletable]:
+struct IndexSome[T: Copyable & Deinitable]:
     var x: Self.T
 
     def __getitem__(self, idx: Some[Indexer]) -> ref[self.x] Self.T:
@@ -192,7 +192,7 @@ def test_some_operator_overloads() raises:
 
 
 @fieldwise_init
-struct FixedStruct[T: Copyable & ImplicitlyDeletable & Writable](Writable):
+struct FixedStruct[T: Copyable & Deinitable & Writable](Writable):
     var x: Self.T
 
 
@@ -203,7 +203,7 @@ def test_where_some_wont_work() raises:
 
 # --- Parameterized types ---
 
-comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDeletable
+comptime ComparableValue = Equatable & ImplicitlyCopyable & Deinitable
 
 
 @fieldwise_init
@@ -250,9 +250,7 @@ def test_mixing_type_and_value() raises:
 
 
 def process[T: AnyType](value: T) -> String:
-    comptime if conforms_to(
-        T, Writable & ImplicitlyCopyable & ImplicitlyDeletable
-    ):
+    comptime if conforms_to(T, Writable & ImplicitlyCopyable & Deinitable):
         return String(value)
     else:
         return "<not writable>"
@@ -268,7 +266,7 @@ def test_type_refinement() raises:
 
 # --- Value parameters: basic example ---
 
-comptime MyCollectionElement = ImplicitlyCopyable & ImplicitlyDeletable
+comptime MyCollectionElement = ImplicitlyCopyable & Deinitable
 
 
 def make_filled[T: MyCollectionElement, size: Int](splat_value: T) -> List[T]:
@@ -303,7 +301,7 @@ def dynamic(size: Int):
 # (conditional `Writable`) and its "conditional method access" example
 # (conditional `Boolable` gating `__bool__()`).
 
-comptime BaseTraits = Copyable & ImplicitlyDeletable
+comptime BaseTraits = Copyable & Deinitable
 
 
 @fieldwise_init
@@ -377,14 +375,14 @@ struct Foo[T: AnyType](Copyable, Writable where conforms_to(T, Writable)):
 
 
 # --- Conditional conformance with value parameters ---
-# The page bounds `T` as `Writable & Copyable & ImplicitlyDeletable` (via the
+# The page bounds `T` as `Writable & Copyable & Deinitable` (via the
 # `ElementTraits` alias) so `write_to()` type-checks; the conditional behavior
 # demonstrated here is the value condition `capacity > 0`.
 
 
-struct SizedListWrapper[
-    capacity: Int, T: Writable & Copyable & ImplicitlyDeletable
-](Sized, Writable where conforms_to(T, Writable) and capacity > 0):
+struct SizedListWrapper[capacity: Int, T: Writable & Copyable & Deinitable](
+    Sized, Writable where conforms_to(T, Writable) and capacity > 0
+):
     var data: List[Self.T]
 
     def __init__(out self, value: Self.T):

@@ -429,7 +429,7 @@ def test_variant_hash() raises:
 
 @fieldwise_init
 struct _Bare(Movable):
-    """A `Movable & ImplicitlyDeletable` type that conforms to nothing
+    """A `Movable & Deinitable` type that conforms to nothing
     else — used to exercise the negative case of `Variant`'s conditional
     conformances."""
 
@@ -486,7 +486,7 @@ def test_variant_conditional_conformances() raises:
     # Movable: non-Movable (pinned) alternative
     assert_false(conforms_to(Variant[_Pinned, Int], Movable))
 
-    # Movable: linear alternative (Movable, not ImplicitlyDeletable)
+    # Movable: linear alternative (Movable, not Deinitable)
     assert_true(conforms_to(Variant[ExplicitDelOnly, Int], Movable))
 
 

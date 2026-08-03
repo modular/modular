@@ -37,10 +37,10 @@ from std.memory.alloc import (
 @explicit_destroy(
     "Use `into_inner()` (for a `Movable` `T`) or `unsafe_take_allocation()`"
     " to consume an `OwnedPointer` whose element type is not"
-    " `ImplicitlyDeletable`"
+    " `Deinitable`"
 )
 struct OwnedPointer[T: AnyType](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
+    Deinitable where conforms_to(T, Deinitable),
     RegisterPassable,
     Writable where conforms_to(T, Writable),
 ):
@@ -56,7 +56,7 @@ struct OwnedPointer[T: AnyType](
 
     Parameters:
         T: The type to be stored in the `OwnedPointer`. When `T` is not
-            `ImplicitlyDeletable`, the `OwnedPointer` has no implicit
+            `Deinitable`, the `OwnedPointer` has no implicit
             destructor and must be consumed with `into_inner()` (for a
             `Movable` `T`) or `unsafe_take_allocation()`.
     """
@@ -165,11 +165,11 @@ struct OwnedPointer[T: AnyType](
             unsafe_from_raw_pointer=ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         )
 
-    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
         """Destroy the `OwnedPointer`, running the destructor of its value.
 
         Constraints:
-            `T` must be `ImplicitlyDeletable`. When it is not, the
+            `T` must be `Deinitable`. When it is not, the
             `OwnedPointer` has no implicit destructor and must be consumed
             with `into_inner()` (for a `Movable` `T`) or
             `unsafe_take_allocation()`.

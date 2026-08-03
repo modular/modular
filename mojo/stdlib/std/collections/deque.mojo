@@ -36,16 +36,16 @@ from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
 @explicit_destroy(
     "Use `deinit_with()` to explicitly destroy a `Deque` of"
-    " non-`ImplicitlyDeletable` elements"
+    " non-`Deinitable` elements"
 )
 struct Deque[ElementType: Movable](
     Boolable,
     Copyable where conforms_to(ElementType, Copyable),
+    Deinitable where conforms_to(ElementType, Deinitable),
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
-    ImplicitlyDeletable where conforms_to(ElementType, ImplicitlyDeletable),
     Iterable,
-    IterableOwned where conforms_to(ElementType, ImplicitlyDeletable),
+    IterableOwned where conforms_to(ElementType, Deinitable),
     Movable,
     Sized,
     Writable where conforms_to(ElementType, Writable),
@@ -58,19 +58,19 @@ struct Deque[ElementType: Movable](
     Parameters:
         ElementType: The type of the elements in the deque. Must implement
             `Movable`. A `Deque` is implicitly destructible only when
-            `ElementType` is `ImplicitlyDeletable`; otherwise drain it with
+            `ElementType` is `Deinitable`; otherwise drain it with
             `deinit_with()`.
     """
 
-    # The by-ref iterator still requires `Copyable & ImplicitlyDeletable` (see
+    # The by-ref iterator still requires `Copyable & Deinitable` (see
     # the `TODO(MSTDL-2390)`s below), while the owned iterator only moves
-    # elements out and so requires just `ImplicitlyDeletable`. The `downcast`s
+    # elements out and so requires just `Deinitable`. The `downcast`s
     # restate those bounds explicitly now that `ElementType`'s bound no longer
     # implies them.
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DequeIter[
-        downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
+        downcast[Self.ElementType, Copyable & Deinitable],
         iterable_origin,
     ]
     """The iterator type for this deque.
@@ -81,7 +81,7 @@ struct Deque[ElementType: Movable](
     """
 
     comptime IteratorOwnedType: Iterator where conforms_to(
-        Self.ElementType, ImplicitlyDeletable
+        Self.ElementType, Deinitable
     ) = _DequeIterOwned[Self.ElementType]
     """The owned iterator type for this deque."""
 
@@ -133,7 +133,7 @@ struct Deque[ElementType: Movable](
         min_capacity: Int = Self.default_capacity,
         maxlen: Int = -1,
         shrink: Bool = True,
-    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+    ) where conforms_to(Self.ElementType, Deinitable):
         """Constructs a deque.
 
         Args:
@@ -144,10 +144,10 @@ struct Deque[ElementType: Movable](
             shrink: Should storage be de-allocated when not needed.
 
         Constraints:
-            `ElementType` must be `ImplicitlyDeletable`. A `maxlen`-bounded
+            `ElementType` must be `Deinitable`. A `maxlen`-bounded
             deque can destroy evicted elements, and the `elements` overflow is
             destroyed during the initial fill. To build a deque of
-            non-`ImplicitlyDeletable` elements, use the variadic constructor.
+            non-`Deinitable` elements, use the variadic constructor.
         """
         if capacity <= 0:
             deque_capacity = self.default_capacity
@@ -200,7 +200,7 @@ struct Deque[ElementType: Movable](
             capacity = args_length
 
         # Initialize storage directly (rather than delegating to the
-        # keyword constructor, which requires `ImplicitlyDeletable`) so the
+        # keyword constructor, which requires `Deinitable`) so the
         # variadic constructor works for any `Movable` element type.
         var deque_capacity = next_power_of_two(capacity)
         self._capacity = deque_capacity
@@ -231,10 +231,10 @@ struct Deque[ElementType: Movable](
             copy: The deque to copy.
         """
         # Initialize storage directly (rather than delegating to the keyword
-        # constructor, which requires `ImplicitlyDeletable`) so copying works
+        # constructor, which requires `Deinitable`) so copying works
         # for any `Copyable` element type. Copying only ever creates elements;
         # it never evicts or otherwise destroys one, so it does not require
-        # `ImplicitlyDeletable`. `copy`'s capacities are already powers of two,
+        # `Deinitable`. `copy`'s capacities are already powers of two,
         # so no renormalization is needed.
         self._capacity = copy._capacity
         self._data = alloc(
@@ -266,7 +266,7 @@ struct Deque[ElementType: Movable](
 
     def __deinit__(
         deinit self,
-    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+    ) where conforms_to(Self.ElementType, Deinitable):
         """Destroys all elements in the deque and frees its memory."""
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
@@ -279,7 +279,7 @@ struct Deque[ElementType: Movable](
         """Consumes this deque and deinitializes its elements using the provided
         closure.
 
-        This can be used to destroy a `Deque` of non-`ImplicitlyDeletable`
+        This can be used to destroy a `Deque` of non-`Deinitable`
         values.
 
         Args:
@@ -301,9 +301,7 @@ struct Deque[ElementType: Movable](
 
     def __add__(
         self, other: Self
-    ) -> Self where conforms_to(
-        Self.ElementType, Copyable & ImplicitlyDeletable
-    ):
+    ) -> Self where conforms_to(Self.ElementType, Copyable & Deinitable):
         """Concatenates self with other and returns the result as a new deque.
 
         Args:
@@ -319,7 +317,7 @@ struct Deque[ElementType: Movable](
 
     def __iadd__(
         mut self, other: Self
-    ) where conforms_to(Self.ElementType, Copyable & ImplicitlyDeletable):
+    ) where conforms_to(Self.ElementType, Copyable & Deinitable):
         """Appends the elements of other deque into self.
 
         Args:
@@ -330,9 +328,7 @@ struct Deque[ElementType: Movable](
 
     def __mul__(
         self, n: Int
-    ) -> Self where conforms_to(
-        Self.ElementType, Copyable & ImplicitlyDeletable
-    ):
+    ) -> Self where conforms_to(Self.ElementType, Copyable & Deinitable):
         """Concatenates `n` deques of `self` and returns a new deque.
 
         Args:
@@ -356,7 +352,7 @@ struct Deque[ElementType: Movable](
 
     def __imul__(
         mut self, n: Int
-    ) where conforms_to(Self.ElementType, Copyable & ImplicitlyDeletable):
+    ) where conforms_to(Self.ElementType, Copyable & Deinitable):
         """Concatenates self `n` times in place.
 
         Args:
@@ -428,9 +424,7 @@ struct Deque[ElementType: Movable](
 
     def __iter__(
         var self,
-    ) -> Self.IteratorOwnedType where conforms_to(
-        Self.ElementType, ImplicitlyDeletable
-    ):
+    ) -> Self.IteratorOwnedType where conforms_to(Self.ElementType, Deinitable):
         """Consume the deque and return an iterator over its elements.
 
         Returns:
@@ -448,20 +442,13 @@ struct Deque[ElementType: Movable](
         """
         # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
         comptime assert conforms_to(
-            Self.ElementType, Copyable & ImplicitlyDeletable
-        ), (
-            "Deque iteration requires the element to be `Copyable &"
-            " ImplicitlyDeletable`."
-        )
+            Self.ElementType, Copyable & Deinitable
+        ), "Deque iteration requires the element to be `Copyable & Deinitable`."
         return _DequeIter(
             0,
             rebind[
                 Pointer[
-                    Deque[
-                        downcast[
-                            Self.ElementType, Copyable & ImplicitlyDeletable
-                        ]
-                    ],
+                    Deque[downcast[Self.ElementType, Copyable & Deinitable]],
                     origin_of(self),
                 ]
             ](Pointer(to=self)),
@@ -473,7 +460,7 @@ struct Deque[ElementType: Movable](
         Self.ElementType,
         origin_of(self),
         False,
-    ] where conforms_to(Self.ElementType, Copyable & ImplicitlyDeletable):
+    ] where conforms_to(Self.ElementType, Copyable & Deinitable):
         """Iterate backwards over the deque, returning the references.
 
         Returns:
@@ -600,14 +587,14 @@ struct Deque[ElementType: Movable](
 
     def append(
         mut self, var value: Self.ElementType
-    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+    ) where conforms_to(Self.ElementType, Deinitable):
         """Appends a value to the right side of the deque.
 
         Args:
             value: The value to append.
 
         Constraints:
-            `ElementType` must be `ImplicitlyDeletable`, because a bounded
+            `ElementType` must be `Deinitable`, because a bounded
             (`maxlen`) deque destroys the evicted element.
         """
         # checking for positive _maxlen first is important for speed
@@ -623,14 +610,14 @@ struct Deque[ElementType: Movable](
 
     def appendleft(
         mut self, var value: Self.ElementType
-    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+    ) where conforms_to(Self.ElementType, Deinitable):
         """Appends a value to the left side of the deque.
 
         Args:
             value: The value to append.
 
         Constraints:
-            `ElementType` must be `ImplicitlyDeletable`, because a bounded
+            `ElementType` must be `Deinitable`, because a bounded
             (`maxlen`) deque destroys the evicted element.
         """
         # checking for positive _maxlen first is important for speed
@@ -646,7 +633,7 @@ struct Deque[ElementType: Movable](
 
     def clear(
         mut self,
-    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+    ) where conforms_to(Self.ElementType, Deinitable):
         """Removes all elements from the deque leaving it with length 0.
 
         Resets the underlying storage capacity to `_min_capacity`.
@@ -686,7 +673,7 @@ struct Deque[ElementType: Movable](
 
     def extend(
         mut self, var values: List[Self.ElementType]
-    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+    ) where conforms_to(Self.ElementType, Deinitable):
         """Extends the right side of the deque by consuming elements of the list argument.
 
         Args:
@@ -726,7 +713,7 @@ struct Deque[ElementType: Movable](
 
     def extendleft(
         mut self, var values: List[Self.ElementType]
-    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+    ) where conforms_to(Self.ElementType, Deinitable):
         """Extends the left side of the deque by consuming elements from the list argument.
 
         Acts as series of left appends resulting in reversed order of elements in the list argument.
@@ -811,7 +798,7 @@ struct Deque[ElementType: Movable](
     @always_inline
     def insert(
         mut self, idx: Int, var value: Self.ElementType
-    ) raises where conforms_to(Self.ElementType, ImplicitlyDeletable):
+    ) raises where conforms_to(Self.ElementType, Deinitable):
         """Inserts the `value` into the deque at position `idx`.
 
         Args:
@@ -853,9 +840,7 @@ struct Deque[ElementType: Movable](
 
     def remove(
         mut self, value: Self.ElementType
-    ) raises where conforms_to(
-        Self.ElementType, Equatable & ImplicitlyDeletable
-    ):
+    ) raises where conforms_to(Self.ElementType, Equatable & Deinitable):
         """Removes the first occurrence of the `value`.
 
         Args:
@@ -1152,7 +1137,7 @@ struct Deque[ElementType: Movable](
 struct _DequeIter[
     mut: Bool,
     //,
-    T: Copyable & ImplicitlyDeletable,
+    T: Copyable & Deinitable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -1215,7 +1200,7 @@ struct _DequeIter[
 
 
 @fieldwise_init
-struct _DequeIterOwned[T: Movable & ImplicitlyDeletable](
+struct _DequeIterOwned[T: Movable & Deinitable](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for Deque.

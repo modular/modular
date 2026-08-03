@@ -161,7 +161,7 @@ from std.sys import align_of
 
 @fieldwise_init
 @align(128)
-struct AlignedType[T: Copyable & ImplicitlyDeletable]:
+struct AlignedType[T: Copyable & Deinitable]:
     var value: Self.T
 
 def main():
@@ -178,7 +178,7 @@ from std.sys import align_of
 
 @fieldwise_init
 @align(4)
-struct AlignedType[T: Copyable & ImplicitlyDeletable]:
+struct AlignedType[T: Copyable & Deinitable]:
     var value: Self.T
 
 def main():

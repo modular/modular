@@ -57,9 +57,7 @@ import std.format._utils as fmt
 from .deque import Deque
 
 
-trait IntervalElement(
-    Comparable, Copyable, ImplicitlyDeletable, Intable, Writable
-):
+trait IntervalElement(Comparable, Copyable, Deinitable, Intable, Writable):
     """The trait denotes a trait composition of the `Copyable`,
     `Writable`, `Intable`, and `Comparable` traits. Which is also subtractable.
     """
@@ -288,7 +286,7 @@ struct Interval[T: IntervalElement](
 
 struct _IntervalNode[
     T: IntervalElement,
-    U: Copyable & Comparable & ImplicitlyDeletable & Writable,
+    U: Copyable & Comparable & Deinitable & Writable,
 ](Copyable, Writable):
     """A node containing an interval and associated data.
 
@@ -453,7 +451,7 @@ struct _IntervalNode[
 
 struct IntervalTree[
     T: IntervalElement,
-    U: Copyable & Comparable & ImplicitlyDeletable & Writable,
+    U: Copyable & Comparable & Deinitable & Writable,
 ](Defaultable, Writable):
     """An interval tree data structure for efficient range queries.
 

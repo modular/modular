@@ -184,9 +184,9 @@ def test_reflection_inequality() raises:
     assert_true(not equal)
 
 
-struct ConditionalCopyableWrapper[T: ImplicitlyDeletable & Movable](
+struct ConditionalCopyableWrapper[T: Deinitable & Movable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDeletable,
+    Deinitable,
     Movable,
 ):
     var value: Self.T
@@ -200,7 +200,7 @@ struct ConditionalCopyableWrapper[T: ImplicitlyDeletable & Movable](
         self.value = copy.value.copy()
 
 
-# All structs are inherently `ImplicitlyDeletable`
+# All structs are inherently `Deinitable`
 @fieldwise_init
 struct NotCopyable(Movable):
     pass
@@ -246,16 +246,12 @@ trait MakeCopyable:
 
         comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
-            comptime if not conforms_to(
-                field_type, Copyable & ImplicitlyDeletable
-            ):
+            comptime if not conforms_to(field_type, Copyable & Deinitable):
                 continue
 
             # TODO(MOCO-4206): Remove redundant assertion after type refinement
             #   following early `continue` is fixed.
-            comptime assert conforms_to(
-                field_type, Copyable & ImplicitlyDeletable
-            )
+            comptime assert conforms_to(field_type, Copyable & Deinitable)
 
             ref p_value = reflect[Self].field_ref[idx](self)
             reflect[Self].field_ref[idx](other) = p_value.copy()

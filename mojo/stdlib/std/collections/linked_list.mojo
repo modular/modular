@@ -32,13 +32,13 @@ from std.sys import align_of, size_of
 
 
 @explicit_destroy(
-    "A `Node` with a non-`ImplicitlyDeletable` element must be consumed with"
+    "A `Node` with a non-`Deinitable` element must be consumed with"
     " `_into_value()`; its owning `LinkedList` manages this."
 )
 struct Node[
     ElementType: Movable,
 ](
-    ImplicitlyDeletable where conforms_to(ElementType, ImplicitlyDeletable),
+    Deinitable where conforms_to(ElementType, Deinitable),
     Movable,
 ):
     """A node in a linked list data structure.
@@ -96,11 +96,11 @@ struct Node[
     # TODO(MOCO-4228): Let the compiler synthesize this method
     def __deinit__(
         deinit self,
-    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+    ) where conforms_to(Self.ElementType, Deinitable):
         """Destroy the entry's key and value.
 
         Constraints:
-            `ElementType` must be `ImplicitlyDeletable`.
+            `ElementType` must be `Deinitable`.
         """
         pass
 
@@ -186,7 +186,7 @@ struct _LinkedListIter[
 
 
 @fieldwise_init
-struct _LinkedListIterOwned[T: Movable & ImplicitlyDeletable](
+struct _LinkedListIterOwned[T: Movable & Deinitable](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for LinkedList.
@@ -240,17 +240,17 @@ struct _LinkedListIterOwned[T: Movable & ImplicitlyDeletable](
 
 @explicit_destroy(
     "Use `deinit_with()` to explicitly destroy a `LinkedList` with"
-    " non-`ImplicitlyDeletable` elements"
+    " non-`Deinitable` elements"
 )
 struct LinkedList[ElementType: Movable](
     Boolable,
     Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
+    Deinitable where conforms_to(ElementType, Deinitable),
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
-    ImplicitlyDeletable where conforms_to(ElementType, ImplicitlyDeletable),
     Iterable,
-    IterableOwned where conforms_to(ElementType, ImplicitlyDeletable),
+    IterableOwned where conforms_to(ElementType, Deinitable),
     Movable,
     Sized,
     Writable where conforms_to(ElementType, Writable),
@@ -284,7 +284,7 @@ struct LinkedList[ElementType: Movable](
     """
 
     comptime IteratorOwnedType: Iterator = _LinkedListIterOwned[
-        downcast[Self.ElementType, ImplicitlyDeletable]
+        downcast[Self.ElementType, Deinitable]
     ]
 
     """The owned iterator type for this linked list."""
@@ -376,7 +376,7 @@ struct LinkedList[ElementType: Movable](
 
     def __deinit__(
         deinit self,
-    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+    ) where conforms_to(Self.ElementType, Deinitable):
         """Clean up the list by freeing all nodes.
 
         Notes:
@@ -390,7 +390,7 @@ struct LinkedList[ElementType: Movable](
         """Consume the list, deinitializing each element with a closure.
 
         Use this to tear down a `LinkedList` whose elements are not
-        `ImplicitlyDeletable`.
+        `Deinitable`.
 
         Args:
             deinit_func: A closure called once per element to deinitialize it.
@@ -494,7 +494,7 @@ struct LinkedList[ElementType: Movable](
 
     @always_inline
     def pop[
-        I: Indexer & ImplicitlyDeletable, //
+        I: Indexer & Deinitable, //
     ](mut self, var i: I) raises -> Self.ElementType:
         """Remove the ith element of the list, counting from the tail if
         given a negative index.
@@ -567,7 +567,7 @@ struct LinkedList[ElementType: Movable](
 
     @always_inline
     def maybe_pop[
-        I: Indexer & ImplicitlyDeletable, //
+        I: Indexer & Deinitable, //
     ](mut self, var i: I) -> Optional[Self.ElementType]:
         """Remove the ith element of the list, counting from the tail if
         given a negative index.
@@ -610,7 +610,7 @@ struct LinkedList[ElementType: Movable](
 
     def clear(
         mut self,
-    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+    ) where conforms_to(Self.ElementType, Deinitable):
         """Removes all elements from the list.
 
         Notes:
@@ -909,9 +909,7 @@ struct LinkedList[ElementType: Movable](
 
     def __iter__(
         var self,
-    ) -> Self.IteratorOwnedType where conforms_to(
-        Self.ElementType, ImplicitlyDeletable
-    ):
+    ) -> Self.IteratorOwnedType where conforms_to(Self.ElementType, Deinitable):
         """Consume the linked list and return an iterator over its elements.
 
         Returns:
@@ -924,9 +922,9 @@ struct LinkedList[ElementType: Movable](
         """
         # TODO(MOCO-4205): Remove `trait_downcast` and `downcast`.
         return Self.IteratorOwnedType(
-            rebind_var[
-                LinkedList[downcast[Self.ElementType, ImplicitlyDeletable]]
-            ](self^)
+            rebind_var[LinkedList[downcast[Self.ElementType, Deinitable]]](
+                self^
+            )
         )
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:

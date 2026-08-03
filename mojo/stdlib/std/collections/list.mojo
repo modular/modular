@@ -107,7 +107,7 @@ struct _ListIter[
 
 
 @fieldwise_init
-struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
+struct _ListIterOwned[T: Movable & Deinitable](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for List.
@@ -154,18 +154,18 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
 
 @explicit_destroy(
     "Use `deinit_with()` to explicitly destroy a `List` of"
-    " non-`ImplicitlyDeletable` elements"
+    " non-`Deinitable` elements"
 )
 @stable(since="1.0")
 struct List[T: Movable, /](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
+    Deinitable where conforms_to(T, Deinitable),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
-    IterableOwned where conforms_to(T, ImplicitlyDeletable),
+    IterableOwned where conforms_to(T, Deinitable),
     Movable,
     Sized,
     Writable where conforms_to(T, Writable),
@@ -359,7 +359,7 @@ struct List[T: Movable, /](
     """
 
     comptime IteratorOwnedType: Iterator = _ListIterOwned[
-        downcast[Self.T, ImplicitlyDeletable]
+        downcast[Self.T, Deinitable]
     ]
     """The owned iterator type for this list."""
 
@@ -537,7 +537,7 @@ struct List[T: Movable, /](
             )
 
     @stable(since="1.0")
-    def __deinit__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
         """Destroy all elements in the list and free its memory."""
         unsafe_destroy_n(
             self._data,
@@ -548,7 +548,7 @@ struct List[T: Movable, /](
     def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
         """Consumes this list and deinitializes its values using the provided closure.
 
-        This can be used to destroy a `List` of non-`ImplicitlyDeletable` values.
+        This can be used to destroy a `List` of non-`Deinitable` values.
 
         Args:
             deinit_func: The deinitializing closure called on each `List` element.
@@ -636,7 +636,7 @@ struct List[T: Movable, /](
 
     def __mul__(
         self, x: Int
-    ) -> Self where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
+    ) -> Self where conforms_to(Self.T, Copyable & Deinitable):
         """Multiplies the list by x and returns a new list.
 
         Args:
@@ -654,8 +654,8 @@ struct List[T: Movable, /](
 
     def __imul__(
         mut self, x: Int
-    ) where conforms_to(Self.T, ImplicitlyDeletable & Copyable) and conforms_to(
-        Self, ImplicitlyDeletable & Copyable
+    ) where conforms_to(Self.T, Deinitable & Copyable) and conforms_to(
+        Self, Deinitable & Copyable
     ):
         """Appends the original elements of this list x-1 times or clears it if
         x is <= 0.
@@ -705,14 +705,14 @@ struct List[T: Movable, /](
 
     def __iter__(
         var self,
-    ) -> Self.IteratorOwnedType where conforms_to(Self.T, ImplicitlyDeletable):
+    ) -> Self.IteratorOwnedType where conforms_to(Self.T, Deinitable):
         """Consume `self`, returning an owned iterator over its elements.
 
         Returns:
             An iterator of owned elements.
         """
         return {
-            rebind_var[List[downcast[Self.T, ImplicitlyDeletable]]](self^),
+            rebind_var[List[downcast[Self.T, Deinitable]]](self^),
             0,
         }
 
@@ -1131,7 +1131,7 @@ struct List[T: Movable, /](
     @stable(since="1.0")
     def resize(
         mut self, length: Int, fill: Self.T
-    ) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
+    ) where conforms_to(Self.T, Copyable & Deinitable):
         """Resizes the list to the given new length.
 
         Args:
@@ -1171,7 +1171,7 @@ struct List[T: Movable, /](
 
     def resize(
         mut self, *, unsafe_uninit_length: Int
-    ) where conforms_to(Self.T, ImplicitlyDeletable):
+    ) where conforms_to(Self.T, Deinitable):
         """Resizes the list to the given new size leaving any new elements
         uninitialized.
 
@@ -1199,9 +1199,7 @@ struct List[T: Movable, /](
             self._annotate_increase(unsafe_uninit_length - self._len)
             self._len = unsafe_uninit_length
 
-    def shrink(
-        mut self, new_length: Int
-    ) where conforms_to(Self.T, ImplicitlyDeletable):
+    def shrink(mut self, new_length: Int) where conforms_to(Self.T, Deinitable):
         """Resizes to the given new length which must be <= the current size.
 
         Args:
@@ -1351,7 +1349,7 @@ struct List[T: Movable, /](
 
     def clear(
         mut self,
-    ) where conforms_to(Self.T, ImplicitlyDeletable):
+    ) where conforms_to(Self.T, Deinitable):
         """Clears the elements in the list.
 
         Examples:
@@ -1568,7 +1566,7 @@ struct List[T: Movable, /](
     @always_inline
     def unsafe_set(
         mut self, idx: Int, var value: Self.T
-    ) where conforms_to(Self.T, ImplicitlyDeletable):
+    ) where conforms_to(Self.T, Deinitable):
         """Write a value to a given location without checking index bounds.
 
         Args:

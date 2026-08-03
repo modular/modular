@@ -691,7 +691,7 @@ struct Span[
     @__allow_legacy_custom_self_type
     def copy_from(
         self: Span[mut=True, Self.T, _], other: Span[Self.T, _]
-    ) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
+    ) where conforms_to(Self.T, Copyable & Deinitable):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
 
@@ -775,7 +775,7 @@ struct Span[
     @__allow_legacy_custom_self_type
     def fill(
         self: Span[mut=True, Self.T, _], value: Self.T
-    ) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
+    ) where conforms_to(Self.T, Copyable & Deinitable):
         """
         Fill the memory that a span references with a given value.
 

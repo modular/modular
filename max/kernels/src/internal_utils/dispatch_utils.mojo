@@ -99,7 +99,7 @@ struct Table[type: TuningConfig](Writable):
 
     # Apply rule on all configs in the table and return list of all the unique results.
     def query_values[
-        ret_type: Comparable & ImplicitlyCopyable & ImplicitlyDeletable,
+        ret_type: Comparable & ImplicitlyCopyable & Deinitable,
         rule_fn: ImplicitlyCopyable & def(Self.type) -> ret_type,
         domain: List[Int] = List[Int](),
     ](self, *, rule: rule_fn) -> List[ret_type]:

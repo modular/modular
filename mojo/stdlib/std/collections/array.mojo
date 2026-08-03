@@ -134,7 +134,7 @@ struct _ArrayIter[
         return (iter_len, {iter_len})
 
 
-struct _ArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
+struct _ArrayIterOwned[T: Movable & Deinitable, length: Int](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for Array.
@@ -216,20 +216,20 @@ struct _ArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
 
 @explicit_destroy(
     "Use `deinit_with()` to explicitly destroy an `Array` of"
-    " non-`ImplicitlyDeletable` elements"
+    " non-`Deinitable` elements"
 )
 @stable(since="1.0")
 struct Array[T: AnyType, length: Int](
     Copyable where conforms_to(T, Copyable),
+    Deinitable where conforms_to(T, Deinitable),
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
     ),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
-    IterableOwned where conforms_to(T, Movable & ImplicitlyDeletable),
+    IterableOwned where conforms_to(T, Movable & Deinitable),
     Movable where conforms_to(T, Movable),
     Sized,
     Writable where conforms_to(T, Writable),
@@ -311,7 +311,7 @@ struct Array[T: AnyType, length: Int](
 
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
     comptime IteratorOwnedType: Iterator where conforms_to(
-        Self.T, Movable & ImplicitlyDeletable
+        Self.T, Movable & Deinitable
     ) = _ArrayIterOwned[Self.T, Self.length]
     """The owned iterator type for this array."""
 
@@ -572,7 +572,7 @@ struct Array[T: AnyType, length: Int](
     @stable(since="1.0")
     def __deinit__(
         deinit self,
-    ) where conforms_to(Self.T, ImplicitlyDeletable):
+    ) where conforms_to(Self.T, Deinitable):
         """Destroys the array's elements."""
         unsafe_destroy_n(self.unsafe_ptr(), Self.length)
 
@@ -581,7 +581,7 @@ struct Array[T: AnyType, length: Int](
         closure.
 
         This can be used to deinitialize an `Array` of
-        non-`ImplicitlyDeletable` values.
+        non-`Deinitable` values.
 
         Args:
             deinit_func: The deinitializing closure called on each array
@@ -646,7 +646,7 @@ struct Array[T: AnyType, length: Int](
 
     @always_inline
     def __getitem_param__[
-        idx: Some[Indexer & ImplicitlyDeletable]
+        idx: Some[Indexer & Deinitable]
     ](ref self) -> ref[self] Self.T:
         """Gets a reference to the element at the given index with compile-time
         bounds checking.
@@ -915,9 +915,7 @@ struct Array[T: AnyType, length: Int](
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
     def __iter__(
         var self,
-    ) -> Self.IteratorOwnedType where conforms_to(
-        Self.T, Movable & ImplicitlyDeletable
-    ):
+    ) -> Self.IteratorOwnedType where conforms_to(Self.T, Movable & Deinitable):
         """Consume the array and return an iterator over its elements.
 
         Returns:

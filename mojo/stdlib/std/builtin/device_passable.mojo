@@ -159,7 +159,7 @@ trait DeviceTypeEncoder:
 
         Constraints:
             - `ValueType` must conform to `DevicePassable` or `RegisterPassable`.
-            - `ValueType` must conform to `Copyable & ImplicitlyDeletable`.
+            - `ValueType` must conform to `Copyable & Deinitable`.
             - If `ValueType` is `DevicePassable`, it must be its own leaf
               `device_type`
               (`ValueType._is_convertible_to_device_type[ValueType]()`), since a
@@ -267,8 +267,8 @@ trait DeviceTypeEncoder:
               struct type.
             - Every field must either conform to `DevicePassable`, be a
               composite transitively containing a `DevicePassable` member,
-              conform to `ImplicitlyCopyable & ImplicitlyDeletable`, or
-              conform to `Copyable & ImplicitlyDeletable`.
+              conform to `ImplicitlyCopyable & Deinitable`, or
+              conform to `Copyable & Deinitable`.
         """
         # NOTE: The trait system does not enforce viral conformance to
         # DevicePassable if a RegisterPassable struct field is DevicePassable.

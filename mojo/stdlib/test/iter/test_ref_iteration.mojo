@@ -78,7 +78,7 @@ struct _RefIter[
 # ===-----------------------------------------------------------------------===#
 
 
-struct MoveOnlyList[T: Movable & ImplicitlyDeletable]:
+struct MoveOnlyList[T: Movable & Deinitable]:
     """A simple list that holds move-only types."""
 
     var _data: Pointer[Self.T, MutUntrackedOrigin]

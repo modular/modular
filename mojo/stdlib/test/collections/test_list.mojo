@@ -764,7 +764,7 @@ def test_list_iter_owned_destroys_elements_if_partially_consumed() raises:
 
 
 def test_list_iter_owned_move_only() raises:
-    # Consuming iteration only requires `Movable & ImplicitlyDeletable`, not
+    # Consuming iteration only requires `Movable & Deinitable`, not
     # `Copyable`: each element is moved out of the list, not copied.
     var list = [MoveOnly[Int](0), MoveOnly[Int](1), MoveOnly[Int](2)]
 
@@ -785,7 +785,7 @@ def test_list_iter_owned_bounds() raises:
 def _test_list_iter_bounds[
     I: Iterator
 ](var list_iter: I, list_len: Int) raises where conforms_to(
-    I.Element, ImplicitlyDeletable
+    I.Element, Deinitable
 ):
     var iter = list_iter^
 
@@ -1028,7 +1028,7 @@ def test_list_conditional_conformances() raises:
     assert_true(conforms_to(List[Int], Writable))
     assert_false(conforms_to(List[NonEquatable], Writable))
 
-    # Owned iteration requires `Movable & ImplicitlyDeletable` elements, but
+    # Owned iteration requires `Movable & Deinitable` elements, but
     # not `Copyable`: a consuming iterator moves elements out rather than
     # copying them.
     assert_true(conforms_to(List[Int], IterableOwned))

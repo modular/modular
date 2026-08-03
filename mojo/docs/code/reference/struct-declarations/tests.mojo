@@ -15,7 +15,7 @@
 # Skip: nested struct error, field without type error, dynamic
 #        trait field error, fieldwise_init synthesis failure
 #        (Alpha/Color), Incomplete(Sized) missing method,
-#        Box without ImplicitlyDeletable abandoned error,
+#        Box without Deinitable abandoned error,
 #        Unsound(Copyable) with SomeMoveOnlyType, default
 #        method conflicts (struct S(A & B) constructed to fail),
 #        missing self error, __init__ without out self error,
@@ -83,7 +83,7 @@ def test_color_manual() raises:
 
 
 @fieldwise_init
-struct Sound[T: Writable & Copyable & ImplicitlyDeletable]:
+struct Sound[T: Writable & Copyable & Deinitable]:
     var item: Self.T
 
 
@@ -113,7 +113,7 @@ def test_color_fieldwise() raises:
 
 
 @fieldwise_init
-struct Pair_1[T: Copyable & ImplicitlyDeletable]:
+struct Pair_1[T: Copyable & Deinitable]:
     var first: Self.T
     var second: Self.T
 
@@ -128,7 +128,7 @@ def test_parameterized_pair() raises:
 
 
 struct SplatList[
-    T: ImplicitlyCopyable & ImplicitlyDeletable,
+    T: ImplicitlyCopyable & Deinitable,
     *,
     fill: T,
     length: Int = 5,
@@ -166,7 +166,7 @@ def test_trait_conformance() raises:
 
 
 @fieldwise_init
-struct Pair_2[T: Copyable & ImplicitlyDeletable](
+struct Pair_2[T: Copyable & Deinitable](
     Equatable where conforms_to(T, Equatable)
 ):
     var first: Self.T
@@ -185,7 +185,7 @@ def test_conformance_where() raises:
 
 
 @fieldwise_init
-struct Pair_Mixed[T: Copyable & ImplicitlyDeletable](
+struct Pair_Mixed[T: Copyable & Deinitable](
     Copyable,
     Equatable where conforms_to(T, Equatable),
     Writable where conforms_to(T, Writable),
@@ -204,13 +204,11 @@ def test_mixed_trait_list() raises:
     _ = pair4
 
 
-# --- Box with ImplicitlyDeletable ---
+# --- Box with Deinitable ---
 
 
 @fieldwise_init
-struct Box[T: Copyable & ImplicitlyDeletable](
-    Equatable where conforms_to(T, Equatable)
-):
+struct Box[T: Copyable & Deinitable](Equatable where conforms_to(T, Equatable)):
     var item: Self.T
 
 

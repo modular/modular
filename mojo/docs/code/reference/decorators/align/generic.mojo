@@ -17,7 +17,7 @@ from std.testing import *
 
 @fieldwise_init
 @align(128)
-struct Aligned[T: Copyable & ImplicitlyDeletable]:
+struct Aligned[T: Copyable & Deinitable]:
     var value: Self.T
 
 

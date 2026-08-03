@@ -442,7 +442,7 @@ def test_inline_array_iter_mut() raises:
 def _test_inline_array_iter_bounds[
     I: Iterator
 ](var array_iter: I, array_len: Int) raises where conforms_to(
-    I.Element, ImplicitlyDeletable
+    I.Element, Deinitable
 ):
     var iter = array_iter^
 
@@ -469,8 +469,8 @@ struct NonMovable(Movable where False):
     var value: Int
 
 
-struct LinearNonMovable(ImplicitlyDeletable where False, Movable where False):
-    """A fully linear type: neither `Movable` nor `ImplicitlyDeletable`."""
+struct LinearNonMovable(Deinitable where False, Movable where False):
+    """A fully linear type: neither `Movable` nor `Deinitable`."""
 
     var value: Int
 
@@ -528,11 +528,11 @@ def test_inline_array_conditional_conformances() raises:
     assert_true(conforms_to(Array[Int, 3], Equatable))
     assert_true(conforms_to(Array[Int, 3], Hashable))
     assert_true(conforms_to(Array[Int, 3], Copyable))
-    assert_true(conforms_to(Array[Int, 3], ImplicitlyDeletable))
+    assert_true(conforms_to(Array[Int, 3], Deinitable))
     # An array of explicitly-destroyed elements is not implicitly deletable.
-    assert_false(conforms_to(Array[ExplicitDestroy, 3], ImplicitlyDeletable))
+    assert_false(conforms_to(Array[ExplicitDestroy, 3], Deinitable))
     assert_false(conforms_to(Array[NonWritable, 3], Writable))
-    # Owned iteration requires `Movable & ImplicitlyDeletable` elements, but
+    # Owned iteration requires `Movable & Deinitable` elements, but
     # not `Copyable`: a consuming iterator moves elements out rather than
     # copying them.
     assert_true(conforms_to(Array[Int, 3], IterableOwned))
@@ -546,11 +546,11 @@ def test_inline_array_conditional_conformances() raises:
     # accepted, and the array's `Movable` conformance follows the element.
     assert_true(conforms_to(Array[Int, 3], Movable))
     assert_false(conforms_to(Array[NonMovable, 3], Movable))
-    assert_true(conforms_to(Array[NonMovable, 3], ImplicitlyDeletable))
-    # A fully linear element (neither `Movable` nor `ImplicitlyDeletable`)
+    assert_true(conforms_to(Array[NonMovable, 3], Deinitable))
+    # A fully linear element (neither `Movable` nor `Deinitable`)
     # yields an array that is likewise neither.
     assert_false(conforms_to(Array[LinearNonMovable, 3], Movable))
-    assert_false(conforms_to(Array[LinearNonMovable, 3], ImplicitlyDeletable))
+    assert_false(conforms_to(Array[LinearNonMovable, 3], Deinitable))
 
 
 def test_inline_array_iter_bounds() raises:
@@ -572,7 +572,7 @@ def test_inline_array_iter_owned() raises:
 
 
 def test_inline_array_iter_owned_move_only() raises:
-    # Consuming iteration only requires `Movable & ImplicitlyDeletable`, not
+    # Consuming iteration only requires `Movable & Deinitable`, not
     # `Copyable`: each element is moved out of the array, not copied.
     var arr: Array[MoveOnly[Int], 3] = [
         MoveOnly[Int](0),

@@ -46,9 +46,7 @@ def test_range_with_int_params_declaration_order() raises:
 
 def _test_range_iter_bounds[
     I: Iterator
-](var range_iter: I, len: Int) raises where conforms_to(
-    I.Element, ImplicitlyDeletable
-):
+](var range_iter: I, len: Int) raises where conforms_to(I.Element, Deinitable):
     var iter = range_iter^
 
     for i in range(len):
