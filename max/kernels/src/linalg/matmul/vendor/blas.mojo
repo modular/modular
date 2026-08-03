@@ -95,8 +95,8 @@ from _rocblas.rocblas import (
     rocblas_destroy_handle,
 )
 from max.gpu.host import DeviceContext
-from std.gpu.host._amdgpu_hip import HIP
-from std.gpu.host._nvidia_cuda import CUDA
+from max.gpu.host._amdgpu_hip import HIP
+from max.gpu.host._nvidia_cuda import CUDA
 from layout import (
     Coord,
     Idx,

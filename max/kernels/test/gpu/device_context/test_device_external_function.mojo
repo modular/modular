@@ -16,7 +16,7 @@ from max.gpu.host import (
     DeviceContext,
 )
 from max.gpu.host import DeviceGraph, DeviceGraphBuilder
-from std.gpu.host.device_context import DeviceExternalFunction
+from max.gpu.host.device_context import DeviceExternalFunction
 from std.os import getenv
 from std.testing import assert_equal
 

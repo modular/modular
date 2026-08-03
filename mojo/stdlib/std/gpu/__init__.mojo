@@ -66,7 +66,6 @@ from .primitives import (
     warp_id,
 )
 from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
-from .host import DeviceBuffer, DeviceContext, HostBuffer
 from .memory import (
     AddressSpace,
     CacheEviction,

@@ -14,7 +14,8 @@
 
 from std.complex import ComplexFloat32, ComplexFloat64
 from std.ffi import _CPointer
-from std.gpu.host._amdgpu_hip import hipStream_t
+
+from max.gpu.host._amdgpu_hip import hipStream_t
 
 from .types import (
     Algorithm,

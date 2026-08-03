@@ -23,9 +23,10 @@
 # is `TrivialRegisterPassable`, and its `_to_device_type` dispatches to
 # `encode_device_ptr`, which appends the owning buffer's handle.
 
-from max.gpu.host import DeviceContext, DevicePointer
-from std.gpu.host._device_context_metal import MetalDeviceTypeEncoder
 from std.testing import assert_equal, assert_true, TestSuite
+
+from max.gpu.host import DeviceContext, DevicePointer
+from max.gpu.host._device_context_metal import MetalDeviceTypeEncoder
 
 
 # A register-passable aggregate that is NOT itself `DevicePassable` but holds

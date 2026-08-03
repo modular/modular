@@ -67,13 +67,6 @@ from std.builtin.device_passable import (
 )
 from std.compile.compile import CompiledFunctionInfo
 from std.reflection import reflect, reflect_fn
-from std.gpu.host.compile import (
-    _compile_code,
-    _cross_compilation,
-    _ptxas_compile,
-    _to_sass,
-    get_gpu_target,
-)
 from std.memory import unsafe_stack_allocation
 from std.memory import alloc, dealloc, ThinAllocation, Layout, UnsafeMaybeUninit
 from std.memory.unsafe import bitcast
@@ -88,7 +81,16 @@ from std.builtin.coroutine import (
 from std.utils import Variant
 from std.utils._serialize import _serialize_elements
 
-from .info import GPUInfo
+from std.gpu.host import get_gpu_target
+from std.gpu.host.info import GPUInfo
+
+from .compile import (
+    _compile_code,
+    _cross_compilation,
+    _ptxas_compile,
+    _to_sass,
+)
+
 from ._device_context_metal import (
     call_with_pack_checked_metal,
     call_with_pack_metal,
@@ -1940,7 +1942,7 @@ struct DeviceBuffer[dtype: DType](
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
         var length = 1024
@@ -2069,7 +2071,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     Example:
 
     ```mojo
-    from std.gpu.host import DeviceContext
+    from max.gpu.host import DeviceContext
 
     var ctx = DeviceContext(0)  # Select first GPU
     var stream = ctx.create_stream()
@@ -2212,7 +2214,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
         var stream = ctx.create_stream()
@@ -2273,7 +2275,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
 
@@ -2556,7 +2558,7 @@ struct DeviceEvent(ImplicitlyCopyable):
     Example:
 
     ```mojo
-    from std.gpu.host import DeviceContext
+    from max.gpu.host import DeviceContext
 
     var ctx = DeviceContext()
 
@@ -2685,7 +2687,7 @@ struct DeviceFunction[
     Example:
 
     ```mojo
-    from std.gpu.host import DeviceContext
+    from max.gpu.host import DeviceContext
 
     def my_kernel():
         # Kernel implementation
@@ -3401,7 +3403,7 @@ struct DeviceFunction[
         Example:
 
         ```mojo
-        from std.gpu.host import Attribute, DeviceContext
+        from max.gpu.host import Attribute, DeviceContext
 
         def kernel():
             pass
@@ -3689,7 +3691,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     [context manager](/docs/manual/errors/#use-a-context-manager). For example:
 
     ```mojo
-    from std.gpu.host import DeviceContext
+    from max.gpu.host import DeviceContext
     from std.gpu import thread_idx
 
     def kernel():
@@ -3703,7 +3705,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     A custom operation receives a `DeviceContext` directly:
 
     ```text
-    from std.gpu.host import DeviceContext
+    from max.gpu.host import DeviceContext
     from extensibility import register
 
     @register("custom_op")
@@ -3808,7 +3810,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         # Create a context for the default GPU
         var ctx = DeviceContext()
@@ -3913,7 +3915,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         # Using DeviceContext as a context manager
         with DeviceContext() as ctx:
@@ -3938,7 +3940,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
         print("Running on device:", ctx.name())
@@ -3973,7 +3975,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
         var api_name = ctx.api()
@@ -4126,7 +4128,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         with DeviceContext() as ctx:
             # Allocate host memory accessible by the device
@@ -4329,8 +4331,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```text
-        from std.gpu.host import DeviceContext
-        from std.gpu.host.device_context import DeviceExternalFunction
+        from max.gpu.host import DeviceContext
+        from max.gpu.host.device_context import DeviceExternalFunction
 
         def func_signature(
             # Arguments being passed to the assembly code
@@ -4397,7 +4399,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```text
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         def vec_add_sig(
             in0: Pointer[Float32],
@@ -4621,7 +4623,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         without compiling it first:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         def kernel():
             print("hello from the GPU")
@@ -4636,7 +4638,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         first to remove the overhead:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         def kernel():
             print("hello from the GPU")
@@ -4840,7 +4842,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```text
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         def gpu_operation(ctx: DeviceContext) raises -> None:
             # Perform some GPU operation using ctx
@@ -4924,7 +4926,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         var ctx = DeviceContext(device_id=1)
         # Ensure GPU 1's context is active for these operations.
@@ -4945,7 +4947,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
         var ctx = DeviceContext(device_id=1)
         ctx.set_as_current()
         ```
@@ -4985,7 +4987,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```text
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         def some_gpu_operation() raises -> None:
             # Perform some GPU operation
@@ -5078,7 +5080,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```text
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         def benchmark_kernel(ctx: DeviceContext, i: Int) raises -> None:
             # Perform GPU operations using ctx, potentially varying by iteration
@@ -5743,7 +5745,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
 
@@ -5815,7 +5817,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         To create a stream with the highest priority, use:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
         var ctx = DeviceContext()
         var priority = ctx.stream_priority_range().greatest
         var stream = ctx.create_stream(priority=priority)
@@ -5913,7 +5915,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         # Create two device contexts
         var ctx1 = DeviceContext(0)  # First GPU
@@ -6008,7 +6010,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         with DeviceContext() as ctx:
             # Get the API version
@@ -6039,7 +6041,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         to specify attributes. For example:
 
         ```mojo
-        from std.gpu.host import DeviceAttribute, DeviceContext
+        from max.gpu.host import DeviceAttribute, DeviceContext
 
         def main() raises:
             var ctx = DeviceContext()
@@ -6086,7 +6088,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
         print("Device is compatible with MAX:", ctx.is_compatible())
@@ -6149,7 +6151,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
         try:
@@ -6236,7 +6238,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
         try:
@@ -6317,7 +6319,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
         var ctx1 = DeviceContext(0)  # First GPU
         var ctx2 = DeviceContext(1)  # Second GPU
 
@@ -6373,7 +6375,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         var ctx1 = DeviceContext(0)  # First GPU
         var ctx2 = DeviceContext(1)  # Second GPU
@@ -6454,7 +6456,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         # Get number of CUDA devices
         var num_cuda_devices = DeviceContext.number_of_devices(api="cuda")
@@ -6495,7 +6497,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         # Enable P2P access between all GPUs
         DeviceContext.enable_all_peer_access()
@@ -6531,7 +6533,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         # P2P access is automatically enabled when devices are constructed.
         # Check if it was successful for all pairs.

@@ -14,8 +14,6 @@
 
 import extensibility
 import std.format
-from max.gpu.host import DeviceContext
-from std.gpu.host._nvidia_cuda import CUstream
 from std.memory import stack_allocation
 from std.collections import Span
 from std.os import abort
@@ -23,6 +21,9 @@ from std.os import abort
 from std.ffi import OwnedDLHandle
 from extensibility import InputTensor, OutputTensor, ManagedTensorSlice
 from std.utils import IndexList
+
+from max.gpu.host import DeviceContext
+from max.gpu.host._nvidia_cuda import CUstream
 
 from .dlpack import DLTensor
 from .tvm_ffi import SafeFunction, TVMFFIAny, take_latest_error

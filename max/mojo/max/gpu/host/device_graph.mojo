@@ -19,7 +19,7 @@ is [`DeviceGraph.create()`](/docs/std/gpu/host/device_graph/DeviceGraph/#create)
 which hands a [`DeviceGraphBuilder`](/docs/std/gpu/host/device_graph/DeviceGraphBuilder/)
 to a scoped callback."""
 
-from std.gpu.host import (
+from max.gpu.host import (
     ConstantMemoryMapping,
     Dim,
     FuncAttribute,
@@ -35,7 +35,7 @@ from std.builtin.device_passable import DevicePassable
 
 from max.runtime.async_value import AnyAsyncValueRef
 
-from std.gpu.host.device_context import (
+from max.gpu.host.device_context import (
     DeviceBuffer,
     DeviceContext,
     DeviceExternalFunction,

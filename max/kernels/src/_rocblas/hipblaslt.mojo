@@ -16,9 +16,9 @@ from std.pathlib import Path
 from std.ffi import _CPointer, _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
-
-from std.gpu.host._amdgpu_hip import hipStream_t
 from std.utils import StaticTuple
+
+from max.gpu.host._amdgpu_hip import hipStream_t
 
 comptime hipblasLtHandle_t = Optional[OpaquePointer[MutAnyOrigin]]
 comptime hipblasLtMatmulDesc_t = Optional[OpaquePointer[MutAnyOrigin]]

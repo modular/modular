@@ -38,7 +38,7 @@ from linalg.arch.sm100._tma import (
     UInt32Indices,
     to_swizzle,
 )
-from std.gpu.host._tensormap import SwizzleMode
+from max.gpu.host._tensormap import SwizzleMode
 from std.gpu import WARP_SIZE
 from std.testing import assert_equal
 from linalg.arch.sm100.mma import max_contiguous_tile_shape, Major

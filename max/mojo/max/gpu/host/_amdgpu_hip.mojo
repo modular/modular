@@ -13,8 +13,8 @@
 
 from std.ffi import _CPointer, external_call
 
-from std.gpu.host import DeviceContext, DeviceFunction, DeviceStream
-from std.gpu.host.device_context import (
+from max.gpu.host import DeviceContext, DeviceFunction, DeviceStream
+from max.gpu.host.device_context import (
     _CString,
     _checked,
     _DeviceContextPtr,

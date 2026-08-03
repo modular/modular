@@ -35,9 +35,9 @@ from .device_context import (
     _FunctionEnqueuer,
     DeviceContext,
 )
-from .dim import Dim
+
+from . import Dim, LaunchAttribute
 from ._launch_args import _compact_zero_sized_capture_slots
-from .launch_attribute import LaunchAttribute
 
 
 @doc_hidden

@@ -20,7 +20,8 @@ captured command buffers are replayable.
 """
 
 from std.ffi import CStringSlice, external_call
-from std.gpu.host.device_context import (
+
+from max.gpu.host.device_context import (
     DeviceContext,
     _CString,
     _DeviceContextPtr,

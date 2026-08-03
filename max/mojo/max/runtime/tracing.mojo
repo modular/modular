@@ -19,15 +19,16 @@ from std.ffi import external_call
 from std.sys import stderr
 from std.sys.defines import get_defined_int, is_defined
 
-import std.gpu.host._tracing as gpu_tracing
 import std.logger.logger as logger
+
+import max.gpu.host._tracing as gpu_tracing
 from max.gpu.host import DeviceContext
-from std.gpu.host._tracing import Color
-from std.gpu.host._tracing import _end_range as _end_gpu_range
-from std.gpu.host._tracing import _is_enabled as _gpu_is_enabled
-from std.gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
-from std.gpu.host._tracing import _mark as _mark_gpu
-from std.gpu.host._tracing import _start_range as _start_gpu_range
+from max.gpu.host._tracing import Color
+from max.gpu.host._tracing import _end_range as _end_gpu_range
+from max.gpu.host._tracing import _is_enabled as _gpu_is_enabled
+from max.gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
+from max.gpu.host._tracing import _mark as _mark_gpu
+from max.gpu.host._tracing import _start_range as _start_gpu_range
 
 from std.utils import IndexList, Variant
 from std.os import abort
