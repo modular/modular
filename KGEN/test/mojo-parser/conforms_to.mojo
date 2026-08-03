@@ -21,7 +21,7 @@ trait Bar:
 
 comptime Alias = Bar
 # CHECK:      lit.alias.decl *"CONFORMS_TO_CHECK
-# CHECK-SAME: conforms_to(:!mt_Foo !Foo, :meta<!Bar_AnyType> !Bar_AnyType)
+# CHECK-SAME: {:scalar<bool> false}
 comptime CONFORMS_TO_CHECK = conforms_to(Foo, Alias)
 
 

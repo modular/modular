@@ -421,13 +421,10 @@ def concrete_non_copyable() -> NeedsCopyableConcrete[MoveOnly]:
 # The receiver need not be a bare type parameter. A compound parametric type
 # with a *conditional* conformance (e.g. `CondCopyable[U]`, which is `Copyable`
 # only when `U` is) reports `NeedsEvidence` rather than `No`, so it is also
-# deferred. The obligation is the conformance of the whole receiver, so it is
-# discharged by a trailing `where` that names the compound type directly.
-#
-# Note: a `where` on just the *condition* (`where conforms_to(U, Copyable)`)
-# does not yet discharge this — that needs the constraint solver to reduce a
-# conditional conformance to its condition during implication, which is tracked
-# separately.
+# deferred. The obligation is folded before it is recorded, reducing the
+# conditional conformance to its condition, so a trailing `where` discharges it
+# whether it names the compound receiver or just the condition. Diagnostics
+# report the reduced form, which is what a `where` clause has to state.
 
 
 struct CondCopyable[T: Movable & Deinitable](
@@ -445,10 +442,16 @@ def cond_discharged[U: Movable & Deinitable]() -> NeedsCopyable[CondCopyable[U]]
     pass
 
 
+# Discharged: naming the condition works too, since the obligation reduces to it.
+def cond_discharged_via_condition[U: Movable & Deinitable]() ->
+    NeedsCopyable[CondCopyable[U]] where conforms_to(U, Copyable):
+    pass
+
+
 # Undischarged: no trailing `where`, so the deferred obligation stays unprovable
 # and the discharge loop points at the `where` that would satisfy it.
 # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
-# expected-note @below {{constraint declared here needs evidence for 'conforms_to(CondCopyable[U], Copyable)'}}
-# expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(CondCopyable[U], Copyable)'}}
+# expected-note @below {{constraint declared here needs evidence for 'conforms_to(U, Copyable)'}}
+# expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(U, Copyable)'}}
 def cond_undischarged[U: Movable & Deinitable]() -> NeedsCopyable[CondCopyable[U]]:
     pass

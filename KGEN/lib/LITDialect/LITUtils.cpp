@@ -1089,13 +1089,12 @@ TriState LIT::isPropositionImplied(ConstraintAttr proposition,
   if (isTriviallyTrueProposition(reboundProposition))
     return TriState::yes();
 
-  SmallVector<TypedAttr> reboundAssumptions;
-  reboundAssumptions.reserve(assumptions.size());
+  SmallVector<TypedAttr> canonAssumptions;
+  canonAssumptions.reserve(assumptions.size());
   for (ConstraintAttr assumption : assumptions)
-    reboundAssumptions.push_back(getCanonicalAttr(
-        evaluator.getReboundAttribute(assumption.getProposition())));
+    canonAssumptions.push_back(getCanonicalAttr(assumption.getProposition()));
 
-  return isPropositionImplied(reboundProposition, reboundAssumptions);
+  return isPropositionImplied(reboundProposition, canonAssumptions);
 }
 
 /// Visit each TypeConformsToTraitAttr found in a constraint proposition.

@@ -1542,13 +1542,15 @@ struct TestConditionallyLinearType[T: Movable](
         pass
 
 
+# `T` must not already be bound by `Deinitable`, or the conditional
+# conformance folds away and the synthesized dtor comes out unconditional.
 # CHECK-LABEL: lit.struct.decl @TestSynthesizedConditionalDtor
-struct TestSynthesizedConditionalDtor[T: Movable & Deinitable](
+struct TestSynthesizedConditionalDtor[T: Movable](
     Deinitable where conforms_to(T, Deinitable), Movable where False
 ):
     var data: Self.T
 
-# CHECK: lit.fn @"__deinit__{{.*}}TestSynthesizedConditionalDtor{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, {{.*}}Deinitable{{.*}}synthetic
+# CHECK: lit.fn @"__deinit__{{.*}}TestSynthesizedConditionalDtor{{.*}}conforms_to(:!AnyType_Movable T, {{.*}}Deinitable{{.*}}synthetic
 
 # MOCO-4059: Conditionally linear type with concrete struct.
 # CHECK-LABEL: lit.struct.decl @AConditionallyLinearType
