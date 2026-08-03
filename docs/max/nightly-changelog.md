@@ -267,6 +267,11 @@ This version is still a work in progress.
   waits for in-flight requests to finish after receiving `SIGTERM` before
   exiting (default 5 seconds). Raise it so long-running requests are drained
   rather than dropped during a rolling restart.
+- Fixed `SIGTERM` cutting off in-flight streaming responses immediately instead
+  of draining them, which dropped partially generated completions during a
+  rolling restart no matter how high
+  `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` was set. Streaming requests are now
+  bounded by that timeout like every other request.
 - Data-parallel (DP) serving now shares the prefix cache across replicas, so a
   multi-turn conversation gets cache hits even when a later turn is scheduled on
   a different replica than the previous one. GPU prefix-cache hits are served by

@@ -42,6 +42,7 @@ modular_py_library(
         requirement("pydantic-core"),
         requirement("requests"),
         requirement("sentencepiece"),
+        requirement("sse-starlette"),
         requirement("typing-extensions"),
         requirement("tqdm"),
         requirement("pyyaml"),
