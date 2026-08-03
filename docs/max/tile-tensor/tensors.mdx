@@ -276,7 +276,7 @@ memory space the tensor data will be stored in:
 #### Creating a `TileTensor` in global memory
 
 You must allocate global memory from the host side, by allocating a
-[`DeviceBuffer`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceBuffer/).
+[`DeviceBuffer`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/).
 
 On the CPU, you can construct a `TileTensor` using a `DeviceBuffer` as its
 storage. Although you can create this tensor on the CPU and pass it in to a
@@ -285,9 +285,9 @@ memory is on the GPU.
 
 In both cases, if you want to initialize data for the tensor from the CPU, you
 can call
-[`enqueue_copy()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#enqueue_copy)
+[`enqueue_copy()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_copy)
 or
-[`enqueue_memset()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#enqueue_memset)
+[`enqueue_memset()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_memset)
 on the buffer prior to invoking the kernel. The following example shows
 initializing a `TileTensor` from the CPU and passing it to a GPU kernel.
 

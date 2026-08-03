@@ -27,13 +27,13 @@ The implementation shows:
 - TileTensor usage for matrix representation
 - Shared memory optimization patterns
 
-This example uses only open source Mojo standard library and layout package.
+This example uses only open source Mojo libraries.
 """
 
 from std.math import ceildiv
 from std.sys import exit, has_accelerator
 
-# GPU programming imports from open source stdlib
+# GPU programming imports from the MAX accelerator library and stdlib
 from std.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.gpu import thread_idx, block_idx

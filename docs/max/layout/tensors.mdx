@@ -222,7 +222,7 @@ memory space the tensor data will be stored in:
 #### Creating a `LayoutTensor` in global memory
 
 You must allocate global memory from the host side, by allocating a
-[`DeviceBuffer`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceBuffer/).
+[`DeviceBuffer`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/).
 You can either construct a `LayoutTensor` using this memory on the host side,
 before invoking a GPU kernel, or you can construct a LayoutTensor inside the
 kernel itself:
@@ -238,9 +238,9 @@ kernel itself:
 
 In both cases, if you want to initialize data for the tensor from the CPU, you
 can call
-[`enqueue_copy()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#enqueue_copy)
+[`enqueue_copy()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_copy)
 or
-[`enqueue_memset()`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext/#enqueue_memset)
+[`enqueue_memset()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_memset)
 on the buffer prior to invoking the kernel. The following example shows
 initializing a `LayoutTensor` from the CPU and passing it to a GPU kernel.
 
