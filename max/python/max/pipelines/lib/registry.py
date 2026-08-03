@@ -1146,14 +1146,13 @@ class PipelineRegistry:
                     f"Failed to import custom model from: {module_spec}"
                 ) from e
 
-            if not module.ARCHITECTURES or not isinstance(
-                module.ARCHITECTURES, list
-            ):
+            architectures = getattr(module, "ARCHITECTURES", None)
+            if not architectures or not isinstance(architectures, list):
                 raise ValueError(
                     f"Custom model imported, but did not expose an `ARCHITECTURES` list. Module: {module_spec}"
                 )
 
-            for arch in module.ARCHITECTURES:
+            for arch in architectures:
                 self.register(arch, allow_override=True)
             self._imported_custom_arch_specs.add(module_spec)
 
