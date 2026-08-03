@@ -423,10 +423,18 @@ This version is still a work in progress.
   can use them to state the mutability it requires of a string argument without
   spelling out the `origin` parameter.
 
-- `Vendor` has a new `PLUGIN_ACCELERATOR` value, for the `GPUInfo` records a
-  stdlib plugin contributes for hardware the stdlib has no built-in knowledge
-  of. The accompanying `GPUInfo.name` and `GPUInfo.api` identify the
-  accelerator.
+- `GPUInfo.vendor` has been removed. It duplicated `GPUInfo.api`, which
+  identifies the vendor precisely (`"cuda"`, `"hip"`, `"metal"`, or a stdlib
+  plugin's own API name) rather than collapsing every plugin accelerator into
+  one enum value. Compare `api` instead:
+
+  ```mojo
+  comptime use_apple_path = ctx.default_device_info.api == "metal"
+  ```
+
+  `Vendor` itself remains, as the classifier behind
+  `has_amd_gpu_accelerator()`, `has_nvidia_gpu_accelerator()` and
+  `has_apple_gpu_accelerator()`.
 
 - `ImplicitlyDestructible` has been renamed to `Deinitable`, for
   consistency with the `deinit` argument convention and the `__deinit__`

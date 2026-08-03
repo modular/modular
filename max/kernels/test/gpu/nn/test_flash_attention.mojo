@@ -17,7 +17,7 @@ from std.sys import argv
 
 from std.gpu import *
 from max.gpu.host import DeviceContext
-from std.sys import Vendor, has_amd_gpu_accelerator
+from std.sys import has_amd_gpu_accelerator
 from max.gpu.host.info import (
     A100,
     H100,
@@ -51,11 +51,7 @@ def is_benchmark() -> Bool:
 
 
 def is_sm8(info: GPUInfo) -> Bool:
-    return (
-        info.vendor == Vendor.NVIDIA_GPU
-        and info.compute >= 8
-        and info.compute < 9
-    )
+    return info.api == "cuda" and info.compute >= 8 and info.compute < 9
 
 
 def test[
