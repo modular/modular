@@ -763,6 +763,41 @@ class ExportKindAttr(max._core.Attribute):
     @property
     def value(self) -> ExportKind: ...
 
+class ExtensionAttr(max._core.Attribute):
+    """
+    The `#kgen.extension` attribute augments the trait view (metatype) of an
+    `anchor` type value with additional trait conformances supplied by a list
+    of "extension" struct type values, without changing the anchor's underlying
+    physical type.
+
+    Unlike `#kgen.downcast`, which merely re-views a conformance the anchor
+    already possesses, an extension supplies the conformance: when
+    `#kgen.get_witness` cannot find a trait entry on the anchor's own witness
+    tables, it searches the conformance tables of the extension structs. Because
+    the anchor's physical type is unchanged, a value typed as the anchor can be
+    rebound to the extension type at zero cost.
+
+    Example:
+
+    ```mlir
+    #kgen.extension<:!lit.trait<"def() -> T"> G, [!EXT1]>
+      : !lit.trait<"def() -> V">
+    ```
+    """
+
+    def __init__(
+        self,
+        type: max._core.Type,
+        anchor: max._core.dialects.builtin.TypedAttr,
+        extensions: Sequence[max._core.dialects.builtin.TypedAttr],
+    ) -> None: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+    @property
+    def anchor(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def extensions(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
+
 class FnTypeIsCABIAttr(max._core.Attribute):
     """
     The `#kgen.fn_type_is_cabi` attribute returns true if the given type value
