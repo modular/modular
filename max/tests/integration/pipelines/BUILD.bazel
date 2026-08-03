@@ -26,6 +26,11 @@ modular_py_test(
     name = "test_model_config_encoding_resolution",
     size = "medium",
     srcs = ["test_model_config_encoding_resolution.py"],
+    # These are offline unit tests: a stray hub lookup for a gated repo turns
+    # into a 401 instead of a cache miss. Linux CI passes HF_HUB_OFFLINE=1 for
+    # the whole invocation (ci/default/test.sh); the macOS lane does not, so
+    # pin it per target.
+    env = {"HF_HUB_OFFLINE": "1"},
     tags = ["skip-external-ci"],
     deps = [
         "//max/python/max/driver",
@@ -74,6 +79,9 @@ modular_py_test(
 modular_py_test(
     name = "test_model_manifest",
     srcs = ["test_model_manifest.py"],
+    # See test_model_config_encoding_resolution above: offline unit tests that
+    # rely on HF_HUB_OFFLINE, which only Linux CI sets invocation-wide.
+    env = {"HF_HUB_OFFLINE": "1"},
     tags = ["skip-external-ci"],
     deps = [
         "//max/python/max/graph",
