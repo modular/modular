@@ -9,7 +9,7 @@
 # Integration tests for @align decorator - verifies runtime behavior.
 
 from std.sys import align_of, size_of
-from std.memory import UnsafePointer, alloc, dealloc
+from std.memory import Pointer, alloc, dealloc
 from std.testing import assert_equal, assert_true, TestSuite
 from std.collections import Optional
 
@@ -106,7 +106,7 @@ struct UsesLaterStruct:
         """Create a local variable of LaterAlignedStruct and verify alignment.
         """
         var later = LaterAlignedStruct(123)
-        var ptr = UnsafePointer(to=later)
+        var ptr = Pointer(to=later)
         var addr = Int(ptr)
         # Return 1 if aligned, 0 if not
         return 1 if (addr & 255) == 0 else 0
@@ -173,7 +173,7 @@ def test_stack_allocation_alignment() raises:
     alloca instructions, ensuring stack allocations are properly aligned.
     """
     var cache_aligned = CacheAligned(42)
-    var ptr = UnsafePointer(to=cache_aligned)
+    var ptr = Pointer(to=cache_aligned)
     var addr = Int(ptr)
 
     # Stack allocation should respect @align(64)
@@ -183,7 +183,7 @@ def test_stack_allocation_alignment() raises:
 
     # Test large alignment on stack (4096-byte aligned)
     var page_aligned = PageAligned(99)
-    var page_ptr = UnsafePointer(to=page_aligned)
+    var page_ptr = Pointer(to=page_aligned)
     var page_addr = Int(page_ptr)
     assert_true(
         (page_addr & 4095) == 0,
@@ -203,7 +203,7 @@ def test_generic_stack_allocation() raises:
     """Test that generic aligned structs are properly aligned on stack."""
     # Stack-allocate a generic aligned struct
     var generic_aligned = AlignedGeneric[Int](42)
-    var ptr = UnsafePointer(to=generic_aligned)
+    var ptr = Pointer(to=generic_aligned)
     var addr = Int(ptr)
 
     # Should be 128-byte aligned
@@ -226,7 +226,7 @@ def test_array_alignment() raises:
     """
     # Allocate array - base pointer should be 64-byte aligned
     var arr_alloc = alloc[CacheAligned]({count = 4}).into_managed()
-    var arr: UnsafePointer[
+    var arr: Pointer[
         CacheAligned, origin_of(arr_alloc)
     ] = arr_alloc.unsafe_ptr()
     var base_addr = Int(arr)
@@ -267,7 +267,7 @@ def test_inherited_stack_alignment() raises:
     # has @align(64). The containing struct should inherit this alignment
     # requirement for stack allocation.
     var container = ContainsAligned(CacheAligned(42), 99)
-    var ptr = UnsafePointer(to=container)
+    var ptr = Pointer(to=container)
     var addr = Int(ptr)
 
     # The struct should be 64-byte aligned due to the CacheAligned field
@@ -280,7 +280,7 @@ def test_inherited_stack_alignment() raises:
     )
 
     # Also verify the inner field is aligned
-    var inner_ptr = UnsafePointer(to=container.inner)
+    var inner_ptr = Pointer(to=container.inner)
     var inner_addr = Int(inner_ptr)
     assert_true(
         (inner_addr & 63) == 0,
@@ -290,7 +290,7 @@ def test_inherited_stack_alignment() raises:
     # Test OuterSmallAlign which has @align(16) but contains CacheAligned (64)
     # The effective alignment should be max(16, 64) = 64
     var outer = OuterSmallAlign(CacheAligned(77))
-    var outer_ptr = UnsafePointer(to=outer)
+    var outer_ptr = Pointer(to=outer)
     var outer_addr = Int(outer_ptr)
     assert_true(
         (outer_addr & 63) == 0,
@@ -308,8 +308,8 @@ def test_field_offset_alignment() raises:
     """
     var container = ContainsAlignedSecond(99, CacheAligned(42))
 
-    var base_ptr = UnsafePointer(to=container)
-    var inner_ptr = UnsafePointer(to=container.inner)
+    var base_ptr = Pointer(to=container)
+    var inner_ptr = Pointer(to=container.inner)
 
     var base_addr = Int(base_ptr)
     var inner_addr = Int(inner_ptr)
@@ -342,7 +342,7 @@ def test_struct_replace_with_alignment() raises:
     assert_equal(container.inner.x, 42, "inner.x should still be 42")
 
     # Verify alignment is preserved after modification
-    var inner_ptr = UnsafePointer(to=container.inner)
+    var inner_ptr = Pointer(to=container.inner)
     var inner_addr = Int(inner_ptr)
     assert_true(
         (inner_addr & 63) == 0,
@@ -385,9 +385,9 @@ def test_compile_time_struct_constant() raises:
     )
 
     # Verify the constant struct has correct layout when stored
-    var ptr = UnsafePointer(to=from_default)
+    var ptr = Pointer(to=from_default)
     var base_addr = Int(ptr)
-    var second_ptr = UnsafePointer(to=from_default.second)
+    var second_ptr = Pointer(to=from_default.second)
     var second_addr = Int(second_ptr)
     var offset = second_addr - base_addr
 
@@ -426,8 +426,8 @@ def test_optional_alignment() raises:
     # Create a struct containing the Optional and verify field alignment
     var container = ContainsOptionalAligned(99, AlignedTrivial(42))
 
-    var base_ptr = UnsafePointer(to=container)
-    var opt_ptr = UnsafePointer(to=container.opt)
+    var base_ptr = Pointer(to=container)
+    var opt_ptr = Pointer(to=container.opt)
 
     var base_addr = Int(base_ptr)
     var opt_addr = Int(opt_ptr)

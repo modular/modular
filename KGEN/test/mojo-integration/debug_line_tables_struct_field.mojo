@@ -9,7 +9,7 @@
 #
 # The mechanism: `c_long_long` in stdlib ffi is `comptime c_long_long =
 # Scalar[_c_long_long_dtype()]`. When a function returns a concrete
-# UnsafePointer to a struct that (transitively) has a c_long_long field,
+# Pointer to a struct that (transitively) has a c_long_long field,
 # the debug info for that function's return type embeds the un-concretized
 # type !kgen.scalar<*apply(@_c_long_long_dtype)>. If the returned pointer is
 # assigned to a local variable whose contents are never accessed, the only
@@ -38,18 +38,18 @@ struct AVOption(Movable, Writable):
 
 @fieldwise_init
 struct AVClass(Movable, Writable):
-    var option: UnsafePointer[AVOption, ImmUntrackedOrigin]
+    var option: Pointer[AVOption, ImmUntrackedOrigin]
 
 
-def sws_get_class() -> UnsafePointer[AVClass, ImmUntrackedOrigin]:
+def sws_get_class() -> Pointer[AVClass, ImmUntrackedOrigin]:
     return external_call[
-        "sws_get_class", UnsafePointer[AVClass, ImmUntrackedOrigin]
+        "sws_get_class", Pointer[AVClass, ImmUntrackedOrigin]
     ]()
 
 
 def main():
     # Assign the return value but never access the nested fields.
-    # The type UnsafePointer[AVClass] appears in regular code (return type),
+    # The type Pointer[AVClass] appears in regular code (return type),
     # but the nested c_long_long field is only referenced in debug info.
     var cls = sws_get_class()
     _ = cls

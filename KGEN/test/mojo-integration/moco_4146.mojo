@@ -39,7 +39,7 @@ struct PointerStorage(TensorStorage):
         dtype: DType,
         origin: Origin[mut=mut],
         address_space: AddressSpace,
-    ]: TrivialRegisterPassable = UnsafePointer[
+    ]: TrivialRegisterPassable = Pointer[
         SIMD[dtype, 1], origin, address_space=address_space
     ]
 
@@ -64,4 +64,4 @@ def go[K: Kernel, o: MutOrigin](alg: K, c: Tile[DType.float32, o]):
 
 def main():
     var x = Float32(0)
-    go(MyKernel(), Tile(UnsafePointer(to=x)))
+    go(MyKernel(), Tile(Pointer(to=x)))

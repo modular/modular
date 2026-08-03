@@ -15,7 +15,7 @@ from std.sys.info import _current_target
 
 @fieldwise_init
 struct Box[w: Int](Movable):
-    var p: UnsafePointer[Int, MutUntrackedOrigin]
+    var p: Pointer[Int, MutUntrackedOrigin]
 
 
 trait HasMember(Movable):

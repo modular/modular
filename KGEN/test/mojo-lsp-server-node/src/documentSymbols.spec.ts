@@ -25,7 +25,7 @@ from . import test
       `
 alias Value = 10
 
-def foo(a: UnsafePointer[mut=True, Float32, MutAnyOrigin]) -> Float32:
+def foo(a: Pointer[mut=True, Float32, MutAnyOrigin]) -> Float32:
   var variable = 15
   def inner_fn():
     return

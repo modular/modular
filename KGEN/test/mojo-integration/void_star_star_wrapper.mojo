@@ -55,11 +55,11 @@ def looks_like_pointer[T: AnyType]() -> Bool:
 def wrapped_entry_point[
     kernel: KernelFunction[_]
 ](
-    pa: UnsafePointer[KernelArgPack[kernel], MutAnyOrigin],
+    pa: Pointer[KernelArgPack[kernel], MutAnyOrigin],
 ) -> kernel.declared_ret_type:
     comptime to_unsafe_pointer_mapper[
         T: AnyType
-    ]: ImplicitlyCopyable & Deinitable = UnsafePointer[T, MutUntrackedOrigin]
+    ]: ImplicitlyCopyable & Deinitable = Pointer[T, MutUntrackedOrigin]
     comptime UnsafePointerTupleType = Tuple[
         *kernel.declared_arg_types.map[to_unsafe_pointer_mapper]()
     ]
@@ -95,7 +95,7 @@ def invoke_kernel[
     kernel: KernelFunction[_]
 ](
     wrapped_kernel: def(
-        UnsafePointer[KernelArgPack[kernel], MutAnyOrigin],
+        Pointer[KernelArgPack[kernel], MutAnyOrigin],
     ) thin -> kernel.declared_ret_type,
     *args: *kernel.declared_arg_types,
 ) -> kernel.declared_ret_type:
@@ -108,14 +108,14 @@ def invoke_kernel[
             )
         else:
             pa.pointers[i] = rebind[MutOpaquePointer[MutUntrackedOrigin]](
-                UnsafePointer(to=args[i])
+                Pointer(to=args[i])
             )
     return wrapped_kernel(
-        UnsafePointer(to=pa).as_unsafe_any_origin(),
+        Pointer(to=pa).as_unsafe_any_origin(),
     )
 
 
-comptime IntPtr = UnsafePointer[Int, MutAnyOrigin]
+comptime IntPtr = Pointer[Int, MutAnyOrigin]
 comptime ScalarKernel = KernelFunction[scalar_kernel]()
 comptime MixedKernel = KernelFunction[mixed_kernel]()
 
@@ -140,6 +140,6 @@ def main():
         invoke_kernel[MixedKernel](
             WrappedMixedKernel,
             4,
-            UnsafePointer(to=value).as_unsafe_any_origin(),
+            Pointer(to=value).as_unsafe_any_origin(),
         )
     )

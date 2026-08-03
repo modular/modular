@@ -9,7 +9,7 @@
 # RUN: %t.dir/test_rollback | FileCheck %s
 
 from std.ffi import external_call
-from std.memory import UnsafePointer, alloc, dealloc
+from std.memory import Pointer, alloc, dealloc
 
 
 # 12-byte struct: two eightbytes, both INTEGER class (IntegerPair).

@@ -33,7 +33,7 @@ def call_from_two_ptrs[
     callee: def(*args: *Ts) thin,
     # fmt: on
 ](mut a0: Ts[0], mut a1: Ts[1]):
-    var ptr_tuple = Tuple(UnsafePointer(to=a0), UnsafePointer(to=a1))
+    var ptr_tuple = Tuple(Pointer(to=a0), Pointer(to=a1))
 
     # Use `*Ts` rather than spelling out element types so the pack's
     # parametric variadic matches the callee's parametric variadic.
@@ -58,9 +58,7 @@ def call_from_three_ptrs[
     callee: def(*args: *Ts) thin,
     # fmt: on
 ](mut a0: Ts[0], mut a1: Ts[1], mut a2: Ts[2]):
-    var ptr_tuple = Tuple(
-        UnsafePointer(to=a0), UnsafePointer(to=a1), UnsafePointer(to=a2)
-    )
+    var ptr_tuple = Tuple(Pointer(to=a0), Pointer(to=a1), Pointer(to=a2))
     comptime PackType = VariadicPack[
         origin=MutAnyOrigin,
         element_trait=AnyType,

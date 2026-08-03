@@ -195,16 +195,13 @@ def closureFromCapturedInt[a: Int, b: Int, c: Int](x: Int):
 
 def must_be_read_only_with_origin[
     Mut: Bool, //, o: Origin[mut=Mut], FuncType: def() -> None
-](
-    impl: FuncType,
-    ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC],
-):
+](impl: FuncType, ptr: Pointer[Int, o, address_space=AddressSpace.GENERIC]):
     impl()
 
 
 def demo_origin_closure[
     o: Origin[mut=True]
-](ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC]):
+](ptr: Pointer[Int, o, address_space=AddressSpace.GENERIC]):
     var immut_ptr = ptr.as_imm()
 
     def read() {imm immut_ptr}:
@@ -315,7 +312,7 @@ def main() raises:
 
     # COM: Test closure capture with pointer origins.
     # CHECK: read only 1
-    var ptr = UnsafePointer(to=one)
+    var ptr = Pointer(to=one)
     demo_origin_closure(ptr)
 
     # CHECK: 3

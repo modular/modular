@@ -20,7 +20,7 @@ spills over to the next line."""
 
 from layout.int_tuple import *
 from std.sys.info import is_nvidia_gpu
-from std.memory import UnsafePointer
+from std.memory import Pointer
 from std.builtin.simd import Float4_e2m1fn, Float8_e4m3fn
 
 
@@ -389,7 +389,7 @@ def logsoftmax[
     input_fn_1d: def[_simd_width: Int](Int) capturing[origins] -> SIMD[
         dtype, _simd_width
     ],
-](output: UnsafePointer[Scalar[dtype], _]) raises:
+](output: Pointer[Scalar[dtype], _]) raises:
     pass
 
 

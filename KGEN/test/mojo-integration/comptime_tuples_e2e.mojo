@@ -10,26 +10,24 @@ from std.utils.variant import Variant
 from std.memory import ThinAllocation, alloc, dealloc
 
 
-# NOTE: This struct uses UnsafePointer-based storage instead of List because
+# NOTE: This struct uses Pointer-based storage instead of List because
 # List requires T: Copyable at the field declaration site, which creates a
 # circular dependency with Variant's conditional Copyable conformance:
 #   MTuple contains List[Variant[T, MTuple[T]]]
 #   -> List requires Variant[T, MTuple[T]]: Copyable
 #   -> requires MTuple[T]: Copyable (conditional on Variant)
 #   -> MTuple's fields include List[Variant[T, MTuple[T]]]... (cycle)
-# UnsafePointer avoids this because it doesn't constrain its element type,
+# Pointer avoids this because it doesn't constrain its element type,
 # and Copyable checks in method bodies resolve after the struct is defined.
 struct MTuple[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable, Writable):
     comptime Element = Variant[Self.T, Self]
-    var _data: UnsafePointer[Self.Element, MutUntrackedOrigin]
+    var _data: Pointer[Self.Element, MutUntrackedOrigin]
     var _len: Int
     var _cap: Int
 
     @always_inline
     def __init__(out self):
-        self._data = UnsafePointer[
-            Self.Element, MutUntrackedOrigin
-        ].unsafe_dangling()
+        self._data = Pointer[Self.Element, MutUntrackedOrigin].unsafe_dangling()
         self._len = 0
         self._cap = 0
 
@@ -45,9 +43,7 @@ struct MTuple[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable, Writable):
         self._data = move._data
         self._len = move._len
         self._cap = move._cap
-        move._data = UnsafePointer[
-            Self.Element, MutUntrackedOrigin
-        ].unsafe_dangling()
+        move._data = Pointer[Self.Element, MutUntrackedOrigin].unsafe_dangling()
         move._len = 0
         move._cap = 0
 
@@ -61,7 +57,7 @@ struct MTuple[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable, Writable):
                     copy._data[unsafe_offset=i]
                 )
         else:
-            self._data = UnsafePointer[
+            self._data = Pointer[
                 Self.Element, MutUntrackedOrigin
             ].unsafe_dangling()
 
