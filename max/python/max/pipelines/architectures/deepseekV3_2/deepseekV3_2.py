@@ -366,12 +366,34 @@ class DeepseekV3_2DecoderLayer(Module):
             reuse_prev_topk=reuse_prev_topk,
         )
 
-        hs = self._post_attention(xs, attn_outs, signal_buffers)
-
-        # Post-attention norm (per-device)
-        norm_outs = forward_sharded_layers(
-            self.post_attention_layernorm_shards, hs
-        )
+        ep_config = self.config.ep_config
+        if (
+            self.tp_attention
+            and ep_config is not None
+            and not ep_config.use_allreduce
+        ):
+            # Fused reduce-scatter + post-attention norm: eliminates the
+            # separate reduce-scatter collective and a global-memory norm
+            # round-trip by keeping the partial sums in float32 registers.
+            hs_partial = [xs[0] + attn_outs[0], *attn_outs[1:]]
+            gammas = [
+                shard.weight.cast(DType.bfloat16).to(x.device)
+                for shard, x in zip(
+                    self.post_attention_layernorm_shards, xs, strict=True
+                )
+            ]
+            norm_outs, hs = ops.reduce_scatter_rms_norm(
+                hs_partial,
+                signal_buffers,
+                gammas,
+                self.config.rms_norm_eps,
+            )
+        else:
+            hs = self._post_attention(xs, attn_outs, signal_buffers)
+            # Post-attention norm (per-device)
+            norm_outs = forward_sharded_layers(
+                self.post_attention_layernorm_shards, hs
+            )
 
         if self.config.ep_config is not None:
             assert ep_inputs is not None
