@@ -304,7 +304,9 @@ def run_slot_indexed_gpu[
             # carry-forward if seq_len < K-1). Reads of the old window
             # complete before any write because the write loop runs after the
             # token loop.
-            var old_window = SIMD[state_dtype, KERNEL_SIZE_MINUS_ONE](0)
+            var old_window = Array[Scalar[state_dtype], KERNEL_SIZE_MINUS_ONE](
+                fill=0
+            )
             comptime for j in range(KERNEL_SIZE_MINUS_ONE):
                 old_window[j] = pool_ref_h.ptr[
                     UInt32(slot) * conv_state_pool_stride

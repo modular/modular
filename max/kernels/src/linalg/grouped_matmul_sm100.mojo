@@ -60,6 +60,8 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout.tile_tensor import TileTensor
+
+from .utils import partial_simd_load
 from layout.swizzle import Swizzle, make_swizzle
 from layout.tile_layout import col_major as tl_col_major
 from layout.tensor_core_async import tile_layout_k_major_typed
@@ -491,11 +493,25 @@ def load_AB_cuda_core[
     comptime a_rows_per_thread = BM // WARP_SIZE
     comptime a_tv = tl_col_major(Coord(Idx[WARP_SIZE], Idx[a_rows_per_thread]))
 
+    # SIMD widths must be powers of two: odd K rows are gathered with a
+    # masked load into the next power-of-two width, whose padded lanes are
+    # never read by the scatter below.
+    comptime K_padded = next_power_of_two(K_actual)
+
     comptime for v in range(a_rows_per_thread):
         var m = a_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]))
-        var vec = a_gmem.load[K_actual, a_row_align](
-            Int(a_row0 + m), Int(a_col0)
-        )
+        var vec: SIMD[a_type, K_padded]
+        comptime if K_actual == K_padded:
+            vec = a_gmem.load[K_padded, a_row_align](
+                Int(a_row0 + m), Int(a_col0)
+            )
+        else:
+            vec = partial_simd_load[K_padded](
+                a_gmem.ptr_at_offset(Index(Int(a_row0 + m), Int(a_col0))),
+                0,
+                K_actual,
+                0,
+            )
         comptime for k in range(BK):
             var smem_off = a_sw(m * Int32(BK) + Int32(k))
             comptime if k < K_actual:
@@ -511,9 +527,18 @@ def load_AB_cuda_core[
 
     comptime for v in range(b_rows_per_thread):
         var n = b_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]))
-        var vec = b_gmem.load[K_actual, b_row_align](
-            Int(b_row0 + n), Int(b_col0)
-        )
+        var vec: SIMD[b_type, K_padded]
+        comptime if K_actual == K_padded:
+            vec = b_gmem.load[K_padded, b_row_align](
+                Int(b_row0 + n), Int(b_col0)
+            )
+        else:
+            vec = partial_simd_load[K_padded](
+                b_gmem.ptr_at_offset(Index(Int(b_row0 + n), Int(b_col0))),
+                0,
+                K_actual,
+                0,
+            )
         comptime for k in range(BK):
             var smem_off = b_sw(n * Int32(BK) + Int32(k))
             comptime if k < K_actual:
