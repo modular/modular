@@ -1,0 +1,82 @@
+---
+title: Mojo stability guarantees
+sidebar_label: Mojo stability guarantees
+sidebar_position: 2
+description: >
+  Learn which Mojo language features are considered stable and which are
+  implementation details that you should avoid in public libraries.
+---
+
+:::caution
+
+This is an early and preliminary version of our stability discussion.
+We will update this page as we finalize the Mojo 1.x stability model.
+
+:::
+
+The Mojo language is intended to be stable and safe to use in production
+code. We regularly roll out new stabilized language features over
+time.
+
+A small set of language features exist to support the compiler, the
+standard library, or advanced metaprogramming. Treat these as
+implementation details, not public-facing language items. They may
+change or disappear without notice and do not have stability guarantees.
+
+Unlike standard library APIs, these language features _can't be marked_
+with `@stable` and the compiler won't warn when you use them
+(`--warn-on-unstable-apis`).
+
+When writing code intended for compatibility across future versions of
+Mojo, avoid relying on these implementation details.
+
+## Mojo language stability
+
+A wide part of the Mojo language is stable. Most language constructs,
+including control flow, types, and ownership are stable. As a rule,
+Mojo's lifetime and operator dunders such as `__add__()`, `__init__()`,
+and `__deinit__()` are stable.
+
+## Avoiding unsafe language features
+
+Some language features are intended for compiler internals or advanced
+library implementation. They may change or disappear without notice.
+
+### The double-underscore prefix
+
+Avoid using any language feature with a leading double underscore (`__`)
+unless the manual explicitly documents it as stable:
+
+Examples of unsafe prefixed calls include:
+
+- `__mlir_type()`
+- `__mlir_op()`
+- `__mlir_attr()`
+- `__generator_type()`
+
+These features are subject to change as the language evolves.
+
+### Internal-use dunder methods (double underscore prefix and suffix)
+
+Several language features exist for specialized compiler or library work.
+These are not intended for general application development. Avoid
+rarely-used power features with full dunder naming, such as:
+
+- `__merge_with__`
+- `__list_literal__`
+- `__literal_size__`
+
+### Internal-use decorators
+
+Some decorators exist only to support language migration, compiler
+implementation, or standard library development. Avoid decorators named
+like:
+
+- `@parameter`, `@__copy_capture` — legacy closure support
+- `@__allow_legacy_custom_self_types`
+- `@__name`
+- `@__llvm_arg_metadata`
+- `@__unsafe_nested_origins_read_only`
+
+Consider any decorators beginning with `@__` as internal and unstable,
+unless the manual explicitly documents them as public.
