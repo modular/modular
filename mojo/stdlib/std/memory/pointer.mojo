@@ -270,6 +270,7 @@ struct _PointerNicheStorage[
 # ===-----------------------------------------------------------------------===#
 
 
+@stable(since="1.0")
 comptime MutPointer[
     T: AnyType,
     origin: MutOrigin,
@@ -284,6 +285,8 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+
+@stable(since="1.0")
 comptime ImmPointer[
     T: AnyType,
     origin: ImmOrigin,
@@ -326,6 +329,7 @@ comptime ImmutPointer = ImmPointer
 # ===-----------------------------------------------------------------------===#
 
 
+@stable(since="1.0")
 struct Pointer[
     mut: Bool,
     //,

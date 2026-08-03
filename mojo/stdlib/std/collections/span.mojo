@@ -362,9 +362,10 @@ struct Span[
     # Operator dunders
     # ===------------------------------------------------------------------===#
 
+    @stable(since="1.0")
     @always_inline
     def __getitem__(
-        self, idx: Int
+        self, idx: Int, /
     ) -> ref[Self.origin, Self.address_space] Self.T:
         """Gets the span element at the given index.
 

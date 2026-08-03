@@ -601,8 +601,9 @@ struct Array[T: AnyType, length: Int](
     # Operator dunders
     # ===------------------------------------------------------------------===#
 
+    @stable(since="1.0")
     @always_inline
-    def __getitem__(ref self, idx: Int) -> ref[self] Self.T:
+    def __getitem__(ref self, idx: Int, /) -> ref[self] Self.T:
         """Gets a reference to the element at the given index.
 
         Args:
@@ -643,6 +644,37 @@ struct Array[T: AnyType, length: Int](
         """
         check_bounds(idx, len(self))
         return self._unchecked_get(idx)
+
+    @stable(since="1.0")
+    @always_inline
+    def __getitem_param__[idx: Int, /](ref self) -> ref[self] Self.T:
+        """Gets a reference to the element at the given index with compile-time
+        bounds checking.
+
+        Parameters:
+            idx: The compile-time constant index to access (0 to len-1).
+
+        Returns:
+            A reference to the element at the specified index.
+
+        Examples:
+
+        ```mojo
+        var arr: Array[Int, 3] = [1, 2, 3]
+        print(arr[0])            # Prints 1 - first element
+        print(arr[1])            # Prints 2 - second element
+        print(arr[len(arr) - 1]) # Prints 3 - last element
+        ```
+
+        Notes:
+            This overload provides array-style indexing with compile-time bounds
+            checking. The index must be a compile-time constant value.
+        """
+        comptime assert (
+            index(idx) >= 0
+        ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
+        comptime assert index(idx) < Self.length, "index is out of bounds"
+        return self._unchecked_get(materialize[idx]())
 
     @always_inline
     def __getitem_param__[

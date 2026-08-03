@@ -1477,7 +1477,7 @@ struct List[T: Movable, /](
     @__unsafe_nested_origins_read_only
     @always_inline
     def __getitem__(
-        ref self, idx: IntLiteral
+        ref self, idx: IntLiteral, /
     ) -> ref[self.unsafe_get(index(idx))] Self.T:
         """Gets the list element at the given index.
 
@@ -1493,10 +1493,11 @@ struct List[T: Movable, /](
         check_bounds(idx, len(self))
         return self.unsafe_get(index(idx))
 
+    @stable(since="1.0")
     @__unsafe_nested_origins_read_only
     @always_inline
     def __getitem__(
-        ref self, idx: Int
+        ref self, idx: Int, /
     ) -> ref[self.unsafe_get(index(idx))] Self.T:
         """Gets the list element at the given index.
 
