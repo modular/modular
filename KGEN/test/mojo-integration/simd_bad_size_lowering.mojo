@@ -14,9 +14,12 @@
 
 
 def main():
-    # CHECK: error: SIMD vector length must be between 1 and 2^15, found '!kgen.simd<0, f32>'
+    # CHECK: error: SIMD vector length must be a power of two between 1 and 2^15, found '!kgen.simd<0, f32>'
     var x = SIMD[DType.float32, 0](0)
     print(x)
-    # CHECK: error: SIMD vector length must be between 1 and 2^15, found '!kgen.simd<-1, f32>'
+    # CHECK: error: SIMD vector length must be a power of two between 1 and 2^15, found '!kgen.simd<-1, f32>'
     var y = SIMD[DType.float32, -1](0)
     print(y)
+    # CHECK: error: SIMD vector length must be a power of two between 1 and 2^15, found '!kgen.simd<3, f32>'
+    var z = SIMD[DType.float32, 3](0)
+    print(z)

@@ -42,8 +42,8 @@ static bool shouldVerifyOp(Operation *op) {
 }
 
 /// Reject SIMD types whose resolved length cannot be lowered: non-positive
-/// lengths, and lengths beyond LLVM SelectionDAG's 2^15 operand limit
-/// (MOCO-1388).
+/// lengths, lengths which aren't a power of two, and lengths beyond LLVM
+/// SelectionDAG's 2^15 operand limit (MOCO-1388).
 /// FIXME: These should be correct on construction from the Mojo code itself,
 /// but as per MOCO-2839 we're (often) silently dropping assertions during the
 /// folding of @always_inline("builtin") functions. This is a clumsy fallback
@@ -57,7 +57,8 @@ static LogicalResult verifySIMDLengths(Operation *op,
       return;
     type.walk([&](SIMDType simd) {
       std::optional<int64_t> size = simd.getResolvedSize();
-      if (size && (*size <= 0 || *size > maxSIMDLength))
+      if (size &&
+          (*size <= 0 || *size > maxSIMDLength || !llvm::isPowerOf2_64(*size)))
         invalid = simd;
     });
   };
@@ -73,7 +74,8 @@ static LogicalResult verifySIMDLengths(Operation *op,
 
   if (!invalid)
     return success();
-  return op->emitError("SIMD vector length must be between 1 and 2^15, found ")
+  return op->emitError("SIMD vector length must be a power of two between 1 "
+                       "and 2^15, found ")
          << invalid;
 }
 
