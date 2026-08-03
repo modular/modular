@@ -26,9 +26,12 @@ public:
   template <typename AttrT, typename... Args>
   TypedAttr getAndFold(Args &&...args) {
     auto attr = AttrT::get(std::forward<Args>(args)...);
-    auto simplified = evaluateExpression(attr);
-    if (succeeded(simplified) && simplified.value())
-      return simplified.value();
+    if (auto toEval =
+            dyn_cast_if_present<ContextuallyEvaluatedAttrInterface>(attr)) {
+      auto simplified = evaluateExpression(toEval);
+      if (succeeded(simplified) && simplified.value())
+        return simplified.value();
+    }
     return attr;
   }
 

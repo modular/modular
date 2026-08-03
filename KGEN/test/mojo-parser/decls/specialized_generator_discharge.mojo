@@ -21,7 +21,9 @@
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK: lit.alias.decl *"trivial_passthrough{{.*}}": !lit.generator<<"T": !AnyType, {<sugar_preserved({{.*}}conforms_to(:!AnyType *(0,0)
+# `conforms_to(T, AnyType)` is provable from `T`'s declared bound, so the
+# clause folds to `true` at the declaration rather than being retained.
+# CHECK: lit.alias.decl *"trivial_passthrough{{.*}}": !lit.generator<<"T": !AnyType, {<true,
 comptime trivial_passthrough[T: AnyType]
     where conforms_to(T, AnyType) = T
 
@@ -33,7 +35,7 @@ comptime intable_passthrough[T: AnyType]
 
 # CHECK: lit.alias.decl *"two_param_passthrough{{.*}}": !lit.generator<<"T": !AnyType, "U": !AnyType, {<sugar_preserved({{.*}}conforms_to(:!AnyType *(0,0)
 comptime two_param_passthrough[T: AnyType, U: AnyType]
-    where conforms_to(T, AnyType) = U
+    where conforms_to(T, Intable) = U
 
 
 # CHECK-LABEL: lit.fn @"need_a_positive
@@ -99,7 +101,7 @@ def use_multivar_full_dischargeable():
 def use_alias_partial_binding():
     # CHECK-LABEL: lit.fn @"use_alias_partial_binding()"
     # CHECK: lit.alias.decl *"curried{{.*}}": !lit.generator<<"U": !AnyType>!AnyType>
-    comptime curried = two_param_passthrough[PlainStruct, _]
+    comptime curried = two_param_passthrough[IntableStruct, _]
 
 
 # Multi-variable constraint with only the first parameter bound: the

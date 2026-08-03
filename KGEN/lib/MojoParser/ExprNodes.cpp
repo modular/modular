@@ -5249,7 +5249,8 @@ AnyValue MagicFunctionNode::emitConformsTo(ExprDest &dest,
   }
 
   TypedAttr conformToI1 =
-      TypeConformsToTraitAttr::get(checkedAttr, traitToCheck.get());
+      emitter.shared.getEvaluationContext().getAndFold<TypeConformsToTraitAttr>(
+          checkedAttr, traitToCheck.get());
   return emitter.emitBool({conformToI1, this}, dest);
 }
 

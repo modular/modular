@@ -1752,7 +1752,8 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     assert(!trait.hasConstraints() &&
            "deferred conformance bound should always bean unconditional trait");
     TypedAttr conformsTo =
-        TypeConformsToTraitAttr::get(typePValue, trait.getPValue());
+        shared.getEvaluationContext().getAndFold<TypeConformsToTraitAttr>(
+            typePValue, trait.getPValue());
     deferredTypingContext->deferredConstraints.push_back(
         {ConstraintAttr::get(
              conformsTo, shared.diags.translateLocation(value.expr->getLoc()),

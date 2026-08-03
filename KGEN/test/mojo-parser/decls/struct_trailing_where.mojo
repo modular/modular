@@ -49,7 +49,9 @@ struct MultilineParentTrailingWhere[T: Base](Marker, Movable where False) where 
 
 # CHECK-LABEL: lit.struct.decl @MultipleTrailingWhereClauses
 # CHECK-SAME: <T: !AnyType_Base, {{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra))
-# CHECK-SAME: conforms_to(:!AnyType_Base T, :meta<!{{.*}}Base> !{{.*}}Base))
+# The second clause is provable from `T`'s declared bound, so it folds to `true`
+# while still occupying its own constraint slot.
+# CHECK-SAME: <true,
 @fieldwise_init
 struct MultipleTrailingWhereClauses[T: Base] (Movable where False) where conforms_to(
     T, Extra
