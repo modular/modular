@@ -36,7 +36,7 @@ from comm import MAX_GPUS, Signal
 from extensibility import StaticTensorSpec
 from max.gpu.host import CompletionFlag, DeviceContext, DeviceContextArray
 from layout.tile_tensor import row_major
-from max.gpu.host.info import B200, Vendor, is_cpu, is_gpu, is_valid_target
+from max.gpu.host.info import B200, is_cpu, is_gpu, is_valid_target
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     ComptimeInt,
@@ -3969,10 +3969,9 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
             # dstate I/O variant: same one-thread-per-channel mapping/launch as
             # v1, but the scalar dstate load/store loops (mem-pipe-bound on M5)
             # become VEC-wide SIMD chunk loads/stores. Gate on the comptime
-            # device vendor (matching the `== B200` gate rationale above).
-            comptime use_apple_vec = (
-                ctx.default_device_info.vendor == Vendor.APPLE_GPU
-            )
+            # device API, which identifies the vendor (matching the `== B200`
+            # gate rationale above).
+            comptime use_apple_vec = ctx.default_device_info.api == "metal"
             # bf16 SSM state is only wired on the Apple vectorized kernel; the
             # B200 dstate-split and portable v1 kernels are fp32-state. The
             # Python side only allocates a bf16 pool on Apple (nemotron_h
