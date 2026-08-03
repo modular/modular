@@ -22,6 +22,7 @@ key or the ``MODULAR_CACHE_DIR`` environment variable).
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import os
 import sys
@@ -103,6 +104,63 @@ def test_read_only_tree_redirects_to_configured_cache_dir(
     assert compiled, (
         f"expected a compiled .so under {cache_dir / '.mojo_cache'}"
     )
+
+
+def test_read_only_tree_redirected_cache_is_env_specific(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The redirected cache location is isolated by Mojo installation root."""
+    _skip_if_root()
+
+    cache_dir = tmp_path / "configured_cache"
+    monkeypatch.setenv("MODULAR_CACHE_DIR", str(cache_dir))
+
+    env1 = Path("/venv1")
+    monkeypatch.setattr(mojo.importer, "get_package_root", lambda: env1)
+    name1 = "readonly_env1_mod"
+    src_dir1 = _make_read_only_module(tmp_path, name1)
+    monkeypatch.syspath_prepend(str(src_dir1))
+
+    try:
+        module1 = importlib.import_module(name1)
+        assert module1.get_answer() == 42
+    finally:
+        os.chmod(src_dir1, 0o755)
+        sys.modules.pop(name1, None)
+
+    env2 = Path("/venv2")
+    monkeypatch.setattr(mojo.importer, "get_package_root", lambda: env2)
+    name2 = "readonly_env2_mod"
+    src_dir2 = _make_read_only_module(tmp_path, name2)
+    monkeypatch.syspath_prepend(str(src_dir2))
+
+    try:
+        module2 = importlib.import_module(name2)
+        assert module2.get_answer() == 42
+    finally:
+        os.chmod(src_dir2, 0o755)
+        sys.modules.pop(name2, None)
+
+    expected_path1 = (
+        cache_dir
+        / "python_extensions"
+        / hashlib.sha256(str(env1).encode("utf-8")).hexdigest()[:16]
+        / name1
+    )
+    expected_path2 = (
+        cache_dir
+        / "python_extensions"
+        / hashlib.sha256(str(env2).encode("utf-8")).hexdigest()[:16]
+        / name2
+    )
+
+    assert list(expected_path1.glob(f"{name1}.*.so")), (
+        f"expected a compiled .so under {expected_path1}"
+    )
+    assert list(expected_path2.glob(f"{name2}.*.so")), (
+        f"expected a compiled .so under {expected_path2}"
+    )
+    assert expected_path1.parent != expected_path2.parent
 
 
 def test_read_only_tree_auto_redirects_without_config(
