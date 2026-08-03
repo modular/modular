@@ -233,3 +233,66 @@ kgen.generator @use_struct_reflection_kgen(%arg0: !StructFieldTypesExpected, %ar
   %none3 = kgen.call @expect_field_type_by_name_kgen<:!kgen.type #mypair_index_i32>(%arg3) : !kgen.generator<(!StructFieldTypeByNameExpected) -> !kgen.none>
   kgen.return %none3 : !kgen.none
 }
+
+// -----
+
+// Test `#kgen.get_witness` contextual evaluation through a `#kgen.extension`.
+
+kgen.generator @call(%arg0: !kgen.struct<(index)>) -> index {
+  %c = kgen.param.constant : index = <1>
+  kgen.return %c : index
+}
+
+// Source struct carrying the `def() -> T` conformance the extension forwards to.
+kgen.struct.generator @make = struct_inst<"make"(data: index)> {
+  kgen.conformance @"def() -> T" {
+    kgen.witness "T" : type = index
+    kgen.witness "__call__" : (!kgen.struct<(index)>) -> index = @call
+  }
+}
+
+// Stateless extension: supplies `def() -> V` by forwarding to the anchor's own
+// `def() -> T` witnesses.
+kgen.struct.generator @fwd_ext<A: type> = struct_inst<"fwd_ext"[A]<:type A>> {
+  kgen.conformance @"def() -> V" {
+    kgen.witness "V" : type = #kgen.get_witness<A, "def() -> T", "T">
+    kgen.witness "__call__" : (!kgen.struct<(index)>) -> index = #kgen.get_witness<A, "def() -> T", "__call__">
+  }
+}
+
+// Stateless extension whose `def() -> V` witnesses do not depend on the anchor.
+kgen.struct.generator @const_ext<A: type> = struct_inst<"const_ext"[A]<:type A>> {
+  kgen.conformance @"def() -> V" {
+    kgen.witness "V" : type = index
+    kgen.witness "__call__" : (!kgen.struct<(index)>) -> index = @call
+  }
+}
+
+#make = #kgen.type<typevalue<:!kgen.type #kgen.genref<@make>>, struct<(index)>> : !kgen.type
+
+// Concrete anchor: the extension resolves `__call__` by forwarding to @call.
+// CHECK-LABEL: kgen.generator @extension_concrete_anchor
+kgen.generator @extension_concrete_anchor(%arg: !kgen.struct<(index)>) -> index {
+  // CHECK: kgen.call @call
+  %r = kgen.call_param[(!kgen.struct<(index)>) -> index: #kgen.get_witness<#kgen.extension<#make, [#kgen.type<typevalue<:!kgen.type #kgen.genref<@fwd_ext<:type #make>>>, struct<()>> : !kgen.type]>, "def() -> V", "__call__">](%arg)
+  kgen.return %r : index
+}
+
+// Parametric anchor, anchor-independent witness: the extension resolves it even
+// though `G` is unresolvable.
+// CHECK-LABEL: kgen.generator @extension_param_anchor_independent
+kgen.generator @extension_param_anchor_independent<G: !kgen.type>(%arg: !kgen.struct<(index)>) -> index {
+  // CHECK: kgen.call @call
+  %r = kgen.call_param[(!kgen.struct<(index)>) -> index: #kgen.get_witness<#kgen.extension<G, [#kgen.type<typevalue<:!kgen.type #kgen.genref<@const_ext<:type G>>>, struct<()>> : !kgen.type]>, "def() -> V", "__call__">](%arg)
+  kgen.return %r : index
+}
+
+// Parametric anchor, forwarding witness: resolution peels the extension down to
+// the anchor's own witness and defers there (no error) since `G` is unresolvable.
+// CHECK-LABEL: kgen.generator @extension_param_anchor_forwarding
+kgen.generator @extension_param_anchor_forwarding<G: !kgen.type>(%arg: !kgen.struct<(index)>) -> index {
+  // CHECK: kgen.call_param
+  // CHECK-SAME: #kgen.get_witness<G, "def() -> T", "__call__">
+  %r = kgen.call_param[(!kgen.struct<(index)>) -> index: #kgen.get_witness<#kgen.extension<G, [#kgen.type<typevalue<:!kgen.type #kgen.genref<@fwd_ext<:type G>>>, struct<()>> : !kgen.type]>, "def() -> V", "__call__">](%arg)
+  kgen.return %r : index
+}

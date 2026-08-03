@@ -419,6 +419,12 @@ def DowncastAttr : DialectAttribute<(attr
   TypedAttr:$inputTypeValue
 )>;
 
+def ExtensionAttr : DialectAttribute<(attr
+  Type:$type,
+  TypedAttr:$anchor,
+  TypedAttrArray:$extensions
+)>;
+
 def CompileOffloadClosureAttr : DialectAttribute<(attr
   TypedAttr:$target,
   TypedAttr:$func,
@@ -599,6 +605,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     LinkageNameAttr,
     TypeConformsToTraitAttr,
     DowncastAttr,
+    ExtensionAttr,
     CompileOffloadClosureAttr,
     GetLinkageNameAttr,
     GetSourceNameAttr,

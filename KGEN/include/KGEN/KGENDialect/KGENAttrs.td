@@ -724,6 +724,55 @@ def KGEN_DowncastAttr : KGEN_ExprAttr<"Downcast", "downcast",
 
 
 //===----------------------------------------------------------------------===//
+// ExtensionAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ExtensionAttr : KGEN_ExprAttr<"Extension", "extension"> {
+  let summary = "Augment a type value's trait view with extra conformances.";
+  let description = [{
+    The `#kgen.extension` attribute augments the trait view (metatype) of an
+    `anchor` type value with additional trait conformances supplied by a list
+    of "extension" struct type values, without changing the anchor's underlying
+    physical type.
+
+    Unlike `#kgen.downcast`, which merely re-views a conformance the anchor
+    already possesses, an extension supplies the conformance: when
+    `#kgen.get_witness` cannot find a trait entry on the anchor's own witness
+    tables, it searches the conformance tables of the extension structs. Because
+    the anchor's physical type is unchanged, a value typed as the anchor can be
+    rebound to the extension type at zero cost.
+
+    Example:
+
+    ```mlir
+    #kgen.extension<:!lit.trait<"def() -> T"> G, [!EXT1]>
+      : !lit.trait<"def() -> V">
+    ```
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    "TypedAttr":$anchor,
+    ArrayRefParameter<"TypedAttr">:$extensions
+  );
+  let assemblyFormat =
+      "`<` custom<TypeParamValue>($anchor) `,` `[` "
+      "custom<TypeParamValues>($extensions) `]` `>`";
+
+  let extraClassDeclaration = [{
+    /// If the specified attribute is an extension, return its anchor type
+    /// value (the physical/underlying type value); otherwise return the value
+    /// unchanged. Witness lookup and type-reference resolution key off the
+    /// anchor, so extensions are physically transparent.
+    static TypedAttr strip(TypedAttr value) {
+      if (auto ext = llvm::dyn_cast<ExtensionAttr>(value))
+        return ext.getAnchor();
+      return value;
+    }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // GetWitnessAttr
 //===----------------------------------------------------------------------===//
 

@@ -85,34 +85,58 @@ FailureOr<TypedAttr> ParamListTabulateAttr::evaluateWithContext(
 
 FailureOr<TypedAttr>
 GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
+  // Returns nullopt when `handle` has no matching conformance.
+  auto simplifyFrom =
+      [&](ResolvedStructHandle handle) -> std::optional<FailureOr<TypedAttr>> {
+    Operation *conformanceOp =
+        context.resolveConformanceForStruct(handle, getTraitName());
+    if (!conformanceOp)
+      return std::nullopt;
+
+    FailureOr<TypedAttr> result = failure();
+    context.withEvaluator(handle.decl.getInputParams(), handle.paramValues,
+                          [&](ParameterEvaluator &evaluator) {
+                            result = simplify(
+                                cast<ConformanceOp>(conformanceOp), &evaluator);
+                          });
+    if (failed(result))
+      context.emitMaterializationError(
+          "failed to locate witness entry '" + getWitnessName().getValue() +
+          "' for trait '" + getTraitName().getValue() + "'");
+    return result;
+  };
+
+  // First, look for the requested conformance directly on the anchor type.
   FailureOr<ResolvedStructHandle> resolvedOr =
       context.resolveStructOp(getTypeValue(), /*acceptAsync=*/false);
-  if (failed(resolvedOr))
-    return failure();
-  ResolvedStructHandle resolved = *resolvedOr;
-  Operation *conformanceOp =
-      context.resolveConformanceForStruct(resolved, getTraitName());
-  if (!conformanceOp) {
-    context.emitMaterializationError(
-        "struct '" +
-        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
-        "' does not have witness table for trait '" +
-        getTraitName().getValue() + "'");
-    return failure();
+  if (succeeded(resolvedOr)) {
+    if (auto result = simplifyFrom(*resolvedOr))
+      return *result;
   }
 
-  auto conformance = cast<ConformanceOp>(conformanceOp);
-  FailureOr<TypedAttr> result = failure();
-  context.withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
-                        [&](ParameterEvaluator &evaluator) {
-                          result = simplify(conformance, &evaluator);
-                        });
-  if (failed(result)) {
-    context.emitMaterializationError(
-        "failed to locate witness entry '" + getWitnessName().getValue() +
-        "' for trait '" + getTraitName().getValue() + "'");
+  // The anchor type does not itself carry the requested conformance, or is not
+  // yet resolvable. Check the extension conformance table.
+  if (auto extension =
+          sugarDynCast<ExtensionAttr>(SugarAttr::strip(getTypeValue()))) {
+    for (TypedAttr ext : extension.getExtensions()) {
+      FailureOr<ResolvedStructHandle> extResolvedOr =
+          context.resolveStructOp(ext, /*acceptAsync=*/false);
+      if (failed(extResolvedOr))
+        return failure();
+      if (auto result = simplifyFrom(*extResolvedOr))
+        return *result;
+    }
   }
-  return result;
+
+  // Neither the anchor nor any extension provided the conformance. If the
+  // anchor was resolvable and we still could not evaluate this is an error.
+  if (succeeded(resolvedOr))
+    context.emitMaterializationError(
+        "struct '" +
+        SymbolTable::getSymbolName(resolvedOr->decl.getOperation()).getValue() +
+        "' does not have witness table for trait '" +
+        getTraitName().getValue() + "'");
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//

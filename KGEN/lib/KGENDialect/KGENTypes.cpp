@@ -154,6 +154,11 @@ Type ParamType::get(TypedAttr param) {
   if (auto upcast = sugarDynCast<UpcastAttr>(param))
     return get(upcast.getInputTypeValue());
 
+  // An extension is physically transparent: it augments the trait view but its
+  // underlying physical type is its anchor.
+  if (auto extension = sugarDynCast<ExtensionAttr>(param))
+    return get(extension.getAnchor());
+
   // Otherwise, form the ParamType like normal.
   return Base::get(param.getContext(), param);
 }
