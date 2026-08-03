@@ -24,6 +24,7 @@ load("//bazel/internal:modular_versioned_expand_template.bzl", _modular_versione
 load("//bazel/internal:mojo_binary.bzl", _mojo_binary = "mojo_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_library.bzl", _mojo_library = "mojo_library")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_overlay_layer.bzl", _mojo_overlay_layer = "mojo_overlay_layer")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_overlay_srcs.bzl", _mojo_overlay_srcs = "mojo_overlay_srcs")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_shared_library.bzl", _mojo_shared_library = "mojo_shared_library")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_test.bzl", _mojo_test = "mojo_test")  # buildifier: disable=bzl-visibility
@@ -45,6 +46,7 @@ modular_py_venv = _modular_py_venv
 modular_run_binary_test = _modular_run_binary_test
 modular_versioned_expand_template = _modular_versioned_expand_template
 mojo_binary = _mojo_binary
+mojo_overlay_layer = _mojo_overlay_layer
 mojo_overlay_srcs = _mojo_overlay_srcs
 mojo_test = _mojo_test
 mojo_filecheck_test = _mojo_filecheck_test
