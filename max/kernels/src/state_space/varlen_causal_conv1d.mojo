@@ -94,12 +94,12 @@ def _channel_weights[
 ](
     weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
     d: Int,
-) -> SIMD[weight_dtype, WIDTH]:
-    """Load channel `d`'s `WIDTH` conv weights into a register SIMD vector.
+) -> Array[Scalar[weight_dtype], WIDTH]:
+    """Load channel `d`'s `WIDTH` conv weights into a register buffer.
 
     Factored out of the fwd / update GPU kernels, which each preloaded the
     per-channel weights into a fixed 8-wide SIMD. The width is now the exact
-    comptime `WIDTH` (no magic 8), so the vector holds exactly the taps used.
+    comptime `WIDTH` (no magic 8), so the buffer holds exactly the taps used.
 
     Parameters:
         weight_dtype: The weight element type.
@@ -111,12 +111,15 @@ def _channel_weights[
         d: The channel index.
 
     Returns:
-        A `WIDTH`-wide SIMD of channel `d`'s weights, tap `w_idx` at lane
+        A `WIDTH`-element `Array` of channel `d`'s weights, tap `w_idx` at index
         `w_idx`.
     """
-    # Tap axis is unit-stride, so the WIDTH taps load in one shot; `alignment=1`
-    # tolerates non-power-of-2 widths (the op dispatches WIDTH in {1, 2, 3, 4}).
-    return weight.load[width=WIDTH, alignment=1](Coord(d, 0))
+    # WIDTH dispatches in {1, 2, 3, 4}; 3 is not a valid SIMD width, and every
+    # consumer indexes the taps one lane at a time, so hold them in an Array.
+    var weights = Array[Scalar[weight_dtype], WIDTH](fill=0)
+    comptime for w_idx in range(WIDTH):
+        weights[w_idx] = weight.load[width=1, alignment=1](Coord(d, w_idx))
+    return weights^
 
 
 # ============================================================================
