@@ -9,6 +9,7 @@ _LIT_TESTS = [
 
 _EXTRA_DEPS = {
     "test_initialize_runtime.mojo": ["//max:max_mojo"],
+    "test_asyncrt.mojo": ["//max:max_mojo"],
 }
 
 [

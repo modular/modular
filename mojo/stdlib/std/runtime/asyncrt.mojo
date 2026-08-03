@@ -196,32 +196,6 @@ def create_task(
     _async_execute[handle.type](task._handle._handle, desired_worker_id=-1)
 
 
-@always_inline("nodebug")
-def task_id_for_device(device_id: Int) -> Int:
-    """Maps a device ID to a preferred AsyncRT worker thread ID for CPU affinity.
-
-    Delegates to the shared C++ implementation in DeviceAffinity.cpp which
-    handles explicit MODULAR_RUNTIME_DEVICE_TASK_CPU_IDS config,
-    NUMA-inferred GPU-to-CPU core mapping, and round-robin fallback.
-
-    Intended for use by affinity-aware task launchers such as
-    `_create_task` and `_launch_device_collective`. Pass -1 when no affinity
-    hint is needed.
-
-    Args:
-        device_id: The integer device ID (e.g. the ordinal of a GPU device).
-
-    Returns:
-        An AsyncRT worker thread index to use as `desired_worker_id`, or -1
-        if no affinity mapping is configured.
-    """
-    return Int(
-        external_call["MLRT_TaskIdForDevice", Int32](
-            Int32(device_id),
-        )
-    )
-
-
 def _create_task(
     var handle: Coroutine[...],
     *,
